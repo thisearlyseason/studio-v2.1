@@ -1,3 +1,4 @@
+
 "use client";
 
 import React from 'react';
@@ -22,7 +23,7 @@ export default function SafetyCenterPage() {
                 alt="The Squad Logo" 
                 fill
                 className="object-contain"
-                data-ai-hint="dark logo"
+                data-ai-hint="black logo"
               />
             )}
           </Link>
