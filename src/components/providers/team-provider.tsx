@@ -11,9 +11,7 @@ import {
   setDoc, 
   updateDoc, 
   addDoc,
-  orderBy,
 } from 'firebase/firestore';
-import { useRouter } from 'next/navigation';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
@@ -149,6 +147,78 @@ interface TeamContextType {
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
 
+// --- Mock Data Generators ---
+
+const generateMockMembers = (teamId: string): Member[] => [
+  { id: 'm1', teamId, name: 'Alex Johnson', role: 'Admin', position: 'Coach', jersey: 'CH', avatar: 'https://picsum.photos/seed/m1/150/150' },
+  { id: 'm2', teamId, name: 'Sarah Williams', role: 'Member', position: 'Point Guard', jersey: '23', avatar: 'https://picsum.photos/seed/m2/150/150' },
+  { id: 'm3', teamId, name: 'Mike Thompson', role: 'Member', position: 'Small Forward', jersey: '11', avatar: 'https://picsum.photos/seed/m3/150/150' },
+  { id: 'm4', teamId, name: 'Jessica Chen', role: 'Member', position: 'Parent', jersey: 'PAR', avatar: 'https://picsum.photos/seed/m4/150/150' },
+];
+
+const generateMockPosts = (teamId: string): Post[] => [
+  {
+    id: 'p1',
+    teamId,
+    author: { name: 'Alex Johnson', avatar: 'https://picsum.photos/seed/m1/150/150' },
+    content: "Great hustle at practice tonight! The defensive rotations are looking much tighter. Let's keep this intensity for Saturday's game. 🏀",
+    type: 'user',
+    imageUrl: 'https://picsum.photos/seed/practice/800/600',
+    createdAt: new Date(Date.now() - 3600000).toISOString(),
+    comments: [
+      { id: 'c1', author: 'Sarah Williams', content: "Feeling good about the new play!", createdAt: new Date(Date.now() - 1800000).toISOString() }
+    ]
+  },
+  {
+    id: 'p2',
+    teamId,
+    author: { name: 'System', avatar: '' },
+    content: "New event scheduled: Team Dinner at Pizza Palace after the tournament.",
+    type: 'system',
+    createdAt: new Date(Date.now() - 86400000).toISOString(),
+    comments: []
+  }
+];
+
+const generateMockEvents = (teamId: string): TeamEvent[] => [
+  {
+    id: 'e1',
+    teamId,
+    title: 'Morning Conditioning',
+    date: new Date(Date.now() + 86400000), // Tomorrow
+    startTime: '07:00',
+    endTime: '08:30',
+    location: 'Community Park',
+    description: 'Drills and fitness focus.',
+    recurrence: 'weekly',
+    rsvps: { going: 12, notGoing: 2, maybe: 1 },
+    userRsvp: 'going'
+  },
+  {
+    id: 'e2',
+    teamId,
+    title: 'Championship Game',
+    date: new Date(Date.now() + 259200000), // 3 days
+    startTime: '19:00',
+    endTime: '21:00',
+    location: 'City Arena',
+    description: 'Final game of the season. Wear the away jerseys!',
+    recurrence: 'none',
+    rsvps: { going: 15, notGoing: 0, maybe: 0 },
+    userRsvp: 'going'
+  }
+];
+
+const generateMockChats = (teamId: string): Chat[] => [
+  { id: 'ch1', teamId, name: 'General Discussion', memberIds: ['m1', 'm2', 'm3', 'm4'], lastMessage: 'See you all tomorrow!', time: '10:30 AM', unread: 2 },
+  { id: 'ch2', teamId, name: 'Tactics & Plays', memberIds: ['m1', 'm2', 'm3'], lastMessage: 'Check the new playbook PDF.', time: 'Yesterday' }
+];
+
+const generateMockFiles = (teamId: string): TeamFile[] => [
+  { id: 'f1', teamId, name: 'OffensivePlaybook_V2.pdf', type: 'PDF', size: '2.4 MB', uploadedBy: 'Alex Johnson', date: new Date() },
+  { id: 'f2', teamId, name: 'TeamPhoto_Regionals.jpg', type: 'JPG', size: '4.1 MB', uploadedBy: 'Sarah Williams', date: new Date(Date.now() - 604800000) }
+];
+
 export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isUserLoading: isAuthLoading } = useUser();
   const db = useFirestore();
@@ -177,7 +247,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [firebaseUser, db]);
 
-  // Fetch Teams (Filtered for QAP)
+  // Fetch Teams
   const teamsQuery = useMemoFirebase(() => {
     if (!firebaseUser || !db) return null;
     return query(
@@ -200,17 +270,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return collection(db, 'teams', activeTeam.id, 'members');
   }, [activeTeam?.id, db]);
   const { data: membersData } = useCollection(membersQuery);
-  const members: Member[] = (membersData || []).map(m => ({
-    id: m.userId,
-    teamId: m.teamId,
-    name: m.name || 'Member',
-    role: m.role,
-    position: m.position || 'Player',
-    jersey: m.jersey || 'TBD',
-    avatar: m.avatar || `https://picsum.photos/seed/${m.userId}/150/150`
-  }));
+  const members: Member[] = membersData && membersData.length > 0 
+    ? (membersData || []).map(m => ({
+        id: m.userId,
+        teamId: m.teamId,
+        name: m.name || 'Member',
+        role: m.role,
+        position: m.position || 'Player',
+        jersey: m.jersey || 'TBD',
+        avatar: m.avatar || `https://picsum.photos/seed/${m.userId}/150/150`
+      }))
+    : (activeTeam ? generateMockMembers(activeTeam.id) : []);
 
-  // Fetch Posts (Filtered for QAP, sorted client-side to avoid complex indexes)
+  // Fetch Posts
   const postsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db || !firebaseUser) return null;
     return query(
@@ -219,20 +291,22 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     );
   }, [activeTeam?.id, db, firebaseUser?.uid]);
   const { data: postsData } = useCollection(postsQuery);
-  const posts: Post[] = (postsData || [])
-    .map(p => ({
-      id: p.id,
-      teamId: p.teamId,
-      author: p.author || { name: 'Anonymous', avatar: '' },
-      content: p.content,
-      type: p.type || 'user',
-      imageUrl: p.imageUrl,
-      createdAt: p.createdAt,
-      comments: []
-    }))
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const posts: Post[] = postsData && postsData.length > 0
+    ? (postsData || [])
+        .map(p => ({
+          id: p.id,
+          teamId: p.teamId,
+          author: p.author || { name: 'Anonymous', avatar: '' },
+          content: p.content,
+          type: p.type || 'user',
+          imageUrl: p.imageUrl,
+          createdAt: p.createdAt,
+          comments: []
+        }))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    : (activeTeam ? generateMockPosts(activeTeam.id) : []);
 
-  // Fetch Events (Filtered for QAP)
+  // Fetch Events
   const eventsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db || !firebaseUser) return null;
     return query(
@@ -241,23 +315,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     );
   }, [activeTeam?.id, db, firebaseUser?.uid]);
   const { data: eventsData } = useCollection(eventsQuery);
-  const events: TeamEvent[] = (eventsData || [])
-    .map(e => ({
-      id: e.id,
-      teamId: e.teamId,
-      title: e.title,
-      date: new Date(e.date),
-      startTime: e.startTime,
-      endTime: e.endTime,
-      location: e.location,
-      description: e.description,
-      recurrence: e.recurrence || 'none',
-      rsvps: e.rsvps || { going: 0, notGoing: 0, maybe: 0 },
-      userRsvp: e.userRsvps?.[firebaseUser?.uid || ''] as RSVPStatus
-    }))
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  const events: TeamEvent[] = eventsData && eventsData.length > 0
+    ? (eventsData || [])
+        .map(e => ({
+          id: e.id,
+          teamId: e.teamId,
+          title: e.title,
+          date: new Date(e.date),
+          startTime: e.startTime,
+          endTime: e.endTime,
+          location: e.location,
+          description: e.description,
+          recurrence: e.recurrence || 'none',
+          rsvps: e.rsvps || { going: 0, notGoing: 0, maybe: 0 },
+          userRsvp: e.userRsvps?.[firebaseUser?.uid || ''] as RSVPStatus
+        }))
+        .sort((a, b) => a.date.getTime() - b.date.getTime())
+    : (activeTeam ? generateMockEvents(activeTeam.id) : []);
 
-  // Fetch Chats (Filtered for QAP)
+  // Fetch Chats
   const chatsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db || !firebaseUser) return null;
     return query(
@@ -266,16 +342,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     );
   }, [activeTeam?.id, db, firebaseUser?.uid]);
   const { data: chatsData } = useCollection(chatsQuery);
-  const chats: Chat[] = (chatsData || []).map(c => ({
-    id: c.id,
-    teamId: c.teamId,
-    name: c.name,
-    memberIds: c.memberIds,
-    lastMessage: 'Open to view messages',
-    time: 'Now'
-  }));
+  const chats: Chat[] = chatsData && chatsData.length > 0
+    ? (chatsData || []).map(c => ({
+        id: c.id,
+        teamId: c.teamId,
+        name: c.name,
+        memberIds: c.memberIds,
+        lastMessage: 'Open to view messages',
+        time: 'Now'
+      }))
+    : (activeTeam ? generateMockChats(activeTeam.id) : []);
 
-  // Fetch Messages for active chat (Filtered for QAP)
+  // Fetch Messages for active chat
   const messagesQuery = useMemoFirebase(() => {
     if (!activeTeam || !activeChatId || !db || !firebaseUser) return null;
     return query(
@@ -296,7 +374,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }))
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-  // Fetch Files (Filtered for QAP)
+  // Fetch Files
   const filesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db || !firebaseUser) return null;
     return query(
@@ -305,17 +383,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     );
   }, [activeTeam?.id, db, firebaseUser?.uid]);
   const { data: filesData } = useCollection(filesQuery);
-  const files: TeamFile[] = (filesData || [])
-    .map(f => ({
-      id: f.id,
-      teamId: f.teamId,
-      name: f.fileName,
-      type: f.fileType,
-      size: f.fileSize,
-      uploadedBy: f.uploaderName || 'Unknown',
-      date: new Date(f.createdAt)
-    }))
-    .sort((a, b) => b.date.getTime() - a.date.getTime());
+  const files: TeamFile[] = filesData && filesData.length > 0
+    ? (filesData || [])
+        .map(f => ({
+          id: f.id,
+          teamId: f.teamId,
+          name: f.fileName,
+          type: f.fileType,
+          size: f.fileSize,
+          uploadedBy: f.uploaderName || 'Unknown',
+          date: new Date(f.createdAt)
+        }))
+        .sort((a, b) => b.date.getTime() - a.date.getTime())
+    : (activeTeam ? generateMockFiles(activeTeam.id) : []);
 
   // Methods
   const updateUser = (updates: Partial<UserProfile>) => {
