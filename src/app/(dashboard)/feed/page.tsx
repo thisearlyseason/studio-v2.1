@@ -6,17 +6,18 @@ import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ImagePlus, MessageSquare, Trash2, Calendar, Send, Heart, Camera, Loader2, Info, X } from 'lucide-react';
+import { ImagePlus, MessageSquare, Trash2, Calendar, Send, Heart, Camera, Loader2, Info, X, MapPin, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
 import { useTeam, Comment } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
 
-function CommentList({ postId, teamId }: { postId: string, teamId: string }) {
+function CommentList({ postId, teamId, isAdmin, currentUserId }: { postId: string, teamId: string, isAdmin: boolean, currentUserId: string }) {
+  const { deleteComment } = useTeam();
   const db = useFirestore();
   const q = useMemoFirebase(() => {
     return query(
@@ -33,14 +34,26 @@ function CommentList({ postId, teamId }: { postId: string, teamId: string }) {
   return (
     <div className="space-y-3 mt-4">
       {comments.map((comment) => (
-        <div key={comment.id} className="flex gap-3 items-start animate-in fade-in slide-in-from-left-2 duration-300">
+        <div key={comment.id} className="flex gap-3 items-start animate-in fade-in slide-in-from-left-2 duration-300 group">
           <Avatar className="h-7 w-7 shrink-0 border border-muted">
             <AvatarFallback className="text-[10px] font-bold">{comment.authorName[0]}</AvatarFallback>
           </Avatar>
-          <div className="flex-1 min-w-0 bg-muted/30 p-2.5 rounded-2xl">
+          <div className="flex-1 min-w-0 bg-muted/30 p-2.5 rounded-2xl relative">
             <div className="flex items-center justify-between mb-0.5">
               <span className="text-[10px] font-black tracking-tight">{comment.authorName}</span>
-              <span className="text-[9px] text-muted-foreground">{formatDistanceToNow(new Date(comment.createdAt))} ago</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] text-muted-foreground">{formatDistanceToNow(new Date(comment.createdAt))} ago</span>
+                {(isAdmin || comment.authorId === currentUserId) && (
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
+                    onClick={() => deleteComment(postId, comment.id)}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
             </div>
             <p className="text-xs font-medium text-foreground/80 leading-snug">{comment.content}</p>
             {comment.imageUrl && (
@@ -56,7 +69,7 @@ function CommentList({ postId, teamId }: { postId: string, teamId: string }) {
 }
 
 export default function FeedPage() {
-  const { activeTeam, posts, addPost, addComment, toggleLike, user, members, updateTeamHero, formatTime } = useTeam();
+  const { activeTeam, posts, addPost, deletePost, addComment, toggleLike, user, updateTeamHero, formatTime } = useTeam();
   const [newPostContent, setNewPostContent] = useState('');
   const [imageUrl, setImageUrl] = useState<string | undefined>();
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
@@ -246,10 +259,12 @@ export default function FeedPage() {
       <div className="space-y-6">
         {posts.map((post) => {
           const isLiked = post.likes?.includes(user?.id || '');
+          const canDelete = isAdmin || (post.authorId === user?.id);
+
           return (
             <Card key={post.id} className={cn(
-              "rounded-3xl border-none shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl ring-1 ring-black/5",
-              post.type === 'system' ? 'bg-amber-50 dark:bg-amber-950/20 ring-amber-500/20' : ''
+              "rounded-3xl border-none shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl ring-1 ring-black/5 group",
+              post.type === 'system' ? 'bg-amber-50 dark:bg-amber-950/20 ring-amber-500/10' : ''
             )}>
               {post.type === 'user' && (
                 <CardHeader className="flex flex-row items-center gap-4 pb-3">
@@ -263,18 +278,65 @@ export default function FeedPage() {
                       {post.createdAt ? formatDistanceToNow(new Date(post.createdAt)) + ' ago' : 'Live'} • {formatTime(post.createdAt)}
                     </div>
                   </div>
+                  {canDelete && (
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
+                      onClick={() => deletePost(post.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </CardHeader>
               )}
-              <CardContent className={post.type === 'system' ? 'py-5' : 'pt-2 pb-4'}>
+              <CardContent className={post.type === 'system' ? 'p-0' : 'pt-2 pb-4'}>
                 {post.type === 'system' ? (
-                  <div className="flex items-center gap-4">
-                    <div className="bg-amber-100 dark:bg-amber-900/40 p-3 rounded-2xl text-amber-600 dark:text-amber-400">
-                      <Info className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <Badge className="mb-2 bg-amber-500/20 text-amber-600 border-none text-[9px] font-black uppercase tracking-widest">System Update</Badge>
-                      <p className="text-base font-bold tracking-tight text-foreground/90 leading-tight">{post.content}</p>
-                    </div>
+                  <div className="p-4 sm:p-6">
+                    {post.systemData ? (
+                      <div className="bg-white dark:bg-background rounded-2xl border-2 border-amber-500/20 shadow-sm overflow-hidden animate-in zoom-in-95">
+                        <div className="bg-amber-100 dark:bg-amber-900/40 py-2 px-4 flex justify-center">
+                          <span className="text-[10px] font-black uppercase text-amber-700 dark:text-amber-400 tracking-[0.2em]">{post.systemData.updateType}</span>
+                        </div>
+                        <div className="p-6 flex flex-col sm:flex-row items-center gap-6">
+                          <div className="flex flex-col items-center justify-center border-r-0 sm:border-r pr-0 sm:pr-8 min-w-[100px] text-center">
+                            <span className="text-sm font-bold text-foreground/60 uppercase">{format(new Date(post.systemData.date), 'EEE')}</span>
+                            <span className="text-2xl font-black text-foreground">{format(new Date(post.systemData.date), 'MM/dd')}</span>
+                            <span className="text-[9px] font-black uppercase text-muted-foreground mt-2 tracking-widest">{post.systemData.label || 'GAME UPDATE'}</span>
+                          </div>
+                          <div className="flex-1 space-y-3 text-center sm:text-left">
+                            <h3 className="text-xl font-black text-foreground tracking-tight">{post.systemData.title}</h3>
+                            <div className="flex flex-col sm:flex-row gap-4 items-center sm:items-start text-sm font-bold text-muted-foreground">
+                              <div className="flex items-center gap-1.5"><Clock className="h-4 w-4" /> {post.systemData.startTime}{post.systemData.endTime ? ` - ${post.systemData.endTime}` : ''}</div>
+                              <div className="flex items-center gap-1.5 truncate max-w-xs"><MapPin className="h-4 w-4" /> {post.systemData.location}</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="border-t border-muted/30 px-6 py-3 flex justify-center sm:justify-start">
+                          <Button variant="link" className="text-primary font-bold text-xs h-auto p-0">View update</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-4">
+                        <div className="bg-amber-100 dark:bg-amber-900/40 p-3 rounded-2xl text-amber-600 dark:text-amber-400">
+                          <Info className="h-6 w-6" />
+                        </div>
+                        <div className="flex-1">
+                          <Badge className="mb-2 bg-amber-500/20 text-amber-600 border-none text-[9px] font-black uppercase tracking-widest">System Update</Badge>
+                          <p className="text-base font-bold tracking-tight text-foreground/90 leading-tight">{post.content}</p>
+                        </div>
+                        {isAdmin && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-destructive"
+                            onClick={() => deletePost(post.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -311,7 +373,7 @@ export default function FeedPage() {
                     </div>
                   </div>
                   <div className="w-full space-y-4 px-1">
-                    <CommentList postId={post.id} teamId={activeTeam.id} />
+                    <CommentList postId={post.id} teamId={activeTeam.id} isAdmin={isAdmin} currentUserId={user?.id || ''} />
                     
                     <div className="space-y-3 pt-2">
                       {commentImages[post.id] && (

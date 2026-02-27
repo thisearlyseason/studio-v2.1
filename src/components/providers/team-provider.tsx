@@ -91,11 +91,21 @@ export type Post = {
   id: string;
   teamId: string;
   author: { name: string; avatar: string };
+  authorId?: string;
   content: string;
   type: 'user' | 'system';
   imageUrl?: string;
   createdAt: string;
   likes?: string[];
+  systemData?: {
+    updateType: string;
+    title: string;
+    date: string;
+    startTime: string;
+    endTime?: string;
+    location?: string;
+    label?: string;
+  };
 };
 
 export type Comment = {
@@ -181,8 +191,10 @@ interface TeamContextType {
   addMessage: (chatId: string, author: string, content: string, type: 'text' | 'poll' | 'image', imageUrl?: string, poll?: any) => void;
   votePoll: (chatId: string, messageId: string, optionIndex: number) => Promise<void>;
   posts: Post[];
-  addPost: (content: string, imageUrl?: string, type?: 'user' | 'system') => void;
+  addPost: (content: string, imageUrl?: string, type?: 'user' | 'system', systemData?: any) => void;
+  deletePost: (postId: string) => void;
   addComment: (postId: string, content: string, imageUrl?: string) => void;
+  deleteComment: (postId: string, commentId: string) => void;
   toggleLike: (postId: string) => Promise<void>;
   events: TeamEvent[];
   addEvent: (event: Omit<TeamEvent, 'id' | 'teamId' | 'rsvps'>) => void;
@@ -290,11 +302,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       id: p.id,
       teamId: p.teamId,
       author: p.author || { name: 'Anonymous', avatar: '' },
+      authorId: p.authorId,
       content: p.content,
       type: p.type || 'user',
       imageUrl: p.imageUrl,
       createdAt: p.createdAt,
-      likes: p.likes || []
+      likes: p.likes || [],
+      systemData: p.systemData
     }));
 
   const eventsQuery = useMemoFirebase(() => {
@@ -492,7 +506,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const addPost = async (content: string, imageUrl?: string, type: 'user' | 'system' = 'user') => {
+  const addPost = async (content: string, imageUrl?: string, type: 'user' | 'system' = 'user', systemData?: any) => {
     if (!activeTeam || !userProfile || !firebaseUser) return;
     const colRef = collection(db, 'teams', activeTeam.id, 'feedPosts');
     addDocumentNonBlocking(colRef, {
@@ -503,8 +517,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       type,
       imageUrl: imageUrl || '',
       likes: [],
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      systemData: systemData || null,
+      members: activeTeam.membersMap || {}
     });
+  };
+
+  const deletePost = (postId: string) => {
+    if (!activeTeam) return;
+    const docRef = doc(db, 'teams', activeTeam.id, 'feedPosts', postId);
+    deleteDocumentNonBlocking(docRef);
+    toast({ title: "Post Removed", description: "The post has been deleted from the squad feed." });
   };
 
   const addComment = async (postId: string, content: string, imageUrl?: string) => {
@@ -518,6 +541,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       imageUrl: imageUrl || '',
       createdAt: new Date().toISOString()
     });
+  };
+
+  const deleteComment = (postId: string, commentId: string) => {
+    if (!activeTeam) return;
+    const docRef = doc(db, 'teams', activeTeam.id, 'feedPosts', postId, 'comments', commentId);
+    deleteDocumentNonBlocking(docRef);
+    toast({ title: "Comment Removed", description: "The comment has been deleted." });
   };
 
   const toggleLike = async (postId: string) => {
@@ -543,7 +573,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       createdBy: firebaseUser.uid,
       createdAt: new Date().toISOString(),
       rsvps: { going: 1, notGoing: 0, maybe: 0 },
-      userRsvps: { [firebaseUser.uid]: 'going' }
+      userRsvps: { [firebaseUser.uid]: 'going' },
+      members: activeTeam.membersMap || {}
     });
   };
 
@@ -563,7 +594,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (updates.date && updates.date.getTime() !== oldEvent.date.getTime()) changeText += ` Date changed to ${updates.date.toLocaleDateString()}.`;
 
       if (changeText) {
-        addPost(`🚨 UPDATE: ${oldEvent.title} has been updated.${changeText}`, undefined, 'system');
+        addPost(`🚨 EVENT UPDATE: ${oldEvent.title}`, undefined, 'system', {
+          updateType: 'EVENT UPDATED',
+          title: oldEvent.title,
+          date: (updates.date || oldEvent.date).toISOString(),
+          startTime: updates.startTime || oldEvent.startTime,
+          location: updates.location || oldEvent.location,
+          label: 'TEAM EVENT'
+        });
       }
     });
   };
@@ -581,7 +619,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       ...gameData,
       teamId: activeTeam.id,
       date: gameData.date.toISOString(),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      members: activeTeam.membersMap || {}
     });
   };
 
@@ -601,7 +640,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (updates.myScore !== undefined || updates.opponentScore !== undefined) changeText += ` Score updated.`;
 
       if (changeText) {
-        addPost(`📊 GAME UPDATE: Match vs ${oldGame.opponent} has been updated.${changeText}`, undefined, 'system');
+        addPost(`📊 GAME UPDATE: Vs ${oldGame.opponent}`, undefined, 'system', {
+          updateType: 'GAME UPDATED',
+          title: `vs ${oldGame.opponent}`,
+          date: (updates.date || oldGame.date).toISOString(),
+          startTime: oldGame.date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+          location: updates.location || oldGame.location,
+          label: 'MATCH DAY'
+        });
       }
     });
   };
@@ -617,7 +663,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       fileUrl: url,
       uploadedBy: firebaseUser.uid,
       uploaderName: userProfile.name,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      members: activeTeam.membersMap || {}
     });
   };
 
@@ -636,9 +683,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       title,
       message,
       createdBy: firebaseUser.uid,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      members: activeTeam.membersMap || {}
     });
-    addPost(`📣 ALERT: ${title} - ${message}`, undefined, 'system');
+    addPost(`📣 ALERT: ${title}`, undefined, 'system', {
+      updateType: 'TEAM ALERT',
+      title: title,
+      date: new Date().toISOString(),
+      startTime: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      location: message,
+      label: 'URGENT'
+    });
   };
 
   const createNewTeam = async (name: string, organizerPosition: string) => {
@@ -665,7 +720,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       name: userProfile?.name || 'Organizer',
       avatar: userProfile?.avatar || `https://picsum.photos/seed/${firebaseUser.uid}/150/150`,
       joinedAt: new Date().toISOString(),
-      feesPaid: false
+      feesPaid: false,
+      members: membersMap
     });
 
     setActiveTeam({ id: teamId, name, code: teamCode, membersMap });
@@ -679,7 +735,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (querySnapshot.empty) return false;
     const teamDoc = querySnapshot.docs[0];
     const teamId = teamDoc.id;
-    await updateDoc(doc(db, 'teams', teamId), { [`members.${firebaseUser.uid}`]: 'Member' });
+    const teamData = teamDoc.data();
+    const newMembersMap = { ...teamData.members, [firebaseUser.uid]: 'Member' };
+    
+    await updateDoc(doc(db, 'teams', teamId), { members: newMembersMap });
     await setDoc(doc(db, 'teams', teamId, 'members', firebaseUser.uid), {
       userId: firebaseUser.uid,
       teamId: teamId,
@@ -688,7 +747,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       name: userProfile.name,
       avatar: userProfile.avatar,
       joinedAt: new Date().toISOString(),
-      feesPaid: false
+      feesPaid: false,
+      members: newMembersMap
     });
     return true;
   };
@@ -701,7 +761,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   return (
     <TeamContext.Provider value={{ 
       user: userProfile, updateUser, activeTeam, setActiveTeam, updateTeamHero, teams, members, updateMember, toggleFeesPaid,
-      chats, createChat, messages, activeChatId, setActiveChatId, addMessage, votePoll, posts, addPost, addComment, toggleLike,
+      chats, createChat, messages, activeChatId, setActiveChatId, addMessage, votePoll, posts, addPost, deletePost, addComment, deleteComment, toggleLike,
       events, addEvent, updateEvent, updateRSVP, games, addGame, updateGame, files, addFile, deleteFile, alerts, createAlert,
       createNewTeam, inviteMember, joinTeamWithCode, isLoading: isAuthLoading, formatTime
     }}>
