@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -69,7 +70,7 @@ export default function LandingPage() {
                   alt="The Squad Logo" 
                   fill
                   className="object-contain"
-                  data-ai-hint={isScrolled ? "dark logo" : "light logo"}
+                  data-ai-hint={isScrolled ? "black logo" : "white logo"}
                   priority
                 />
               )}
@@ -332,7 +333,7 @@ export default function LandingPage() {
                     alt="The Squad Logo" 
                     fill
                     className="object-contain"
-                    data-ai-hint="dark logo"
+                    data-ai-hint="black logo"
                   />
                 )}
               </div>

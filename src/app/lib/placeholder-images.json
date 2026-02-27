@@ -4,13 +4,13 @@
     {
       "id": "brand-logo-dark",
       "description": "The Squad official brand logo (Black version for light backgrounds)",
-      "imageUrl": "https://images.unsplash.com/photo-1560179707-f14e90ef3623?auto=format&fit=crop&q=80&w=400&h=160",
+      "imageUrl": "https://placehold.co/400x160/ffffff/000000.png?text=THE+SQUAD.",
       "imageHint": "black logo"
     },
     {
       "id": "brand-logo-light",
       "description": "The Squad official brand logo (White version for dark backgrounds)",
-      "imageUrl": "https://images.unsplash.com/photo-1551818255-e6e10975bc17?auto=format&fit=crop&q=80&w=400&h=160",
+      "imageUrl": "https://placehold.co/400x160/000000/ffffff.png?text=THE+SQUAD.",
       "imageHint": "white logo"
     },
     {
