@@ -1,0 +1,21 @@
+# **App Name**: SquadForge
+
+## Core Features:
+
+- Secure User Authentication: Allow users to create accounts, log in with email/password, reset forgotten passwords, and manage their personal profiles, including full name, email, phone (optional), and an optional avatar image. Notifications can also be globally toggled here.
+- Team Collaboration Hub: Enable users to create new teams, which generates a unique 6-character alphanumeric team code. Users can also join existing teams using a valid code. The system automatically assigns 'Admin' roles to team creators, with other members assigned 'Member' roles.
+- Dynamic Team Activity Feed: Display a real-time activity feed specific to each team, featuring posts created by members (which can include text, a single image, and/or a linked event). Automated system posts notify members of new events, updates, or new team members. Users can comment on posts. Posts and comments are deletable by their authors, and by any admin.
+- Event Coordination & Availability: Admins can create detailed team events, specifying title, date, time, location, and description. Team members can view events in a list or calendar format and RSVP with 'Going', 'Not Going', or 'Maybe'. Members can also mark themselves unavailable for specific dates, which is visible to admins on the event details screen to aid in planning.
+- Interactive Group Messaging & Poll Assistant: Facilitate real-time group chats within teams, allowing members to communicate, share messages, and create polls for quick decision-making. The system includes an AI-powered tool to suggest relevant poll questions and options. Members can cast one vote per poll and change their selection before a poll is closed. Polls display live vote counts. Admins can globally delete any chat, removing it for all members; regular members can remove a chat only from their personal view.
+- Roster Management & Secure File Sharing: Provide a comprehensive team roster where admins can edit member details such as position and jersey number (members can only edit their own profile information). The platform also supports uploading and managing shared files (PDF, JPG, PNG, up to 10MB), displayed as a simple list sorted by creation date.
+- Activity Alerts via Web Notifications: Keep users informed of key team activities through web push notifications. These alerts are sent for new feed posts, new events, event reminders (1 hour before start), mentions in comments, new chat messages, and newly created polls. Users have the ability to toggle notification reception globally within their settings.
+
+## Style Guidelines:
+
+- Primary Color: A vibrant, yet professional royal blue (#385CE0), chosen for its connotations of trust, reliability, and team dynamism. It offers excellent contrast against lighter elements.
+- Background Color: A very subtle, cool-toned off-white (#F2F5FC). This background hue is a heavily desaturated variant of the primary color, providing a clean, light canvas that complements the main palette.
+- Accent Color: A bright and clean sky blue-cyan (#30DBFF) that acts as a lively highlight. This color provides a striking visual contrast with the primary royal blue, signaling interactive elements and important information without appearing overly garish.
+- Headline and Body Font: 'Inter' (sans-serif), chosen for its exceptional readability across various screen sizes, modern aesthetic, and versatile application in both prominent headlines and detailed body text for a clear, objective feel suitable for a productivity tool.
+- Utilize a consistent set of minimalist, outlined icons to maintain a clean and professional interface, enhancing navigability without overwhelming the visual design. Icons should be clear and immediately recognizable.
+- Adopt a responsive, single-column dominant layout on smaller screens with a clear navigation hierarchy presented as a sticky bottom bar, transitioning to a flexible two-column or sidebar layout on larger screens. Information density will be balanced with adequate whitespace to ensure scannability.
+- Incorporate subtle, performant UI animations, such as smooth transitions for content loading, feed updates, and tab switching. Focus on animations that enhance user feedback and perception of responsiveness, avoiding excessive or distracting motions.

@@ -1,0 +1,29 @@
+
+{
+  "placeholderImages": [
+    {
+      "id": "team-logo-1",
+      "description": "SquadForge Team Logo",
+      "imageUrl": "https://picsum.photos/seed/squad1/200/200",
+      "imageHint": "team logo"
+    },
+    {
+      "id": "avatar-1",
+      "description": "User Avatar 1",
+      "imageUrl": "https://picsum.photos/seed/user1/150/150",
+      "imageHint": "user avatar"
+    },
+    {
+      "id": "avatar-2",
+      "description": "User Avatar 2",
+      "imageUrl": "https://picsum.photos/seed/user2/150/150",
+      "imageHint": "user avatar"
+    },
+    {
+      "id": "feed-img-1",
+      "description": "Team practice photo",
+      "imageUrl": "https://picsum.photos/seed/practice/800/600",
+      "imageHint": "sports practice"
+    }
+  ]
+}
