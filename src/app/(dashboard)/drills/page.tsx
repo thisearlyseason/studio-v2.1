@@ -343,10 +343,13 @@ export default function DrillsPage() {
                 </div>
 
                 <div className="p-8 space-y-6">
-                  <div className="flex items-start justify-between flex-wrap gap-4">
+                  <DialogHeader className="flex flex-row items-start justify-between flex-wrap gap-4 text-left">
                     <div className="space-y-1">
                       <Badge variant="secondary" className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[10px]">Training Resource</Badge>
-                      <h2 className="text-3xl font-black tracking-tight">{selectedDrill.title}</h2>
+                      <DialogTitle className="text-3xl font-black tracking-tight">{selectedDrill.title}</DialogTitle>
+                      <DialogDescription className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                        Published to {activeTeam.name} coordination library
+                      </DialogDescription>
                     </div>
                     {isAdmin && (
                       <Button 
@@ -361,7 +364,7 @@ export default function DrillsPage() {
                         <Trash2 className="h-5 w-5" />
                       </Button>
                     )}
-                  </div>
+                  </DialogHeader>
 
                   <div className="space-y-4">
                     <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Instructions</h4>
