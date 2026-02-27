@@ -48,6 +48,23 @@ function EventDetailDialog({ event, updateRSVP, formatTime, children }: EventDet
             {event.date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </DialogDescription>
         </DialogHeader>
+
+        {/* RSVP Stats Dashboard */}
+        <div className="flex gap-2 justify-center py-4 border-y bg-muted/20 rounded-xl my-4">
+          <div className="text-center px-4">
+            <p className="text-2xl font-black text-green-600 leading-none">{event.rsvps.going}</p>
+            <p className="text-[9px] font-bold uppercase text-muted-foreground mt-1">Going</p>
+          </div>
+          <div className="text-center px-4 border-x border-muted">
+            <p className="text-2xl font-black text-amber-600 leading-none">{event.rsvps.maybe}</p>
+            <p className="text-[9px] font-bold uppercase text-muted-foreground mt-1">Maybe</p>
+          </div>
+          <div className="text-center px-4">
+            <p className="text-2xl font-black text-red-600 leading-none">{event.rsvps.notGoing}</p>
+            <p className="text-[9px] font-bold uppercase text-muted-foreground mt-1">No</p>
+          </div>
+        </div>
+
         <div className="space-y-4 py-4">
           <div className="flex items-start gap-3">
             <div className="bg-primary/10 p-2 rounded-lg text-primary"><Clock className="h-5 w-5" /></div>
@@ -81,10 +98,28 @@ function EventDetailDialog({ event, updateRSVP, formatTime, children }: EventDet
             </div>
           </div>
         </div>
-        <DialogFooter className="flex gap-2 sm:flex-row flex-col">
-          <Button variant={event.userRsvp === 'notGoing' ? 'destructive' : 'outline'} className="flex-1 rounded-xl" onClick={() => updateRSVP(event.id, 'notGoing')}>Can't Go</Button>
-          <Button variant={event.userRsvp === 'maybe' ? 'secondary' : 'outline'} className="flex-1 rounded-xl" onClick={() => updateRSVP(event.id, 'maybe')}>Maybe</Button>
-          <Button className={cn("flex-1 rounded-xl", event.userRsvp === 'going' ? "bg-green-600 hover:bg-green-700" : "")} onClick={() => updateRSVP(event.id, 'going')}>
+        <DialogFooter className="flex gap-2 sm:flex-row flex-col pt-4">
+          <Button 
+            variant={event.userRsvp === 'notGoing' ? 'destructive' : 'outline'} 
+            className="flex-1 rounded-xl h-11 font-bold" 
+            onClick={() => updateRSVP(event.id, 'notGoing')}
+          >
+            Can't Go
+          </Button>
+          <Button 
+            variant={event.userRsvp === 'maybe' ? 'secondary' : 'outline'} 
+            className="flex-1 rounded-xl h-11 font-bold" 
+            onClick={() => updateRSVP(event.id, 'maybe')}
+          >
+            Maybe
+          </Button>
+          <Button 
+            className={cn(
+              "flex-1 rounded-xl h-11 font-bold", 
+              event.userRsvp === 'going' ? "bg-green-600 hover:bg-green-700" : ""
+            )} 
+            onClick={() => updateRSVP(event.id, 'going')}
+          >
             {event.userRsvp === 'going' && <CheckCircle2 className="h-4 w-4 mr-2" />}
             Going
           </Button>
@@ -229,9 +264,21 @@ export default function EventsPage() {
                       </div>
                       <ChevronRight className="h-5 w-5 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
                     </div>
-                    <div className="flex flex-wrap gap-y-1 gap-x-4 text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                      <div className="flex items-center"><Clock className="h-3.5 w-3.5 mr-1.5 text-primary/50" />{event.startTime}</div>
-                      {event.location && <div className="flex items-center truncate"><MapPin className="h-3.5 w-3.5 mr-1.5 text-primary/50" />{event.location}</div>}
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap gap-y-1 gap-x-4 text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                        <div className="flex items-center"><Clock className="h-3.5 w-3.5 mr-1.5 text-primary/50" />{event.startTime}</div>
+                        {event.location && <div className="flex items-center truncate"><MapPin className="h-3.5 w-3.5 mr-1.5 text-primary/50" />{event.location}</div>}
+                      </div>
+                      {event.userRsvp && (
+                        <Badge className={cn(
+                          "text-[9px] px-2 h-5 font-black uppercase tracking-tighter",
+                          event.userRsvp === 'going' ? "bg-green-500 hover:bg-green-500" : 
+                          event.userRsvp === 'maybe' ? "bg-amber-500 hover:bg-amber-500" : 
+                          "bg-red-500 hover:bg-red-500"
+                        )}>
+                          {event.userRsvp === 'going' ? 'Going' : event.userRsvp === 'maybe' ? 'Maybe' : 'No'}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 </div>

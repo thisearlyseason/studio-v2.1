@@ -318,21 +318,31 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeam?.id, db]);
   const { data: eventsData } = useCollection(eventsQuery);
   const events: TeamEvent[] = (eventsData || [])
-    .map(e => ({
-      id: e.id,
-      teamId: e.teamId,
-      title: e.title,
-      date: new Date(e.date),
-      startTime: e.startTime,
-      endTime: e.endTime,
-      location: e.location,
-      description: e.description,
-      recurrence: e.recurrence || 'none',
-      recurrenceDays: e.recurrenceDays,
-      recurrenceEndDate: e.recurrenceEndDate,
-      rsvps: e.rsvps || { going: 0, notGoing: 0, maybe: 0 },
-      userRsvp: e.userRvps?.[firebaseUser?.uid || ''] as RSVPStatus
-    }))
+    .map(e => {
+      const userRsvpsMap = e.userRsvps || {};
+      const counts = { going: 0, notGoing: 0, maybe: 0 };
+      Object.values(userRsvpsMap).forEach(val => {
+        if (val === 'going') counts.going++;
+        if (val === 'notGoing') counts.notGoing++;
+        if (val === 'maybe') counts.maybe++;
+      });
+      
+      return {
+        id: e.id,
+        teamId: e.teamId,
+        title: e.title,
+        date: new Date(e.date),
+        startTime: e.startTime,
+        endTime: e.endTime,
+        location: e.location,
+        description: e.description,
+        recurrence: e.recurrence || 'none',
+        recurrenceDays: e.recurrenceDays,
+        recurrenceEndDate: e.recurrenceEndDate,
+        rsvps: counts,
+        userRsvp: userRsvpsMap[firebaseUser?.uid || ''] as RSVPStatus
+      };
+    })
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 
   const gamesQuery = useMemoFirebase(() => {

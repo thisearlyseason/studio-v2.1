@@ -58,7 +58,11 @@ service cloud.firestore {
 
       match /events/{eventId} {
         allow list, get: if isMemberOfTeam(teamId);
-        allow create, update, delete: if isAdminOfTeam(teamId);
+        allow create, delete: if isAdminOfTeam(teamId);
+        // Allow admins full update, or members to update only the userRsvps map
+        allow update: if isAdminOfTeam(teamId) || 
+                       (isMemberOfTeam(teamId) && 
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userRsvps']));
       }
 
       match /games/{gameId} {
