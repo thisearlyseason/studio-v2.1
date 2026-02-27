@@ -19,23 +19,36 @@ import { Megaphone, Bell } from 'lucide-react';
 import { useTeam } from '@/components/providers/team-provider';
 import { toast } from '@/hooks/use-toast';
 
+const SEEN_ALERTS_KEY = 'squad_seen_alerts_ids';
+
 export function AlertOverlay() {
   const { alerts, activeTeam } = useTeam();
   const [currentAlertId, setCurrentAlertId] = useState<string | null>(null);
   const [isAlertOpen, setIsAlertOpen] = useState(false);
-  const [viewedAlerts, setViewedAlerts] = useState<Set<string>>(new Set());
+  const [seenIds, setSeenIds] = useState<string[]>([]);
+
+  // Load seen IDs from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem(SEEN_ALERTS_KEY);
+    if (stored) {
+      try {
+        setSeenIds(JSON.parse(stored));
+      } catch (e) {
+        console.error("Failed to parse seen alerts", e);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (alerts.length > 0) {
       const latestAlert = alerts[0];
       
-      // If we haven't seen this alert in this session, show it
-      if (!viewedAlerts.has(latestAlert.id)) {
+      // If we haven't seen this alert ID yet, and it's not currently open
+      if (!seenIds.includes(latestAlert.id) && !isAlertOpen) {
         setCurrentAlertId(latestAlert.id);
         setIsAlertOpen(true);
-        setViewedAlerts(prev => new Set(prev).add(latestAlert.id));
         
-        // Also show a toast notification
+        // Also show a toast notification for extra visibility
         toast({
           title: "New Team Alert!",
           description: latestAlert.title,
@@ -43,14 +56,33 @@ export function AlertOverlay() {
         });
       }
     }
-  }, [alerts, viewedAlerts]);
+  }, [alerts, seenIds, isAlertOpen]);
+
+  const markAsSeen = (id: string) => {
+    const updated = [...seenIds, id];
+    setSeenIds(updated);
+    localStorage.setItem(SEEN_ALERTS_KEY, JSON.stringify(updated));
+  };
+
+  const handleUnderstood = () => {
+    if (currentAlertId) {
+      markAsSeen(currentAlertId);
+    }
+    setIsAlertOpen(false);
+  };
 
   const latestAlert = alerts.find(a => a.id === currentAlertId);
 
   if (!latestAlert) return null;
 
   return (
-    <Dialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
+    <Dialog open={isAlertOpen} onOpenChange={(open) => {
+      setIsAlertOpen(open);
+      // If closed via X or clicking outside, we also mark it as seen
+      if (!open && currentAlertId && !seenIds.includes(currentAlertId)) {
+        markAsSeen(currentAlertId);
+      }
+    }}>
       <DialogContent className="sm:max-w-md border-t-4 border-t-primary rounded-3xl overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
           <Megaphone className="h-32 w-32 -rotate-12" />
@@ -72,7 +104,7 @@ export function AlertOverlay() {
         <DialogFooter className="mt-4">
           <Button 
             className="w-full rounded-2xl h-14 text-lg font-black shadow-xl shadow-primary/20" 
-            onClick={() => setIsAlertOpen(false)}
+            onClick={handleUnderstood}
           >
             Understood
           </Button>
