@@ -38,7 +38,7 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 export default function TeamProfilePage() {
-  const { activeTeam, user, members, updateTeamDetails } = useTeam();
+  const { activeTeam, user, members, updateTeamDetails, isSuperAdmin } = useTeam();
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isUpdatingLogo, setIsUpdatingLogo] = useState(false);
@@ -73,8 +73,8 @@ export default function TeamProfilePage() {
     );
   }
 
-  // Simplified and robust Admin check
-  const isAdmin = activeTeam.role === 'Admin' || (activeTeam.membersMap?.[user?.id || ''] === 'Admin');
+  // Unified Admin Check
+  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
   
   // Inclusive filter for leadership roles
   const admins = members.filter(m => 

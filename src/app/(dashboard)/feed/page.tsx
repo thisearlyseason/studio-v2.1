@@ -69,7 +69,7 @@ function CommentList({ postId, teamId, isAdmin, currentUserId }: { postId: strin
 }
 
 export default function FeedPage() {
-  const { activeTeam, posts, addPost, deletePost, addComment, toggleLike, user, updateTeamHero, formatTime } = useTeam();
+  const { activeTeam, posts, addPost, deletePost, addComment, toggleLike, user, updateTeamHero, formatTime, isSuperAdmin } = useTeam();
   const [newPostContent, setNewPostContent] = useState('');
   const [imageUrl, setImageUrl] = useState<string | undefined>();
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
@@ -93,7 +93,8 @@ export default function FeedPage() {
     );
   }
 
-  const isAdmin = activeTeam.role === 'Admin';
+  // Unified Admin Check
+  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
 
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
@@ -269,11 +270,11 @@ export default function FeedPage() {
               {post.type === 'user' && (
                 <CardHeader className="flex flex-row items-center gap-4 pb-3">
                   <Avatar className="h-11 w-11 border-2 border-background shadow-sm">
-                    <AvatarImage src={post.author.avatar} />
-                    <AvatarFallback className="font-bold">{post.author.name[0]}</AvatarFallback>
+                    <AvatarImage src={post.author?.avatar} />
+                    <AvatarFallback className="font-bold">{post.author?.name?.[0] || '?'}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <div className="font-extrabold text-sm tracking-tight">{post.author.name}</div>
+                    <div className="font-extrabold text-sm tracking-tight">{post.author?.name || 'Anonymous'}</div>
                     <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
                       {post.createdAt ? formatDistanceToNow(new Date(post.createdAt)) + ' ago' : 'Live'} • {formatTime(post.createdAt)}
                     </div>

@@ -111,12 +111,13 @@ export function AlertOverlay() {
 }
 
 export function CreateAlertButton() {
-  const { createAlert, user, activeTeam } = useTeam();
+  const { createAlert, user, activeTeam, isSuperAdmin } = useTeam();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
 
-  const isAdmin = activeTeam?.role === 'Admin';
+  // Unified Admin Check
+  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
 
   if (!isAdmin) return null;
 

@@ -37,7 +37,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
 export default function DrillsPage() {
-  const { activeTeam, drills, addDrill, deleteDrill, user, isPro } = useTeam();
+  const { activeTeam, drills, addDrill, deleteDrill, user, isPro, isSuperAdmin } = useTeam();
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedDrill, setSelectedDrill] = useState<Drill | null>(null);
@@ -63,6 +63,9 @@ export default function DrillsPage() {
       </div>
     );
   }
+
+  // Unified Admin Check
+  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
 
   if (!isPro) {
     return (
@@ -103,7 +106,6 @@ export default function DrillsPage() {
     );
   }
 
-  const isAdmin = activeTeam.membersMap?.[user?.id || ''] === 'Admin';
   const filteredDrills = drills.filter(d => 
     d.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
     d.description.toLowerCase().includes(searchTerm.toLowerCase())

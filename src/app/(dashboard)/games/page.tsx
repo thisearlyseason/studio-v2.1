@@ -40,7 +40,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export default function GamesPage() {
-  const { activeTeam, games, addGame, updateGame, user, isPro } = useTeam();
+  const { activeTeam, games, addGame, updateGame, user, isPro, isSuperAdmin } = useTeam();
   const [isRecordOpen, setIsRecordOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<Game | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -72,7 +72,7 @@ export default function GamesPage() {
     
     const wins = games.filter(g => g.result === 'Win').length;
     const winRate = wins / games.length;
-    const lastGame = games[0]; // games is sorted descending by date in provider usually, or we can check logic
+    const lastGame = games[0]; 
 
     if (games.length >= 3) {
       const lastThree = games.slice(0, 3);
@@ -81,11 +81,11 @@ export default function GamesPage() {
       }
     }
 
-    if (lastGame.result === 'Win') {
+    if (lastGame?.result === 'Win') {
       return "Victory! Great job on the latest win. Let's carry this energy into the next one.";
     }
 
-    if (lastGame.result === 'Loss') {
+    if (lastGame?.result === 'Loss') {
       return "Tough game, but champions are built in the comeback. Review the film and level up!";
     }
 
@@ -104,6 +104,9 @@ export default function GamesPage() {
       </div>
     );
   }
+
+  // Unified Admin Check
+  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
 
   if (!isPro) {
     return (
@@ -143,8 +146,6 @@ export default function GamesPage() {
       </div>
     );
   }
-
-  const isAdmin = activeTeam.membersMap?.[user?.id || ''] === 'Admin';
 
   const wins = games.filter(g => g.result === 'Win').length;
   const losses = games.filter(g => g.result === 'Loss').length;

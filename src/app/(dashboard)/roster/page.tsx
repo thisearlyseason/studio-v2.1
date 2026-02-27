@@ -30,7 +30,7 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 export default function RosterPage() {
-  const { activeTeam, members, updateMember, inviteMember, user, toggleFeesPaid, isPro } = useTeam();
+  const { activeTeam, members, updateMember, inviteMember, user, toggleFeesPaid, isPro, isSuperAdmin } = useTeam();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteName, setInviteName] = useState('');
@@ -52,6 +52,9 @@ export default function RosterPage() {
       </div>
     );
   }
+
+  // Unified Admin Check
+  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
 
   if (!isPro) {
     return (
@@ -92,7 +95,6 @@ export default function RosterPage() {
     );
   }
 
-  const isAdmin = activeTeam.membersMap?.[user?.id || ''] === 'Admin';
   const teamRoster = members.filter(member => member.teamId === activeTeam.id);
   
   const filteredRoster = teamRoster.filter(member => 
