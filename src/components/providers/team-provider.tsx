@@ -12,6 +12,8 @@ import {
   setDoc, 
   updateDoc, 
   addDoc,
+  getDocs,
+  limit
 } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -149,6 +151,7 @@ interface TeamContextType {
   addFile: (name: string, type: string, size: string) => void;
   createNewTeam: (name: string, organizerPosition: string) => Promise<void>;
   inviteMember: (name: string, email: string, position: MemberPosition) => void;
+  joinTeamWithCode: (code: string) => Promise<boolean>;
   isLoading: boolean;
   formatTime: (date: string | Date) => string;
 }
@@ -332,14 +335,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const formatTime = (date: string | Date) => {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
   };
 
   const updateUser = (updates: Partial<UserProfile>) => {
     if (!firebaseUser) return;
     const docRef = doc(db, 'users', firebaseUser.uid);
     
-    // Map UserProfile fields to Firestore User document fields
     const firestoreUpdates: any = {};
     if (updates.name !== undefined) firestoreUpdates.fullName = updates.name;
     if (updates.email !== undefined) firestoreUpdates.email = updates.email;
@@ -350,7 +352,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       errorEmitter.emit('permission-error', new FirestorePermissionError({ path: docRef.path, operation: 'update' }));
     });
 
-    // Optimistically update local state
     if (userProfile) {
       setUserProfile({ ...userProfile, ...updates });
     }
@@ -527,35 +528,55 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     setActiveTeam({ id: teamId, name, code: teamCode, membersMap });
   };
 
-  const inviteMember = async (name: string, email: string, position: MemberPosition) => {
-    if (!activeTeam) return;
-    const teamId = activeTeam.id;
-    const mockUserId = `invited_${Date.now()}`;
-    const teamRef = doc(db, 'teams', teamId);
-    const teamSnap = await getDoc(teamRef);
-    const newMembersMap = { ...(teamSnap.data()?.members || {}), [mockUserId]: 'Member' };
-
-    await updateDoc(teamRef, { [`members.${mockUserId}`]: 'Member' });
+  const joinTeamWithCode = async (code: string): Promise<boolean> => {
+    if (!firebaseUser || !userProfile) return false;
     
-    await setDoc(doc(db, 'teams', teamId, 'members', mockUserId), {
-      userId: mockUserId,
-      teamId,
+    const teamsRef = collection(db, 'teams');
+    const q = query(teamsRef, where('teamCode', '==', code.toUpperCase()), limit(1));
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) return false;
+    
+    const teamDoc = querySnapshot.docs[0];
+    const teamData = teamDoc.data();
+    const teamId = teamDoc.id;
+    
+    const newMembersMap = { ...(teamData.members || {}), [firebaseUser.uid]: 'Member' };
+    
+    await updateDoc(doc(db, 'teams', teamId), {
+      [`members.${firebaseUser.uid}`]: 'Member'
+    });
+    
+    await setDoc(doc(db, 'teams', teamId, 'members', firebaseUser.uid), {
+      userId: firebaseUser.uid,
+      teamId: teamId,
       role: 'Member',
-      position,
-      name,
-      email,
+      position: 'Player',
+      name: userProfile.name,
+      avatar: userProfile.avatar,
       joinedAt: new Date().toISOString(),
       members: newMembersMap
     });
+    
+    return true;
+  };
 
-    console.log(`Email invited to ${name} (${email}) for team ${activeTeam.name}. Code: ${activeTeam.code}. Link: ${window.location.origin}/signup?code=${activeTeam.code}`);
+  const inviteMember = async (name: string, email: string, position: MemberPosition) => {
+    if (!activeTeam) return;
+    // In a real app, this would trigger a Cloud Function to send an email.
+    // For this prototype, we log it and provide a testable link.
+    const inviteLink = `${window.location.origin}/signup?code=${activeTeam.code}`;
+    console.log(`[PROTOTYPE INVITE] To: ${name} (${email})`);
+    console.log(`[PROTOTYPE INVITE] Message: Join ${activeTeam.name} on The Squad!`);
+    console.log(`[PROTOTYPE INVITE] Team Code: ${activeTeam.code}`);
+    console.log(`[PROTOTYPE INVITE] Join Link: ${inviteLink}`);
   };
 
   return (
     <TeamContext.Provider value={{ 
       user: userProfile, updateUser, activeTeam, setActiveTeam, updateTeamHero, teams, members, updateMember,
       chats, createChat, messages, activeChatId, setActiveChatId, addMessage, votePoll, posts, addPost, addComment,
-      events, addEvent, updateRSVP, files, addFile, createNewTeam, inviteMember, isLoading: isAuthLoading, formatTime
+      events, addEvent, updateRSVP, files, addFile, createNewTeam, inviteMember, joinTeamWithCode, isLoading: isAuthLoading, formatTime
     }}>
       {children}
     </TeamContext.Provider>

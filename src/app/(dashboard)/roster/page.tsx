@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Search, MoreVertical, ShieldCheck, Mail, Phone, UserPlus, Link as LinkIcon, AtSign } from 'lucide-react';
+import { Search, MoreVertical, ShieldCheck, Mail, Phone, UserPlus, Link as LinkIcon, AtSign, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTeam } from '@/components/providers/team-provider';
 import {
@@ -36,6 +36,7 @@ export default function RosterPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePosition, setInvitePosition] = useState('Player');
   const [mounted, setMounted] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   
   const [editingMember, setEditingMember] = useState<any>(null);
   const [editForm, setEditForm] = useState({ position: '', jersey: '' });
@@ -83,10 +84,18 @@ export default function RosterPage() {
       setInviteEmail('');
       setInvitePosition('Player');
       toast({
-        title: "Invitation Sent",
-        description: `We've sent a sign-up link and team code to ${inviteName} at ${inviteEmail}.`,
+        title: "Invitation Logged",
+        description: "In this prototype, invitations are logged to the console. Use the Copy Link button to test the joining flow manually!",
       });
     }
+  };
+
+  const copyInviteLink = () => {
+    const link = `${window.location.origin}/signup?code=${activeTeam.code}`;
+    navigator.clipboard.writeText(link);
+    setIsCopied(true);
+    toast({ title: "Invite Link Copied", description: "Share this link with your teammate to have them join automatically." });
+    setTimeout(() => setIsCopied(false), 2000);
   };
 
   const copyTeamCode = () => {
@@ -110,51 +119,54 @@ export default function RosterPage() {
               <DialogHeader>
                 <DialogTitle>Invite to {activeTeam.name}</DialogTitle>
                 <DialogDescription>
-                  We'll send an email with the team code and a direct link to join.
+                  Share your team link or send an invite to have members join your squad.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
+                <div className="flex flex-col gap-2">
+                  <Label className="text-xs font-bold uppercase text-muted-foreground ml-1">Shareable Team Link</Label>
+                  <div className="flex gap-2">
+                    <div className="flex-1 bg-muted rounded-xl px-4 flex items-center h-11 text-xs font-mono truncate border border-muted-foreground/10">
+                      {window.location.origin}/signup?code={activeTeam.code}
+                    </div>
+                    <Button variant="secondary" size="icon" className="h-11 w-11 rounded-xl shrink-0" onClick={copyInviteLink}>
+                      {isCopied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground px-1 italic">New members using this link will join {activeTeam.name} automatically after signing up.</p>
+                </div>
+
                 <div className="p-4 bg-primary/5 rounded-2xl text-center space-y-2 border border-primary/10 group cursor-pointer" onClick={copyTeamCode}>
-                  <p className="text-[10px] font-black text-primary uppercase tracking-widest">Shareable Team Code</p>
+                  <p className="text-[10px] font-black text-primary uppercase tracking-widest">Team Code</p>
                   <div className="flex items-center justify-center gap-2">
                     <p className="text-3xl font-black text-primary tracking-widest">{activeTeam.code}</p>
                     <LinkIcon className="h-4 w-4 text-primary opacity-30 group-hover:opacity-100 transition-opacity" />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Full Name</Label>
-                  <Input 
-                    placeholder="Teammate Name" 
-                    value={inviteName} 
-                    onChange={(e) => setInviteName(e.target.value)}
-                    className="rounded-xl h-11"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Email Address</Label>
-                  <div className="relative">
-                    <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+
+                <div className="space-y-3 pt-2">
+                  <div className="space-y-1">
+                    <Label>Full Name</Label>
                     <Input 
-                      type="email"
-                      placeholder="teammate@example.com" 
-                      value={inviteEmail} 
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      className="rounded-xl h-11 pl-10"
+                      placeholder="Teammate Name" 
+                      value={inviteName} 
+                      onChange={(e) => setInviteName(e.target.value)}
+                      className="rounded-xl h-11"
                     />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Primary Role</Label>
-                  <Select value={invitePosition} onValueChange={setInvitePosition}>
-                    <SelectTrigger className="h-11 rounded-xl">
-                      <SelectValue placeholder="Select role..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Player">Player</SelectItem>
-                      <SelectItem value="Parent">Parent</SelectItem>
-                      <SelectItem value="Coach">Coach</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-1">
+                    <Label>Email Address</Label>
+                    <div className="relative">
+                      <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input 
+                        type="email"
+                        placeholder="teammate@example.com" 
+                        value={inviteEmail} 
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        className="rounded-xl h-11 pl-10"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
               <DialogFooter>
@@ -163,7 +175,7 @@ export default function RosterPage() {
                   onClick={handleSendInvite} 
                   disabled={!inviteName.trim() || !inviteEmail.trim() || !inviteEmail.includes('@')}
                 >
-                  Send Invitation Email
+                  Send Invite Notification
                 </Button>
               </DialogFooter>
             </DialogContent>
