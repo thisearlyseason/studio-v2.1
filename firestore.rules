@@ -5,6 +5,7 @@ service cloud.firestore {
 
     /**
      * SquadForge Security Rules
+     * Updated to support denormalized members map for performant authorization.
      */
 
     function isSignedIn() {
@@ -29,10 +30,6 @@ service cloud.firestore {
 
     function isTeamAdmin(data) {
       return isSignedIn() && data.members[request.auth.uid] == 'Admin';
-    }
-
-    function isUnchanged(field) {
-      return request.resource.data[field] == resource.data[field];
     }
 
     // --- Collection Rules ---
@@ -71,6 +68,12 @@ service cloud.firestore {
       match /games/{gameId} {
         allow get, list: if isTeamMember(resource.data);
         allow create: if isIncomingTeamMember(request.resource.data) && isTeamAdmin(request.resource.data);
+        allow update, delete: if resource != null && isTeamAdmin(resource.data);
+      }
+
+      match /alerts/{alertId} {
+        allow get, list: if isTeamMember(resource.data);
+        allow create: if isTeamAdmin(request.resource.data);
         allow update, delete: if resource != null && isTeamAdmin(resource.data);
       }
 
