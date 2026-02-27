@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import { toast } from '@/hooks/use-toast';
 import { useTeam } from '@/components/providers/team-provider';
 import { ShieldCheck, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { PlaceHolderImages } from '@/lib/placeholder-images';
 
 function SignupForm() {
   const [name, setName] = useState('');
@@ -23,6 +24,7 @@ function SignupForm() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('Player');
   const [isLoading, setIsLoading] = useState(false);
+  const [backgroundImage, setBackgroundImage] = useState('');
   const auth = useAuth();
   const db = useFirestore();
   const router = useRouter();
@@ -30,6 +32,14 @@ function SignupForm() {
   const { joinTeamWithCode } = useTeam();
   
   const inviteCode = searchParams.get('code');
+
+  useEffect(() => {
+    const sportsImages = PlaceHolderImages.filter(img => img.id.startsWith('sport-'));
+    if (sportsImages.length > 0) {
+      const randomIdx = Math.floor(Math.random() * sportsImages.length);
+      setBackgroundImage(sportsImages[randomIdx].imageUrl);
+    }
+  }, []);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,21 +84,34 @@ function SignupForm() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-50 p-6 relative overflow-hidden">
-      <div className="absolute top-0 -left-20 w-72 h-72 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-      <div className="absolute bottom-0 -right-20 w-96 h-96 bg-accent/10 rounded-full blur-3xl animate-pulse delay-700" />
+    <div className="flex flex-col items-center justify-center min-h-screen bg-black p-6 relative overflow-hidden">
+      {/* Dynamic Sports Background */}
+      {backgroundImage && (
+        <>
+          <img 
+            src={backgroundImage} 
+            alt="Sports Background" 
+            className="absolute inset-0 w-full h-full object-cover opacity-60 animate-in fade-in duration-1000"
+            data-ai-hint="sports background"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80" />
+        </>
+      )}
+
+      {/* Logo Header */}
+      <div className="relative z-20 mb-8 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-1000">
+        <div className="w-16 h-16 hero-gradient rounded-2xl flex items-center justify-center shadow-2xl shadow-primary/40 rotate-3 border-2 border-white/20">
+          <ShieldCheck className="h-10 w-10 text-white" />
+        </div>
+        <h1 className="text-3xl font-black text-white tracking-tighter drop-shadow-md">THE SQUAD</h1>
+      </div>
       
-      <Card className="w-full max-w-md border-none shadow-2xl rounded-[2.5rem] relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-700">
-        <CardHeader className="space-y-4 pt-10 text-center">
-          <div className="mx-auto w-16 h-16 hero-gradient rounded-2xl flex items-center justify-center shadow-xl shadow-primary/20 mb-2 rotate-3">
-            <ShieldCheck className="h-10 w-10 text-white" />
-          </div>
-          <div className="space-y-2">
-            <CardTitle className="text-4xl font-black tracking-tighter">Join The Squad</CardTitle>
-            <CardDescription className="text-base font-medium">
-              {inviteCode ? `You've been invited to join your team!` : 'Create an account to coordinate your next win.'}
-            </CardDescription>
-          </div>
+      <Card className="w-full max-w-md border-none shadow-2xl rounded-[2.5rem] relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-700 bg-white/95 backdrop-blur-sm">
+        <CardHeader className="space-y-2 pt-10 text-center">
+          <CardTitle className="text-4xl font-black tracking-tighter">Join The Squad</CardTitle>
+          <CardDescription className="text-base font-medium">
+            {inviteCode ? `You've been invited to join your team!` : 'Create an account to coordinate your next win.'}
+          </CardDescription>
         </CardHeader>
         <form onSubmit={handleSignup}>
           <CardContent className="space-y-5 px-8">
@@ -169,10 +192,10 @@ function SignupForm() {
 export default function SignupPage() {
   return (
     <Suspense fallback={
-      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+      <div className="flex items-center justify-center min-h-screen bg-black">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Loading Enrollment...</p>
+          <p className="text-sm font-bold text-white/70 uppercase tracking-widest">Loading Enrollment...</p>
         </div>
       </div>
     }>

@@ -18,6 +18,42 @@
       "description": "Modern empty state illustration",
       "imageUrl": "https://picsum.photos/seed/empty/600/400",
       "imageHint": "abstract communication"
+    },
+    {
+      "id": "sport-soccer",
+      "description": "Soccer action shot",
+      "imageUrl": "https://picsum.photos/seed/soccer/1920/1080",
+      "imageHint": "soccer match"
+    },
+    {
+      "id": "sport-basketball",
+      "description": "Basketball action shot",
+      "imageUrl": "https://picsum.photos/seed/basketball/1920/1080",
+      "imageHint": "basketball player"
+    },
+    {
+      "id": "sport-football",
+      "description": "Football action shot",
+      "imageUrl": "https://picsum.photos/seed/football/1920/1080",
+      "imageHint": "american football"
+    },
+    {
+      "id": "sport-baseball",
+      "description": "Baseball action shot",
+      "imageUrl": "https://picsum.photos/seed/baseball/1920/1080",
+      "imageHint": "baseball game"
+    },
+    {
+      "id": "sport-tennis",
+      "description": "Tennis action shot",
+      "imageUrl": "https://picsum.photos/seed/tennis/1920/1080",
+      "imageHint": "tennis player"
+    },
+    {
+      "id": "sport-hockey",
+      "description": "Hockey action shot",
+      "imageUrl": "https://picsum.photos/seed/hockey/1920/1080",
+      "imageHint": "ice hockey"
     }
   ]
 }
