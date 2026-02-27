@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
@@ -141,6 +142,7 @@ export type TeamFile = {
   size: string;
   uploadedBy: string;
   date: Date;
+  url?: string;
 };
 
 export type TeamAlert = {
@@ -180,7 +182,7 @@ interface TeamContextType {
   addGame: (game: Omit<Game, 'id' | 'teamId' | 'createdAt'>) => void;
   updateGame: (gameId: string, updates: Partial<Game>) => void;
   files: TeamFile[];
-  addFile: (name: string, type: string, size: string) => void;
+  addFile: (name: string, type: string, size: string, url: string) => void;
   alerts: TeamAlert[];
   createAlert: (title: string, message: string) => void;
   createNewTeam: (name: string, organizerPosition: string) => Promise<void>;
@@ -390,7 +392,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       type: f.fileType,
       size: f.fileSize,
       uploadedBy: f.uploaderName || 'Unknown',
-      date: new Date(f.createdAt)
+      date: new Date(f.createdAt),
+      url: f.fileUrl
     }))
     .sort((a, b) => b.date.getTime() - a.date.getTime());
 
@@ -585,7 +588,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const addFile = async (name: string, type: string, size: string) => {
+  const addFile = async (name: string, type: string, size: string, url: string) => {
     if (!activeTeam || !userProfile || !firebaseUser) return;
     const colRef = collection(db, 'teams', activeTeam.id, 'files');
     addDoc(colRef, {
@@ -593,6 +596,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       fileName: name,
       fileType: type,
       fileSize: size,
+      fileUrl: url,
       uploadedBy: firebaseUser.uid,
       uploaderName: userProfile.name,
       createdAt: new Date().toISOString()

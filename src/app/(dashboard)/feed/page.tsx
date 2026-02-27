@@ -228,9 +228,8 @@ export default function FeedPage() {
             {post.type === 'user' && (
               <CardFooter className="flex flex-col border-t border-muted/30 pt-4 pb-6 gap-4">
                 <div className="flex items-center gap-6 w-full px-1">
-                  <Button variant="ghost" size="sm" className="h-9 px-4 rounded-full text-muted-foreground font-bold hover:bg-primary/5 hover:text-primary group">
-                    <Heart className="h-4 w-4 mr-2 group-hover:fill-current" />
-                    Approve
+                  <Button variant="ghost" size="sm" className="h-9 w-9 rounded-full text-muted-foreground hover:bg-primary/5 hover:text-primary group">
+                    <Heart className="h-4 w-4 group-hover:fill-current" />
                   </Button>
                   <Button variant="ghost" size="sm" className="h-9 px-4 rounded-full text-muted-foreground font-bold hover:bg-primary/5 hover:text-primary">
                     <MessageSquare className="h-4 w-4 mr-2" />
