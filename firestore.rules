@@ -4,30 +4,24 @@ service cloud.firestore {
 
     /**
      * SquadForge Security Rules
-     * Optimized for reliability and performance using parent-based authorization
-     * for sub-collections, which avoids denormalization issues.
+     * Optimized for reliability and performance using dedicated sub-collection authorization.
      */
 
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Helper to get the parent team document. 
-    // Using get() in rules is robust for sub-collections and query-aware.
-    function getTeam(teamId) {
-      return get(/databases/$(database)/documents/teams/$(teamId)).data;
-    }
-
+    // Membership check using the dedicated sub-collection
+    // This is robust for list queries as it performs an exists() check on a specific path.
     function isMemberOfTeam(teamId) {
       return isSignedIn() && 
-             getTeam(teamId).members != null && 
-             getTeam(teamId).members[request.auth.uid] != null;
+             exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
     }
 
+    // Role check using the dedicated sub-collection document
     function isAdminOfTeam(teamId) {
       return isSignedIn() && 
-             getTeam(teamId).members != null && 
-             getTeam(teamId).members[request.auth.uid] == 'Admin';
+             get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.role == 'Admin';
     }
 
     // --- Collection Rules ---
@@ -38,18 +32,17 @@ service cloud.firestore {
     }
 
     match /teams/{teamId} {
-      // Top-level teams collection. Listable only if you are in the members map.
-      // The query must include where("members." + uid, "!=", null) or similar.
+      // Top-level teams collection. Listable if you are in the members map (efficient for /teams queries).
       allow list: if isSignedIn() && resource.data.members[request.auth.uid] != null;
-      allow get: if isSignedIn() && resource.data.members[request.auth.uid] != null;
+      allow get: if isSignedIn() && (resource.data.members[request.auth.uid] != null || isMemberOfTeam(teamId));
       allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if isSignedIn() && resource.data.members[request.auth.uid] == 'Admin';
 
       // --- Sub-collections ---
-      // These rules use parent-based checks which are extremely reliable for list queries.
+      // These rules use the dedicated members sub-collection for granular and query-aware access.
 
       match /members/{memberId} {
-        allow list, get: if isMemberOfTeam(teamId);
+        allow list, get: if isMemberOfTeam(teamId) || (isSignedIn() && request.auth.uid == memberId);
         allow create, update, delete: if isAdminOfTeam(teamId);
       }
 
