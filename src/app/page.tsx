@@ -31,7 +31,8 @@ export default function LandingPage() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isScrolled, setIsScrolled] = useState(false);
 
-  const brandLogo = PlaceHolderImages.find(img => img.id === 'brand-logo')?.imageUrl || '';
+  const brandLogoDark = PlaceHolderImages.find(img => img.id === 'brand-logo-dark')?.imageUrl || '';
+  const brandLogoLight = PlaceHolderImages.find(img => img.id === 'brand-logo-light')?.imageUrl || '';
 
   const sportsImages = PlaceHolderImages
     .filter(img => img.id.startsWith('sport-'))
@@ -64,11 +65,11 @@ export default function LandingPage() {
           <Link href="/" className="flex items-center gap-3">
             <div className="relative h-10 w-24">
               <Image 
-                src={brandLogo} 
+                src={isScrolled ? brandLogoDark : brandLogoLight} 
                 alt="The Squad Logo" 
                 fill 
                 className="object-contain"
-                data-ai-hint="brand logo"
+                data-ai-hint={isScrolled ? "black logo" : "white logo"}
               />
             </div>
           </Link>
@@ -322,11 +323,11 @@ export default function LandingPage() {
             <div className="flex items-center gap-3">
               <div className="relative h-8 w-20">
                 <Image 
-                  src={brandLogo} 
+                  src={brandLogoDark} 
                   alt="The Squad Logo" 
                   fill 
                   className="object-contain"
-                  data-ai-hint="brand logo"
+                  data-ai-hint="black brand logo"
                 />
               </div>
             </div>

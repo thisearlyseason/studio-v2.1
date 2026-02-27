@@ -33,7 +33,7 @@ function SignupForm() {
   const { joinTeamWithCode } = useTeam();
   
   const inviteCode = searchParams.get('code');
-  const brandLogo = PlaceHolderImages.find(img => img.id === 'brand-logo')?.imageUrl || '';
+  const brandLogoDark = PlaceHolderImages.find(img => img.id === 'brand-logo-dark')?.imageUrl || '';
 
   useEffect(() => {
     const sportsImages = PlaceHolderImages.filter(img => img.id.startsWith('sport-'));
@@ -107,10 +107,10 @@ function SignupForm() {
       <div className="relative z-20 mb-8 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-1000">
         <div className="relative h-16 w-40">
           <Image 
-            src={brandLogo} 
+            src={brandLogoDark} 
             alt="The Squad Brand" 
             fill 
-            className="object-contain drop-shadow-2xl"
+            className="object-contain drop-shadow-2xl brightness-0 invert"
             data-ai-hint="brand logo"
           />
         </div>
