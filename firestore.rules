@@ -4,7 +4,7 @@ service cloud.firestore {
 
     /**
      * SquadForge Security Rules
-     * Optimized for reliability and performance using dedicated sub-collection authorization.
+     * Optimized for reliability and performance.
      */
 
     function isSignedIn() {
@@ -12,7 +12,6 @@ service cloud.firestore {
     }
 
     // Membership check using the dedicated sub-collection
-    // This is robust for list queries as it performs an exists() check on a specific path.
     function isMemberOfTeam(teamId) {
       return isSignedIn() && 
              exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
@@ -32,14 +31,10 @@ service cloud.firestore {
     }
 
     match /teams/{teamId} {
-      // Top-level teams collection. Listable if you are in the members map (efficient for /teams queries).
       allow list: if isSignedIn() && resource.data.members[request.auth.uid] != null;
       allow get: if isSignedIn() && (resource.data.members[request.auth.uid] != null || isMemberOfTeam(teamId));
       allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if isSignedIn() && resource.data.members[request.auth.uid] == 'Admin';
-
-      // --- Sub-collections ---
-      // These rules use the dedicated members sub-collection for granular and query-aware access.
 
       match /members/{memberId} {
         allow list, get: if isMemberOfTeam(teamId) || (isSignedIn() && request.auth.uid == memberId);
@@ -49,7 +44,9 @@ service cloud.firestore {
       match /feedPosts/{postId} {
         allow list, get: if isMemberOfTeam(teamId);
         allow create: if isMemberOfTeam(teamId);
-        allow update, delete: if isAdminOfTeam(teamId) || (resource != null && resource.data.authorId == request.auth.uid);
+        // Allow members to update posts (for liking)
+        allow update: if isMemberOfTeam(teamId);
+        allow delete: if isAdminOfTeam(teamId) || (resource != null && resource.data.authorId == request.auth.uid);
 
         match /comments/{commentId} {
           allow list, get: if isMemberOfTeam(teamId);

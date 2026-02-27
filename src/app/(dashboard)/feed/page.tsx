@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
 export default function FeedPage() {
-  const { activeTeam, posts, addPost, addComment, user, members, updateTeamHero, formatTime } = useTeam();
+  const { activeTeam, posts, addPost, addComment, toggleLike, user, members, updateTeamHero, formatTime } = useTeam();
   const [newPostContent, setNewPostContent] = useState('');
   const [imageUrl, setImageUrl] = useState<string | undefined>();
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
@@ -101,6 +101,10 @@ export default function FeedPage() {
     setCommentInputs(prev => ({ ...prev, [postId]: '' }));
   };
 
+  const handleToggleLike = (postId: string) => {
+    toggleLike(postId);
+  };
+
   return (
     <div className="space-y-8 pb-12 animate-in fade-in duration-500">
       <section className="relative h-48 sm:h-64 rounded-3xl overflow-hidden shadow-2xl group ring-1 ring-black/5">
@@ -184,76 +188,91 @@ export default function FeedPage() {
       </Card>
 
       <div className="space-y-6">
-        {posts.map((post) => (
-          <Card key={post.id} className={cn(
-            "rounded-3xl border-none shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl ring-1 ring-black/5",
-            post.type === 'system' ? 'bg-amber-50 dark:bg-amber-950/20 ring-amber-500/20' : ''
-          )}>
-            {post.type === 'user' && (
-              <CardHeader className="flex flex-row items-center gap-4 pb-3">
-                <Avatar className="h-11 w-11 border-2 border-background shadow-sm">
-                  <AvatarImage src={post.author.avatar} />
-                  <AvatarFallback className="font-bold">{post.author.name[0]}</AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <div className="font-extrabold text-sm tracking-tight">{post.author.name}</div>
-                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
-                    {post.createdAt ? formatDistanceToNow(new Date(post.createdAt)) + ' ago' : 'Live'} • {formatTime(post.createdAt)}
-                  </div>
-                </div>
-              </CardHeader>
-            )}
-            <CardContent className={post.type === 'system' ? 'py-5' : 'pt-2 pb-4'}>
-              {post.type === 'system' ? (
-                <div className="flex items-center gap-4">
-                  <div className="bg-amber-100 dark:bg-amber-900/40 p-3 rounded-2xl text-amber-600 dark:text-amber-400">
-                    <Info className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <Badge className="mb-2 bg-amber-500/20 text-amber-600 border-none text-[9px] font-black uppercase tracking-widest">System Update</Badge>
-                    <p className="text-base font-bold tracking-tight text-foreground/90 leading-tight">{post.content}</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <p className="text-base leading-relaxed whitespace-pre-wrap font-medium text-foreground/80 px-1">{post.content}</p>
-                  {post.imageUrl && (
-                    <div className="rounded-2xl overflow-hidden border-2 border-muted/50 shadow-sm bg-muted/30">
-                      <img src={post.imageUrl} alt="Post content" className="w-full h-auto object-cover max-h-[500px]" />
+        {posts.map((post) => {
+          const isLiked = post.likes?.includes(user?.id || '');
+          return (
+            <Card key={post.id} className={cn(
+              "rounded-3xl border-none shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl ring-1 ring-black/5",
+              post.type === 'system' ? 'bg-amber-50 dark:bg-amber-950/20 ring-amber-500/20' : ''
+            )}>
+              {post.type === 'user' && (
+                <CardHeader className="flex flex-row items-center gap-4 pb-3">
+                  <Avatar className="h-11 w-11 border-2 border-background shadow-sm">
+                    <AvatarImage src={post.author.avatar} />
+                    <AvatarFallback className="font-bold">{post.author.name[0]}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-extrabold text-sm tracking-tight">{post.author.name}</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
+                      {post.createdAt ? formatDistanceToNow(new Date(post.createdAt)) + ' ago' : 'Live'} • {formatTime(post.createdAt)}
                     </div>
-                  )}
-                </div>
+                  </div>
+                </CardHeader>
               )}
-            </CardContent>
-            {post.type === 'user' && (
-              <CardFooter className="flex flex-col border-t border-muted/30 pt-4 pb-6 gap-4">
-                <div className="flex items-center gap-6 w-full px-1">
-                  <Button variant="ghost" size="sm" className="h-9 w-9 rounded-full text-muted-foreground hover:bg-primary/5 hover:text-primary group">
-                    <Heart className="h-4 w-4 group-hover:fill-current" />
-                  </Button>
-                  <Button variant="ghost" size="sm" className="h-9 px-4 rounded-full text-muted-foreground font-bold hover:bg-primary/5 hover:text-primary">
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    {(post.comments || []).length} Comments
-                  </Button>
-                </div>
-                <div className="w-full space-y-4 px-1">
-                  <div className="flex gap-3 pt-2">
-                    <Input 
-                      placeholder="Write something to your squad..." 
-                      className="bg-muted/50 border-none rounded-2xl h-11 text-sm font-medium px-5 shadow-inner"
-                      value={commentInputs[post.id] || ''}
-                      onChange={(e) => setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))}
-                      onKeyDown={(e) => e.key === 'Enter' && handleCommentSubmit(post.id)}
-                    />
-                    <Button size="icon" className="rounded-2xl h-11 w-11 shrink-0 shadow-lg shadow-primary/10 active:scale-90" onClick={() => handleCommentSubmit(post.id)}>
-                      <Send className="h-5 w-5" />
+              <CardContent className={post.type === 'system' ? 'py-5' : 'pt-2 pb-4'}>
+                {post.type === 'system' ? (
+                  <div className="flex items-center gap-4">
+                    <div className="bg-amber-100 dark:bg-amber-900/40 p-3 rounded-2xl text-amber-600 dark:text-amber-400">
+                      <Info className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <Badge className="mb-2 bg-amber-500/20 text-amber-600 border-none text-[9px] font-black uppercase tracking-widest">System Update</Badge>
+                      <p className="text-base font-bold tracking-tight text-foreground/90 leading-tight">{post.content}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-base leading-relaxed whitespace-pre-wrap font-medium text-foreground/80 px-1">{post.content}</p>
+                    {post.imageUrl && (
+                      <div className="rounded-2xl overflow-hidden border-2 border-muted/50 shadow-sm bg-muted/30">
+                        <img src={post.imageUrl} alt="Post content" className="w-full h-auto object-cover max-h-[500px]" />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+              {post.type === 'user' && (
+                <CardFooter className="flex flex-col border-t border-muted/30 pt-4 pb-6 gap-4">
+                  <div className="flex items-center gap-6 w-full px-1">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className={cn(
+                        "h-9 px-4 rounded-full font-bold transition-all",
+                        isLiked ? "text-primary bg-primary/5" : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
+                      )}
+                      onClick={() => handleToggleLike(post.id)}
+                    >
+                      <Heart className={cn("h-4 w-4 mr-2", isLiked && "fill-current")} />
+                      Like
+                      {post.likes && post.likes.length > 0 && (
+                        <span className="ml-1.5 opacity-60">({post.likes.length})</span>
+                      )}
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-9 px-4 rounded-full text-muted-foreground font-bold hover:bg-primary/5 hover:text-primary">
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      {(post.comments || []).length} Comments
                     </Button>
                   </div>
-                </div>
-              </CardFooter>
-            )}
-          </Card>
-        ))}
+                  <div className="w-full space-y-4 px-1">
+                    <div className="flex gap-3 pt-2">
+                      <Input 
+                        placeholder="Write something to your squad..." 
+                        className="bg-muted/50 border-none rounded-2xl h-11 text-sm font-medium px-5 shadow-inner"
+                        value={commentInputs[post.id] || ''}
+                        onChange={(e) => setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))}
+                        onKeyDown={(e) => e.key === 'Enter' && handleCommentSubmit(post.id)}
+                      />
+                      <Button size="icon" className="rounded-2xl h-11 w-11 shrink-0 shadow-lg shadow-primary/10 active:scale-90" onClick={() => handleCommentSubmit(post.id)}>
+                        <Send className="h-5 w-5" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardFooter>
+              )}
+            </Card>
+          );
+        })}
       </div>
     </div>
   );

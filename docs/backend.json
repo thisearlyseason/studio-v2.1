@@ -1,4 +1,3 @@
-
 {
   "entities": {
     "User": {
@@ -186,6 +185,11 @@
           "type": "string",
           "description": "An optional URL to a single image attached to the post.",
           "format": "uri"
+        },
+        "likes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Array of user IDs who liked the post."
         },
         "linkedEventId": {
           "type": "string",

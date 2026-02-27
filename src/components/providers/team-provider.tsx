@@ -14,7 +14,9 @@ import {
   getDocs,
   limit,
   orderBy,
-  setDoc
+  setDoc,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -90,6 +92,7 @@ export type Post = {
   imageUrl?: string;
   createdAt: string;
   comments: Comment[];
+  likes?: string[];
 };
 
 export type Comment = {
@@ -174,6 +177,7 @@ interface TeamContextType {
   posts: Post[];
   addPost: (content: string, imageUrl?: string, type?: 'user' | 'system') => void;
   addComment: (postId: string, content: string) => void;
+  toggleLike: (postId: string) => Promise<void>;
   events: TeamEvent[];
   addEvent: (event: Omit<TeamEvent, 'id' | 'teamId' | 'rsvps'>) => void;
   updateEvent: (eventId: string, updates: Partial<TeamEvent>) => void;
@@ -220,7 +224,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [firebaseUser, db]);
 
-  // Top-level teams query. MUST keep the filter to only show teams the user is in.
   const teamsQuery = useMemoFirebase(() => {
     if (!firebaseUser || !db) return null;
     return query(
@@ -250,9 +253,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [teams, activeTeam]);
 
-  // Sub-collection queries. REDUNDANT membership filters removed.
-  // Authorization is now handled by parent-check in security rules.
-  
   const membersQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
     return collection(db, 'teams', activeTeam.id, 'members');
@@ -287,7 +287,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       type: p.type || 'user',
       imageUrl: p.imageUrl,
       createdAt: p.createdAt,
-      comments: []
+      comments: [],
+      likes: p.likes || []
     }));
 
   const eventsQuery = useMemoFirebase(() => {
@@ -499,6 +500,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       content,
       type,
       imageUrl: imageUrl || '',
+      likes: [],
       createdAt: new Date().toISOString()
     });
   };
@@ -512,6 +514,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       authorName: userProfile.name,
       content,
       createdAt: new Date().toISOString()
+    });
+  };
+
+  const toggleLike = async (postId: string) => {
+    if (!activeTeam || !firebaseUser) return;
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+
+    const isLiked = post.likes?.includes(firebaseUser.uid);
+    const docRef = doc(db, 'teams', activeTeam.id, 'feedPosts', postId);
+
+    updateDoc(docRef, {
+      likes: isLiked ? arrayRemove(firebaseUser.uid) : arrayUnion(firebaseUser.uid)
+    }).catch(err => {
+      errorEmitter.emit('permission-error', new FirestorePermissionError({ path: docRef.path, operation: 'update' }));
     });
   };
 
@@ -676,7 +693,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   return (
     <TeamContext.Provider value={{ 
       user: userProfile, updateUser, activeTeam, setActiveTeam, updateTeamHero, teams, members, updateMember, toggleFeesPaid,
-      chats, createChat, messages, activeChatId, setActiveChatId, addMessage, votePoll, posts, addPost, addComment,
+      chats, createChat, messages, activeChatId, setActiveChatId, addMessage, votePoll, posts, addPost, addComment, toggleLike,
       events, addEvent, updateEvent, updateRSVP, games, addGame, updateGame, files, addFile, alerts, createAlert,
       createNewTeam, inviteMember, joinTeamWithCode, isLoading: isAuthLoading, formatTime
     }}>
