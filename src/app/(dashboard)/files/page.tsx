@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -11,46 +11,62 @@ import {
   Download, 
   MoreVertical, 
   Upload,
-  Calendar
+  Calendar,
+  Trash2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-
-const MOCK_FILES = [
-  { id: '1', name: 'Tournament_Schedule.pdf', type: 'pdf', size: '2.4 MB', uploadedBy: 'Coach Miller', date: new Date(Date.now() - 3600000) },
-  { id: '2', name: 'Team_Photo_Practice.jpg', type: 'jpg', size: '4.1 MB', uploadedBy: 'Sarah Connor', date: new Date(Date.now() - 86400000) },
-  { id: '3', name: 'Liability_Waiver.pdf', type: 'pdf', size: '1.2 MB', uploadedBy: 'Coach Miller', date: new Date(Date.now() - 172800000) },
-  { id: '4', name: 'New_Plays_Tactics.png', type: 'png', size: '3.8 MB', uploadedBy: 'Mike Ross', date: new Date(Date.now() - 259200000) },
-];
+import { useTeam } from '@/components/providers/team-provider';
 
 export default function FilesPage() {
+  const { activeTeam, files, addFile } = useTeam();
   const [mounted, setMounted] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const getFileIcon = (type: string) => {
-    switch(type) {
-      case 'pdf': return <FileText className="h-6 w-6 text-red-500" />;
-      case 'jpg':
-      case 'png': return <ImageIcon className="h-6 w-6 text-blue-500" />;
-      default: return <FileIcon className="h-6 w-6 text-muted-foreground" />;
+  const teamFiles = files.filter(f => f.teamId === activeTeam.id);
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const type = file.name.split('.').pop() || 'file';
+      const size = (file.size / (1024 * 1024)).toFixed(1) + ' MB';
+      addFile(file.name, type, size);
     }
+  };
+
+  const getFileIcon = (type: string) => {
+    const t = type.toLowerCase();
+    if (t === 'pdf') return <FileText className="h-6 w-6 text-red-500" />;
+    if (['jpg', 'png', 'jpeg', 'gif'].includes(t)) return <ImageIcon className="h-6 w-6 text-blue-500" />;
+    return <FileIcon className="h-6 w-6 text-muted-foreground" />;
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Team Files</h1>
-        <Button size="sm" className="bg-primary hover:bg-primary/90">
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          className="hidden" 
+          onChange={handleFileChange} 
+        />
+        <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={handleUploadClick}>
           <Upload className="h-4 w-4 mr-2" />
           Upload
         </Button>
       </div>
 
       <div className="grid gap-3">
-        {MOCK_FILES.map((file) => (
+        {teamFiles.length > 0 ? teamFiles.map((file) => (
           <Card key={file.id} className="hover:bg-accent/50 transition-colors border-none shadow-sm">
             <CardContent className="p-4 flex items-center gap-4">
               <div className="h-12 w-12 rounded-xl bg-background flex items-center justify-center border shadow-sm shrink-0">
@@ -79,10 +95,17 @@ export default function FilesPage() {
               </div>
             </CardContent>
           </Card>
-        ))}
+        )) : (
+          <div className="text-center py-20 bg-muted/20 border-2 border-dashed rounded-2xl">
+            <p className="text-muted-foreground italic">No files shared yet.</p>
+          </div>
+        )}
       </div>
 
-      <div className="bg-muted/30 border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-3">
+      <div 
+        className="bg-muted/30 border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-3 cursor-pointer hover:bg-muted/50 transition-colors"
+        onClick={handleUploadClick}
+      >
         <div className="bg-white p-3 rounded-full shadow-sm">
           <Upload className="h-6 w-6 text-primary" />
         </div>

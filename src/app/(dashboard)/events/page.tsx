@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Clock, Plus, ChevronRight, Info } from 'lucide-react';
+import { MapPin, Clock, Plus, ChevronRight, Info, Repeat, CheckCircle2 } from 'lucide-react';
 import { 
   Dialog, 
   DialogContent, 
@@ -20,106 +20,114 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useTeam } from '@/components/providers/team-provider';
-
-const MOCK_EVENTS = [
-  {
-    id: '1',
-    teamId: '1',
-    title: 'Morning Practice',
-    date: new Date(),
-    startTime: '07:00 AM',
-    endTime: '09:00 AM',
-    location: 'Pitch 4, Central Park',
-    description: 'Drills and tactical session. Please bring both kits.',
-    rsvps: { going: 12, notGoing: 2, maybe: 4 }
-  },
-  {
-    id: '2',
-    teamId: '1',
-    title: 'Away Game vs. Titans',
-    date: new Date(Date.now() + 86400000 * 2),
-    startTime: '02:00 PM',
-    location: 'Stadium East',
-    description: 'Season semi-finals. Meeting at the clubhouse at 12:30 PM.',
-    rsvps: { going: 18, notGoing: 1, maybe: 0 }
-  },
-  {
-    id: '3',
-    teamId: '2',
-    title: 'Basketball Drills',
-    date: new Date(),
-    startTime: '05:00 PM',
-    location: 'Indoor Court A',
-    description: 'Focusing on three-pointers and defense.',
-    rsvps: { going: 8, notGoing: 0, maybe: 2 }
-  }
-];
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useTeam, EventRecurrence } from '@/components/providers/team-provider';
+import { cn } from '@/lib/utils';
 
 export default function EventsPage() {
-  const { activeTeam } = useTeam();
+  const { activeTeam, events, addEvent, updateRSVP } = useTeam();
   const [date, setDate] = useState<Date | undefined>(new Date());
-  const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
+  
+  // New Event Form State
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDate, setNewDate] = useState('');
+  const [newTime, setNewTime] = useState('');
+  const [newLocation, setNewLocation] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [newRecurrence, setNewRecurrence] = useState<EventRecurrence>('none');
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const teamEvents = MOCK_EVENTS.filter(e => e.teamId === activeTeam.id);
+  const teamEvents = events.filter(e => e.teamId === activeTeam.id);
+
+  const handleCreateEvent = () => {
+    if (!newTitle || !newDate || !newTime) return;
+    addEvent({
+      title: newTitle,
+      date: new Date(newDate),
+      startTime: newTime,
+      location: newLocation,
+      description: newDescription,
+      recurrence: newRecurrence
+    });
+    setIsCreateOpen(false);
+    resetForm();
+  };
+
+  const resetForm = () => {
+    setNewTitle('');
+    setNewDate('');
+    setNewTime('');
+    setNewLocation('');
+    setNewDescription('');
+    setNewRecurrence('none');
+  };
 
   if (!mounted) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Events</h1>
-          <Button size="sm" disabled><Plus className="h-4 w-4 mr-2" />New Event</Button>
-        </div>
-        <div className="h-40 bg-muted animate-pulse rounded-2xl" />
-      </div>
-    );
+    return <div className="p-10 text-center animate-pulse">Loading schedule...</div>;
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Events</h1>
-        <Dialog>
+        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
             <Button size="sm">
               <Plus className="h-4 w-4 mr-2" />
               New Event
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[450px]">
             <DialogHeader>
               <DialogTitle>Create Team Event</DialogTitle>
+              <DialogDescription>Schedule a practice, game, or team outing.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="title">Event Title</Label>
-                <Input id="title" placeholder="e.g. Practice, Game Day" />
+                <Input id="title" placeholder="e.g. Practice, Game Day" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Date</Label>
-                  <Input type="date" />
+                  <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Start Time</Label>
-                  <Input type="time" />
+                  <Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} />
                 </div>
               </div>
               <div className="space-y-2">
+                <Label>Recurrence</Label>
+                <Select value={newRecurrence} onValueChange={(v: EventRecurrence) => setNewRecurrence(v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Repeats..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">One-time event</SelectItem>
+                    <SelectItem value="daily">Daily</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="location">Location</Label>
-                <Input id="location" placeholder="Where is it?" />
+                <Input id="location" placeholder="Where is it?" value={newLocation} onChange={e => setNewLocation(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
-                <Textarea id="description" placeholder="Optional details..." />
+                <Textarea id="description" placeholder="Optional details..." value={newDescription} onChange={e => setNewDescription(e.target.value)} />
               </div>
-              <Button className="w-full">Create Event</Button>
             </div>
+            <DialogFooter>
+              <Button className="w-full" onClick={handleCreateEvent}>Create Event</Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -132,9 +140,9 @@ export default function EventsPage() {
         
         <TabsContent value="list" className="space-y-4 mt-4">
           {teamEvents.length > 0 ? teamEvents.map((event) => (
-            <Dialog key={event.id} onOpenChange={(open) => !open && setSelectedEvent(null)}>
+            <Dialog key={event.id}>
               <DialogTrigger asChild>
-                <Card className="overflow-hidden hover:border-primary transition-colors cursor-pointer group" onClick={() => setSelectedEvent(event)}>
+                <Card className="overflow-hidden hover:border-primary transition-colors cursor-pointer group">
                   <div className="flex items-stretch">
                     <div className="bg-primary/5 w-16 flex flex-col items-center justify-center border-r shrink-0">
                       <span className="text-xs font-bold uppercase text-primary">
@@ -146,7 +154,10 @@ export default function EventsPage() {
                     </div>
                     <div className="flex-1 p-4 space-y-2 min-w-0">
                       <div className="flex items-start justify-between">
-                        <h3 className="font-bold text-lg leading-tight group-hover:text-primary transition-colors truncate">{event.title}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-lg leading-tight group-hover:text-primary transition-colors truncate">{event.title}</h3>
+                          {event.recurrence !== 'none' && <Repeat className="h-3 w-3 text-muted-foreground" />}
+                        </div>
                         <ChevronRight className="h-5 w-5 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity" />
                       </div>
                       <div className="flex flex-wrap gap-y-1 gap-x-4 text-sm text-muted-foreground">
@@ -162,9 +173,17 @@ export default function EventsPage() {
                         )}
                       </div>
                       <div className="pt-2 flex items-center gap-2">
-                        <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100 border-none">
-                          {event.rsvps.going} Going
-                        </Badge>
+                        {event.userRsvp && (
+                          <Badge className={cn(
+                            "text-[10px] font-bold uppercase tracking-wider h-5",
+                            event.userRsvp === 'going' ? "bg-green-500" : event.userRsvp === 'maybe' ? "bg-amber-500" : "bg-red-500"
+                          )}>
+                            {event.userRsvp}
+                          </Badge>
+                        )}
+                        <span className="text-[10px] font-bold text-muted-foreground">
+                          {event.rsvps.going} confirmed
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -172,7 +191,10 @@ export default function EventsPage() {
               </DialogTrigger>
               <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
-                  <DialogTitle>{event.title}</DialogTitle>
+                  <DialogTitle className="flex items-center gap-2">
+                    {event.title}
+                    {event.recurrence !== 'none' && <Badge variant="outline" className="text-[10px] py-0">{event.recurrence}</Badge>}
+                  </DialogTitle>
                   <DialogDescription>
                     {event.date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
                   </DialogDescription>
@@ -220,14 +242,33 @@ export default function EventsPage() {
                     </div>
                   </div>
                 </div>
-                <DialogFooter className="flex gap-2">
-                  <Button variant="outline" className="flex-1">Can't Go</Button>
-                  <Button className="flex-1">Going</Button>
+                <DialogFooter className="flex gap-2 sm:flex-row flex-col">
+                  <Button 
+                    variant={event.userRsvp === 'notGoing' ? 'destructive' : 'outline'} 
+                    className="flex-1"
+                    onClick={() => updateRSVP(event.id, 'notGoing')}
+                  >
+                    Can't Go
+                  </Button>
+                  <Button 
+                    variant={event.userRsvp === 'maybe' ? 'secondary' : 'outline'} 
+                    className="flex-1"
+                    onClick={() => updateRSVP(event.id, 'maybe')}
+                  >
+                    Maybe
+                  </Button>
+                  <Button 
+                    className={cn("flex-1", event.userRsvp === 'going' ? "bg-green-600 hover:bg-green-700" : "")}
+                    onClick={() => updateRSVP(event.id, 'going')}
+                  >
+                    {event.userRsvp === 'going' && <CheckCircle2 className="h-4 w-4 mr-2" />}
+                    Going
+                  </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
           )) : (
-            <div className="text-center py-12 border-2 border-dashed rounded-2xl">
+            <div className="text-center py-20 border-2 border-dashed rounded-2xl">
               <p className="text-muted-foreground italic">No events scheduled for {activeTeam.name}.</p>
             </div>
           )}
