@@ -2,14 +2,14 @@
   "placeholderImages": [
     {
       "id": "brand-logo-dark",
-      "description": "THE SQUAD. Official Brand Logo (Black version for light backgrounds)",
-      "imageUrl": "https://placehold.co/400x120/000000/FFFFFF/png?text=THE+SQUAD",
+      "description": "Official brand logo in black for light backgrounds",
+      "imageUrl": "https://placehold.co/400x120/FFFFFF/000000/png",
       "imageHint": "black logo"
     },
     {
       "id": "brand-logo-light",
-      "description": "THE SQUAD. Official Brand Logo (White version for dark backgrounds)",
-      "imageUrl": "https://placehold.co/400x120/FFFFFF/000000/png?text=THE+SQUAD",
+      "description": "Official brand logo in white for dark backgrounds",
+      "imageUrl": "https://placehold.co/400x120/000000/FFFFFF/png",
       "imageHint": "white logo"
     },
     {
@@ -75,7 +75,7 @@
     {
       "id": "sport-pickleball",
       "description": "Pickleball action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1608673712088-2d776b1a0c63?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxwaWNrbGViYWxsJTIwbWF0Y2h8ZW58MHx8fHwxNzcyMjA1OTEzfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1608673712088-2d776b1a0c63?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxwaWNrbGViYWxsJTIwbWF0Y2h8ZW58MHx8fHwxNzcyMjA1OTEzfDA&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "pickleball match"
     }
   ]

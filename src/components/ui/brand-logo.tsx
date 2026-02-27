@@ -1,4 +1,3 @@
-
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
@@ -10,28 +9,23 @@ interface BrandLogoProps {
 }
 
 /**
- * Centralized BrandLogo component for The Squad.
- * - 'dark-background' variant renders the white logo (optimized for dark surfaces).
- * - 'light-background' variant renders the black logo (optimized for light surfaces).
+ * Strictly image-based BrandLogo component.
+ * - 'dark-background' uses the white logo asset (hint: "white logo").
+ * - 'light-background' uses the black logo asset (hint: "black logo").
+ * No text fallback is allowed per business requirements.
  */
 export function BrandLogo({ variant, className, priority }: BrandLogoProps) {
   const isDarkBg = variant === 'dark-background';
-  
-  // Retrieve logo data from central placeholder repository
-  // 'brand-logo-light' is the white version for dark backgrounds
-  // 'brand-logo-dark' is the black version for light backgrounds
   const logoId = isDarkBg ? 'brand-logo-light' : 'brand-logo-dark';
   const logoData = PlaceHolderImages.find(img => img.id === logoId);
 
-  if (!logoData) {
-    return <span className={cn("font-black text-xl tracking-tighter uppercase", className)}>THE SQUAD.</span>;
-  }
+  if (!logoData) return null;
 
   return (
     <div className={cn("relative", className)}>
       <Image
         src={logoData.imageUrl}
-        alt="THE SQUAD."
+        alt="The Squad"
         width={400}
         height={120}
         className="object-contain w-full h-full"
