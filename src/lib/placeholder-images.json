@@ -3,13 +3,13 @@
     {
       "id": "brand-logo-dark",
       "description": "THE SQUAD. Official Brand Logo (Black version for light backgrounds)",
-      "imageUrl": "/logo-dark.png",
+      "imageUrl": "https://images.unsplash.com/photo-1629238506147-0c0fc62f2dce?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxibGFjayUyMGxvZ298ZW58MHx8fHwxNzcyMjA3MTI1fDA&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "black logo"
     },
     {
       "id": "brand-logo-light",
       "description": "THE SQUAD. Official Brand Logo (White version for dark backgrounds)",
-      "imageUrl": "/logo-light.png",
+      "imageUrl": "https://images.unsplash.com/photo-1705904506582-6552c35a2dc4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHx3aGl0ZSUyMGxvZ298ZW58MHx8fHwxNzcyMjA3MTI1fDA&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "white logo"
     },
     {

@@ -1,5 +1,7 @@
+
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import { PlaceHolderImages } from '@/lib/placeholder-images';
 
 interface BrandLogoProps {
   variant: 'dark-background' | 'light-background';
@@ -8,26 +10,29 @@ interface BrandLogoProps {
 }
 
 /**
- * Centralized BrandLogo component for SquadForge.
- * - 'dark-background' variant renders logo-light.png (for visibility on dark surfaces).
- * - 'light-background' variant renders logo-dark.png (for visibility on light surfaces).
+ * Centralized BrandLogo component for The Squad.
+ * - 'dark-background' variant renders the white logo (optimized for dark surfaces).
+ * - 'light-background' variant renders the black logo (optimized for light surfaces).
  */
 export function BrandLogo({ variant, className, priority }: BrandLogoProps) {
   const isDarkBg = variant === 'dark-background';
   
-  // Use the specific assets required by business goals
-  const src = isDarkBg ? '/logo-light.png' : '/logo-dark.png';
-  const alt = "THE SQUAD.";
-  const hint = isDarkBg ? "white logo" : "black logo";
+  // Retrieve logo data from central placeholder repository
+  const logoId = isDarkBg ? 'brand-logo-light' : 'brand-logo-dark';
+  const logoData = PlaceHolderImages.find(img => img.id === logoId);
+
+  if (!logoData) {
+    return <span className="font-black text-xl tracking-tighter">THE SQUAD.</span>;
+  }
 
   return (
     <div className={cn("relative overflow-hidden", className)}>
       <Image
-        src={src}
-        alt={alt}
+        src={logoData.imageUrl}
+        alt="THE SQUAD."
         fill
         className="object-contain"
-        data-ai-hint={hint}
+        data-ai-hint={logoData.imageHint}
         priority={priority}
       />
     </div>

@@ -1,15 +1,16 @@
+
 {
   "placeholderImages": [
     {
       "id": "brand-logo-dark",
       "description": "THE SQUAD. Official Brand Logo (Black version for light backgrounds)",
-      "imageUrl": "/logo-dark.png",
+      "imageUrl": "https://picsum.photos/seed/logo-dark/400/120",
       "imageHint": "black logo"
     },
     {
       "id": "brand-logo-light",
       "description": "THE SQUAD. Official Brand Logo (White version for dark backgrounds)",
-      "imageUrl": "/logo-light.png",
+      "imageUrl": "https://picsum.photos/seed/logo-light/400/120",
       "imageHint": "white logo"
     },
     {
