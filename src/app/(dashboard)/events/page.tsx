@@ -28,12 +28,13 @@ import { cn } from '@/lib/utils';
 interface EventDetailDialogProps {
   event: TeamEvent;
   updateRSVP: (id: string, status: RSVPStatus) => void;
+  formatTime: (date: string | Date) => string;
   children: React.ReactNode;
 }
 
 const DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-function EventDetailDialog({ event, updateRSVP, children }: EventDetailDialogProps) {
+function EventDetailDialog({ event, updateRSVP, formatTime, children }: EventDetailDialogProps) {
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
@@ -81,9 +82,9 @@ function EventDetailDialog({ event, updateRSVP, children }: EventDetailDialogPro
           </div>
         </div>
         <DialogFooter className="flex gap-2 sm:flex-row flex-col">
-          <Button variant={event.userRsvp === 'notGoing' ? 'destructive' : 'outline'} className="flex-1" onClick={() => updateRSVP(event.id, 'notGoing')}>Can't Go</Button>
-          <Button variant={event.userRsvp === 'maybe' ? 'secondary' : 'outline'} className="flex-1" onClick={() => updateRSVP(event.id, 'maybe')}>Maybe</Button>
-          <Button className={cn("flex-1", event.userRsvp === 'going' ? "bg-green-600 hover:bg-green-700" : "")} onClick={() => updateRSVP(event.id, 'going')}>
+          <Button variant={event.userRsvp === 'notGoing' ? 'destructive' : 'outline'} className="flex-1 rounded-xl" onClick={() => updateRSVP(event.id, 'notGoing')}>Can't Go</Button>
+          <Button variant={event.userRsvp === 'maybe' ? 'secondary' : 'outline'} className="flex-1 rounded-xl" onClick={() => updateRSVP(event.id, 'maybe')}>Maybe</Button>
+          <Button className={cn("flex-1 rounded-xl", event.userRsvp === 'going' ? "bg-green-600 hover:bg-green-700" : "")} onClick={() => updateRSVP(event.id, 'going')}>
             {event.userRsvp === 'going' && <CheckCircle2 className="h-4 w-4 mr-2" />}
             Going
           </Button>
@@ -94,7 +95,7 @@ function EventDetailDialog({ event, updateRSVP, children }: EventDetailDialogPro
 }
 
 export default function EventsPage() {
-  const { activeTeam, events, addEvent, updateRSVP } = useTeam();
+  const { activeTeam, events, addEvent, updateRSVP, formatTime } = useTeam();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [mounted, setMounted] = useState(false);
   
@@ -118,10 +119,18 @@ export default function EventsPage() {
 
   const handleCreateEvent = () => {
     if (!newTitle || !newDate || !newTime) return;
+    
+    // Format input time to 12h for display consistency
+    const [hours, minutes] = newTime.split(':');
+    const h = parseInt(hours);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const displayHours = h % 12 || 12;
+    const formattedStartTime = `${displayHours}:${minutes} ${ampm}`;
+
     addEvent({
       title: newTitle,
       date: new Date(newDate),
-      startTime: newTime,
+      startTime: formattedStartTime,
       location: newLocation,
       description: newDescription,
       recurrence: newRecurrence,
@@ -146,9 +155,9 @@ export default function EventsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Events</h1>
+        <h1 className="text-2xl font-bold">Schedule</h1>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogTrigger asChild><Button size="sm"><Plus className="h-4 w-4 mr-2" />New Event</Button></DialogTrigger>
+          <DialogTrigger asChild><Button size="sm" className="rounded-full"><Plus className="h-4 w-4 mr-2" />New Event</Button></DialogTrigger>
           <DialogContent className="sm:max-w-[500px] overflow-y-auto max-h-[90vh]">
             <DialogHeader>
               <DialogTitle>Create Team Event</DialogTitle>
@@ -180,9 +189,9 @@ export default function EventsPage() {
                   <Label className="text-xs font-bold uppercase text-muted-foreground">Select Days</Label>
                   <div className="flex flex-wrap gap-2 pt-2">
                     {DAYS_OF_WEEK.map(day => (
-                      <div key={day} className="flex items-center gap-1.5 bg-background px-2 py-1.5 rounded-lg border">
-                        <Checkbox checked={newRecurrenceDays.includes(day)} onCheckedChange={() => toggleDay(day)} />
-                        <span className="text-xs font-medium">{day}</span>
+                      <div key={day} className="flex items-center gap-1.5 bg-background px-2 py-1.5 rounded-lg border hover:border-primary transition-colors cursor-pointer">
+                        <Checkbox id={`day-${day}`} checked={newRecurrenceDays.includes(day)} onCheckedChange={() => toggleDay(day)} />
+                        <Label htmlFor={`day-${day}`} className="text-xs font-medium cursor-pointer">{day}</Label>
                       </div>
                     ))}
                   </div>
@@ -194,45 +203,49 @@ export default function EventsPage() {
               <div className="space-y-2"><Label>Location</Label><Input placeholder="Where is it?" value={newLocation} onChange={e => setNewLocation(e.target.value)} /></div>
               <div className="space-y-2"><Label>Description</Label><Textarea placeholder="Optional details..." value={newDescription} onChange={e => setNewDescription(e.target.value)} /></div>
             </div>
-            <DialogFooter><Button className="w-full" onClick={handleCreateEvent}>Create Event</Button></DialogFooter>
+            <DialogFooter><Button className="w-full rounded-xl h-11" onClick={handleCreateEvent}>Create Event</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
       <Tabs defaultValue="list" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="list">List View</TabsTrigger>
-          <TabsTrigger value="calendar">Calendar</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2 rounded-full p-1 h-12">
+          <TabsTrigger value="list" className="rounded-full h-10">List View</TabsTrigger>
+          <TabsTrigger value="calendar" className="rounded-full h-10">Calendar</TabsTrigger>
         </TabsList>
         <TabsContent value="list" className="space-y-4 mt-4">
-          {events.map((event) => (
-            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP}>
-              <Card className="overflow-hidden hover:border-primary transition-colors cursor-pointer group">
+          {events.length > 0 ? events.map((event) => (
+            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime}>
+              <Card className="overflow-hidden hover:border-primary transition-all duration-300 cursor-pointer group hover:shadow-lg border-none shadow-sm ring-1 ring-black/5">
                 <div className="flex items-stretch">
                   <div className="bg-primary/5 w-16 flex flex-col items-center justify-center border-r shrink-0">
-                    <span className="text-xs font-bold uppercase text-primary">{event.date.toLocaleString('default', { month: 'short' })}</span>
-                    <span className="text-2xl font-black text-primary">{event.date.getDate()}</span>
+                    <span className="text-[10px] font-black uppercase text-primary tracking-tighter">{event.date.toLocaleString('default', { month: 'short' })}</span>
+                    <span className="text-2xl font-black text-primary tracking-tighter">{event.date.getDate()}</span>
                   </div>
                   <div className="flex-1 p-4 space-y-2 min-w-0">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2">
                         <h3 className="font-bold text-lg leading-tight group-hover:text-primary truncate">{event.title}</h3>
-                        {event.recurrence !== 'none' && <Repeat className="h-3 w-3 text-muted-foreground" />}
+                        {event.recurrence !== 'none' && <Repeat className="h-3 w-3 text-muted-foreground animate-pulse" />}
                       </div>
-                      <ChevronRight className="h-5 w-5 text-muted-foreground opacity-50" />
+                      <ChevronRight className="h-5 w-5 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
                     </div>
-                    <div className="flex flex-wrap gap-y-1 gap-x-4 text-sm text-muted-foreground">
-                      <div className="flex items-center"><Clock className="h-3.5 w-3.5 mr-1.5" />{event.startTime}</div>
-                      {event.location && <div className="flex items-center truncate"><MapPin className="h-3.5 w-3.5 mr-1.5" />{event.location}</div>}
+                    <div className="flex flex-wrap gap-y-1 gap-x-4 text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                      <div className="flex items-center"><Clock className="h-3.5 w-3.5 mr-1.5 text-primary/50" />{event.startTime}</div>
+                      {event.location && <div className="flex items-center truncate"><MapPin className="h-3.5 w-3.5 mr-1.5 text-primary/50" />{event.location}</div>}
                     </div>
                   </div>
                 </div>
               </Card>
             </EventDetailDialog>
-          ))}
+          )) : (
+            <div className="text-center py-20 border-2 border-dashed rounded-3xl bg-muted/20">
+              <p className="text-muted-foreground italic font-medium">Your squad's schedule is empty.</p>
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="calendar" className="mt-4">
-          <Card><CardContent className="p-4"><Calendar mode="single" selected={date} onSelect={setDate} className="rounded-md border mx-auto w-full" /></CardContent></Card>
+          <Card className="border-none shadow-xl rounded-3xl overflow-hidden"><CardContent className="p-4"><Calendar mode="single" selected={date} onSelect={setDate} className="rounded-md mx-auto w-full" /></CardContent></Card>
         </TabsContent>
       </Tabs>
     </div>

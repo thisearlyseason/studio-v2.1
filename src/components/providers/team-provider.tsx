@@ -54,6 +54,7 @@ export type Chat = {
 export type PollOption = {
   text: string;
   votes: number;
+  voterIds?: string[];
 };
 
 export type Message = {
@@ -70,6 +71,7 @@ export type Message = {
     totalVotes: number;
     userVoted?: number;
     isClosed: boolean;
+    voters?: Record<string, number>; // uid: optionIndex
   };
 };
 
@@ -136,6 +138,7 @@ interface TeamContextType {
   activeChatId: string | null;
   setActiveChatId: (id: string | null) => void;
   addMessage: (chatId: string, author: string, content: string, type: 'text' | 'poll', poll?: any) => void;
+  votePoll: (chatId: string, messageId: string, optionIndex: number) => Promise<void>;
   posts: Post[];
   addPost: (content: string, imageUrl?: string) => void;
   addComment: (postId: string, content: string) => void;
@@ -147,6 +150,7 @@ interface TeamContextType {
   createNewTeam: (name: string, organizerPosition: string) => Promise<void>;
   inviteMember: (name: string, position: MemberPosition) => void;
   isLoading: boolean;
+  formatTime: (date: string | Date) => string;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -324,6 +328,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }))
     .sort((a, b) => b.date.getTime() - a.date.getTime());
 
+  const formatTime = (date: string | Date) => {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+
   const updateUser = (updates: Partial<UserProfile>) => {
     if (!firebaseUser) return;
     const docRef = doc(db, 'users', firebaseUser.uid);
@@ -375,6 +384,41 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       type,
       pollData: poll || null,
       createdAt: new Date().toISOString()
+    });
+  };
+
+  const votePoll = async (chatId: string, messageId: string, optionIndex: number) => {
+    if (!activeTeam || !firebaseUser) return;
+    const docRef = doc(db, 'teams', activeTeam.id, 'groupChats', chatId, 'messages', messageId);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) return;
+
+    const msg = docSnap.data() as any;
+    const poll = msg.pollData;
+    if (!poll) return;
+
+    const voters = poll.voters || {};
+    const previousVote = voters[firebaseUser.uid];
+
+    // If user clicks the same option, remove vote? (Toggle behavior)
+    // For now, let's just update the vote.
+    if (previousVote === optionIndex) return;
+
+    const newVoters = { ...voters, [firebaseUser.uid]: optionIndex };
+    
+    // Recalculate options
+    const newOptions = poll.options.map((opt: any, idx: number) => {
+      let count = 0;
+      Object.values(newVoters).forEach(v => { if (v === idx) count++; });
+      return { ...opt, votes: count };
+    });
+
+    await updateDoc(docRef, {
+      'pollData.voters': newVoters,
+      'pollData.options': newOptions,
+      'pollData.totalVotes': Object.keys(newVoters).length
+    }).catch(err => {
+      errorEmitter.emit('permission-error', new FirestorePermissionError({ path: docRef.path, operation: 'update' }));
     });
   };
 
@@ -479,7 +523,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const teamSnap = await getDoc(teamRef);
     const newMembersMap = { ...(teamSnap.data()?.members || {}), [mockUserId]: 'Member' };
 
+    // Update team document with new member map
     await updateDoc(teamRef, { [`members.${mockUserId}`]: 'Member' });
+    
+    // Create member document
     await setDoc(doc(db, 'teams', teamId, 'members', mockUserId), {
       userId: mockUserId,
       teamId,
@@ -489,13 +536,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       joinedAt: new Date().toISOString(),
       members: newMembersMap
     });
+
+    // Simulate sending email
+    console.log(`Email invited to ${name} for team ${activeTeam.name}. Code: ${activeTeam.code}. Link: ${window.location.origin}/signup?code=${activeTeam.code}`);
   };
 
   return (
     <TeamContext.Provider value={{ 
       user: userProfile, updateUser, activeTeam, setActiveTeam, updateTeamHero, teams, members, updateMember,
-      chats, createChat, messages, activeChatId, setActiveChatId, addMessage, posts, addPost, addComment,
-      events, addEvent, updateRSVP, files, addFile, createNewTeam, inviteMember, isLoading: isAuthLoading
+      chats, createChat, messages, activeChatId, setActiveChatId, addMessage, votePoll, posts, addPost, addComment,
+      events, addEvent, updateRSVP, files, addFile, createNewTeam, inviteMember, isLoading: isAuthLoading, formatTime
     }}>
       {children}
     </TeamContext.Provider>

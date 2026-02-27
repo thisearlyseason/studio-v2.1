@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
 export default function FeedPage() {
-  const { activeTeam, posts, addPost, addComment, user, members, updateTeamHero } = useTeam();
+  const { activeTeam, posts, addPost, addComment, user, members, updateTeamHero, formatTime } = useTeam();
   const [newPostContent, setNewPostContent] = useState('');
   const [imageUrl, setImageUrl] = useState<string | undefined>();
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
@@ -118,7 +118,7 @@ export default function FeedPage() {
               <Button 
                 variant="secondary" 
                 size="sm" 
-                className="bg-white/20 backdrop-blur-md text-white hover:bg-white/40 border-none rounded-full h-9"
+                className="bg-white/20 backdrop-blur-md text-white hover:bg-white/40 border-none rounded-full h-9 transition-all active:scale-95"
                 onClick={() => heroInputRef.current?.click()}
               >
                 <Camera className="h-4 w-4 mr-2" />
@@ -144,20 +144,20 @@ export default function FeedPage() {
                 className="min-h-[100px] resize-none border-none focus-visible:ring-0 p-0 text-lg font-medium placeholder:text-muted-foreground/50"
               />
               {imageUrl && (
-                <div className="relative rounded-2xl overflow-hidden border-4 border-white shadow-lg">
+                <div className="relative rounded-2xl overflow-hidden border-4 border-white shadow-lg animate-in zoom-in-95">
                   <img src={imageUrl} alt="Preview" className="w-full h-auto object-cover max-h-[400px]" />
-                  <Button variant="destructive" size="icon" className="absolute top-3 right-3 h-8 w-8 rounded-full" onClick={() => setImageUrl(undefined)}>
+                  <Button variant="destructive" size="icon" className="absolute top-3 right-3 h-8 w-8 rounded-full shadow-lg" onClick={() => setImageUrl(undefined)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               )}
               <div className="flex items-center justify-between pt-4 border-t border-muted/50">
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-                <Button variant="ghost" size="sm" className="rounded-full text-muted-foreground font-bold" onClick={() => fileInputRef.current?.click()}>
+                <Button variant="ghost" size="sm" className="rounded-full text-muted-foreground font-bold hover:bg-primary/5" onClick={() => fileInputRef.current?.click()}>
                   <ImagePlus className="h-4 w-4 mr-2" />
                   Media
                 </Button>
-                <Button disabled={!newPostContent.trim()} onClick={handlePost} className="rounded-full px-6 font-bold shadow-lg shadow-primary/20">
+                <Button disabled={!newPostContent.trim()} onClick={handlePost} className="rounded-full px-6 font-bold shadow-lg shadow-primary/20 transition-all active:scale-95">
                   Post to Squad
                 </Button>
               </div>
@@ -178,7 +178,7 @@ export default function FeedPage() {
                 <div className="flex-1 min-w-0">
                   <div className="font-extrabold text-sm tracking-tight">{post.author.name}</div>
                   <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
-                    {post.createdAt ? formatDistanceToNow(new Date(post.createdAt)) + ' ago' : 'Live'}
+                    {post.createdAt ? formatDistanceToNow(new Date(post.createdAt)) + ' ago' : 'Live'} • {formatTime(post.createdAt)}
                   </div>
                 </div>
               </CardHeader>
@@ -219,7 +219,7 @@ export default function FeedPage() {
                   <div className="flex gap-3 pt-2">
                     <Input 
                       placeholder="Write something to your squad..." 
-                      className="bg-muted/50 border-none rounded-2xl h-11 text-sm font-medium px-5"
+                      className="bg-muted/50 border-none rounded-2xl h-11 text-sm font-medium px-5 shadow-inner"
                       value={commentInputs[post.id] || ''}
                       onChange={(e) => setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))}
                       onKeyDown={(e) => e.key === 'Enter' && handleCommentSubmit(post.id)}
