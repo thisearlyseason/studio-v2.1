@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -151,37 +152,88 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Features Section */}
-      <section id="features" className="py-24 bg-white relative overflow-hidden">
+      {/* Features Section - Revamped editorial style */}
+      <section id="features" className="py-32 bg-white relative overflow-hidden">
         <div className="container mx-auto px-6">
-          <div className="text-center space-y-4 mb-16 max-w-3xl mx-auto">
-            <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Everything you need</h2>
-            <h3 className="text-4xl md:text-5xl font-black tracking-tight">Built for Champions.</h3>
-            <p className="text-muted-foreground font-medium text-lg">
-              Stop using fragmented group chats and spreadsheets. The Squad brings everything into a single, high-performance dashboard.
+          <div className="text-center space-y-4 mb-24 max-w-3xl mx-auto">
+            <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-black px-4 py-1 uppercase tracking-widest text-[10px]">
+              The Suite
+            </Badge>
+            <h3 className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.9]">
+              BUILT FOR <br /> <span className="text-primary italic">CHAMPIONS.</span>
+            </h3>
+            <p className="text-muted-foreground font-medium text-lg pt-4 leading-relaxed">
+              Ditch the fragmented group chats. The Squad provides a unified, high-performance platform for elite coordination.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
             {[
-              { icon: Calendar, title: "Pro Schedule", desc: "Interactive match day calendars with RSVP tracking for the entire roster." },
-              { icon: MessageSquare, title: "Tactical Chats", desc: "Private group discussions for positions, strategy, or event planning." },
-              { icon: Users, title: "Roster Logic", desc: "Professional member profiles with role management and jersey tracking." },
-              { icon: Trophy, title: "Game Stats", desc: "Track every win, loss, and draw with visual performance metrics." },
-              { icon: BarChart3, title: "Live Feed", desc: "A centralized hub for squad updates, media sharing, and high-priority alerts." },
-              { icon: Globe, title: "Team Library", desc: "Shared repository for playbooks, waivers, and tournament documents." }
+              { 
+                title: "PRO SCHEDULE", 
+                desc: "Real-time RSVP tracking and match day logistics for the entire squad.", 
+                img: "https://images.unsplash.com/photo-1508088062105-17d61307629d?auto=format&fit=crop&q=80&w=800",
+                hint: "soccer match"
+              },
+              { 
+                title: "TACTICAL CHATS", 
+                desc: "Secure, role-based discussions for strategy, positions, and events.", 
+                img: "https://images.unsplash.com/photo-1612768875331-0447b960fa40?auto=format&fit=crop&q=80&w=800",
+                hint: "basketball player"
+              },
+              { 
+                title: "ROSTER LOGIC", 
+                desc: "Professional member management with jersey tracking and role authority.", 
+                img: "https://images.unsplash.com/photo-1508863702330-2eece3ea08cb?auto=format&fit=crop&q=80&w=800",
+                hint: "american football"
+              },
+              { 
+                title: "GAME STATS", 
+                desc: "Visualize your trajectory with automated win/loss and performance tracking.", 
+                img: "https://images.unsplash.com/photo-1711045676217-c3d73143071c?auto=format&fit=crop&q=80&w=800",
+                hint: "baseball game"
+              },
+              { 
+                title: "LIVE FEED", 
+                desc: "A high-priority broadcast hub for squad updates, media, and alerts.", 
+                img: "https://images.unsplash.com/photo-1614743653196-d969b45200b9?auto=format&fit=crop&q=80&w=800",
+                hint: "tennis player"
+              },
+              { 
+                title: "SQUAD LIBRARY", 
+                desc: "Centralized repository for playbooks, waivers, and official documents.", 
+                img: "https://images.unsplash.com/photo-1486128105845-91daff43f404?auto=format&fit=crop&q=80&w=800",
+                hint: "ice hockey"
+              }
             ].map((feature, i) => (
-              <Card key={i} className="group border-none shadow-xl shadow-primary/5 hover:shadow-2xl hover:-translate-y-2 transition-all duration-500 rounded-[2rem] overflow-hidden">
-                <CardContent className="p-10 space-y-4">
-                  <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all duration-500 rotate-3">
-                    <feature.icon className="h-8 w-8" />
-                  </div>
-                  <h4 className="text-xl font-black tracking-tight pt-2">{feature.title}</h4>
-                  <p className="text-muted-foreground font-medium leading-relaxed">
+              <div 
+                key={i} 
+                className="group relative h-[450px] rounded-[2.5rem] overflow-hidden shadow-2xl transition-all duration-700 hover:scale-[1.02] cursor-default"
+              >
+                <Image 
+                  src={feature.img} 
+                  alt={feature.title}
+                  fill
+                  className="object-cover transition-transform duration-1000 group-hover:scale-110"
+                  data-ai-hint={feature.hint}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+                
+                <CardContent className="absolute bottom-0 p-8 space-y-4 w-full">
+                  <Badge className="bg-primary text-white border-none font-black px-3 py-1 uppercase tracking-widest text-[9px]">
+                    ELITE COORDINATION
+                  </Badge>
+                  <h4 className="text-3xl font-black text-white tracking-tighter leading-none">
+                    {feature.title}
+                  </h4>
+                  <p className="text-white/70 font-medium text-sm leading-relaxed max-w-[240px] opacity-0 group-hover:opacity-100 transition-opacity duration-500">
                     {feature.desc}
                   </p>
+                  <div className="pt-2">
+                    <div className="h-1 w-12 bg-primary group-hover:w-full transition-all duration-700 ease-in-out" />
+                  </div>
                 </CardContent>
-              </Card>
+              </div>
             ))}
           </div>
         </div>
