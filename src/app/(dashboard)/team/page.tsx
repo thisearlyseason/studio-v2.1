@@ -14,7 +14,10 @@ import {
   Globe,
   Loader2,
   X,
-  Check
+  Check,
+  Star,
+  Users,
+  ShieldCheck
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -71,7 +74,21 @@ export default function TeamProfilePage() {
   }
 
   const isAdmin = activeTeam.membersMap?.[user?.id || ''] === 'Admin';
-  const admins = members.filter(m => m.role === 'Admin');
+  
+  // Inclusive filter for leadership roles
+  const admins = members.filter(m => 
+    m.role === 'Admin' || 
+    ['Coach', 'Assistant Coach', 'Squad Leader', 'Team Lead'].includes(m.position)
+  ).sort((a, b) => {
+    // Sort logic: Coaches first, then the rest
+    const rank = (pos: string) => {
+      if (pos === 'Coach') return 1;
+      if (pos === 'Assistant Coach') return 2;
+      if (pos === 'Team Lead' || pos === 'Squad Leader') return 3;
+      return 4;
+    };
+    return rank(a.position) - rank(b.position);
+  });
 
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
@@ -175,7 +192,7 @@ export default function TeamProfilePage() {
               </div>
               <div className="flex items-center gap-2">
                 <Globe className="h-4 w-4 text-primary opacity-40" />
-                Squadforge Public ID: {activeTeam.id.split('_')[1]}
+                Public ID: {activeTeam.id.split('_')[1] || activeTeam.id.slice(-6)}
               </div>
             </div>
           </div>
@@ -232,25 +249,49 @@ export default function TeamProfilePage() {
 
           {/* Leadership Section */}
           <div className="space-y-4">
-            <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground ml-2">Squad Leadership</h2>
+            <div className="flex items-center justify-between px-2">
+              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Squad Leadership & Staff</h2>
+              <Badge variant="outline" className="text-[9px] font-black border-primary/20 text-primary uppercase">{admins.length} STAFF</Badge>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {admins.map((admin) => (
-                <Card key={admin.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-md transition-all group">
-                  <CardContent className="p-4 flex items-center gap-4">
-                    <Avatar className="h-12 w-12 rounded-xl ring-2 ring-primary/10">
-                      <AvatarImage src={admin.avatar} />
-                      <AvatarFallback className="rounded-xl font-black">{admin.name[0]}</AvatarFallback>
-                    </Avatar>
+              {admins.length > 0 ? admins.map((admin) => (
+                <Card key={admin.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-md transition-all group overflow-hidden">
+                  <CardContent className="p-4 flex items-center gap-4 relative">
+                    <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
+                      <Shield className="h-12 w-12 rotate-12" />
+                    </div>
+                    <div className="relative">
+                      <Avatar className="h-14 w-14 rounded-2xl ring-2 ring-primary/10 border-2 border-background shadow-sm">
+                        <AvatarImage src={admin.avatar} className="object-cover" />
+                        <AvatarFallback className="rounded-2xl font-black bg-muted">{admin.name[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="absolute -bottom-1 -right-1 bg-primary text-white p-1 rounded-full shadow-lg border-2 border-background">
+                        {admin.position === 'Coach' ? <Star className="h-2 w-2 fill-current" /> : <ShieldCheck className="h-2 w-2" />}
+                      </div>
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-sm truncate">{admin.name}</span>
-                        <Shield className="h-3 w-3 text-primary fill-primary/10" />
+                        <span className="font-extrabold text-sm truncate tracking-tight">{admin.name}</span>
                       </div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">{admin.position}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-primary leading-none">
+                          {admin.position}
+                        </span>
+                        {admin.role === 'Admin' && (
+                          <span className="h-1 w-1 bg-muted-foreground/30 rounded-full" />
+                        )}
+                        {admin.role === 'Admin' && (
+                          <span className="text-[8px] font-bold text-muted-foreground uppercase">Authority</span>
+                        )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+              )) : (
+                <div className="col-span-full py-8 text-center bg-muted/20 rounded-3xl border-2 border-dashed">
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">No leadership roles assigned yet</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -283,9 +324,12 @@ export default function TeamProfilePage() {
           </Card>
           
           <div className="bg-muted/30 p-6 rounded-3xl space-y-3 border-2 border-dashed">
-            <h4 className="font-black text-xs uppercase tracking-widest">Public Directory</h4>
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" />
+              <h4 className="font-black text-xs uppercase tracking-widest">Squad Directory</h4>
+            </div>
             <p className="text-xs text-muted-foreground font-medium leading-relaxed">
-              Squadforge provides a centralized profile for your team to coordinate. Updates to the squad logo and info will be visible to all verified members.
+              Squadforge provides a centralized profile for your team to coordinate. Updates to the squad logo and info will be visible to all verified members and staff.
             </p>
           </div>
         </aside>
