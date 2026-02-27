@@ -3,7 +3,7 @@
     {
       "id": "brand-logo-dark",
       "description": "The Squad official brand logo (Black version for light backgrounds)",
-      "imageUrl": "https://images.unsplash.com/photo-1754242121974-c6b3d6c631c6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxibGFjayUyMGxvZ298ZW58MHx8fHwxNzcyMjA3MTI1fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1590456744030-8b9128517cbb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxibGFjayUyMGxvZ298ZW58MHx8fHwxNzcyMjA3MTI1fDA&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "black logo"
     },
     {
@@ -33,19 +33,19 @@
     {
       "id": "sport-soccer",
       "description": "Soccer action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1508088062105-17d61307629d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxzb2NjZXIlMjBtYXRjaHxlbnwwfHx8fDE3NzIyMDIyMDB8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1508088062105-17d61307629d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxzb2NjZXIlMjBtYXRjaHxlbnwwfHx8DE3NzIyMDIyMDB8MA&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "soccer match"
     },
     {
       "id": "sport-basketball",
       "description": "Basketball action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1612768875331-0447b960fa40?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8YmFza2V0YmFsbCUyMHBsYXllcnxlbnwwfHx8fDE3NzIyMDIxOTl8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1612768875331-0447b960fa40?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8YmFza2V0YmFsbCUyMHBsYXllcnxlbnwwfHx8DE3NzIyMDIxOTl8MA&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "basketball player"
     },
     {
       "id": "sport-football",
       "description": "Football action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1508863702330-2eece3ea08cb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8YW1lcmljYW4lMjBmb290YmFsbHxlbnwwfHx8fDE3NzIyMDIxOTl8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1508863702330-2eece3ea08cb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8YW1lcmljYW4lMjBmb290YmFsbHxlbnwwfHx8DE3NzIyMDIxOTl8MA&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "american football"
     },
     {
@@ -63,7 +63,7 @@
     {
       "id": "sport-hockey",
       "description": "Hockey action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1486128105845-91daff43f404?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxpY2UlMjBob2NrZXl8ZW58MHx8fDE3NzIyMDQ0OTV8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1486128105845-91daff43f404?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw8fHxpY2UlMjBob2NrZXl8ZW58MHx8fDE3NzIyMDQ0OTV8MA&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "ice hockey"
     },
     {

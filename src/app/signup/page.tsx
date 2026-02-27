@@ -106,15 +106,13 @@ function SignupForm() {
       {/* Logo Header */}
       <div className="relative z-20 mb-8 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-1000">
         <div className="relative h-16 w-48">
-          {brandLogoLight && (
-            <Image 
-              src={brandLogoLight} 
-              alt="The Squad Brand" 
-              fill 
-              className="object-contain drop-shadow-2xl"
-              data-ai-hint="white logo"
-            />
-          )}
+          <Image 
+            src={brandLogoLight} 
+            alt="The Squad Brand" 
+            fill 
+            className="object-contain drop-shadow-2xl"
+            data-ai-hint="white logo"
+          />
         </div>
       </div>
       

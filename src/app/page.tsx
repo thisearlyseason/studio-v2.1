@@ -64,13 +64,22 @@ export default function LandingPage() {
         <div className="container mx-auto px-6 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
             <div className="relative h-10 w-40">
-              {brandLogoDark && brandLogoLight && (
+              {isScrolled ? (
                 <Image 
-                  src={isScrolled ? brandLogoDark : brandLogoLight} 
+                  src={brandLogoDark} 
                   alt="The Squad Logo" 
                   fill
                   className="object-contain"
-                  data-ai-hint={isScrolled ? "black logo" : "white logo"}
+                  data-ai-hint="black logo"
+                  priority
+                />
+              ) : (
+                <Image 
+                  src={brandLogoLight} 
+                  alt="The Squad Logo" 
+                  fill
+                  className="object-contain"
+                  data-ai-hint="white logo"
                   priority
                 />
               )}
@@ -327,15 +336,13 @@ export default function LandingPage() {
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="flex items-center gap-3">
               <div className="relative h-8 w-32">
-                {brandLogoDark && (
-                  <Image 
-                    src={brandLogoDark} 
-                    alt="The Squad Logo" 
-                    fill
-                    className="object-contain"
-                    data-ai-hint="black logo"
-                  />
-                )}
+                <Image 
+                  src={brandLogoDark} 
+                  alt="The Squad Logo" 
+                  fill
+                  className="object-contain"
+                  data-ai-hint="black logo"
+                />
               </div>
             </div>
             
