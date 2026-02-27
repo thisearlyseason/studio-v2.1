@@ -5,7 +5,7 @@ service cloud.firestore {
 
     /**
      * SquadForge Security Rules
-     * Optimized for list queries using robust map access for denormalized membership checks.
+     * Optimized for list queries using direct map access for denormalized membership checks.
      */
 
     function isSignedIn() {
@@ -17,32 +17,26 @@ service cloud.firestore {
     }
 
     // Helper for checking membership in documents that have a denormalized 'members' map
-    // Using direct map access allows the Firestore query optimizer to validate 'list' operations.
+    // We use direct indexing which is highly compatible with Firestore's query optimizer.
     function isTeamMember(data) {
       return isSignedIn() && 
-             data != null && 
-             data.members != null &&
              data.members[request.auth.uid] in ['Admin', 'Member'];
     }
 
     function isTeamAdmin(data) {
       return isSignedIn() && 
-             data != null && 
-             data.members != null &&
              data.members[request.auth.uid] == 'Admin';
     }
 
     // --- Collection Rules ---
 
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow list: if false; // Users are not globally listable
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId);
-      allow delete: if false;
+      allow get, create, update: if isOwner(userId);
+      allow list: if false;
     }
 
     match /teams/{teamId} {
+      // Teams themselves are listable if the user is in the members map
       allow get, list: if isTeamMember(resource.data);
       allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if isTeamAdmin(resource.data);
@@ -57,12 +51,12 @@ service cloud.firestore {
       match /feedPosts/{postId} {
         allow get, list: if isTeamMember(resource.data);
         allow create: if isTeamMember(request.resource.data) && request.resource.data.authorId == request.auth.uid;
-        allow update, delete: if isTeamAdmin(resource.data) || isOwner(resource.data.authorId);
+        allow update, delete: if isTeamAdmin(resource.data) || request.auth.uid == resource.data.authorId;
 
         match /comments/{commentId} {
           allow get, list: if isTeamMember(resource.data);
           allow create: if isTeamMember(request.resource.data) && request.resource.data.authorId == request.auth.uid;
-          allow update, delete: if isTeamAdmin(resource.data) || isOwner(resource.data.authorId);
+          allow update, delete: if isTeamAdmin(resource.data) || request.auth.uid == resource.data.authorId;
         }
       }
 
@@ -87,7 +81,7 @@ service cloud.firestore {
       match /files/{fileId} {
         allow get, list: if isTeamMember(resource.data);
         allow create: if isTeamMember(request.resource.data) && request.resource.data.uploadedBy == request.auth.uid;
-        allow update, delete: if isTeamAdmin(resource.data) || isOwner(resource.data.uploadedBy);
+        allow update, delete: if isTeamAdmin(resource.data) || request.auth.uid == resource.data.uploadedBy;
       }
 
       match /groupChats/{chatId} {
@@ -98,8 +92,8 @@ service cloud.firestore {
         match /messages/{messageId} {
           allow get, list: if isTeamMember(resource.data);
           allow create: if isTeamMember(request.resource.data) && request.resource.data.authorId == request.auth.uid;
-          allow update: if isOwner(resource.data.authorId);
-          allow delete: if isTeamAdmin(resource.data) || isOwner(resource.data.authorId);
+          allow update: if request.auth.uid == resource.data.authorId;
+          allow delete: if isTeamAdmin(resource.data) || request.auth.uid == resource.data.authorId;
         }
       }
     }
