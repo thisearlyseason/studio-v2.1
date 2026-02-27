@@ -161,7 +161,14 @@ export default function EventsPage() {
   const isAdmin = activeTeam?.role === 'Admin';
 
   const handleCreateEvent = () => {
-    if (!newTitle || !newDate || !newTime) return;
+    if (!newTitle || !newDate || !newTime) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide a title, date, and time for the event.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     const [hours, minutes] = newTime.split(':');
     const h = parseInt(hours);
@@ -169,9 +176,19 @@ export default function EventsPage() {
     const displayHours = h % 12 || 12;
     const formattedStartTime = `${displayHours}:${minutes} ${ampm}`;
 
+    const eventDate = new Date(newDate);
+    if (isNaN(eventDate.getTime())) {
+      toast({
+        title: "Invalid Date",
+        description: "The selected date is invalid. Please try again.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     addEvent({
       title: newTitle,
-      date: new Date(newDate),
+      date: eventDate,
       startTime: formattedStartTime,
       location: newLocation,
       description: newDescription,
@@ -179,8 +196,10 @@ export default function EventsPage() {
       allowExternalRegistration: allowExternal,
       maxRegistrations: maxRegs ? parseInt(maxRegs) : undefined
     });
+    
     setIsCreateOpen(false);
     resetForm();
+    toast({ title: "Event Created", description: `${newTitle} has been scheduled.` });
   };
 
   const resetForm = () => {
@@ -188,7 +207,7 @@ export default function EventsPage() {
     setAllowExternal(false); setMaxRegs('');
   };
 
-  if (!activeTeam) return <div className="p-10 text-center animate-pulse">Loading...</div>;
+  if (!activeTeam) return <div className="p-10 text-center animate-pulse">Loading schedule...</div>;
 
   return (
     <div className="space-y-6">

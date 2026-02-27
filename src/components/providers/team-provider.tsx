@@ -556,8 +556,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const addEvent = async (eventData: Omit<TeamEvent, 'id' | 'teamId' | 'rsvps'>) => {
     if (!activeTeam || !firebaseUser) return;
+    
+    // Safety check for date validity
+    const eventDate = eventData.date instanceof Date ? eventData.date : new Date(eventData.date);
+    if (isNaN(eventDate.getTime())) {
+      console.error("Invalid event date provided to addEvent");
+      return;
+    }
+
     addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'events'), {
-      ...eventData, teamId: activeTeam.id, date: eventData.date.toISOString(), createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), userRsvps: { [firebaseUser.uid]: 'going' }
+      ...eventData, 
+      teamId: activeTeam.id, 
+      date: eventDate.toISOString(), 
+      createdBy: firebaseUser.uid, 
+      createdAt: new Date().toISOString(), 
+      userRsvps: { [firebaseUser.uid]: 'going' }
     });
   };
 
