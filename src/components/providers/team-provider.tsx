@@ -426,7 +426,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       type: f.fileType,
       size: f.fileSize,
       uploadedBy: f.uploaderName || 'Unknown',
-      uploaderId: f.uploadedBy || '',
+      uploaderId: f.uploadedBy || f.uploaderId || '',
       date: new Date(f.createdAt),
       url: f.fileUrl
     }))
@@ -678,6 +678,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       fileType: type,
       fileSize: size,
       fileUrl: url,
+      uploaderId: firebaseUser.uid,
       uploadedBy: firebaseUser.uid,
       uploaderName: userProfile.name,
       createdAt: new Date().toISOString(),

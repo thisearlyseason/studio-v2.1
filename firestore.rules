@@ -5,23 +5,23 @@ service cloud.firestore {
 
     /**
      * SquadForge Security Rules
-     * Optimized for reliability and performance.
+     * Optimized for reliability and performance using map-based authorization.
      */
 
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Membership check using the dedicated sub-collection
+    // Membership check using the denormalized members map in the team document
     function isMemberOfTeam(teamId) {
       return isSignedIn() && 
-             exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
+             get(/databases/$(database)/documents/teams/$(teamId)).data.members[request.auth.uid] != null;
     }
 
-    // Role check using the dedicated sub-collection document
+    // Role check using the denormalized members map in the team document
     function isAdminOfTeam(teamId) {
       return isSignedIn() && 
-             get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.role == 'Admin';
+             get(/databases/$(database)/documents/teams/$(teamId)).data.members[request.auth.uid] == 'Admin';
     }
 
     // --- Collection Rules ---
@@ -33,7 +33,7 @@ service cloud.firestore {
 
     match /teams/{teamId} {
       allow list: if isSignedIn() && resource.data.members[request.auth.uid] != null;
-      allow get: if isSignedIn() && (resource.data.members[request.auth.uid] != null || isMemberOfTeam(teamId));
+      allow get: if isSignedIn() && resource.data.members[request.auth.uid] != null;
       allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if isSignedIn() && resource.data.members[request.auth.uid] == 'Admin';
 
@@ -45,7 +45,6 @@ service cloud.firestore {
       match /feedPosts/{postId} {
         allow list, get: if isMemberOfTeam(teamId);
         allow create: if isMemberOfTeam(teamId);
-        // Allow members to update posts (for liking)
         allow update: if isMemberOfTeam(teamId);
         allow delete: if isAdminOfTeam(teamId) || (resource != null && resource.data.authorId == request.auth.uid);
 
@@ -59,7 +58,6 @@ service cloud.firestore {
       match /events/{eventId} {
         allow list, get: if isMemberOfTeam(teamId);
         allow create, delete: if isAdminOfTeam(teamId);
-        // Allow admins full update, or members to update only the userRsvps map
         allow update: if isAdminOfTeam(teamId) || 
                        (isMemberOfTeam(teamId) && 
                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userRsvps']));
@@ -78,7 +76,7 @@ service cloud.firestore {
       match /files/{fileId} {
         allow list, get: if isMemberOfTeam(teamId);
         allow create: if isMemberOfTeam(teamId);
-        allow update, delete: if isAdminOfTeam(teamId) || (resource != null && resource.data.uploadedBy == request.auth.uid);
+        allow update, delete: if isAdminOfTeam(teamId) || (resource != null && (resource.data.uploaderId == request.auth.uid || resource.data.uploadedBy == request.auth.uid));
       }
 
       match /groupChats/{chatId} {
