@@ -14,9 +14,10 @@ import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { useTeam } from '@/components/providers/team-provider';
-import { ShieldCheck, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
+import Image from 'next/image';
 
 function SignupForm() {
   const [name, setName] = useState('');
@@ -32,6 +33,7 @@ function SignupForm() {
   const { joinTeamWithCode } = useTeam();
   
   const inviteCode = searchParams.get('code');
+  const brandLogo = PlaceHolderImages.find(img => img.id === 'brand-logo')?.imageUrl || '';
 
   useEffect(() => {
     const sportsImages = PlaceHolderImages.filter(img => img.id.startsWith('sport-'));
@@ -88,22 +90,30 @@ function SignupForm() {
       {/* Dynamic Sports Background */}
       {backgroundImage && (
         <>
-          <img 
-            src={backgroundImage} 
-            alt="Sports Background" 
-            className="absolute inset-0 w-full h-full object-cover opacity-60 animate-in fade-in duration-1000"
-            data-ai-hint="sports background"
-          />
+          <div className="absolute inset-0 w-full h-full">
+            <Image 
+              src={backgroundImage} 
+              alt="Sports Background" 
+              fill
+              className="object-cover opacity-60 animate-in fade-in duration-1000"
+              data-ai-hint="sports background"
+            />
+          </div>
           <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80" />
         </>
       )}
 
       {/* Logo Header */}
       <div className="relative z-20 mb-8 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-1000">
-        <div className="w-16 h-16 hero-gradient rounded-2xl flex items-center justify-center shadow-2xl shadow-primary/40 rotate-3 border-2 border-white/20">
-          <ShieldCheck className="h-10 w-10 text-white" />
+        <div className="relative h-16 w-40">
+          <Image 
+            src={brandLogo} 
+            alt="The Squad Brand" 
+            fill 
+            className="object-contain drop-shadow-2xl"
+            data-ai-hint="brand logo"
+          />
         </div>
-        <h1 className="text-3xl font-black text-white tracking-tighter drop-shadow-md">THE SQUAD</h1>
       </div>
       
       <Card className="w-full max-w-md border-none shadow-2xl rounded-[2.5rem] relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-700 bg-white/95 backdrop-blur-sm">
@@ -159,15 +169,17 @@ function SignupForm() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="font-bold text-xs uppercase tracking-widest px-1">Joining as</Label>
-                  <Select value={role} onValueChange={setRole}>
-                    <SelectTrigger className="h-12 rounded-2xl bg-muted/50 border-none focus:ring-primary/30">
-                      <SelectValue placeholder="Select your role..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Player">Teammate / Player</SelectItem>
-                      <SelectItem value="Parent">Parent / Guardian</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Suspense fallback={<Loader2 className="h-4 w-4 animate-spin" />}>
+                    <Select value={role} onValueChange={setRole}>
+                      <SelectTrigger className="h-12 rounded-2xl bg-muted/50 border-none focus:ring-primary/30">
+                        <SelectValue placeholder="Select your role..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Player">Teammate / Player</SelectItem>
+                        <SelectItem value="Parent">Parent / Guardian</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Suspense>
                 </div>
               </div>
             )}

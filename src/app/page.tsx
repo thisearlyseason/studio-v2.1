@@ -4,7 +4,6 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
-  ShieldCheck, 
   ChevronRight, 
   Calendar, 
   MessageSquare, 
@@ -16,8 +15,7 @@ import {
   Phone,
   BarChart3,
   Globe,
-  ArrowRight,
-  Star
+  ArrowRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -27,12 +25,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { cn } from '@/lib/utils';
+import Image from 'next/image';
 
 export default function LandingPage() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isScrolled, setIsScrolled] = useState(false);
 
-  // Filter for requested sports images from the centralized library
+  const brandLogo = PlaceHolderImages.find(img => img.id === 'brand-logo')?.imageUrl || '';
+
   const sportsImages = PlaceHolderImages
     .filter(img => img.id.startsWith('sport-'))
     .map(img => img.imageUrl);
@@ -61,14 +61,17 @@ export default function LandingPage() {
         isScrolled ? "bg-white/80 backdrop-blur-md py-3 shadow-sm border-border" : "bg-transparent py-5 border-transparent"
       )}>
         <div className="container mx-auto px-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 hero-gradient rounded-xl flex items-center justify-center shadow-lg shadow-primary/20 rotate-3">
-              <ShieldCheck className="h-6 w-6 text-white" />
+          <Link href="/" className="flex items-center gap-3">
+            <div className="relative h-10 w-24">
+              <Image 
+                src={brandLogo} 
+                alt="The Squad Logo" 
+                fill 
+                className="object-contain"
+                data-ai-hint="brand logo"
+              />
             </div>
-            <span className={cn("text-xl font-black tracking-tighter", isScrolled ? "text-foreground" : "text-white")}>
-              THE SQUAD
-            </span>
-          </div>
+          </Link>
 
           <div className="hidden md:flex items-center gap-8 text-sm font-bold uppercase tracking-widest">
             <a href="#features" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>Features</a>
@@ -101,10 +104,11 @@ export default function LandingPage() {
               currentImageIndex === idx ? "opacity-100" : "opacity-0"
             )}
           >
-            <img 
+            <Image 
               src={img} 
               alt="Sports Background" 
-              className="w-full h-full object-cover scale-105"
+              fill
+              className="object-cover scale-105"
               data-ai-hint="sports background"
             />
             <div className="absolute inset-0 bg-black/60 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
@@ -168,7 +172,7 @@ export default function LandingPage() {
               { icon: Calendar, title: "Pro Schedule", desc: "Interactive match day calendars with RSVP tracking for the entire roster." },
               { icon: MessageSquare, title: "Tactical Chats", desc: "Private group discussions for positions, strategy, or event planning." },
               { icon: Users, title: "Roster Logic", desc: "Professional member profiles with role management and jersey tracking." },
-              { icon: BarChart3, title: "Game Stats", desc: "Track every win, loss, and draw with visual performance metrics." },
+              { icon: Trophy, title: "Game Stats", desc: "Track every win, loss, and draw with visual performance metrics." },
               { icon: BarChart3, title: "Live Feed", desc: "A centralized hub for squad updates, media sharing, and high-priority alerts." },
               { icon: Globe, title: "Team Library", desc: "Shared repository for playbooks, waivers, and tournament documents." }
             ].map((feature, i) => (
@@ -315,11 +319,16 @@ export default function LandingPage() {
       <footer className="py-12 bg-muted/50 border-t">
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 hero-gradient rounded-lg flex items-center justify-center shadow-md">
-                <ShieldCheck className="h-5 w-5 text-white" />
+            <div className="flex items-center gap-3">
+              <div className="relative h-8 w-20">
+                <Image 
+                  src={brandLogo} 
+                  alt="The Squad Logo" 
+                  fill 
+                  className="object-contain"
+                  data-ai-hint="brand logo"
+                />
               </div>
-              <span className="font-black tracking-tighter text-lg">THE SQUAD</span>
             </div>
             
             <div className="flex items-center gap-8 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
