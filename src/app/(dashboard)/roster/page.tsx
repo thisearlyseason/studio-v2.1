@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Search, MoreVertical, ShieldCheck, Mail, Phone, UserPlus, Link as LinkIcon, AtSign, Copy, Check } from 'lucide-react';
+import { Search, MoreVertical, ShieldCheck, Mail, Phone, UserPlus, AtSign, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTeam } from '@/components/providers/team-provider';
 import {
@@ -29,14 +29,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from '@/hooks/use-toast';
 
 export default function RosterPage() {
-  const { activeTeam, members, updateMember, inviteMember } = useTeam();
+  const { activeTeam, members, updateMember, inviteMember, user } = useTeam();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
-  const [invitePosition, setInvitePosition] = useState('Player');
   const [mounted, setMounted] = useState(false);
-  const [isCopied, setIsCopied] = useState(false);
   
   const [editingMember, setEditingMember] = useState<any>(null);
   const [editForm, setEditForm] = useState({ position: '', jersey: '' });
@@ -54,6 +52,7 @@ export default function RosterPage() {
     );
   }
 
+  const isAdmin = activeTeam.membersMap?.[user?.id || ''] === 'Admin';
   const teamRoster = members.filter(member => member.teamId === activeTeam.id);
   
   const filteredRoster = teamRoster.filter(member => 
@@ -73,29 +72,21 @@ export default function RosterPage() {
         jersey: editForm.jersey
       });
       setEditingMember(null);
+      toast({ title: "Updated", description: "Member role and position updated." });
     }
   };
 
   const handleSendInvite = () => {
     if (inviteName.trim() && inviteEmail.trim()) {
-      inviteMember(inviteName, inviteEmail, invitePosition);
+      inviteMember(inviteName, inviteEmail, 'Player');
       setIsInviteOpen(false);
       setInviteName('');
       setInviteEmail('');
-      setInvitePosition('Player');
       toast({
-        title: "Invitation Logged",
-        description: "In this prototype, invitations are logged to the console. Use the Copy Link button to test the joining flow manually!",
+        title: "Teammate Logged",
+        description: "Invite data logged. Share the team code for them to join!",
       });
     }
-  };
-
-  const copyInviteLink = () => {
-    const link = `${window.location.origin}/signup?code=${activeTeam.code}`;
-    navigator.clipboard.writeText(link);
-    setIsCopied(true);
-    toast({ title: "Invite Link Copied", description: "Share this link with your teammate to have them join automatically." });
-    setTimeout(() => setIsCopied(false), 2000);
   };
 
   const copyTeamCode = () => {
@@ -119,34 +110,22 @@ export default function RosterPage() {
               <DialogHeader>
                 <DialogTitle>Invite to {activeTeam.name}</DialogTitle>
                 <DialogDescription>
-                  Share your team link or send an invite to have members join your squad.
+                  Share your team code to have members join your squad.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="flex flex-col gap-2">
-                  <Label className="text-xs font-bold uppercase text-muted-foreground ml-1">Shareable Team Link</Label>
-                  <div className="flex gap-2">
-                    <div className="flex-1 bg-muted rounded-xl px-4 flex items-center h-11 text-xs font-mono truncate border border-muted-foreground/10">
-                      {window.location.origin}/signup?code={activeTeam.code}
-                    </div>
-                    <Button variant="secondary" size="icon" className="h-11 w-11 rounded-xl shrink-0" onClick={copyInviteLink}>
-                      {isCopied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-                    </Button>
+              <div className="space-y-6 py-4">
+                <div className="p-6 bg-primary/5 rounded-3xl text-center space-y-3 border-2 border-primary/10 group cursor-pointer active:scale-95 transition-all" onClick={copyTeamCode}>
+                  <p className="text-[10px] font-black text-primary uppercase tracking-widest">Your Team Code</p>
+                  <div className="flex items-center justify-center gap-3">
+                    <p className="text-4xl font-black text-primary tracking-widest">{activeTeam.code}</p>
+                    <Copy className="h-5 w-5 text-primary opacity-30 group-hover:opacity-100 transition-opacity" />
                   </div>
-                  <p className="text-[10px] text-muted-foreground px-1 italic">New members using this link will join {activeTeam.name} automatically after signing up.</p>
-                </div>
-
-                <div className="p-4 bg-primary/5 rounded-2xl text-center space-y-2 border border-primary/10 group cursor-pointer" onClick={copyTeamCode}>
-                  <p className="text-[10px] font-black text-primary uppercase tracking-widest">Team Code</p>
-                  <div className="flex items-center justify-center gap-2">
-                    <p className="text-3xl font-black text-primary tracking-widest">{activeTeam.code}</p>
-                    <LinkIcon className="h-4 w-4 text-primary opacity-30 group-hover:opacity-100 transition-opacity" />
-                  </div>
+                  <p className="text-[10px] text-muted-foreground italic">Tap to copy and share with teammates or parents.</p>
                 </div>
 
                 <div className="space-y-3 pt-2">
+                  <Label className="text-xs font-bold uppercase text-muted-foreground ml-1">Log Teammate Info (Optional)</Label>
                   <div className="space-y-1">
-                    <Label>Full Name</Label>
                     <Input 
                       placeholder="Teammate Name" 
                       value={inviteName} 
@@ -155,7 +134,6 @@ export default function RosterPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label>Email Address</Label>
                     <div className="relative">
                       <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input 
@@ -173,9 +151,9 @@ export default function RosterPage() {
                 <Button 
                   className="w-full rounded-xl h-12 text-base font-bold" 
                   onClick={handleSendInvite} 
-                  disabled={!inviteName.trim() || !inviteEmail.trim() || !inviteEmail.includes('@')}
+                  disabled={!inviteName.trim() || !inviteEmail.trim()}
                 >
-                  Send Invite Notification
+                  Log Teammate Entry
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -227,17 +205,19 @@ export default function RosterPage() {
                 </div>
               </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
-                    <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="rounded-xl shadow-xl">
-                  <DropdownMenuItem onClick={() => handleEditClick(member)} className="font-medium p-2.5">Edit Labels</DropdownMenuItem>
-                  <DropdownMenuItem className="text-destructive font-medium p-2.5">Remove from Squad</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {isAdmin && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
+                      <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="rounded-xl shadow-xl">
+                    <DropdownMenuItem onClick={() => handleEditClick(member)} className="font-medium p-2.5">Edit Role & Position</DropdownMenuItem>
+                    <DropdownMenuItem className="text-destructive font-medium p-2.5">Remove from Squad</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </CardContent>
           </Card>
         ))}
@@ -246,8 +226,8 @@ export default function RosterPage() {
       <Dialog open={!!editingMember} onOpenChange={() => setEditingMember(null)}>
         <DialogContent className="rounded-3xl">
           <DialogHeader>
-            <DialogTitle>Edit Member Details</DialogTitle>
-            <DialogDescription>Update labels for {editingMember?.name}</DialogDescription>
+            <DialogTitle>Update Squad Role</DialogTitle>
+            <DialogDescription>Promote or reassign {editingMember?.name} within the team.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -260,14 +240,15 @@ export default function RosterPage() {
                   <SelectValue placeholder="Select position..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Coach">Coach</SelectItem>
-                  <SelectItem value="Team Lead">Team Lead</SelectItem>
-                  <SelectItem value="Assistant Coach">Assistant Coach</SelectItem>
-                  <SelectItem value="Squad Leader">Squad Leader</SelectItem>
-                  <SelectItem value="Player">Player</SelectItem>
-                  <SelectItem value="Parent">Parent</SelectItem>
+                  <SelectItem value="Coach">Coach (Admin)</SelectItem>
+                  <SelectItem value="Team Lead">Team Lead (Admin)</SelectItem>
+                  <SelectItem value="Assistant Coach">Assistant Coach (Admin)</SelectItem>
+                  <SelectItem value="Squad Leader">Squad Leader (Admin)</SelectItem>
+                  <SelectItem value="Player">Player (Teammate)</SelectItem>
+                  <SelectItem value="Parent">Parent / Guardian</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-[10px] text-muted-foreground px-1">Coaches and Leads have full administrative permissions.</p>
             </div>
             <div className="space-y-2">
               <Label>Jersey # or Identifier</Label>
@@ -275,11 +256,12 @@ export default function RosterPage() {
                 value={editForm.jersey} 
                 onChange={(e) => setEditForm(prev => ({ ...prev, jersey: e.target.value }))}
                 className="rounded-xl h-11"
+                placeholder="e.g. 23"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={handleSaveLabels} className="w-full rounded-xl h-11 text-base font-bold">Save Changes</Button>
+            <Button onClick={handleSaveLabels} className="w-full rounded-xl h-11 text-base font-bold">Apply Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

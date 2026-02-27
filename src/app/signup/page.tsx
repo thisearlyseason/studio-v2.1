@@ -1,24 +1,27 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth, useFirestore } from '@/firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { useTeam } from '@/components/providers/team-provider';
 import { ShieldCheck } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 export default function SignupPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState('Player');
   const [isLoading, setIsLoading] = useState(false);
   const auth = useAuth();
   const db = useFirestore();
@@ -37,25 +40,24 @@ export default function SignupPage() {
 
       await updateProfile(user, { displayName: name });
 
-      // Create user document in Firestore
+      const avatarUrl = `https://picsum.photos/seed/${user.uid}/150/150`;
       const userDocData = {
         id: user.uid,
         fullName: name,
         email: email,
         notificationsEnabled: true,
         createdAt: new Date().toISOString(),
-        avatarUrl: `https://picsum.photos/seed/${user.uid}/150/150`
+        avatarUrl: avatarUrl
       };
       
       await setDoc(doc(db, 'users', user.uid), userDocData);
 
-      // If an invite code was present, join the team
       if (inviteCode) {
-        const joined = await joinTeamWithCode(inviteCode);
+        const joined = await joinTeamWithCode(inviteCode, role);
         if (joined) {
           toast({ title: "Welcome to the Squad!", description: "You've successfully joined your team." });
         } else {
-          toast({ title: "Account Created", description: "Your account is ready, but the team code was invalid." });
+          toast({ title: "Account Created", description: "Your account is ready, but the team code was invalid.", variant: "destructive" });
         }
       }
 
@@ -125,10 +127,25 @@ export default function SignupPage() {
                 className="h-12 rounded-2xl bg-muted/50 border-none focus-visible:ring-primary/30 text-base"
               />
             </div>
+            
             {inviteCode && (
-              <div className="bg-primary/5 p-3 rounded-2xl border border-primary/10 flex items-center justify-between">
-                <span className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Joining with Code</span>
-                <Badge variant="secondary" className="font-mono bg-white border-primary/20 text-primary">{inviteCode}</Badge>
+              <div className="space-y-4 pt-2">
+                <div className="bg-primary/5 p-3 rounded-2xl border border-primary/10 flex items-center justify-between">
+                  <span className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Joining with Code</span>
+                  <Badge variant="secondary" className="font-mono bg-white border-primary/20 text-primary">{inviteCode}</Badge>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="font-bold text-xs uppercase tracking-widest px-1">Joining as</Label>
+                  <Select value={role} onValueChange={setRole}>
+                    <SelectTrigger className="h-12 rounded-2xl bg-muted/50 border-none focus:ring-primary/30">
+                      <SelectValue placeholder="Select your role..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Player">Teammate / Player</SelectItem>
+                      <SelectItem value="Parent">Parent / Guardian</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             )}
           </CardContent>

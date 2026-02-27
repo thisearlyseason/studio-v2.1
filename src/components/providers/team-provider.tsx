@@ -151,7 +151,7 @@ interface TeamContextType {
   addFile: (name: string, type: string, size: string) => void;
   createNewTeam: (name: string, organizerPosition: string) => Promise<void>;
   inviteMember: (name: string, email: string, position: MemberPosition) => void;
-  joinTeamWithCode: (code: string) => Promise<boolean>;
+  joinTeamWithCode: (code: string, position: string) => Promise<boolean>;
   isLoading: boolean;
   formatTime: (date: string | Date) => string;
 }
@@ -368,9 +368,31 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateMember = (id: string, updates: Partial<Member>) => {
     if (!activeTeam) return;
     const docRef = doc(db, 'teams', activeTeam.id, 'members', id);
-    updateDoc(docRef, updates).catch(err => {
+    
+    // If the Admin changes the position to Coach or Admin, we might want to toggle the Firestore role as well
+    const firestoreUpdates: any = { ...updates };
+    if (updates.position) {
+      if (['Coach', 'Team Lead', 'Assistant Coach', 'Squad Leader'].includes(updates.position)) {
+        firestoreUpdates.role = 'Admin';
+      } else {
+        firestoreUpdates.role = 'Member';
+      }
+    }
+
+    updateDoc(docRef, firestoreUpdates).catch(err => {
       errorEmitter.emit('permission-error', new FirestorePermissionError({ path: docRef.path, operation: 'update' }));
     });
+
+    // Also update the parent team members map for authorization sync
+    if (firestoreUpdates.role) {
+      updateDoc(doc(db, 'teams', activeTeam.id), {
+        [`members.${id}`]: firestoreUpdates.role
+      });
+      // Also update the membership document's own members map
+      updateDoc(docRef, {
+        [`members.${id}`]: firestoreUpdates.role
+      });
+    }
   };
 
   const createChat = async (name: string, memberIds: string[]) => {
@@ -521,6 +543,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       role: 'Admin',
       position: organizerPosition || 'Coach',
       name: userProfile?.name || 'Organizer',
+      avatar: userProfile?.avatar || `https://picsum.photos/seed/${firebaseUser.uid}/150/150`,
       joinedAt: new Date().toISOString(),
       members: membersMap
     });
@@ -528,7 +551,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     setActiveTeam({ id: teamId, name, code: teamCode, membersMap });
   };
 
-  const joinTeamWithCode = async (code: string): Promise<boolean> => {
+  const joinTeamWithCode = async (code: string, position: string): Promise<boolean> => {
     if (!firebaseUser || !userProfile) return false;
     
     const teamsRef = collection(db, 'teams');
@@ -551,7 +574,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       userId: firebaseUser.uid,
       teamId: teamId,
       role: 'Member',
-      position: 'Player',
+      position: position || 'Player',
       name: userProfile.name,
       avatar: userProfile.avatar,
       joinedAt: new Date().toISOString(),
@@ -563,13 +586,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const inviteMember = async (name: string, email: string, position: MemberPosition) => {
     if (!activeTeam) return;
-    // In a real app, this would trigger a Cloud Function to send an email.
-    // For this prototype, we log it and provide a testable link.
-    const inviteLink = `${window.location.origin}/signup?code=${activeTeam.code}`;
     console.log(`[PROTOTYPE INVITE] To: ${name} (${email})`);
-    console.log(`[PROTOTYPE INVITE] Message: Join ${activeTeam.name} on The Squad!`);
     console.log(`[PROTOTYPE INVITE] Team Code: ${activeTeam.code}`);
-    console.log(`[PROTOTYPE INVITE] Join Link: ${inviteLink}`);
   };
 
   return (
