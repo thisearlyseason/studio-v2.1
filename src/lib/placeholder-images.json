@@ -3,13 +3,13 @@
     {
       "id": "brand-logo-dark",
       "description": "THE SQUAD. Official Brand Logo (Black version for light backgrounds)",
-      "imageUrl": "https://images.unsplash.com/photo-1629238506147-0c0fc62f2dce?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxibGFjayUyMGxvZ298ZW58MHx8fHwxNzcyMjA3MTI1fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://placehold.co/400x120/000000/FFFFFF/png?text=THE+SQUAD",
       "imageHint": "black logo"
     },
     {
       "id": "brand-logo-light",
       "description": "THE SQUAD. Official Brand Logo (White version for dark backgrounds)",
-      "imageUrl": "https://images.unsplash.com/photo-1705904506582-6552c35a2dc4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHx3aGl0ZSUyMGxvZ298ZW58MHx8fHwxNzcyMjA3MTI1fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://placehold.co/400x120/FFFFFF/000000/png?text=THE+SQUAD",
       "imageHint": "white logo"
     },
     {
@@ -27,7 +27,7 @@
     {
       "id": "empty-state",
       "description": "Modern empty state illustration",
-      "imageUrl": "https://images.unsplash.com/photo-1762014270399-f1e1c0a895cc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxhYnN0cmFjdCUyMGNvbW11bmljYXRpb258ZW58MHx8fHwxNzcyMTkzMzE2fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1762014270399-f1e1c0a895cc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxhYnN0culjdCUyMGNvbW11bmljYXRpb258ZW58MHx8fHwxNzcyMTkzMzE2fDA&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "abstract communication"
     },
     {

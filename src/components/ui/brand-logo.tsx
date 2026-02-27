@@ -18,20 +18,23 @@ export function BrandLogo({ variant, className, priority }: BrandLogoProps) {
   const isDarkBg = variant === 'dark-background';
   
   // Retrieve logo data from central placeholder repository
+  // 'brand-logo-light' is the white version for dark backgrounds
+  // 'brand-logo-dark' is the black version for light backgrounds
   const logoId = isDarkBg ? 'brand-logo-light' : 'brand-logo-dark';
   const logoData = PlaceHolderImages.find(img => img.id === logoId);
 
   if (!logoData) {
-    return <span className="font-black text-xl tracking-tighter">THE SQUAD.</span>;
+    return <span className={cn("font-black text-xl tracking-tighter uppercase", className)}>THE SQUAD.</span>;
   }
 
   return (
-    <div className={cn("relative overflow-hidden", className)}>
+    <div className={cn("relative", className)}>
       <Image
         src={logoData.imageUrl}
         alt="THE SQUAD."
-        fill
-        className="object-contain"
+        width={400}
+        height={120}
+        className="object-contain w-full h-full"
         data-ai-hint={logoData.imageHint}
         priority={priority}
       />
