@@ -1,0 +1,251 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * SquadForge Security Rules
+     * 
+     * PHILOSOPHY:
+     * This ruleset implements a robust, denormalization-heavy security model designed for performance 
+     * and "Authorization Independence." The core mechanism relies on a 'members' map (mapping UIDs 
+     * to roles) that is denormalized from the Team document into every related subcollection 
+     * document (posts, events, chats, etc.). This allows for atomic authorization checks 
+     * without the latency of cross-document lookups (get() calls).
+     * 
+     * DATA STRUCTURE:
+     * - /users/{userId}: Private user profiles, strictly owner-accessed.
+     * - /teams/{teamId}: Team metadata containing the master 'members' map.
+     * - /teams/{teamId}/...: Nested collections for team activity (feed, events, chats, etc.).
+     * 
+     * KEY SECURITY DECISIONS:
+     * 1. Authorization Independence: Every team-related document contains the authorization 
+     *    context (the members map) needed to secure itself.
+     * 2. Role-Based Access: Logic differentiates between 'Admin' and 'Member' roles stored 
+     *    within the denormalized maps.
+     * 3. Ownership: Individual documents (posts, comments, RSVPs) are further secured by 
+     *    authorId or userId fields to allow personal management.
+     * 4. Relational Integrity: On creation, we enforce that the document's internal 
+     *    relational fields (like creatorId or authorId) match the authenticated user.
+     */
+
+    // --- Helper Functions ---
+
+    /** Checks if the request is from an authenticated user. */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /** Checks if the authenticated user's UID matches the provided userId. */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /** Checks if the user is an owner of an existing document. */
+    function isExistingOwner(userId) {
+      return resource != null && isOwner(userId);
+    }
+
+    /** 
+     * Checks if the user is a member of the team based on denormalized data on the document.
+     * Used for 'resource' (existing data).
+     */
+    function isTeamMember(data) {
+      return isSignedIn() && data.members[request.auth.uid] != null;
+    }
+
+    /** 
+     * Checks if the user is a member of the team based on denormalized data on the document.
+     * Used for 'request.resource' (incoming data on create/update).
+     */
+    function isIncomingTeamMember(data) {
+      return isSignedIn() && data.members[request.auth.uid] != null;
+    }
+
+    /** Checks if the user has the 'Admin' role in the denormalized members map. */
+    function isTeamAdmin(data) {
+      return isSignedIn() && data.members[request.auth.uid] == 'Admin';
+    }
+
+    /** Checks if a field is being modified during an update. */
+    function isUnchanged(field) {
+      return request.resource.data[field] == resource.data[field];
+    }
+
+    // --- Collection Rules ---
+
+    /**
+     * @description Rules for the User profile.
+     * @path /users/{userId}
+     * @allow (get, list, create, update) if the user is the owner.
+     * @deny (delete) always, user accounts should be deactivated or handled by admin.
+     * @principle Ownership.
+     */
+    match /users/{userId} {
+      allow get, list: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if false;
+
+      /**
+       * @description Records of chats hidden by a specific user.
+       * @path /users/{userId}/hiddenChats/{chatId}
+       * @allow (all) if the user is the owner.
+       * @principle Ownership.
+       */
+      match /hiddenChats/{chatId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && request.resource.data.userId == userId;
+        allow update: if isExistingOwner(userId) && isUnchanged('userId');
+        allow delete: if isExistingOwner(userId);
+      }
+    }
+
+    /**
+     * @description Core Team metadata and the source of truth for membership.
+     * @path /teams/{teamId}
+     * @allow (read) if the user is a member of the team.
+     * @allow (create) if the user is signed in (they become the initial admin).
+     * @allow (update, delete) if the user is a Team Admin.
+     * @principle Shared Access (Roles).
+     */
+    match /teams/{teamId} {
+      allow get, list: if isTeamMember(resource.data);
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
+      allow update: if resource != null && isTeamAdmin(resource.data);
+      allow delete: if resource != null && isTeamAdmin(resource.data);
+
+      /**
+       * @description Individual membership records.
+       * @path /teams/{teamId}/members/{userId}
+       * @allow (read) if the user is a member of the team.
+       * @allow (write) if the user is a Team Admin.
+       * @principle Shared Access (Roles).
+       */
+      match /members/{userId} {
+        // We use get() on the parent Team doc here because membership docs don't yet contain the full map.
+        // This is the one exception to Authorization Independence to allow bootstrapping.
+        allow get, list: if isSignedIn() && get(/databases/$(database)/documents/teams/$(teamId)).data.members[request.auth.uid] != null;
+        allow create, update, delete: if isSignedIn() && get(/databases/$(database)/documents/teams/$(teamId)).data.members[request.auth.uid] == 'Admin';
+      }
+
+      /**
+       * @description Activity feed posts for a team.
+       * @path /teams/{teamId}/feedPosts/{postId}
+       * @allow (read) if member. (create) if member. (update, delete) if admin or author.
+       * @principle Shared Access (Closed Collaborators) & Ownership.
+       */
+      match /feedPosts/{postId} {
+        allow get, list: if isTeamMember(resource.data);
+        allow create: if isIncomingTeamMember(request.resource.data) && request.resource.data.authorId == request.auth.uid;
+        allow update: if resource != null && (isTeamAdmin(resource.data) || isOwner(resource.data.authorId));
+        allow delete: if resource != null && (isTeamAdmin(resource.data) || isOwner(resource.data.authorId));
+
+        /**
+         * @description Comments on a feed post.
+         * @path /teams/{teamId}/feedPosts/{postId}/comments/{commentId}
+         * @principle Shared Access (Closed Collaborators) & Ownership.
+         */
+        match /comments/{commentId} {
+          allow get, list: if isTeamMember(resource.data);
+          allow create: if isIncomingTeamMember(request.resource.data) && request.resource.data.authorId == request.auth.uid;
+          allow update: if resource != null && (isTeamAdmin(resource.data) || isOwner(resource.data.authorId));
+          allow delete: if resource != null && (isTeamAdmin(resource.data) || isOwner(resource.data.authorId));
+        }
+      }
+
+      /**
+       * @description Team events.
+       * @path /teams/{teamId}/events/{eventId}
+       * @allow (read) member. (write) admin only.
+       * @principle Shared Access (Roles).
+       */
+      match /events/{eventId} {
+        allow get, list: if isTeamMember(resource.data);
+        allow create: if isIncomingTeamMember(request.resource.data) && isTeamAdmin(request.resource.data);
+        allow update: if resource != null && isTeamAdmin(resource.data);
+        allow delete: if resource != null && isTeamAdmin(resource.data);
+
+        /**
+         * @description User RSVPs for specific events.
+         * @path /teams/{teamId}/events/{eventId}/rsvps/{userId}
+         * @principle Shared Access (Closed Collaborators) & Ownership.
+         */
+        match /rsvps/{userId} {
+          allow get, list: if isTeamMember(resource.data);
+          allow create: if isIncomingTeamMember(request.resource.data) && isOwner(userId);
+          allow update: if isExistingOwner(userId) && isUnchanged('userId');
+          allow delete: if isExistingOwner(userId);
+        }
+      }
+
+      /**
+       * @description Personal unavailability records for a team.
+       * @path /teams/{teamId}/userAvailability/{availabilityId}
+       * @principle Shared Access (Closed Collaborators) & Ownership.
+       */
+      match /userAvailability/{availabilityId} {
+        allow get, list: if isTeamMember(resource.data);
+        allow create: if isIncomingTeamMember(request.resource.data) && request.resource.data.userId == request.auth.uid;
+        allow update: if resource != null && isOwner(resource.data.userId) && isUnchanged('userId');
+        allow delete: if resource != null && isOwner(resource.data.userId);
+      }
+
+      /**
+       * @description Files shared within a team.
+       * @path /teams/{teamId}/files/{fileId}
+       * @principle Shared Access (Closed Collaborators).
+       */
+      match /files/{fileId} {
+        allow get, list: if isTeamMember(resource.data);
+        allow create: if isIncomingTeamMember(request.resource.data) && request.resource.data.uploadedBy == request.auth.uid;
+        allow update: if resource != null && (isTeamAdmin(resource.data) || isOwner(resource.data.uploadedBy));
+        allow delete: if resource != null && (isTeamAdmin(resource.data) || isOwner(resource.data.uploadedBy));
+      }
+
+      /**
+       * @description Group chat management within a team.
+       * @path /teams/{teamId}/groupChats/{chatId}
+       * @principle Shared Access (Closed Collaborators).
+       */
+      match /groupChats/{chatId} {
+        allow get, list: if isTeamMember(resource.data);
+        allow create: if isIncomingTeamMember(request.resource.data);
+        allow update: if resource != null && isTeamAdmin(resource.data);
+        allow delete: if resource != null && isTeamAdmin(resource.data);
+
+        /**
+         * @description Messages within a group chat.
+         * @path /teams/{teamId}/groupChats/{chatId}/messages/{messageId}
+         */
+        match /messages/{messageId} {
+          allow get, list: if isTeamMember(resource.data);
+          allow create: if isIncomingTeamMember(request.resource.data) && request.resource.data.authorId == request.auth.uid;
+          allow update: if resource != null && isOwner(resource.data.authorId);
+          allow delete: if resource != null && (isTeamAdmin(resource.data) || isOwner(resource.data.authorId));
+        }
+
+        /**
+         * @description Polls within a group chat.
+         * @path /teams/{teamId}/groupChats/{chatId}/polls/{pollId}
+         */
+        match /polls/{pollId} {
+          allow get, list: if isTeamMember(resource.data);
+          allow create: if isIncomingTeamMember(request.resource.data) && request.resource.data.createdBy == request.auth.uid;
+          allow update: if resource != null && (isTeamAdmin(resource.data) || isOwner(resource.data.createdBy));
+          allow delete: if resource != null && (isTeamAdmin(resource.data) || isOwner(resource.data.createdBy));
+
+          /**
+           * @description User votes on polls.
+           * @path /teams/{teamId}/groupChats/{chatId}/polls/{pollId}/votes/{userId}
+           */
+          match /votes/{userId} {
+            allow get, list: if isTeamMember(resource.data);
+            allow create: if isIncomingTeamMember(request.resource.data) && isOwner(userId);
+            allow update: if isExistingOwner(userId) && isUnchanged('userId');
+            allow delete: if isExistingOwner(userId);
+          }
+        }
+      }
+    }
+  }
+}
