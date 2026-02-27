@@ -25,13 +25,16 @@ import {
   DialogFooter
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function RosterPage() {
-  const { activeTeam, members, updateMember } = useTeam();
+  const { activeTeam, members, updateMember, inviteMember } = useTeam();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
-  const [editingMember, setEditingMember] = useState<any>(null);
+  const [inviteName, setInviteName] = useState('');
+  const [invitePosition, setInvitePosition] = useState('Player');
   
+  const [editingMember, setEditingMember] = useState<any>(null);
   const [editForm, setEditForm] = useState({ position: '', jersey: '' });
 
   const teamRoster = members.filter(member => member.teamId === activeTeam.id);
@@ -56,6 +59,15 @@ export default function RosterPage() {
     }
   };
 
+  const handleSendInvite = () => {
+    if (inviteName.trim()) {
+      inviteMember(inviteName, invitePosition);
+      setIsInviteOpen(false);
+      setInviteName('');
+      setInvitePosition('Player');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4">
@@ -72,7 +84,7 @@ export default function RosterPage() {
               <DialogHeader>
                 <DialogTitle>Invite to {activeTeam.name}</DialogTitle>
                 <DialogDescription>
-                  Share the team code or send an email invitation.
+                  Add a new member and select their primary role.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -81,12 +93,29 @@ export default function RosterPage() {
                   <p className="text-3xl font-black text-primary tracking-widest">{activeTeam.code}</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Email Address</Label>
-                  <Input placeholder="teammate@example.com" />
+                  <Label>Name</Label>
+                  <Input 
+                    placeholder="Teammate Name" 
+                    value={inviteName} 
+                    onChange={(e) => setInviteName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role Selection</Label>
+                  <Select value={invitePosition} onValueChange={setInvitePosition}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select role..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Player">Player</SelectItem>
+                      <SelectItem value="Parent">Parent</SelectItem>
+                      <SelectItem value="Coach">Coach</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <DialogFooter>
-                <Button className="w-full" onClick={() => setIsInviteOpen(false)}>Send Invitation</Button>
+                <Button className="w-full" onClick={handleSendInvite} disabled={!inviteName.trim()}>Send Invitation</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -123,7 +152,7 @@ export default function RosterPage() {
                 <div className="flex items-center gap-2 mb-0.5">
                   <h3 className="font-bold truncate">{member.name}</h3>
                   <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4 border-primary/20 text-primary font-bold">
-                    #{member.jersey}
+                    {member.jersey !== 'PAR' && member.jersey !== 'TBD' ? `#${member.jersey}` : member.jersey}
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground font-medium">{member.position}</p>
@@ -162,11 +191,23 @@ export default function RosterPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Position</Label>
-              <Input 
+              <Label>Position / Role</Label>
+              <Select 
                 value={editForm.position} 
-                onChange={(e) => setEditForm(prev => ({ ...prev, position: e.target.value }))}
-              />
+                onValueChange={(v) => setEditForm(prev => ({ ...prev, position: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select position..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Coach">Coach</SelectItem>
+                  <SelectItem value="Team Lead">Team Lead</SelectItem>
+                  <SelectItem value="Assistant Coach">Assistant Coach</SelectItem>
+                  <SelectItem value="Squad Leader">Squad Leader</SelectItem>
+                  <SelectItem value="Player">Player</SelectItem>
+                  <SelectItem value="Parent">Parent</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Jersey #</Label>

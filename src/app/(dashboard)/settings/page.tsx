@@ -9,6 +9,13 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select';
+import { 
   Bell, 
   Lock, 
   LogOut, 
@@ -29,16 +36,19 @@ import { useTeam } from '@/components/providers/team-provider';
 import { toast } from '@/hooks/use-toast';
 
 export default function SettingsPage() {
-  const { user, updateUser } = useTeam();
+  const { user, updateUser, members, activeTeam, updateMember } = useTeam();
   const [notifications, setNotifications] = useState(true);
   const [isEditOpen, setIsEditOpen] = useState(false);
   
+  const currentMember = members.find(m => m.id === 'me_id' && m.teamId === activeTeam.id);
+
   // Form state
   const [editForm, setEditForm] = useState({
     name: user.name,
     email: user.email,
     phone: user.phone,
-    password: ''
+    password: '',
+    position: currentMember?.position || ''
   });
 
   const handleSaveProfile = () => {
@@ -47,6 +57,13 @@ export default function SettingsPage() {
       email: editForm.email,
       phone: editForm.phone
     });
+    
+    if (currentMember) {
+      updateMember(currentMember.id, {
+        position: editForm.position
+      });
+    }
+
     setIsEditOpen(false);
     toast({
       title: "Profile Updated",
@@ -74,8 +91,8 @@ export default function SettingsPage() {
             </div>
             <div className="text-center">
               <h2 className="text-xl font-bold">{user.name}</h2>
-              <p className="text-sm text-muted-foreground">{user.email}</p>
-              {user.phone && <p className="text-[10px] text-muted-foreground mt-1">{user.phone}</p>}
+              <p className="text-sm text-muted-foreground">{currentMember?.position || 'Team Member'}</p>
+              <p className="text-xs text-muted-foreground">{user.email}</p>
             </div>
             
             <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -96,6 +113,25 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label>Position / Role</Label>
+                    <Select 
+                      value={editForm.position} 
+                      onValueChange={(v) => setEditForm(prev => ({ ...prev, position: v }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select position..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Coach">Coach</SelectItem>
+                        <SelectItem value="Team Lead">Team Lead</SelectItem>
+                        <SelectItem value="Assistant Coach">Assistant Coach</SelectItem>
+                        <SelectItem value="Squad Leader">Squad Leader</SelectItem>
+                        <SelectItem value="Player">Player</SelectItem>
+                        <SelectItem value="Parent">Parent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
                     <Label>Email</Label>
                     <Input 
                       type="email"
@@ -108,15 +144,6 @@ export default function SettingsPage() {
                     <Input 
                       value={editForm.phone} 
                       onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))} 
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Change Password</Label>
-                    <Input 
-                      type="password"
-                      placeholder="Enter new password"
-                      value={editForm.password} 
-                      onChange={e => setEditForm(prev => ({ ...prev, password: e.target.value }))} 
                     />
                   </div>
                 </div>

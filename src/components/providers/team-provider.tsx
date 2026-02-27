@@ -16,12 +16,14 @@ export type Team = {
   code: string;
 };
 
+export type MemberPosition = 'Coach' | 'Team Lead' | 'Assistant Coach' | 'Squad Leader' | 'Player' | 'Parent' | string;
+
 export type Member = {
   id: string;
   teamId: string;
   name: string;
   role: 'Admin' | 'Member';
-  position: string;
+  position: MemberPosition;
   jersey: string;
   avatar: string;
 };
@@ -110,11 +112,11 @@ const MOCK_TEAMS: Team[] = [
 ];
 
 const INITIAL_MEMBERS: Member[] = [
-  { id: '1', teamId: '1', name: 'James Miller', role: 'Admin', position: 'Head Coach', jersey: 'COACH', avatar: 'https://picsum.photos/seed/coach/150/150' },
-  { id: '2', teamId: '1', name: 'Alex Smith', role: 'Member', position: 'Striker', jersey: '10', avatar: 'https://picsum.photos/seed/alex/150/150' },
-  { id: '3', teamId: '1', name: 'Sarah Connor', role: 'Member', position: 'Midfield', jersey: '08', avatar: 'https://picsum.photos/seed/sarah/150/150' },
-  { id: '4', teamId: '2', name: 'Mike Ross', role: 'Member', position: 'Point Guard', jersey: '04', avatar: 'https://picsum.photos/seed/mike/150/150' },
-  { id: '5', teamId: '2', name: 'Donna Paulsen', role: 'Admin', position: 'Manager', jersey: 'MGR', avatar: 'https://picsum.photos/seed/donna/150/150' },
+  { id: 'me_id', teamId: '1', name: 'James Miller', role: 'Admin', position: 'Coach', jersey: 'COACH', avatar: 'https://picsum.photos/seed/me/150/150' },
+  { id: '2', teamId: '1', name: 'Alex Smith', role: 'Member', position: 'Player', jersey: '10', avatar: 'https://picsum.photos/seed/alex/150/150' },
+  { id: '3', teamId: '1', name: 'Sarah Connor', role: 'Member', position: 'Parent', jersey: '08', avatar: 'https://picsum.photos/seed/sarah/150/150' },
+  { id: '4', teamId: '2', name: 'Mike Ross', role: 'Member', position: 'Player', jersey: '04', avatar: 'https://picsum.photos/seed/mike/150/150' },
+  { id: '5', teamId: '2', name: 'Donna Paulsen', role: 'Admin', position: 'Team Lead', jersey: 'MGR', avatar: 'https://picsum.photos/seed/donna/150/150' },
 ];
 
 interface TeamContextType {
@@ -137,6 +139,8 @@ interface TeamContextType {
   updateRSVP: (eventId: string, status: RSVPStatus) => void;
   files: TeamFile[];
   addFile: (name: string, type: string, size: string) => void;
+  createNewTeam: (name: string, organizerPosition: string) => void;
+  inviteMember: (name: string, position: MemberPosition) => void;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -149,6 +153,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     avatar: 'https://picsum.photos/seed/me/150/150'
   });
   
+  const [teams, setTeams] = useState<Team[]>(MOCK_TEAMS);
   const [activeTeam, setActiveTeam] = useState<Team>(MOCK_TEAMS[0]);
   const [members, setMembers] = useState<Member[]>(INITIAL_MEMBERS);
   const [chats, setChats] = useState<Chat[]>([]);
@@ -206,13 +211,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
     if (chats.length === 0) {
       setChats([
-        { id: 'c1', teamId: '1', name: 'General Discussion', memberIds: ['1', '2', '3'], lastMessage: 'Training tomorrow is at 7am sharp!', time: '2m ago', unread: 3 }
+        { id: 'c1', teamId: '1', name: 'General Discussion', memberIds: ['me_id', '2', '3'], lastMessage: 'Training tomorrow is at 7am sharp!', time: '2m ago', unread: 3 }
       ]);
     }
   }, []);
 
   const updateUser = (updates: Partial<UserProfile>) => {
     setUser(prev => ({ ...prev, ...updates }));
+    // Also update current member name for "Me"
+    setMembers(prev => prev.map(m => m.id === 'me_id' ? { ...m, name: updates.name || m.name } : m));
   };
 
   const updateMember = (id: string, updates: Partial<Member>) => {
@@ -225,7 +232,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       id,
       teamId: activeTeam.id,
       name,
-      memberIds,
+      memberIds: ['me_id', ...memberIds],
       time: 'Just now',
       unread: 0
     };
@@ -309,13 +316,49 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     setFiles(prev => [newFile, ...prev]);
   };
 
+  const createNewTeam = (name: string, organizerPosition: string) => {
+    const id = `team_${Date.now()}`;
+    const newTeam: Team = {
+      id,
+      name,
+      code: Math.random().toString(36).substring(2, 8).toUpperCase()
+    };
+    setTeams(prev => [...prev, newTeam]);
+    
+    // Add organizer as admin member
+    const newMember: Member = {
+      id: 'me_id',
+      teamId: id,
+      name: user.name,
+      role: 'Admin',
+      position: organizerPosition || 'Coach',
+      jersey: 'COACH',
+      avatar: user.avatar
+    };
+    setMembers(prev => [...prev, newMember]);
+    setActiveTeam(newTeam);
+  };
+
+  const inviteMember = (name: string, position: MemberPosition) => {
+    const newMember: Member = {
+      id: `mem_${Date.now()}`,
+      teamId: activeTeam.id,
+      name,
+      role: 'Member',
+      position,
+      jersey: position === 'Parent' ? 'PAR' : 'TBD',
+      avatar: `https://picsum.photos/seed/${name}/150/150`
+    };
+    setMembers(prev => [...prev, newMember]);
+  };
+
   return (
     <TeamContext.Provider value={{ 
       user,
       updateUser,
       activeTeam, 
       setActiveTeam, 
-      teams: MOCK_TEAMS, 
+      teams, 
       members, 
       updateMember,
       chats,
@@ -329,7 +372,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       addEvent,
       updateRSVP,
       files,
-      addFile
+      addFile,
+      createNewTeam,
+      inviteMember
     }}>
       {children}
     </TeamContext.Provider>
