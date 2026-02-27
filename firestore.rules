@@ -6,6 +6,7 @@ service cloud.firestore {
     /**
      * SquadForge Security Rules
      * Updated to support denormalized members map for performant authorization.
+     * Includes robust null checks to prevent rule evaluation errors during list operations.
      */
 
     function isSignedIn() {
@@ -21,15 +22,24 @@ service cloud.firestore {
     }
 
     function isTeamMember(data) {
-      return isSignedIn() && (data.members[request.auth.uid] == 'Admin' || data.members[request.auth.uid] == 'Member');
+      return isSignedIn() && 
+             data != null && 
+             'members' in data && 
+             (data.members[request.auth.uid] == 'Admin' || data.members[request.auth.uid] == 'Member');
     }
 
     function isIncomingTeamMember(data) {
-      return isSignedIn() && (data.members[request.auth.uid] == 'Admin' || data.members[request.auth.uid] == 'Member');
+      return isSignedIn() && 
+             data != null && 
+             'members' in data && 
+             (data.members[request.auth.uid] == 'Admin' || data.members[request.auth.uid] == 'Member');
     }
 
     function isTeamAdmin(data) {
-      return isSignedIn() && data.members[request.auth.uid] == 'Admin';
+      return isSignedIn() && 
+             data != null && 
+             'members' in data && 
+             data.members[request.auth.uid] == 'Admin';
     }
 
     // --- Collection Rules ---
