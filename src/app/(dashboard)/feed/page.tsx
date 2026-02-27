@@ -93,7 +93,7 @@ export default function FeedPage() {
     );
   }
 
-  const isAdmin = activeTeam.membersMap?.[user?.id || ''] === 'Admin';
+  const isAdmin = activeTeam.role === 'Admin';
 
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {

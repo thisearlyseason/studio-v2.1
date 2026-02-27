@@ -494,7 +494,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addMessage = (chatId: string, author: string, content: string, type: 'text' | 'poll' | 'image', imageUrl?: string, poll?: any) => {
     if (!activeTeam || !firebaseUser) return;
     addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'groupChats', chatId, 'messages'), {
-      chatId, author, authorId: firebaseUser.uid, content, type, imageUrl, poll, createdAt: new Date().toISOString()
+      chatId, author, authorId: firebaseUser.uid, content, type, imageUrl: imageUrl || null, poll: poll || null, createdAt: new Date().toISOString()
     });
   };
 
@@ -519,8 +519,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addPost = (content: string, imageUrl?: string, type: 'user' | 'system' = 'user', systemData?: any) => {
     if (!activeTeam || !firebaseUser) return;
     addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts'), {
-      teamId: activeTeam.id, content, imageUrl, type, systemData, authorId: firebaseUser.uid,
-      author: { name: userProfile?.name || 'Anonymous', avatar: userProfile?.avatar || '' }, createdAt: new Date().toISOString(), likes: []
+      teamId: activeTeam.id, 
+      content, 
+      imageUrl: imageUrl || null, 
+      type, 
+      systemData: systemData || null, 
+      authorId: firebaseUser.uid,
+      author: { 
+        name: userProfile?.name || firebaseUser.displayName || 'Anonymous', 
+        avatar: userProfile?.avatar || firebaseUser.photoURL || '' 
+      }, 
+      createdAt: new Date().toISOString(), 
+      likes: []
     });
   };
 
@@ -532,7 +542,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addComment = (postId: string, content: string, imageUrl?: string) => {
     if (!activeTeam || !firebaseUser) return;
     addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts', postId, 'comments'), {
-      postId, content, imageUrl, authorId: firebaseUser.uid, authorName: userProfile?.name || 'Anonymous', createdAt: new Date().toISOString()
+      postId, content, imageUrl: imageUrl || null, authorId: firebaseUser.uid, authorName: userProfile?.name || firebaseUser.displayName || 'Anonymous', createdAt: new Date().toISOString()
     });
   };
 
@@ -556,21 +566,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const addEvent = async (eventData: Omit<TeamEvent, 'id' | 'teamId' | 'rsvps'>) => {
     if (!activeTeam || !firebaseUser) return;
-    
-    // Safety check for date validity
     const eventDate = eventData.date instanceof Date ? eventData.date : new Date(eventData.date);
-    if (isNaN(eventDate.getTime())) {
-      console.error("Invalid event date provided to addEvent");
-      return;
-    }
-
+    if (isNaN(eventDate.getTime())) return;
     addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'events'), {
-      ...eventData, 
-      teamId: activeTeam.id, 
-      date: eventDate.toISOString(), 
-      createdBy: firebaseUser.uid, 
-      createdAt: new Date().toISOString(), 
-      userRsvps: { [firebaseUser.uid]: 'going' }
+      ...eventData, teamId: activeTeam.id, date: eventDate.toISOString(), createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), userRsvps: { [firebaseUser.uid]: 'going' }
     });
   };
 
@@ -584,14 +583,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const eventRef = doc(db, 'teams', teamId, 'events', eventId);
       const eventSnap = await getDoc(eventRef);
       if (!eventSnap.exists()) return false;
-      
       const regsRef = collection(db, 'teams', teamId, 'events', eventId, 'registrations');
       await addDoc(regsRef, { ...data, createdAt: new Date().toISOString(), status: 'pending' });
       return true;
-    } catch (e) { 
-      console.error("Registration failed", e);
-      return false; 
-    }
+    } catch (e) { return false; }
   };
 
   const promoteToRoster = async (teamId: string, eventId: string, reg: EventRegistration) => {
@@ -616,7 +611,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addFile = (name: string, type: string, size: string, url: string) => {
     if (!activeTeam || !firebaseUser) return;
     addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), {
-      teamId: activeTeam.id, fileName: name, fileType: type, fileSize: size, fileUrl: url, uploaderName: userProfile?.name || 'Unknown', uploadedBy: firebaseUser.uid, createdAt: new Date().toISOString()
+      teamId: activeTeam.id, fileName: name, fileType: type, fileSize: size, fileUrl: url, uploaderName: userProfile?.name || firebaseUser.displayName || 'Unknown', uploadedBy: firebaseUser.uid, createdAt: new Date().toISOString()
     });
   };
 
@@ -650,7 +645,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const teamCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     const batch = writeBatch(db);
     batch.set(doc(db, 'teams', teamId), { id: teamId, teamName: name, teamCode, createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), members: { [firebaseUser.uid]: 'Admin' }, isPro: false });
-    batch.set(doc(db, 'teams', teamId, 'members', firebaseUser.uid), { userId: firebaseUser.uid, teamId, role: 'Admin', position: organizerPosition || 'Coach', name: userProfile?.name || 'Organizer', avatar: userProfile?.avatar || '', joinedAt: new Date().toISOString() });
+    batch.set(doc(db, 'teams', teamId, 'members', firebaseUser.uid), { userId: firebaseUser.uid, teamId, role: 'Admin', position: organizerPosition || 'Coach', name: userProfile?.name || firebaseUser.displayName || 'Organizer', avatar: userProfile?.avatar || firebaseUser.photoURL || '', joinedAt: new Date().toISOString() });
     batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', teamId), { userId: firebaseUser.uid, teamId, teamName: name, teamCode, role: 'Admin', isPro: false, joinedAt: new Date().toISOString() });
     await batch.commit();
     setActiveTeam({ id: teamId, name, code: teamCode, role: 'Admin', isPro: false });
@@ -671,7 +666,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
-  const inviteMember = async (name: string, email: string, position: MemberPosition) => { console.log(`Invite to ${activeTeam?.name}: ${name}`); };
+  const inviteMember = async (name: string, email: string, position: MemberPosition) => { console.log(`Invite: ${name}`); };
 
   return (
     <TeamContext.Provider value={{ 
