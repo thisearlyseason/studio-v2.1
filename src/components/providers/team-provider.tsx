@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
@@ -41,6 +42,7 @@ export type Team = {
   contactPhone?: string;
   membersMap?: Record<string, string>;
   isPro?: boolean;
+  role?: 'Admin' | 'Member'; // Added role to the team object for UI checks
 };
 
 export type MemberPosition = 'Coach' | 'Team Lead' | 'Assistant Coach' | 'Squad Leader' | 'Player' | 'Parent' | string;
@@ -294,7 +296,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         contactEmail: t.contactEmail,
         contactPhone: t.contactPhone,
         membersMap: t.members,
-        isPro: t.isPro || false
+        isPro: t.isPro || false,
+        role: 'Admin'
       })));
     } else {
       // Map denormalized memberships to Team objects
@@ -304,7 +307,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         code: m.teamCode,
         sport: m.sport,
         teamLogoUrl: m.teamLogoUrl,
-        isPro: m.isPro || false
+        isPro: m.isPro || false,
+        role: m.role || 'Member'
       })));
     }
   }, [teamsRawData, isSuperAdmin]);
@@ -315,8 +319,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         setActiveTeam(teams[0]);
       } else {
         const updated = teams.find(t => t.id === activeTeam.id);
-        if (updated && (JSON.stringify(updated) !== JSON.stringify(activeTeam))) {
-          setActiveTeam(updated);
+        if (updated) {
+          // Robust comparison to prevent render loops
+          const hasChanged = 
+            updated.name !== activeTeam.name || 
+            updated.teamLogoUrl !== activeTeam.teamLogoUrl || 
+            updated.role !== activeTeam.role ||
+            updated.isPro !== activeTeam.isPro;
+            
+          if (hasChanged) {
+            setActiveTeam(updated);
+          }
         }
       }
     }
@@ -528,9 +541,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   };
 
   const updateTeamHero = async (url: string) => {
-    if (!activeTeam) return;
+    if (!activeTeam || !firebaseUser) return;
     const docRef = doc(db, 'teams', activeTeam.id);
     updateDocumentNonBlocking(docRef, { heroImageUrl: url });
+    
+    // Denormalized update for the current user's membership view
+    const membershipRef = doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id);
+    updateDocumentNonBlocking(membershipRef, { heroImageUrl: url });
   };
 
   const updateTeamDetails = async (updates: Partial<Team>) => {
@@ -543,9 +560,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (updates.contactEmail) firestoreUpdates.contactEmail = updates.contactEmail;
     if (updates.contactPhone) firestoreUpdates.contactPhone = updates.contactPhone;
 
-    updateDocumentNonBlocking(docRef, firestoreUpdates);
+    if (Object.keys(firestoreUpdates).length > 0) {
+      updateDocumentNonBlocking(docRef, firestoreUpdates);
+    }
 
-    // Also update denormalized info in membership
+    // Also update denormalized info in membership for the current user
     const membershipRef = doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id);
     const membershipUpdates: any = {};
     if (updates.name) membershipUpdates.teamName = updates.name;
@@ -894,7 +913,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
 
     await batch.commit();
-    setActiveTeam({ id: teamId, name, code: teamCode, membersMap, isPro: false });
+    setActiveTeam({ id: teamId, name, code: teamCode, membersMap, isPro: false, role: 'Admin' });
   };
 
   const joinTeamWithCode = async (code: string, position: string): Promise<boolean> => {

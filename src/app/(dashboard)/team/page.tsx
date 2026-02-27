@@ -73,7 +73,8 @@ export default function TeamProfilePage() {
     );
   }
 
-  const isAdmin = activeTeam.membersMap?.[user?.id || ''] === 'Admin';
+  // Simplified and robust Admin check
+  const isAdmin = activeTeam.role === 'Admin' || (activeTeam.membersMap?.[user?.id || ''] === 'Admin');
   
   // Inclusive filter for leadership roles
   const admins = members.filter(m => 
@@ -91,11 +92,13 @@ export default function TeamProfilePage() {
   });
 
   const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
+      reader.onerror = (e) => reject(e);
       reader.onload = (event) => {
         const img = new Image();
+        img.onerror = (e) => reject(e);
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -131,6 +134,7 @@ export default function TeamProfilePage() {
         await updateTeamDetails({ teamLogoUrl: compressed });
         toast({ title: "Logo Updated", description: "Official squad logo synchronized." });
       } catch (error) {
+        console.error("Logo update failed", error);
         toast({ title: "Upload Failed", description: "Could not update logo image.", variant: "destructive" });
       } finally {
         setIsUpdatingLogo(false);
@@ -139,8 +143,12 @@ export default function TeamProfilePage() {
   };
 
   const handleSaveDetails = async () => {
-    await updateTeamDetails(editForm);
-    setIsEditOpen(false);
+    try {
+      await updateTeamDetails(editForm);
+      setIsEditOpen(false);
+    } catch (error) {
+      toast({ title: "Error", description: "Could not save team details.", variant: "destructive" });
+    }
   };
 
   return (
@@ -148,11 +156,15 @@ export default function TeamProfilePage() {
       {/* Header Profile Section */}
       <section className="relative">
         <div className="h-40 sm:h-56 w-full hero-gradient rounded-[2.5rem] shadow-2xl overflow-hidden relative">
-          <img 
-            src={activeTeam.heroImageUrl || "https://picsum.photos/seed/squadhero/1200/400"} 
-            alt="Team Cover" 
-            className="w-full h-full object-cover opacity-30"
-          />
+          {activeTeam.heroImageUrl ? (
+            <img 
+              src={activeTeam.heroImageUrl} 
+              alt="Team Cover" 
+              className="w-full h-full object-cover opacity-30"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-primary/20" />
+          )}
           <div className="absolute inset-0 bg-black/20" />
         </div>
         
@@ -162,7 +174,7 @@ export default function TeamProfilePage() {
             <Avatar className="h-40 w-40 border-[6px] border-background shadow-2xl rounded-3xl transition-transform hover:scale-105 duration-300">
               <AvatarImage src={activeTeam.teamLogoUrl} className="object-cover" />
               <AvatarFallback className="hero-gradient text-white text-4xl font-black rounded-3xl">
-                {activeTeam.name[0]}
+                {activeTeam.name ? activeTeam.name[0] : 'T'}
               </AvatarFallback>
             </Avatar>
             {isAdmin && (
@@ -263,7 +275,7 @@ export default function TeamProfilePage() {
                     <div className="relative">
                       <Avatar className="h-14 w-14 rounded-2xl ring-2 ring-primary/10 border-2 border-background shadow-sm">
                         <AvatarImage src={admin.avatar} className="object-cover" />
-                        <AvatarFallback className="rounded-2xl font-black bg-muted">{admin.name[0]}</AvatarFallback>
+                        <AvatarFallback className="rounded-2xl font-black bg-muted">{admin.name ? admin.name[0] : '?'}</AvatarFallback>
                       </Avatar>
                       <div className="absolute -bottom-1 -right-1 bg-primary text-white p-1 rounded-full shadow-lg border-2 border-background">
                         {admin.position === 'Coach' ? <Star className="h-2 w-2 fill-current" /> : <ShieldCheck className="h-2 w-2" />}
