@@ -32,14 +32,10 @@ export default function LandingPage() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isScrolled, setIsScrolled] = useState(false);
 
-  // Filter for sports images
-  const sportsImages = [
-    "https://picsum.photos/seed/soccer/1920/1080",
-    "https://picsum.photos/seed/basketball/1920/1080",
-    "https://picsum.photos/seed/football/1920/1080",
-    "https://picsum.photos/seed/baseball/1920/1080",
-    "https://picsum.photos/seed/tennis/1920/1080"
-  ];
+  // Filter for requested sports images from the centralized library
+  const sportsImages = PlaceHolderImages
+    .filter(img => img.id.startsWith('sport-'))
+    .map(img => img.imageUrl);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -109,6 +105,7 @@ export default function LandingPage() {
               src={img} 
               alt="Sports Background" 
               className="w-full h-full object-cover scale-105"
+              data-ai-hint="sports background"
             />
             <div className="absolute inset-0 bg-black/60 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
           </div>
