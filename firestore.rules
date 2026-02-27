@@ -17,15 +17,15 @@ service cloud.firestore {
     }
 
     // Helper for checking membership in documents that have a denormalized 'members' map
-    // We use direct indexing which is highly compatible with Firestore's query optimizer.
+    // We use .get() to handle missing maps gracefully and assist the query optimizer.
     function isTeamMember(data) {
       return isSignedIn() && 
-             data.members[request.auth.uid] in ['Admin', 'Member'];
+             data.get('members', {}).get(request.auth.uid, 'none') in ['Admin', 'Member'];
     }
 
     function isTeamAdmin(data) {
       return isSignedIn() && 
-             data.members[request.auth.uid] == 'Admin';
+             data.get('members', {}).get(request.auth.uid, 'none') == 'Admin';
     }
 
     // --- Collection Rules ---
