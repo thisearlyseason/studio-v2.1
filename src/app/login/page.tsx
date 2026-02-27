@@ -70,14 +70,16 @@ export default function LoginPage() {
       
       {/* Logo Header */}
       <div className="relative z-20 mb-8 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-1000">
-        <div className="relative h-16 w-40">
-          <Image 
-            src={brandLogoDark} 
-            alt="The Squad Brand" 
-            fill 
-            className="object-contain drop-shadow-2xl brightness-0 invert"
-            data-ai-hint="brand logo"
-          />
+        <div className="relative h-16 w-48">
+          {brandLogoDark && (
+            <Image 
+              src={brandLogoDark} 
+              alt="The Squad Brand" 
+              fill 
+              className="object-contain drop-shadow-2xl brightness-0 invert"
+              data-ai-hint="brand logo"
+            />
+          )}
         </div>
       </div>
 

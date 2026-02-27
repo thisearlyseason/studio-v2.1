@@ -4,13 +4,13 @@
     {
       "id": "brand-logo-dark",
       "description": "The Squad official brand logo (Black text for light backgrounds)",
-      "imageUrl": "https://placehold.co/400x160/FFFFFF/000000/png?text=THE+SQUAD",
+      "imageUrl": "https://placehold.co/400x160/FFFFFF/000000.png?text=THE+SQUAD",
       "imageHint": "black logo"
     },
     {
       "id": "brand-logo-light",
       "description": "The Squad official brand logo (White text for dark backgrounds)",
-      "imageUrl": "https://placehold.co/400x160/000000/FFFFFF/png?text=THE+SQUAD",
+      "imageUrl": "https://placehold.co/400x160/000000/FFFFFF.png?text=THE+SQUAD",
       "imageHint": "white logo"
     },
     {
