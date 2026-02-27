@@ -78,7 +78,7 @@ export default function FilesPage() {
   const getFileIcon = (type: string) => {
     const t = type.toLowerCase();
     if (t === 'pdf') return <FileText className="h-6 w-6 text-red-500" />;
-    if (['jpg', 'png', 'jpeg', 'gif'].includes(t)) return <ImageIcon className="h-6 w-6 text-blue-500" />;
+    if (['jpg', 'png', 'jpeg', 'gif', 'webp'].includes(t)) return <ImageIcon className="h-6 w-6 text-blue-500" />;
     return <FileIcon className="h-6 w-6 text-muted-foreground" />;
   };
 
@@ -115,69 +115,73 @@ export default function FilesPage() {
       </div>
 
       <div className="grid gap-3 w-full">
-        {teamFiles.length > 0 ? teamFiles.map((file) => (
-          <Card key={file.id} className="hover:bg-accent/50 transition-colors border-none shadow-sm overflow-hidden w-full">
-            <CardContent className="p-4 flex items-center gap-4 flex-wrap sm:flex-nowrap">
-              <div className="h-12 w-12 rounded-xl bg-background flex items-center justify-center border shadow-sm shrink-0">
-                {getFileIcon(file.type)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-sm truncate pr-2" title={file.name}>{file.name}</h3>
-                <div className="flex items-center gap-3 text-[10px] font-medium text-muted-foreground mt-1 flex-wrap">
-                  <span>{file.size}</span>
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-2.5 w-2.5" />
-                    {mounted ? format(file.date, 'MMM d, yyyy') : '...'}
-                  </span>
-                  <Badge variant="secondary" className="text-[9px] py-0 px-1.5 h-3.5 bg-muted">
-                    {file.uploadedBy}
-                  </Badge>
+        {teamFiles.length > 0 ? teamFiles.map((file) => {
+          const canDelete = isAdmin || (file.uploaderId === user?.id);
+          
+          return (
+            <Card key={file.id} className="hover:bg-accent/50 transition-colors border-none shadow-sm overflow-hidden w-full">
+              <CardContent className="p-4 flex items-center gap-4 flex-wrap sm:flex-nowrap">
+                <div className="h-12 w-12 rounded-xl bg-background flex items-center justify-center border shadow-sm shrink-0">
+                  {getFileIcon(file.type)}
                 </div>
-              </div>
-              <div className="flex gap-1 shrink-0 ml-auto sm:ml-0">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8 text-muted-foreground hover:text-primary"
-                  onClick={() => setSelectedFile(file)}
-                >
-                  <Eye className="h-4 w-4" />
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8 text-muted-foreground hover:text-primary"
-                  onClick={() => handleDownload(file)}
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
-                
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleDownload(file)}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download
-                    </DropdownMenuItem>
-                    {isAdmin && (
-                      <DropdownMenuItem 
-                        onClick={() => handleDelete(file.id)}
-                        className="text-destructive focus:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete Resource
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-sm truncate pr-2" title={file.name}>{file.name}</h3>
+                  <div className="flex items-center gap-3 text-[10px] font-medium text-muted-foreground mt-1 flex-wrap">
+                    <span>{file.size}</span>
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-2.5 w-2.5" />
+                      {mounted ? format(file.date, 'MMM d, yyyy') : '...'}
+                    </span>
+                    <Badge variant="secondary" className="text-[9px] py-0 px-1.5 h-3.5 bg-muted">
+                      {file.uploadedBy}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="flex gap-1 shrink-0 ml-auto sm:ml-0">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 text-muted-foreground hover:text-primary"
+                    onClick={() => setSelectedFile(file)}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 text-muted-foreground hover:text-primary"
+                    onClick={() => handleDownload(file)}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => handleDownload(file)}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download
                       </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </CardContent>
-          </Card>
-        )) : (
+                      {canDelete && (
+                        <DropdownMenuItem 
+                          onSelect={() => handleDelete(file.id)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete Resource
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        }) : (
           <div className="text-center py-20 bg-muted/20 border-2 border-dashed rounded-2xl w-full">
             <p className="text-muted-foreground italic">No files shared yet.</p>
           </div>
@@ -215,7 +219,7 @@ export default function FilesPage() {
           <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-black/40">
             {selectedFile && (
               <>
-                {['jpg', 'png', 'jpeg', 'gif'].includes(selectedFile.type.toLowerCase()) ? (
+                {['jpg', 'png', 'jpeg', 'gif', 'webp'].includes(selectedFile.type.toLowerCase()) ? (
                   <img 
                     src={selectedFile.url} 
                     alt={selectedFile.name} 

@@ -148,7 +148,8 @@ export type TeamFile = {
   name: string;
   type: string;
   size: string;
-  uploadedBy: string;
+  uploadedBy: string; // name
+  uploaderId: string; // uid
   date: Date;
   url?: string;
 };
@@ -400,6 +401,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       type: f.fileType,
       size: f.fileSize,
       uploadedBy: f.uploaderName || 'Unknown',
+      uploaderId: f.uploadedBy || '',
       date: new Date(f.createdAt),
       url: f.fileUrl
     }))
