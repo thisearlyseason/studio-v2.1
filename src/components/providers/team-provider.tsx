@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
@@ -586,7 +585,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!eventSnap.exists()) return false;
       
       const regsRef = collection(db, 'teams', teamId, 'events', eventId, 'registrations');
-      // Capacity check is bypassed for public users due to privacy rules (cannot list other registrations)
       await addDoc(regsRef, { ...data, createdAt: new Date().toISOString(), status: 'pending' });
       return true;
     } catch (e) { 
