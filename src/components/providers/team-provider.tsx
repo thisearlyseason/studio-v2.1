@@ -198,12 +198,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }));
 
   useEffect(() => {
-    if (teams.length > 0 && !activeTeam) {
-      setActiveTeam(teams[0]);
-    } else if (activeTeam) {
-      const updated = teams.find(t => t.id === activeTeam.id);
-      if (updated && JSON.stringify(updated) !== JSON.stringify(activeTeam)) {
-        setActiveTeam(updated);
+    if (teams.length > 0) {
+      if (!activeTeam) {
+        setActiveTeam(teams[0]);
+      } else {
+        const updated = teams.find(t => t.id === activeTeam.id);
+        if (updated && (updated.heroImageUrl !== activeTeam.heroImageUrl || updated.name !== activeTeam.name)) {
+          setActiveTeam(updated);
+        }
       }
     }
   }, [teams, activeTeam]);
@@ -400,13 +402,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const voters = poll.voters || {};
     const previousVote = voters[firebaseUser.uid];
 
-    // If user clicks the same option, remove vote? (Toggle behavior)
-    // For now, let's just update the vote.
     if (previousVote === optionIndex) return;
 
     const newVoters = { ...voters, [firebaseUser.uid]: optionIndex };
     
-    // Recalculate options
     const newOptions = poll.options.map((opt: any, idx: number) => {
       let count = 0;
       Object.values(newVoters).forEach(v => { if (v === idx) count++; });
@@ -523,10 +522,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const teamSnap = await getDoc(teamRef);
     const newMembersMap = { ...(teamSnap.data()?.members || {}), [mockUserId]: 'Member' };
 
-    // Update team document with new member map
     await updateDoc(teamRef, { [`members.${mockUserId}`]: 'Member' });
     
-    // Create member document
     await setDoc(doc(db, 'teams', teamId, 'members', mockUserId), {
       userId: mockUserId,
       teamId,
@@ -537,7 +534,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       members: newMembersMap
     });
 
-    // Simulate sending email
     console.log(`Email invited to ${name} for team ${activeTeam.name}. Code: ${activeTeam.code}. Link: ${window.location.origin}/signup?code=${activeTeam.code}`);
   };
 

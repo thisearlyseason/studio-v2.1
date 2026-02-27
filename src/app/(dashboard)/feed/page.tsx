@@ -6,7 +6,7 @@ import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ImagePlus, MessageSquare, Trash2, Calendar, Send, Heart, Camera } from 'lucide-react';
+import { ImagePlus, MessageSquare, Trash2, Calendar, Send, Heart, Camera, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { formatDistanceToNow } from 'date-fns';
@@ -20,6 +20,7 @@ export default function FeedPage() {
   const [imageUrl, setImageUrl] = useState<string | undefined>();
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
   const [mounted, setMounted] = useState(false);
+  const [isUpdatingHero, setIsUpdatingHero] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const heroInputRef = useRef<HTMLInputElement>(null);
 
@@ -80,9 +81,16 @@ export default function FeedPage() {
 
   const handleHeroChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const compressed = await compressImage(e.target.files[0]);
-      await updateTeamHero(compressed);
-      toast({ title: "Hero Updated", description: "Team banner updated successfully." });
+      setIsUpdatingHero(true);
+      try {
+        const compressed = await compressImage(e.target.files[0]);
+        await updateTeamHero(compressed);
+        toast({ title: "Hero Updated", description: "Team banner updated successfully." });
+      } catch (error) {
+        toast({ title: "Update Failed", description: "Could not update team hero image.", variant: "destructive" });
+      } finally {
+        setIsUpdatingHero(false);
+      }
     }
   };
 
@@ -95,13 +103,34 @@ export default function FeedPage() {
 
   return (
     <div className="space-y-8 pb-12 animate-in fade-in duration-500">
-      <section className="relative h-48 sm:h-64 rounded-3xl overflow-hidden shadow-2xl group">
+      <section className="relative h-48 sm:h-64 rounded-3xl overflow-hidden shadow-2xl group ring-1 ring-black/5">
         <img 
           src={activeTeam.heroImageUrl || "https://picsum.photos/seed/squadhero/1200/400"} 
           alt="Team Hero" 
-          className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+          className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+        
+        {isAdmin && (
+          <div className="absolute top-4 right-4">
+            <input type="file" ref={heroInputRef} className="hidden" accept="image/*" onChange={handleHeroChange} />
+            <Button 
+              variant="secondary" 
+              size="sm" 
+              disabled={isUpdatingHero}
+              className="bg-white/20 backdrop-blur-md text-white hover:bg-white/40 border-none rounded-full h-9 transition-all active:scale-95 shadow-lg"
+              onClick={() => heroInputRef.current?.click()}
+            >
+              {isUpdatingHero ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Camera className="h-4 w-4 mr-2" />
+              )}
+              {isUpdatingHero ? "Uploading..." : "Change Cover"}
+            </Button>
+          </div>
+        )}
+
         <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between">
           <div className="space-y-1">
             <Badge variant="secondary" className="mb-2 bg-white/20 backdrop-blur-md text-white border-none font-bold uppercase tracking-wider text-[10px]">
@@ -112,20 +141,6 @@ export default function FeedPage() {
             </h1>
             <p className="text-white/70 text-sm font-medium">Join the discussion, coordinate the win.</p>
           </div>
-          {isAdmin && (
-            <div className="mb-1">
-              <input type="file" ref={heroInputRef} className="hidden" accept="image/*" onChange={handleHeroChange} />
-              <Button 
-                variant="secondary" 
-                size="sm" 
-                className="bg-white/20 backdrop-blur-md text-white hover:bg-white/40 border-none rounded-full h-9 transition-all active:scale-95"
-                onClick={() => heroInputRef.current?.click()}
-              >
-                <Camera className="h-4 w-4 mr-2" />
-                Change Cover
-              </Button>
-            </div>
-          )}
         </div>
       </section>
 
