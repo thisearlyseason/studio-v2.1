@@ -16,11 +16,13 @@ import {
   orderBy,
   setDoc,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  deleteDoc
 } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { toast } from '@/hooks/use-toast';
+import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 export type UserProfile = {
   id: string;
@@ -187,6 +189,7 @@ interface TeamContextType {
   updateGame: (gameId: string, updates: Partial<Game>) => void;
   files: TeamFile[];
   addFile: (name: string, type: string, size: string, url: string) => void;
+  deleteFile: (fileId: string) => void;
   alerts: TeamAlert[];
   createAlert: (title: string, message: string) => void;
   createNewTeam: (name: string, organizerPosition: string) => Promise<void>;
@@ -620,6 +623,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const deleteFile = (fileId: string) => {
+    if (!activeTeam) return;
+    const docRef = doc(db, 'teams', activeTeam.id, 'files', fileId);
+    deleteDocumentNonBlocking(docRef);
+    toast({ title: "File Deleted", description: "The resource has been removed from the library." });
+  };
+
   const createAlert = async (title: string, message: string) => {
     if (!activeTeam || !firebaseUser) return;
     const colRef = collection(db, 'teams', activeTeam.id, 'alerts');
@@ -694,7 +704,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     <TeamContext.Provider value={{ 
       user: userProfile, updateUser, activeTeam, setActiveTeam, updateTeamHero, teams, members, updateMember, toggleFeesPaid,
       chats, createChat, messages, activeChatId, setActiveChatId, addMessage, votePoll, posts, addPost, addComment, toggleLike,
-      events, addEvent, updateEvent, updateRSVP, games, addGame, updateGame, files, addFile, alerts, createAlert,
+      events, addEvent, updateEvent, updateRSVP, games, addGame, updateGame, files, addFile, deleteFile, alerts, createAlert,
       createNewTeam, inviteMember, joinTeamWithCode, isLoading: isAuthLoading, formatTime
     }}>
       {children}

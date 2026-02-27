@@ -13,7 +13,7 @@ import {
   Upload,
   Calendar,
   Eye,
-  ExternalLink
+  Trash2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -27,9 +27,15 @@ import {
   DialogDescription,
   DialogFooter
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function FilesPage() {
-  const { activeTeam, files, addFile } = useTeam();
+  const { activeTeam, files, addFile, deleteFile, user } = useTeam();
   const [mounted, setMounted] = useState(false);
   const [selectedFile, setSelectedFile] = useState<TeamFile | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -47,6 +53,7 @@ export default function FilesPage() {
     );
   }
 
+  const isAdmin = activeTeam.membersMap?.[user?.id || ''] === 'Admin';
   const teamFiles = files.filter(f => f.teamId === activeTeam.id);
 
   const handleUploadClick = () => {
@@ -83,6 +90,12 @@ export default function FilesPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleDelete = (fileId: string) => {
+    if (confirm("Are you sure you want to remove this resource from the library?")) {
+      deleteFile(fileId);
+    }
   };
 
   return (
@@ -138,9 +151,29 @@ export default function FilesPage() {
                 >
                   <Download className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
+                
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleDownload(file)}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </DropdownMenuItem>
+                    {isAdmin && (
+                      <DropdownMenuItem 
+                        onClick={() => handleDelete(file.id)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Resource
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </CardContent>
           </Card>
@@ -170,10 +203,14 @@ export default function FilesPage() {
       <Dialog open={!!selectedFile} onOpenChange={(open) => !open && setSelectedFile(null)}>
         <DialogContent className="sm:max-w-[90vw] max-h-[90vh] flex flex-col p-0 overflow-hidden bg-black/90 border-none text-white">
           <DialogHeader className="p-4 border-b border-white/10 shrink-0">
-            <DialogTitle className="text-lg font-bold truncate pr-8">{selectedFile?.name}</DialogTitle>
-            <DialogDescription className="text-white/60 text-xs">
-              Uploaded by {selectedFile?.uploadedBy} on {selectedFile?.date && format(selectedFile.date, 'MMM d, yyyy')}
-            </DialogDescription>
+            <div className="flex items-center justify-between">
+              <div className="min-w-0 pr-8">
+                <DialogTitle className="text-lg font-bold truncate">{selectedFile?.name}</DialogTitle>
+                <DialogDescription className="text-white/60 text-xs">
+                  Uploaded by {selectedFile?.uploadedBy} on {selectedFile?.date && format(selectedFile.date, 'MMM d, yyyy')}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
           <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-black/40">
             {selectedFile && (
