@@ -2,6 +2,9 @@
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { useUser, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
+import { collection, query, where, doc, getDoc, setDoc, updateDoc, serverTimestamp, addDoc } from 'firebase/firestore';
+import { useRouter } from 'next/navigation';
 
 export type UserProfile = {
   name: string;
@@ -106,29 +109,16 @@ export type TeamFile = {
   date: Date;
 };
 
-const MOCK_TEAMS: Team[] = [
-  { id: '1', name: 'Eagles Soccer Club', code: 'EAGL01' },
-  { id: '2', name: 'Wildcats Basketball', code: 'CAT99X' }
-];
-
-const INITIAL_MEMBERS: Member[] = [
-  { id: 'me_id', teamId: '1', name: 'James Miller', role: 'Admin', position: 'Coach', jersey: 'COACH', avatar: 'https://picsum.photos/seed/me/150/150' },
-  { id: '2', teamId: '1', name: 'Alex Smith', role: 'Member', position: 'Player', jersey: '10', avatar: 'https://picsum.photos/seed/alex/150/150' },
-  { id: '3', teamId: '1', name: 'Sarah Connor', role: 'Member', position: 'Parent', jersey: '08', avatar: 'https://picsum.photos/seed/sarah/150/150' },
-  { id: '4', teamId: '2', name: 'Mike Ross', role: 'Member', position: 'Player', jersey: '04', avatar: 'https://picsum.photos/seed/mike/150/150' },
-  { id: '5', teamId: '2', name: 'Donna Paulsen', role: 'Admin', position: 'Team Lead', jersey: 'MGR', avatar: 'https://picsum.photos/seed/donna/150/150' },
-];
-
 interface TeamContextType {
-  user: UserProfile;
+  user: UserProfile | null;
   updateUser: (updates: Partial<UserProfile>) => void;
-  activeTeam: Team;
+  activeTeam: Team | null;
   setActiveTeam: (team: Team) => void;
   teams: Team[];
   members: Member[];
   updateMember: (id: string, updates: Partial<Member>) => void;
   chats: Chat[];
-  createChat: (name: string, memberIds: string[]) => string;
+  createChat: (name: string, memberIds: string[]) => Promise<string>;
   messages: Message[];
   addMessage: (chatId: string, author: string, content: string, type: 'text' | 'poll', poll?: any) => void;
   posts: Post[];
@@ -139,100 +129,84 @@ interface TeamContextType {
   updateRSVP: (eventId: string, status: RSVPStatus) => void;
   files: TeamFile[];
   addFile: (name: string, type: string, size: string) => void;
-  createNewTeam: (name: string, organizerPosition: string) => void;
+  createNewTeam: (name: string, organizerPosition: string) => Promise<void>;
   inviteMember: (name: string, position: MemberPosition) => void;
+  isLoading: boolean;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
 
 export function TeamProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserProfile>({
-    name: 'James Miller',
-    email: 'j.miller@squadforge.com',
-    phone: '+1 (555) 000-0000',
-    avatar: 'https://picsum.photos/seed/me/150/150'
-  });
+  const { user: firebaseUser, isUserLoading: isAuthLoading } = useUser();
+  const db = useFirestore();
+  const router = useRouter();
   
-  const [teams, setTeams] = useState<Team[]>(MOCK_TEAMS);
-  const [activeTeam, setActiveTeam] = useState<Team>(MOCK_TEAMS[0]);
-  const [members, setMembers] = useState<Member[]>(INITIAL_MEMBERS);
+  const [activeTeam, setActiveTeam] = useState<Team | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [events, setEvents] = useState<TeamEvent[]>([]);
   const [files, setFiles] = useState<TeamFile[]>([]);
 
+  // Fetch User Profile
   useEffect(() => {
-    if (posts.length === 0) {
-      setPosts([
-        {
-          id: '1',
-          teamId: '1',
-          author: { name: 'Coach Miller', avatar: 'https://picsum.photos/seed/coach/150/150' },
-          content: "Great job today everyone! Let's keep this energy up for the tournament this weekend.",
-          type: 'user',
-          imageUrl: 'https://picsum.photos/seed/tournament/800/600',
-          createdAt: new Date(Date.now() - 3600000).toISOString(),
-          comments: [
-            { id: 'c1', author: 'Alex Smith', content: 'Ready when you are!', createdAt: new Date(Date.now() - 1800000).toISOString() }
-          ]
-        },
-        {
-          id: '2',
-          teamId: '1',
-          author: { name: 'System', avatar: '' },
-          content: "New Event: Regional Qualifiers - Saturday at 9:00 AM",
-          type: 'system',
-          createdAt: new Date(Date.now() - 7200000).toISOString(),
-          comments: []
+    if (firebaseUser) {
+      const fetchProfile = async () => {
+        const docRef = doc(db, 'users', firebaseUser.uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setUserProfile({
+            name: data.fullName || firebaseUser.displayName || 'Anonymous',
+            email: data.email || firebaseUser.email || '',
+            phone: data.phone || '',
+            avatar: data.avatarUrl || `https://picsum.photos/seed/${firebaseUser.uid}/150/150`
+          });
         }
-      ]);
+      };
+      fetchProfile();
     }
-    if (events.length === 0) {
-      setEvents([
-        {
-          id: 'e1',
-          teamId: '1',
-          title: 'Morning Practice',
-          date: new Date(),
-          startTime: '07:00 AM',
-          endTime: '09:00 AM',
-          location: 'Pitch 4, Central Park',
-          description: 'Drills and tactical session. Please bring both kits.',
-          recurrence: 'weekly',
-          rsvps: { going: 12, notGoing: 2, maybe: 4 }
-        }
-      ]);
-    }
-    if (files.length === 0) {
-      setFiles([
-        { id: 'f1', teamId: '1', name: 'Tournament_Schedule.pdf', type: 'pdf', size: '2.4 MB', uploadedBy: 'Coach Miller', date: new Date() }
-      ]);
-    }
-    if (chats.length === 0) {
-      setChats([
-        { id: 'c1', teamId: '1', name: 'General Discussion', memberIds: ['me_id', '2', '3'], lastMessage: 'Training tomorrow is at 7am sharp!', time: '2m ago', unread: 3 }
-      ]);
-    }
-  }, []);
+  }, [firebaseUser, db]);
 
-  const updateUser = (updates: Partial<UserProfile>) => {
-    setUser(prev => ({ ...prev, ...updates }));
-    // Also update current member name for "Me"
-    setMembers(prev => prev.map(m => m.id === 'me_id' ? { ...m, name: updates.name || m.name } : m));
+  // Fetch Teams (Mocking the membership lookup for now via collection group or just listing)
+  // In a real app, you'd query team memberships collection.
+  useEffect(() => {
+    if (firebaseUser) {
+      // Mocking some initial team data if none exists
+      setTeams([
+        { id: '1', name: 'Eagles Soccer Club', code: 'EAGL01' },
+        { id: '2', name: 'Wildcats Basketball', code: 'CAT99X' }
+      ]);
+      setActiveTeam({ id: '1', name: 'Eagles Soccer Club', code: 'EAGL01' });
+    }
+  }, [firebaseUser]);
+
+  const updateUser = async (updates: Partial<UserProfile>) => {
+    if (!firebaseUser) return;
+    const docRef = doc(db, 'users', firebaseUser.uid);
+    await updateDoc(docRef, {
+      fullName: updates.name,
+      email: updates.email,
+      phone: updates.phone
+    });
+    setUserProfile(prev => prev ? { ...prev, ...updates } : null);
   };
 
   const updateMember = (id: string, updates: Partial<Member>) => {
     setMembers(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
   };
 
-  const createChat = (name: string, memberIds: string[]) => {
+  const createChat = async (name: string, memberIds: string[]) => {
+    if (!activeTeam || !firebaseUser) return '';
     const id = `chat_${Date.now()}`;
     const newChat: Chat = {
       id,
       teamId: activeTeam.id,
       name,
-      memberIds: ['me_id', ...memberIds],
+      memberIds: [firebaseUser.uid, ...memberIds],
       time: 'Just now',
       unread: 0
     };
@@ -255,10 +229,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   };
 
   const addPost = (content: string, imageUrl?: string) => {
+    if (!activeTeam || !userProfile) return;
     const newPost: Post = {
       id: `post_${Date.now()}`,
       teamId: activeTeam.id,
-      author: { name: user.name, avatar: user.avatar },
+      author: { name: userProfile.name, avatar: userProfile.avatar },
       content,
       type: 'user',
       imageUrl,
@@ -269,9 +244,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   };
 
   const addComment = (postId: string, content: string) => {
+    if (!userProfile) return;
     const newComment: Comment = {
       id: `comment_${Date.now()}`,
-      author: user.name,
+      author: userProfile.name,
       content,
       createdAt: new Date().toISOString()
     };
@@ -279,6 +255,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   };
 
   const addEvent = (eventData: Omit<TeamEvent, 'id' | 'teamId' | 'rsvps'>) => {
+    if (!activeTeam) return;
     const newEvent: TeamEvent = {
       ...eventData,
       id: `event_${Date.now()}`,
@@ -304,42 +281,58 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   };
 
   const addFile = (name: string, type: string, size: string) => {
+    if (!activeTeam || !userProfile) return;
     const newFile: TeamFile = {
       id: `file_${Date.now()}`,
       teamId: activeTeam.id,
       name,
       type,
       size,
-      uploadedBy: user.name,
+      uploadedBy: userProfile.name,
       date: new Date()
     };
     setFiles(prev => [newFile, ...prev]);
   };
 
-  const createNewTeam = (name: string, organizerPosition: string) => {
-    const id = `team_${Date.now()}`;
-    const newTeam: Team = {
-      id,
-      name,
-      code: Math.random().toString(36).substring(2, 8).toUpperCase()
-    };
-    setTeams(prev => [...prev, newTeam]);
+  const createNewTeam = async (name: string, organizerPosition: string) => {
+    if (!firebaseUser) return;
+    const teamId = `team_${Date.now()}`;
+    const teamCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     
+    const newTeam: Team = {
+      id: teamId,
+      name,
+      code: teamCode
+    };
+
+    // Create Team Document in Firestore
+    await setDoc(doc(db, 'teams', teamId), {
+      id: teamId,
+      teamName: name,
+      sport: 'General',
+      teamCode: teamCode,
+      createdBy: firebaseUser.uid,
+      createdAt: new Date().toISOString()
+    });
+
     // Add organizer as admin member
-    const newMember: Member = {
-      id: 'me_id',
-      teamId: id,
-      name: user.name,
+    const membershipId = `${teamId}_${firebaseUser.uid}`;
+    await setDoc(doc(db, 'teams', teamId, 'members', firebaseUser.uid), {
+      id: membershipId,
+      userId: firebaseUser.uid,
+      teamId: teamId,
       role: 'Admin',
       position: organizerPosition || 'Coach',
       jersey: 'COACH',
-      avatar: user.avatar
-    };
-    setMembers(prev => [...prev, newMember]);
+      joinedAt: new Date().toISOString()
+    });
+
+    setTeams(prev => [...prev, newTeam]);
     setActiveTeam(newTeam);
   };
 
   const inviteMember = (name: string, position: MemberPosition) => {
+    if (!activeTeam) return;
     const newMember: Member = {
       id: `mem_${Date.now()}`,
       teamId: activeTeam.id,
@@ -354,7 +347,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   return (
     <TeamContext.Provider value={{ 
-      user,
+      user: userProfile,
       updateUser,
       activeTeam, 
       setActiveTeam, 
@@ -374,7 +367,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       files,
       addFile,
       createNewTeam,
-      inviteMember
+      inviteMember,
+      isLoading: isAuthLoading
     }}>
       {children}
     </TeamContext.Provider>

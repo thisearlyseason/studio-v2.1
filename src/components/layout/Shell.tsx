@@ -3,7 +3,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   Rss, 
   CalendarDays, 
@@ -38,6 +38,7 @@ const tabs = [
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { activeTeam, setActiveTeam, teams, user } = useTeam();
 
   return (
@@ -49,24 +50,24 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2 font-bold text-lg p-0 hover:bg-transparent">
-                  {activeTeam.name}
+                  {activeTeam?.name || 'Select Team'}
                   <ChevronDown className="h-4 w-4 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56">
                 <DropdownMenuLabel>Your Teams</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {teams.map((team) => (
+                {teams.length > 0 ? teams.map((team) => (
                   <DropdownMenuItem key={team.id} onClick={() => setActiveTeam(team)}>
                     {team.name}
                   </DropdownMenuItem>
-                ))}
+                )) : (
+                  <div className="px-2 py-1 text-xs text-muted-foreground">No teams yet</div>
+                )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/teams/new" className="flex items-center">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create New Team
-                  </Link>
+                <DropdownMenuItem onClick={() => router.push('/teams/new')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create New Team
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -74,8 +75,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           
           <Link href="/settings">
             <Avatar className="h-8 w-8 hover:ring-2 hover:ring-primary transition-all">
-              <AvatarImage src={user.avatar} alt={user.name} />
-              <AvatarFallback>{user.name[0]}</AvatarFallback>
+              <AvatarImage src={user?.avatar} alt={user?.name} />
+              <AvatarFallback>{user?.name?.[0] || '?'}</AvatarFallback>
             </Avatar>
           </Link>
         </div>
