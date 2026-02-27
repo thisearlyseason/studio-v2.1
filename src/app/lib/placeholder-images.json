@@ -2,28 +2,22 @@
 {
   "placeholderImages": [
     {
-      "id": "team-logo-1",
-      "description": "SquadForge Team Logo",
-      "imageUrl": "https://picsum.photos/seed/squad1/200/200",
-      "imageHint": "team logo"
+      "id": "team-hero",
+      "description": "Dynamic team hero background",
+      "imageUrl": "https://picsum.photos/seed/squadhero/1200/400",
+      "imageHint": "sports team"
     },
     {
-      "id": "avatar-1",
-      "description": "User Avatar 1",
-      "imageUrl": "https://picsum.photos/seed/user1/150/150",
-      "imageHint": "user avatar"
+      "id": "avatar-default",
+      "description": "Professional avatar placeholder",
+      "imageUrl": "https://picsum.photos/seed/user-pro/150/150",
+      "imageHint": "user portrait"
     },
     {
-      "id": "avatar-2",
-      "description": "User Avatar 2",
-      "imageUrl": "https://picsum.photos/seed/user2/150/150",
-      "imageHint": "user avatar"
-    },
-    {
-      "id": "feed-img-1",
-      "description": "Team practice photo",
-      "imageUrl": "https://picsum.photos/seed/practice/800/600",
-      "imageHint": "sports practice"
+      "id": "empty-state",
+      "description": "Modern empty state illustration",
+      "imageUrl": "https://picsum.photos/seed/empty/600/400",
+      "imageHint": "abstract communication"
     }
   ]
 }
