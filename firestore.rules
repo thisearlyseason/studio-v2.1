@@ -72,7 +72,9 @@ service cloud.firestore {
         // Membership docs now use denormalized members map for QAP performance
         allow get, list: if isTeamMember(resource.data);
         allow create: if isIncomingTeamMember(request.resource.data) && isTeamAdmin(request.resource.data);
-        allow update, delete: if resource != null && isTeamAdmin(resource.data);
+        // Allow members to update their own labels, or admins to manage the roster
+        allow update: if resource != null && (isTeamAdmin(resource.data) || isOwner(userId));
+        allow delete: if resource != null && isTeamAdmin(resource.data);
       }
 
       match /feedPosts/{postId} {

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -71,7 +70,7 @@ export default function SettingsPage() {
     );
   }
 
-  const currentMember = members.find(m => m.id === user.email && m.teamId === activeTeam.id);
+  const currentMember = members.find(m => m.id === user.id && m.teamId === activeTeam.id);
 
   const handleSaveProfile = () => {
     updateUser({

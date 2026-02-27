@@ -16,6 +16,7 @@ import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
 export type UserProfile = {
+  id: string;
   name: string;
   email: string;
   phone: string;
@@ -236,6 +237,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         if (docSnap.exists()) {
           const data = docSnap.data();
           setUserProfile({
+            id: firebaseUser.uid,
             name: data.fullName || firebaseUser.displayName || 'Anonymous',
             email: data.email || firebaseUser.email || '',
             phone: data.phone || '',
