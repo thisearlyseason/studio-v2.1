@@ -2,15 +2,15 @@
   "placeholderImages": [
     {
       "id": "brand-logo-dark",
-      "description": "The Squad official brand logo (Black text for light backgrounds)",
-      "imageUrl": "https://placehold.co/400x160/FFFFFF/000000?text=THE+SQUAD.",
-      "imageHint": "black logo"
+      "description": "The Squad official brand logo (Dark version for light backgrounds)",
+      "imageUrl": "https://images.unsplash.com/photo-1560179707-f14e90ef3623?auto=format&fit=crop&q=80&w=400&h=160",
+      "imageHint": "company logo"
     },
     {
       "id": "brand-logo-light",
-      "description": "The Squad official brand logo (White text for dark backgrounds)",
-      "imageUrl": "https://placehold.co/400x160/000000/FFFFFF?text=THE+SQUAD.",
-      "imageHint": "white logo"
+      "description": "The Squad official brand logo (Light version for dark backgrounds)",
+      "imageUrl": "https://images.unsplash.com/photo-1551818255-e6e10975bc17?auto=format&fit=crop&q=80&w=400&h=160",
+      "imageHint": "abstract logo"
     },
     {
       "id": "team-hero",
@@ -63,7 +63,7 @@
     {
       "id": "sport-hockey",
       "description": "Hockey action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1486128105845-91daff43f404?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxpY2UlMjBob2NrZXl8ZW58MHx8fHwxNzcyMjAyMjAwfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1486128105845-91daff43f404?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxpY2UlMjBob2NrZXl8ZW58MHx8fDE3NzIyMDQ0OTV8MA&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "ice hockey"
     },
     {

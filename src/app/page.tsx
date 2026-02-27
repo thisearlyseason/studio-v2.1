@@ -68,10 +68,9 @@ export default function LandingPage() {
                 <Image 
                   src={isScrolled ? brandLogoDark : brandLogoLight} 
                   alt="The Squad Logo" 
-                  width={160}
-                  height={40}
-                  className="object-contain h-10 w-auto"
-                  data-ai-hint={isScrolled ? "black logo" : "white logo"}
+                  fill
+                  className="object-contain"
+                  data-ai-hint={isScrolled ? "dark logo" : "light logo"}
                   priority
                 />
               )}
@@ -332,10 +331,9 @@ export default function LandingPage() {
                   <Image 
                     src={brandLogoDark} 
                     alt="The Squad Logo" 
-                    width={128}
-                    height={32}
-                    className="object-contain h-8 w-auto"
-                    data-ai-hint="black brand logo"
+                    fill
+                    className="object-contain"
+                    data-ai-hint="dark logo"
                   />
                 )}
               </div>
