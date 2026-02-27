@@ -63,15 +63,18 @@ export default function LandingPage() {
       )}>
         <div className="container mx-auto px-6 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
-            <div className="relative h-10 w-32">
-              <Image 
-                src={isScrolled ? brandLogoDark : brandLogoLight} 
-                alt="The Squad Logo" 
-                fill 
-                className="object-contain"
-                data-ai-hint={isScrolled ? "black logo" : "white logo"}
-                priority
-              />
+            <div className="relative h-10 w-40">
+              {brandLogoDark && brandLogoLight && (
+                <Image 
+                  src={isScrolled ? brandLogoDark : brandLogoLight} 
+                  alt="The Squad Logo" 
+                  width={160}
+                  height={40}
+                  className="object-contain h-10 w-auto"
+                  data-ai-hint={isScrolled ? "black logo" : "white logo"}
+                  priority
+                />
+              )}
             </div>
           </Link>
 
@@ -112,6 +115,7 @@ export default function LandingPage() {
               fill
               className="object-cover scale-105"
               data-ai-hint="sports background"
+              priority={idx === 0}
             />
             <div className="absolute inset-0 bg-black/60 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
           </div>
@@ -322,14 +326,17 @@ export default function LandingPage() {
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="flex items-center gap-3">
-              <div className="relative h-8 w-24">
-                <Image 
-                  src={brandLogoDark} 
-                  alt="The Squad Logo" 
-                  fill 
-                  className="object-contain"
-                  data-ai-hint="black brand logo"
-                />
+              <div className="relative h-8 w-32">
+                {brandLogoDark && (
+                  <Image 
+                    src={brandLogoDark} 
+                    alt="The Squad Logo" 
+                    width={128}
+                    height={32}
+                    className="object-contain h-8 w-auto"
+                    data-ai-hint="black brand logo"
+                  />
+                )}
               </div>
             </div>
             
