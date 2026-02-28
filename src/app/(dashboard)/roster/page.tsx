@@ -205,8 +205,8 @@ export default function RosterPage() {
   };
 
   // Club Manager Protection Logic
-  const isManager = (memberId: string) => {
-    return memberId === activeTeam?.createdBy;
+  const isProtectedManager = (memberUserId: string) => {
+    return memberUserId === activeTeam?.createdBy;
   };
 
   return (
@@ -284,7 +284,7 @@ export default function RosterPage() {
                   <Badge variant="outline" className="text-[9px] py-0 px-1.5 h-4 border-primary/20 text-primary font-black uppercase tracking-tighter">
                     {member.jersey !== 'PAR' && member.jersey !== 'TBD' ? `#${member.jersey}` : member.jersey}
                   </Badge>
-                  {isManager(member.userId) && (
+                  {isProtectedManager(member.userId) && (
                     <Badge className="bg-black text-white border-none text-[7px] h-3.5 font-black uppercase px-1 shadow-sm">Manager</Badge>
                   )}
                 </div>
@@ -333,7 +333,7 @@ export default function RosterPage() {
                     <div className="flex flex-col sm:flex-row items-center gap-3">
                       <h2 className="text-3xl sm:text-4xl font-black tracking-tighter leading-none">{selectedMember.name}</h2>
                       {selectedMember.role === 'Admin' && <Badge className="bg-primary text-white border-none font-black text-[10px] h-5 uppercase tracking-widest px-3">Leadership</Badge>}
-                      {isManager(selectedMember.userId) && <Badge className="bg-black text-white border-none font-black text-[10px] h-5 uppercase tracking-widest px-3">Primary Manager</Badge>}
+                      {isProtectedManager(selectedMember.userId) && <Badge className="bg-black text-white border-none font-black text-[10px] h-5 uppercase tracking-widest px-3">Primary Manager</Badge>}
                     </div>
                     <p className="font-black text-primary uppercase tracking-[0.2em] text-xs sm:text-sm">
                       {selectedMember.position} • {selectedMember.jersey !== 'PAR' ? `#${selectedMember.jersey}` : 'Staff'}
@@ -671,7 +671,7 @@ export default function RosterPage() {
               
               <div className="p-6 bg-muted/10 border-t flex justify-between items-center shrink-0">
                 <div className="flex items-center gap-2">
-                  {isManager(selectedMember.userId) && (
+                  {isProtectedManager(selectedMember.userId) && (
                     <div className="flex items-center gap-2 text-muted-foreground opacity-50 px-2">
                       <ShieldCheck className="h-4 w-4" />
                       <span className="text-[9px] font-black uppercase tracking-widest leading-none">Protected Club Manager Profile</span>
@@ -679,7 +679,7 @@ export default function RosterPage() {
                   )}
                 </div>
                 <div className="flex gap-3">
-                  {isAdmin && !isManager(selectedMember.userId) && (
+                  {isAdmin && !isProtectedManager(selectedMember.userId) && (
                     <Button variant="ghost" className="h-12 px-6 rounded-xl text-destructive hover:bg-destructive/10 font-black uppercase text-[10px] tracking-widest">
                       <Trash2 className="h-4 w-4 mr-2" /> Remove Teammate
                     </Button>
