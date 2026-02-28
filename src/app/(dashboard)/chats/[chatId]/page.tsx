@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { 
   ChevronLeft, 
@@ -50,18 +50,20 @@ export default function ChatRoomPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Use useMemo to avoid re-calculating on every render
+  const currentChat = useMemo(() => chats.find(c => c.id === chatId), [chats, chatId]);
+
   useEffect(() => {
     setActiveChatId(chatId as string);
     return () => setActiveChatId(null);
   }, [chatId, setActiveChatId]);
 
-  const currentChat = chats.find(c => c.id === chatId);
-
+  // Optimization: Only scroll to bottom when messages length changes or a new poll/image is added
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages.length]);
 
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
@@ -157,7 +159,7 @@ export default function ChatRoomPage() {
     const pollData = {
       id: 'p' + Date.now(),
       question,
-      options: options.map(o => ({ text: o, votes: 0, voterIds: [] })),
+      options: options.map(o => ({ text: o, votes: 0 })),
       totalVotes: 0,
       voters: {},
       isClosed: false
@@ -191,13 +193,15 @@ export default function ChatRoomPage() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-6">
         {messages.map((msg) => {
           const isMe = msg.authorId === user?.id || msg.author === user?.name;
+          const isPoll = msg.type === 'poll' || !!msg.poll;
+
           return (
             <div key={msg.id} className={cn("flex flex-col gap-1.5", isMe ? 'items-end' : 'items-start')}>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] font-bold uppercase text-muted-foreground">{msg.author}</span>
                 <span className="text-[10px] text-muted-foreground/50">{formatTime(msg.createdAt)}</span>
               </div>
-              {msg.type === 'text' || msg.type === 'image' ? (
+              {!isPoll ? (
                 <div className={cn("max-w-[85%] p-3 rounded-2xl text-sm shadow-sm space-y-2", isMe ? "bg-primary text-primary-foreground rounded-tr-none" : "bg-muted text-foreground rounded-tl-none")}>
                   {msg.imageUrl && (
                     <div className="rounded-xl overflow-hidden border border-white/20 shadow-lg">
@@ -336,7 +340,7 @@ export default function ChatRoomPage() {
           <ScrollArea className="max-h-[300px] mt-2">
             <div className="space-y-3 p-1">
               {viewVotersFor?.voterIds.map(vid => {
-                const voter = members.find(m => m.id === vid);
+                const voter = members.find(m => m.userId === vid);
                 return (
                   <div key={vid} className="flex items-center gap-3">
                     <Avatar className="h-8 w-8">

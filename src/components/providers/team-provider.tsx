@@ -128,10 +128,18 @@ export type Post = {
   author: { name: string; avatar: string };
   authorId?: string;
   content: string;
-  type: 'user' | 'system';
+  type: 'user' | 'system' | 'poll';
   imageUrl?: string;
   createdAt: string;
   likes?: string[];
+  poll?: {
+    id: string;
+    question: string;
+    options: PollOption[];
+    totalVotes: number;
+    voters?: Record<string, number>;
+    isClosed: boolean;
+  };
   systemData?: {
     updateType: string;
     title: string;
@@ -244,11 +252,12 @@ interface TeamContextType {
   addMessage: (chatId: string, author: string, content: string, type: 'text' | 'poll' | 'image', imageUrl?: string, poll?: any) => void;
   votePoll: (chatId: string, messageId: string, optionIndex: number) => Promise<void>;
   posts: Post[];
-  addPost: (content: string, imageUrl?: string, type?: 'user' | 'system', systemData?: any) => void;
+  addPost: (content: string, imageUrl?: string, type?: 'user' | 'system' | 'poll', systemData?: any, poll?: any) => void;
   deletePost: (postId: string) => void;
   addComment: (postId: string, content: string, imageUrl?: string) => void;
   deleteComment: (postId: string, commentId: string) => void;
   toggleLike: (postId: string) => Promise<void>;
+  votePostPoll: (postId: string, optionIndex: number) => Promise<void>;
   events: TeamEvent[];
   addEvent: (event: Omit<TeamEvent, 'id' | 'teamId' | 'rsvps'>) => void;
   updateEvent: (eventId: string, updates: Partial<TeamEvent>) => void;
@@ -302,7 +311,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   // Initialize RevenueCat SDK with robust error handling
   useEffect(() => {
     if (firebaseUser && !isRCInitialized) {
-      // Preliminary check for key validity to avoid SDK-level synchronous crashes
       if (!REVENUECAT_PUBLIC_API_KEY || REVENUECAT_PUBLIC_API_KEY.includes('placeholder')) {
         console.warn("RevenueCat: API Key is missing or default. Subscriptions will be disabled.");
         setIsRCInitialized(true);
@@ -310,17 +318,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        // Configuration must happen before getSharedInstance
-        // We use a try-catch to silence validation errors from the SDK in the dev console
         Purchases.configure(REVENUECAT_PUBLIC_API_KEY, firebaseUser.uid);
         const purchases = Purchases.getSharedInstance();
         
-        // Initial check for entitlements
         purchases.getCustomerInfo().then(info => {
           setIsProEntitlementActive(!!info.entitlements.active[PRO_ENTITLEMENT_ID]);
         }).catch(err => console.warn("RevenueCat: Customer info retrieval failed.", err.message));
 
-        // Listen for subscription updates
         const unsubscribe = purchases.addCustomerInfoUpdateListener((info) => {
           setIsProEntitlementActive(!!info.entitlements.active[PRO_ENTITLEMENT_ID]);
         });
@@ -331,7 +335,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           if (unsubscribe) unsubscribe();
         };
       } catch (e: any) {
-        // Silently catch initialization errors if the key is rejected by the SDK
         console.warn("RevenueCat: Initial configuration failed. Check your Billing API key.", e.message);
         setIsRCInitialized(true);
       }
@@ -430,7 +433,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeam?.id, db]);
   const { data: postsData } = useCollection(postsQuery);
   const posts: Post[] = (postsData || []).map(p => ({
-    id: p.id, teamId: p.teamId, author: p.author || { name: 'Anonymous', avatar: '' }, authorId: p.authorId, content: p.content, type: p.type || 'user', imageUrl: p.imageUrl, createdAt: p.createdAt, likes: p.likes || [], systemData: p.systemData
+    id: p.id, teamId: p.teamId, author: p.author || { name: 'Anonymous', avatar: '' }, authorId: p.authorId, content: p.content, type: p.type || 'user', imageUrl: p.imageUrl, createdAt: p.createdAt, likes: p.likes || [], systemData: p.systemData, poll: p.poll
   }));
 
   const eventsQuery = useMemoFirebase(() => {
@@ -582,7 +585,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     updateDocumentNonBlocking(msgRef, updates);
   };
 
-  const addPost = (content: string, imageUrl?: string, type: 'user' | 'system' = 'user', systemData?: any) => {
+  const addPost = (content: string, imageUrl?: string, type: 'user' | 'system' | 'poll' = 'user', systemData?: any, poll?: any) => {
     if (!activeTeam || !firebaseUser) return;
     addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts'), {
       teamId: activeTeam.id, 
@@ -590,6 +593,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       imageUrl: imageUrl || null, 
       type, 
       systemData: systemData || null, 
+      poll: poll || null,
       authorId: firebaseUser.uid,
       author: { 
         name: userProfile?.name || firebaseUser.displayName || 'Anonymous', 
@@ -628,6 +632,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     } else {
       updateDocumentNonBlocking(postRef, { likes: arrayUnion(firebaseUser.uid) });
     }
+  };
+
+  const votePostPoll = async (postId: string, optionIndex: number) => {
+    if (!activeTeam || !firebaseUser) return;
+    const postRef = doc(db, 'teams', activeTeam.id, 'feedPosts', postId);
+    const postSnap = await getDoc(postRef);
+    if (!postSnap.exists()) return;
+    const poll = postSnap.data().poll;
+    if (!poll) return;
+    const currentVote = poll.voters?.[firebaseUser.uid];
+    const updates: any = { [`poll.voters.${firebaseUser.uid}`]: optionIndex };
+    if (currentVote === undefined) {
+      updates[`poll.options.${optionIndex}.votes`] = increment(1);
+      updates['poll.totalVotes'] = increment(1);
+    } else if (currentVote !== optionIndex) {
+      updates[`poll.options.${currentVote}.votes`] = increment(-1);
+      updates[`poll.options.${optionIndex}.votes`] = increment(1);
+    }
+    updateDocumentNonBlocking(postRef, updates);
   };
 
   const addEvent = async (eventData: Omit<TeamEvent, 'id' | 'teamId' | 'rsvps'>) => {
@@ -751,7 +774,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   return (
     <TeamContext.Provider value={{ 
       user: userProfile, updateUser, activeTeam, setActiveTeam, updateTeamHero, updateTeamDetails, teams, members, updateMember, toggleFeesPaid,
-      chats, createChat, messages, activeChatId, setActiveChatId, addMessage, votePoll, posts, addPost, deletePost, addComment, deleteComment, toggleLike,
+      chats, createChat, messages, activeChatId, setActiveChatId, addMessage, votePoll, posts, addPost, deletePost, addComment, deleteComment, toggleLike, votePostPoll,
       events, addEvent, updateEvent: (id, u) => updateDocumentNonBlocking(doc(db, 'teams', activeTeam!.id, 'events', id), u), updateRSVP, addRegistration, promoteToRoster, games, addGame, updateGame: (id, u) => updateDocumentNonBlocking(doc(db, 'teams', activeTeam!.id, 'games', id), u), files, addFile, deleteFile, drills, addDrill, deleteDrill, alerts, createAlert,
       createNewTeam, inviteMember, joinTeamWithCode, isLoading: isUserLoading, formatTime, isSuperAdmin, 
       isPro: activeTeam?.isPro || isProEntitlementActive || isSuperAdmin,

@@ -24,9 +24,8 @@ import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
-  ChartTooltipContent,
 } from "@/components/ui/chart";
-import { Line, LineChart, CartesianGrid, XAxis, ResponsiveContainer, YAxis } from "recharts";
+import { Line, LineChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 const chartConfig = {
   myScore: {
@@ -64,6 +63,7 @@ export default function GamesPage() {
         date: g.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         myScore: g.myScore,
         opponentScore: g.opponentScore,
+        opponentName: g.opponent,
       }));
   }, [games]);
 
@@ -105,7 +105,6 @@ export default function GamesPage() {
     );
   }
 
-  // Unified Admin Check
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
 
   if (!isPro) {
@@ -289,7 +288,7 @@ export default function GamesPage() {
             <div className="h-[200px] w-full pt-4">
               <ChartContainer config={chartConfig} className="h-full w-full">
                 <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={true} opacity={0.1} />
                   <XAxis 
                     dataKey="date" 
                     axisLine={false} 
@@ -298,7 +297,21 @@ export default function GamesPage() {
                     dy={10}
                   />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartTooltip 
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-background border rounded-lg p-2 shadow-xl text-xs font-bold space-y-1">
+                            <p className="text-muted-foreground uppercase text-[9px]">{data.date}</p>
+                            <p className="text-primary">{activeTeam.name}: {data.myScore}</p>
+                            <p className="text-muted-foreground">{data.opponentName}: {data.opponentScore}</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }} 
+                  />
                   <Line 
                     type="monotone" 
                     dataKey="myScore" 
@@ -313,7 +326,7 @@ export default function GamesPage() {
                     stroke="var(--color-opponentScore)" 
                     strokeWidth={2} 
                     strokeDasharray="5 5"
-                    dot={false}
+                    dot={{ r: 3, fill: "var(--color-opponentScore)" }}
                   />
                 </LineChart>
               </ChartContainer>
