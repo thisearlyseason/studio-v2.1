@@ -22,7 +22,7 @@
         },
         "phone": {
           "type": "string",
-          "description": "The user's phone number (optional)."
+          "description": "The user's cell phone number (optional)."
         },
         "avatarUrl": {
           "type": "string",
@@ -82,6 +82,10 @@
           "type": "string",
           "description": "Timestamp when the team was created.",
           "format": "date-time"
+        },
+        "isPro": {
+          "type": "boolean",
+          "description": "Indicates if the team has an active Pro subscription."
         }
       },
       "required": [
@@ -109,7 +113,7 @@
         },
         "defaultEnabled": {
           "type": "boolean",
-          "description": "Whether the feature is enabled by default."
+          "description": "Whether the feature is enabled by default for new teams."
         }
       },
       "required": [
@@ -138,11 +142,11 @@
         },
         "isPublic": {
           "type": "boolean",
-          "description": "Whether the plan is visible to all users."
+          "description": "Whether the plan is visible to all users in the pricing section."
         },
         "isContactOnly": {
           "type": "boolean",
-          "description": "If true, requires manual sales contact."
+          "description": "If true, requires manual sales contact to activate."
         },
         "billingType": {
           "type": "string",
@@ -159,7 +163,7 @@
         },
         "features": {
           "type": "object",
-          "description": "A map of feature IDs to booleans indicating if they are enabled.",
+          "description": "A map of feature IDs to booleans indicating if they are enabled for this plan.",
           "additionalProperties": {
             "type": "boolean"
           }
@@ -182,27 +186,29 @@
     ]
   },
   "firestore": {
-    "structure": [
-      {
-        "path": "/features/{featureId}",
-        "definition": {
-          "entityName": "Feature",
-          "schema": {
-            "$ref": "#/backend/entities/Feature"
-          },
-          "description": "Global collection for defining all available features."
-        }
+    "/features/{featureId}": {
+      "schema": {
+        "$ref": "#/backend/entities/Feature"
       },
-      {
-        "path": "/plans/{planId}",
-        "definition": {
-          "entityName": "Plan",
-          "schema": {
-            "$ref": "#/backend/entities/Plan"
-          },
-          "description": "Global collection for defining subscription tiers."
-        }
-      }
-    ]
+      "description": "Global collection defining available application capabilities."
+    },
+    "/plans/{planId}": {
+      "schema": {
+        "$ref": "#/backend/entities/Plan"
+      },
+      "description": "Global collection defining subscription tiers and their associated features."
+    },
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/backend/entities/User"
+      },
+      "description": "Private user profiles."
+    },
+    "/teams/{teamId}": {
+      "schema": {
+        "$ref": "#/backend/entities/Team"
+      },
+      "description": "Collaborative team hubs."
+    }
   }
 }

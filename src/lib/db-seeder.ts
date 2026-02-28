@@ -4,8 +4,6 @@
 import { 
   Firestore, 
   doc, 
-  getDoc, 
-  setDoc, 
   collection, 
   getDocs, 
   writeBatch 
@@ -13,11 +11,11 @@ import {
 
 /**
  * Seeds the Firestore database with default plans and features if they don't exist.
- * This is designed to run once or during administrative sessions.
+ * This is designed to run once or during administrative sessions to establish the single source of truth.
  */
 export async function seedSubscriptionData(db: Firestore) {
   try {
-    // 1. Check if features already exist to avoid overwriting
+    // 1. Seed Features if missing
     const featuresSnapshot = await getDocs(collection(db, 'features'));
     if (featuresSnapshot.empty) {
       console.log('Seeding default features...');
@@ -41,7 +39,7 @@ export async function seedSubscriptionData(db: Firestore) {
       defaultFeatures.forEach((f) => {
         const ref = doc(db, 'features', f.id);
         batch.set(ref, {
-          key: f.id,
+          id: f.id,
           description: f.description,
           defaultEnabled: f.defaultEnabled
         });
@@ -50,7 +48,7 @@ export async function seedSubscriptionData(db: Firestore) {
       await batch.commit();
     }
 
-    // 2. Check if plans already exist
+    // 2. Seed Plans if missing
     const plansSnapshot = await getDocs(collection(db, 'plans'));
     if (plansSnapshot.empty) {
       console.log('Seeding default plans...');
@@ -94,7 +92,7 @@ export async function seedSubscriptionData(db: Firestore) {
           description: 'Full-scale coordination and analytics for elite squads.',
           isPublic: true,
           isContactOnly: false,
-          billingType: 'monthly', // Also annual via package logic
+          billingType: 'monthly', // Also annual logic
           teamLimit: 5,
           features: allFeaturesMap
         },
