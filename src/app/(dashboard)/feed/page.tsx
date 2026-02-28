@@ -243,7 +243,7 @@ export default function FeedPage() {
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 pb-12 animate-in fade-in duration-500">
-      <div className="flex-1 space-y-8 min-w-0">
+      <div className="flex-1 min-w-0 space-y-8">
         <section className="relative h-48 sm:h-64 lg:h-80 rounded-[2.5rem] overflow-hidden shadow-2xl group ring-1 ring-black/5">
           <img src={activeTeam.heroImageUrl || "https://picsum.photos/seed/squadhero/1200/400"} alt="Team Hero" className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
@@ -277,7 +277,7 @@ export default function FeedPage() {
                   placeholder={`What's the play for ${activeTeam.name}?`} 
                   value={newPostContent} 
                   onChange={(e) => setNewPostContent(e.target.value)} 
-                  className="min-h-[100px] w-full resize-none border-none focus-visible:ring-0 p-0 text-lg sm:text-xl font-medium placeholder:text-muted-foreground/30 bg-transparent leading-relaxed" 
+                  className="min-h-[100px] w-full resize-none border-none focus-visible:ring-0 p-2 text-lg sm:text-xl font-medium placeholder:text-muted-foreground/30 bg-transparent leading-relaxed" 
                 />
                 
                 {imageUrl && (
@@ -287,25 +287,27 @@ export default function FeedPage() {
                   </div>
                 )}
 
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-6 pt-8 mt-4 border-t border-muted/50">
-                  <div className="flex items-center gap-4">
+                <div className="flex flex-row items-center justify-center gap-4 sm:gap-6 pt-8 mt-4 border-t border-muted/50">
+                  <div className="flex items-center gap-3">
                     <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                     <Button 
                       variant="ghost" 
-                      size="sm" 
-                      className="h-12 px-6 rounded-full font-black uppercase text-[10px] tracking-widest text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all" 
+                      size="icon" 
+                      className="h-12 w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all shadow-sm" 
                       onClick={() => fileInputRef.current?.click()}
+                      title="Add Media"
                     >
-                      <ImagePlus className="h-4 w-4 mr-2" /> Media
+                      <ImagePlus className="h-5 w-5" />
                     </Button>
                     <Dialog open={isPollDialogOpen} onOpenChange={setIsPollDialogOpen}>
                       <DialogTrigger asChild>
                         <Button 
                           variant="ghost" 
-                          size="sm" 
-                          className="h-12 px-6 rounded-full font-black uppercase text-[10px] tracking-widest text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all"
+                          size="icon" 
+                          className="h-12 w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all shadow-sm"
+                          title="Create Poll"
                         >
-                          <BarChart2 className="h-4 w-4 mr-2" /> Poll
+                          <BarChart2 className="h-5 w-5" />
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="sm:max-w-md rounded-3xl">
@@ -335,7 +337,7 @@ export default function FeedPage() {
                   <Button 
                     disabled={!newPostContent.trim() && !imageUrl} 
                     onClick={handlePost} 
-                    className="w-full sm:w-auto rounded-full px-10 h-12 font-black uppercase text-[11px] tracking-[0.15em] shadow-xl shadow-primary/20 transition-all active:scale-95 shrink-0"
+                    className="rounded-full px-8 h-12 font-black uppercase text-[11px] tracking-[0.15em] shadow-xl shadow-primary/20 transition-all active:scale-95 shrink-0"
                   >
                     Post to Squad
                   </Button>
