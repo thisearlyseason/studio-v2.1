@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState } from 'react';
@@ -5,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { 
   Select, 
@@ -23,6 +25,7 @@ export default function NewTeamPage() {
   const router = useRouter();
   const { createNewTeam, teams, isSuperAdmin, plans, activeTeam } = useTeam();
   const [teamName, setTeamName] = useState('');
+  const [description, setDescription] = useState('');
   const [organizerPosition, setOrganizerPosition] = useState('Coach');
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -34,7 +37,7 @@ export default function NewTeamPage() {
   const handleCreate = async () => {
     if (teamName.trim() && !isAtLimit) {
       setIsProcessing(true);
-      await createNewTeam(teamName, organizerPosition);
+      await createNewTeam(teamName, organizerPosition, description);
       router.push('/feed');
     }
   };
@@ -70,6 +73,11 @@ export default function NewTeamPage() {
           <div className="space-y-2">
             <Label htmlFor="teamName" className="text-xs font-bold uppercase tracking-widest ml-1">Squad Name</Label>
             <Input id="teamName" placeholder="e.g. Westside Warriors" value={teamName} onChange={(e) => setTeamName(e.target.value)} className="h-12 text-lg rounded-xl" />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="description" className="text-xs font-bold uppercase tracking-widest ml-1">Squad Bio</Label>
+            <Textarea id="description" placeholder="A brief description of your team..." value={description} onChange={(e) => setDescription(e.target.value)} className="rounded-xl min-h-[100px] resize-none" />
           </div>
 
           <div className="space-y-2">

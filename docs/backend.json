@@ -69,6 +69,10 @@
           "type": "string",
           "description": "The sport the team is associated with."
         },
+        "description": {
+          "type": "string",
+          "description": "A brief bio or description of the team."
+        },
         "teamLogoUrl": {
           "type": "string",
           "description": "URL to the team's logo image (optional).",

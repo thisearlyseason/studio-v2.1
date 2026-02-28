@@ -38,6 +38,7 @@ export type Team = {
   name: string;
   code: string;
   sport?: string;
+  description?: string;
   teamLogoUrl?: string;
   heroImageUrl?: string;
   contactEmail?: string;
@@ -151,7 +152,7 @@ interface TeamContextType {
   updateMember: (id: string, updates: Partial<Member>) => void;
   alerts: TeamAlert[];
   createAlert: (title: string, message: string) => void;
-  createNewTeam: (name: string, organizerPosition: string) => Promise<void>;
+  createNewTeam: (name: string, organizerPosition: string, description?: string) => Promise<void>;
   joinTeamWithCode: (code: string, position: string) => Promise<boolean>;
   addEvent: (event: any) => void;
   updateEvent: (id: string, event: any) => void;
@@ -282,6 +283,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         name: m.teamName || m.name || 'Unnamed Team',
         code: m.teamCode || m.code || '......',
         sport: m.sport,
+        description: m.description,
         teamLogoUrl: m.teamLogoUrl,
         heroImageUrl: m.heroImageUrl,
         isPro: m.isPro || false,
@@ -333,7 +335,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     activeTeam, 
     setActiveTeam: (t: Team) => setActiveTeamId(t.id),
     updateTeamHero: async (url: string) => { if (activeTeam?.id && firebaseUser) { updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id), { heroImageUrl: url }); updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), { heroImageUrl: url }); } },
-    updateTeamDetails: async (updates: Partial<Team>) => { if (activeTeam?.id && firebaseUser) { const f: any = {}; if (updates.name) f.teamName = updates.name; if (updates.sport) f.sport = updates.sport; if (updates.teamLogoUrl) f.teamLogoUrl = updates.teamLogoUrl; if (Object.keys(f).length > 0) { updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id), f); updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), f); } toast({ title: "Squad Updated" }); } },
+    updateTeamDetails: async (updates: Partial<Team>) => { if (activeTeam?.id && firebaseUser) { const f: any = {}; if (updates.name) f.teamName = updates.name; if (updates.sport) f.sport = updates.sport; if (updates.description) f.description = updates.description; if (updates.teamLogoUrl) f.teamLogoUrl = updates.teamLogoUrl; if (Object.keys(f).length > 0) { updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id), f); updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), f); } toast({ title: "Squad Updated" }); } },
     updateTeamPlan: async (tid: string, pid: string) => { if (db) { const tRef = doc(db, 'teams', tid); const p = plans.find(p => p.id === pid); updateDocumentNonBlocking(tRef, { planId: pid, isPro: p?.billingType !== 'free' }); const memberships = await getDocs(query(collection(db, 'users'), limit(100))); memberships.forEach(async (uDoc) => { const memRef = doc(db, 'users', uDoc.id, 'teamMemberships', tid); try { await setDoc(memRef, { planId: pid, isPro: p?.billingType !== 'free' }, { merge: true }); } catch {} }); toast({ title: "Plan Synchronized" }); } },
     teams, 
     isTeamsLoading,
@@ -341,7 +343,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     updateMember: (id: string, u: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'members', id), u),
     alerts, 
     createAlert: (t: string, m: string) => { if (activeTeam?.id && firebaseUser) { setDocumentNonBlocking(doc(collection(db, 'teams', activeTeam.id, 'alerts')), { teamId: activeTeam.id, title: t, message: m, createdBy: firebaseUser.uid, createdAt: new Date().toISOString() }, { merge: true }); } },
-    createNewTeam: async (name: string, pos: string) => { if (!firebaseUser) return; const tid = `team_${Date.now()}`; const code = Math.random().toString(36).substring(2, 8).toUpperCase(); const batch = writeBatch(db); batch.set(doc(db, 'teams', tid), { id: tid, teamName: name, teamCode: code, createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), members: { [firebaseUser.uid]: 'Admin' }, isPro: false, planId: 'starter_squad' }); batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), { userId: firebaseUser.uid, teamId: tid, role: 'Admin', position: pos || 'Coach', name: userProfile?.name || 'Organizer', avatar: userProfile?.avatar || '', joinedAt: new Date().toISOString() }); batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { userId: firebaseUser.uid, teamId: tid, teamName: name, teamCode: code, role: 'Admin', isPro: false, planId: 'starter_squad', joinedAt: new Date().toISOString() }); await batch.commit(); setActiveTeamId(tid); },
+    createNewTeam: async (name: string, pos: string, description?: string) => { if (!firebaseUser) return; const tid = `team_${Date.now()}`; const code = Math.random().toString(36).substring(2, 8).toUpperCase(); const batch = writeBatch(db); batch.set(doc(db, 'teams', tid), { id: tid, teamName: name, description: description || '', teamCode: code, createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), members: { [firebaseUser.uid]: 'Admin' }, isPro: false, planId: 'starter_squad' }); batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), { userId: firebaseUser.uid, teamId: tid, role: 'Admin', position: pos || 'Coach', name: userProfile?.name || 'Organizer', avatar: userProfile?.avatar || '', joinedAt: new Date().toISOString() }); batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { userId: firebaseUser.uid, teamId: tid, teamName: name, description: description || '', teamCode: code, role: 'Admin', isPro: false, planId: 'starter_squad', joinedAt: new Date().toISOString() }); await batch.commit(); setActiveTeamId(tid); },
     joinTeamWithCode: async (code: string, pos: string) => { if (!firebaseUser || !userProfile) return false; const qT = query(collection(db, 'teams'), where('teamCode', '==', code.toUpperCase()), limit(1)); const snap = await getDocs(qT); if (snap.empty) return false; const tDoc = snap.docs[0]; const tData = tDoc.data(); const tid = tDoc.id; const batch = writeBatch(db); batch.update(doc(db, 'teams', tid), { [`members.${firebaseUser.uid}`]: 'Member' }); batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), { userId: firebaseUser.uid, teamId: tid, role: 'Member', position: pos || 'Player', name: userProfile.name, avatar: userProfile.avatar, joinedAt: new Date().toISOString() }); batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { userId: firebaseUser.uid, teamId: tid, teamName: tData.teamName, teamCode: code.toUpperCase(), role: 'Member', isPro: tData.isPro || false, planId: tData.planId || (tData.isPro ? 'squad_pro' : 'starter_squad'), joinedAt: new Date().toISOString() }); await batch.commit(); setActiveTeamId(tid); return true; },
     addEvent: (e: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'events'), { ...e, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString(), userRsvps: {} }),
     updateEvent: (id: string, e: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', id), e),
@@ -353,7 +355,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addFile: (n: string, t: string, s: string, u: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: t, size: s, url: u, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString() }),
     deleteFile: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'files', id)),
     createChat: async (name: string, memberIds: string[]) => { if (!activeTeam?.id || !firebaseUser) return ''; const docRef = await addDoc(collection(db, 'teams', activeTeam.id, 'groupChats'), { teamId: activeTeam.id, name, memberIds: [...memberIds, firebaseUser.uid], createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), lastMessage: '', unread: 0 }); return docRef.id; },
-    addMessage: (cid: string, auth: string, cont: string, type: string, img?: string, poll?: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages'), { author: auth, authorId: firebaseUser?.uid, content: cont, type, imageUrl: img || null, poll: poll || null, createdAt: new Date().toISOString() }),
+    addMessage: (cid: string, auth: string, content: string, type: string, img?: string, poll?: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages'), { author: auth, authorId: firebaseUser?.uid, content, type, imageUrl: img || null, poll: poll || null, createdAt: new Date().toISOString() }),
     votePoll: async (cid: string, mid: string, oidx: number) => { if (!activeTeam?.id || !firebaseUser) return; const ref = doc(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages', mid); const snap = await getDocs(query(collection(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages'), where('__name__', '==', mid))); if (snap.empty) return; const poll = snap.docs[0].data().poll; const current = poll.voters?.[firebaseUser.uid]; const u: any = { [`poll.voters.${firebaseUser.uid}`]: oidx }; if (current === undefined) { u[`poll.options.${oidx}.votes`] = poll.options[oidx].votes + 1; u['poll.totalVotes'] = poll.totalVotes + 1; } else if (current !== oidx) { u[`poll.options.${current}.votes`] = poll.options[current].votes - 1; u[`poll.options.${oidx}.votes`] = poll.options[oidx].votes + 1; } updateDocumentNonBlocking(ref, u); },
     updateRSVP: (eid: string, s: string) => { if (activeTeam?.id && firebaseUser) { const ref = doc(db, 'teams', activeTeam.id, 'events', eid); updateDocumentNonBlocking(ref, { [`userRsvps.${firebaseUser.uid}`]: s }); toast({ title: `RSVP Updated: ${s}` }); } },
     addRegistration: async (tid: string, eid: string, d: any) => { try { await addDoc(collection(db, 'teams', tid, 'events', eid, 'registrations'), { ...d, status: 'pending', createdAt: new Date().toISOString() }); return true; } catch { return false; } },
