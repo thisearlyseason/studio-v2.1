@@ -116,6 +116,19 @@ export type Message = {
   };
 };
 
+export type Plan = {
+  id: string;
+  name: string;
+  description: string;
+  priceDisplay: string;
+  billingCycle: string;
+  isPublic: boolean;
+  isContactOnly: boolean;
+  billingType: 'free' | 'monthly' | 'annual' | 'manual';
+  teamLimit: number | null;
+  features: Record<string, boolean>;
+};
+
 interface TeamContextType {
   user: UserProfile | null;
   updateUser: (updates: Partial<UserProfile>) => void;
@@ -146,6 +159,7 @@ interface TeamContextType {
   updateRSVP: (eventId: string, status: string) => void;
   addRegistration: (teamId: string, eventId: string, data: any) => Promise<boolean>;
   promoteToRoster: (teamId: string, eventId: string, reg: any) => Promise<void>;
+  submitLead: (data: any) => Promise<boolean>;
   isLoading: boolean;
   isSuperAdmin: boolean;
   isPro: boolean;
@@ -309,6 +323,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     updateRSVP: (eid: string, s: string) => { if (activeTeam && firebaseUser) { const ref = doc(db, 'teams', activeTeam.id, 'events', eid); updateDocumentNonBlocking(ref, { [`userRsvps.${firebaseUser.uid}`]: s }); toast({ title: `RSVP Updated: ${s}` }); } },
     addRegistration: async (tid: string, eid: string, d: any) => { try { await addDoc(collection(db, 'teams', tid, 'events', eid, 'registrations'), { ...d, status: 'pending', createdAt: new Date().toISOString() }); return true; } catch { return false; } },
     promoteToRoster: async (tid: string, eid: string, reg: any) => { if (!firebaseUser) return; try { const mid = `member_${Date.now()}`; await setDoc(doc(db, 'teams', tid, 'members', mid), { userId: `ext_${Date.now()}`, teamId: tid, name: reg.name, role: 'Member', position: 'Player', avatar: '', joinedAt: new Date().toISOString() }); await deleteDoc(doc(db, 'teams', tid, 'events', eid, 'registrations', reg.id)); toast({ title: "Promoted to Roster" }); } catch { toast({ title: "Promotion Failed", variant: "destructive" }); } },
+    submitLead: async (data: any) => { try { await addDoc(collection(db, 'leads'), { ...data, createdAt: new Date().toISOString() }); toast({ title: "Inquiry Sent", description: "Our team will reach out shortly." }); return true; } catch { toast({ title: "Submission Failed", variant: "destructive" }); return false; } },
     isLoading: isUserLoading, 
     isSuperAdmin,
     isPro: activeTeam?.isPro || isProEntitlementActive || isSuperAdmin,

@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, memo } from 'react';
@@ -17,7 +18,8 @@ import {
   Info,
   Lock,
   Dumbbell,
-  Search
+  Search,
+  CreditCard
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -177,6 +179,24 @@ export default function Shell({ children }: { children: React.Node }) {
                   isLocked={tab.pro && !isPro} 
                 />
               ))}
+              <SidebarSeparator className="my-4 opacity-10" />
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  asChild 
+                  isActive={pathname === '/pricing'}
+                  className={cn(
+                    "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
+                    pathname === '/pricing' 
+                      ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20 hover:bg-amber-600" 
+                      : "text-muted-foreground hover:bg-amber-500/5 hover:text-amber-600"
+                  )}
+                >
+                  <Link href="/pricing" className="flex items-center gap-4">
+                    <CreditCard className="h-5 w-5" />
+                    <span>Pricing & Plans</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarContent>
 
@@ -199,7 +219,9 @@ export default function Shell({ children }: { children: React.Node }) {
         <div className="flex flex-col flex-1 min-w-0 h-screen overflow-y-auto">
           <header className="hidden md:flex sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-20 items-center px-10 justify-between shrink-0">
             <div className="flex flex-col">
-              <h2 className="text-2xl font-black tracking-tighter uppercase">{tabs.find(t => pathname.startsWith(t.href))?.name || 'Dashboard'}</h2>
+              <h2 className="text-2xl font-black tracking-tighter uppercase">
+                {pathname === '/pricing' ? 'Pricing' : (tabs.find(t => pathname.startsWith(t.href))?.name || 'Dashboard')}
+              </h2>
               <p className="text-[10px] font-black uppercase text-muted-foreground tracking-[0.3em] ml-0.5">The Squad Hub • {activeTeam?.name}</p>
             </div>
             
@@ -222,7 +244,7 @@ export default function Shell({ children }: { children: React.Node }) {
 
           <nav className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-2xl glass rounded-2xl shadow-2xl border-white/40 p-1.5">
             <div className="flex items-center justify-around h-14">
-              {tabs.map((tab) => {
+              {tabs.slice(0, 5).map((tab) => {
                 const Icon = tab.icon;
                 const isActive = pathname.startsWith(tab.href);
                 return (
@@ -232,6 +254,10 @@ export default function Shell({ children }: { children: React.Node }) {
                   </Link>
                 );
               })}
+              <Link href="/pricing" className={cn("flex flex-col items-center justify-center gap-1 px-1 py-1 rounded-xl transition-all relative min-w-[50px]", pathname === '/pricing' ? "text-amber-500 bg-amber-500/5" : "text-muted-foreground")}>
+                <CreditCard className={cn("h-5 w-5", pathname === '/pricing' && "scale-110")} />
+                <span className="text-[8px] font-black tracking-tight uppercase truncate">Plans</span>
+              </Link>
             </div>
           </nav>
         </div>

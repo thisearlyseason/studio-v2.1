@@ -144,6 +144,14 @@
           "type": "string",
           "description": "Description of what the plan offers."
         },
+        "priceDisplay": {
+          "type": "string",
+          "description": "Display price (e.g. '$9.99')"
+        },
+        "billingCycle": {
+          "type": "string",
+          "description": "Cycle (e.g. '/mo' or '/yr')"
+        },
         "isPublic": {
           "type": "boolean",
           "description": "Whether the plan is visible to all users in the pricing section."
@@ -181,6 +189,43 @@
         "billingType",
         "features"
       ]
+    },
+    "Lead": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Lead",
+      "type": "object",
+      "description": "A contact inquiry for custom plans.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "organization": {
+          "type": "string"
+        },
+        "teamCount": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "name",
+        "email",
+        "organization",
+        "createdAt"
+      ]
     }
   },
   "auth": {
@@ -201,6 +246,12 @@
         "$ref": "#/backend/entities/Plan"
       },
       "description": "Global collection defining subscription tiers and their associated features."
+    },
+    "/leads/{leadId}": {
+      "schema": {
+        "$ref": "#/backend/entities/Lead"
+      },
+      "description": "Storage for custom plan inquiries."
     },
     "/users/{userId}": {
       "schema": {

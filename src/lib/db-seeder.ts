@@ -11,7 +11,6 @@ import {
 
 /**
  * Seeds the Firestore database with default plans and features if they don't exist.
- * This is designed to run once or during administrative sessions to establish the single source of truth.
  */
 export async function seedSubscriptionData(db: Firestore) {
   try {
@@ -80,6 +79,8 @@ export async function seedSubscriptionData(db: Firestore) {
           id: 'starter_squad',
           name: 'Starter Squad',
           description: 'Basic coordination essentials for growing teams.',
+          priceDisplay: 'Free',
+          billingCycle: '',
           isPublic: true,
           isContactOnly: false,
           billingType: 'free',
@@ -90,17 +91,21 @@ export async function seedSubscriptionData(db: Firestore) {
           id: 'squad_pro',
           name: 'Squad Pro',
           description: 'Full-scale coordination and analytics for elite squads.',
+          priceDisplay: '$9.99',
+          billingCycle: '/mo',
           isPublic: true,
           isContactOnly: false,
-          billingType: 'monthly', // Also annual logic
+          billingType: 'monthly',
           teamLimit: 5,
           features: allFeaturesMap
         },
         {
           id: 'club_custom',
           name: 'Club / Custom',
-          description: 'Custom solutions for leagues and multi-team organizations.',
-          isPublic: false,
+          description: 'Enterprise solutions for leagues and multi-team organizations.',
+          priceDisplay: 'Custom',
+          billingCycle: '',
+          isPublic: true,
           isContactOnly: true,
           billingType: 'manual',
           teamLimit: null,

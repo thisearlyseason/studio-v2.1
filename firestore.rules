@@ -1,3 +1,4 @@
+
 /**
  * SquadForge Firestore Security Rules
  *
@@ -6,11 +7,6 @@
  * "Authorization Independence" by leveraging denormalized fields (like authorId and creatorId) 
  * to ensure that security decisions are fast, performant, and do not require excessive cross-document 
  * lookups. Access is strictly governed by the authenticated user's identity.
- *
- * DATA STRUCTURE:
- * - /users/{userId}: Private user profiles managed by the owner.
- * - /teams/{teamId}: Collaborative group spaces containing sub-resources (Members, Events, Posts, etc.).
- * - /features & /plans: Global application configuration for subscription management.
  */
 
 rules_version = '2';
@@ -35,25 +31,13 @@ service cloud.firestore {
     }
 
     /**
-     * @description Verifies ownership of an existing document before modification or deletion.
-     */
-    function isExistingOwner(ownerId) {
-      return resource != null && isOwner(ownerId);
-    }
-
-    /**
-     * @description Checks if the authenticated user is a member of the specified group chat.
-     */
-    function isChatMember(chatId) {
-      return isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.memberIds;
-    }
-
-    /**
-     * @description Checks if the user is an admin of a specific team based on the members map.
+     * @description Checks if the user is an admin of a specific team based on the members subcollection or role field.
      */
     function isTeamAdmin(teamId) {
+      // For simplicity in this ruleset, we check if the user is the creator or has an admin role mapping.
+      // In a production app, we would often check a 'members' map on the team document itself for performance.
       let teamData = get(/databases/$(database)/documents/teams/$(teamId)).data;
-      return isAdmin() || (isSignedIn() && (teamData.members[request.auth.uid] == 'Admin' || teamData.creatorId == request.auth.uid || teamData.createdBy == request.auth.uid));
+      return isAdmin() || (isSignedIn() && (teamData.members[request.auth.uid] == 'Admin' || teamData.createdBy == request.auth.uid));
     }
 
     // --- COLLECTION RULES ---
@@ -77,65 +61,43 @@ service cloud.firestore {
       allow get, list, create: if isSignedIn();
       allow update, delete: if isTeamAdmin(teamId);
 
-      /**
-       * @description Team Roster Members.
-       */
       match /members/{memberId} {
         allow read: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if isTeamAdmin(teamId) || isOwner(resource.data.userId);
+        allow write: if isTeamAdmin(teamId) || isOwner(request.resource.data.userId);
       }
 
-      /**
-       * @description Scheduled team events and matches.
-       */
       match /events/{eventId} {
         allow read: if isSignedIn();
-        allow create, update, delete: if isTeamAdmin(teamId);
+        allow write: if isTeamAdmin(teamId);
 
         match /registrations/{regId} {
           allow read: if isTeamAdmin(teamId);
-          allow create: if true; // Public Registration
+          allow create: if true;
           allow delete: if isTeamAdmin(teamId);
         }
       }
 
-      /**
-       * @description Recorded match results.
-       */
       match /games/{gameId} {
         allow read: if isSignedIn();
-        allow create, update, delete: if isTeamAdmin(teamId);
+        allow write: if isTeamAdmin(teamId);
       }
 
-      /**
-       * @description Training library drills.
-       */
       match /drills/{drillId} {
         allow read: if isSignedIn();
-        allow create, update, delete: if isTeamAdmin(teamId);
+        allow write: if isTeamAdmin(teamId);
       }
 
-      /**
-       * @description Shared squad repository files.
-       */
       match /files/{fileId} {
         allow read: if isSignedIn();
         allow create: if isSignedIn();
         allow delete: if isTeamAdmin(teamId) || isOwner(resource.data.uploaderId);
       }
 
-      /**
-       * @description High priority broadcasts.
-       */
       match /alerts/{alertId} {
         allow read: if isSignedIn();
         allow create, delete: if isTeamAdmin(teamId);
       }
 
-      /**
-       * @description Activity feed posts.
-       */
       match /feedPosts/{postId} {
         allow read: if isSignedIn();
         allow create: if isSignedIn();
@@ -148,13 +110,10 @@ service cloud.firestore {
         }
       }
 
-      /**
-       * @description Group messaging channels.
-       */
       match /groupChats/{chatId} {
-        allow read: if isSignedIn() && (request.auth.uid in resource.data.memberIds || isTeamAdmin(teamId));
+        allow read: if isSignedIn();
         allow create: if isSignedIn();
-        allow update: if isSignedIn() && (request.auth.uid in resource.data.memberIds || isTeamAdmin(teamId));
+        allow update: if isSignedIn();
         allow delete: if isTeamAdmin(teamId);
 
         match /messages/{messageId} {
@@ -166,19 +125,21 @@ service cloud.firestore {
     }
 
     /**
-     * @description Global application features metadata.
+     * @description Global application configuration.
      */
     match /features/{featureId} {
       allow get, list: if true;
       allow write: if isAdmin();
     }
 
-    /**
-     * @description Global application subscription plans.
-     */
     match /plans/{planId} {
-      allow read: if isSignedIn();
+      allow get, list: if isSignedIn();
       allow write: if isAdmin();
+    }
+
+    match /leads/{leadId} {
+      allow create: if isSignedIn();
+      allow read, write: if isAdmin();
     }
 
     /**
