@@ -76,6 +76,14 @@ export type Member = {
   feesPaid?: boolean;
   amountOwed?: number;
   fees?: any[];
+  // Extended Profile Fields
+  birthdate?: string;
+  parentName?: string;
+  parentEmail?: string;
+  parentPhone?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  notes?: string;
 };
 
 export type TeamAlert = {
@@ -219,7 +227,24 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeam?.id, db]);
   const { data: membersData } = useCollection(membersQuery);
   const members = useMemo(() => (membersData || []).map(m => ({
-    id: m.id, userId: m.userId, teamId: m.teamId, name: m.name || 'Member', role: m.role, position: m.position || 'Player', jersey: m.jersey || 'TBD', avatar: m.avatar || `https://picsum.photos/seed/${m.userId}/150/150`, feesPaid: m.feesPaid || false, amountOwed: m.amountOwed || 0, fees: m.fees || []
+    id: m.id, 
+    userId: m.userId, 
+    teamId: m.teamId, 
+    name: m.name || 'Member', 
+    role: m.role, 
+    position: m.position || 'Player', 
+    jersey: m.jersey || 'TBD', 
+    avatar: m.avatar || `https://picsum.photos/seed/${m.userId}/150/150`, 
+    feesPaid: m.feesPaid || false, 
+    amountOwed: m.amountOwed || 0, 
+    fees: m.fees || [],
+    birthdate: m.birthdate,
+    parentName: m.parentName,
+    parentEmail: m.parentEmail,
+    parentPhone: m.parentPhone,
+    emergencyContactName: m.emergencyContactName,
+    emergencyContactPhone: m.emergencyContactPhone,
+    notes: m.notes
   })), [membersData]);
 
   const alertsQuery = useMemoFirebase(() => {
