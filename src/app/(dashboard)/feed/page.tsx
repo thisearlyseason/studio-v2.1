@@ -24,7 +24,8 @@ import {
   Users,
   BarChart2,
   Sparkles,
-  Plus
+  Plus,
+  XCircle
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -277,7 +278,7 @@ export default function FeedPage() {
                   placeholder={`What's the play for ${activeTeam.name}?`} 
                   value={newPostContent} 
                   onChange={(e) => setNewPostContent(e.target.value)} 
-                  className="min-h-[100px] w-full resize-none border-none focus-visible:ring-0 p-2 text-lg sm:text-xl font-medium placeholder:text-muted-foreground/30 bg-transparent leading-relaxed" 
+                  className="min-h-[100px] w-full resize-none border-none focus-visible:ring-0 p-4 text-lg sm:text-xl font-medium placeholder:text-muted-foreground/30 bg-transparent leading-relaxed" 
                 />
                 
                 {imageUrl && (
@@ -310,27 +311,45 @@ export default function FeedPage() {
                           <BarChart2 className="h-5 w-5" />
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="sm:max-w-md rounded-3xl">
-                        <DialogHeader>
-                          <DialogTitle>Create Squad Poll</DialogTitle>
-                          <DialogDescription>Ask your team a question and track the vote.</DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                          <div className="space-y-2">
-                            <Label>Question</Label>
-                            <Input placeholder="e.g. Best time for practice?" value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} className="rounded-xl h-11" />
-                          </div>
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between"><Label className="text-xs font-black uppercase text-muted-foreground">Options</Label><Button variant="ghost" size="sm" onClick={handleAddPollOption} disabled={pollOptions.length >= 6} className="h-7 text-[10px] font-black uppercase"><Plus className="h-3 w-3 mr-1" /> Add</Button></div>
-                            {pollOptions.map((opt, i) => (
-                              <div key={i} className="flex gap-2">
-                                <Input placeholder={`Option ${i+1}`} value={opt} onChange={e => { const newOpts = [...pollOptions]; newOpts[i] = e.target.value; setPollOptions(newOpts); }} className="rounded-lg h-9 text-sm" />
-                                <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive" onClick={() => handleRemovePollOption(i)} disabled={pollOptions.length <= 2}><Trash2 className="h-4 w-4" /></Button>
+                      <DialogContent className="sm:max-w-3xl rounded-[2.5rem] overflow-hidden p-0">
+                        <div className="grid grid-cols-1 lg:grid-cols-2">
+                          <div className="p-8 bg-primary/5 border-r space-y-6">
+                            <DialogHeader>
+                              <DialogTitle className="text-2xl font-black tracking-tight">Launch Squad Poll</DialogTitle>
+                              <DialogDescription className="font-bold text-primary/60 uppercase tracking-widest text-[10px]">Collect squad consensus</DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4 pt-4">
+                              <div className="space-y-2">
+                                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">The Question</Label>
+                                <Input placeholder="e.g. Best time for extra training?" value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} className="rounded-xl h-12 bg-background font-bold" />
                               </div>
-                            ))}
+                              <div className="p-6 bg-background rounded-2xl border-2 border-dashed border-primary/10">
+                                <p className="text-xs text-muted-foreground font-medium leading-relaxed italic">
+                                  Use polls to finalize event locations, voting on jerseys, or deciding team meals.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="p-8 space-y-6 flex flex-col justify-between">
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Polling Options</Label>
+                                <Button variant="ghost" size="sm" onClick={handleAddPollOption} disabled={pollOptions.length >= 6} className="h-7 text-[10px] font-black uppercase tracking-widest text-primary"><Plus className="h-3 w-3 mr-1" /> Add</Button>
+                              </div>
+                              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                {pollOptions.map((opt, i) => (
+                                  <div key={i} className="flex gap-2 group">
+                                    <Input placeholder={`Option ${i+1}`} value={opt} onChange={e => { const newOpts = [...pollOptions]; newOpts[i] = e.target.value; setPollOptions(newOpts); }} className="rounded-xl h-11 bg-muted/30 focus:bg-background transition-colors" />
+                                    <Button variant="ghost" size="icon" className="h-11 w-11 rounded-xl text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleRemovePollOption(i)} disabled={pollOptions.length <= 2}><Trash2 className="h-4 w-4" /></Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <DialogFooter>
+                              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCreatePoll}>Launch Poll to Feed</Button>
+                            </DialogFooter>
                           </div>
                         </div>
-                        <DialogFooter><Button className="w-full rounded-xl h-12 text-base font-black" onClick={handleCreatePoll}>Launch Poll</Button></DialogFooter>
                       </DialogContent>
                     </Dialog>
                   </div>
@@ -539,27 +558,49 @@ export default function FeedPage() {
       </aside>
 
       <Dialog open={!!viewVotersFor} onOpenChange={() => setViewVotersFor(null)}>
-        <DialogContent className="sm:max-w-xs rounded-3xl">
-          <DialogHeader><DialogTitle className="text-sm font-black uppercase tracking-widest">Voter List</DialogTitle></DialogHeader>
-          <ScrollArea className="max-h-[300px] mt-2">
-            <div className="space-y-3 p-1">
-              {viewVotersFor?.voterIds.map(vid => {
-                const voter = members.find(m => m.userId === vid);
-                return (
-                  <div key={vid} className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={voter?.avatar} />
-                      <AvatarFallback>{voter?.name?.[0] || '?'}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex flex-col">
-                      <span className="text-xs font-bold">{voter?.name || 'Unknown'}</span>
-                      <span className="text-[9px] text-muted-foreground font-black uppercase">{voter?.position || 'Member'}</span>
+        <DialogContent className="sm:max-w-md rounded-[2rem] p-0 overflow-hidden">
+          <div className="bg-primary/5 p-6 border-b flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-primary/10 p-2 rounded-xl text-primary"><Users className="h-5 w-5" /></div>
+              <div>
+                <DialogTitle className="text-sm font-black uppercase tracking-widest">Voter Analysis</DialogTitle>
+                <DialogDescription className="text-[9px] font-bold text-primary/60 tracking-widest uppercase">Squad Consensus Tracking</DialogDescription>
+              </div>
+            </div>
+            <DialogClose asChild>
+              <Button variant="ghost" size="icon" className="rounded-full h-8 w-8"><XCircle className="h-5 w-5 text-muted-foreground" /></Button>
+            </DialogClose>
+          </div>
+          <ScrollArea className="max-h-[400px]">
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between px-1">
+                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Option Selected</p>
+                <Badge variant="secondary" className="bg-primary/10 text-primary uppercase font-black text-[9px]">{viewVotersFor?.question.slice(0, 20)}...</Badge>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {viewVotersFor?.voterIds.map(vid => {
+                  const voter = members.find(m => m.userId === vid);
+                  return (
+                    <div key={vid} className="flex items-center gap-3 p-3 bg-muted/20 rounded-2xl hover:bg-muted/30 transition-all border border-transparent hover:border-black/5">
+                      <Avatar className="h-9 w-9 ring-2 ring-background">
+                        <AvatarImage src={voter?.avatar} />
+                        <AvatarFallback className="font-bold text-xs">{voter?.name?.[0] || '?'}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xs font-black truncate">{voter?.name || 'Unknown'}</span>
+                        <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest">{voter?.position || 'Member'}</span>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </ScrollArea>
+          <div className="p-4 bg-muted/10 border-t flex justify-center">
+            <DialogClose asChild>
+              <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest h-9 px-8">Close Insight</Button>
+            </DialogClose>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

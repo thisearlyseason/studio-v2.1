@@ -137,7 +137,7 @@ export default function GamesPage() {
               <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-amber-500" /> Detailed Match Archives</li>
               <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-amber-500" /> Individual Performance Logs</li>
             </ul>
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20">
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={purchasePro}>
               Upgrade Squad for $9.99 USD
             </Button>
           </div>
@@ -222,31 +222,45 @@ export default function GamesPage() {
                 Record Game
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>{editingGame ? "Edit Game Result" : "Record Game Result"}</DialogTitle>
-                <DialogDescription>Enter the details of a completed match.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Opponent Name</Label>
-                  <Input placeholder="e.g. Riverside Rovers" value={opponent} onChange={e => setOpponent(e.target.value)} />
+            <DialogContent className="sm:max-w-3xl rounded-[2.5rem] overflow-hidden p-0">
+              <div className="grid grid-cols-1 lg:grid-cols-2">
+                <div className="p-8 bg-primary/5 border-r space-y-6">
+                  <DialogHeader>
+                    <DialogTitle className="text-2xl font-black tracking-tight">{editingGame ? "Update Match Record" : "Post Match Result"}</DialogTitle>
+                    <DialogDescription className="font-bold text-primary/60 uppercase tracking-widest text-[10px]">Official Season Scoreboard</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-5">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Opponent Name</Label>
+                      <Input placeholder="e.g. Riverside Rovers" value={opponent} onChange={e => setOpponent(e.target.value)} className="h-12 rounded-xl bg-background" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-12 rounded-xl bg-background" /></div>
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label><Input placeholder="Arena/Field" value={location} onChange={e => setLocation(e.target.value)} className="h-12 rounded-xl bg-background" /></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">{activeTeam.name} Score</Label><Input type="number" value={myScore} onChange={e => setMyScore(e.target.value)} className="h-12 rounded-xl bg-background font-black text-lg" /></div>
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Opponent Score</Label><Input type="number" value={opponentScore} onChange={e => setOpponentScore(e.target.value)} className="h-12 rounded-xl bg-background font-black text-lg" /></div>
+                    </div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Date</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
-                  <div className="space-y-2"><Label>Location</Label><Input placeholder="Arena/Field" value={location} onChange={e => setLocation(e.target.value)} /></div>
+                <div className="p-8 space-y-6 flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Match Summary & Highlights</Label>
+                    <Textarea 
+                      placeholder="Recap the game, call out MVPs, or note areas for improvement..." 
+                      value={notes} 
+                      onChange={e => setNotes(e.target.value)} 
+                      className="min-h-[250px] rounded-[2rem] p-6 text-base leading-relaxed bg-muted/10 border-2" 
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleRecordGame}>
+                      {editingGame ? "Commit Updates" : "Post Official Result"}
+                    </Button>
+                  </DialogFooter>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>{activeTeam.name} Score</Label><Input type="number" value={myScore} onChange={e => setMyScore(e.target.value)} /></div>
-                  <div className="space-y-2"><Label>Opponent Score</Label><Input type="number" value={opponentScore} onChange={e => setOpponentScore(e.target.value)} /></div>
-                </div>
-                <div className="space-y-2"><Label>Notes / Summary</Label><Textarea placeholder="Highlights or MVPs..." value={notes} onChange={e => setNotes(e.target.value)} /></div>
               </div>
-              <DialogFooter>
-                <Button className="w-full h-12 rounded-xl text-base font-bold" onClick={handleRecordGame}>
-                  {editingGame ? "Update Result" : "Post Result"}
-                </Button>
-              </DialogFooter>
             </DialogContent>
           </Dialog>
         )}

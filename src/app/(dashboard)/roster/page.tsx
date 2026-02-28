@@ -291,12 +291,12 @@ export default function RosterPage() {
         ))}
       </div>
 
-      {/* Member Details & Management Dialog */}
+      {/* Member Details & Management Dialog - Desktop Optimized */}
       <Dialog open={!!selectedMember} onOpenChange={(open) => !open && setSelectedMember(null)}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-lg overflow-y-auto max-h-[90vh]">
+        <DialogContent className="rounded-[2.5rem] sm:max-w-4xl overflow-y-auto max-h-[95vh]">
           {selectedMember && (
             <>
-              <DialogHeader className="flex flex-col items-center text-center space-y-4 pt-4">
+              <DialogHeader className="flex flex-col items-center text-center space-y-4 pt-4 border-b pb-6">
                 <div className="relative">
                   <Avatar className="h-24 w-24 rounded-[2rem] border-4 border-background shadow-xl">
                     <AvatarImage src={selectedMember.avatar} />
@@ -316,139 +316,146 @@ export default function RosterPage() {
                 </div>
               </DialogHeader>
 
-              <div className="space-y-6 py-4">
-                {/* Collapsible Financial Section */}
-                <Accordion type="single" collapsible className="w-full">
-                  <AccordionItem value="finances" className="border-none">
-                    <AccordionTrigger className="hover:no-underline bg-muted/30 p-4 rounded-2xl border-2 border-dashed">
-                      <div className="flex items-center gap-3 text-left">
-                        <div className="bg-primary/10 p-2 rounded-lg text-primary">
-                          <CreditCard className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-black uppercase tracking-widest text-primary">Financial Ledger</p>
-                          <p className="text-[10px] text-muted-foreground font-bold">Total Owed: ${selectedMember.amountOwed || 0}</p>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 py-6">
+                {/* Left Column: Financial Ledger */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 px-1 mb-4">
+                    <div className="bg-primary/10 p-2 rounded-lg text-primary">
+                      <CreditCard className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-primary">Financial Ledger</p>
+                      <p className="text-[10px] text-muted-foreground font-bold">Total Owed: ${selectedMember.amountOwed || 0}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {isAdmin && (
+                      <div className="bg-muted/50 p-4 rounded-2xl space-y-3 border-2 border-dashed">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Add New Charge</p>
+                        <div className="flex gap-2">
+                          <Input 
+                            placeholder="Fee Title (e.g. League)" 
+                            className="h-10 text-xs rounded-xl"
+                            value={newFee.title}
+                            onChange={e => setNewFee(p => ({ ...p, title: e.target.value }))}
+                          />
+                          <div className="relative w-28">
+                            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                            <Input 
+                              type="number" 
+                              placeholder="0.00" 
+                              className="h-10 text-xs pl-8 rounded-xl"
+                              value={newFee.amount}
+                              onChange={e => setNewFee(p => ({ ...p, amount: e.target.value }))}
+                            />
+                          </div>
+                          <Button size="icon" className="h-10 w-10 shrink-0 rounded-xl" onClick={handleAddFee} disabled={!newFee.title || !newFee.amount}>
+                            <Plus className="h-5 w-5" />
+                          </Button>
                         </div>
                       </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="pt-4 px-1 space-y-4">
-                      {/* Add New Fee Item (Admin Only) */}
-                      {isAdmin && (
-                        <div className="bg-muted/50 p-4 rounded-xl space-y-3">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Add New Charge</p>
-                          <div className="flex gap-2">
-                            <Input 
-                              placeholder="Fee Title (e.g. League)" 
-                              className="h-9 text-xs rounded-lg"
-                              value={newFee.title}
-                              onChange={e => setNewFee(p => ({ ...p, title: e.target.value }))}
-                            />
-                            <div className="relative w-24">
-                              <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                              <Input 
-                                type="number" 
-                                placeholder="0.00" 
-                                className="h-9 text-xs pl-6 rounded-lg"
-                                value={newFee.amount}
-                                onChange={e => setNewFee(p => ({ ...p, amount: e.target.value }))}
+                    )}
+
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                      {selectedMember.fees && selectedMember.fees.length > 0 ? selectedMember.fees.map((fee) => (
+                        <div key={fee.id} className="flex items-center justify-between p-4 bg-background border rounded-2xl shadow-sm hover:border-primary/20 transition-all">
+                          <div className="flex items-center gap-4">
+                            {isAdmin ? (
+                              <Checkbox 
+                                checked={fee.paid} 
+                                onCheckedChange={() => handleToggleFeePaid(fee.id)}
+                                className="h-5 w-5 rounded-md"
                               />
+                            ) : (
+                              fee.paid ? <Check className="h-5 w-5 text-green-600" /> : <Circle className="h-5 w-5 text-amber-500 opacity-30" />
+                            )}
+                            <div>
+                              <p className={cn("text-sm font-bold", fee.paid && "text-muted-foreground line-through")}>{fee.title}</p>
+                              <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">${fee.amount}</p>
                             </div>
-                            <Button size="icon" className="h-9 w-9 shrink-0 rounded-lg" onClick={handleAddFee} disabled={!newFee.title || !newFee.amount}>
-                              <Plus className="h-4 w-4" />
-                            </Button>
                           </div>
+                          {isAdmin && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-full" onClick={() => handleRemoveFee(fee.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      )) : (
+                        <div className="text-center py-12 bg-muted/20 rounded-2xl border-2 border-dashed">
+                          <p className="text-muted-foreground italic text-xs font-medium">No financial records for this teammate.</p>
                         </div>
                       )}
-
-                      {/* Fee Items List */}
-                      <div className="space-y-2">
-                        {selectedMember.fees && selectedMember.fees.length > 0 ? selectedMember.fees.map((fee) => (
-                          <div key={fee.id} className="flex items-center justify-between p-3 bg-white border rounded-xl shadow-sm">
-                            <div className="flex items-center gap-3">
-                              {isAdmin ? (
-                                <Checkbox 
-                                  checked={fee.paid} 
-                                  onCheckedChange={() => handleToggleFeePaid(fee.id)}
-                                  className="h-5 w-5"
-                                />
-                              ) : (
-                                fee.paid ? <Check className="h-4 w-4 text-green-600" /> : <Circle className="h-4 w-4 text-amber-500 opacity-30" />
-                              )}
-                              <div>
-                                <p className={cn("text-xs font-bold", fee.paid && "text-muted-foreground line-through")}>{fee.title}</p>
-                                <p className="text-[9px] text-muted-foreground uppercase font-black">${fee.amount}</p>
-                              </div>
-                            </div>
-                            {isAdmin && (
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRemoveFee(fee.id)}>
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            )}
-                          </div>
-                        )) : (
-                          <div className="text-center py-6 text-muted-foreground italic text-xs">No financial records for this teammate.</div>
-                        )}
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-
-                {/* Role & Position (Admin Only) */}
-                {isAdmin && (
-                  <div className="space-y-5">
-                    <div className="flex items-center gap-2 px-1">
-                      <Users2 className="h-4 w-4 text-muted-foreground" />
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Roster Details</h4>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Position / Role</Label>
-                        <Select 
-                          value={editForm.position} 
-                          onValueChange={(v) => setEditForm(prev => ({ ...prev, position: v }))}
-                        >
-                          <SelectTrigger className="rounded-xl h-11">
-                            <SelectValue placeholder="Select position..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Coach">Coach (Admin)</SelectItem>
-                            <SelectItem value="Team Lead">Team Lead (Admin)</SelectItem>
-                            <SelectItem value="Assistant Coach">Assistant Coach (Admin)</SelectItem>
-                            <SelectItem value="Squad Leader">Squad Leader (Admin)</SelectItem>
-                            <SelectItem value="Player">Player (Teammate)</SelectItem>
-                            <SelectItem value="Parent">Parent / Guardian</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Jersey #</Label>
-                        <Input 
-                          value={editForm.jersey} 
-                          onChange={(e) => setEditForm(prev => ({ ...prev, jersey: e.target.value }))}
-                          className="rounded-xl h-11"
-                          placeholder="e.g. 23"
-                        />
-                      </div>
                     </div>
                   </div>
-                )}
+                </div>
 
-                {!isAdmin && (
+                {/* Right Column: Roster Details & Actions */}
+                <div className="space-y-8">
+                  {isAdmin && (
+                    <div className="space-y-6">
+                      <div className="flex items-center gap-3 px-1">
+                        <div className="bg-primary/10 p-2 rounded-lg text-primary">
+                          <Users2 className="h-4 w-4" />
+                        </div>
+                        <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Management Controls</h4>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-muted/30 p-6 rounded-2xl border">
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Position / Role</Label>
+                          <Select 
+                            value={editForm.position} 
+                            onValueChange={(v) => setEditForm(prev => ({ ...prev, position: v }))}
+                          >
+                            <SelectTrigger className="rounded-xl h-12 bg-background">
+                              <SelectValue placeholder="Select position..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Coach">Coach (Admin)</SelectItem>
+                              <SelectItem value="Team Lead">Team Lead (Admin)</SelectItem>
+                              <SelectItem value="Assistant Coach">Assistant Coach (Admin)</SelectItem>
+                              <SelectItem value="Squad Leader">Squad Leader (Admin)</SelectItem>
+                              <SelectItem value="Player">Player (Teammate)</SelectItem>
+                              <SelectItem value="Parent">Parent / Guardian</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Jersey #</Label>
+                          <Input 
+                            value={editForm.jersey} 
+                            onChange={(e) => setEditForm(prev => ({ ...prev, jersey: e.target.value }))}
+                            className="rounded-xl h-12 bg-background font-bold text-lg"
+                            placeholder="e.g. 23"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-4">
-                    <Button variant="outline" className="w-full h-12 rounded-xl border-primary/20 text-primary font-bold gap-2">
-                      <Mail className="h-4 w-4" /> Message Teammate
-                    </Button>
-                    <Button variant="outline" className="w-full h-12 rounded-xl border-primary/20 text-primary font-bold gap-2">
-                      <Phone className="h-4 w-4" /> Call Teammate
-                    </Button>
+                    <div className="flex items-center gap-3 px-1">
+                      <div className="bg-primary/10 p-2 rounded-lg text-primary">
+                        <AtSign className="h-4 w-4" />
+                      </div>
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Quick Contact</h4>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Button variant="outline" className="h-14 rounded-2xl border-primary/20 text-primary font-black uppercase text-[10px] tracking-widest gap-3 shadow-sm hover:bg-primary/5">
+                        <Mail className="h-4 w-4" /> Message
+                      </Button>
+                      <Button variant="outline" className="h-14 rounded-2xl border-primary/20 text-primary font-black uppercase text-[10px] tracking-widest gap-3 shadow-sm hover:bg-primary/5">
+                        <Phone className="h-4 w-4" /> Direct Call
+                      </Button>
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
 
               {isAdmin && (
-                <DialogFooter className="pt-2">
-                  <Button onClick={handleSaveDetails} className="w-full rounded-2xl h-14 text-lg font-black shadow-xl shadow-primary/20">
+                <DialogFooter className="pt-6 border-t mt-4">
+                  <Button onClick={handleSaveDetails} className="w-full sm:w-auto px-12 rounded-2xl h-14 text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all">
                     Apply Squad Changes
                   </Button>
                 </DialogFooter>
