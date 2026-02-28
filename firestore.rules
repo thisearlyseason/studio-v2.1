@@ -9,20 +9,8 @@
  *
  * DATA STRUCTURE:
  * - /users/{userId}: Private user profiles managed by the owner.
- * - /teams/{teamId}: Collaborative group spaces managed by creators.
+ * - /teams/{teamId}: Collaborative group spaces containing sub-resources (Members, Events, Posts, etc.).
  * - /features & /plans: Global application configuration for subscription management.
- * - Sub-resources (Posts, Events, Chats): Generally managed by their respective authors/creators 
- *   within the context of a team.
- *
- * KEY SECURITY DECISIONS:
- * - Admin Access: Administrative actions (modifying plans/features) are restricted to users 
- *   present in the `/roles_admin` collection.
- * - Prototyping Flexibility: Rules enforce strict ownership and relationship integrity but 
- *   allow for flexible data shapes (schema-agnostic) to support rapid development iteration.
- * - Relational Integrity: On creation, documents must include a field (e.g., authorId) that 
- *   matches the authenticated user's UID.
- * - Resource Existence: All updates and deletes require explicit verification that the 
- *   document exists to prevent orphaned operations.
  */
 
 rules_version = '2';
@@ -61,199 +49,145 @@ service cloud.firestore {
     }
 
     /**
-     * @description Ensures a field is not being modified during an update.
+     * @description Checks if the user is an admin of a specific team based on the members map.
      */
-    function isImmutable(fieldName) {
-      return !(fieldName in request.resource.data) || request.resource.data[fieldName] == resource.data[fieldName];
+    function isTeamAdmin(teamId) {
+      let teamData = get(/databases/$(database)/documents/teams/$(teamId)).data;
+      return isAdmin() || (isSignedIn() && (teamData.members[request.auth.uid] == 'Admin' || teamData.creatorId == request.auth.uid || teamData.createdBy == request.auth.uid));
     }
 
     // --- COLLECTION RULES ---
 
     /**
      * @description Personal user account data.
-     * @path /users/{userId}
-     * @allow Authenticated user matching the document ID (get, list, create, update).
-     * @deny Any user attempting to modify another user's profile.
-     * @principle Ownership and Self-Creation.
      */
     match /users/{userId} {
-      allow get, list: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isExistingOwner(userId);
-      allow delete: if false; // User accounts are rarely deleted via client SDK
+      allow get, list, create: if isOwner(userId) || isAdmin();
+      allow update: if isOwner(userId) || isAdmin();
+      
+      match /teamMemberships/{membershipId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
     }
 
     /**
-     * @description Team entities.
-     * @path /teams/{teamId}
-     * @allow Any signed-in user (get, list, create). Creator (update, delete).
-     * @deny Modification by non-creators.
-     * @principle Creator-based authorization for administrative team actions.
+     * @description Team entities and their nested sub-resources.
      */
     match /teams/{teamId} {
       allow get, list, create: if isSignedIn();
-      allow update, delete: if isExistingOwner(resource.data.creatorId);
+      allow update, delete: if isTeamAdmin(teamId);
+
+      /**
+       * @description Team Roster Members.
+       */
+      match /members/{memberId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if isTeamAdmin(teamId) || isOwner(resource.data.userId);
+      }
+
+      /**
+       * @description Scheduled team events and matches.
+       */
+      match /events/{eventId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isTeamAdmin(teamId);
+
+        match /registrations/{regId} {
+          allow read: if isTeamAdmin(teamId);
+          allow create: if true; // Public Registration
+          allow delete: if isTeamAdmin(teamId);
+        }
+      }
+
+      /**
+       * @description Recorded match results.
+       */
+      match /games/{gameId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isTeamAdmin(teamId);
+      }
+
+      /**
+       * @description Training library drills.
+       */
+      match /drills/{drillId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isTeamAdmin(teamId);
+      }
+
+      /**
+       * @description Shared squad repository files.
+       */
+      match /files/{fileId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn();
+        allow delete: if isTeamAdmin(teamId) || isOwner(resource.data.uploaderId);
+      }
+
+      /**
+       * @description High priority broadcasts.
+       */
+      match /alerts/{alertId} {
+        allow read: if isSignedIn();
+        allow create, delete: if isTeamAdmin(teamId);
+      }
+
+      /**
+       * @description Activity feed posts.
+       */
+      match /feedPosts/{postId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if isTeamAdmin(teamId) || isOwner(resource.data.authorId);
+
+        match /comments/{commentId} {
+          allow read: if isSignedIn();
+          allow create: if isSignedIn();
+          allow delete: if isTeamAdmin(teamId) || isOwner(resource.data.authorId);
+        }
+      }
+
+      /**
+       * @description Group messaging channels.
+       */
+      match /groupChats/{chatId} {
+        allow read: if isSignedIn() && (request.auth.uid in resource.data.memberIds || isTeamAdmin(teamId));
+        allow create: if isSignedIn();
+        allow update: if isSignedIn() && (request.auth.uid in resource.data.memberIds || isTeamAdmin(teamId));
+        allow delete: if isTeamAdmin(teamId);
+
+        match /messages/{messageId} {
+          allow read: if isSignedIn();
+          allow create: if isSignedIn();
+          allow delete: if isTeamAdmin(teamId) || isOwner(resource.data.authorId);
+        }
+      }
     }
 
     /**
-     * @description Relationship between users and teams.
-     * @path /memberships/{membershipId}
-     * @allow Owner of the membership (get, list).
-     * @deny Unauthorized access to membership details.
-     * @principle Ownership.
-     */
-    match /memberships/{membershipId} {
-      allow get, list: if isSignedIn() && (isOwner(resource.data.userId) || isOwner(get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.creatorId));
-      allow create: if isSignedIn();
-      allow update: if isExistingOwner(resource.data.userId) || isAdmin();
-      allow delete: if isExistingOwner(resource.data.userId) || isAdmin();
-    }
-
-    /**
-     * @description Team activity feed posts.
-     * @path /posts/{postId}
-     * @allow Signed-in users (get, list). Authors (create, update, delete).
-     * @deny Authorship spoofing or unauthorized modification.
-     * @principle Ownership and Relational Integrity.
-     */
-    match /posts/{postId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
-      allow update: if isExistingOwner(resource.data.authorId) && isImmutable('authorId');
-      allow delete: if isExistingOwner(resource.data.authorId);
-    }
-
-    /**
-     * @description Comments on posts.
-     * @path /comments/{commentId}
-     * @allow Signed-in users (get, list). Authors (create, update, delete).
-     * @deny Unauthorized modification.
-     * @principle Ownership.
-     */
-    match /comments/{commentId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
-      allow update: if isExistingOwner(resource.data.authorId) && isImmutable('authorId');
-      allow delete: if isExistingOwner(resource.data.authorId);
-    }
-
-    /**
-     * @description Scheduled team events.
-     * @path /events/{eventId}
-     * @allow Signed-in users (get, list). Creators (create, update, delete).
-     * @deny Non-creators updating event details.
-     * @principle Creator-based authorization.
-     */
-    match /events/{eventId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
-      allow update: if isExistingOwner(resource.data.createdBy) && isImmutable('createdBy');
-      allow delete: if isExistingOwner(resource.data.createdBy);
-    }
-
-    /**
-     * @description Event RSVP records.
-     * @path /rsvps/{rsvpId}
-     * @allow Owners (get, list, create, update, delete).
-     * @deny Submitting RSVPs for other users.
-     * @principle Ownership.
-     */
-    match /rsvps/{rsvpId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if isExistingOwner(resource.data.userId) && isImmutable('userId');
-      allow delete: if isExistingOwner(resource.data.userId);
-    }
-
-    /**
-     * @description Group messaging channels.
-     * @path /chats/{chatId}
-     * @allow Members of the chat (get, list). Creators (create, update, delete).
-     * @deny Access by non-members.
-     * @principle Shared Access (Closed Collaborators).
-     */
-    match /chats/{chatId} {
-      allow get, list: if isSignedIn() && request.auth.uid in resource.data.memberIds;
-      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
-      allow update: if isExistingOwner(resource.data.createdBy) || (isSignedIn() && request.auth.uid in resource.data.memberIds);
-      allow delete: if isExistingOwner(resource.data.createdBy) || isAdmin();
-    }
-
-    /**
-     * @description Messages within a group chat.
-     * @path /messages/{messageId}
-     * @allow Members of the parent chat (get, list). Author (create, update, delete).
-     * @deny Unauthorized reading or spoofing.
-     * @principle Relational access via parent and Ownership.
-     */
-    match /messages/{messageId} {
-      allow get, list: if isChatMember(resource.data.chatId);
-      allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid && isChatMember(request.resource.data.chatId);
-      allow update: if isExistingOwner(resource.data.authorId) && isImmutable('authorId');
-      allow delete: if isExistingOwner(resource.data.authorId);
-    }
-
-    /**
-     * @description Application features metadata.
-     * @path /features/{featureId}
-     * @allow Public read access. Admin only writes.
-     * @deny Non-admin writes.
-     * @principle Public Read with Admin-Only Writes.
+     * @description Global application features metadata.
      */
     match /features/{featureId} {
       allow get, list: if true;
-      allow create, update, delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
     /**
-     * @description Application subscription plans.
-     * @path /plans/{planId}
-     * @allow Public read for isPublic plans. Admin only writes.
-     * @deny Unauthorized modification of billing or features.
-     * @principle Public Read with Admin-Only Writes.
+     * @description Global application subscription plans.
      */
     match /plans/{planId} {
       allow get: if true;
       allow list: if resource.data.isPublic == true || isAdmin();
-      allow create, update, delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
     /**
-     * @description Fallback for other entities defined in the IR.
+     * @description Admin Role Management.
      */
-    match /availability/{id} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isExistingOwner(resource.data.userId);
-    }
-
-    match /files/{id} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.uploadedBy == request.auth.uid;
-      allow update, delete: if isExistingOwner(resource.data.uploadedBy);
-    }
-
-    match /polls/{id} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
-      allow update, delete: if isExistingOwner(resource.data.createdBy);
-    }
-
-    match /poll_votes/{id} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isExistingOwner(resource.data.userId);
-    }
-
-    match /user_hidden_chats/{id} {
-      allow get, list: if isSignedIn() && isOwner(resource.data.userId);
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isExistingOwner(resource.data.userId);
-    }
-
     match /roles_admin/{uid} {
       allow read: if isSignedIn();
-      allow write: if false; // Admins are typically managed via Console or Functions
+      allow write: if false;
     }
   }
 }
