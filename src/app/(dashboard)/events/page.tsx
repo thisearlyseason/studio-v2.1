@@ -296,7 +296,7 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
 export default function EventsPage() {
   const { activeTeam, events, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, promoteToRoster, user, isSuperAdmin } = useTeam();
   
-  // TOURNAMENT CALCULATIONS (MUST BE BEFORE EARLY RETURNS)
+  // HOOKS MUST BE AT TOP LEVEL
   const tournamentDays = useMemo(() => {
     return events.filter(e => e.isTournament && e.endDate).flatMap(e => {
       const days = [];
@@ -307,7 +307,7 @@ export default function EventsPage() {
           days.push(new Date(curr));
           curr.setDate(curr.getDate() + 1);
         }
-      } catch (e) {}
+      } catch (err) {}
       return days;
     });
   }, [events]);
@@ -405,7 +405,7 @@ export default function EventsPage() {
   };
 
   const handleCreateEvent = () => {
-    if (!newTitle || !newDate || !newTime) {
+    if (!newTitle || !newDate || (!isTournamentMode && !newTime)) {
       toast({ title: "Missing Information", description: "Please provide a title, date, and time.", variant: "destructive" });
       return;
     }
@@ -419,11 +419,10 @@ export default function EventsPage() {
       return;
     }
 
-    // Build sanitized payload to avoid Firebase undefined errors
     const payload: any = {
       title: newTitle,
       date: eventDate,
-      startTime: formattedStartTime,
+      startTime: formattedStartTime || 'TBD',
       location: newLocation,
       description: newDescription,
       recurrence: 'none' as EventRecurrence,
@@ -462,7 +461,9 @@ export default function EventsPage() {
   };
 
   const addScheduleMatch = () => {
-    setTournamentSchedule([...tournamentSchedule, { date: newDate || new Date().toISOString().split('T')[0], time: '', label: 'Match' }]);
+    // Default match date to the tournament start date or today
+    const defaultDate = newDate || new Date().toISOString().split('T')[0];
+    setTournamentSchedule([...tournamentSchedule, { date: defaultDate, time: '', label: 'Match' }]);
   };
 
   return (
@@ -483,8 +484,8 @@ export default function EventsPage() {
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-4xl rounded-[2.5rem] overflow-hidden p-0 max-h-[95vh] flex flex-col">
-                <div className="overflow-y-auto flex-1 custom-scrollbar">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 h-full">
+                <div className="overflow-y-auto flex-1 custom-scrollbar p-0">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 h-full min-h-[600px]">
                     <div className={cn("p-8 lg:border-r space-y-6", isTournamentMode ? "bg-amber-50/50" : "bg-primary/5")}>
                       <DialogHeader>
                         <DialogTitle className="text-2xl font-black tracking-tight">
@@ -495,30 +496,35 @@ export default function EventsPage() {
                       <div className="space-y-4">
                         <div className="space-y-2">
                           <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title</Label>
-                          <Input placeholder={isTournamentMode ? "e.g. Regional Qualifiers" : "e.g. Open Tryouts"} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl" />
+                          <Input placeholder={isTournamentMode ? "e.g. Regional Qualifiers" : "e.g. Open Tryouts"} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl border-2" />
                         </div>
                         
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <Label className="text-[10px] font-black uppercase tracking-widest ml-1">{isTournamentMode ? "Start Date" : "Date"}</Label>
-                            <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl" />
+                            <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl border-2" />
                           </div>
                           {isTournamentMode ? (
                             <div className="space-y-2">
                               <Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label>
-                              <Input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="h-12 rounded-xl" />
+                              <Input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="h-12 rounded-xl border-2" />
                             </div>
                           ) : (
                             <div className="space-y-2">
                               <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time</Label>
-                              <Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl" />
+                              <Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2" />
                             </div>
                           )}
                         </div>
 
                         <div className="space-y-2">
                           <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label>
-                          <Input placeholder="Arena or Field name..." value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-12 rounded-xl" />
+                          <Input placeholder="Arena or Field name..." value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-12 rounded-xl border-2" />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Logistics & Strategy</Label>
+                          <Textarea placeholder="What should the squad bring? Tactical notes..." value={newDescription} onChange={e => setNewDescription(e.target.value)} className="min-h-[120px] rounded-2xl resize-none border-2" />
                         </div>
                       </div>
                     </div>
@@ -528,57 +534,88 @@ export default function EventsPage() {
                         {isTournamentMode && (
                           <div className="space-y-4">
                             <div className="flex items-center justify-between">
-                              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Tournament Matches/Blocks</Label>
+                              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Tournament Schedule Details</Label>
                               <Button variant="ghost" size="sm" onClick={addScheduleMatch} className="h-7 text-[10px] font-black uppercase text-amber-600 hover:bg-amber-50">
                                 <Plus className="h-3 w-3 mr-1" /> Add Match
                               </Button>
                             </div>
-                            <div className="space-y-3">
+                            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                               {tournamentSchedule.map((match, i) => (
-                                <div key={i} className="flex gap-2 items-end animate-in fade-in slide-in-from-left-2">
-                                  <div className="flex-1 space-y-1">
-                                    <Input placeholder="Match Label (e.g. Game 1)" value={match.label} onChange={e => {
-                                      const next = [...tournamentSchedule];
-                                      next[i].label = e.target.value;
-                                      setTournamentSchedule(next);
-                                    }} className="h-9 text-xs rounded-lg" />
+                                <div key={i} className="bg-white p-4 rounded-2xl border-2 shadow-sm space-y-3 animate-in fade-in slide-in-from-left-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[9px] font-black text-amber-600 uppercase tracking-[0.2em]">Match #{i+1}</span>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => setTournamentSchedule(tournamentSchedule.filter((_, idx) => idx !== i))}>
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
                                   </div>
-                                  <div className="w-24">
-                                    <Input type="time" value={match.time} onChange={e => {
-                                      const next = [...tournamentSchedule];
-                                      next[i].time = e.target.value;
-                                      setTournamentSchedule(next);
-                                    }} className="h-9 text-xs rounded-lg p-1" />
+                                  <div className="space-y-3">
+                                    <Input 
+                                      placeholder="Match Label (e.g. Quarter Finals)" 
+                                      value={match.label} 
+                                      onChange={e => {
+                                        const next = [...tournamentSchedule];
+                                        next[i].label = e.target.value;
+                                        setTournamentSchedule(next);
+                                      }} 
+                                      className="h-10 text-xs rounded-xl" 
+                                    />
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div className="space-y-1">
+                                        <Label className="text-[8px] font-black uppercase ml-1">Match Day</Label>
+                                        <Input 
+                                          type="date" 
+                                          value={match.date} 
+                                          onChange={e => {
+                                            const next = [...tournamentSchedule];
+                                            next[i].date = e.target.value;
+                                            setTournamentSchedule(next);
+                                          }} 
+                                          className="h-10 text-[10px] rounded-xl" 
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-[8px] font-black uppercase ml-1">Match Time</Label>
+                                        <Input 
+                                          type="time" 
+                                          value={match.time} 
+                                          onChange={e => {
+                                            const next = [...tournamentSchedule];
+                                            next[i].time = e.target.value;
+                                            setTournamentSchedule(next);
+                                          }} 
+                                          className="h-10 text-[10px] rounded-xl" 
+                                        />
+                                      </div>
+                                    </div>
                                   </div>
-                                  <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive" onClick={() => setTournamentSchedule(tournamentSchedule.filter((_, idx) => idx !== i))}>
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
                                 </div>
                               ))}
+                              {tournamentSchedule.length === 0 && (
+                                <div className="text-center py-10 bg-muted/20 rounded-2xl border-2 border-dashed">
+                                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Add games to this series</p>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}
 
-                        <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Logistics & Strategy</Label>
-                          <Textarea placeholder="What should the squad bring? Tactical notes..." value={newDescription} onChange={e => setNewDescription(e.target.value)} className="min-h-[100px] rounded-2xl resize-none" />
-                        </div>
-                        
-                        <div className="bg-muted/30 p-6 rounded-[2rem] border-2 border-dashed space-y-4">
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                              <Label className="text-sm font-black">External Sign-ups</Label>
-                              <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Public Registration Page</p>
+                        {!isTournamentMode && (
+                          <div className="bg-muted/30 p-6 rounded-[2rem] border-2 border-dashed space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div className="space-y-0.5">
+                                <Label className="text-sm font-black">External Sign-ups</Label>
+                                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Public Registration Page</p>
+                              </div>
+                              <Checkbox checked={allowExternal} onCheckedChange={(v) => setAllowExternal(!!v)} className="h-6 w-6 rounded-lg border-2" />
                             </div>
-                            <Checkbox checked={allowExternal} onCheckedChange={(v) => setAllowExternal(!!v)} className="h-6 w-6 rounded-lg" />
+                            {allowExternal && (
+                              <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                                <Label className="text-[10px] font-black uppercase tracking-widest">Roster Capacity Limit</Label>
+                                <Input type="number" placeholder="Leave blank for unlimited" value={maxRegs} onChange={e => setMaxRegs(e.target.value)} className="h-10 rounded-xl" />
+                              </div>
+                            )}
                           </div>
-                          {allowExternal && (
-                            <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
-                              <Label className="text-[10px] font-black uppercase tracking-widest">Roster Capacity Limit</Label>
-                              <Input type="number" placeholder="Leave blank for unlimited" value={maxRegs} onChange={e => setMaxRegs(e.target.value)} className="h-10 rounded-xl" />
-                            </div>
-                          )}
-                        </div>
+                        )}
                       </div>
                       <Button className={cn("w-full h-14 rounded-2xl text-lg font-black shadow-xl active:scale-95 transition-all mt-6", isTournamentMode ? "bg-amber-600 hover:bg-amber-700 shadow-amber-600/20" : "shadow-primary/20")} onClick={handleCreateEvent}>
                         {editingEvent ? "Commit Changes" : isTournamentMode ? "Launch Tournament Hub" : "Schedule to Squad"}
