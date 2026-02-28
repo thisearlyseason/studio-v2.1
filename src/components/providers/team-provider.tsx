@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useRef } from 'react';
 import { useUser, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
 import { 
   collection, 
@@ -204,6 +204,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [isRCInitialized, setIsRCInitialized] = useState(false);
   const [simulationPlanId, setSimulationPlanId] = useState<string | null>(null);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
+  
+  // Persistent guard to prevent multiple seeding triggers in one session
+  const seedingRef = useRef(false);
 
   const isSuperAdmin = useMemo(() => {
     const email = firebaseUser?.email?.toLowerCase();
@@ -219,15 +222,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const demoIntent = searchParams.get('seed_demo');
-    if (demoIntent && firebaseUser && !isSeedingDemo) {
+    if (demoIntent && firebaseUser && !isSeedingDemo && !seedingRef.current) {
       const runSeeding = async () => {
+        seedingRef.current = true;
         setIsSeedingDemo(true);
         try {
           const tid = await seedGuestDemoTeam(db, firebaseUser.uid, demoIntent);
           setActiveTeamId(tid);
+          
+          // Clean up URL parameters to prevent re-seeding loop
+          const url = new URL(window.location.href);
+          url.searchParams.delete('seed_demo');
+          window.history.replaceState({}, '', url.toString());
+          
           toast({ title: "Demo Ready", description: `You are now exploring the ${demoIntent.replace('_', ' ')} environment.` });
         } catch (e) {
           console.error("Demo seeding failed", e);
+          seedingRef.current = false; // Allow retry on failure
         } finally {
           setIsSeedingDemo(false);
         }
@@ -266,7 +277,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           setUserProfile({
             id: firebaseUser.uid,
             name: firebaseUser.displayName || 'Guest Coordinator',
-            email: firebaseUser.email || '',
+            email: firebaseUser.email || 'guest@thesquad.io',
             phone: '',
             avatar: `https://picsum.photos/seed/${firebaseUser.uid}/150/150`
           });
