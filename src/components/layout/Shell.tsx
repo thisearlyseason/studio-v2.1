@@ -91,11 +91,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         {/* Desktop Sidebar (Only visible on MD+) */}
         <Sidebar collapsible="none" className="hidden md:flex border-r bg-muted/20 w-72 shrink-0 sticky top-0 h-screen">
           <SidebarHeader className="p-6">
-            <div className="flex flex-col gap-1.5 mb-8 px-2">
-              <BrandLogo variant="light-background" className="h-8 w-36 justify-start" priority />
-              <div className="flex items-center gap-2 ml-1">
-                <div className="h-[1px] w-4 bg-primary/30" />
-                <p className="text-[9px] font-black text-primary uppercase tracking-[0.3em] whitespace-nowrap">Coordination Hub</p>
+            <div className="flex flex-col mb-10 px-2">
+              <BrandLogo variant="light-background" className="h-10 w-44 justify-start -ml-2" priority />
+              <div className="flex items-center gap-3 mt-1 ml-1">
+                <div className="h-[2px] w-6 bg-primary rounded-full" />
+                <p className="text-[10px] font-extrabold text-primary uppercase tracking-[0.25em] whitespace-nowrap">Coordination Hub</p>
               </div>
             </div>
 

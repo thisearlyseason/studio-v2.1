@@ -265,35 +265,46 @@ export default function FeedPage() {
           </div>
         </section>
 
-        <Card className="rounded-[2.5rem] border-none shadow-xl shadow-primary/5 ring-1 ring-black/5">
-          <CardContent className="pt-8">
-            <div className="flex flex-col sm:flex-row gap-5">
-              <Avatar className="h-14 w-14 shrink-0 border-2 border-primary/10 shadow-sm hidden sm:flex">
+        <Card className="rounded-[3rem] border-none shadow-xl shadow-primary/5 ring-1 ring-black/5 overflow-hidden">
+          <CardContent className="p-8 pb-10">
+            <div className="flex flex-col sm:flex-row gap-6 items-start">
+              <Avatar className="h-12 w-12 shrink-0 border-2 border-primary/10 shadow-sm">
                 <AvatarImage src={user?.avatar} />
-                <AvatarFallback className="font-black text-lg">{user?.name?.[0] || '?'}</AvatarFallback>
+                <AvatarFallback className="font-black">{user?.name?.[0] || '?'}</AvatarFallback>
               </Avatar>
-              <div className="flex-1 space-y-4 min-w-0">
+              <div className="flex-1 min-w-0 w-full">
                 <Textarea 
                   placeholder={`What's the play for ${activeTeam.name}?`} 
                   value={newPostContent} 
                   onChange={(e) => setNewPostContent(e.target.value)} 
-                  className="min-h-[100px] resize-none border-none focus-visible:ring-0 p-3 text-lg sm:text-xl font-medium placeholder:text-muted-foreground/40 leading-relaxed overflow-hidden" 
+                  className="min-h-[100px] w-full resize-none border-none focus-visible:ring-0 p-0 text-lg sm:text-xl font-medium placeholder:text-muted-foreground/30 bg-transparent leading-relaxed" 
                 />
+                
                 {imageUrl && (
-                  <div className="relative rounded-3xl overflow-hidden border-4 border-white shadow-lg animate-in zoom-in-95">
+                  <div className="mt-4 relative rounded-3xl overflow-hidden border-4 border-white shadow-lg animate-in zoom-in-95">
                     <img src={imageUrl} alt="Preview" className="w-full h-auto object-cover max-h-[500px]" />
                     <Button variant="destructive" size="icon" className="absolute top-4 right-4 h-10 w-10 rounded-full shadow-lg" onClick={() => setImageUrl(undefined)}><X className="h-5 w-5" /></Button>
                   </div>
                 )}
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6 border-t border-muted/50">
-                  <div className="flex items-center gap-3">
+
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-6 pt-8 mt-4 border-t border-muted/50">
+                  <div className="flex items-center gap-4">
                     <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-                    <Button variant="ghost" size="sm" className="rounded-full h-10 px-4 text-muted-foreground font-black uppercase text-[9px] tracking-widest hover:bg-primary/5 hover:text-primary transition-all" onClick={() => fileInputRef.current?.click()}>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-12 px-6 rounded-full font-black uppercase text-[10px] tracking-widest text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all" 
+                      onClick={() => fileInputRef.current?.click()}
+                    >
                       <ImagePlus className="h-4 w-4 mr-2" /> Media
                     </Button>
                     <Dialog open={isPollDialogOpen} onOpenChange={setIsPollDialogOpen}>
                       <DialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="rounded-full h-10 px-4 text-muted-foreground font-black uppercase text-[9px] tracking-widest hover:bg-primary/5 hover:text-primary transition-all">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-12 px-6 rounded-full font-black uppercase text-[10px] tracking-widest text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all"
+                        >
                           <BarChart2 className="h-4 w-4 mr-2" /> Poll
                         </Button>
                       </DialogTrigger>
@@ -324,7 +335,7 @@ export default function FeedPage() {
                   <Button 
                     disabled={!newPostContent.trim() && !imageUrl} 
                     onClick={handlePost} 
-                    className="w-full sm:w-auto rounded-full px-8 h-12 font-black uppercase text-[11px] tracking-[0.2em] shadow-xl shadow-primary/20 transition-all active:scale-95"
+                    className="w-full sm:w-auto rounded-full px-10 h-12 font-black uppercase text-[11px] tracking-[0.15em] shadow-xl shadow-primary/20 transition-all active:scale-95 shrink-0"
                   >
                     Post to Squad
                   </Button>
