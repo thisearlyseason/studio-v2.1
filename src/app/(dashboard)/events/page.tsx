@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Clock, Plus, ChevronRight, Info, Repeat, CheckCircle2, Users, Link as LinkIcon, UserPlus, Trash2, HelpCircle, XCircle, UserCheck } from 'lucide-react';
+import { MapPin, Clock, Plus, ChevronRight, Info, Repeat, CheckCircle2, Users, Link as LinkIcon, UserPlus, Trash2, HelpCircle, XCircle, UserCheck, Edit3 } from 'lucide-react';
 import { 
   Dialog, 
   DialogContent, 
@@ -37,15 +37,15 @@ interface EventDetailDialogProps {
   formatTime: (date: string | Date) => string;
   isAdmin: boolean;
   promoteToRoster: (teamId: string, eventId: string, reg: EventRegistration) => Promise<void>;
+  onEdit: (event: TeamEvent) => void;
+  onDelete: (eventId: string) => void;
   children: React.ReactNode;
 }
 
-function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, children }: EventDetailDialogProps) {
+function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit, onDelete, children }: EventDetailDialogProps) {
   const { members } = useTeam();
   const db = useFirestore();
   
-  // CRITICAL FIX: Only attempt to fetch registrations if the user is an admin.
-  // Standard users will be blocked by Firestore Security Rules, causing a crash.
   const regQuery = useMemoFirebase(() => {
     if (!isAdmin) return null;
     return query(collection(db, 'teams', event.teamId, 'events', event.id, 'registrations'), orderBy('createdAt', 'desc'));
@@ -94,14 +94,26 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, childr
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="sm:max-w-[550px] overflow-y-auto max-h-[90vh] p-0 flex flex-col">
         <div className="p-6 pb-2 bg-background z-10 border-b shrink-0">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
               <DialogTitle className="text-2xl font-black tracking-tight">{event.title}</DialogTitle>
               <DialogDescription className="font-bold text-primary">
                 {event.date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
               </DialogDescription>
             </div>
-            {event.allowExternalRegistration && <Badge className="bg-blue-500 font-black px-3 h-7 uppercase tracking-tighter">Public Open</Badge>}
+            <div className="flex flex-col items-end gap-2">
+              {event.allowExternalRegistration && <Badge className="bg-blue-500 font-black px-3 h-7 uppercase tracking-tighter">Public Open</Badge>}
+              {isAdmin && (
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => onEdit(event)}>
+                    <Edit3 className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/5" onClick={() => onDelete(event.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -284,9 +296,10 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, childr
 }
 
 export default function EventsPage() {
-  const { activeTeam, events, addEvent, updateRSVP, formatTime, promoteToRoster, user, isSuperAdmin } = useTeam();
+  const { activeTeam, events, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, promoteToRoster, user, isSuperAdmin } = useTeam();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<TeamEvent | null>(null);
   
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState('');
@@ -312,6 +325,34 @@ export default function EventsPage() {
   }
 
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
+
+  const handleEdit = (event: TeamEvent) => {
+    setEditingEvent(event);
+    setNewTitle(event.title);
+    setNewDate(event.date.toISOString().split('T')[0]);
+    
+    // Extract HH:MM for input type="time"
+    const timeParts = event.startTime.split(' ');
+    const [h, m] = timeParts[0].split(':');
+    let hours = parseInt(h);
+    if (timeParts[1] === 'PM' && hours < 12) hours += 12;
+    if (timeParts[1] === 'AM' && hours === 12) hours = 0;
+    const formattedTime = `${hours.toString().padStart(2, '0')}:${m}`;
+    
+    setNewTime(formattedTime);
+    setNewLocation(event.location);
+    setNewDescription(event.description);
+    setAllowExternal(!!event.allowExternalRegistration);
+    setMaxRegs(event.maxRegistrations?.toString() || '');
+    setIsCreateOpen(true);
+  };
+
+  const handleDelete = (eventId: string) => {
+    if (confirm("Are you sure you want to delete this event? This action cannot be undone.")) {
+      deleteEvent(eventId);
+      toast({ title: "Event Deleted" });
+    }
+  };
 
   const handleCreateEvent = () => {
     if (!newTitle || !newDate || !newTime) {
@@ -339,23 +380,31 @@ export default function EventsPage() {
       return;
     }
 
-    addEvent({
+    const payload = {
       title: newTitle,
       date: eventDate,
       startTime: formattedStartTime,
       location: newLocation,
       description: newDescription,
-      recurrence: 'none',
+      recurrence: 'none' as EventRecurrence,
       allowExternalRegistration: allowExternal,
       maxRegistrations: maxRegs ? parseInt(maxRegs) : undefined
-    });
+    };
+
+    if (editingEvent) {
+      updateEvent(editingEvent.id, payload);
+      toast({ title: "Event Updated" });
+    } else {
+      addEvent(payload);
+      toast({ title: "Event Created", description: `${newTitle} has been scheduled.` });
+    }
     
     setIsCreateOpen(false);
     resetForm();
-    toast({ title: "Event Created", description: `${newTitle} has been scheduled.` });
   };
 
   const resetForm = () => {
+    setEditingEvent(null);
     setNewTitle(''); setNewDate(''); setNewTime(''); setNewLocation(''); setNewDescription('');
     setAllowExternal(false); setMaxRegs('');
   };
@@ -365,11 +414,14 @@ export default function EventsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Schedule</h1>
         {isAdmin && (
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <Dialog open={isCreateOpen} onOpenChange={(open) => {
+            setIsCreateOpen(open);
+            if (!open) resetForm();
+          }}>
             <DialogTrigger asChild><Button size="sm" className="rounded-full"><Plus className="h-4 w-4 mr-2" />New Event</Button></DialogTrigger>
             <DialogContent className="sm:max-w-[500px] overflow-y-auto max-h-[90vh]">
               <DialogHeader>
-                <DialogTitle>Create Team Event</DialogTitle>
+                <DialogTitle>{editingEvent ? "Edit Event" : "Create Team Event"}</DialogTitle>
                 <DialogDescription>Schedule events and manage registrations.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -400,7 +452,7 @@ export default function EventsPage() {
                   )}
                 </div>
               </div>
-              <DialogFooter><Button className="w-full rounded-xl h-11" onClick={handleCreateEvent}>Create Event</Button></DialogFooter>
+              <DialogFooter><Button className="w-full rounded-xl h-11" onClick={handleCreateEvent}>{editingEvent ? "Save Changes" : "Create Event"}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
         )}
@@ -413,7 +465,7 @@ export default function EventsPage() {
         </TabsList>
         <TabsContent value="list" className="space-y-4 mt-4">
           {events.length > 0 ? events.map((event) => (
-            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} promoteToRoster={promoteToRoster}>
+            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} promoteToRoster={promoteToRoster} onEdit={handleEdit} onDelete={handleDelete}>
               <Card className="overflow-hidden hover:border-primary transition-all duration-300 cursor-pointer group hover:shadow-lg border-none shadow-sm ring-1 ring-black/5">
                 <div className="flex items-stretch">
                   <div className="bg-primary/5 w-16 flex flex-col items-center justify-center border-r shrink-0">

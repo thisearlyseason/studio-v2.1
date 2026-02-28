@@ -261,6 +261,7 @@ interface TeamContextType {
   events: TeamEvent[];
   addEvent: (event: Omit<TeamEvent, 'id' | 'teamId' | 'rsvps'>) => void;
   updateEvent: (eventId: string, updates: Partial<TeamEvent>) => void;
+  deleteEvent: (eventId: string) => void;
   updateRSVP: (eventId: string, status: RSVPStatus) => void;
   addRegistration: (teamId: string, eventId: string, data: Omit<EventRegistration, 'id' | 'createdAt' | 'status'>) => Promise<boolean>;
   promoteToRoster: (teamId: string, eventId: string, registration: EventRegistration) => Promise<void>;
@@ -662,6 +663,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const deleteEvent = (eventId: string) => {
+    if (!activeTeam) return;
+    deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', eventId));
+  };
+
   const updateRSVP = (eventId: string, status: RSVPStatus) => {
     if (!activeTeam || !firebaseUser) return;
     updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', eventId), { [`userRsvps.${firebaseUser.uid}`]: status });
@@ -775,7 +781,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     <TeamContext.Provider value={{ 
       user: userProfile, updateUser, activeTeam, setActiveTeam, updateTeamHero, updateTeamDetails, teams, members, updateMember, toggleFeesPaid,
       chats, createChat, messages, activeChatId, setActiveChatId, addMessage, votePoll, posts, addPost, deletePost, addComment, deleteComment, toggleLike, votePostPoll,
-      events, addEvent, updateEvent: (id, u) => updateDocumentNonBlocking(doc(db, 'teams', activeTeam!.id, 'events', id), u), updateRSVP, addRegistration, promoteToRoster, games, addGame, updateGame: (id, u) => updateDocumentNonBlocking(doc(db, 'teams', activeTeam!.id, 'games', id), u), files, addFile, deleteFile, drills, addDrill, deleteDrill, alerts, createAlert,
+      events, addEvent, updateEvent: (id, u) => updateDocumentNonBlocking(doc(db, 'teams', activeTeam!.id, 'events', id), u), deleteEvent, updateRSVP, addRegistration, promoteToRoster, games, addGame, updateGame: (id, u) => updateDocumentNonBlocking(doc(db, 'teams', activeTeam!.id, 'games', id), u), files, addFile, deleteFile, drills, addDrill, deleteDrill, alerts, createAlert,
       createNewTeam, inviteMember, joinTeamWithCode, isLoading: isUserLoading, formatTime, isSuperAdmin, 
       isPro: activeTeam?.isPro || isProEntitlementActive || isSuperAdmin,
       purchasePro, manageSubscription, isPaywallOpen, setIsPaywallOpen
