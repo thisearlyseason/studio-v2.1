@@ -115,7 +115,6 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="sm:max-w-4xl p-0 overflow-hidden rounded-[2.5rem]">
         <div className="grid grid-cols-1 lg:grid-cols-5 h-full min-h-[500px]">
-          {/* Left Column: Event Summary (2/5) */}
           <div className="lg:col-span-2 bg-muted/30 p-8 border-r flex flex-col justify-between">
             <div className="space-y-6">
               <div className="space-y-2">
@@ -197,7 +196,6 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
             </div>
           </div>
 
-          {/* Right Column: Attendance & Response (3/5) */}
           <div className="lg:col-span-3 flex flex-col bg-background">
             <Tabs defaultValue="attendance" className="flex-1 flex flex-col">
               <div className="px-8 pt-8 pb-4 border-b flex items-center justify-between">
@@ -300,7 +298,6 @@ export default function EventsPage() {
   const [isTournamentMode, setIsTournamentMode] = useState(false);
   const [editingEvent, setEditingEvent] = useState<TeamEvent | null>(null);
   
-  // Form state
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState('');
   const [newEndDate, setNewEndDate] = useState('');
@@ -310,8 +307,6 @@ export default function EventsPage() {
   const [newDescription, setNewDescription] = useState('');
   const [allowExternal, setAllowExternal] = useState(false);
   const [maxRegs, setMaxRegs] = useState('');
-  
-  // Tournament specific schedule matches
   const [tournamentSchedule, setTournamentSchedule] = useState<Omit<TournamentMatch, 'id'>[]>([]);
 
   const [mounted, setMounted] = useState(false);
@@ -319,6 +314,30 @@ export default function EventsPage() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const tournamentDays = useMemo(() => {
+    return events.filter(e => e.isTournament && e.endDate).flatMap(e => {
+      const days = [];
+      let curr = startOfDay(new Date(e.date));
+      const last = endOfDay(new Date(e.endDate!));
+      while (curr <= last) {
+        days.push(new Date(curr));
+        curr.setDate(curr.getDate() + 1);
+      }
+      return days;
+    });
+  }, [events]);
+
+  const selectedDayEvents = useMemo(() => {
+    if (!date) return [];
+    const target = startOfDay(date);
+    return events.filter(e => {
+      if (e.isTournament && e.endDate) {
+        return isWithinInterval(target, { start: startOfDay(e.date), end: endOfDay(e.endDate) });
+      }
+      return startOfDay(e.date).getTime() === target.getTime();
+    });
+  }, [date, events]);
 
   if (!mounted || !activeTeam) {
     return (
@@ -431,31 +450,6 @@ export default function EventsPage() {
   const addScheduleMatch = () => {
     setTournamentSchedule([...tournamentSchedule, { date: newDate, time: '', label: 'Match' }]);
   };
-
-  // Tournament-aware Calendar Modifiers
-  const tournamentDays = useMemo(() => {
-    return events.filter(e => e.isTournament && e.endDate).flatMap(e => {
-      const days = [];
-      let curr = startOfDay(new Date(e.date));
-      const last = endOfDay(new Date(e.endDate!));
-      while (curr <= last) {
-        days.push(new Date(curr));
-        curr.setDate(curr.getDate() + 1);
-      }
-      return days;
-    });
-  }, [events]);
-
-  const selectedDayEvents = useMemo(() => {
-    if (!date) return [];
-    const target = startOfDay(date);
-    return events.filter(e => {
-      if (e.isTournament && e.endDate) {
-        return isWithinInterval(target, { start: startOfDay(e.date), end: endOfDay(e.endDate) });
-      }
-      return startOfDay(e.date).getTime() === target.getTime();
-    });
-  }, [date, events]);
 
   return (
     <div className="space-y-6">
