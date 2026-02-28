@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useRef } from 'react';
@@ -219,8 +218,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return email ? SUPER_ADMIN_EMAILS.includes(email) : false;
   }, [firebaseUser?.email]);
 
-  // --- Move Data Fetching Hooks above Effect Hooks ---
-
   // Plans
   const plansQuery = useMemoFirebase(() => {
     if (!db) return null;
@@ -289,8 +286,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: alertsData } = useCollection(alertsQuery);
   const alerts = useMemo(() => (alertsData || []).map(a => ({ id: a.id, teamId: a.teamId, title: a.title, message: a.message, createdBy: a.createdBy, createdAt: a.createdAt })), [alertsData]);
 
-  // --- Effect Hooks ---
-
   // Demo Heartbeat: 5-minute cycle
   useEffect(() => {
     if (!userProfile?.isDemo || !userProfile?.createdAt || !activeTeamId) {
@@ -311,13 +306,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         toast({ title: "Environment Resetting", description: "Demo session expired. Restoring baseline data..." });
         
         try {
-          // Reset team and user doc
           const planId = teams.find(t => t.id === activeTeamId)?.planId || 'starter_squad';
           await resetDemoEnvironment(db, activeTeamId, planId, userProfile.id);
-          
-          // Update the user doc createdAt to restart the cycle
           await updateDoc(doc(db, 'users', userProfile.id), { createdAt: new Date().toISOString() });
-          
           toast({ title: "Reset Complete", description: "Welcome back to the baseline squad." });
         } catch (e) {
           console.error("Auto reset failed", e);
@@ -457,7 +448,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     submitLead: async (data: any) => { try { await addDoc(collection(db, 'leads'), { ...data, createdAt: new Date().toISOString() }); toast({ title: "Inquiry Sent", description: "Our team will reach out shortly." }); return true; } catch { toast({ title: "Submission Failed", variant: "destructive" }); return false; } },
     isLoading: isUserLoading, 
     isSuperAdmin,
-    isPro: (activeTeam?.isPro || isProEntitlementActive || isSuperAdmin) || (simulationPlanId !== 'starter_squad' && simulationPlanId !== null),
+    isPro: (activeTeam?.isPro || isProEntitlementActive || isSuperAdmin) || (simulationPlanId !== 'starter_squad' && simulationPlanId !== null) || (activeTeam?.planId !== 'starter_squad'),
     hasFeature: (featureKey: string) => { if (isSuperAdmin && !simulationPlanId) return true; return !!activePlanFeatures[featureKey]; },
     purchasePro: async () => setIsPaywallOpen(true),
     manageSubscription: async () => { try { await Purchases.getSharedInstance().openCustomerCenter(); } catch { toast({ title: "Error", description: "Failed to open settings.", variant: "destructive" }); } },
