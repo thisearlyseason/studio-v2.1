@@ -54,6 +54,14 @@ export type Team = {
 
 export type MemberPosition = 'Coach' | 'Team Lead' | 'Assistant Coach' | 'Squad Leader' | 'Player' | 'Parent' | string;
 
+export type FeeItem = {
+  id: string;
+  title: string;
+  amount: number;
+  paid: boolean;
+  createdAt: string;
+};
+
 export type Member = {
   id: string;
   userId: string;
@@ -65,6 +73,7 @@ export type Member = {
   avatar: string;
   feesPaid?: boolean;
   amountOwed?: number;
+  fees?: FeeItem[];
 };
 
 export type Chat = {
@@ -293,7 +302,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (firebaseUser) {
       try {
-        // Configuration must happen before getSharedInstance
+        // Static configuration first
         Purchases.configure(REVENUECAT_PUBLIC_API_KEY, firebaseUser.uid);
         const purchases = Purchases.getSharedInstance();
         
@@ -398,7 +407,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     jersey: m.jersey || 'TBD',
     avatar: m.avatar || `https://picsum.photos/seed/${m.userId}/150/150`,
     feesPaid: m.feesPaid || false,
-    amountOwed: m.amountOwed || 0
+    amountOwed: m.amountOwed || 0,
+    fees: m.fees || []
   }));
 
   const postsQuery = useMemoFirebase(() => {

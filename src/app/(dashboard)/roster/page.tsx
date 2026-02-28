@@ -6,9 +6,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Search, MoreVertical, ShieldCheck, Mail, Phone, UserPlus, AtSign, Copy, Check, DollarSign, Lock, Sparkles, Users2, CreditCard } from 'lucide-react';
+import { Search, MoreVertical, ShieldCheck, Mail, Phone, UserPlus, AtSign, Copy, Check, DollarSign, Lock, Sparkles, Users2, CreditCard, ChevronDown, Plus, Trash2, Circle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useTeam, Member } from '@/components/providers/team-provider';
+import { useTeam, Member, FeeItem } from '@/components/providers/team-provider';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,11 +27,12 @@ import {
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 export default function RosterPage() {
-  const { activeTeam, members, updateMember, inviteMember, user, toggleFeesPaid, isPro, isSuperAdmin, purchasePro } = useTeam();
+  const { activeTeam, members, updateMember, inviteMember, user, isPro, isSuperAdmin, purchasePro } = useTeam();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteName, setInviteName] = useState('');
@@ -39,7 +40,8 @@ export default function RosterPage() {
   const [mounted, setMounted] = useState(false);
   
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
-  const [editForm, setEditForm] = useState({ position: '', jersey: '', amountOwed: '0', feesPaid: false });
+  const [editForm, setEditForm] = useState({ position: '', jersey: '', role: 'Member' as 'Admin' | 'Member' });
+  const [newFee, setNewFee] = useState({ title: '', amount: '' });
 
   useEffect(() => {
     setMounted(true);
@@ -50,8 +52,7 @@ export default function RosterPage() {
       setEditForm({
         position: selectedMember.position,
         jersey: selectedMember.jersey,
-        amountOwed: (selectedMember.amountOwed || 0).toString(),
-        feesPaid: selectedMember.feesPaid || false
+        role: selectedMember.role
       });
     }
   }, [selectedMember]);
@@ -118,34 +119,73 @@ export default function RosterPage() {
     setSelectedMember(member);
   };
 
+  const handleAddFee = () => {
+    if (!selectedMember || !newFee.title || !newFee.amount) return;
+    
+    const feeItem: FeeItem = {
+      id: 'fee_' + Date.now(),
+      title: newFee.title,
+      amount: parseFloat(newFee.amount) || 0,
+      paid: false,
+      createdAt: new Date().toISOString()
+    };
+
+    const currentFees = selectedMember.fees || [];
+    const updatedFees = [...currentFees, feeItem];
+    
+    updateMember(selectedMember.id, {
+      fees: updatedFees,
+      amountOwed: updatedFees.filter(f => !f.paid).reduce((sum, f) => sum + f.amount, 0),
+      feesPaid: updatedFees.length > 0 && updatedFees.every(f => f.paid)
+    });
+
+    setSelectedMember({ ...selectedMember, fees: updatedFees });
+    setNewFee({ title: '', amount: '' });
+    toast({ title: "Fee Added", description: `${feeItem.title} added to ledger.` });
+  };
+
+  const handleToggleFeePaid = (feeId: string) => {
+    if (!selectedMember) return;
+    
+    const updatedFees = (selectedMember.fees || []).map(f => 
+      f.id === feeId ? { ...f, paid: !f.paid } : f
+    );
+
+    updateMember(selectedMember.id, {
+      fees: updatedFees,
+      amountOwed: updatedFees.filter(f => !f.paid).reduce((sum, f) => sum + f.amount, 0),
+      feesPaid: updatedFees.length > 0 && updatedFees.every(f => f.paid)
+    });
+
+    setSelectedMember({ ...selectedMember, fees: updatedFees });
+  };
+
+  const handleRemoveFee = (feeId: string) => {
+    if (!selectedMember) return;
+    
+    const updatedFees = (selectedMember.fees || []).filter(f => f.id !== feeId);
+
+    updateMember(selectedMember.id, {
+      fees: updatedFees,
+      amountOwed: updatedFees.filter(f => !f.paid).reduce((sum, f) => sum + f.amount, 0),
+      feesPaid: updatedFees.length > 0 && updatedFees.every(f => f.paid)
+    });
+
+    setSelectedMember({ ...selectedMember, fees: updatedFees });
+  };
+
   const handleSaveDetails = () => {
     if (selectedMember) {
-      // Determine role based on position
       const adminPositions = ['Coach', 'Team Lead', 'Assistant Coach', 'Squad Leader'];
       const newRole = adminPositions.includes(editForm.position) ? 'Admin' : 'Member';
 
       updateMember(selectedMember.id, {
         position: editForm.position,
         jersey: editForm.jersey,
-        role: newRole,
-        amountOwed: parseFloat(editForm.amountOwed) || 0,
-        feesPaid: editForm.feesPaid
+        role: newRole
       });
       setSelectedMember(null);
       toast({ title: "Updated", description: "Teammate profile updated." });
-    }
-  };
-
-  const handleSendInvite = () => {
-    if (inviteName.trim() && inviteEmail.trim()) {
-      inviteMember(inviteName, inviteEmail, 'Player');
-      setIsInviteOpen(false);
-      setInviteName('');
-      setInviteEmail('');
-      toast({
-        title: "Teammate Logged",
-        description: "Invite data logged. Share the team code for them to join!",
-      });
     }
   };
 
@@ -182,39 +222,9 @@ export default function RosterPage() {
                   </div>
                   <p className="text-[10px] text-muted-foreground italic">Tap to copy and share with teammates or parents.</p>
                 </div>
-
-                <div className="space-y-3 pt-2">
-                  <Label className="text-xs font-bold uppercase text-muted-foreground ml-1">Log Teammate Info (Optional)</Label>
-                  <div className="space-y-1">
-                    <Input 
-                      placeholder="Teammate Name" 
-                      value={inviteName} 
-                      onChange={(e) => setInviteName(e.target.value)}
-                      className="rounded-xl h-11"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="relative">
-                      <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input 
-                        type="email"
-                        placeholder="teammate@example.com" 
-                        value={inviteEmail} 
-                        onChange={(e) => setInviteEmail(e.target.value)}
-                        className="rounded-xl h-11 pl-10"
-                      />
-                    </div>
-                  </div>
-                </div>
               </div>
               <DialogFooter>
-                <Button 
-                  className="w-full rounded-xl h-12 text-base font-bold" 
-                  onClick={handleSendInvite} 
-                  disabled={!inviteName.trim() || !inviteEmail.trim()}
-                >
-                  Log Teammate Entry
-                </Button>
+                <Button className="w-full rounded-xl h-12 text-base font-bold" onClick={() => setIsInviteOpen(false)}>Close Invite Menu</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -259,14 +269,6 @@ export default function RosterPage() {
                   </Badge>
                 </div>
                 <p className="text-[11px] text-muted-foreground font-bold uppercase tracking-widest">{member.position}</p>
-                <div className="flex gap-2.5 mt-2">
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full bg-muted/50 hover:bg-primary/10 hover:text-primary transition-all">
-                    <Mail className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full bg-muted/50 hover:bg-primary/10 hover:text-primary transition-all">
-                    <Phone className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
               </div>
 
               <div className="flex items-center gap-4">
@@ -282,12 +284,7 @@ export default function RosterPage() {
                     {member.feesPaid ? "PAID" : `$${member.amountOwed || 0}`}
                   </div>
                 </div>
-
-                {isAdmin && (
-                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={(e) => { e.stopPropagation(); handleMemberClick(member); }}>
-                    <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                )}
+                <MoreVertical className="h-4 w-4 text-muted-foreground opacity-30" />
               </div>
             </CardContent>
           </Card>
@@ -319,57 +316,82 @@ export default function RosterPage() {
                 </div>
               </DialogHeader>
 
-              <div className="space-y-8 py-6">
-                {/* Financial Section (Admin Only) */}
-                {isAdmin ? (
-                  <div className="space-y-4 bg-muted/30 p-6 rounded-[2rem] border-2 border-dashed">
-                    <div className="flex items-center gap-2 mb-2">
-                      <CreditCard className="h-4 w-4 text-primary" />
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Financial Management</h4>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold">Total Fees Owed ($)</Label>
-                        <div className="relative">
-                          <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                          <Input 
-                            type="number"
-                            value={editForm.amountOwed}
-                            onChange={e => setEditForm(p => ({ ...p, amountOwed: e.target.value }))}
-                            className="rounded-xl h-11 pl-10"
-                            placeholder="0.00"
-                          />
+              <div className="space-y-6 py-4">
+                {/* Collapsible Financial Section */}
+                <Accordion type="single" collapsible className="w-full">
+                  <AccordionItem value="finances" className="border-none">
+                    <AccordionTrigger className="hover:no-underline bg-muted/30 p-4 rounded-2xl border-2 border-dashed">
+                      <div className="flex items-center gap-3 text-left">
+                        <div className="bg-primary/10 p-2 rounded-lg text-primary">
+                          <CreditCard className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-widest text-primary">Financial Ledger</p>
+                          <p className="text-[10px] text-muted-foreground font-bold">Total Owed: ${selectedMember.amountOwed || 0}</p>
                         </div>
                       </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-4 px-1 space-y-4">
+                      {/* Add New Fee Item (Admin Only) */}
+                      {isAdmin && (
+                        <div className="bg-muted/50 p-4 rounded-xl space-y-3">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Add New Charge</p>
+                          <div className="flex gap-2">
+                            <Input 
+                              placeholder="Fee Title (e.g. League)" 
+                              className="h-9 text-xs rounded-lg"
+                              value={newFee.title}
+                              onChange={e => setNewFee(p => ({ ...p, title: e.target.value }))}
+                            />
+                            <div className="relative w-24">
+                              <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                              <Input 
+                                type="number" 
+                                placeholder="0.00" 
+                                className="h-9 text-xs pl-6 rounded-lg"
+                                value={newFee.amount}
+                                onChange={e => setNewFee(p => ({ ...p, amount: e.target.value }))}
+                              />
+                            </div>
+                            <Button size="icon" className="h-9 w-9 shrink-0 rounded-lg" onClick={handleAddFee} disabled={!newFee.title || !newFee.amount}>
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
 
-                      <div className="flex items-center justify-between bg-white/50 p-4 rounded-xl border">
-                        <div className="space-y-0.5">
-                          <Label className="text-sm font-bold">Mark as Fully Paid</Label>
-                          <p className="text-[10px] text-muted-foreground">Confirm that all dues have been cleared.</p>
-                        </div>
-                        <Checkbox 
-                          checked={editForm.feesPaid}
-                          onCheckedChange={(v) => setEditForm(p => ({ ...p, feesPaid: !!v }))}
-                          className="h-6 w-6"
-                        />
+                      {/* Fee Items List */}
+                      <div className="space-y-2">
+                        {selectedMember.fees && selectedMember.fees.length > 0 ? selectedMember.fees.map((fee) => (
+                          <div key={fee.id} className="flex items-center justify-between p-3 bg-white border rounded-xl shadow-sm">
+                            <div className="flex items-center gap-3">
+                              {isAdmin ? (
+                                <Checkbox 
+                                  checked={fee.paid} 
+                                  onCheckedChange={() => handleToggleFeePaid(fee.id)}
+                                  className="h-5 w-5"
+                                />
+                              ) : (
+                                fee.paid ? <Check className="h-4 w-4 text-green-600" /> : <Circle className="h-4 w-4 text-amber-500 opacity-30" />
+                              )}
+                              <div>
+                                <p className={cn("text-xs font-bold", fee.paid && "text-muted-foreground line-through")}>{fee.title}</p>
+                                <p className="text-[9px] text-muted-foreground uppercase font-black">${fee.amount}</p>
+                              </div>
+                            </div>
+                            {isAdmin && (
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRemoveFee(fee.id)}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        )) : (
+                          <div className="text-center py-6 text-muted-foreground italic text-xs">No financial records for this teammate.</div>
+                        )}
                       </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between p-6 bg-primary/5 rounded-[2rem]">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-primary/60">Season Dues</p>
-                      <p className="text-2xl font-black">${selectedMember.amountOwed || 0}</p>
-                    </div>
-                    <Badge className={cn(
-                      "h-8 px-4 rounded-full font-black uppercase tracking-widest text-[10px]",
-                      selectedMember.feesPaid ? "bg-green-500" : "bg-amber-500"
-                    )}>
-                      {selectedMember.feesPaid ? "Paid" : "Outstanding"}
-                    </Badge>
-                  </div>
-                )}
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
 
                 {/* Role & Position (Admin Only) */}
                 {isAdmin && (
