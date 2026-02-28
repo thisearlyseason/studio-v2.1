@@ -164,7 +164,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const code = teamId.slice(-6).toUpperCase();
   const batch = writeBatch(db);
   
-  // 1. Ensure User Doc exists so the app recognizes the guest as a manager
+  // 1. Ensure User Doc exists
   batch.set(doc(db, 'users', userId), {
     id: userId,
     fullName: 'Guest Coordinator',
@@ -182,14 +182,12 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     description: planId === 'club_custom' ? 'The flagship developmental squad of the City Central Academy.' : 'A focused environment for competitive growth and coordination.'
   });
   
-  // 3. Create Membership for the guest user
   batch.set(doc(db, 'users', userId, 'teamMemberships', teamId), {
     userId, teamId, teamName, teamCode: code,
     role: 'Admin', isPro: planId !== 'starter_squad', planId, isDemo: true, 
     joinedAt: new Date().toISOString(), createdBy: userId
   });
 
-  // 4. Add guest user to the members subcollection as the primary Club Manager/Coach
   batch.set(doc(db, 'teams', teamId, 'members', userId), {
     id: userId, userId, teamId, name: 'Guest Coordinator', role: 'Admin',
     position: planId === 'club_custom' ? 'Club Manager' : 'Coach', jersey: 'Staff',
@@ -197,8 +195,9 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     phone: '(555) 000-1234', amountOwed: 0, feesPaid: true, isDemo: true
   });
 
-  // 5. If Club, seed a second team to demonstrate organization hub
+  // 3. If Club, seed exactly TWO additional teams (total 3)
   if (planId === 'club_custom') {
+    // Secondary Team
     const secondaryTeamId = `demo_guest_sub_${userId.slice(-6)}_${timestamp}`;
     const secondaryTeamName = 'Guest U14 Development';
     const secondaryCode = secondaryTeamId.slice(-6).toUpperCase();
@@ -221,14 +220,39 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       position: 'Club Manager', jersey: 'Staff', avatar: `https://picsum.photos/seed/${userId}/150/150`,
       joinedAt: new Date().toISOString(), phone: '(555) 000-1234', amountOwed: 0, feesPaid: true, isDemo: true
     });
+
+    // Third Team (Exactly 3 teams total)
+    const thirdTeamId = `demo_guest_tri_${userId.slice(-6)}_${timestamp}`;
+    const thirdTeamName = 'Guest U16 Regional Select';
+    const thirdCode = thirdTeamId.slice(-6).toUpperCase();
+
+    batch.set(doc(db, 'teams', thirdTeamId), {
+      id: thirdTeamId, teamName: thirdTeamName, teamCode: thirdCode, createdBy: userId,
+      createdAt: new Date().toISOString(), members: { [userId]: 'Admin' },
+      isPro: true, planId: 'club_custom', sport: 'Multi-Sport', isDemo: true,
+      description: 'High-performance regional squad for advanced competition.'
+    });
+
+    batch.set(doc(db, 'users', userId, 'teamMemberships', thirdTeamId), {
+      userId, teamId: thirdTeamId, teamName: thirdTeamName, teamCode: thirdCode,
+      role: 'Admin', isPro: true, planId: 'club_custom', isDemo: true, 
+      joinedAt: new Date().toISOString(), createdBy: userId
+    });
+
+    batch.set(doc(db, 'teams', thirdTeamId, 'members', userId), {
+      id: userId, userId, teamId: thirdTeamId, name: 'Guest Coordinator', role: 'Admin',
+      position: 'Club Manager', jersey: 'Staff', avatar: `https://picsum.photos/seed/${userId}/150/150`,
+      joinedAt: new Date().toISOString(), phone: '(555) 000-1234', amountOwed: 0, feesPaid: true, isDemo: true
+    });
   }
   
   await batch.commit();
   
-  // 6. Seed subcollections asynchronously for both teams
+  // Seed subcollections
   await seedDemoData(db, teamId, planId, userId);
   if (planId === 'club_custom') {
     await seedDemoData(db, `demo_guest_sub_${userId.slice(-6)}_${timestamp}`, 'club_custom', userId);
+    await seedDemoData(db, `demo_guest_tri_${userId.slice(-6)}_${timestamp}`, 'club_custom', userId);
   }
 
   return teamId;
@@ -238,24 +262,31 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
  * Resets a demo environment by wiping and re-seeding.
  */
 export async function resetDemoEnvironment(db: Firestore, teamId: string, planId: string, userId: string) {
+  // We need to find all teams belonging to this guest if it's a club plan
+  const membershipsSnap = await getDocs(collection(db, 'users', userId, 'teamMemberships'));
+  const teamIds = membershipsSnap.docs.map(d => d.id);
+
   const subcollections = ['members', 'events', 'games', 'drills', 'files', 'alerts', 'feedPosts', 'groupChats'];
   
-  for (const sub of subcollections) {
-    const snap = await getDocs(collection(db, 'teams', teamId, sub));
-    for (const d of snap.docs) {
-      if (sub === 'groupChats') {
-        const msgs = await getDocs(collection(db, 'teams', teamId, sub, d.id, 'messages'));
-        for (const m of msgs.docs) await deleteDoc(m.ref);
+  for (const tid of teamIds) {
+    for (const sub of subcollections) {
+      const snap = await getDocs(collection(db, 'teams', tid, sub));
+      for (const d of snap.docs) {
+        if (sub === 'groupChats') {
+          const msgs = await getDocs(collection(db, 'teams', tid, sub, d.id, 'messages'));
+          for (const m of msgs.docs) await deleteDoc(m.ref);
+        }
+        if (sub === 'events') {
+          const regs = await getDocs(collection(db, 'teams', tid, sub, d.id, 'registrations'));
+          for (const r of regs.docs) await deleteDoc(r.ref);
+        }
+        await deleteDoc(d.ref);
       }
-      if (sub === 'events') {
-        const regs = await getDocs(collection(db, 'teams', teamId, sub, d.id, 'registrations'));
-        for (const r of regs.docs) await deleteDoc(r.ref);
-      }
-      await deleteDoc(d.ref);
     }
+    // Note: We don't delete the team doc itself to preserve the ID, we just reset it via re-seeding logic
   }
 
-  // Wipe guest user doc modifications (emails, names, etc.)
+  // Reset guest user profile
   await setDoc(doc(db, 'users', userId), {
     id: userId,
     fullName: 'Guest Coordinator',
@@ -265,15 +296,16 @@ export async function resetDemoEnvironment(db: Firestore, teamId: string, planId
     isDemo: true
   }, { merge: true });
 
-  // Restore the guest user member doc after wipe to ensure they don't lose admin status
-  await setDoc(doc(db, 'teams', teamId, 'members', userId), {
-    id: userId, userId, teamId, name: 'Guest Coordinator', role: 'Admin',
-    position: planId === 'club_custom' ? 'Club Manager' : 'Coach', jersey: 'Staff',
-    avatar: `https://picsum.photos/seed/${userId}/150/150`, joinedAt: new Date().toISOString(),
-    phone: '(555) 000-1234', amountOwed: 0, feesPaid: true, isDemo: true
-  });
-
-  await seedDemoData(db, teamId, planId, userId);
+  // Re-seed all teams
+  for (const tid of teamIds) {
+    await setDoc(doc(db, 'teams', tid, 'members', userId), {
+      id: userId, userId, teamId: tid, name: 'Guest Coordinator', role: 'Admin',
+      position: planId === 'club_custom' ? 'Club Manager' : 'Coach', jersey: 'Staff',
+      avatar: `https://picsum.photos/seed/${userId}/150/150`, joinedAt: new Date().toISOString(),
+      phone: '(555) 000-1234', amountOwed: 0, feesPaid: true, isDemo: true
+    });
+    await seedDemoData(db, tid, planId, userId);
+  }
 }
 
 /**
@@ -303,7 +335,6 @@ export async function launchDemoEnvironments(db: Firestore, superAdminId: string
         role: 'Admin', isPro: dt.planId !== 'starter_squad', planId: dt.planId, isDemo: true, joinedAt: new Date().toISOString(),
         createdBy: superAdminId
       });
-      // Add super admin to members subcollection
       batch.set(doc(db, 'teams', dt.id, 'members', superAdminId), {
         id: superAdminId, userId: superAdminId, teamId: dt.id, name: 'Platform Admin', role: 'Admin',
         position: 'Platform Admin', jersey: 'HQ', avatar: `https://picsum.photos/seed/${superAdminId}/150/150`,
