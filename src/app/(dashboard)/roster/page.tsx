@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -73,10 +72,10 @@ export default function RosterPage() {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
         <div className="relative">
-          <div className="bg-purple-100 p-6 rounded-[2.5rem] shadow-xl">
-            <Users2 className="h-16 w-16 text-purple-600" />
+          <div className="bg-primary/10 p-6 rounded-[2.5rem] shadow-xl">
+            <Users2 className="h-16 w-16 text-primary" />
           </div>
-          <div className="absolute -top-2 -right-2 bg-primary text-white p-2 rounded-full shadow-lg border-2 border-background">
+          <div className="absolute -top-2 -right-2 bg-secondary text-white p-2 rounded-full shadow-lg border-2 border-background">
             <Lock className="h-4 w-4" />
           </div>
         </div>
@@ -88,18 +87,18 @@ export default function RosterPage() {
           </p>
         </div>
 
-        <Card className="w-full max-w-sm border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white">
+        <Card className="w-full max-w-sm border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white ring-1 ring-black/5">
           <div className="p-8 space-y-6">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black uppercase text-primary tracking-widest">Pro Plan Features</span>
-              <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-none font-bold">Admin Suite</Badge>
+              <Badge variant="secondary" className="bg-primary/10 text-primary border-none font-bold">Admin Suite</Badge>
             </div>
             <ul className="space-y-4">
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-purple-500" /> Advanced Role Assignment</li>
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-purple-500" /> Fee Tracking Dashboard</li>
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-purple-500" /> Jersey & Position Control</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Advanced Role Assignment</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Fee Tracking Dashboard</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Jersey & Position Control</li>
             </ul>
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={purchasePro}>
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 hover:bg-primary/90" onClick={purchasePro}>
               Go Pro for $9.99 USD/mo
             </Button>
           </div>
@@ -201,30 +200,30 @@ export default function RosterPage() {
           <h1 className="text-2xl font-bold">Team Roster</h1>
           <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" className="rounded-full px-5">
+              <Button size="sm" className="rounded-full px-6 font-black uppercase text-xs h-11 tracking-widest shadow-lg shadow-primary/20">
                 <UserPlus className="h-4 w-4 mr-2" />
                 Invite Member
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-md rounded-[2.5rem]">
               <DialogHeader>
-                <DialogTitle>Invite to {activeTeam.name}</DialogTitle>
-                <DialogDescription>
+                <DialogTitle className="text-2xl font-black tracking-tight">Invite to {activeTeam.name}</DialogTitle>
+                <DialogDescription className="font-medium">
                   Share your team code to have members join your squad.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-6 py-4">
-                <div className="p-6 bg-primary/5 rounded-3xl text-center space-y-3 border-2 border-primary/10 group cursor-pointer active:scale-95 transition-all" onClick={copyTeamCode}>
-                  <p className="text-[10px] font-black text-primary uppercase tracking-widest">Your Team Code</p>
-                  <div className="flex items-center justify-center gap-3">
-                    <p className="text-4xl font-black text-primary tracking-widest">{activeTeam.code}</p>
-                    <Copy className="h-5 w-5 text-primary opacity-30 group-hover:opacity-100 transition-opacity" />
+                <div className="p-8 bg-primary/5 rounded-[2rem] text-center space-y-4 border-2 border-dashed border-primary/20 group cursor-pointer active:scale-95 transition-all" onClick={copyTeamCode}>
+                  <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Official Squad Code</p>
+                  <div className="flex items-center justify-center gap-4">
+                    <p className="text-5xl font-black text-primary tracking-widest">{activeTeam.code}</p>
+                    <Copy className="h-6 w-6 text-primary opacity-30 group-hover:opacity-100 transition-opacity" />
                   </div>
-                  <p className="text-[10px] text-muted-foreground italic">Tap to copy and share with teammates or parents.</p>
+                  <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest pt-2">Tap to copy and share with your team</p>
                 </div>
               </div>
               <DialogFooter>
-                <Button className="w-full rounded-xl h-12 text-base font-bold" onClick={() => setIsInviteOpen(false)}>Close Invite Menu</Button>
+                <Button className="w-full rounded-2xl h-14 text-base font-black uppercase tracking-widest" onClick={() => setIsInviteOpen(false)}>Close Invite Menu</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -234,7 +233,7 @@ export default function RosterPage() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input 
             placeholder="Search squad by name or role..." 
-            className="pl-11 bg-muted/50 border-none rounded-2xl h-12 shadow-inner"
+            className="pl-11 bg-muted/50 border-none rounded-2xl h-12 shadow-inner font-bold"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -263,22 +262,22 @@ export default function RosterPage() {
               
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <h3 className="font-extrabold truncate text-base">{member.name}</h3>
+                  <h3 className="font-black truncate text-lg tracking-tight">{member.name}</h3>
                   <Badge variant="outline" className="text-[9px] py-0 px-1.5 h-4 border-primary/20 text-primary font-black uppercase tracking-tighter">
                     {member.jersey !== 'PAR' && member.jersey !== 'TBD' ? `#${member.jersey}` : member.jersey}
                   </Badge>
                 </div>
-                <p className="text-[11px] text-muted-foreground font-bold uppercase tracking-widest">{member.position}</p>
+                <p className="text-[11px] text-muted-foreground font-black uppercase tracking-widest">{member.position}</p>
               </div>
 
               <div className="flex items-center gap-4">
                 <div className="flex flex-col items-center">
                   <span className="text-[8px] font-black uppercase text-muted-foreground mb-1 tracking-widest">Fees</span>
                   <div className={cn(
-                    "h-8 px-2 rounded-lg font-bold text-[10px] border flex items-center justify-center transition-all",
+                    "h-8 px-3 rounded-lg font-black text-[10px] border flex items-center justify-center transition-all tracking-tighter",
                     member.feesPaid 
-                      ? "bg-green-500/10 text-green-600 border-green-500/20" 
-                      : "bg-amber-500/10 text-amber-600 border-amber-500/20"
+                      ? "bg-primary text-white border-primary shadow-sm" 
+                      : "bg-secondary text-white border-secondary shadow-sm"
                   )}>
                     {member.feesPaid ? <Check className="h-3 w-3 mr-1" /> : <DollarSign className="h-3 w-3 mr-1" />}
                     {member.feesPaid ? "PAID" : `$${member.amountOwed || 0}`}
@@ -293,97 +292,102 @@ export default function RosterPage() {
 
       {/* Member Details & Management Dialog - Desktop Optimized */}
       <Dialog open={!!selectedMember} onOpenChange={(open) => !open && setSelectedMember(null)}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-4xl overflow-y-auto max-h-[95vh]">
+        <DialogContent className="rounded-[2.5rem] sm:max-w-4xl overflow-y-auto max-h-[95vh] border-none shadow-2xl p-0">
           {selectedMember && (
-            <>
-              <DialogHeader className="flex flex-col items-center text-center space-y-4 pt-4 border-b pb-6">
-                <div className="relative">
-                  <Avatar className="h-24 w-24 rounded-[2rem] border-4 border-background shadow-xl">
-                    <AvatarImage src={selectedMember.avatar} />
-                    <AvatarFallback className="text-2xl font-black">{selectedMember.name[0]}</AvatarFallback>
-                  </Avatar>
-                  {selectedMember.role === 'Admin' && (
-                    <div className="absolute -top-2 -right-2 bg-primary text-white p-2 rounded-full shadow-lg border-2 border-background">
-                      <ShieldCheck className="h-4 w-4" />
-                    </div>
-                  )}
+            <div className="flex flex-col">
+              <div className="bg-muted/30 p-8 border-b text-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none">
+                  <Users2 className="h-48 w-48 -rotate-12" />
                 </div>
-                <div className="space-y-1">
-                  <DialogTitle className="text-3xl font-black tracking-tight">{selectedMember.name}</DialogTitle>
-                  <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">
-                    {selectedMember.position} • {selectedMember.role}
-                  </DialogDescription>
+                <div className="relative z-10 flex flex-col items-center space-y-4">
+                  <div className="relative">
+                    <Avatar className="h-32 w-32 rounded-[2.5rem] border-[6px] border-background shadow-2xl">
+                      <AvatarImage src={selectedMember.avatar} />
+                      <AvatarFallback className="text-3xl font-black">{selectedMember.name[0]}</AvatarFallback>
+                    </Avatar>
+                    {selectedMember.role === 'Admin' && (
+                      <div className="absolute -top-2 -right-2 bg-primary text-white p-2.5 rounded-full shadow-xl border-4 border-background">
+                        <ShieldCheck className="h-5 w-5" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <DialogTitle className="text-4xl font-black tracking-tighter">{selectedMember.name}</DialogTitle>
+                    <DialogDescription className="font-black text-primary uppercase tracking-[0.2em] text-xs">
+                      {selectedMember.position} • {selectedMember.role}
+                    </DialogDescription>
+                  </div>
                 </div>
-              </DialogHeader>
+              </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 py-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
                 {/* Left Column: Financial Ledger */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 px-1 mb-4">
-                    <div className="bg-primary/10 p-2 rounded-lg text-primary">
-                      <CreditCard className="h-4 w-4" />
+                <div className="p-8 border-r">
+                  <div className="flex items-center gap-3 px-1 mb-6">
+                    <div className="bg-primary/10 p-2.5 rounded-xl text-primary">
+                      <CreditCard className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="text-xs font-black uppercase tracking-widest text-primary">Financial Ledger</p>
-                      <p className="text-[10px] text-muted-foreground font-bold">Total Owed: ${selectedMember.amountOwed || 0}</p>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Financial Ledger</p>
+                      <p className="text-lg font-black tracking-tight">Total Owed: ${selectedMember.amountOwed || 0}</p>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     {isAdmin && (
-                      <div className="bg-muted/50 p-4 rounded-2xl space-y-3 border-2 border-dashed">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Add New Charge</p>
-                        <div className="flex gap-2">
+                      <div className="bg-muted/50 p-5 rounded-3xl space-y-4 border-2 border-dashed">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Add New Charge</p>
+                        <div className="flex gap-3">
                           <Input 
-                            placeholder="Fee Title (e.g. League)" 
-                            className="h-10 text-xs rounded-xl"
+                            placeholder="Title" 
+                            className="h-12 text-sm font-bold rounded-xl border-2"
                             value={newFee.title}
                             onChange={e => setNewFee(p => ({ ...p, title: e.target.value }))}
                           />
-                          <div className="relative w-28">
-                            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                          <div className="relative w-32">
+                            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input 
                               type="number" 
                               placeholder="0.00" 
-                              className="h-10 text-xs pl-8 rounded-xl"
+                              className="h-12 text-sm font-bold pl-9 rounded-xl border-2"
                               value={newFee.amount}
                               onChange={e => setNewFee(p => ({ ...p, amount: e.target.value }))}
                             />
                           </div>
-                          <Button size="icon" className="h-10 w-10 shrink-0 rounded-xl" onClick={handleAddFee} disabled={!newFee.title || !newFee.amount}>
+                          <Button size="icon" className="h-12 w-12 shrink-0 rounded-xl shadow-lg shadow-primary/20" onClick={handleAddFee} disabled={!newFee.title || !newFee.amount}>
                             <Plus className="h-5 w-5" />
                           </Button>
                         </div>
                       </div>
                     )}
 
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                       {selectedMember.fees && selectedMember.fees.length > 0 ? selectedMember.fees.map((fee) => (
-                        <div key={fee.id} className="flex items-center justify-between p-4 bg-background border rounded-2xl shadow-sm hover:border-primary/20 transition-all">
+                        <div key={fee.id} className="flex items-center justify-between p-5 bg-background border-2 rounded-2xl shadow-sm hover:border-primary transition-all group">
                           <div className="flex items-center gap-4">
                             {isAdmin ? (
                               <Checkbox 
                                 checked={fee.paid} 
                                 onCheckedChange={() => handleToggleFeePaid(fee.id)}
-                                className="h-5 w-5 rounded-md"
+                                className="h-6 w-6 rounded-lg border-2"
                               />
                             ) : (
-                              fee.paid ? <Check className="h-5 w-5 text-green-600" /> : <Circle className="h-5 w-5 text-amber-500 opacity-30" />
+                              fee.paid ? <Check className="h-6 w-6 text-primary stroke-[3px]" /> : <Circle className="h-6 w-6 text-muted-foreground opacity-20" />
                             )}
                             <div>
-                              <p className={cn("text-sm font-bold", fee.paid && "text-muted-foreground line-through")}>{fee.title}</p>
-                              <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">${fee.amount}</p>
+                              <p className={cn("text-base font-black tracking-tight", fee.paid && "text-muted-foreground line-through")}>{fee.title}</p>
+                              <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">${fee.amount}</p>
                             </div>
                           </div>
                           {isAdmin && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-full" onClick={() => handleRemoveFee(fee.id)}>
+                            <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/10 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleRemoveFee(fee.id)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           )}
                         </div>
                       )) : (
-                        <div className="text-center py-12 bg-muted/20 rounded-2xl border-2 border-dashed">
-                          <p className="text-muted-foreground italic text-xs font-medium">No financial records for this teammate.</p>
+                        <div className="text-center py-16 bg-muted/20 rounded-[2rem] border-2 border-dashed">
+                          <p className="text-muted-foreground font-black uppercase tracking-widest text-[10px]">No financial history</p>
                         </div>
                       )}
                     </div>
@@ -391,27 +395,27 @@ export default function RosterPage() {
                 </div>
 
                 {/* Right Column: Roster Details & Actions */}
-                <div className="space-y-8">
+                <div className="p-8 space-y-10">
                   {isAdmin && (
                     <div className="space-y-6">
                       <div className="flex items-center gap-3 px-1">
-                        <div className="bg-primary/10 p-2 rounded-lg text-primary">
-                          <Users2 className="h-4 w-4" />
+                        <div className="bg-secondary/10 p-2.5 rounded-xl text-secondary">
+                          <Users2 className="h-5 w-5" />
                         </div>
-                        <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Management Controls</h4>
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">Management Controls</h4>
                       </div>
                       
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-muted/30 p-6 rounded-2xl border">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-muted/30 p-6 rounded-[2rem] border-2 border-dashed">
                         <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Position / Role</Label>
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Position / Role</Label>
                           <Select 
                             value={editForm.position} 
                             onValueChange={(v) => setEditForm(prev => ({ ...prev, position: v }))}
                           >
-                            <SelectTrigger className="rounded-xl h-12 bg-background">
+                            <SelectTrigger className="rounded-xl h-12 bg-background border-2 font-bold">
                               <SelectValue placeholder="Select position..." />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="rounded-xl">
                               <SelectItem value="Coach">Coach (Admin)</SelectItem>
                               <SelectItem value="Team Lead">Team Lead (Admin)</SelectItem>
                               <SelectItem value="Assistant Coach">Assistant Coach (Admin)</SelectItem>
@@ -422,11 +426,11 @@ export default function RosterPage() {
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Jersey #</Label>
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Jersey #</Label>
                           <Input 
                             value={editForm.jersey} 
                             onChange={(e) => setEditForm(prev => ({ ...prev, jersey: e.target.value }))}
-                            className="rounded-xl h-12 bg-background font-bold text-lg"
+                            className="rounded-xl h-12 bg-background font-black text-xl border-2 text-primary"
                             placeholder="e.g. 23"
                           />
                         </div>
@@ -434,44 +438,44 @@ export default function RosterPage() {
                     </div>
                   )}
 
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div className="flex items-center gap-3 px-1">
-                      <div className="bg-primary/10 p-2 rounded-lg text-primary">
-                        <AtSign className="h-4 w-4" />
+                      <div className="bg-primary/10 p-2.5 rounded-xl text-primary">
+                        <AtSign className="h-5 w-5" />
                       </div>
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Quick Contact</h4>
+                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Direct Communication</h4>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <Button variant="outline" className="h-14 rounded-2xl border-primary/20 text-primary font-black uppercase text-[10px] tracking-widest gap-3 shadow-sm hover:bg-primary/5">
-                        <Mail className="h-4 w-4" /> Message
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Button variant="outline" className="h-16 rounded-2xl border-2 border-primary/20 text-primary font-black uppercase text-[10px] tracking-widest gap-3 shadow-sm hover:bg-primary hover:text-white transition-all">
+                        <Mail className="h-5 w-5" /> Message
                       </Button>
-                      <Button variant="outline" className="h-14 rounded-2xl border-primary/20 text-primary font-black uppercase text-[10px] tracking-widest gap-3 shadow-sm hover:bg-primary/5">
-                        <Phone className="h-4 w-4" /> Direct Call
+                      <Button variant="outline" className="h-16 rounded-2xl border-2 border-primary/20 text-primary font-black uppercase text-[10px] tracking-widest gap-3 shadow-sm hover:bg-primary hover:text-white transition-all">
+                        <Phone className="h-5 w-5" /> Direct Call
                       </Button>
                     </div>
                   </div>
+
+                  {isAdmin && (
+                    <div className="pt-4">
+                      <Button onClick={handleSaveDetails} className="w-full px-12 rounded-2xl h-16 text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all">
+                        Commit Squad Changes
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {isAdmin && (
-                <DialogFooter className="pt-6 border-t mt-4">
-                  <Button onClick={handleSaveDetails} className="w-full sm:w-auto px-12 rounded-2xl h-14 text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all">
-                    Apply Squad Changes
-                  </Button>
-                </DialogFooter>
-              )}
-            </>
+            </div>
           )}
         </DialogContent>
       </Dialog>
       
       {filteredRoster.length === 0 && (
         <div className="text-center py-20 bg-muted/10 rounded-3xl border-2 border-dashed">
-          <div className="bg-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-sm">
+          <div className="bg-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-sm ring-1 ring-black/5">
             <Search className="h-8 w-8 text-muted-foreground opacity-20" />
           </div>
-          <h3 className="font-bold text-lg">No teammates found</h3>
-          <p className="text-sm text-muted-foreground">Try adjusting your search criteria.</p>
+          <h3 className="font-black text-lg uppercase tracking-tight">No teammates found</h3>
+          <p className="text-sm text-muted-foreground font-medium">Try adjusting your search criteria.</p>
         </div>
       )}
     </div>

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -73,10 +72,10 @@ export default function DrillsPage() {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
         <div className="relative">
-          <div className="bg-amber-100 p-6 rounded-[2.5rem] shadow-xl">
-            <Dumbbell className="h-16 w-16 text-amber-600" />
+          <div className="bg-primary/10 p-6 rounded-[2.5rem] shadow-xl">
+            <Dumbbell className="h-16 w-16 text-primary" />
           </div>
-          <div className="absolute -top-2 -right-2 bg-primary text-white p-2 rounded-full shadow-lg border-2 border-background">
+          <div className="absolute -top-2 -right-2 bg-secondary text-white p-2 rounded-full shadow-lg border-2 border-background">
             <Lock className="h-4 w-4" />
           </div>
         </div>
@@ -88,18 +87,18 @@ export default function DrillsPage() {
           </p>
         </div>
 
-        <Card className="w-full max-w-sm border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white">
+        <Card className="w-full max-w-sm border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white ring-1 ring-black/5">
           <div className="p-8 space-y-6">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black uppercase text-primary tracking-widest">Pro Training Suite</span>
-              <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-none font-bold">Elite Content</Badge>
+              <Badge variant="secondary" className="bg-primary/10 text-primary border-none font-bold">Elite Content</Badge>
             </div>
             <ul className="space-y-4">
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-amber-500" /> Custom Drill Directory</li>
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-amber-500" /> YouTube Video Integration</li>
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-amber-500" /> Photo Aid Uploads</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Custom Drill Directory</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> YouTube Video Integration</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Photo Aid Uploads</li>
             </ul>
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={purchasePro}>
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 hover:bg-primary/90" onClick={purchasePro}>
               Unlock Training Library
             </Button>
           </div>
@@ -197,7 +196,7 @@ export default function DrillsPage() {
         {isAdmin && (
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
-              <Button className="rounded-full shadow-lg shadow-primary/20">
+              <Button className="rounded-full shadow-lg shadow-primary/20 px-6 font-black uppercase text-xs tracking-widest h-11">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Drill
               </Button>
@@ -213,13 +212,13 @@ export default function DrillsPage() {
                     <div className="space-y-5">
                       <div className="space-y-2">
                         <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Drill Name</Label>
-                        <Input placeholder="e.g. Full Court Press, Zone Defense" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="rounded-xl h-12 bg-background shadow-sm" />
+                        <Input placeholder="e.g. Full Court Press, Zone Defense" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="rounded-xl h-12 bg-background shadow-sm border-2" />
                       </div>
                       <div className="space-y-2">
                         <Label className="text-[10px] font-black uppercase tracking-widest ml-1">YouTube Integration (Optional)</Label>
                         <div className="relative">
                           <Youtube className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                          <Input placeholder="https://youtube.com/..." value={newVideoUrl} onChange={e => setNewVideoUrl(e.target.value)} className="rounded-xl h-12 pl-11 bg-background shadow-sm" />
+                          <Input placeholder="https://youtube.com/..." value={newVideoUrl} onChange={e => setNewVideoUrl(e.target.value)} className="rounded-xl h-12 pl-11 bg-background shadow-sm border-2" />
                         </div>
                       </div>
                       <div className="space-y-2">
@@ -276,7 +275,7 @@ export default function DrillsPage() {
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input 
           placeholder="Search training directory..." 
-          className="pl-11 bg-muted/50 border-none rounded-2xl h-12 shadow-inner"
+          className="pl-11 bg-muted/50 border-none rounded-2xl h-12 shadow-inner font-bold"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -302,15 +301,15 @@ export default function DrillsPage() {
               </div>
               {drill.videoUrl && (
                 <div className="absolute top-3 right-3">
-                  <Badge className="bg-red-600 text-white border-none text-[9px] font-black uppercase tracking-widest px-2 h-5">Video</Badge>
+                  <Badge className="bg-primary text-white border-none text-[9px] font-black uppercase tracking-widest px-2 h-5">Video</Badge>
                 </div>
               )}
             </div>
             <CardContent className="p-5 space-y-2 flex-1 flex flex-col">
               <h3 className="font-black text-lg tracking-tight group-hover:text-primary transition-colors line-clamp-1">{drill.title}</h3>
-              <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed flex-1">{drill.description}</p>
+              <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed flex-1 font-medium">{drill.description}</p>
               <div className="flex items-center justify-between pt-4 mt-auto">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Added {new Date(drill.createdAt).toLocaleDateString()}</span>
+                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Added {new Date(drill.createdAt).toLocaleDateString()}</span>
                 <ChevronRight className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-all group-hover:translate-x-1" />
               </div>
             </CardContent>
@@ -319,10 +318,10 @@ export default function DrillsPage() {
           <div className="col-span-full py-20 text-center bg-muted/20 border-2 border-dashed rounded-[2.5rem] space-y-4">
             <Dumbbell className="h-12 w-12 text-muted-foreground opacity-20 mx-auto" />
             <div>
-              <p className="font-bold text-lg">No drills found</p>
-              <p className="text-sm text-muted-foreground">Time to build your squad's playbook.</p>
+              <p className="font-black text-lg uppercase tracking-tight">No drills found</p>
+              <p className="text-sm text-muted-foreground font-medium">Time to build your squad's playbook.</p>
             </div>
-            {isAdmin && <Button variant="outline" className="rounded-full" onClick={() => setIsAddOpen(true)}>Create First Drill</Button>}
+            {isAdmin && <Button variant="outline" className="rounded-full px-8 font-black uppercase text-xs tracking-widest border-2" onClick={() => setIsAddOpen(true)}>Create First Drill</Button>}
           </div>
         )}
       </div>
@@ -376,11 +375,11 @@ export default function DrillsPage() {
 
                     <div className="space-y-4">
                       <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Expert Instructions</h4>
-                      <p className="text-base leading-relaxed text-foreground/80 font-medium whitespace-pre-wrap">{selectedDrill.description}</p>
+                      <p className="text-base leading-relaxed text-foreground/80 font-bold whitespace-pre-wrap">{selectedDrill.description}</p>
                     </div>
 
                     {selectedDrill.videoUrl && !getYouTubeEmbedUrl(selectedDrill.videoUrl) && (
-                      <Button asChild variant="outline" className="h-12 rounded-xl w-full gap-3 font-bold border-primary/20 text-primary mt-4 shadow-sm">
+                      <Button asChild variant="outline" className="h-12 rounded-xl w-full gap-3 font-black uppercase text-xs tracking-widest border-2 border-primary/20 text-primary mt-4 shadow-sm">
                         <a href={selectedDrill.videoUrl} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="h-4 w-4" /> Open Source Video
                         </a>
@@ -402,7 +401,7 @@ export default function DrillsPage() {
                       <Trash2 className="h-5 w-5" />
                     </Button>
                   )}
-                  <Button className="flex-1 rounded-xl h-12 font-bold" onClick={() => setSelectedDrill(null)}>Close Resource</Button>
+                  <Button className="flex-1 rounded-xl h-12 font-black uppercase text-xs tracking-widest" onClick={() => setSelectedDrill(null)}>Close Resource</Button>
                 </div>
               </div>
             </>

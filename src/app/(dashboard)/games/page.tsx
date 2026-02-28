@@ -33,7 +33,7 @@ const chartConfig = {
   },
   opponentScore: {
     label: "Opponent",
-    color: "hsl(var(--muted-foreground))",
+    color: "hsl(var(--secondary))",
   },
 } satisfies ChartConfig;
 
@@ -110,10 +110,10 @@ export default function GamesPage() {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
         <div className="relative">
-          <div className="bg-amber-100 p-6 rounded-[2.5rem] shadow-xl">
-            <Trophy className="h-16 w-16 text-amber-600" />
+          <div className="bg-primary/10 p-6 rounded-[2.5rem] shadow-xl">
+            <Trophy className="h-16 w-16 text-primary" />
           </div>
-          <div className="absolute -top-2 -right-2 bg-primary text-white p-2 rounded-full shadow-lg border-2 border-background">
+          <div className="absolute -top-2 -right-2 bg-secondary text-white p-2 rounded-full shadow-lg border-2 border-background">
             <Lock className="h-4 w-4" />
           </div>
         </div>
@@ -125,18 +125,18 @@ export default function GamesPage() {
           </p>
         </div>
 
-        <Card className="w-full max-w-sm border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white">
+        <Card className="w-full max-w-sm border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white ring-1 ring-black/5">
           <div className="p-8 space-y-6">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black uppercase text-primary tracking-widest">Pro Plan Features</span>
-              <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-none font-bold">Recommended</Badge>
+              <Badge variant="secondary" className="bg-primary/10 text-primary border-none font-bold">Elite Stats</Badge>
             </div>
             <ul className="space-y-4">
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-amber-500" /> Season Win/Loss Metrics</li>
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-amber-500" /> Detailed Match Archives</li>
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-amber-500" /> Individual Performance Logs</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Season Win/Loss Metrics</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Detailed Match Archives</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Individual Performance Logs</li>
             </ul>
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={purchasePro}>
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 hover:bg-primary/90" onClick={purchasePro}>
               Upgrade Squad for $9.99 USD
             </Button>
           </div>
@@ -216,30 +216,30 @@ export default function GamesPage() {
             }
           }}>
             <DialogTrigger asChild>
-              <Button className="rounded-full shadow-lg shadow-primary/20">
+              <Button className="rounded-full shadow-lg shadow-primary/20 px-6 font-black uppercase text-xs tracking-widest h-11">
                 <Plus className="h-4 w-4 mr-2" />
                 Record Game
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-3xl rounded-[2.5rem] overflow-hidden p-0">
               <div className="grid grid-cols-1 lg:grid-cols-2">
-                <div className="p-8 bg-primary/5 border-r space-y-6">
+                <div className="p-8 bg-muted/30 border-r space-y-6">
                   <DialogHeader>
                     <DialogTitle className="text-2xl font-black tracking-tight">{editingGame ? "Update Match Record" : "Post Match Result"}</DialogTitle>
-                    <DialogDescription className="font-bold text-primary/60 uppercase tracking-widest text-[10px]">Official Season Scoreboard</DialogDescription>
+                    <DialogDescription className="font-black text-primary uppercase tracking-widest text-[10px]">Official Season Scoreboard</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-5">
                     <div className="space-y-2">
                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Opponent Name</Label>
-                      <Input placeholder="e.g. Riverside Rovers" value={opponent} onChange={e => setOpponent(e.target.value)} className="h-12 rounded-xl bg-background" />
+                      <Input placeholder="e.g. Riverside Rovers" value={opponent} onChange={e => setOpponent(e.target.value)} className="h-12 rounded-xl bg-background border-2" />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-12 rounded-xl bg-background" /></div>
-                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label><Input placeholder="Arena/Field" value={location} onChange={e => setLocation(e.target.value)} className="h-12 rounded-xl bg-background" /></div>
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-12 rounded-xl bg-background border-2" /></div>
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label><Input placeholder="Arena/Field" value={location} onChange={e => setLocation(e.target.value)} className="h-12 rounded-xl bg-background border-2" /></div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">{activeTeam.name} Score</Label><Input type="number" value={myScore} onChange={e => setMyScore(e.target.value)} className="h-12 rounded-xl bg-background font-black text-lg" /></div>
-                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Opponent Score</Label><Input type="number" value={opponentScore} onChange={e => setOpponentScore(e.target.value)} className="h-12 rounded-xl bg-background font-black text-lg" /></div>
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">{activeTeam.name} Score</Label><Input type="number" value={myScore} onChange={e => setMyScore(e.target.value)} className="h-12 rounded-xl bg-background font-black text-lg border-2 border-primary/20" /></div>
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Opponent Score</Label><Input type="number" value={opponentScore} onChange={e => setOpponentScore(e.target.value)} className="h-12 rounded-xl bg-background font-black text-lg border-2" /></div>
                     </div>
                   </div>
                 </div>
@@ -250,7 +250,7 @@ export default function GamesPage() {
                       placeholder="Recap the game, call out MVPs, or note areas for improvement..." 
                       value={notes} 
                       onChange={e => setNotes(e.target.value)} 
-                      className="min-h-[250px] rounded-[2rem] p-6 text-base leading-relaxed bg-muted/10 border-2" 
+                      className="min-h-[250px] rounded-[2rem] p-6 text-base font-bold leading-relaxed bg-muted/10 border-2" 
                     />
                   </div>
                   <DialogFooter>
@@ -266,36 +266,36 @@ export default function GamesPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <Card className="border-none shadow-sm bg-green-50/50 dark:bg-green-950/20">
+        <Card className="border-none shadow-sm bg-primary text-white">
           <CardContent className="p-4 text-center">
-            <div className="text-[10px] font-black uppercase text-green-600 tracking-widest mb-1">Wins</div>
-            <div className="text-3xl font-black text-green-600">{wins}</div>
+            <div className="text-[10px] font-black uppercase text-white/60 tracking-widest mb-1">Wins</div>
+            <div className="text-3xl font-black">{wins}</div>
           </CardContent>
         </Card>
-        <Card className="border-none shadow-sm bg-red-50/50 dark:bg-red-950/20">
+        <Card className="border-none shadow-sm bg-secondary text-white">
           <CardContent className="p-4 text-center">
-            <div className="text-[10px] font-black uppercase text-red-600 tracking-widest mb-1">Losses</div>
-            <div className="text-3xl font-black text-red-600">{losses}</div>
+            <div className="text-[10px] font-black uppercase text-white/60 tracking-widest mb-1">Losses</div>
+            <div className="text-3xl font-black">{losses}</div>
           </CardContent>
         </Card>
-        <Card className="border-none shadow-sm bg-blue-50/50 dark:bg-blue-950/20">
+        <Card className="border-none shadow-sm bg-muted text-foreground">
           <CardContent className="p-4 text-center">
-            <div className="text-[10px] font-black uppercase text-blue-600 tracking-widest mb-1">Ties</div>
-            <div className="text-3xl font-black text-blue-600">{ties}</div>
+            <div className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-1">Ties</div>
+            <div className="text-3xl font-black">{ties}</div>
           </CardContent>
         </Card>
       </div>
 
       {games.length > 0 && (
         <Card className="rounded-[2rem] border-none shadow-xl shadow-primary/5 ring-1 ring-black/5 overflow-hidden">
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 bg-muted/30">
             <div className="flex items-center gap-2">
               <ChartIcon className="h-4 w-4 text-primary" />
-              <CardTitle className="text-lg font-black">Performance Trend</CardTitle>
+              <CardTitle className="text-lg font-black uppercase tracking-tight">Performance Trend</CardTitle>
             </div>
-            <CardDescription className="text-xs font-bold uppercase tracking-widest">Scoring trajectory for the season</CardDescription>
+            <CardDescription className="text-xs font-black uppercase tracking-widest text-muted-foreground">Scoring trajectory for the season</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6 pt-6">
             <div className="h-[200px] w-full pt-4">
               <ChartContainer config={chartConfig} className="h-full w-full">
                 <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
@@ -304,19 +304,21 @@ export default function GamesPage() {
                     dataKey="date" 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fontSize: 10, fontWeight: 'bold' }} 
+                    tick={{ fontSize: 10, fontWeight: '900', fill: 'hsl(var(--muted-foreground))' }} 
                     dy={10}
                   />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: '900', fill: 'hsl(var(--muted-foreground))' }} />
                   <ChartTooltip 
                     content={({ active, payload }) => {
                       if (active && payload && payload.length) {
                         const data = payload[0].payload;
                         return (
-                          <div className="bg-background border-2 border-primary/10 rounded-xl p-3 shadow-2xl text-xs font-bold space-y-1 animate-in zoom-in-95">
-                            <p className="text-muted-foreground uppercase text-[9px] tracking-widest">{data.date}</p>
-                            <p className="text-primary flex justify-between gap-4"><span>{activeTeam.name}:</span> <span>{data.myScore}</span></p>
-                            <p className="text-muted-foreground flex justify-between gap-4"><span>Vs. {data.opponentName}:</span> <span>{data.opponentScore}</span></p>
+                          <div className="bg-secondary text-white border-none rounded-xl p-4 shadow-2xl text-xs font-black space-y-2 animate-in zoom-in-95">
+                            <p className="text-white/50 uppercase text-[9px] tracking-[0.2em]">{data.date}</p>
+                            <div className="space-y-1">
+                              <p className="flex justify-between gap-6"><span>{activeTeam.name}:</span> <span className="text-primary">{data.myScore}</span></p>
+                              <p className="text-white/70 flex justify-between gap-6"><span>Vs. {data.opponentName}:</span> <span>{data.opponentScore}</span></p>
+                            </div>
                           </div>
                         );
                       }
@@ -327,29 +329,29 @@ export default function GamesPage() {
                     type="monotone" 
                     dataKey="myScore" 
                     stroke="var(--color-myScore)" 
-                    strokeWidth={4} 
-                    dot={{ r: 5, fill: "var(--color-myScore)", strokeWidth: 2, stroke: "#fff" }}
-                    activeDot={{ r: 8, strokeWidth: 0 }}
+                    strokeWidth={5} 
+                    dot={{ r: 6, fill: "var(--color-myScore)", strokeWidth: 3, stroke: "#fff" }}
+                    activeDot={{ r: 9, strokeWidth: 0 }}
                   />
                   <Line 
                     type="monotone" 
                     dataKey="opponentScore" 
                     stroke="var(--color-opponentScore)" 
-                    strokeWidth={2} 
-                    strokeDasharray="5 5"
-                    dot={{ r: 4, fill: "var(--color-opponentScore)", strokeWidth: 2, stroke: "#fff" }}
+                    strokeWidth={3} 
+                    strokeDasharray="6 6"
+                    dot={{ r: 5, fill: "var(--color-opponentScore)", strokeWidth: 2, stroke: "#fff" }}
                   />
                 </LineChart>
               </ChartContainer>
             </div>
             
-            <div className="bg-primary/5 rounded-2xl p-4 flex items-start gap-3 border border-primary/10">
-              <div className="bg-primary text-white p-1.5 rounded-lg shrink-0">
-                <Sparkles className="h-4 w-4" />
+            <div className="bg-primary/5 rounded-2xl p-5 flex items-start gap-4 border-2 border-primary/10">
+              <div className="bg-primary text-white p-2 rounded-xl shrink-0 shadow-lg shadow-primary/20">
+                <Sparkles className="h-5 w-5" />
               </div>
               <div className="space-y-1">
-                <p className="text-xs font-black uppercase text-primary tracking-widest leading-none">Squad Motivation</p>
-                <p className="text-sm font-bold text-foreground/80 leading-relaxed italic">
+                <p className="text-xs font-black uppercase text-primary tracking-[0.2em] leading-none">Squad Motivation</p>
+                <p className="text-sm font-bold text-foreground/90 leading-relaxed italic">
                   "{encouragement}"
                 </p>
               </div>
@@ -359,14 +361,14 @@ export default function GamesPage() {
       )}
 
       <div className="space-y-4">
-        <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground ml-1">Recent Match History</h2>
+        <h2 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground ml-1">Recent Match History</h2>
         {games.length > 0 ? games.map((game) => (
           <Card key={game.id} className="overflow-hidden border-none shadow-sm ring-1 ring-black/5 rounded-3xl hover:shadow-md transition-all group relative">
             {isAdmin && (
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="absolute top-4 right-4 h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute top-4 right-4 h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity rounded-full bg-white/80 backdrop-blur-sm"
                 onClick={() => handleEditClick(game)}
               >
                 <Edit2 className="h-4 w-4" />
@@ -375,45 +377,45 @@ export default function GamesPage() {
             <CardContent className="p-0 flex items-stretch">
               <div className={cn(
                 "w-3 shrink-0",
-                game.result === 'Win' ? "bg-green-500" : game.result === 'Loss' ? "bg-red-500" : "bg-blue-500"
+                game.result === 'Win' ? "bg-primary" : game.result === 'Loss' ? "bg-secondary" : "bg-muted"
               )} />
-              <div className="flex-1 p-5 space-y-4">
+              <div className="flex-1 p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Vs. Opponent</span>
-                      {game.result === 'Win' && <Badge className="bg-green-500 h-4 text-[9px] uppercase">Victory</Badge>}
+                      {game.result === 'Win' && <Badge className="bg-primary text-white h-4 text-[9px] uppercase font-black px-2">Victory</Badge>}
                     </div>
-                    <h3 className="text-xl font-bold">{game.opponent}</h3>
+                    <h3 className="text-2xl font-black tracking-tight">{game.opponent}</h3>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-4 bg-muted/30 px-5 py-2 rounded-2xl border">
                     <div className="flex flex-col items-center">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase">{activeTeam.name[0]}</span>
-                      <span className="text-2xl font-black">{game.myScore}</span>
+                      <span className="text-[9px] font-black text-muted-foreground uppercase">{activeTeam.name[0]}</span>
+                      <span className="text-3xl font-black text-primary">{game.myScore}</span>
                     </div>
-                    <div className="text-muted-foreground font-black text-xl">:</div>
+                    <div className="text-muted-foreground font-black text-xl opacity-30">:</div>
                     <div className="flex flex-col items-center">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase">{game.opponent[0]}</span>
-                      <span className="text-2xl font-black">{game.opponentScore}</span>
+                      <span className="text-[9px] font-black text-muted-foreground uppercase">{game.opponent[0]}</span>
+                      <span className="text-3xl font-black">{game.opponentScore}</span>
                     </div>
                   </div>
                 </div>
                 
-                <div className="flex flex-wrap gap-y-2 gap-x-5 pt-2 border-t border-muted/50 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
-                  <div className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {game.date.toLocaleDateString()}</div>
-                  {game.location && <div className="flex items-center gap-1.5"><MapPin className="h-3 w-3" /> {game.location}</div>}
+                <div className="flex flex-wrap gap-y-2 gap-x-6 pt-4 border-t border-muted text-[11px] font-black text-muted-foreground uppercase tracking-widest">
+                  <div className="flex items-center gap-2"><Calendar className="h-3.5 w-3.5 text-primary" /> {game.date.toLocaleDateString()}</div>
+                  {game.location && <div className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-primary" /> {game.location}</div>}
                   {game.result === 'Win' ? (
-                    <div className="flex items-center gap-1.5 text-green-600"><TrendingUp className="h-3 w-3" /> Win</div>
+                    <div className="flex items-center gap-2 text-primary"><TrendingUp className="h-3.5 w-3.5" /> Win</div>
                   ) : game.result === 'Loss' ? (
-                    <div className="flex items-center gap-1.5 text-red-600"><TrendingDown className="h-3 w-3" /> Loss</div>
+                    <div className="flex items-center gap-2 text-foreground"><TrendingDown className="h-3.5 w-3.5" /> Loss</div>
                   ) : (
-                    <div className="flex items-center gap-1.5 text-blue-600"><MinusCircle className="h-3 w-3" /> Draw</div>
+                    <div className="flex items-center gap-2 text-muted-foreground"><MinusCircle className="h-3.5 w-3.5" /> Draw</div>
                   )}
                 </div>
 
                 {game.notes && (
-                  <div className="bg-muted/30 p-3 rounded-2xl">
-                    <p className="text-xs text-muted-foreground font-medium leading-relaxed italic">"{game.notes}"</p>
+                  <div className="bg-muted/50 p-4 rounded-2xl border-l-4 border-primary">
+                    <p className="text-xs text-foreground/80 font-bold leading-relaxed italic">"{game.notes}"</p>
                   </div>
                 )}
               </div>
@@ -423,10 +425,10 @@ export default function GamesPage() {
           <div className="text-center py-20 bg-muted/20 border-2 border-dashed rounded-[2.5rem] space-y-4">
             <Trophy className="h-12 w-12 text-muted-foreground opacity-20 mx-auto" />
             <div>
-              <p className="font-bold text-lg">No games recorded yet</p>
-              <p className="text-sm text-muted-foreground">Start tracking your season performance.</p>
+              <p className="font-black text-lg uppercase tracking-tight">No games recorded yet</p>
+              <p className="text-sm text-muted-foreground font-medium">Start tracking your season performance.</p>
             </div>
-            {isAdmin && <Button variant="outline" className="rounded-full" onClick={() => setIsRecordOpen(true)}>Record First Game</Button>}
+            {isAdmin && <Button variant="outline" className="rounded-full px-8 font-black uppercase text-xs tracking-widest border-2" onClick={() => setIsRecordOpen(true)}>Record First Game</Button>}
           </div>
         )}
       </div>
