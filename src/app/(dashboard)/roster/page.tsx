@@ -34,7 +34,7 @@ import {
   Clock,
   MessageSquare
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { useTeam, Member, FeeItem } from '@/components/providers/team-provider';
 import {
   DropdownMenu,
@@ -555,16 +555,26 @@ export default function RosterPage() {
                             <div className="grid grid-cols-1 gap-3">
                               {isMobile ? (
                                 <>
-                                  <Button asChild variant="outline" className="h-14 rounded-2xl border-2 border-primary/20 text-primary font-black uppercase text-[10px] tracking-widest gap-3 shadow-sm hover:bg-primary hover:text-white transition-all">
-                                    <a href={selectedMember.phone ? `sms:${selectedMember.phone}` : '#'}>
-                                      <Mail className="h-4 w-4" /> Message Direct
-                                    </a>
-                                  </Button>
-                                  <Button asChild variant="outline" className="h-14 rounded-2xl border-2 border-primary/20 text-primary font-black uppercase text-[10px] tracking-widest gap-3 shadow-sm hover:bg-primary hover:text-white transition-all">
-                                    <a href={selectedMember.phone ? `tel:${selectedMember.phone}` : '#'}>
-                                      <Phone className="h-4 w-4" /> Call Member
-                                    </a>
-                                  </Button>
+                                  <a 
+                                    href={selectedMember.phone ? `sms:${selectedMember.phone}` : '#'}
+                                    className={cn(
+                                      buttonVariants({ variant: "outline" }),
+                                      "h-14 rounded-2xl border-2 border-primary/20 text-primary font-black uppercase text-[10px] tracking-widest gap-3 shadow-sm hover:bg-primary hover:text-white transition-all w-full",
+                                      !selectedMember.phone && "opacity-50 pointer-events-none"
+                                    )}
+                                  >
+                                    <MessageSquare className="h-4 w-4" /> Message Direct
+                                  </a>
+                                  <a 
+                                    href={selectedMember.phone ? `tel:${selectedMember.phone}` : '#'}
+                                    className={cn(
+                                      buttonVariants({ variant: "default" }),
+                                      "h-14 rounded-2xl font-black uppercase text-[10px] tracking-widest gap-3 shadow-xl shadow-primary/20 active:scale-95 transition-all w-full",
+                                      !selectedMember.phone && "opacity-50 pointer-events-none"
+                                    )}
+                                  >
+                                    <Phone className="h-4 w-4" /> Call Member
+                                  </a>
                                 </>
                               ) : (
                                 <div className="bg-muted/30 p-5 rounded-2xl">
@@ -593,16 +603,26 @@ export default function RosterPage() {
                                     <Badge className="bg-primary text-white border-none text-[8px] h-4 uppercase tracking-widest font-black">Parent</Badge>
                                   </div>
                                   <div className="flex items-center gap-4 pt-2">
-                                    <Button asChild variant="ghost" size="icon" className="h-9 w-9 rounded-xl bg-white shadow-sm border text-primary">
-                                      <a href={selectedMember.parentPhone ? `tel:${selectedMember.parentPhone}` : '#'}>
-                                        <Phone className="h-4 w-4" />
-                                      </a>
-                                    </Button>
-                                    <Button asChild variant="ghost" size="icon" className="h-9 w-9 rounded-xl bg-white shadow-sm border text-primary">
-                                      <a href={selectedMember.parentPhone ? `sms:${selectedMember.parentPhone}` : '#'}>
-                                        <Mail className="h-4 w-4" />
-                                      </a>
-                                    </Button>
+                                    <a 
+                                      href={selectedMember.parentPhone ? `tel:${selectedMember.parentPhone}` : '#'}
+                                      className={cn(
+                                        buttonVariants({ variant: "ghost", size: "icon" }),
+                                        "h-9 w-9 rounded-xl bg-white shadow-sm border text-primary",
+                                        !selectedMember.parentPhone && "opacity-50 pointer-events-none"
+                                      )}
+                                    >
+                                      <Phone className="h-4 w-4" />
+                                    </a>
+                                    <a 
+                                      href={selectedMember.parentPhone ? `sms:${selectedMember.parentPhone}` : '#'}
+                                      className={cn(
+                                        buttonVariants({ variant: "ghost", size: "icon" }),
+                                        "h-9 w-9 rounded-xl bg-white shadow-sm border text-primary",
+                                        !selectedMember.parentPhone && "opacity-50 pointer-events-none"
+                                      )}
+                                    >
+                                      <MessageSquare className="h-4 w-4" />
+                                    </a>
                                     <span className="text-[10px] font-bold text-muted-foreground font-mono">{selectedMember.parentPhone || 'No number'}</span>
                                   </div>
                                 </div>
@@ -614,11 +634,16 @@ export default function RosterPage() {
                                     <p className="text-base font-black tracking-tight">{selectedMember.emergencyContactName}</p>
                                   </div>
                                   <div className="flex items-center gap-4 pt-2">
-                                    <Button asChild variant="ghost" size="icon" className="h-9 w-9 rounded-xl bg-white shadow-sm border text-black">
-                                      <a href={selectedMember.emergencyContactPhone ? `tel:${selectedMember.emergencyContactPhone}` : '#'}>
-                                        <Phone className="h-4 w-4" />
-                                      </a>
-                                    </Button>
+                                    <a 
+                                      href={selectedMember.emergencyContactPhone ? `tel:${selectedMember.emergencyContactPhone}` : '#'}
+                                      className={cn(
+                                        buttonVariants({ variant: "ghost", size: "icon" }),
+                                        "h-9 w-9 rounded-xl bg-white shadow-sm border text-black",
+                                        !selectedMember.emergencyContactPhone && "opacity-50 pointer-events-none"
+                                      )}
+                                    >
+                                      <Phone className="h-4 w-4" />
+                                    </a>
                                     <span className="text-[10px] font-bold text-muted-foreground font-mono">{selectedMember.emergencyContactPhone || 'No number'}</span>
                                   </div>
                                 </div>
