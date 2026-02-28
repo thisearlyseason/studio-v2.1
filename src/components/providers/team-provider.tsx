@@ -293,8 +293,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (firebaseUser) {
       try {
+        // Configuration must happen before getSharedInstance
+        Purchases.configure(REVENUECAT_PUBLIC_API_KEY, firebaseUser.uid);
         const purchases = Purchases.getSharedInstance();
-        purchases.configure(REVENUECAT_PUBLIC_API_KEY, firebaseUser.uid);
         
         // Initial check for entitlements
         purchases.getCustomerInfo().then(info => {
