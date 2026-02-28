@@ -82,6 +82,10 @@
           "type": "string",
           "description": "Reference to the User who created this team."
         },
+        "createdBy": {
+          "type": "string",
+          "description": "Alias for creatorId used in Firestore implementation."
+        },
         "createdAt": {
           "type": "string",
           "description": "Timestamp when the team was created.",
@@ -98,6 +102,13 @@
         "isDemo": {
           "type": "boolean",
           "description": "Flag indicating if this is a pre-populated demo squad."
+        },
+        "members": {
+          "type": "object",
+          "description": "A map of user IDs to their roles (e.g., 'Admin', 'Member') for rapid rule checks.",
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       },
       "required": [
@@ -105,7 +116,7 @@
         "teamName",
         "sport",
         "teamCode",
-        "creatorId",
+        "createdBy",
         "createdAt"
       ]
     },

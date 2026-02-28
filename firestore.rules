@@ -4,6 +4,8 @@
  *
  * CORE PHILOSOPHY:
  * This ruleset implements a robust, role-based and ownership-based security model.
+ * It is designed to handle batch operations, collaborative engagement (polls/likes),
+ * and dynamic feature gating.
  */
 
 rules_version = '2';
@@ -24,18 +26,26 @@ service cloud.firestore {
      * @description Checks if the user is an application administrator (Super Admin).
      */
     function isAdmin() {
-      // In this prototype, we treat specific emails as super-admins for seeding and global config.
-      return isSignedIn() && (request.auth.token.email == 'thisearlyseason@gmail.com' || request.auth.token.email == 'test@gmail.com');
+      // Treating specific emails as super-admins for platform management and global config.
+      return isSignedIn() && (
+        request.auth.token.email == 'thisearlyseason@gmail.com' || 
+        request.auth.token.email == 'test@gmail.com'
+      );
     }
 
     /**
-     * @description Checks if the user is an admin of a specific team.
+     * @description Robust check if the user is an admin of a specific team.
+     * Checks both the 'members' map on the team document and legacy 'createdBy' field.
      */
     function isTeamAdmin(teamId) {
-      let teamData = get(/databases/$(database)/documents/teams/$(teamId)).data;
-      return isAdmin() || (isSignedIn() && (
+      let teamPath = /databases/$(database)/documents/teams/$(teamId);
+      let hasTeam = exists(teamPath);
+      let teamData = hasTeam ? get(teamPath).data : null;
+      
+      return isAdmin() || (isSignedIn() && hasTeam && (
         (teamData.members != null && teamData.members[request.auth.uid] == 'Admin') || 
         teamData.createdBy == request.auth.uid || 
+        teamData.creatorId == request.auth.uid ||
         teamData.isDemo == true
       ));
     }
@@ -58,13 +68,17 @@ service cloud.firestore {
      * @description Team entities and their nested sub-resources.
      */
     match /teams/{teamId} {
+      // Any signed-in user can view teams (for joining) or create a new one.
       allow get, list, create: if isSignedIn();
       allow update, delete: if isTeamAdmin(teamId);
 
       match /members/{memberId} {
         allow read: if isSignedIn();
-        // Allow write/delete if admin or the user themselves
-        allow write: if isTeamAdmin(teamId) || isOwner(memberId) || (resource != null && isOwner(resource.data.userId));
+        // Critical: Allow create if the user is setting up their own member doc (handles batches)
+        // or if they are a team admin.
+        allow create: if isSignedIn() && (memberId == request.auth.uid || isTeamAdmin(teamId));
+        allow update: if isSignedIn() && (memberId == request.auth.uid || isTeamAdmin(teamId));
+        allow delete: if isTeamAdmin(teamId);
       }
 
       match /events/{eventId} {
@@ -72,9 +86,9 @@ service cloud.firestore {
         allow write: if isTeamAdmin(teamId);
 
         match /registrations/{regId} {
-          allow read: if isTeamAdmin(teamId);
-          allow create: if true;
-          allow delete: if isTeamAdmin(teamId);
+          // Public registrations are open for creation (leads/public links)
+          allow create: if true; 
+          allow read, delete: if isTeamAdmin(teamId);
         }
       }
 
@@ -91,7 +105,8 @@ service cloud.firestore {
       match /files/{fileId} {
         allow read: if isSignedIn();
         allow create: if isSignedIn();
-        allow delete: if isTeamAdmin(teamId) || (resource != null && isOwner(resource.data.uploaderId));
+        // Allow deletion if admin or the original uploader.
+        allow delete: if isTeamAdmin(teamId) || (resource != null && resource.data.uploaderId == request.auth.uid);
       }
 
       match /alerts/{alertId} {
@@ -102,14 +117,14 @@ service cloud.firestore {
       match /feedPosts/{postId} {
         allow read: if isSignedIn();
         allow create: if isSignedIn();
-        // Allow updates for likes and poll voting
+        // Broad update allowed for likes and poll voting increments.
         allow update: if isSignedIn();
-        allow delete: if isTeamAdmin(teamId) || (resource != null && isOwner(resource.data.authorId));
+        allow delete: if isTeamAdmin(teamId) || (resource != null && resource.data.authorId == request.auth.uid);
 
         match /comments/{commentId} {
           allow read: if isSignedIn();
           allow create: if isSignedIn();
-          allow delete: if isTeamAdmin(teamId) || (resource != null && isOwner(resource.data.authorId));
+          allow delete: if isTeamAdmin(teamId) || (resource != null && resource.data.authorId == request.auth.uid);
         }
       }
 
@@ -122,15 +137,16 @@ service cloud.firestore {
         match /messages/{messageId} {
           allow read: if isSignedIn();
           allow create: if isSignedIn();
-          // Allow update for poll voting
+          // Allow update for poll voting.
           allow update: if isSignedIn();
-          allow delete: if isTeamAdmin(teamId) || (resource != null && isOwner(resource.data.authorId));
+          allow delete: if isTeamAdmin(teamId) || (resource != null && resource.data.authorId == request.auth.uid);
         }
       }
     }
 
     /**
      * @description Global application configuration.
+     * All users must be able to read these for feature gating to work.
      */
     match /features/{featureId} {
       allow read: if true;
