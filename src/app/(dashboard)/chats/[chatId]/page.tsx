@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -38,8 +39,8 @@ import { useTeam, Message } from '@/components/providers/team-provider';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, onSnapshot, limit, doc } from 'firebase/firestore';
+import { useFirestore, useDoc, useMemoFirebase, useCollection } from '@/firebase';
+import { collection, query, orderBy, limit, doc } from 'firebase/firestore';
 
 export default function ChatRoomPage() {
   const { chatId } = useParams();
@@ -47,7 +48,6 @@ export default function ChatRoomPage() {
   const { addMessage, votePoll, user, formatTime, members, activeTeam } = useTeam();
   const db = useFirestore();
   
-  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isPollDialogOpen, setIsPollDialogOpen] = useState(false);
   const [pollPrompt, setPollPrompt] = useState('');
@@ -63,7 +63,7 @@ export default function ChatRoomPage() {
   const optionImageInputRef = useRef<HTMLInputElement>(null);
   const activeOptionIdxRef = useRef<number | null>(null);
 
-  // Localized chat room details fetching for performance
+  // Memoized Chat Metadata Ref
   const chatDocRef = useMemoFirebase(() => {
     if (!activeTeam || !db || !chatId) return null;
     return doc(db, 'teams', activeTeam.id, 'groupChats', chatId as string);
@@ -71,27 +71,24 @@ export default function ChatRoomPage() {
 
   const { data: currentChat } = useDoc(chatDocRef);
 
-  useEffect(() => {
-    if (!activeTeam || !db || !chatId) return;
-    
-    const q = query(
+  // Memoized Messages Query
+  const messagesQuery = useMemoFirebase(() => {
+    if (!activeTeam || !db || !chatId) return null;
+    return query(
       collection(db, 'teams', activeTeam.id, 'groupChats', chatId as string, 'messages'),
       orderBy('createdAt', 'asc'),
       limit(100)
     );
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message)));
-    });
-    
-    return () => unsubscribe();
-  }, [activeTeam?.id, chatId, db]);
+  }, [activeTeam?.id, db, chatId]);
 
+  const { data: messages = [] } = useCollection<Message>(messagesQuery);
+
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages.length]);
+  }, [messages?.length]);
 
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
@@ -239,7 +236,7 @@ export default function ChatRoomPage() {
 
       <ScrollArea className="flex-1">
         <div ref={scrollRef} className="p-4 space-y-6">
-          {messages.map((msg) => {
+          {messages?.map((msg) => {
             const isMe = msg.authorId === user?.id || msg.author === user?.name;
             const isPoll = (msg.type === 'poll' || !!msg.poll) && msg.poll;
             const hasOptionImages = isPoll && msg.poll?.options.some(o => o.imageUrl);
