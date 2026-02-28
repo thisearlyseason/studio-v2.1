@@ -18,7 +18,7 @@ import {
   Globe
 } from 'lucide-react';
 import { useTeam, Plan } from '@/components/providers/team-provider';
-import { useFirestore, useCollection } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -51,7 +51,11 @@ export default function PricingPage() {
     message: ''
   });
 
-  const plansQuery = query(collection(db, 'plans'), orderBy('billingType', 'asc'));
+  const plansQuery = useMemoFirebase(() => {
+    if (!db) return null;
+    return query(collection(db, 'plans'), orderBy('billingType', 'asc'));
+  }, [db]);
+
   const { data: plans, isLoading } = useCollection<Plan>(plansQuery);
 
   const handleContactSubmit = async (e: React.FormEvent) => {
