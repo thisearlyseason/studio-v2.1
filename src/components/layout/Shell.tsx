@@ -1,7 +1,7 @@
 
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { 
@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTeam } from '@/components/providers/team-provider';
-import { CreateAlertButton } from '@/components/layout/AlertOverlay';
+import { CreateAlertButton, AlertsHistoryDialog } from '@/components/layout/AlertOverlay';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,7 +59,30 @@ const tabs = [
 export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { activeTeam, setActiveTeam, teams, user, isPro } = useTeam();
+  const { activeTeam, setActiveTeam, teams, user, isPro, alerts } = useTeam();
+  const [hasUnreadAlerts, setHasUnreadAlerts] = useState(false);
+
+  useEffect(() => {
+    const checkUnread = () => {
+      const stored = localStorage.getItem('squad_seen_alerts_ids');
+      if (!stored) {
+        setHasUnreadAlerts(alerts.length > 0);
+        return;
+      }
+      try {
+        const seenIds = JSON.parse(stored);
+        const hasUnseen = alerts.some(a => !seenIds.includes(a.id));
+        setHasUnreadAlerts(hasUnseen);
+      } catch (e) {
+        setHasUnreadAlerts(alerts.length > 0);
+      }
+    };
+
+    checkUnread();
+    // Re-check periodically or when alerts change
+    const interval = setInterval(checkUnread, 5000);
+    return () => clearInterval(interval);
+  }, [alerts]);
 
   return (
     <SidebarProvider>
@@ -265,6 +288,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               
               <div className="flex items-center gap-3">
                 <CreateAlertButton />
+                <AlertsHistoryDialog>
+                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full hover:bg-muted relative">
+                    <Bell className="h-5 w-5" />
+                    {hasUnreadAlerts && <span className="absolute top-2.5 right-2.5 h-2 w-2 bg-red-500 rounded-full border-2 border-background" />}
+                  </Button>
+                </AlertsHistoryDialog>
                 <Link href="/settings">
                   <Avatar className="h-9 w-9 border-2 border-background shadow-sm hover:ring-4 hover:ring-primary/10 transition-all">
                     <AvatarImage src={user?.avatar} alt={user?.name} />
@@ -295,10 +324,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </div>
               <div className="flex items-center gap-2">
                 <CreateAlertButton />
-                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-2xl hover:bg-primary/5 hover:text-primary transition-all relative">
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute top-2.5 right-2.5 h-2 w-2 bg-red-500 rounded-full border-2 border-background" />
-                </Button>
+                <AlertsHistoryDialog>
+                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-2xl hover:bg-primary/5 hover:text-primary transition-all relative">
+                    <Bell className="h-5 w-5" />
+                    {hasUnreadAlerts && <span className="absolute top-2.5 right-2.5 h-2 w-2 bg-red-500 rounded-full border-2 border-background" />}
+                  </Button>
+                </AlertsHistoryDialog>
               </div>
             </div>
           </header>

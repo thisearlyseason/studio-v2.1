@@ -9,17 +9,23 @@ import {
   DialogTitle, 
   DialogDescription,
   DialogFooter,
-  DialogTrigger
+  DialogTrigger,
+  DialogClose
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Megaphone, Bell } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Megaphone, Bell, Info, History, Clock, X } from 'lucide-react';
 import { useTeam, TeamAlert } from '@/components/providers/team-provider';
+import { formatDistanceToNow } from 'date-fns';
 
 const SEEN_ALERTS_KEY = 'squad_seen_alerts_ids';
 
+/**
+ * Handles the automatic one-time popup for high priority alerts
+ */
 export function AlertOverlay() {
   const { alerts } = useTeam();
   const [currentAlertId, setCurrentAlertId] = useState<string | null>(null);
@@ -43,11 +49,12 @@ export function AlertOverlay() {
   useEffect(() => {
     if (!hasInitialized || alerts.length === 0) return;
 
-    const latestAlert = alerts[0];
+    // Find the first alert that hasn't been seen yet
+    const unseenAlert = alerts.find(a => !seenIds.includes(a.id));
     
-    // Check if we haven't seen this alert and no dialog is currently open
-    if (!seenIds.includes(latestAlert.id) && !isAlertOpen) {
-      setCurrentAlertId(latestAlert.id);
+    // Check if we found an unseen alert and no dialog is currently open
+    if (unseenAlert && !isAlertOpen) {
+      setCurrentAlertId(unseenAlert.id);
       setIsAlertOpen(true);
     }
   }, [alerts, seenIds, isAlertOpen, hasInitialized]);
@@ -105,6 +112,96 @@ export function AlertOverlay() {
             Understood
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * A dialog that shows the history of all alerts for the team
+ */
+export function AlertsHistoryDialog({ children }: { children: React.ReactNode }) {
+  const { alerts } = useTeam();
+  const [isOpen, setIsOpen] = useState(false);
+  const [seenIds, setSeenIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(SEEN_ALERTS_KEY);
+    if (stored) {
+      try {
+        setSeenIds(JSON.parse(stored));
+      } catch (e) {}
+    }
+  }, [isOpen]);
+
+  const markAllAsSeen = () => {
+    const allIds = alerts.map(a => a.id);
+    localStorage.setItem(SEEN_ALERTS_KEY, JSON.stringify(allIds));
+    setSeenIds(allIds);
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        {children}
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md rounded-3xl p-0 overflow-hidden">
+        <DialogHeader className="p-6 pb-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <History className="h-5 w-5 text-primary" />
+              <DialogTitle className="text-xl font-black">Squad Alerts</DialogTitle>
+            </div>
+            <Button variant="ghost" size="sm" className="text-[10px] font-black uppercase tracking-widest h-7" onClick={markAllAsSeen}>
+              Mark all read
+            </Button>
+          </div>
+          <DialogDescription className="text-xs font-bold uppercase tracking-widest text-muted-foreground pt-1">
+            Stay informed on urgent squad coordination
+          </DialogDescription>
+        </DialogHeader>
+        
+        <ScrollArea className="max-h-[400px] px-6 pb-6">
+          <div className="space-y-4 pt-4">
+            {alerts.length > 0 ? alerts.map((alert) => (
+              <div 
+                key={alert.id} 
+                className="group relative p-4 rounded-2xl bg-muted/30 border-2 border-transparent hover:border-primary/10 transition-all"
+              >
+                {!seenIds.includes(alert.id) && (
+                  <div className="absolute top-4 right-4 h-2 w-2 bg-primary rounded-full animate-pulse" />
+                )}
+                <div className="flex items-start gap-3">
+                  <div className="bg-white p-2 rounded-xl shadow-sm border shrink-0">
+                    <Megaphone className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-black text-sm tracking-tight leading-tight mb-1">{alert.title}</h4>
+                    <p className="text-xs font-medium text-muted-foreground leading-relaxed">{alert.message}</p>
+                    <div className="flex items-center gap-1.5 mt-3 opacity-50">
+                      <Clock className="h-3 w-3" />
+                      <span className="text-[9px] font-black uppercase tracking-widest">
+                        {formatDistanceToNow(new Date(alert.createdAt))} ago
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )) : (
+              <div className="text-center py-12 space-y-3">
+                <div className="bg-primary/5 w-12 h-12 rounded-full flex items-center justify-center mx-auto opacity-20">
+                  <Bell className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-bold text-muted-foreground italic">No broadcast history found.</p>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+        <div className="p-4 bg-muted/10 border-t flex justify-center">
+          <DialogClose asChild>
+            <Button variant="ghost" className="text-xs font-black uppercase tracking-widest h-9 px-8">Close Inbox</Button>
+          </DialogClose>
+        </div>
       </DialogContent>
     </Dialog>
   );
