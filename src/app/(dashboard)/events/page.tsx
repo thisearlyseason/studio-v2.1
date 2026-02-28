@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -23,7 +24,9 @@ import {
   Copy,
   Trophy,
   CalendarDays,
-  ArrowRight
+  ArrowRight,
+  Lock,
+  Sparkles
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -56,10 +59,12 @@ interface EventDetailDialogProps {
   promoteToRoster: (teamId: string, eventId: string, reg: any) => Promise<void>;
   onEdit: (event: TeamEvent) => void;
   onDelete: (eventId: string) => void;
+  hasAttendance: boolean;
+  purchasePro: () => void;
   children: React.ReactNode;
 }
 
-function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit, onDelete, children }: EventDetailDialogProps) {
+function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit, onDelete, hasAttendance, purchasePro, children }: EventDetailDialogProps) {
   const { members } = useTeam();
   const db = useFirestore();
   
@@ -183,73 +188,93 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                     </div>
                   )}
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-center bg-background rounded-2xl p-4 shadow-inner border-2">
-                  <div><p className="text-xl font-black text-green-600 leading-none">{goingList.length}</p><p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest mt-1">Going</p></div>
-                  <div><p className="text-xl font-black text-amber-600 leading-none">{maybeList.length}</p><p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest mt-1">Maybe</p></div>
-                  <div><p className="text-xl font-black text-red-600 leading-none">{notGoingList.length}</p><p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest mt-1">No</p></div>
-                </div>
+                {hasAttendance && (
+                  <div className="grid grid-cols-3 gap-2 text-center bg-background rounded-2xl p-4 shadow-inner border-2">
+                    <div><p className="text-xl font-black text-green-600 leading-none">{goingList.length}</p><p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest mt-1">Going</p></div>
+                    <div><p className="text-xl font-black text-amber-600 leading-none">{maybeList.length}</p><p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest mt-1">Maybe</p></div>
+                    <div><p className="text-xl font-black text-red-600 leading-none">{notGoingList.length}</p><p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest mt-1">No</p></div>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="lg:col-span-8 flex flex-col bg-background">
-              <Tabs defaultValue="attendance" className="flex-1 flex flex-col">
-                <div className="px-8 pt-8 pb-4 border-b flex items-center justify-between">
-                  <TabsList className="bg-muted/50 rounded-xl p-1 h-11">
-                    <TabsTrigger value="attendance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Roster Status ({attendanceData.length})</TabsTrigger>
-                    {event.allowExternalRegistration && <TabsTrigger value="links" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Access</TabsTrigger>}
-                  </TabsList>
-                  <DialogClose asChild><Button variant="ghost" size="icon" className="rounded-full h-8 w-8"><XCircle className="h-5 w-5 text-muted-foreground" /></Button></DialogClose>
-                </div>
-
-                <div className="flex-1 px-8 py-6">
-                  <TabsContent value="attendance" className="mt-0 space-y-8">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 px-1">
-                        <CheckCircle2 className="h-4 w-4 text-green-600" />
-                        <span className="text-[10px] font-black uppercase text-green-600 tracking-[0.2em]">Confirmed Squad ({goingList.length})</span>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {goingList.length > 0 ? goingList.map((person) => (
-                          <div key={person.id} className="flex items-center justify-between p-3 bg-muted/20 rounded-2xl ring-2 ring-black/5 hover:bg-muted/30 transition-all">
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-8 w-8 ring-2 ring-background"><AvatarImage src={person.avatar} /><AvatarFallback className="font-black text-xs">{person.name[0]}</AvatarFallback></Avatar>
-                              <div className="flex flex-col min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-black truncate">{person.name}</span>
-                                  {person.isExternal && <Badge className="text-[7px] h-3.5 bg-primary text-white font-black uppercase px-1 shadow-sm">Public</Badge>}
-                                </div>
-                                <span className="text-[8px] text-muted-foreground font-black uppercase tracking-widest truncate">{person.role}</span>
-                              </div>
-                            </div>
-                            {person.isExternal && person.regData?.status === 'pending' && isAdmin && (
-                              <Button size="sm" variant="ghost" className="h-7 text-[9px] font-black text-primary hover:bg-primary/10 rounded-full shrink-0" onClick={() => promoteToRoster(event.teamId, event.id, person.regData!)}><UserPlus className="h-3 w-3 mr-1" /> Add</Button>
-                            )}
-                          </div>
-                        )) : <p className="text-xs text-muted-foreground font-black italic px-1">Awaiting confirmations...</p>}
-                      </div>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="links" className="mt-0 pt-4">
-                    <div className="bg-primary/5 p-8 rounded-[2rem] border-2 border-dashed border-primary/20 text-center space-y-6">
-                      <div className="bg-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-xl">
-                        <LinkIcon className="h-8 w-8 text-primary" />
-                      </div>
-                      <h4 className="text-xl font-black tracking-tight">Public Sign-up Portal</h4>
-                      <Button className="w-full h-14 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 gap-3" onClick={copyRegLink}><Copy className="h-4 w-4" /> Copy Registration Link</Button>
-                    </div>
-                  </TabsContent>
-                </div>
-
-                <div className="px-8 py-8 border-t bg-muted/10 mt-auto">
-                  <p className="text-[9px] font-black uppercase text-muted-foreground tracking-[0.3em] text-center mb-4">Required: Update your status</p>
-                  <div className="grid grid-cols-3 gap-4">
-                    <Button variant={event.userRsvp === 'notGoing' ? 'default' : 'outline'} className={cn("rounded-2xl h-14 font-black transition-all text-[10px] uppercase tracking-widest", event.userRsvp === 'notGoing' ? "bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/20" : "hover:border-red-600 hover:text-red-600")} onClick={() => updateRSVP(event.id, 'notGoing')}><XCircle className="h-4 w-4 mr-2" /> No</Button>
-                    <Button variant={event.userRsvp === 'maybe' ? 'default' : 'outline'} className={cn("rounded-2xl h-14 font-black transition-all text-[10px] uppercase tracking-widest", event.userRsvp === 'maybe' ? "bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/20" : "hover:border-amber-500 hover:text-amber-500")} onClick={() => updateRSVP(event.id, 'maybe')}><HelpCircle className="h-4 w-4 mr-2" /> Maybe</Button>
-                    <Button variant={event.userRsvp === 'going' ? 'default' : 'outline'} className={cn("rounded-2xl h-14 font-black transition-all text-[10px] uppercase tracking-widest", event.userRsvp === 'going' ? "bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/20" : "hover:border-green-600 hover:text-green-600")} onClick={() => updateRSVP(event.id, 'going')}><CheckCircle2 className="h-4 w-4 mr-2" /> Going</Button>
+              {hasAttendance ? (
+                <Tabs defaultValue="attendance" className="flex-1 flex flex-col">
+                  <div className="px-8 pt-8 pb-4 border-b flex items-center justify-between">
+                    <TabsList className="bg-muted/50 rounded-xl p-1 h-11">
+                      <TabsTrigger value="attendance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Roster Status ({attendanceData.length})</TabsTrigger>
+                      {event.allowExternalRegistration && <TabsTrigger value="links" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Access</TabsTrigger>}
+                    </TabsList>
+                    <DialogClose asChild><Button variant="ghost" size="icon" className="rounded-full h-8 w-8"><XCircle className="h-5 w-5 text-muted-foreground" /></Button></DialogClose>
                   </div>
+
+                  <div className="flex-1 px-8 py-6">
+                    <TabsContent value="attendance" className="mt-0 space-y-8">
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 px-1">
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          <span className="text-[10px] font-black uppercase text-green-600 tracking-[0.2em]">Confirmed Squad ({goingList.length})</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {goingList.length > 0 ? goingList.map((person) => (
+                            <div key={person.id} className="flex items-center justify-between p-3 bg-muted/20 rounded-2xl ring-2 ring-black/5 hover:bg-muted/30 transition-all">
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-8 w-8 ring-2 ring-background"><AvatarImage src={person.avatar} /><AvatarFallback className="font-black text-xs">{person.name[0]}</AvatarFallback></Avatar>
+                                <div className="flex flex-col min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black truncate">{person.name}</span>
+                                    {person.isExternal && <Badge className="text-[7px] h-3.5 bg-primary text-white font-black uppercase px-1 shadow-sm">Public</Badge>}
+                                  </div>
+                                  <span className="text-[8px] text-muted-foreground font-black uppercase tracking-widest truncate">{person.role}</span>
+                                </div>
+                              </div>
+                              {person.isExternal && person.regData?.status === 'pending' && isAdmin && (
+                                <Button size="sm" variant="ghost" className="h-7 text-[9px] font-black text-primary hover:bg-primary/10 rounded-full shrink-0" onClick={() => promoteToRoster(event.teamId, event.id, person.regData!)}><UserPlus className="h-3 w-3 mr-1" /> Add</Button>
+                              )}
+                            </div>
+                          )) : <p className="text-xs text-muted-foreground font-black italic px-1">Awaiting confirmations...</p>}
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="links" className="mt-0 pt-4">
+                      <div className="bg-primary/5 p-8 rounded-[2rem] border-2 border-dashed border-primary/20 text-center space-y-6">
+                        <div className="bg-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-xl">
+                          <LinkIcon className="h-8 w-8 text-primary" />
+                        </div>
+                        <h4 className="text-xl font-black tracking-tight">Public Sign-up Portal</h4>
+                        <Button className="w-full h-14 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 gap-3" onClick={copyRegLink}><Copy className="h-4 w-4" /> Copy Registration Link</Button>
+                      </div>
+                    </TabsContent>
+                  </div>
+
+                  <div className="px-8 py-8 border-t bg-muted/10 mt-auto">
+                    <p className="text-[9px] font-black uppercase text-muted-foreground tracking-[0.3em] text-center mb-4">Required: Update your status</p>
+                    <div className="grid grid-cols-3 gap-4">
+                      <Button variant={event.userRsvp === 'notGoing' ? 'default' : 'outline'} className={cn("rounded-2xl h-14 font-black transition-all text-[10px] uppercase tracking-widest", event.userRsvp === 'notGoing' ? "bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/20" : "hover:border-red-600 hover:text-red-600")} onClick={() => updateRSVP(event.id, 'notGoing')}><XCircle className="h-4 w-4 mr-2" /> No</Button>
+                      <Button variant={event.userRsvp === 'maybe' ? 'default' : 'outline'} className={cn("rounded-2xl h-14 font-black transition-all text-[10px] uppercase tracking-widest", event.userRsvp === 'maybe' ? "bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/20" : "hover:border-amber-500 hover:text-amber-500")} onClick={() => updateRSVP(event.id, 'maybe')}><HelpCircle className="h-4 w-4 mr-2" /> Maybe</Button>
+                      <Button variant={event.userRsvp === 'going' ? 'default' : 'outline'} className={cn("rounded-2xl h-14 font-black transition-all text-[10px] uppercase tracking-widest", event.userRsvp === 'going' ? "bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/20" : "hover:border-green-600 hover:text-green-600")} onClick={() => updateRSVP(event.id, 'going')}><CheckCircle2 className="h-4 w-4 mr-2" /> Going</Button>
+                    </div>
+                  </div>
+                </Tabs>
+              ) : (
+                <div className="flex flex-col items-center justify-center flex-1 p-8 text-center space-y-6">
+                  <div className="bg-primary/10 p-6 rounded-[2rem] shadow-xl relative">
+                    <Users className="h-12 w-12 text-primary" />
+                    <div className="absolute -top-2 -right-2 bg-black text-white p-1.5 rounded-full shadow-lg border-2 border-background"><Lock className="h-3 w-3" /></div>
+                  </div>
+                  <div className="space-y-2 max-w-sm">
+                    <h3 className="text-2xl font-black tracking-tight">Attendance Tracking</h3>
+                    <p className="text-muted-foreground font-bold text-sm leading-relaxed">
+                      Upgrade to a Pro plan to track squad RSVPs, manage public registrations, and view real-time roster status for match days.
+                    </p>
+                  </div>
+                  <Button className="rounded-2xl h-12 px-10 font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20" onClick={purchasePro}>
+                    <Sparkles className="h-4 w-4 mr-2" /> Unlock Attendance
+                  </Button>
                 </div>
-              </Tabs>
+              )}
             </div>
           </div>
         </div>
@@ -259,7 +284,7 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
 }
 
 export default function EventsPage() {
-  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, promoteToRoster, isSuperAdmin } = useTeam();
+  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, promoteToRoster, isSuperAdmin, hasFeature, purchasePro } = useTeam();
   const db = useFirestore();
 
   const eventsQuery = useMemoFirebase(() => {
@@ -329,6 +354,8 @@ export default function EventsPage() {
   }
 
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
+  const canPlanTournaments = hasFeature('tournaments');
+  const hasAttendanceTracking = hasFeature('attendance_tracking');
 
   const handleEdit = (event: TeamEvent) => {
     setEditingEvent(event);
@@ -387,7 +414,23 @@ export default function EventsPage() {
         {isAdmin && (
           <div className="flex gap-2">
             <Button size="sm" className="rounded-full shadow-lg shadow-primary/20 h-11 px-6 font-black uppercase text-xs" onClick={() => { setIsTournamentMode(false); setIsCreateOpen(true); }}><Plus className="h-4 w-4 mr-2" />New Event</Button>
-            <Button size="sm" variant="secondary" className="rounded-full shadow-md bg-black text-white hover:bg-black/90 h-11 px-6 font-black uppercase text-xs" onClick={() => { setIsTournamentMode(true); setIsCreateOpen(true); }}><Trophy className="h-4 w-4 mr-2" />New Tournament</Button>
+            <Button 
+              size="sm" 
+              variant="secondary" 
+              className="rounded-full shadow-md bg-black text-white hover:bg-black/90 h-11 px-6 font-black uppercase text-xs relative overflow-hidden" 
+              onClick={() => { 
+                if (canPlanTournaments) {
+                  setIsTournamentMode(true); 
+                  setIsCreateOpen(true); 
+                } else {
+                  purchasePro();
+                }
+              }}
+            >
+              <Trophy className="h-4 w-4 mr-2" />
+              New Tournament
+              {!canPlanTournaments && <div className="absolute top-0 right-0 bg-primary h-full w-1 flex flex-col items-center justify-center"><Lock className="h-2 w-2 text-white" /></div>}
+            </Button>
           </div>
         )}
       </div>
@@ -472,7 +515,18 @@ export default function EventsPage() {
         </TabsList>
         <TabsContent value="list" className="space-y-4 mt-8">
           {events.length > 0 ? events.map((event) => (
-            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} promoteToRoster={promoteToRoster} onEdit={handleEdit} onDelete={handleDelete}>
+            <EventDetailDialog 
+              key={event.id} 
+              event={event} 
+              updateRSVP={updateRSVP} 
+              formatTime={formatTime} 
+              isAdmin={isAdmin} 
+              promoteToRoster={promoteToRoster} 
+              onEdit={handleEdit} 
+              onDelete={handleDelete}
+              hasAttendance={hasAttendanceTracking}
+              purchasePro={purchasePro}
+            >
               <Card className={cn("overflow-hidden hover:border-primary/30 transition-all duration-500 cursor-pointer group hover:shadow-2xl border-none shadow-md ring-2 ring-black/5 rounded-[2rem]", event.isTournament && "ring-primary/20")}>
                 <div className="flex items-stretch">
                   <div className="w-20 sm:w-24 flex flex-col items-center justify-center border-r-2 shrink-0 transition-colors group-hover:bg-primary/10 bg-primary/5">
@@ -507,7 +561,18 @@ export default function EventsPage() {
               <h3 className="font-black text-lg px-2">{date ? format(date, 'MMMM d') : 'Select a date'}</h3>
               <div className="space-y-4">
                 {selectedDayEvents.map(event => (
-                  <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} promoteToRoster={promoteToRoster} onEdit={handleEdit} onDelete={handleDelete}>
+                  <EventDetailDialog 
+                    key={event.id} 
+                    event={event} 
+                    updateRSVP={updateRSVP} 
+                    formatTime={formatTime} 
+                    isAdmin={isAdmin} 
+                    promoteToRoster={promoteToRoster} 
+                    onEdit={handleEdit} 
+                    onDelete={handleDelete}
+                    hasAttendance={hasAttendanceTracking}
+                    purchasePro={purchasePro}
+                  >
                     <Card className="cursor-pointer hover:scale-[1.02] transition-all border-none shadow-md rounded-2xl p-4 space-y-2 ring-2 ring-black/5">
                       <span className="text-[8px] font-black uppercase text-primary tracking-[0.2em]">{event.isTournament ? "TOURNAMENT" : "MATCH"}</span>
                       <h4 className="font-black text-base leading-tight">{event.title}</h4>

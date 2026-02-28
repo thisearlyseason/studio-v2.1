@@ -62,7 +62,7 @@ import { format, differenceInYears } from 'date-fns';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 export default function RosterPage() {
-  const { activeTeam, members, updateMember, user, isPro, isSuperAdmin, purchasePro } = useTeam();
+  const { activeTeam, members, updateMember, user, isPro, isSuperAdmin, purchasePro, hasFeature } = useTeam();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -107,45 +107,7 @@ export default function RosterPage() {
 
   // Unified Admin Check
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
-
-  if (!isPro) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
-        <div className="relative">
-          <div className="bg-primary/10 p-6 rounded-[2.5rem] shadow-xl">
-            <Users2 className="h-16 w-16 text-primary" />
-          </div>
-          <div className="absolute -top-2 -right-2 bg-secondary text-white p-2 rounded-full shadow-lg border-2 border-background">
-            <Lock className="h-4 w-4" />
-          </div>
-        </div>
-        
-        <div className="text-center max-w-sm space-y-3">
-          <h1 className="text-3xl font-black tracking-tight">Roster Management</h1>
-          <p className="text-muted-foreground font-medium leading-relaxed">
-            Manage your full roster, assign positions, track jersey numbers, and monitor team fee payments with Pro logic.
-          </p>
-        </div>
-
-        <Card className="w-full max-w-sm border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white ring-1 ring-black/5">
-          <div className="p-8 space-y-6">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black uppercase text-primary tracking-widest">Pro Plan Features</span>
-              <Badge variant="secondary" className="bg-primary/10 text-primary border-none font-bold">Admin Suite</Badge>
-            </div>
-            <ul className="space-y-4">
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Advanced Role Assignment</li>
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Fee Tracking Dashboard</li>
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Jersey & Position Control</li>
-            </ul>
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 hover:bg-primary/90" onClick={purchasePro}>
-              Go Pro for $9.99 USD/mo
-            </Button>
-          </div>
-        </Card>
-      </div>
-    );
-  }
+  const canEditDetails = hasFeature('full_roster_details');
 
   const teamRoster = members.filter(member => member.teamId === activeTeam.id);
   
@@ -376,9 +338,21 @@ export default function RosterPage() {
                       variant={isEditing ? "default" : "outline"} 
                       size="sm" 
                       className={cn("rounded-full h-12 sm:h-10 px-8 sm:px-6 font-black uppercase text-[10px] tracking-widest transition-all shadow-lg", isEditing && "bg-black hover:bg-black/90")}
-                      onClick={() => setIsEditing(!isEditing)}
+                      onClick={() => {
+                        if (canEditDetails) {
+                          setIsEditing(!isEditing);
+                        } else {
+                          purchasePro();
+                        }
+                      }}
                     >
-                      {isEditing ? <><Eye className="h-3.5 w-3.5 mr-2" /> View Mode</> : <><Edit3 className="h-3.5 w-3.5 mr-2" /> Edit Member</>}
+                      {isEditing ? <><Eye className="h-3.5 w-3.5 mr-2" /> View Mode</> : (
+                        <>
+                          <Edit3 className="h-3.5 w-3.5 mr-2" /> 
+                          Edit Member
+                          {!canEditDetails && <Lock className="ml-2 h-3 w-3 opacity-40" />}
+                        </>
+                      )}
                     </Button>
                   </div>
                 )}
@@ -586,81 +560,101 @@ export default function RosterPage() {
                           </div>
                         </div>
 
-                        {(selectedMember.parentName || selectedMember.emergencyContactName) && (
-                          <div className="space-y-6">
-                            <div className="flex items-center gap-3 px-1">
-                              <div className="bg-primary/10 p-2 rounded-xl text-primary"><Baby className="h-4 w-4" /></div>
-                              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Emergency Network</h4>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {selectedMember.parentName && (
-                                <div className="bg-primary/5 p-6 rounded-[2rem] border-2 border-primary/10 space-y-3">
-                                  <div className="flex justify-between items-start">
-                                    <div>
-                                      <p className="text-[8px] font-black uppercase text-primary/60 mb-1">Primary Guardian</p>
-                                      <p className="text-base font-black tracking-tight">{selectedMember.parentName}</p>
+                        {canEditDetails ? (
+                          <>
+                            {(selectedMember.parentName || selectedMember.emergencyContactName) && (
+                              <div className="space-y-6">
+                                <div className="flex items-center gap-3 px-1">
+                                  <div className="bg-primary/10 p-2 rounded-xl text-primary"><Baby className="h-4 w-4" /></div>
+                                  <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Emergency Network</h4>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  {selectedMember.parentName && (
+                                    <div className="bg-primary/5 p-6 rounded-[2rem] border-2 border-primary/10 space-y-3">
+                                      <div className="flex justify-between items-start">
+                                        <div>
+                                          <p className="text-[8px] font-black uppercase text-primary/60 mb-1">Primary Guardian</p>
+                                          <p className="text-base font-black tracking-tight">{selectedMember.parentName}</p>
+                                        </div>
+                                        <Badge className="bg-primary text-white border-none text-[8px] h-4 uppercase tracking-widest font-black">Parent</Badge>
+                                      </div>
+                                      <div className="flex items-center gap-4 pt-2">
+                                        <a 
+                                          href={selectedMember.parentPhone ? `tel:${selectedMember.parentPhone}` : '#'}
+                                          className={cn(
+                                            buttonVariants({ variant: "ghost", size: "icon" }),
+                                            "h-9 w-9 rounded-xl bg-white shadow-sm border text-primary",
+                                            !selectedMember.parentPhone && "opacity-50 pointer-events-none"
+                                          )}
+                                        >
+                                          <Phone className="h-4 w-4" />
+                                        </a>
+                                        <a 
+                                          href={selectedMember.parentPhone ? `sms:${selectedMember.parentPhone}` : '#'}
+                                          className={cn(
+                                            buttonVariants({ variant: "ghost", size: "icon" }),
+                                            "h-9 w-9 rounded-xl bg-white shadow-sm border text-primary",
+                                            !selectedMember.parentPhone && "opacity-50 pointer-events-none"
+                                          )}
+                                        >
+                                          <MessageSquare className="h-4 w-4" />
+                                        </a>
+                                        <span className="text-[10px] font-bold text-muted-foreground font-mono">{selectedMember.parentPhone || 'No number'}</span>
+                                      </div>
                                     </div>
-                                    <Badge className="bg-primary text-white border-none text-[8px] h-4 uppercase tracking-widest font-black">Parent</Badge>
-                                  </div>
-                                  <div className="flex items-center gap-4 pt-2">
-                                    <a 
-                                      href={selectedMember.parentPhone ? `tel:${selectedMember.parentPhone}` : '#'}
-                                      className={cn(
-                                        buttonVariants({ variant: "ghost", size: "icon" }),
-                                        "h-9 w-9 rounded-xl bg-white shadow-sm border text-primary",
-                                        !selectedMember.parentPhone && "opacity-50 pointer-events-none"
-                                      )}
-                                    >
-                                      <Phone className="h-4 w-4" />
-                                    </a>
-                                    <a 
-                                      href={selectedMember.parentPhone ? `sms:${selectedMember.parentPhone}` : '#'}
-                                      className={cn(
-                                        buttonVariants({ variant: "ghost", size: "icon" }),
-                                        "h-9 w-9 rounded-xl bg-white shadow-sm border text-primary",
-                                        !selectedMember.parentPhone && "opacity-50 pointer-events-none"
-                                      )}
-                                    >
-                                      <MessageSquare className="h-4 w-4" />
-                                    </a>
-                                    <span className="text-[10px] font-bold text-muted-foreground font-mono">{selectedMember.parentPhone || 'No number'}</span>
-                                  </div>
+                                  )}
+                                  {selectedMember.emergencyContactName && (
+                                    <div className="bg-black/5 p-6 rounded-[2rem] border-2 border-black/10 space-y-3">
+                                      <div>
+                                        <p className="text-[8px] font-black uppercase text-muted-foreground mb-1 tracking-widest">Emergency Contact</p>
+                                        <p className="text-base font-black tracking-tight">{selectedMember.emergencyContactName}</p>
+                                      </div>
+                                      <div className="flex items-center gap-4 pt-2">
+                                        <a 
+                                          href={selectedMember.emergencyContactPhone ? `tel:${selectedMember.emergencyContactPhone}` : '#'}
+                                          className={cn(
+                                            buttonVariants({ variant: "ghost", size: "icon" }),
+                                            "h-9 w-9 rounded-xl bg-white shadow-sm border text-black",
+                                            !selectedMember.emergencyContactPhone && "opacity-50 pointer-events-none"
+                                          )}
+                                        >
+                                          <Phone className="h-4 w-4" />
+                                        </a>
+                                        <span className="text-[10px] font-bold text-muted-foreground font-mono">{selectedMember.emergencyContactPhone || 'No number'}</span>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                              {selectedMember.emergencyContactName && (
-                                <div className="bg-black/5 p-6 rounded-[2rem] border-2 border-black/10 space-y-3">
-                                  <div>
-                                    <p className="text-[8px] font-black uppercase text-muted-foreground mb-1 tracking-widest">Emergency Contact</p>
-                                    <p className="text-base font-black tracking-tight">{selectedMember.emergencyContactName}</p>
-                                  </div>
-                                  <div className="flex items-center gap-4 pt-2">
-                                    <a 
-                                      href={selectedMember.emergencyContactPhone ? `tel:${selectedMember.emergencyContactPhone}` : '#'}
-                                      className={cn(
-                                        buttonVariants({ variant: "ghost", size: "icon" }),
-                                        "h-9 w-9 rounded-xl bg-white shadow-sm border text-black",
-                                        !selectedMember.emergencyContactPhone && "opacity-50 pointer-events-none"
-                                      )}
-                                    >
-                                      <Phone className="h-4 w-4" />
-                                    </a>
-                                    <span className="text-[10px] font-bold text-muted-foreground font-mono">{selectedMember.emergencyContactPhone || 'No number'}</span>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                              </div>
+                            )}
 
-                        {selectedMember.notes && (
-                          <div className="space-y-4">
-                            <div className="flex items-center gap-3 px-1">
-                              <div className="bg-black/10 p-2 rounded-xl text-black"><BookOpen className="h-4 w-4" /></div>
-                              <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Coaching Notes</h4>
+                            {selectedMember.notes && (
+                              <div className="space-y-4">
+                                <div className="flex items-center gap-3 px-1">
+                                  <div className="bg-black/10 p-2 rounded-xl text-black"><BookOpen className="h-4 w-4" /></div>
+                                  <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Coaching Notes</h4>
+                                </div>
+                                <div className="p-6 bg-muted/20 rounded-[2rem] border-2 border-dashed">
+                                  <p className="text-sm font-medium leading-relaxed italic text-foreground/80">"{selectedMember.notes}"</p>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="bg-primary/5 p-10 rounded-[3rem] border-2 border-dashed border-primary/20 text-center space-y-6">
+                            <div className="bg-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-xl relative">
+                              <Lock className="h-8 w-8 text-primary" />
+                              <Sparkles className="absolute -top-2 -right-2 h-5 w-5 text-amber-500" />
                             </div>
-                            <div className="p-6 bg-muted/20 rounded-[2rem] border-2 border-dashed">
-                              <p className="text-sm font-medium leading-relaxed italic text-foreground/80">"{selectedMember.notes}"</p>
+                            <div className="space-y-2">
+                              <h4 className="text-xl font-black tracking-tight">Full Roster Logic</h4>
+                              <p className="text-sm text-muted-foreground font-bold leading-relaxed max-w-xs mx-auto">
+                                Upgrade to a Pro plan to track emergency contacts, guardian details, and private coaching notes for your entire squad.
+                              </p>
                             </div>
+                            <Button className="h-12 rounded-xl px-10 font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20" onClick={purchasePro}>
+                              Go Pro
+                            </Button>
                           </div>
                         )}
                       </div>

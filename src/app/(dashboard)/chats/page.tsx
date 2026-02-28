@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, MessageSquare, ChevronRight, Hash } from 'lucide-react';
+import { Plus, MessageSquare, ChevronRight, Hash, Lock, Sparkles } from 'lucide-react';
 import { useTeam } from '@/components/providers/team-provider';
 import { 
   Dialog, 
@@ -26,7 +26,7 @@ import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
 
 export default function ChatsPage() {
-  const { activeTeam, members, createChat } = useTeam();
+  const { activeTeam, members, createChat, hasFeature, purchasePro } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
@@ -57,6 +57,7 @@ export default function ChatsPage() {
     );
   }
 
+  const canUseChat = hasFeature('group_chat');
   const teamMembers = members;
 
   const handleCreateChat = async () => {
@@ -75,6 +76,45 @@ export default function ChatsPage() {
         : [...prev, memberId]
     );
   };
+
+  if (!canUseChat) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
+        <div className="relative">
+          <div className="bg-primary/10 p-8 rounded-[3rem] shadow-2xl">
+            <MessageSquare className="h-20 w-20 text-primary" />
+          </div>
+          <div className="absolute -top-3 -right-3 bg-black text-white p-2.5 rounded-full shadow-lg border-4 border-background">
+            <Lock className="h-5 w-5" />
+          </div>
+        </div>
+        
+        <div className="text-center max-w-md space-y-4">
+          <h1 className="text-4xl font-black tracking-tight">Tactical Chats</h1>
+          <p className="text-muted-foreground font-bold leading-relaxed text-lg">
+            Create high-priority discussion hubs for strategy, positions, and events. Gated by Pro subscription logic.
+          </p>
+        </div>
+
+        <Card className="w-full max-w-sm border-none shadow-2xl rounded-[2.5rem] overflow-hidden bg-white ring-1 ring-black/5">
+          <div className="p-8 space-y-6">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase text-primary tracking-widest">Elite Communication</span>
+              <Badge className="bg-primary text-white border-none font-bold">PRO HUB</Badge>
+            </div>
+            <ul className="space-y-4">
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Unlimited Group Threads</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Role-Based Access</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Strategy Polls & Media</li>
+            </ul>
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 hover:bg-primary/90" onClick={purchasePro}>
+              Unlock Tactical Chats
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

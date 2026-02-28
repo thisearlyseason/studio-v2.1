@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -40,7 +41,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export default function GamesPage() {
-  const { activeTeam, addGame, updateGame, isPro, isSuperAdmin, purchasePro } = useTeam();
+  const { activeTeam, addGame, updateGame, isPro, isSuperAdmin, purchasePro, hasFeature } = useTeam();
   const db = useFirestore();
   
   // Localized data fetching for performance
@@ -89,8 +90,9 @@ export default function GamesPage() {
 
   if (!mounted || !activeTeam) return null;
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
+  const canTrackScores = hasFeature('score_tracking');
 
-  if (!isPro) {
+  if (!canTrackScores) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
         <div className="bg-primary/10 p-6 rounded-[2.5rem] shadow-xl relative">
@@ -100,6 +102,9 @@ export default function GamesPage() {
         <div className="text-center max-w-sm space-y-3">
           <h1 className="text-3xl font-black tracking-tight">Pro Season Tracker</h1>
           <p className="text-muted-foreground font-black uppercase tracking-widest text-[10px] opacity-60">Record results and track season progress</p>
+          <p className="text-sm font-medium text-muted-foreground pt-4">
+            Unlock professional game tracking, win/loss analytics, and performance trends for your squad.
+          </p>
         </div>
         <Button className="w-full max-w-sm h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={purchasePro}>Upgrade Squad</Button>
       </div>

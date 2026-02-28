@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -24,7 +25,9 @@ import {
   BarChart2,
   Plus,
   XCircle,
-  ImageIcon
+  ImageIcon,
+  Lock,
+  Sparkles
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -84,7 +87,7 @@ function CommentList({ postId, teamId, isAdmin, currentUserId }: { postId: strin
 }
 
 export default function FeedPage() {
-  const { activeTeam, user, updateTeamHero, formatTime, isSuperAdmin, members } = useTeam();
+  const { activeTeam, user, updateTeamHero, formatTime, isSuperAdmin, members, hasFeature, purchasePro } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
@@ -114,6 +117,7 @@ export default function FeedPage() {
 
   if (!activeTeam) return null;
   const isAdmin = activeTeam.role === 'Admin' || isSuperAdmin;
+  const canPost = hasFeature('live_feed_post');
 
   const handlePost = () => {
     if (!newPostContent.trim() && !imageUrl) return;
@@ -208,24 +212,42 @@ export default function FeedPage() {
           </div>
         </section>
 
-        <Card className="rounded-[3rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
-          <CardContent className="p-8 pb-10">
-            <div className="flex flex-col sm:flex-row gap-6 items-start">
-              <Avatar className="h-12 w-12 shrink-0 border-2 border-primary/10">
-                <AvatarImage src={user?.avatar} />
-                <AvatarFallback className="font-black">{user?.name?.[0]}</AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0 w-full">
-                <Textarea placeholder={`What's the play, ${user?.name}?`} value={newPostContent} onChange={(e) => setNewPostContent(e.target.value)} className="min-h-[100px] w-full resize-none border-none focus-visible:ring-0 p-4 text-lg font-medium placeholder:text-muted-foreground/30 bg-transparent" />
-                <div className="flex items-center gap-4 pt-4 mt-4 border-t">
-                  <Button variant="ghost" size="icon" className="h-12 w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => fileInputRef.current?.click()}><ImagePlus className="h-5 w-5" /></Button>
-                  <Button variant="ghost" size="icon" className="h-12 w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => setIsPollDialogOpen(true)}><BarChart2 className="h-5 w-5" /></Button>
-                  <Button disabled={!newPostContent.trim() && !imageUrl} onClick={handlePost} className="ml-auto rounded-full px-8 h-12 font-black uppercase text-[11px] tracking-widest shadow-xl shadow-primary/20">Post to Squad</Button>
+        {canPost ? (
+          <Card className="rounded-[3rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
+            <CardContent className="p-8 pb-10">
+              <div className="flex flex-col sm:flex-row gap-6 items-start">
+                <Avatar className="h-12 w-12 shrink-0 border-2 border-primary/10">
+                  <AvatarImage src={user?.avatar} />
+                  <AvatarFallback className="font-black">{user?.name?.[0]}</AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0 w-full">
+                  <Textarea placeholder={`What's the play, ${user?.name}?`} value={newPostContent} onChange={(e) => setNewPostContent(e.target.value)} className="min-h-[100px] w-full resize-none border-none focus-visible:ring-0 p-4 text-lg font-medium placeholder:text-muted-foreground/30 bg-transparent" />
+                  <div className="flex items-center gap-4 pt-4 mt-4 border-t">
+                    <Button variant="ghost" size="icon" className="h-12 w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => fileInputRef.current?.click()}><ImagePlus className="h-5 w-5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-12 w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => setIsPollDialogOpen(true)}><BarChart2 className="h-5 w-5" /></Button>
+                    <Button disabled={!newPostContent.trim() && !imageUrl} onClick={handlePost} className="ml-auto rounded-full px-8 h-12 font-black uppercase text-[11px] tracking-widest shadow-xl shadow-primary/20">Post to Squad</Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="rounded-[3rem] border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-primary/5 border-2 border-dashed border-primary/20">
+            <CardContent className="p-10 flex flex-col items-center text-center space-y-4">
+              <div className="bg-white w-16 h-16 rounded-[1.5rem] flex items-center justify-center shadow-lg relative">
+                <MessageSquare className="h-8 w-8 text-primary" />
+                <div className="absolute -top-2 -right-2 bg-black text-white p-1 rounded-full border-2 border-background shadow-md"><Lock className="h-3 w-3" /></div>
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-xl font-black tracking-tight">Post to your Squad</h3>
+                <p className="text-muted-foreground font-bold text-sm uppercase tracking-widest max-w-[280px]">Upgrade to Squad Pro to post updates, polls, and photos to the live feed.</p>
+              </div>
+              <Button className="rounded-full px-8 h-11 font-black uppercase text-[10px] tracking-widest shadow-xl shadow-primary/20" onClick={purchasePro}>
+                <Sparkles className="h-4 w-4 mr-2" /> Go Pro
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="space-y-8">
           {posts?.map((post) => (
@@ -347,7 +369,7 @@ export default function FeedPage() {
                 <div className="space-y-4 pt-4">
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">The Question</Label>
-                    <Input placeholder="e.g. Best time for extra training?" value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} className="rounded-xl h-12 bg-background font-bold" />
+                    <Input placeholder="e.g. Best time for extra training?" value={pollQuestion} onChange={e => setpollQuestion(e.target.value)} className="rounded-xl h-12 bg-background font-bold" />
                   </div>
                 </div>
               </div>

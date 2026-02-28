@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -50,7 +51,7 @@ import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
 
 export default function FilesPage() {
-  const { activeTeam, addFile, deleteFile, user, isPro } = useTeam();
+  const { activeTeam, addFile, deleteFile, user, isPro, hasFeature, purchasePro } = useTeam();
   const db = useFirestore();
   
   const [mounted, setMounted] = useState(false);
@@ -80,7 +81,9 @@ export default function FilesPage() {
     );
   }
 
-  if (!isPro) {
+  const canUpload = hasFeature('media_uploads');
+
+  if (!canUpload) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
         <div className="relative">
@@ -110,8 +113,8 @@ export default function FilesPage() {
               <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> PDF & Image Previews</li>
               <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Multi-Member Uploads</li>
             </ul>
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 hover:bg-primary/90">
-              Upgrade for $9.99 USD/mo
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 hover:bg-primary/90" onClick={purchasePro}>
+              Unlock Team Library
             </Button>
           </div>
         </Card>
