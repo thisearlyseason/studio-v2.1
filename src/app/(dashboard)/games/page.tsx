@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Trophy, Plus, MapPin, Calendar, TrendingUp, TrendingDown, MinusCircle, Edit2, Lock, Sparkles, LineChart as ChartIcon, ChevronRight } from 'lucide-react';
+import { Trophy, Plus, MapPin, Calendar, TrendingUp, TrendingDown, MinusCircle, Edit2, Lock, Sparkles, LineChart as ChartIcon, ChevronRight, Zap, Quote } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -87,6 +87,32 @@ export default function GamesPage() {
     const losses = games.filter(g => g.result === 'Loss').length;
     const ties = games.filter(g => g.result === 'Tie').length;
     return { wins, losses, ties };
+  }, [games]);
+
+  const momentum = useMemo(() => {
+    if (games.length === 0) {
+      return {
+        message: "The journey to dominance begins with the first match. Let's get on the board!",
+        type: 'neutral'
+      };
+    }
+    const lastGame = games[0];
+    if (lastGame.result === 'Win') {
+      return {
+        message: `Incredible victory against ${lastGame.opponent}! Keep that championship energy high for the next play.`,
+        type: 'positive'
+      };
+    }
+    if (lastGame.result === 'Loss') {
+      return {
+        message: `Tough battle against ${lastGame.opponent}, but elite squads are forged in the grit. We learn, we adjust, we win.`,
+        type: 'motivational'
+      };
+    }
+    return {
+      message: `A hard-fought draw. Let's find that extra gear to clinch the victory in our next outing.`,
+      type: 'neutral'
+    };
   }, [games]);
 
   if (!mounted || !activeTeam) return null;
@@ -192,23 +218,42 @@ export default function GamesPage() {
         )}
       </div>
 
+      {/* Encouragement Brief */}
+      <Card className={cn(
+        "rounded-[2.5rem] border-none shadow-xl overflow-hidden relative group",
+        momentum.type === 'positive' ? "bg-primary text-white" : "bg-black text-white"
+      )}>
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none group-hover:scale-110 transition-transform duration-700">
+          <Zap className="h-32 w-32 -rotate-12" />
+        </div>
+        <CardContent className="p-8 relative z-10">
+          <div className="flex items-center gap-3 mb-4">
+            <Quote className="h-5 w-5 opacity-40" />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Squad Momentum Brief</span>
+          </div>
+          <p className="text-xl sm:text-2xl font-black tracking-tight leading-tight max-w-2xl">
+            {momentum.message}
+          </p>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-3 gap-4">
-        <Card className="bg-primary text-white border-none shadow-lg rounded-[2rem] overflow-hidden group">
+        <Card className="bg-white border-none shadow-md rounded-[2rem] overflow-hidden group ring-1 ring-black/5">
           <CardContent className="p-6 text-center space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Wins</div>
-            <div className="text-4xl font-black group-hover:scale-110 transition-transform">{stats.wins}</div>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground opacity-60">Wins</div>
+            <div className="text-4xl font-black text-primary group-hover:scale-110 transition-transform">{stats.wins}</div>
           </CardContent>
         </Card>
-        <Card className="bg-black text-white border-none shadow-lg rounded-[2rem] overflow-hidden group">
+        <Card className="bg-white border-none shadow-md rounded-[2rem] overflow-hidden group ring-1 ring-black/5">
           <CardContent className="p-6 text-center space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Losses</div>
-            <div className="text-4xl font-black group-hover:scale-110 transition-transform">{stats.losses}</div>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground opacity-60">Losses</div>
+            <div className="text-4xl font-black text-black group-hover:scale-110 transition-transform">{stats.losses}</div>
           </CardContent>
         </Card>
-        <Card className="bg-muted text-foreground border-none shadow-md rounded-[2rem] overflow-hidden group ring-1 ring-black/5">
+        <Card className="bg-white border-none shadow-md rounded-[2rem] overflow-hidden group ring-1 ring-black/5">
           <CardContent className="p-6 text-center space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Ties</div>
-            <div className="text-4xl font-black group-hover:scale-110 transition-transform">{stats.ties}</div>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground opacity-40">Ties</div>
+            <div className="text-4xl font-black text-muted-foreground group-hover:scale-110 transition-transform">{stats.ties}</div>
           </CardContent>
         </Card>
       </div>
