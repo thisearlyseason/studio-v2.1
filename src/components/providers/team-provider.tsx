@@ -13,14 +13,12 @@ import {
   writeBatch,
   onSnapshot,
   deleteDoc,
-  updateDoc,
   addDoc
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { updateDocumentNonBlocking, setDocumentNonBlocking, addDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { Purchases } from '@revenuecat/purchases-js';
 
-// Configuration for RevenueCat
 const REVENUECAT_PUBLIC_API_KEY = 'test_zvlronFHqIFQuWTkgaeWrdyYnkZ';
 const PRO_ENTITLEMENT_ID = 'The Squad Pro';
 
