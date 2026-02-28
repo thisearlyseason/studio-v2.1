@@ -480,7 +480,7 @@ export default function RosterPage() {
                             <Input value={editForm.jersey} onChange={e => setEditForm(p => ({ ...p, jersey: e.target.value }))} className="h-12 rounded-xl font-black text-xl text-primary bg-muted/20 border-2" placeholder="e.g. 23" />
                           </div>
                           <div className="space-y-2">
-                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Phone</Label>
+                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Cell Phone</Label>
                             <Input value={editForm.phone} onChange={e => setEditForm(p => ({ ...p, phone: e.target.value }))} className="h-12 rounded-xl font-bold bg-muted/20 border-2" placeholder="(555) 000-0000" />
                           </div>
                           <div className="space-y-2">
@@ -578,7 +578,7 @@ export default function RosterPage() {
                                 </>
                               ) : (
                                 <div className="bg-muted/30 p-5 rounded-2xl">
-                                  <p className="text-[8px] font-black uppercase text-muted-foreground mb-1 tracking-widest">Direct Phone</p>
+                                  <p className="text-[8px] font-black uppercase text-muted-foreground mb-1 tracking-widest">Cell Phone</p>
                                   <p className="text-sm font-black">{selectedMember.phone || 'No phone recorded'}</p>
                                 </div>
                               )}
