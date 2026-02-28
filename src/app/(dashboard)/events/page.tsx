@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Clock, Plus, ChevronRight, Info, Repeat, CheckCircle2, Users, Link as LinkIcon, UserPlus, Trash2, HelpCircle, XCircle, UserCheck, Edit3 } from 'lucide-react';
+import { MapPin, Clock, Plus, ChevronRight, Info, Repeat, CheckCircle2, Users, Link as LinkIcon, UserPlus, Trash2, HelpCircle, XCircle, UserCheck, Edit3, Copy } from 'lucide-react';
 import { 
   Dialog, 
   DialogContent, 
