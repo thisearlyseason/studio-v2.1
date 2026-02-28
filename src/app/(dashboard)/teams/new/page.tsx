@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from 'react';
@@ -18,6 +17,7 @@ import { useTeam } from '@/components/providers/team-provider';
 import { ChevronLeft, Sparkles, CreditCard, ShieldCheck, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { cn } from '@/lib/utils';
 
 export default function NewTeamPage() {
   const router = useRouter();
