@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useRef } from 'react';
@@ -213,20 +214,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const seedingRef = useRef(false);
   const resetLockRef = useRef(false);
 
+  // 1. Initial Data Fetching
+  const plansQuery = useMemoFirebase(() => db ? collection(db, 'plans') : null, [db]);
+  const { data: plansData } = useCollection(plansQuery);
+  const plans = useMemo(() => (plansData || []) as Plan[], [plansData]);
+
   const isSuperAdmin = useMemo(() => {
     const email = firebaseUser?.email?.toLowerCase();
     return email ? SUPER_ADMIN_EMAILS.includes(email) : false;
   }, [firebaseUser?.email]);
 
-  // Plans
-  const plansQuery = useMemoFirebase(() => {
-    if (!db) return null;
-    return collection(db, 'plans');
-  }, [db]);
-  const { data: plansData } = useCollection(plansQuery);
-  const plans = useMemo(() => (plansData || []) as Plan[], [plansData]);
-
-  // Teams
   const teamsQuery = useMemoFirebase(() => {
     if (!firebaseUser || !db) return null;
     const base = isSuperAdmin ? collection(db, 'teams') : collection(db, 'users', firebaseUser.uid, 'teamMemberships');
@@ -260,13 +257,36 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return teams.find(t => t.id === activeTeamId) || teams[0];
   }, [teams, activeTeamId]);
 
-  // Features based on plan
+  // 2. Feature Gating Logic
   const activePlanFeatures = useMemo(() => {
     const pid = simulationPlanId || activeTeam?.planId;
     if (!pid || !plans) return {};
     const plan = plans.find(p => p.id === pid);
-    return plan?.features || {};
-  }, [activeTeam, plans, simulationPlanId]);
+    const baseFeatures = plan?.features || {};
+
+    // Dynamic Club Tiers based on actual team count
+    if (pid === 'club_custom') {
+      const teamCount = teams.length;
+      if (teamCount >= 2) {
+        baseFeatures.multi_team_admin_dashboard = true;
+        baseFeatures.cross_team_announcements = true;
+      }
+      if (teamCount >= 4) baseFeatures.priority_support = true;
+      if (teamCount >= 8) {
+        baseFeatures.early_feature_access = true;
+        baseFeatures.custom_permissions = true;
+      }
+    }
+
+    return baseFeatures;
+  }, [activeTeam, plans, simulationPlanId, teams.length]);
+
+  const isPro = useMemo(() => {
+    if (isSuperAdmin && !simulationPlanId) return true;
+    if (simulationPlanId === 'starter_squad') return false;
+    if (simulationPlanId === 'squad_pro' || simulationPlanId === 'club_custom') return true;
+    return (activeTeam?.isPro || isProEntitlementActive) || (activeTeam?.planId !== 'starter_squad');
+  }, [activeTeam, isProEntitlementActive, isSuperAdmin, simulationPlanId]);
 
   // Members
   const membersQuery = useMemoFirebase(() => {
@@ -286,7 +306,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: alertsData } = useCollection(alertsQuery);
   const alerts = useMemo(() => (alertsData || []).map(a => ({ id: a.id, teamId: a.teamId, title: a.title, message: a.message, createdBy: a.createdBy, createdAt: a.createdAt })), [alertsData]);
 
-  // Demo Heartbeat: 5-minute cycle
+  // Demo Heartbeat
   useEffect(() => {
     if (!userProfile?.isDemo || !userProfile?.createdAt || !activeTeamId) {
       setSecondsUntilReset(null);
@@ -338,12 +358,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         try {
           const tid = await seedGuestDemoTeam(db, firebaseUser.uid, demoIntent);
           setActiveTeamId(tid);
-          
           const url = new URL(window.location.href);
           url.searchParams.delete('seed_demo');
           window.history.replaceState({}, '', url.toString());
-          
-          toast({ title: "Demo Ready", description: `You are now exploring the ${demoIntent.replace('_', ' ')} environment.` });
+          toast({ title: "Demo Ready", description: `Exploring the ${demoIntent.replace('_', ' ')} environment.` });
         } catch (e) {
           console.error("Demo seeding failed", e);
           seedingRef.current = false;
@@ -382,15 +400,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
             createdAt: data.createdAt,
             isDemo: data.isDemo || false
           });
-        } else {
-          setUserProfile({
-            id: firebaseUser.uid,
-            name: firebaseUser.displayName || 'Guest Coordinator',
-            email: firebaseUser.email || 'guest@thesquad.io',
-            phone: '',
-            avatar: `https://picsum.photos/seed/${firebaseUser.uid}/150/150`,
-            isDemo: false
-          });
         }
       });
       return () => unsub();
@@ -398,8 +407,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser, db]);
 
   const isClubManager = useMemo(() => {
+    if (simulationPlanId === 'club_custom') return true;
     return teams.some(t => t.createdBy === firebaseUser?.uid && t.planId === 'club_custom');
-  }, [teams, firebaseUser?.uid]);
+  }, [teams, firebaseUser?.uid, simulationPlanId]);
 
   const contextValue = useMemo(() => ({
     user: userProfile, 
@@ -448,7 +458,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     submitLead: async (data: any) => { try { await addDoc(collection(db, 'leads'), { ...data, createdAt: new Date().toISOString() }); toast({ title: "Inquiry Sent", description: "Our team will reach out shortly." }); return true; } catch { toast({ title: "Submission Failed", variant: "destructive" }); return false; } },
     isLoading: isUserLoading, 
     isSuperAdmin,
-    isPro: (activeTeam?.isPro || isProEntitlementActive || isSuperAdmin) || (simulationPlanId !== 'starter_squad' && simulationPlanId !== null) || (activeTeam?.planId !== 'starter_squad'),
+    isPro,
     hasFeature: (featureKey: string) => { if (isSuperAdmin && !simulationPlanId) return true; return !!activePlanFeatures[featureKey]; },
     purchasePro: async () => setIsPaywallOpen(true),
     manageSubscription: async () => { try { await Purchases.getSharedInstance().openCustomerCenter(); } catch { toast({ title: "Error", description: "Failed to open settings.", variant: "destructive" }); } },
@@ -460,7 +470,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     isSeedingDemo,
     isClubManager,
     secondsUntilReset
-  }), [userProfile, activeTeam, teams, isTeamsLoading, members, alerts, isUserLoading, isProEntitlementActive, isSuperAdmin, isPaywallOpen, db, firebaseUser, activePlanFeatures, plans, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset]);
+  }), [userProfile, activeTeam, teams, isTeamsLoading, members, alerts, isUserLoading, isSuperAdmin, isPaywallOpen, db, firebaseUser, activePlanFeatures, plans, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;
 }

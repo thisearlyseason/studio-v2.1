@@ -30,7 +30,7 @@ export default function AdminPlansPage() {
   const { isSuperAdmin, plans } = useTeam();
   const db = useFirestore();
   
-  const featuresQuery = useMemoFirebase(() => collection(db, 'features'), [db]);
+  const featuresQuery = useMemoFirebase(() => db ? collection(db, 'features') : null, [db]);
   const { data: featuresRaw } = useCollection(featuresQuery);
   const features = useMemo(() => (featuresRaw || []) as Feature[], [featuresRaw]);
 
@@ -114,7 +114,7 @@ export default function AdminPlansPage() {
                 </div>
                 <div className="flex justify-between text-xs font-bold">
                   <span>Enabled Features</span>
-                  <span className="text-primary">{Object.values(plan.features).filter(v => v).length}</span>
+                  <span className="text-primary">{Object.values(plan.features || {}).filter(v => v).length}</span>
                 </div>
               </div>
             </CardContent>
