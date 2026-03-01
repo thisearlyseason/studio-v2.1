@@ -73,8 +73,8 @@ const tabs = [
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Games', href: '/games', icon: Trophy, pro: true },
   { name: 'Drills', href: '/drills', icon: Dumbbell, pro: true },
-  { name: 'Chats', href: '/chats', icon: MessageCircle, pro: false },
-  { name: 'Roster', href: '/roster', icon: Users2, pro: true },
+  { name: 'Chats', href: '/chats', icon: MessageCircle, pro: true }, // Changed to true for Starter gating
+  { name: 'Roster', href: '/roster', icon: Users2, pro: false }, // Basic roster is allowed
   { name: 'Library', href: '/files', icon: FolderClosed, pro: true },
 ];
 

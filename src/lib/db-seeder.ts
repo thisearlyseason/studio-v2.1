@@ -105,7 +105,8 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
   const now = new Date();
 
   // 1. Setup Team Roster
-  const count = planId === 'starter_squad' ? 12 : 18;
+  const isStarter = planId === 'starter_squad';
+  const count = isStarter ? 12 : 18;
   const memberPositions = ['Assistant Coach', 'Captain', 'Defender', 'Midfielder', 'Forward', 'Goalie'];
   const names = [
     'Jordan Smith', 'Alex Rivera', 'Sam Taylor', 'Casey Morgan', 'Riley Jones', 
@@ -121,7 +122,7 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
       role: 'Member', position: memberPositions[i % memberPositions.length], 
       jersey: (i + 10).toString(), avatar: `https://picsum.photos/seed/demo_${i}_${teamId}/150/150`, 
       joinedAt: now.toISOString(), phone: '(555) 000-0000', amountOwed: 0, feesPaid: true, 
-      isDemo: true, notes: planId !== 'starter_squad' ? 'Strong performance in regional qualifiers.' : ''
+      isDemo: true, notes: !isStarter ? 'Strong performance in regional qualifiers.' : ''
     });
   }
 
@@ -140,8 +141,8 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
     });
   });
 
-  // 3. Setup Games & Stats
-  if (planId !== 'starter_squad') {
+  // 3. Setup Games & Stats (Only for Pro/Club)
+  if (!isStarter) {
     const games = [
       { opponent: 'Northern Tigers', date: new Date(now.getTime() - 86400000 * 3).toISOString(), myScore: 3, opponentScore: 1, result: 'Win', location: 'Home Field', notes: 'Great defensive pressure throughout.' },
       { opponent: 'Eastside Warriors', date: new Date(now.getTime() - 86400000 * 7).toISOString(), myScore: 2, opponentScore: 2, result: 'Tie', location: 'Warriors Den', notes: 'Hard fought match in the rain.' },
@@ -154,7 +155,7 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
   }
 
   // 4. Setup Chat & Feed
-  if (planId !== 'starter_squad') {
+  if (!isStarter) {
     const cid = `demo_chat_${teamId}`;
     batch.set(doc(db, 'teams', teamId, 'groupChats', cid), { id: cid, teamId, name: 'Tactical Planning', memberIds: [userId], createdBy: userId, createdAt: now.toISOString(), lastMessage: 'Reviewing the tape now.', isDemo: true });
     
@@ -162,6 +163,14 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
       teamId, content: 'Check the new defensive drills in the library. Essential for this weekend!', 
       type: 'user', authorId: userId, author: { name: 'Guest Coordinator', avatar: `https://picsum.photos/seed/${userId}/150/150` }, 
       createdAt: now.toISOString(), likes: [userId], imageUrl: 'https://images.unsplash.com/photo-1508088062105-17d61307629d?auto=format&fit=crop&q=80&w=800' 
+    };
+    batch.set(doc(collection(db, 'teams', teamId, 'feedPosts')), { ...post, isDemo: true });
+  } else {
+    // Basic feed for Starter
+    const post = { 
+      teamId, content: 'Welcome to the squad feed. This is where we broadcast team updates.', 
+      type: 'system', authorId: userId, author: { name: 'The Squad', avatar: '' }, 
+      createdAt: now.toISOString(), isDemo: true 
     };
     batch.set(doc(collection(db, 'teams', teamId, 'feedPosts')), { ...post, isDemo: true });
   }
@@ -212,8 +221,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   // 3. Club Sub-teams
   if (planId === 'club_custom') {
     const subs = [
-      { id: `demo_sub_${userId.slice(-6)}_1`, name: 'Guest U14 Select' },
-      { id: `demo_sub_${userId.slice(-6)}_2`, name: 'Guest U16 Regional' }
+      { id: `demo_sub_${userId.slice(-6)}_1`, name: 'Guest U14 Development' },
+      { id: `demo_sub_${userId.slice(-6)}_2`, name: 'Guest U16 Regional Select' }
     ];
 
     for (const sub of subs) {

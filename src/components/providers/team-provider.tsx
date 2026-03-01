@@ -285,7 +285,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (isSuperAdmin && !simulationPlanId) return true;
     if (simulationPlanId === 'starter_squad') return false;
     if (simulationPlanId === 'squad_pro' || simulationPlanId === 'club_custom') return true;
-    return (activeTeam?.isPro || isProEntitlementActive) || (activeTeam?.planId !== 'starter_squad');
+    
+    // Normal User Logic
+    const currentPlanId = activeTeam?.planId;
+    return (activeTeam?.isPro || isProEntitlementActive) || (currentPlanId !== 'starter_squad');
   }, [activeTeam, isProEntitlementActive, isSuperAdmin, simulationPlanId]);
 
   // Members
@@ -407,7 +410,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser, db]);
 
   const isClubManager = useMemo(() => {
+    // Respect Simulation Mode first
     if (simulationPlanId === 'club_custom') return true;
+    if (simulationPlanId === 'starter_squad' || simulationPlanId === 'squad_pro') return false;
+    
+    // Normal Check
     return teams.some(t => t.createdBy === firebaseUser?.uid && t.planId === 'club_custom');
   }, [teams, firebaseUser?.uid, simulationPlanId]);
 
@@ -459,7 +466,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     isLoading: isUserLoading, 
     isSuperAdmin,
     isPro,
-    hasFeature: (featureKey: string) => { if (isSuperAdmin && !simulationPlanId) return true; return !!activePlanFeatures[featureKey]; },
+    hasFeature: (featureKey: string) => { 
+      if (isSuperAdmin && !simulationPlanId) return true; 
+      return !!activePlanFeatures[featureKey]; 
+    },
     purchasePro: async () => setIsPaywallOpen(true),
     manageSubscription: async () => { try { await Purchases.getSharedInstance().openCustomerCenter(); } catch { toast({ title: "Error", description: "Failed to open settings.", variant: "destructive" }); } },
     isPaywallOpen, setIsPaywallOpen,
