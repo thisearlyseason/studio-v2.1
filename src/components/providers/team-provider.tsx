@@ -263,6 +263,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const plan = plans.find(p => p.id === pid);
     const baseFeatures = { ...(plan?.features || {}) };
 
+    // Dynamic Club Scaling
     if (pid === 'club_custom') {
       const teamCount = teams.length;
       if (teamCount >= 2) {
@@ -294,6 +295,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (simulationPlanId === 'club_custom') return true;
     if (simulationPlanId === 'starter_squad' || simulationPlanId === 'squad_pro') return false;
     
+    // For Demos, derive from the specific plan assigned
     if (activeTeam?.isDemo) {
       return activeTeam.planId === 'club_custom';
     }
@@ -341,7 +343,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         try {
           const planId = teams.find(t => t.id === activeTeamId)?.planId || 'starter_squad';
           await resetDemoEnvironment(db, activeTeamId, planId, userProfile.id);
-          await updateDoc(doc(db, 'users', userProfile.id), { createdAt: new Date().toISOString() });
           toast({ title: "Reset Complete", description: "Welcome back to the baseline squad." });
         } catch (e) {
           console.error("Auto reset failed", e);
@@ -386,7 +387,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [searchParams, firebaseUser, db, isSeedingDemo]);
 
-  // Harden RevenueCat Initialization
   useEffect(() => {
     if (firebaseUser && !rcInitRef.current) {
       rcInitRef.current = true;
@@ -400,7 +400,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           setIsRCInitialized(true); 
         });
       } catch (e) { 
-        console.warn("RevenueCat config skipped or failed", e);
         setIsRCInitialized(true); 
       }
     }

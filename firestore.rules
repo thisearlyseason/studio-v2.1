@@ -76,8 +76,8 @@ service cloud.firestore {
         allow read: if isSignedIn();
         allow create: if isSignedIn() && (memberId == request.auth.uid || isTeamAdmin(teamId));
         allow update: if isSignedIn() && (memberId == request.auth.uid || isTeamAdmin(teamId));
-        // Protect manager from deletion by other admins/coaches
-        allow delete: if isTeamAdmin(teamId) && (!isManager(teamId, memberId) || isAdmin());
+        // Protect manager from deletion by other admins/coaches, unless it is a demo team or super admin
+        allow delete: if isTeamAdmin(teamId) && (!isManager(teamId, memberId) || isAdmin() || resource.data.isDemo == true);
       }
 
       match /events/{eventId} {

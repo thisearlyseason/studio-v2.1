@@ -257,47 +257,59 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 }
 
 /**
- * Resets a demo environment by wiping and re-seeding.
+ * Resiliently resets a demo environment by wiping and re-seeding subcollections via batches.
  */
 export async function resetDemoEnvironment(db: Firestore, teamId: string, planId: string, userId: string) {
-  const membershipsSnap = await getDocs(collection(db, 'users', userId, 'teamMemberships'));
-  const teamIds = membershipsSnap.docs.map(d => d.id);
+  try {
+    const membershipsSnap = await getDocs(collection(db, 'users', userId, 'teamMemberships'));
+    const teamIds = membershipsSnap.docs.map(d => d.id);
 
-  const subcollections = ['members', 'events', 'games', 'drills', 'files', 'alerts', 'feedPosts', 'groupChats'];
-  
-  for (const tid of teamIds) {
-    for (const sub of subcollections) {
-      const snap = await getDocs(collection(db, 'teams', tid, sub));
-      for (const d of snap.docs) {
-        if (sub === 'groupChats') {
-          const msgs = await getDocs(collection(db, 'teams', tid, sub, d.id, 'messages'));
-          for (const m of msgs.docs) await deleteDoc(m.ref);
+    const subcollections = ['events', 'games', 'drills', 'files', 'alerts', 'feedPosts', 'groupChats', 'members'];
+    
+    // Purge logic using batches
+    for (const tid of teamIds) {
+      for (const sub of subcollections) {
+        const snap = await getDocs(collection(db, 'teams', tid, sub));
+        if (snap.empty) continue;
+
+        const batch = writeBatch(db);
+        for (const docSnap of snap.docs) {
+          // Safety: Don't delete the active manager's member record during the wipe
+          // to avoid permission Denied if rules prevent manager deletion.
+          if (sub === 'members' && docSnap.data().userId === userId) continue;
+          
+          // Handle nested subcollections
+          if (sub === 'groupChats') {
+            const msgs = await getDocs(collection(db, 'teams', tid, sub, docSnap.id, 'messages'));
+            const msgBatch = writeBatch(db);
+            msgs.forEach(m => msgBatch.delete(m.ref));
+            await msgBatch.commit();
+          }
+          if (sub === 'events') {
+            const regs = await getDocs(collection(db, 'teams', tid, sub, docSnap.id, 'registrations'));
+            const regBatch = writeBatch(db);
+            regs.forEach(r => regBatch.delete(r.ref));
+            await regBatch.commit();
+          }
+
+          batch.delete(docSnap.ref);
         }
-        if (sub === 'events') {
-          const regs = await getDocs(collection(db, 'teams', tid, sub, d.id, 'registrations'));
-          for (const r of regs.docs) await deleteDoc(r.ref);
-        }
-        await deleteDoc(d.ref);
+        await batch.commit();
       }
     }
-  }
 
-  // Reset user
-  await setDoc(doc(db, 'users', userId), {
-    id: userId, fullName: 'Guest Coordinator', email: 'guest@thesquad.io',
-    notificationsEnabled: true, createdAt: new Date().toISOString(),
-    isDemo: true, avatarUrl: `https://picsum.photos/seed/${userId}/150/150`
-  }, { merge: true });
-
-  // Re-seed all
-  for (const tid of teamIds) {
-    await setDoc(doc(db, 'teams', tid, 'members', userId), {
-      id: userId, userId, teamId: tid, name: 'Guest Coordinator', role: 'Admin',
-      position: planId === 'club_custom' ? 'Club Manager' : 'Coach', jersey: 'Staff',
-      avatar: `https://picsum.photos/seed/${userId}/150/150`, joinedAt: new Date().toISOString(),
-      phone: '(555) 000-1234', amountOwed: 0, feesPaid: true, isDemo: true
+    // Reset user heartbeat
+    await updateDoc(doc(db, 'users', userId), { 
+      createdAt: new Date().toISOString() 
     });
-    await seedDemoData(db, tid, planId, userId);
+
+    // Re-seed content
+    for (const tid of teamIds) {
+      await seedDemoData(db, tid, planId, userId);
+    }
+  } catch (error) {
+    console.error("Atomic Demo Reset Failed:", error);
+    throw error;
   }
 }
 
