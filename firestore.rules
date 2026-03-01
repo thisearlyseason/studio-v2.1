@@ -145,12 +145,12 @@ service cloud.firestore {
     }
 
     match /plans/{planId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if isAdmin();
     }
 
     match /leads/{leadId} {
-      allow create: if isSignedIn();
+      allow create: if true;
       allow read, write: if isAdmin();
     }
   }
