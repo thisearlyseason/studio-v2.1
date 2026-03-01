@@ -4,8 +4,7 @@
  *
  * CORE PHILOSOPHY:
  * This ruleset implements a robust, role-based and ownership-based security model.
- * It is designed to handle batch operations, collaborative engagement (polls/likes),
- * and dynamic feature gating.
+ * It is updated to support the Pro-team quota model and organizational scaling.
  */
 
 rules_version = '2';
@@ -34,6 +33,7 @@ service cloud.firestore {
 
     /**
      * @description Robust check if the user is an admin of a specific team.
+     * Updated to prioritize the new ownerUserId field.
      */
     function isTeamAdmin(teamId) {
       let teamPath = /databases/$(database)/documents/teams/$(teamId);
@@ -50,7 +50,7 @@ service cloud.firestore {
     }
 
     /**
-     * @description Ensures the club manager (creator) cannot be deleted.
+     * @description Ensures the club manager (creator/owner) cannot be deleted.
      */
     function isManager(teamId, memberId) {
       let teamPath = /databases/$(database)/documents/teams/$(teamId);
@@ -65,8 +65,8 @@ service cloud.firestore {
     // --- COLLECTION RULES ---
 
     match /users/{userId} {
-      allow get, list, create: if isOwner(userId) || isAdmin();
-      allow update: if isOwner(userId) || isAdmin();
+      allow read, update, delete: if isOwner(userId) || isAdmin();
+      allow create: if isSignedIn(); // Allow user profile creation on signup
       
       match /teamMemberships/{membershipId} {
         allow read, write: if isOwner(userId) || isAdmin();
@@ -75,11 +75,13 @@ service cloud.firestore {
 
     match /subscriptions/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow write: if isAdmin();
+      // Write access is server-controlled via webhooks or manually by Super Admins.
+      allow write: if isAdmin(); 
     }
 
     match /teams/{teamId} {
-      allow get, list, create: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.ownerUserId;
       allow update, delete: if isTeamAdmin(teamId);
 
       match /members/{memberId} {
@@ -147,6 +149,10 @@ service cloud.firestore {
           allow delete: if isTeamAdmin(teamId) || (resource != null && resource.data.authorId == request.auth.uid);
         }
       }
+    }
+
+    match /demo/{docId} {
+      allow read, write: if false; // Reserved for system-only session flags
     }
 
     match /features/{featureId} {
