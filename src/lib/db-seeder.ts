@@ -1,4 +1,3 @@
-
 'use client';
 
 import { 
@@ -55,8 +54,6 @@ export async function seedSubscriptionData(db: Firestore) {
     // 2. Authoritative Plan Catalog
     const plansSnapshot = await getDocs(collection(db, 'plans'));
     
-    // For this update, we want the catalog to be authoritative, so we'll overwrite if needed
-    // or seed if empty.
     if (plansSnapshot.empty) {
       const batch = writeBatch(db);
 

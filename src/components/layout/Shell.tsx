@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, memo } from 'react';
@@ -73,8 +72,8 @@ const tabs = [
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Games', href: '/games', icon: Trophy, pro: true },
   { name: 'Drills', href: '/drills', icon: Dumbbell, pro: true },
-  { name: 'Chats', href: '/chats', icon: MessageCircle, pro: true }, // Changed to true for Starter gating
-  { name: 'Roster', href: '/roster', icon: Users2, pro: false }, // Basic roster is allowed
+  { name: 'Chats', href: '/chats', icon: MessageCircle, pro: true },
+  { name: 'Roster', href: '/roster', icon: Users2, pro: false },
   { name: 'Library', href: '/files', icon: FolderClosed, pro: true },
 ];
 
@@ -350,7 +349,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </Sidebar>
 
           <div className="flex flex-col flex-1 min-w-0 h-screen overflow-y-auto">
-            {/* Desktop Header */}
             <header className="hidden md:flex sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-20 items-center px-10 justify-between shrink-0">
               <div className="flex items-center gap-4">
                 <div className="flex flex-col">
@@ -380,7 +378,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </div>
             </header>
 
-            {/* Mobile Header */}
             <header className="flex md:hidden sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 items-center px-4 justify-between shrink-0">
               <Link href="/feed" className="flex items-center gap-2">
                 <BrandLogo variant="light-background" className="h-8 w-32 justify-start" priority />
@@ -412,7 +409,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               {children}
             </main>
 
-            {/* Mobile Bottom Navigation - Restored all primary tabs */}
             <nav className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[96%] max-w-2xl glass rounded-2xl shadow-2xl border-white/40 p-1">
               <div className="flex items-center justify-around h-14 overflow-x-auto no-scrollbar">
                 {tabs.map((tab) => {
