@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/firebase';
-import { signInWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInAnonymously, signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import BrandLogo from '@/components/BrandLogo';
@@ -55,6 +55,9 @@ export default function LoginPage() {
   const handleLaunchDemo = async (planId: string) => {
     setIsDemoLoading(true);
     try {
+      // CRITICAL: Sign out first to ensure a fresh anonymous UID for each demo tier
+      // This prevents "Starter" demos from inheriting "Club" teams from previous clicks
+      await signOut(auth);
       await signInAnonymously(auth);
       // We pass the demo intent via a URL parameter which the TeamProvider will pick up
       router.push(`/feed?seed_demo=${planId}`);
@@ -158,9 +161,9 @@ export default function LoginPage() {
 
           <div className="grid grid-cols-1 gap-4">
             {[
-              { id: 'starter_squad', name: 'Starter Demo', icon: Users, desc: 'Grassroots essentials' },
-              { id: 'squad_pro', name: 'Elite Pro Demo', icon: Zap, desc: 'Advanced analytics & strategy' },
-              { id: 'club_custom', name: 'League / Club Demo', icon: Trophy, desc: 'Multi-team organization' }
+              { id: 'starter_squad', name: 'Starter Demo (FREE)', icon: Users, desc: 'Grassroots essentials' },
+              { id: 'squad_pro', name: 'Elite Squad Demo (PRO)', icon: Zap, desc: 'Advanced analytics & strategy' },
+              { id: 'club_custom', name: 'Club Demo (CUSTOM)', icon: Trophy, desc: 'Multi-team organization' }
             ].map((demo) => (
               <Button 
                 key={demo.id} 

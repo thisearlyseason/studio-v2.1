@@ -23,10 +23,6 @@ import { Purchases } from '@revenuecat/purchases-js';
 import { seedSubscriptionData, launchDemoEnvironments, resetDemoEnvironment, seedGuestDemoTeam } from '@/lib/db-seeder';
 import { useSearchParams } from 'next/navigation';
 
-const REVENUECAT_PUBLIC_API_KEY = 'test_zvlronFHqIFQuWTkgaeWrdyYnkZ';
-const PRO_ENTITLEMENT_ID = 'The Squad Pro';
-const DEMO_RESET_INTERVAL_MS = 5 * 60 * 1000; // 5 Minutes
-
 export type UserProfile = {
   id: string;
   name: string;
@@ -196,6 +192,7 @@ interface TeamContextType {
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
 
 const SUPER_ADMIN_EMAILS = ['thisearlyseason@gmail.com', 'test@gmail.com'];
+const DEMO_RESET_INTERVAL_MS = 5 * 60 * 1000; // 5 Minutes
 
 export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isUserLoading } = useUser();
@@ -214,7 +211,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const seedingRef = useRef(false);
   const resetLockRef = useRef(false);
 
-  // 1. Initial Data Fetching
+  // 1. Core Data
   const plansQuery = useMemoFirebase(() => db ? collection(db, 'plans') : null, [db]);
   const { data: plansData } = useCollection(plansQuery);
   const plans = useMemo(() => (plansData || []) as Plan[], [plansData]);
@@ -257,14 +254,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return teams.find(t => t.id === activeTeamId) || teams[0];
   }, [teams, activeTeamId]);
 
-  // 2. Feature Gating Logic
+  // 2. Feature Gating Logic (Harden)
   const activePlanFeatures = useMemo(() => {
     const pid = simulationPlanId || activeTeam?.planId;
     if (!pid || !plans) return {};
     const plan = plans.find(p => p.id === pid);
-    const baseFeatures = plan?.features || {};
+    const baseFeatures = { ...(plan?.features || {}) };
 
-    // Dynamic Club Tiers based on actual team count
+    // Dynamic Club Scaling
     if (pid === 'club_custom') {
       const teamCount = teams.length;
       if (teamCount >= 2) {
@@ -282,14 +279,27 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeam, plans, simulationPlanId, teams.length]);
 
   const isPro = useMemo(() => {
-    if (isSuperAdmin && !simulationPlanId) return true;
     if (simulationPlanId === 'starter_squad') return false;
     if (simulationPlanId === 'squad_pro' || simulationPlanId === 'club_custom') return true;
+    if (isSuperAdmin) return true;
+    if (isProEntitlementActive) return true;
     
-    // Normal User Logic
-    const currentPlanId = activeTeam?.planId;
-    return (activeTeam?.isPro || isProEntitlementActive) || (currentPlanId !== 'starter_squad');
+    const pid = activeTeam?.planId;
+    if (!pid || pid === 'starter_squad') return false;
+    return true;
   }, [activeTeam, isProEntitlementActive, isSuperAdmin, simulationPlanId]);
+
+  const isClubManager = useMemo(() => {
+    if (simulationPlanId === 'club_custom') return true;
+    if (simulationPlanId === 'starter_squad' || simulationPlanId === 'squad_pro') return false;
+    
+    // Demo constraint: in a demo, only show hub if active team IS a club team
+    if (activeTeam?.isDemo) {
+      return activeTeam.planId === 'club_custom';
+    }
+
+    return teams.some(t => t.createdBy === firebaseUser?.uid && t.planId === 'club_custom');
+  }, [teams, firebaseUser?.uid, simulationPlanId, activeTeam]);
 
   // Members
   const membersQuery = useMemoFirebase(() => {
@@ -309,7 +319,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: alertsData } = useCollection(alertsQuery);
   const alerts = useMemo(() => (alertsData || []).map(a => ({ id: a.id, teamId: a.teamId, title: a.title, message: a.message, createdBy: a.createdBy, createdAt: a.createdAt })), [alertsData]);
 
-  // Demo Heartbeat
+  // Demo Heartbeat (Harden)
   useEffect(() => {
     if (!userProfile?.isDemo || !userProfile?.createdAt || !activeTeamId) {
       setSecondsUntilReset(null);
@@ -379,10 +389,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (firebaseUser && !isRCInitialized) {
       try {
-        Purchases.configure(REVENUECAT_PUBLIC_API_KEY, firebaseUser.uid);
+        Purchases.configure('test_zvlronFHqIFQuWTkgaeWrdyYnkZ', firebaseUser.uid);
         const purchases = Purchases.getSharedInstance();
         purchases.getCustomerInfo().then(info => {
-          setIsProEntitlementActive(!!info.entitlements.active[PRO_ENTITLEMENT_ID]);
+          setIsProEntitlementActive(!!info.entitlements.active['The Squad Pro']);
         }).catch(() => {});
         setIsRCInitialized(true);
       } catch (e) { setIsRCInitialized(true); }
@@ -408,15 +418,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       return () => unsub();
     }
   }, [firebaseUser, db]);
-
-  const isClubManager = useMemo(() => {
-    // Respect Simulation Mode first
-    if (simulationPlanId === 'club_custom') return true;
-    if (simulationPlanId === 'starter_squad' || simulationPlanId === 'squad_pro') return false;
-    
-    // Normal Check
-    return teams.some(t => t.createdBy === firebaseUser?.uid && t.planId === 'club_custom');
-  }, [teams, firebaseUser?.uid, simulationPlanId]);
 
   const contextValue = useMemo(() => ({
     user: userProfile, 

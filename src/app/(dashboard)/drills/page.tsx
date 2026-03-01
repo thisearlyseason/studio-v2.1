@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -39,7 +40,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
 export default function DrillsPage() {
-  const { activeTeam, addDrill, deleteDrill, isPro, isSuperAdmin, purchasePro } = useTeam();
+  const { activeTeam, addDrill, deleteDrill, hasFeature, isSuperAdmin, purchasePro } = useTeam();
   const db = useFirestore();
 
   // Localized data fetching for performance
@@ -85,8 +86,9 @@ export default function DrillsPage() {
   }
 
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
+  const canAccessLibrary = hasFeature('media_uploads');
 
-  if (!isPro) {
+  if (!canAccessLibrary) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
         <div className="relative">

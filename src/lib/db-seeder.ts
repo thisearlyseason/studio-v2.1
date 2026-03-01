@@ -74,7 +74,7 @@ export async function seedSubscriptionData(db: Firestore) {
           billingType: 'free', teamLimit: 1, features: starterFeatures
         },
         {
-          id: 'squad_pro', name: 'Squad Pro', description: 'Full-scale coordination and analytics for elite squads.',
+          id: 'squad_pro', name: 'Elite Squad', description: 'Full-scale coordination and analytics for elite squads.',
           priceDisplay: '$9.99', billingCycle: '/mo', isPublic: true, isContactOnly: false,
           billingType: 'monthly', teamLimit: 5, features: proFeaturesMap
         },
@@ -188,6 +188,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                    planId === 'squad_pro' ? 'Guest Pro Varsity' : 'City Central Academy (Club)';
   
   const code = teamId.slice(-6).toUpperCase();
+  const isPro = planId !== 'starter_squad';
   const batch = writeBatch(db);
   
   // 1. Ensure User Profile
@@ -201,13 +202,13 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   batch.set(doc(db, 'teams', teamId), {
     id: teamId, teamName, teamCode: code, createdBy: userId,
     createdAt: new Date().toISOString(), members: { [userId]: 'Admin' },
-    isPro: planId !== 'starter_squad', planId, sport: 'Multi-Sport', isDemo: true,
+    isPro, planId, sport: 'Multi-Sport', isDemo: true,
     description: planId === 'club_custom' ? 'Elite multi-team development organization.' : 'Dynamic coordination for high-performance squads.'
   });
   
   batch.set(doc(db, 'users', userId, 'teamMemberships', teamId), {
     userId, teamId, teamName, teamCode: code, role: 'Admin', 
-    isPro: planId !== 'starter_squad', planId, isDemo: true, 
+    isPro, planId, isDemo: true, 
     joinedAt: new Date().toISOString(), createdBy: userId
   });
 
