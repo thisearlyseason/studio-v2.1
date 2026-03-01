@@ -24,6 +24,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
+import { Badge } from '@/components/ui/badge';
 
 export default function ChatsPage() {
   const { activeTeam, members, createChat, hasFeature, purchasePro } = useTeam();
