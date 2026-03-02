@@ -113,10 +113,10 @@ export default function GamesPage() {
           <Trophy className="h-12 w-12 lg:h-16 lg:w-16 text-primary" />
           <div className="absolute -top-2 -right-2 bg-black text-white p-1.5 lg:p-2 rounded-full shadow-lg border-2 border-background"><Lock className="h-3 w-3 lg:h-4 lg:w-4" /></div>
         </div>
-        <div className="text-center max-w-sm space-y-3">
+        <div className="text-center max-sm:px-4 space-y-3">
           <h1 className="text-2xl lg:text-3xl font-black tracking-tight uppercase">Score Tracking</h1>
           <p className="text-muted-foreground font-black uppercase tracking-widest text-[8px] lg:text-[10px] opacity-60">Record results and track progress</p>
-          <p className="text-xs lg:text-sm font-medium text-muted-foreground pt-2">
+          <p className="text-xs lg:text-sm font-medium text-muted-foreground pt-2 max-w-xs mx-auto">
             Unlock professional game tracking, win/loss analytics, and performance trends.
           </p>
         </div>
@@ -226,7 +226,8 @@ export default function GamesPage() {
             <div className="text-[8px] lg:text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground opacity-40">Ties</div>
             <div className="text-2xl lg:text-4xl font-black text-muted-foreground group-hover:scale-110 transition-transform">{stats.ties}</div>
           </CardContent>
-        </div>
+        </Card>
+      </div>
 
       {games.length > 0 ? (
         <div className="space-y-8 lg:space-y-10">
