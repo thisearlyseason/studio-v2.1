@@ -9,7 +9,6 @@ import {
   Sparkles, 
   Trophy, 
   Users, 
-  MessageSquare, 
   Mail, 
   ShieldCheck, 
   ArrowRight,
@@ -37,12 +36,14 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function PricingPage() {
   const { activeTeam, purchasePro, submitLead, user, proQuotaStatus } = useTeam();
   const db = useFirestore();
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
   
   const [leadForm, setLeadForm] = useState({
     name: user?.name || '',
@@ -84,7 +85,7 @@ export default function PricingPage() {
 
   return (
     <div className="space-y-12 pb-20">
-      <div className="text-center max-w-2xl mx-auto space-y-4">
+      <div className="text-center max-w-2xl mx-auto space-y-6">
         <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-black px-4 py-1 uppercase tracking-widest text-[10px]">
           Subscription Catalog
         </Badge>
@@ -92,8 +93,23 @@ export default function PricingPage() {
           Elite <span className="text-primary italic">Infrastucture.</span>
         </h1>
         <p className="text-muted-foreground font-medium text-lg pt-2 leading-relaxed">
-          From solo coaches to global organizations, select the Pro quota that scales with your ambition.
+          Select the Pro quota that scales with your ambition. Professional coordination for professional squads.
         </p>
+
+        {/* Billing Cycle Switcher */}
+        <div className="flex flex-col items-center gap-4 pt-4">
+          <Tabs defaultValue="monthly" className="w-[300px]" onValueChange={(v) => setBillingCycle(v as any)}>
+            <TabsList className="grid w-full grid-cols-2 rounded-full h-14 p-1 bg-muted/50 border-2">
+              <TabsTrigger value="monthly" className="rounded-full font-black text-xs uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg">Monthly</TabsTrigger>
+              <TabsTrigger value="annual" className="rounded-full font-black text-xs uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg">Annual</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {billingCycle === 'annual' && (
+            <Badge className="bg-green-100 text-green-700 border-none font-black text-[10px] uppercase tracking-widest px-4 h-7 animate-in zoom-in-95">
+              <Sparkles className="h-3 w-3 mr-2" /> Save 20% with Annual
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* Quota Status Banner */}
@@ -132,6 +148,8 @@ export default function PricingPage() {
           const isCurrent = user?.activePlanId === plan.id;
           const isProPlan = plan.billingType !== 'free';
           const isContact = plan.isContactOnly;
+          const displayPrice = (billingCycle === 'annual' && plan.annualPriceDisplay) ? plan.annualPriceDisplay : plan.priceDisplay;
+          const displayCycle = billingCycle === 'annual' ? (plan.annualPriceDisplay === 'Free' || plan.annualPriceDisplay === 'Custom' ? '' : '/yr') : (plan.priceDisplay === 'Free' || plan.priceDisplay === 'Custom' ? '' : '/mo');
 
           return (
             <Card 
@@ -150,9 +168,9 @@ export default function PricingPage() {
                       {plan.name}
                     </p>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-black">{plan.priceDisplay}</span>
+                      <span className="text-3xl font-black">{displayPrice}</span>
                       <span className="text-[10px] font-bold uppercase text-muted-foreground">
-                        {plan.billingCycle}
+                        {displayCycle}
                       </span>
                     </div>
                   </div>

@@ -172,6 +172,7 @@ export type Plan = {
   name: string;
   description: string;
   priceDisplay: string;
+  annualPriceDisplay?: string;
   billingCycle: string;
   isPublic: boolean;
   isContactOnly: boolean;

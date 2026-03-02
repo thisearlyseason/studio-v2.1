@@ -1,3 +1,4 @@
+
 'use client';
 
 import { 
@@ -66,27 +67,27 @@ export async function seedSubscriptionData(db: Firestore) {
       const plans = [
         {
           id: 'starter_squad', name: 'Starter Squad', description: 'Essential coordination for unlimited teams.',
-          priceDisplay: 'Free', billingCycle: '', isPublic: true, isContactOnly: false,
+          priceDisplay: 'Free', annualPriceDisplay: 'Free', billingCycle: '', isPublic: true, isContactOnly: false,
           billingType: 'free', teamLimit: null, features: starterFeatures, proTeamLimit: 0
         },
         {
-          id: 'squad_pro', name: 'Elite Solo', description: 'Pro features for a single competitive team.',
-          priceDisplay: '$12.99', billingCycle: '/mo', isPublic: true, isContactOnly: false,
+          id: 'squad_pro', name: 'Elite Pro', description: 'Professional features for a single competitive team.',
+          priceDisplay: '$9.99', annualPriceDisplay: '$100', billingCycle: '/mo', isPublic: true, isContactOnly: false,
           billingType: 'monthly', teamLimit: 1, features: proFeaturesMap, proTeamLimit: 1
         },
         {
           id: 'squad_duo', name: 'Dynamic Duo', description: 'Power up two elite squads.',
-          priceDisplay: '$23.99', billingCycle: '/mo', isPublic: true, isContactOnly: false,
+          priceDisplay: '$18.99', annualPriceDisplay: '$190', billingCycle: '/mo', isPublic: true, isContactOnly: false,
           billingType: 'monthly', teamLimit: 2, features: proFeaturesMap, proTeamLimit: 2
         },
         {
           id: 'squad_crew', name: 'The Crew', description: 'Coordination suite for up to 4 teams.',
-          priceDisplay: '$44.99', billingCycle: '/mo', isPublic: true, isContactOnly: false,
+          priceDisplay: '$34.99', annualPriceDisplay: '$350', billingCycle: '/mo', isPublic: true, isContactOnly: false,
           billingType: 'monthly', teamLimit: 4, features: proFeaturesMap, proTeamLimit: 4
         },
         {
           id: 'squad_organization', name: 'Organization', description: 'Custom enterprise-grade infrastructure for large clubs.',
-          priceDisplay: 'Custom', billingCycle: '', isPublic: true, isContactOnly: true,
+          priceDisplay: 'Custom', annualPriceDisplay: 'Custom', billingCycle: '', isPublic: true, isContactOnly: true,
           billingType: 'manual', teamLimit: null, features: proFeaturesMap, proTeamLimit: 15
         }
       ];
@@ -337,7 +338,7 @@ export async function resetDemoEnvironment(db: Firestore, teamId: string, planId
 export async function launchDemoEnvironments(db: Firestore, superAdminId: string) {
   const demoTeams = [
     { id: 'demo_starter_team', name: 'U10 Grassroots Stars', planId: 'starter_squad', sport: 'Soccer' },
-    { id: 'demo_pro_team', name: 'Elite Solo Squad', planId: 'squad_pro', sport: 'Basketball' },
+    { id: 'demo_pro_team', name: 'Elite Pro Squad', planId: 'squad_pro', sport: 'Basketball' },
     { id: 'demo_club_team_1', name: 'City Central United', planId: 'squad_organization', sport: 'Academy' }
   ];
 

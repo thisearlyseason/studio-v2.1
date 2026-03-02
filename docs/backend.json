@@ -245,7 +245,11 @@
         },
         "priceDisplay": {
           "type": "string",
-          "description": "Display price (e.g. '$9.99')"
+          "description": "Monthly display price (e.g. '$9.99')"
+        },
+        "annualPriceDisplay": {
+          "type": "string",
+          "description": "Annual display price (e.g. '$100')"
         },
         "billingCycle": {
           "type": "string",
