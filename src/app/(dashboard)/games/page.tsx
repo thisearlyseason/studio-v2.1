@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/chart";
 import { Line, LineChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { format } from 'date-fns';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const chartConfig = {
   myScore: {
@@ -45,7 +46,6 @@ export default function GamesPage() {
   const { activeTeam, addGame, updateGame, isSuperAdmin, purchasePro, hasFeature } = useTeam();
   const db = useFirestore();
   
-  // Localized data fetching for performance with strict limits
   const gamesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
     return query(collection(db, 'teams', activeTeam.id, 'games'), orderBy('date', 'desc'), limit(50));
@@ -58,7 +58,6 @@ export default function GamesPage() {
   const [editingGame, setEditingGame] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
 
-  // Form state
   const [opponent, setOpponent] = useState('');
   const [date, setDate] = useState('');
   const [myScore, setMyScore] = useState('');
@@ -227,8 +226,7 @@ export default function GamesPage() {
             <div className="text-[8px] lg:text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground opacity-40">Ties</div>
             <div className="text-2xl lg:text-4xl font-black text-muted-foreground group-hover:scale-110 transition-transform">{stats.ties}</div>
           </CardContent>
-        </Card>
-      </div>
+        </div>
 
       {games.length > 0 ? (
         <div className="space-y-8 lg:space-y-10">

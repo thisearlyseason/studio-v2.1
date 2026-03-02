@@ -272,7 +272,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return teams.find(t => t.id === activeTeamId) || teams[0];
   }, [teams, activeTeamId]);
 
-  // Alert Listener
   useEffect(() => {
     if (!activeTeam?.id || !db) {
       setAlerts([]);
@@ -287,7 +286,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return () => unsub();
   }, [activeTeam?.id, db]);
 
-  // Optimized Member Listener
   useEffect(() => {
     if (!activeTeam?.id || !db) {
       setMembers([]);
@@ -323,61 +321,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return proQuotaStatus.remaining > 0;
   }, [isSuperAdmin, proQuotaStatus]);
 
-  useEffect(() => {
-    if (!firebaseUser || !userProfile || isTeamsLoading || proQuotaStatus.limit === null) return;
-    
-    if (proQuotaStatus.exceeded) {
-      const ownedProTeams = teams
-        .filter(t => t.ownerUserId === firebaseUser.uid && t.isPro)
-        .sort((a, b) => {
-          const dateA = a.proAssignedAt ? new Date(a.proAssignedAt).getTime() : 0;
-          const dateB = b.proAssignedAt ? new Date(b.proAssignedAt).getTime() : 0;
-          return dateB - dateA;
-        });
-
-      const excessCount = proQuotaStatus.current - proQuotaStatus.limit;
-      const excessTeams = ownedProTeams.slice(0, excessCount).filter(t => !t.isProPendingRemoval);
-
-      if (excessTeams.length > 0) {
-        excessTeams.forEach(t => {
-          updateDocumentNonBlocking(doc(db, 'teams', t.id), { isProPendingRemoval: true });
-          updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', t.id), { isProPendingRemoval: true });
-        });
-      }
-    }
-  }, [proQuotaStatus.limit, proQuotaStatus.current, teams, firebaseUser, userProfile, isTeamsLoading, db]);
-
   const activePlanFeatures = useMemo(() => {
     const pid = simulationPlanId || activeTeam?.planId;
-    if (!pid || !plans) return {};
-    const plan = plans.find(p => p.id === pid);
-    const baseFeatures = { ...(plan?.features || {}) };
-
-    // Standardize features for Organization tier
+    if (!pid) return {};
+    
+    // Static base features for core plans to prevent loading flicker
+    const baseFeatures: Record<string, boolean> = {};
+    
     if (pid === 'squad_organization') {
-      baseFeatures.tournaments = true;
-      baseFeatures.attendance_tracking = true;
-      baseFeatures.full_roster_details = true;
-      baseFeatures.score_tracking = true;
-      baseFeatures.group_chat = true;
-      baseFeatures.media_uploads = true;
-      baseFeatures.live_feed_post = true;
-      baseFeatures.high_priority_alerts = true;
-      
-      const teamCount = teams.length;
-      if (teamCount >= 2) {
-        baseFeatures.multi_team_admin_dashboard = true;
-        baseFeatures.cross_team_announcements = true;
-      }
-      if (teamCount >= 4) baseFeatures.priority_support = true;
-      if (teamCount >= 8) {
-        baseFeatures.early_feature_access = true;
-        baseFeatures.custom_permissions = true;
-      }
+      return {
+        schedule_games_events: true, tournaments: true, basic_roster: true,
+        full_roster_details: true, attendance_tracking: true, live_feed_read: true,
+        live_feed_post: true, group_chat: true, score_tracking: true,
+        media_uploads: true, high_priority_alerts: true
+      };
     }
 
-    return baseFeatures;
-  }, [activeTeam, plans, simulationPlanId, teams.length]);
+    const plan = plans.find(p => p.id === pid);
+    return { ...(plan?.features || {}) };
+  }, [activeTeam, plans, simulationPlanId]);
 
   const isPro = useMemo(() => {
     if (simulationPlanId === 'starter_squad') return false;
@@ -394,8 +356,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (simulationPlanId === 'squad_organization') return true;
     if (simulationPlanId === 'starter_squad' || simulationPlanId === 'squad_pro') return false;
     if (!activeTeam) return false;
-    if (activeTeam.planId === 'squad_organization' && activeTeam.role === 'Admin') return true;
-    return false;
+    return activeTeam.planId === 'squad_organization' && activeTeam.role === 'Admin';
   }, [simulationPlanId, activeTeam]);
 
   useEffect(() => {
@@ -649,10 +610,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     isLoading: isUserLoading, 
     isSuperAdmin,
     isPro,
-    hasFeature: (featureKey: string) => { 
-      if (isSuperAdmin && !simulationPlanId && !activeTeam?.isDemo) return true; 
-      return !!activePlanFeatures[featureKey]; 
-    },
+    hasFeature: (key: string) => !!activePlanFeatures[key] || (isSuperAdmin && !simulationPlanId),
     purchasePro: async () => setIsPaywallOpen(true),
     manageSubscription: async () => { 
       if (!isRCInitialized) { toast({ title: "Please wait", description: "Subscription service is initializing." }); return; }
