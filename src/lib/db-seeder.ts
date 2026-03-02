@@ -33,7 +33,7 @@ export async function seedSubscriptionData(db: Firestore) {
         { id: 'live_feed_read', description: 'View the squad activity feed.', defaultEnabled: true },
         { id: 'live_feed_post', description: 'Post updates, photos, and polls to the squad.', defaultEnabled: false },
         { id: 'group_chat', description: 'Real-time messaging channels for coordination.', defaultEnabled: false },
-        { id: 'score_tracking', description: 'Record game results and season progress.', defaultEnabled: false },
+        { id: 'score_tracking', description: 'Record game results and season progress.', defaultEnabled: true },
         { id: 'stats_basic', description: 'Basic performance metrics and trends.', defaultEnabled: false },
         { id: 'media_uploads', description: 'Upload and share playbooks, photos, and files.', defaultEnabled: false },
         { id: 'history_unlimited', description: 'Retain full history of posts, chats, and results.', defaultEnabled: false },
@@ -61,7 +61,7 @@ export async function seedSubscriptionData(db: Firestore) {
       };
 
       const starterFeatures = {
-        schedule_games_events: true, basic_roster: true, live_feed_read: true
+        schedule_games_events: true, basic_roster: true, live_feed_read: true, score_tracking: true
       };
 
       const plans = [
@@ -181,19 +181,17 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
   }
 
   // 4. Setup Games
-  if (isPro) {
-    const games = [
-      { opponent: 'Wildcats', result: 'Win', myScore: 4, opponentScore: 2 },
-      { opponent: 'Storm', result: 'Loss', myScore: 1, opponentScore: 3 }
-    ];
-    games.forEach((g, i) => {
-      const gid = `demo_game_${teamId}_${i}`;
-      batch.set(doc(db, 'teams', teamId, 'games', gid), {
-        ...g, id: gid, teamId, date: new Date(now.getTime() - 86400000 * (i + 2)).toISOString(),
-        location: 'Arena Central', notes: 'Elite execution.', isDemo: true, createdAt: now.toISOString()
-      });
+  const games = [
+    { opponent: 'Wildcats', result: 'Win', myScore: 4, opponentScore: 2 },
+    { opponent: 'Storm', result: 'Loss', myScore: 1, opponentScore: 3 }
+  ];
+  games.forEach((g, i) => {
+    const gid = `demo_game_${teamId}_${i}`;
+    batch.set(doc(db, 'teams', teamId, 'games', gid), {
+      ...g, id: gid, teamId, date: new Date(now.getTime() - 86400000 * (i + 2)).toISOString(),
+      location: 'Arena Central', notes: isPro ? 'Elite execution.' : '', isDemo: true, createdAt: now.toISOString()
     });
-  }
+  });
 
   // 5. Setup Chat & Messages
   if (isPro) {
