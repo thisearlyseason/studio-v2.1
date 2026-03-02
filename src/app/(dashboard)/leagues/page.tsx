@@ -178,7 +178,6 @@ export default function LeaguesPage() {
     }
   };
 
-  // CONDITIONAL RETURNS MUST BE AT THE BOTTOM OF THE HOOK SECTION
   if (!canUseLeagues) {
     return (
       <div className="flex flex-col items-center justify-center py-20 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
@@ -394,7 +393,10 @@ export default function LeaguesPage() {
           </div>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
             <Button className="h-12 px-8 rounded-xl font-black uppercase text-xs tracking-widest" onClick={() => setIsCreateOpen(true)}>Create Hub League</Button>
-            <Button variant="outline" className="h-12 px-8 rounded-xl font-black uppercase text-xs tracking-widest border-2">Browse Public Leagues</Button>
+            <div className="relative group">
+              <Button variant="outline" className="h-12 px-8 rounded-xl font-black uppercase text-xs tracking-widest border-2 opacity-50 cursor-not-allowed">Browse Public Leagues</Button>
+              <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-500 text-white font-black text-[8px] uppercase px-2 h-5 shadow-lg whitespace-nowrap">Coming Soon</Badge>
+            </div>
           </div>
         </div>
       )}

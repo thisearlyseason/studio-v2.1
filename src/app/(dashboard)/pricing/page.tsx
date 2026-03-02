@@ -16,7 +16,8 @@ import {
   Zap,
   Star,
   Building,
-  Shield
+  Shield,
+  CircleCheck
 } from 'lucide-react';
 import { useTeam } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
@@ -48,9 +49,10 @@ export default function PricingPage() {
     message: ''
   });
 
-  const sortedPlans = useMemo(() => {
-    return [...plans].sort((a, b) => (a.proTeamLimit || 0) - (b.proTeamLimit || 0));
-  }, [plans]);
+  const starterPlan = useMemo(() => plans.find(p => p.id === 'starter_squad'), [plans]);
+  const proPlan = useMemo(() => plans.find(p => p.id === 'squad_pro'), [plans]);
+  const clubPlans = useMemo(() => plans.filter(p => p.id.startsWith('squad_') && p.id !== 'squad_pro' && p.id !== 'squad_organization' && p.id !== 'starter_squad').sort((a, b) => (a.proTeamLimit || 0) - (b.proTeamLimit || 0)), [plans]);
+  const customPlan = useMemo(() => plans.find(p => p.id === 'squad_organization'), [plans]);
 
   const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,6 +77,17 @@ export default function PricingPage() {
     );
   }
 
+  const getDisplayPrice = (plan?: any) => {
+    if (!plan) return '';
+    const price = (billingCycle === 'annual' && plan.annualPriceDisplay) ? plan.annualPriceDisplay : plan.priceDisplay;
+    return price;
+  };
+
+  const getCycleLabel = (plan?: any) => {
+    if (!plan || plan.priceDisplay === 'Free' || plan.priceDisplay === 'Custom') return '';
+    return billingCycle === 'annual' ? '/yr' : '/mo';
+  };
+
   return (
     <div className="space-y-12 pb-20 max-w-7xl mx-auto px-4 md:px-6">
       <div className="text-center space-y-6">
@@ -93,87 +106,108 @@ export default function PricingPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-        {sortedPlans.length > 0 ? sortedPlans.map((plan) => {
-          const isCurrent = activeTeam?.planId === plan.id;
-          const isStarter = plan.id === 'starter_squad';
-          const isPro = plan.id === 'squad_pro';
-          
-          const displayPrice = (billingCycle === 'annual' && plan.annualPriceDisplay) ? plan.annualPriceDisplay : plan.priceDisplay;
-          const displayCycle = displayPrice === 'Free' || displayPrice === 'Custom' ? '' : (billingCycle === 'annual' ? '/yr' : '/mo');
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
+        {/* STARTER SQUAD */}
+        <Card className={cn("rounded-[3rem] border-none shadow-xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.02] ring-1 ring-black/5 bg-white")}>
+          <div className="h-2 w-full bg-muted-foreground/20" />
+          <CardHeader className="p-10 pb-6 space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 flex items-center border-primary/20 text-primary">FREE</Badge>
+              {activeTeam?.planId === 'starter_squad' && <Badge className="bg-primary text-white border-none font-black text-[8px] px-3 h-5 uppercase shadow-lg">Active Squad</Badge>}
+            </div>
+            <div className="space-y-1">
+              <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none">Starter</CardTitle>
+              <div className="flex items-baseline gap-1">
+                <span className="text-5xl font-black tracking-tighter">$0</span>
+              </div>
+            </div>
+            <CardDescription className="text-xs font-bold leading-relaxed text-muted-foreground">Essential coordination for growing grassroots teams.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-10 pt-0 flex-1 space-y-8">
+            <div className="pt-6 border-t border-muted space-y-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Capabilities</p>
+              <ul className="space-y-3">
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-tight"><Check className="h-4 w-4 text-primary shrink-0" /> <span>Basic Schedule</span></li>
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-tight"><Check className="h-4 w-4 text-primary shrink-0" /> <span>Basic Roster</span></li>
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-tight"><Check className="h-4 w-4 text-primary shrink-0" /> <span>Squad Feed Read</span></li>
+              </ul>
+            </div>
+          </CardContent>
+          <CardFooter className="p-10 pt-0">
+            <Button variant="outline" disabled className="w-full h-14 rounded-2xl text-base font-black border-2 opacity-50 uppercase tracking-widest">Baseline Tier</Button>
+          </CardFooter>
+        </Card>
 
-          return (
-            <Card 
-              key={plan.id} 
-              className={cn(
-                "rounded-[3rem] border-none shadow-xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.02]", 
-                isCurrent ? "ring-4 ring-primary shadow-primary/20 scale-[1.02] z-10" : "ring-1 ring-black/5",
-                isPro ? "bg-black text-white" : "bg-white"
-              )}
-            >
-              <div className={cn("h-2 w-full", isStarter ? "bg-muted-foreground/20" : "bg-primary")} />
-              <CardHeader className="p-10 pb-6 space-y-4">
-                <div className="flex justify-between items-start">
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline" className={cn("font-black uppercase text-[8px] tracking-widest px-3 h-5 flex items-center whitespace-nowrap", isPro ? "border-white/20 text-white" : "border-primary/20 text-primary")}>
-                      {plan.billingType}
-                    </Badge>
-                    {isCurrent && <Badge className="bg-primary text-white border-none font-black text-[8px] px-3 h-5 uppercase shadow-lg whitespace-nowrap">Active Squad</Badge>}
+        {/* SQUAD PRO - MIDDLE & ANIMATED */}
+        <Card className={cn("rounded-[3rem] border-none shadow-2xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.05] ring-4 ring-primary bg-black text-white relative z-10 animate-in zoom-in-95")}>
+          <div className="absolute inset-0 bg-primary/5 pointer-events-none animate-pulse" />
+          <div className="h-2 w-full bg-primary" />
+          <CardHeader className="p-10 pb-6 space-y-4 relative z-10">
+            <div className="flex flex-wrap gap-2">
+              <Badge className="bg-primary text-white border-none font-black text-[8px] px-3 h-5 uppercase shadow-lg">ELITE SQUAD</Badge>
+              {activeTeam?.planId === 'squad_pro' && <Badge className="bg-white text-black border-none font-black text-[8px] px-3 h-5 uppercase shadow-lg">Active Squad</Badge>}
+            </div>
+            <div className="space-y-1">
+              <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none">Squad Pro</CardTitle>
+              <div className="flex items-baseline gap-1">
+                <span className="text-5xl font-black tracking-tighter text-primary">{getDisplayPrice(proPlan)}</span>
+                <span className="text-xs font-black uppercase opacity-60 text-white/60">{getCycleLabel(proPlan)}</span>
+              </div>
+            </div>
+            <CardDescription className="text-xs font-bold leading-relaxed text-white/60">Full-scale coordination and analytics for professional-grade squads.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-10 pt-0 flex-1 space-y-8 relative z-10">
+            <div className="pt-6 border-t border-white/10 space-y-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Professional Logic</p>
+              <ul className="space-y-3">
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-tight"><CircleCheck className="h-4 w-4 text-primary shrink-0" /> <span>RSVP & Attendance</span></li>
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-tight"><CircleCheck className="h-4 w-4 text-primary shrink-0" /> <span>Tactical Group Chat</span></li>
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-tight"><CircleCheck className="h-4 w-4 text-primary shrink-0" /> <span>Media & Playbook Vault</span></li>
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-tight"><CircleCheck className="h-4 w-4 text-primary shrink-0" /> <span>Score & Perf Tracking</span></li>
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-tight"><CircleCheck className="h-4 w-4 text-primary shrink-0" /> <span>League Creation</span></li>
+              </ul>
+            </div>
+          </CardContent>
+          <CardFooter className="p-10 pt-0 relative z-10">
+            <Button className="w-full h-14 rounded-2xl text-base font-black bg-white text-black hover:bg-white/90 shadow-xl" onClick={purchasePro}>
+              Upgrade to Pro
+            </Button>
+          </CardFooter>
+        </Card>
+
+        {/* CLUB SUITE */}
+        <Card className={cn("rounded-[3rem] border-none shadow-xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.02] ring-1 ring-black/5 bg-white")}>
+          <div className="h-2 w-full bg-primary" />
+          <CardHeader className="p-10 pb-6 space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 flex items-center border-primary/20 text-primary">CLUB MANAGER</Badge>
+            </div>
+            <div className="space-y-1">
+              <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none">Club Suite</CardTitle>
+              <div className="flex items-baseline gap-1">
+                <span className="text-5xl font-black tracking-tighter">{getDisplayPrice(clubPlans[0])}</span>
+                <span className="text-xs font-black uppercase opacity-60 text-muted-foreground">{getCycleLabel(clubPlans[0])}</span>
+              </div>
+            </div>
+            <CardDescription className="text-xs font-bold leading-relaxed text-muted-foreground">Consolidated management for multi-team organizations and academies.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-10 pt-0 flex-1 space-y-8">
+            <div className="pt-6 border-t border-muted space-y-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Organization Scaling</p>
+              <div className="space-y-3">
+                {clubPlans.map(cp => (
+                  <div key={cp.id} className="flex justify-between items-center bg-muted/30 p-2.5 rounded-xl border border-transparent hover:border-primary/10 transition-all">
+                    <span className="text-[10px] font-black uppercase tracking-tight">{cp.name.replace('Club ', '')} ({cp.proTeamLimit} Teams)</span>
+                    <span className="text-[10px] font-black text-primary">{getDisplayPrice(cp)}</span>
                   </div>
-                </div>
-                <div className="space-y-1">
-                  <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none">{plan.name}</CardTitle>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-5xl font-black tracking-tighter">{displayPrice}</span>
-                    <span className={cn("text-xs font-black uppercase opacity-60", isPro ? "text-white/60" : "text-muted-foreground")}>{displayCycle}</span>
-                  </div>
-                </div>
-                <CardDescription className={cn("text-xs font-bold leading-relaxed", isPro ? "text-white/60" : "text-muted-foreground")}>{plan.description}</CardDescription>
-              </CardHeader>
-
-              <CardContent className="p-10 pt-0 flex-1 space-y-8">
-                <div className={cn("pt-6 border-t space-y-4", isPro ? "border-white/10" : "border-muted")}>
-                  <p className={cn("text-[10px] font-black uppercase tracking-[0.2em]", isPro ? "text-white/40" : "text-muted-foreground")}>Capabilities</p>
-                  <ul className="space-y-3">
-                    {Object.entries(plan.features || {}).filter(([_, v]) => v).slice(0, 6).map(([key]) => (
-                      <li key={key} className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-tight">
-                        <Check className="h-4 w-4 text-primary shrink-0" />
-                        <span>{key.replace(/_/g, ' ')}</span>
-                      </li>
-                    ))}
-                    {!isStarter && <li className="flex items-center gap-3 text-[11px] font-black uppercase tracking-tight text-primary"><Shield className="h-4 w-4 shrink-0" /> League Creation Enabled</li>}
-                  </ul>
-                </div>
-              </CardContent>
-
-              <CardFooter className="p-10 pt-0">
-                {plan.isContactOnly ? (
-                  <Dialog open={isContactOpen} onOpenChange={setIsContactOpen}>
-                    <DialogTrigger asChild>
-                      <Button className="w-full h-14 rounded-2xl text-base font-black bg-white text-black hover:bg-white/90 shadow-xl">Inquire Organization <ArrowRight className="ml-2 h-4 w-4" /></Button>
-                    </DialogTrigger>
-                    <DialogContent className="rounded-[2.5rem] p-8 border-none shadow-2xl">
-                      <DialogHeader className="mb-6"><DialogTitle className="text-2xl font-black uppercase tracking-tight">Enterprise Infrastructure</DialogTitle></DialogHeader>
-                      <form onSubmit={handleContactSubmit} className="space-y-4">
-                        <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Club Email</Label><Input required type="email" value={leadForm.email} onChange={e => setLeadForm(p => ({ ...p, email: e.target.value }))} className="h-12 rounded-xl font-bold" /></div>
-                        <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Organization</Label><Input required value={leadForm.organization} onChange={e => setLeadForm(p => ({ ...p, organization: e.target.value }))} className="h-12 rounded-xl font-bold" /></div>
-                        <Button disabled={isSubmitting} className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 mt-4">{isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Contact Sales"}</Button>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
-                ) : isCurrent ? (
-                  <Button variant="outline" disabled className={cn("w-full h-14 rounded-2xl text-base font-black border-2 opacity-50 uppercase tracking-widest", isPro ? "border-white/20 text-white" : "border-black/10 text-black")}>Active Plan</Button>
-                ) : (
-                  <Button className={cn("w-full h-14 rounded-2xl text-base font-black shadow-xl", isPro ? "bg-white text-black hover:bg-white/90" : "bg-primary text-white hover:bg-primary/90 shadow-primary/20")} onClick={purchasePro}>Select Tier</Button>
-                )}
-              </CardFooter>
-            </Card>
-          );
-        }) : (
-          <div className="col-span-full py-20 text-center opacity-40">
-            <p className="font-black uppercase tracking-widest text-xs">Catalog initializing...</p>
-          </div>
-        )}
+                ))}
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="p-10 pt-0">
+            <Button className="w-full h-14 rounded-2xl text-base font-black shadow-xl bg-primary text-white hover:bg-primary/90 shadow-primary/20" onClick={purchasePro}>Scale Organization</Button>
+          </CardFooter>
+        </Card>
       </div>
 
       <div className="bg-muted/50 p-10 rounded-[3rem] text-center border-2 border-dashed space-y-4">
@@ -198,7 +232,20 @@ export default function PricingPage() {
         </div>
         <div className="max-w-md relative z-10 space-y-4">
           <p className="text-sm font-medium text-white/40 leading-relaxed italic">Managing an entire league or a large regional club? Our Club Custom solutions provide white-label coordination hubs, priority operational support, and bulk team provisioning for organizations with 15+ teams.</p>
-          <Button variant="outline" className="rounded-full px-10 h-12 border-white/20 text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-[0.2em]">Contact Enterprise</Button>
+          
+          <Dialog open={isContactOpen} onOpenChange={setIsContactOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="rounded-full px-10 h-12 border-white/20 text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-[0.2em]">Contact Enterprise</Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-[2.5rem] p-8 border-none shadow-2xl">
+              <DialogHeader className="mb-6"><DialogTitle className="text-2xl font-black uppercase tracking-tight">Enterprise Infrastructure</DialogTitle></DialogHeader>
+              <form onSubmit={handleContactSubmit} className="space-y-4">
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Club Email</Label><Input required type="email" value={leadForm.email} onChange={e => setLeadForm(p => ({ ...p, email: e.target.value }))} className="h-12 rounded-xl font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Organization</Label><Input required value={leadForm.organization} onChange={e => setLeadForm(p => ({ ...p, organization: e.target.value }))} className="h-12 rounded-xl font-bold" /></div>
+                <Button disabled={isSubmitting} className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 mt-4">{isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Contact Sales"}</Button>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
     </div>

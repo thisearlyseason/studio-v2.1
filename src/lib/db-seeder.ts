@@ -67,7 +67,7 @@ export async function seedSubscriptionData(db: Firestore) {
       const plans = [
         {
           id: 'starter_squad', name: 'Starter Squad', description: 'Essential coordination for growing teams.',
-          priceDisplay: 'Free', annualPriceDisplay: 'Free', billingCycle: '', isPublic: true, isContactOnly: false,
+          priceDisplay: '$0', annualPriceDisplay: '$0', billingCycle: '', isPublic: true, isContactOnly: false,
           billingType: 'free', teamLimit: null, features: starterFeatures, proTeamLimit: 0
         },
         {
