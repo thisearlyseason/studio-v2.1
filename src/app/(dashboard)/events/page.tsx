@@ -65,7 +65,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { format } from 'date-fns';
+import { format, isSameDay } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface EventDetailDialogProps {
@@ -193,6 +193,19 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
     if (!event.isTournament || !event.tournamentTeams) return [];
     return calculateTournamentStandings(event.tournamentTeams, event.tournamentGames || []);
   }, [event]);
+
+  // Group games by date for multi-day schedule
+  const groupedGames = useMemo(() => {
+    if (!event.tournamentGames) return {};
+    const groups: Record<string, TournamentGame[]> = {};
+    [...event.tournamentGames]
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .forEach(game => {
+        if (!groups[game.date]) groups[game.date] = [];
+        groups[game.date].push(game);
+      });
+    return groups;
+  }, [event.tournamentGames]);
 
   const handleRSVPAction = (status: string) => {
     if (status === 'going') {
@@ -399,54 +412,66 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                   </div>
 
                   <div className="flex-1 p-10 overflow-y-auto custom-scrollbar">
-                    <TabsContent value="bracket" className="mt-0 space-y-6">
+                    <TabsContent value="bracket" className="mt-0 space-y-10">
                       {!isTournamentModuleUnlocked ? (
                         <TournamentPaywall purchasePro={purchasePro} />
                       ) : (
-                        <div className="grid grid-cols-1 gap-4 max-w-3xl mx-auto">
-                          {event.tournamentGames?.map((game) => (
-                            <button 
-                              key={game.id} 
-                              onClick={() => isAdmin && setEditingGame(game)}
-                              className={cn(
-                                "p-5 bg-white rounded-3xl border shadow-sm transition-all text-left relative overflow-hidden group ring-1 ring-black/5",
-                                isAdmin ? "hover:shadow-md cursor-pointer hover:ring-primary/20" : "cursor-default"
-                              )}
-                            >
-                              <div className="flex justify-between items-center mb-4">
-                                <Badge variant="outline" className="text-[8px] font-black uppercase border-black/10 tracking-widest px-2 h-5">
-                                  {game.date} @ {game.time}
+                        <div className="space-y-12">
+                          {Object.entries(groupedGames).map(([date, games]) => (
+                            <div key={date} className="space-y-6">
+                              <div className="flex items-center gap-4 px-2">
+                                <Badge className="bg-black text-white font-black uppercase text-[10px] px-4 h-7 shadow-lg">
+                                  {format(new Date(date), 'EEEE, MMM d')}
                                 </Badge>
-                                {game.isCompleted && <Badge className="text-[8px] font-black uppercase h-5 px-2 bg-black text-white">Final</Badge>}
+                                <div className="h-px bg-muted flex-1" />
                               </div>
-                              
-                              <div className="grid grid-cols-7 items-center gap-4">
-                                <div className="col-span-3 text-right">
-                                  <div className="flex items-center justify-end gap-2 mb-1">
-                                    <p className="font-black text-xs uppercase truncate">{game.team1}</p>
-                                    {game.winnerId === game.team1 && <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />}
-                                  </div>
-                                  <p className="text-3xl font-black text-primary leading-none">{game.score1}</p>
-                                </div>
-                                
-                                <div className="col-span-1 flex items-center justify-center">
-                                  <span className="font-black text-[10px] uppercase opacity-20">VS</span>
-                                </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {games.map((game) => (
+                                  <button 
+                                    key={game.id} 
+                                    onClick={() => isAdmin && setEditingGame(game)}
+                                    className={cn(
+                                      "p-5 bg-white rounded-3xl border shadow-sm transition-all text-left relative overflow-hidden group ring-1 ring-black/5",
+                                      isAdmin ? "hover:shadow-md cursor-pointer hover:ring-primary/20" : "cursor-default"
+                                    )}
+                                  >
+                                    <div className="flex justify-between items-center mb-4">
+                                      <Badge variant="outline" className="text-[8px] font-black uppercase border-black/10 tracking-widest px-2 h-5">
+                                        {game.time}
+                                      </Badge>
+                                      {game.isCompleted && <Badge className="text-[8px] font-black uppercase h-5 px-2 bg-black text-white">Final</Badge>}
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-7 items-center gap-4">
+                                      <div className="col-span-3 text-right">
+                                        <div className="flex items-center justify-end gap-2 mb-1">
+                                          <p className="font-black text-xs uppercase truncate">{game.team1}</p>
+                                          {game.winnerId === game.team1 && <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />}
+                                        </div>
+                                        <p className="text-3xl font-black text-primary leading-none">{game.score1}</p>
+                                      </div>
+                                      
+                                      <div className="col-span-1 flex items-center justify-center">
+                                        <span className="font-black text-[10px] uppercase opacity-20">VS</span>
+                                      </div>
 
-                                <div className="col-span-3">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    {game.winnerId === game.team2 && <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />}
-                                    <p className="font-black text-xs uppercase truncate">{game.team2}</p>
-                                  </div>
-                                  <p className="text-3xl font-black text-primary leading-none">{game.score2}</p>
-                                </div>
+                                      <div className="col-span-3">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          {game.winnerId === game.team2 && <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />}
+                                          <p className="font-black text-xs uppercase truncate">{game.team2}</p>
+                                        </div>
+                                        <p className="text-3xl font-black text-primary leading-none">{game.score2}</p>
+                                      </div>
+                                    </div>
+                                    {isAdmin && (
+                                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Edit3 className="h-3 w-3 text-muted-foreground" />
+                                      </div>
+                                    )}
+                                  </button>
+                                ))}
                               </div>
-                              {isAdmin && (
-                                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <Edit3 className="h-3 w-3 text-muted-foreground" />
-                                </div>
-                              )}
-                            </button>
+                            </div>
                           ))}
                         </div>
                       )}
@@ -562,6 +587,15 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
             </DialogHeader>
             {editingGame && (
               <div className="space-y-6 py-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Game Date</Label>
+                  <Input 
+                    type="date" 
+                    value={editingGame.date} 
+                    onChange={e => setEditingGame({...editingGame, date: e.target.value})}
+                    className="h-12 rounded-xl font-bold border-2"
+                  />
+                </div>
                 <div className="grid grid-cols-2 gap-6 items-end">
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase truncate">{editingGame.team1}</Label>
@@ -700,7 +734,7 @@ export default function EventsPage() {
       team2: tournamentTeams[1] || 'Team B',
       score1: 0,
       score2: 0,
-      date: newDate,
+      date: newDate, // Default to tournament start date
       time: '10:00 AM',
       isCompleted: false
     };
@@ -737,6 +771,9 @@ export default function EventsPage() {
     }));
   };
 
+  // Check if tournament fields should be locked (anti-recycling)
+  const isLocked = editingEvent?.isTournamentPaid && editingEvent?.tournamentGames && editingEvent.tournamentGames.length > 0;
+
   return (
     <div className="space-y-8 pb-20">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -769,17 +806,36 @@ export default function EventsPage() {
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Event Title</Label>
-                    <Input placeholder="e.g. Regional Championship" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-black border-2" />
+                    <Input 
+                      placeholder="e.g. Regional Championship" 
+                      value={newTitle} 
+                      onChange={e => setNewTitle(e.target.value)} 
+                      disabled={isLocked}
+                      className="h-12 rounded-xl font-black border-2" 
+                    />
+                    {isLocked && <p className="text-[8px] font-bold text-primary uppercase">Title locked after activation.</p>}
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label>
-                      <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl font-black border-2" />
+                      <Input 
+                        type="date" 
+                        value={newDate} 
+                        onChange={e => setNewDate(e.target.value)} 
+                        disabled={isLocked}
+                        className="h-12 rounded-xl font-black border-2" 
+                      />
                     </div>
                     {isTournamentMode ? (
                       <div className="space-y-1.5">
                         <Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label>
-                        <Input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="h-12 rounded-xl font-black border-2" />
+                        <Input 
+                          type="date" 
+                          value={newEndDate} 
+                          onChange={e => setNewEndDate(e.target.value)} 
+                          disabled={isLocked}
+                          className="h-12 rounded-xl font-black border-2" 
+                        />
                       </div>
                     ) : (
                       <div className="space-y-1.5">
@@ -827,20 +883,31 @@ export default function EventsPage() {
                         <div className="space-y-4">
                           {tournamentGames.map((game) => (
                             <div key={game.id} className="p-4 bg-muted/20 rounded-2xl border-2 space-y-4 group relative">
-                              <div className="flex justify-between items-center gap-4">
-                                <Select value={game.team1} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team1: v} : g))}>
-                                  <SelectTrigger className="h-10 rounded-xl font-bold"><SelectValue /></SelectTrigger>
-                                  <SelectContent>{tournamentTeams.map((t, idx) => <SelectItem key={`${t}-${idx}-1`} value={t}>{t}</SelectItem>)}</SelectContent>
-                                </Select>
-                                <div className="flex items-center gap-2">
-                                  <Input type="number" value={game.score1} onChange={e => updateGameScore(game.id, 1, e.target.value)} className="w-16 h-10 text-center font-black" />
-                                  <span className="opacity-20 font-black">VS</span>
-                                  <Input type="number" value={game.score2} onChange={e => updateGameScore(game.id, 2, e.target.value)} className="w-16 h-10 text-center font-black" />
+                              <div className="grid grid-cols-1 gap-3">
+                                <div className="space-y-1">
+                                  <Label className="text-[8px] font-black uppercase opacity-40">Match Date</Label>
+                                  <Input 
+                                    type="date" 
+                                    value={game.date} 
+                                    onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, date: e.target.value} : g))}
+                                    className="h-9 rounded-xl font-bold border-muted"
+                                  />
                                 </div>
-                                <Select value={game.team2} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team2: v} : g))}>
-                                  <SelectTrigger className="h-10 rounded-xl font-bold"><SelectValue /></SelectTrigger>
-                                  <SelectContent>{tournamentTeams.map((t, idx) => <SelectItem key={`${t}-${idx}-2`} value={t}>{t}</SelectItem>)}</SelectContent>
-                                </Select>
+                                <div className="flex justify-between items-center gap-4">
+                                  <Select value={game.team1} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team1: v} : g))}>
+                                    <SelectTrigger className="h-10 rounded-xl font-bold"><SelectValue /></SelectTrigger>
+                                    <SelectContent>{tournamentTeams.map((t, idx) => <SelectItem key={`${t}-${idx}-1`} value={t}>{t}</SelectItem>)}</SelectContent>
+                                  </Select>
+                                  <div className="flex items-center gap-2">
+                                    <Input type="number" value={game.score1} onChange={e => updateGameScore(game.id, 1, e.target.value)} className="w-16 h-10 text-center font-black" />
+                                    <span className="opacity-20 font-black">VS</span>
+                                    <Input type="number" value={game.score2} onChange={e => updateGameScore(game.id, 2, e.target.value)} className="w-16 h-10 text-center font-black" />
+                                  </div>
+                                  <Select value={game.team2} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team2: v} : g))}>
+                                    <SelectTrigger className="h-10 rounded-xl font-bold"><SelectValue /></SelectTrigger>
+                                    <SelectContent>{tournamentTeams.map((t, idx) => <SelectItem key={`${t}-${idx}-2`} value={t}>{t}</SelectItem>)}</SelectContent>
+                                  </Select>
+                                </div>
                               </div>
                               <div className="flex justify-between items-center border-t border-muted pt-3">
                                 <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase">

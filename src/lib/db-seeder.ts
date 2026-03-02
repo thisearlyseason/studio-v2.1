@@ -138,9 +138,13 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
     });
   }
 
-  // Add a tournament if requested
+  // Add a multi-day tournament if requested
   if (planId === 'tournament_pro' || extraOptions?.includeTournament) {
     const eid = `demo_tournament_${teamId}`;
+    const day1Str = now.toISOString().split('T')[0];
+    const day2Str = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
+    const day3Str = new Date(now.getTime() + 172800000).toISOString().split('T')[0];
+
     batch.set(doc(db, 'teams', teamId, 'events', eid), {
       id: eid, teamId, title: 'Summer Regional Finals', 
       date: new Date(now.getTime() + 86400000).toISOString(),
@@ -149,18 +153,16 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
       description: 'Grand finale tournament for the region.',
       isTournament: true,
       isTournamentPaid: true,
-      tournamentTeams: ['Westside Warriors', 'Eastside Elite', 'Northside Knights', 'Southside Strikers'],
+      tournamentTeams: ['Westside Warriors', 'Eastside Elite', 'Northside Knights', 'Southside Strikers', 'Metro Stars', 'City Rangers'],
       tournamentGames: [
-        {
-          id: 'g1', team1: 'Westside Warriors', team2: 'Eastside Elite', 
-          score1: 4, score2: 2, date: now.toISOString().split('T')[0], 
-          time: '10:00 AM', isCompleted: true, winnerId: 'Westside Warriors'
-        },
-        {
-          id: 'g2', team1: 'Northside Knights', team2: 'Southside Strikers', 
-          score1: 0, score2: 0, date: now.toISOString().split('T')[0], 
-          time: '12:00 PM', isCompleted: false
-        }
+        // DAY 1
+        { id: 'g1', team1: 'Westside Warriors', team2: 'Eastside Elite', score1: 4, score2: 2, date: day1Str, time: '10:00 AM', isCompleted: true, winnerId: 'Westside Warriors' },
+        { id: 'g2', team1: 'Northside Knights', team2: 'Southside Strikers', score1: 1, score2: 1, date: day1Str, time: '12:00 PM', isCompleted: true },
+        // DAY 2
+        { id: 'g3', team1: 'Metro Stars', team2: 'City Rangers', score1: 0, score2: 3, date: day2Str, time: '09:00 AM', isCompleted: true, winnerId: 'City Rangers' },
+        { id: 'g4', team1: 'Westside Warriors', team2: 'Northside Knights', score1: 0, score2: 0, date: day2Str, time: '02:00 PM', isCompleted: false },
+        // DAY 3
+        { id: 'g5', team1: 'City Rangers', team2: 'Eastside Elite', score1: 0, score2: 0, date: day3Str, time: '11:00 AM', isCompleted: false }
       ],
       userRsvps: { [userId]: 'going' }, isDemo: true, createdAt: now.toISOString(), lastUpdated: now.toISOString()
     });
