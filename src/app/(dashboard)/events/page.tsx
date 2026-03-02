@@ -41,7 +41,8 @@ import {
   Check,
   Zap,
   MoreVertical,
-  Play
+  Play,
+  X
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -64,7 +65,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { format, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
+import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface EventDetailDialogProps {
@@ -78,6 +79,40 @@ interface EventDetailDialogProps {
   hasAttendance: boolean;
   purchasePro: () => void;
   children: React.ReactNode;
+}
+
+function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
+  const standings = teams.reduce((acc, team) => {
+    acc[team] = { name: team, wins: 0, losses: 0, ties: 0, points: 0 };
+    return acc;
+  }, {} as Record<string, any>);
+
+  games.forEach(game => {
+    if (!game.isCompleted) return;
+    
+    const t1 = game.team1;
+    const t2 = game.team2;
+    
+    if (!standings[t1]) standings[t1] = { name: t1, wins: 0, losses: 0, ties: 0, points: 0 };
+    if (!standings[t2]) standings[t2] = { name: t2, wins: 0, losses: 0, ties: 0, points: 0 };
+
+    if (game.score1 > game.score2) {
+      standings[t1].wins += 1;
+      standings[t1].points += 1;
+      standings[t2].losses += 1;
+      standings[t2].points -= 1;
+    } else if (game.score2 > game.score1) {
+      standings[t2].wins += 1;
+      standings[t2].points += 1;
+      standings[t1].losses += 1;
+      standings[t1].points -= 1;
+    } else {
+      standings[t1].ties += 1;
+      standings[t2].ties += 1;
+    }
+  });
+
+  return Object.values(standings).sort((a, b) => b.points - a.points || b.wins - a.wins);
 }
 
 function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit, onDelete, hasAttendance, purchasePro, children }: EventDetailDialogProps) {
@@ -130,14 +165,15 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
   }, [event.userRsvps, event.specialWaiverResponses, members, registrations]);
 
   const goingList = attendanceData.filter(a => a.status === 'going');
-  const maybeList = attendanceData.filter(a => a.status === 'maybe');
-  const notGoingList = attendanceData.filter(a => a.status === 'notGoing');
-
-  const hasAgreedToWaiver = user ? !!event.specialWaiverResponses?.[user.id]?.agreed : false;
+  
+  const tournamentStandings = useMemo(() => {
+    if (!event.isTournament || !event.tournamentTeams) return [];
+    return calculateTournamentStandings(event.tournamentTeams, event.tournamentGames || []);
+  }, [event]);
 
   const handleRSVPAction = (status: string) => {
     if (status === 'going') {
-      if (event.requiresSpecialWaiver && !hasAgreedToWaiver) {
+      if (event.requiresSpecialWaiver && !event.specialWaiverResponses?.[user?.id || '']?.agreed) {
         setShowWaiverStep(true);
         return;
       }
@@ -250,22 +286,23 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                       <Share2 className="h-3.5 w-3.5" /> Share Public Hub
                     </Button>
                   )}
+                  {event.lastUpdated && (
+                    <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">
+                      Last Updated: {format(new Date(event.lastUpdated), 'MMM d, h:mm a')}
+                    </p>
+                  )}
                 </div>
 
-                {event.isTournament && event.tournamentGames && (
+                {event.isTournament && tournamentStandings.length > 0 && (
                   <div className="pt-6 border-t space-y-4">
-                    <h4 className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Active Standing</h4>
+                    <h4 className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Live Standings</h4>
                     <div className="bg-white p-4 rounded-2xl shadow-sm border space-y-2">
-                      <p className="text-[9px] font-black uppercase opacity-40">Leaderboard Preview</p>
-                      {/* Simplified standing preview */}
-                      <div className="space-y-1">
-                        {event.tournamentTeams?.slice(0, 3).map((t, i) => (
-                          <div key={i} className="flex justify-between items-center text-xs font-bold uppercase">
-                            <span>{t}</span>
-                            <span className="text-primary font-black">1st</span>
-                          </div>
-                        ))}
-                      </div>
+                      {tournamentStandings.map((team, i) => (
+                        <div key={team.name} className="flex justify-between items-center text-xs font-bold uppercase">
+                          <span className="truncate pr-2">{i + 1}. {team.name}</span>
+                          <span className="text-primary font-black shrink-0">{team.points} PTS</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -301,7 +338,10 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                             </div>
                             <div className="grid grid-cols-7 items-center gap-4">
                               <div className="col-span-3 text-right">
-                                <p className="font-black text-sm uppercase truncate">{game.team1}</p>
+                                <div className="flex items-center justify-end gap-2">
+                                  {game.winnerId === game.team1 && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                                  <p className="font-black text-sm uppercase truncate">{game.team1}</p>
+                                </div>
                                 <p className="text-2xl font-black text-primary">{game.score1}</p>
                               </div>
                               <div className="col-span-1 text-center opacity-30 font-black text-xs">VS</div>
@@ -469,7 +509,6 @@ export default function EventsPage() {
       const score = parseInt(val) || 0;
       const updated = { ...g, [teamIdx === 1 ? 'score1' : 'score2']: score };
       
-      // Auto-set winner if both scores present and differ
       if (updated.isCompleted) {
         if (updated.score1 > updated.score2) updated.winnerId = updated.team1;
         else if (updated.score2 > updated.score1) updated.winnerId = updated.team2;
