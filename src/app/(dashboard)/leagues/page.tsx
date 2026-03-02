@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { useTeam, League, LeagueInvite } from '@/components/providers/team-provider';
+import { useTeam, League, LeagueInvite, Member } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +20,8 @@ import {
   Lock,
   Loader2,
   Table as TableIcon,
-  MessageSquare
+  MessageSquare,
+  Users
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -40,6 +41,67 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useRouter } from 'next/navigation';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: string | null, teamName: string | null, isOpen: boolean, onOpenChange: (open: boolean) => void }) {
+  const db = useFirestore();
+  
+  const rosterQuery = useMemoFirebase(() => {
+    if (!teamId || !db) return null;
+    return query(collection(db, 'teams', teamId, 'members'), orderBy('name', 'asc'));
+  }, [teamId, db]);
+
+  const { data: roster, isLoading } = useCollection<Member>(rosterQuery);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl overflow-hidden p-0">
+        <div className="h-2 bg-primary w-full" />
+        <div className="p-8 space-y-6">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black tracking-tight uppercase">{teamName} Roster</DialogTitle>
+            <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">
+              Verified Squad Members
+            </DialogDescription>
+          </DialogHeader>
+          
+          <ScrollArea className="h-[300px] pr-4">
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Scouting Roster...</p>
+              </div>
+            ) : roster && roster.length > 0 ? (
+              <div className="space-y-3">
+                {roster.map((member) => (
+                  <div key={member.id} className="flex items-center gap-4 p-3 bg-muted/30 rounded-2xl border border-transparent hover:border-primary/10 transition-all">
+                    <Avatar className="h-10 w-10 rounded-xl border shadow-sm shrink-0">
+                      <AvatarImage src={member.avatar} />
+                      <AvatarFallback className="font-black text-xs">{member.name[0]}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <p className="font-black text-sm truncate">{member.name}</p>
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{member.position}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-10 opacity-30">
+                <Users className="h-10 w-10 mx-auto mb-2" />
+                <p className="text-[10px] font-black uppercase tracking-widest">No roster data found.</p>
+              </div>
+            )}
+          </ScrollArea>
+          
+          <DialogFooter>
+            <Button className="w-full h-12 rounded-xl font-black uppercase text-xs tracking-widest" onClick={() => onOpenChange(false)}>Close Scout</Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function LeaguesPage() {
   const { activeTeam, user, createLeague, inviteTeamToLeague, acceptLeagueInvite, hasFeature, purchasePro, createChat } = useTeam();
@@ -50,6 +112,9 @@ export default function LeaguesPage() {
   const [leagueName, setLeagueName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  const [scoutTeamId, setScoutTeamId] = useState<string | null>(null);
+  const [scoutTeamName, setScoutTeamName] = useState<string | null>(null);
 
   const canUseLeagues = hasFeature('leagues');
 
@@ -232,7 +297,7 @@ export default function LeaguesPage() {
                   <TableIcon className="h-4 w-4 text-primary" />
                   <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">League Standings</h3>
                 </div>
-                <p className="text-[9px] font-bold text-muted-foreground italic">Ranked by Wins & Points</p>
+                <p className="text-[9px] font-bold text-muted-foreground italic">Click row to scout roster</p>
               </div>
               <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                 <CardContent className="p-0">
@@ -249,7 +314,11 @@ export default function LeaguesPage() {
                       </thead>
                       <tbody className="divide-y divide-muted/50">
                         {sortedStandings.map((team, idx) => (
-                          <tr key={team.id} className={cn("hover:bg-primary/5 transition-colors group", team.id === activeTeam?.id && "bg-primary/5")}>
+                          <tr 
+                            key={team.id} 
+                            onClick={() => { setScoutTeamId(team.id); setScoutTeamName(team.teamName); }}
+                            className={cn("hover:bg-primary/5 transition-colors group cursor-pointer", team.id === activeTeam?.id && "bg-primary/5")}
+                          >
                             <td className="px-8 py-6">
                               <div className="flex items-center gap-4">
                                 <span className="text-xs font-black text-muted-foreground/40 w-4">{idx + 1}</span>
@@ -352,6 +421,14 @@ export default function LeaguesPage() {
           </div>
         </div>
       )}
+
+      {/* Roster Scout Dialog */}
+      <TeamRosterDialog 
+        teamId={scoutTeamId} 
+        teamName={scoutTeamName} 
+        isOpen={!!scoutTeamId} 
+        onOpenChange={(open) => { if (!open) setScoutTeamId(null); }} 
+      />
     </div>
   );
 }
