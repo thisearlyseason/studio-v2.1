@@ -1,3 +1,4 @@
+
 {
   "placeholderImages": [
     {
@@ -16,66 +17,66 @@
       "id": "team-hero",
       "description": "Dynamic team hero background",
       "imageUrl": "https://images.unsplash.com/photo-1502904550040-7534597429ae?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxzcG9ydHMlMjB0ZWFtfGVufDB8fHx8MTc3MjE3NDMwNHww&ixlib=rb-4.1.0&q=80&w=1080",
-      "imageHint": "sports team"
+      "imageHint": "stadium team"
     },
     {
       "id": "avatar-default",
       "description": "Professional avatar placeholder",
       "imageUrl": "https://images.unsplash.com/photo-1688989667243-221eee13cbdb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHx1c2VyJTIwcG9ydHJhaXR8ZW58MHx8fHwxNzcyMTE5MzU2fDA&ixlib=rb-4.1.0&q=80&w=1080",
-      "imageHint": "user portrait"
+      "imageHint": "athlete portrait"
     },
     {
       "id": "empty-state",
       "description": "Modern empty state illustration",
       "imageUrl": "https://images.unsplash.com/photo-1762014270399-f1e1c0a895cc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxhYnN0culjdCUyMGNvbW11bmljYXRpb258ZW58MHx8fHwxNzcyMTkzMzE2fDA&ixlib=rb-4.1.0&q=80&w=1080",
-      "imageHint": "abstract communication"
+      "imageHint": "abstract team"
     },
     {
       "id": "sport-soccer",
       "description": "Soccer action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1508088062105-17d61307629d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxzb2NjZXIlMjBtYXRjaHxlbnwwfHx8DE3NzIyMDIyMDB8MA&ixlib=rb-4.1.0&q=80&w=1080",
-      "imageHint": "soccer match"
+      "imageUrl": "https://images.unsplash.com/photo-1508088062105-17d61307629d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "soccer action"
     },
     {
       "id": "sport-basketball",
       "description": "Basketball action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1612768875331-0447b960fa40?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8YmFza2V0YmFsbCUyMHBsYXllcnxlbnwwfHx8DE3NzIyMDIyMDB8MA&ixlib=rb-4.1.0&q=80&w=1080",
-      "imageHint": "basketball player"
+      "imageUrl": "https://images.unsplash.com/photo-1612768875331-0447b960fa40?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "basketball dunk"
     },
     {
       "id": "sport-football",
       "description": "Football action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1508863702330-2eece3ea08cb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8YW1lcmljYW4lMjBmb290YmFsbHxlbnwwfHx8DE3NzIyMDIyMDB8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1508863702330-2eece3ea08cb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "american football"
     },
     {
       "id": "sport-baseball",
       "description": "Baseball action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1711045676217-c3d73143071c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw2fHxiYXNlYmFsbCUyMGdhbWV8ZW58MHx8fHwxNzcyMjAyMjAwfDA&ixlib=rb-4.1.0&q=80&w=1080",
-      "imageHint": "baseball game"
+      "imageUrl": "https://images.unsplash.com/photo-1711045676217-c3d73143071c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "baseball swing"
     },
     {
       "id": "sport-tennis",
       "description": "Tennis action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1614743653196-d969b45200b9?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8dGVubmlzJTIwcGxheWVyfGVufDB8fHx8MTc3MjE4MzMwOXww&ixlib=rb-4.1.0&q=80&w=1080",
-      "imageHint": "tennis player"
+      "imageUrl": "https://images.unsplash.com/photo-1614743653196-d969b45200b9?auto=format&fit=crop&q=80&w=1080",
+      "imageHint": "tennis match"
     },
     {
       "id": "sport-hockey",
       "description": "Hockey action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1486128105845-91daff43f404?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxpY2UlMjBob2NrZXl8ZW58MHx8fHwxNzcyMDQ0OTV8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1486128105845-91daff43f404?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "ice hockey"
     },
     {
       "id": "sport-golf",
       "description": "Golf action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1592937238247-cd0090e02f65?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHxnb2xmJTIwY291cnNlfGVufDB8fHx8MTc3MjIwNTkxM3ww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1592937238247-cd0090e02f65?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "golf course"
     },
     {
       "id": "sport-pickleball",
       "description": "Pickleball action shot",
-      "imageUrl": "https://images.unsplash.com/photo-1608673712088-2d776b1a0c63?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxwaWNrbGViYWxsJTIwbWF0Y2h8ZW58MHx8fHwxNzcyMjA1OTEzfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageUrl": "https://images.unsplash.com/photo-1608673712088-2d776b1a0c63?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixlib=rb-4.1.0&q=80&w=1080",
       "imageHint": "pickleball match"
     }
   ]

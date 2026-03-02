@@ -47,7 +47,7 @@ export default function ClubManagementPage() {
   const [initialCoach, setInitialCoach] = useState('');
 
   const clubTeams = useMemo(() => {
-    return teams.filter(t => t.createdBy === user?.id && t.planId === 'club_custom');
+    return teams.filter(t => t.createdBy === user?.id && t.planId === 'squad_organization');
   }, [teams, user?.id]);
 
   const filteredTeams = useMemo(() => {
@@ -71,8 +71,8 @@ export default function ClubManagementPage() {
     if (!newTeamName.trim()) return;
     setIsCreating(true);
     try {
-      // Create team with club_custom plan
-      const tid = await createNewTeam(newTeamName, 'Coach', `Official club squad managed by ${user?.name}`, 'club_custom');
+      // Align with canonical squad_organization plan ID
+      const tid = await createNewTeam(newTeamName, 'Coach', `Official club squad managed by ${user?.name}`, 'squad_organization');
       
       setIsCreating(false);
       setNewTeamName('');
@@ -249,7 +249,7 @@ export default function ClubManagementPage() {
       </div>
 
       <div className="bg-black text-white rounded-[3rem] p-10 md:p-16 relative overflow-hidden shadow-2xl">
-        <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none">
+        <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none avoid-pointer-events">
           <Building className="h-64 w-64" />
         </div>
         <div className="relative z-10 max-w-xl space-y-6">

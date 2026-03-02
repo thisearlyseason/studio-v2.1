@@ -353,7 +353,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const plan = plans.find(p => p.id === pid);
     const baseFeatures = { ...(plan?.features || {}) };
 
+    // Standardize features for Organization tier
     if (pid === 'squad_organization') {
+      baseFeatures.tournaments = true;
+      baseFeatures.attendance_tracking = true;
+      baseFeatures.full_roster_details = true;
+      baseFeatures.score_tracking = true;
+      baseFeatures.group_chat = true;
+      baseFeatures.media_uploads = true;
+      baseFeatures.live_feed_post = true;
+      
       const teamCount = teams.length;
       if (teamCount >= 2) {
         baseFeatures.multi_team_admin_dashboard = true;
