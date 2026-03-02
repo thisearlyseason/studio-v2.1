@@ -20,11 +20,16 @@ import {
   Loader2,
   Link as LinkIcon,
   Globe,
-  Plus
+  Plus,
+  ShieldCheck,
+  Check,
+  XCircle,
+  AlertTriangle,
+  FileCheck
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { useTeam, TeamFile } from '@/components/providers/team-provider';
+import { useTeam, TeamFile, Member } from '@/components/providers/team-provider';
 import { 
   Dialog, 
   DialogContent, 
@@ -52,20 +57,24 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 export default function FilesPage() {
-  const { activeTeam, addFile, addExternalLink, deleteFile, user, isPro, hasFeature, purchasePro, isSuperAdmin } = useTeam();
+  const { activeTeam, addFile, addExternalLink, deleteFile, user, isPro, hasFeature, purchasePro, isSuperAdmin, members, updateMember, createAlert } = useTeam();
   const db = useFirestore();
   
   const [mounted, setMounted] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [selectedFile, setSelectedFile] = useState<TeamFile | null>(null);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
   const [isLinkOpen, setIsLinkOpen] = useState(false);
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
+  const [linkCompliance, setLinkCompliance] = useState<string>('none');
+  const [uploadCompliance, setUploadCompliance] = useState<string>('none');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Localized data fetching for performance
@@ -74,7 +83,7 @@ export default function FilesPage() {
     return query(collection(db, 'teams', activeTeam.id, 'files'), orderBy('date', 'desc'));
   }, [activeTeam?.id, db]);
 
-  const { data: rawFiles, isLoading } = useCollection(filesQuery);
+  const { data: rawFiles, isLoading } = useCollection<TeamFile>(filesQuery);
   const teamFiles = useMemo(() => rawFiles || [], [rawFiles]);
 
   useEffect(() => {
@@ -145,7 +154,8 @@ export default function FilesPage() {
       const reader = new FileReader();
       reader.onload = (event) => {
         const url = event.target?.result as string;
-        addFile(file.name, type, size, url);
+        addFile(file.name, type, size, url, uploadCompliance !== 'none' ? uploadCompliance : undefined);
+        setUploadCompliance('none');
         toast({ title: "Resource Added", description: `${file.name} is now available to the squad.` });
       };
       reader.readAsDataURL(file);
@@ -154,10 +164,11 @@ export default function FilesPage() {
 
   const handleAddLink = () => {
     if (!linkTitle || !linkUrl) return;
-    addExternalLink(linkTitle, linkUrl);
+    addExternalLink(linkTitle, linkUrl, linkCompliance !== 'none' ? linkCompliance : undefined);
     setIsLinkOpen(false);
     setLinkTitle('');
     setLinkUrl('');
+    setLinkCompliance('none');
     toast({ title: "Link Synchronized", description: `${linkTitle} added to library.` });
   };
 
@@ -169,7 +180,7 @@ export default function FilesPage() {
     return <FileIcon className="h-6 w-6 text-muted-foreground" />;
   };
 
-  const handleDownload = (file: any) => {
+  const handleDownload = (file: TeamFile) => {
     if (file.type === 'link') {
       window.open(file.url, '_blank');
       return;
@@ -189,6 +200,31 @@ export default function FilesPage() {
     }
   };
 
+  const handleAgree = async (file: TeamFile) => {
+    if (!user || !file.complianceType) return;
+    const member = members.find(m => m.userId === user.id);
+    if (!member) return;
+
+    updateMember(member.id, {
+      [file.complianceType]: true
+    });
+
+    setSelectedFile(null);
+    toast({ title: "Acknowledgment Received", description: "Your status has been updated on the team roster." });
+  };
+
+  const handleDisagree = async (file: TeamFile) => {
+    if (!user || !file.complianceType) return;
+    
+    await createAlert(
+      "Compliance Attention Required",
+      `Member ${user.name} has declined to agree to the document: "${file.name}". Please coordinate follow-up.`
+    );
+
+    setSelectedFile(null);
+    toast({ title: "Status Recorded", description: "The coaching staff has been notified of your decline.", variant: "destructive" });
+  };
+
   return (
     <div className="space-y-6 max-w-full overflow-x-hidden">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -204,9 +240,27 @@ export default function FilesPage() {
               className="hidden" 
               onChange={handleFileChange} 
             />
+            <div className="flex flex-col gap-2">
+              <Select value={uploadCompliance} onValueChange={setUploadCompliance}>
+                <SelectTrigger className="h-8 text-[8px] font-black uppercase border-dashed">
+                  <SelectValue placeholder="ACK TYPE (OPT)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None (Standard)</SelectItem>
+                  <SelectItem value="waiverSigned">General Waiver</SelectItem>
+                  <SelectItem value="transportationWaiverSigned">Transport Waiver</SelectItem>
+                  <SelectItem value="medicalClearance">Medical Clearance</SelectItem>
+                  <SelectItem value="mediaRelease">Media Release</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size="sm" className="rounded-full px-6 font-black uppercase text-[10px] h-11 tracking-widest shadow-lg shadow-primary/20" onClick={handleUploadClick}>
+                <Upload className="h-3.5 w-3.5 mr-2" />
+                Upload File
+              </Button>
+            </div>
             <Dialog open={isLinkOpen} onOpenChange={setIsLinkOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="rounded-full px-6 font-black uppercase text-[10px] h-11 tracking-widest border-2">
+                <Button variant="outline" size="sm" className="rounded-full px-6 font-black uppercase text-[10px] h-11 tracking-widest border-2 mt-auto">
                   <LinkIcon className="h-3.5 w-3.5 mr-2" />
                   Add Link
                 </Button>
@@ -227,6 +281,21 @@ export default function FilesPage() {
                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Destination URL</Label>
                       <Input placeholder="https://..." value={linkUrl} onChange={e => setLinkUrl(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
                     </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Acknowledgment Category</Label>
+                      <Select value={linkCompliance} onValueChange={setLinkCompliance}>
+                        <SelectTrigger className="h-12 rounded-xl font-bold border-2">
+                          <SelectValue placeholder="None" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Standard Reference</SelectItem>
+                          <SelectItem value="waiverSigned">General Waiver</SelectItem>
+                          <SelectItem value="transportationWaiverSigned">Transport Waiver</SelectItem>
+                          <SelectItem value="medicalClearance">Medical Clearance</SelectItem>
+                          <SelectItem value="mediaRelease">Media Release</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleAddLink} disabled={!linkTitle || !linkUrl}>
@@ -236,10 +305,6 @@ export default function FilesPage() {
                 </div>
               </DialogContent>
             </Dialog>
-            <Button size="sm" className="rounded-full px-6 font-black uppercase text-[10px] h-11 tracking-widest shadow-lg shadow-primary/20" onClick={handleUploadClick}>
-              <Upload className="h-3.5 w-3.5 mr-2" />
-              Upload File
-            </Button>
           </div>
         )}
       </div>
@@ -253,6 +318,7 @@ export default function FilesPage() {
         <div className="grid gap-3 w-full">
           {teamFiles.length > 0 ? teamFiles.map((file) => {
             const canDelete = isAdmin || (file.uploaderId === user?.id);
+            const isCompliance = file.complianceType && file.complianceType !== 'none';
             
             return (
               <Card key={file.id} className="hover:bg-muted/30 transition-all border-none shadow-sm overflow-hidden w-full ring-1 ring-black/5 rounded-2xl group">
@@ -261,7 +327,10 @@ export default function FilesPage() {
                     {getFileIcon(file.type)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-black text-base truncate pr-2" title={file.name}>{file.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-black text-base truncate pr-2" title={file.name}>{file.name}</h3>
+                      {isCompliance && <Badge className="bg-amber-100 text-amber-700 border-none h-4 text-[7px] font-black uppercase tracking-widest px-1.5"><ShieldCheck className="h-2 w-2 mr-1" /> Ack Required</Badge>}
+                    </div>
                     <div className="flex items-center gap-3 text-[10px] font-black text-muted-foreground uppercase mt-1 flex-wrap tracking-widest">
                       <span className={cn(file.type === 'link' ? "text-blue-600" : "text-primary")}>{file.size}</span>
                       <span className="flex items-center gap-1.5">
@@ -274,16 +343,14 @@ export default function FilesPage() {
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0 ml-auto sm:ml-0">
-                    {file.type !== 'link' && (
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-10 w-10 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5"
-                        onClick={() => setSelectedFile(file)}
-                      >
-                        <Eye className="h-5 w-5" />
-                      </Button>
-                    )}
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className={cn("h-10 w-10 rounded-full text-muted-foreground hover:bg-primary/5", isCompliance ? "text-amber-600 hover:text-amber-700" : "hover:text-primary")}
+                      onClick={() => setSelectedFile(file)}
+                    >
+                      {isCompliance ? <FileCheck className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </Button>
                     <Button 
                       variant="ghost" 
                       size="icon" 
@@ -339,7 +406,12 @@ export default function FilesPage() {
           <DialogHeader className="p-6 border-b border-white/10 shrink-0">
             <div className="flex items-center justify-between">
               <div className="min-w-0 pr-8">
-                <DialogTitle className="text-xl font-black truncate tracking-tight">{selectedFile?.name}</DialogTitle>
+                <div className="flex items-center gap-3">
+                  <DialogTitle className="text-xl font-black truncate tracking-tight">{selectedFile?.name}</DialogTitle>
+                  {selectedFile?.complianceType && selectedFile.complianceType !== 'none' && (
+                    <Badge className="bg-amber-500 text-black font-black uppercase text-[8px] px-2 h-5">Action Required</Badge>
+                  )}
+                </div>
                 <DialogDescription className="text-white/60 text-[10px] font-black uppercase tracking-[0.2em] mt-1">
                   SECURE RESOURCE • UPLOADED BY {selectedFile?.uploadedBy} • {selectedFile?.date && format(new Date(selectedFile.date), 'MMM d, yyyy')}
                 </DialogDescription>
@@ -361,6 +433,19 @@ export default function FilesPage() {
                     className="w-full h-full min-h-[70vh] rounded-2xl bg-white shadow-2xl" 
                     title={selectedFile.name}
                   />
+                ) : selectedFile.type?.toLowerCase() === 'link' ? (
+                  <div className="text-center space-y-8 bg-white/5 p-12 rounded-[3rem] border-2 border-dashed border-white/10 max-w-lg">
+                    <div className="bg-primary/20 h-24 w-24 rounded-[2rem] flex items-center justify-center mx-auto">
+                      <Globe className="h-12 w-12 text-primary" />
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="text-2xl font-black uppercase tracking-tight">Tactical Destination</h4>
+                      <p className="text-white/60 text-xs font-bold uppercase tracking-widest">{selectedFile.url}</p>
+                    </div>
+                    <Button onClick={() => window.open(selectedFile.url, '_blank')} className="rounded-full h-14 px-10 font-black uppercase text-xs tracking-widest">
+                      Launch External Site <ExternalLink className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
                 ) : (
                   <div className="text-center space-y-6">
                     <div className="bg-white/5 h-32 w-32 rounded-[2.5rem] flex items-center justify-center mx-auto">
@@ -376,13 +461,32 @@ export default function FilesPage() {
               </>
             )}
           </div>
-          <DialogFooter className="p-6 border-t border-white/10 flex gap-3 justify-end shrink-0">
-            <Button variant="ghost" onClick={() => setSelectedFile(null)} className="text-white hover:bg-white/10 font-black uppercase tracking-widest text-[10px] h-12 px-8">Dismiss</Button>
-            {selectedFile && (
-              <Button onClick={() => handleDownload(selectedFile)} className="bg-primary text-white hover:bg-primary/90 font-black uppercase tracking-widest text-[10px] h-12 px-10 rounded-2xl shadow-xl shadow-primary/20">
-                <Download className="h-4 w-4 mr-2" />
-                Download
-              </Button>
+          
+          <DialogFooter className="p-6 border-t border-white/10 flex flex-col sm:flex-row gap-4 justify-between items-center shrink-0">
+            {selectedFile?.complianceType && selectedFile.complianceType !== 'none' ? (
+              <div className="w-full flex flex-col sm:flex-row items-center gap-4 bg-white/5 p-4 rounded-3xl border border-white/10">
+                <div className="flex items-center gap-3 px-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-500" />
+                  <div className="text-left">
+                    <p className="text-[10px] font-black uppercase tracking-widest leading-none">Agreement Required</p>
+                    <p className="text-[8px] font-bold text-white/40 uppercase tracking-tighter">Your decision will be synced to the roster</p>
+                  </div>
+                </div>
+                <div className="flex gap-2 w-full sm:w-auto ml-auto">
+                  <Button variant="ghost" onClick={() => handleDisagree(selectedFile)} className="flex-1 sm:flex-none text-red-400 hover:text-red-500 font-black uppercase text-[10px] h-12 px-6">I Do Not Agree</Button>
+                  <Button onClick={() => handleAgree(selectedFile)} className="flex-1 sm:flex-none bg-primary text-white font-black uppercase text-[10px] h-12 px-10 rounded-2xl shadow-xl shadow-primary/20">I Agree & Acknowledge</Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <Button variant="ghost" onClick={() => setSelectedFile(null)} className="text-white hover:bg-white/10 font-black uppercase tracking-widest text-[10px] h-12 px-8">Dismiss</Button>
+                {selectedFile && (
+                  <Button onClick={() => handleDownload(selectedFile)} className="bg-primary text-white hover:bg-primary/90 font-black uppercase tracking-widest text-[10px] h-12 px-10 rounded-2xl shadow-xl shadow-primary/20">
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
+                  </Button>
+                )}
+              </>
             )}
           </DialogFooter>
         </DialogContent>
