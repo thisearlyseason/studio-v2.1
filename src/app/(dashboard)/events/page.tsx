@@ -61,7 +61,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useTeam, TeamEvent, CustomFormField, FormFieldType, TournamentGame } from '@/components/providers/team-provider';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy, collectionGroup, where, limit } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
@@ -470,7 +470,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
               <div className="space-y-6 py-4">
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Game Date</Label>
-                  <Input type="date" value={editingGame.date} onChange={e => setEditingGame({...editingGame, date: e.target.value})} className="h-12 rounded-xl font-bold border-2" />
+                  <input type="date" value={editingGame.date} onChange={e => setEditingGame({...editingGame, date: e.target.value})} className="w-full h-12 rounded-xl font-bold border-2 bg-background px-3" />
                 </div>
                 <div className="grid grid-cols-2 gap-6 items-end">
                   <div className="space-y-2">
@@ -511,6 +511,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
 
 export default function EventsPage() {
   const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, isSuperAdmin, hasFeature, purchasePro } = useTeam();
+  const { user } = useUser();
   const db = useFirestore();
 
   const eventsQuery = useMemoFirebase(() => {
@@ -522,9 +523,9 @@ export default function EventsPage() {
   const events = rawEvents || [];
 
   const invitedTournamentsQuery = useMemoFirebase(() => {
-    if (!activeTeam || !db) return null;
+    if (!activeTeam || !db || !user) return null;
     return query(collectionGroup(db, 'events'), where('tournamentTeams', 'array-contains', activeTeam.name), limit(20));
-  }, [activeTeam?.name, db]);
+  }, [activeTeam?.name, db, user?.uid]);
 
   const { data: rawInvitedTournaments } = useCollection<TeamEvent>(invitedTournamentsQuery);
   const invitedTournaments = rawInvitedTournaments || [];
@@ -614,11 +615,11 @@ export default function EventsPage() {
                     <Input placeholder="e.g. Regional Championship" value={newTitle} onChange={e => setNewTitle(e.target.value)} disabled={isLocked} className="h-12 rounded-xl font-black border-2" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label><Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} disabled={isLocked} className="h-12 rounded-xl font-black border-2" /></div>
+                    <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label><input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} disabled={isLocked} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>
                     {isTournamentMode ? (
-                      <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label><Input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} disabled={isLocked} className="h-12 rounded-xl font-black border-2" /></div>
+                      <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label><input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} disabled={isLocked} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>
                     ) : (
-                      <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time</Label><Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl font-black border-2" /></div>
+                      <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time</Label><input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>
                     )}
                   </div>
                   <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label><Input placeholder="Stadium Name" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
@@ -648,7 +649,7 @@ export default function EventsPage() {
                         <div className="space-y-4">
                           {tournamentGames.map((game) => (
                             <div key={game.id} className="p-4 bg-muted/20 rounded-2xl border-2 space-y-4 relative group">
-                              <Input type="date" value={game.date} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, date: e.target.value} : g))} className="h-9 rounded-xl font-bold" />
+                              <input type="date" value={game.date} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, date: e.target.value} : g))} className="w-full h-9 rounded-xl font-bold bg-background px-3 border" />
                               <div className="flex justify-between items-center gap-4">
                                 <Select value={game.team1} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team1: v} : g))}><SelectTrigger className="h-10 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{tournamentTeams.map((t, idx) => <SelectItem key={`${t}-${idx}-1`} value={t}>{t}</SelectItem>)}</SelectContent></Select>
                                 <div className="flex items-center gap-2"><Input type="number" value={game.score1} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, score1: parseInt(e.target.value) || 0} : g))} className="w-16 h-10 text-center font-black" /><span className="opacity-20 font-black">VS</span><Input type="number" value={game.score2} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, score2: parseInt(e.target.value) || 0} : g))} className="w-16 h-10 text-center font-black" /></div>

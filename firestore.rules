@@ -19,6 +19,7 @@ service cloud.firestore {
     }
 
     // Support for collectionGroup queries on events (External Invitations)
+    // This must match the collection ID exactly across the database
     match /{path=**}/events/{eventId} {
       allow read: if isSignedIn();
     }
