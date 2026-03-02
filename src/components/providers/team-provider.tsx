@@ -144,21 +144,6 @@ export type Plan = {
   proTeamLimit: number;
 };
 
-export type Feature = {
-  id: string;
-  description: string;
-  defaultEnabled: boolean;
-};
-
-export type Subscription = {
-  userId: string;
-  productId: string;
-  entitlementActive: boolean;
-  proTeamLimit: number;
-  source: 'revenuecat' | 'manual';
-  lastSyncedAt: string;
-};
-
 interface TeamContextType {
   user: UserProfile | null;
   updateUser: (updates: Partial<UserProfile>) => void;
@@ -169,10 +154,6 @@ interface TeamContextType {
   updateTeamPlan: (teamId: string, planId: string) => Promise<void>;
   teams: Team[];
   isTeamsLoading: boolean;
-  members: Member[];
-  updateMember: (id: string, updates: Partial<Member>) => void;
-  alerts: TeamAlert[];
-  createAlert: (title: string, message: string) => void;
   createNewTeam: (name: string, organizerPosition: string, description?: string, planId?: string) => Promise<string>;
   joinTeamWithCode: (code: string, position: string) => Promise<boolean>;
   addEvent: (event: any) => void;
@@ -217,7 +198,7 @@ interface TeamContextType {
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
 
 const SUPER_ADMIN_EMAILS = ['thisearlyseason@gmail.com', 'test@gmail.com'];
-const DEMO_RESET_INTERVAL_MS = 5 * 60 * 1000; // 5 Minutes
+const DEMO_RESET_INTERVAL_MS = 5 * 60 * 1000;
 
 export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isUserLoading } = useUser();
@@ -238,7 +219,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const resetLockRef = useRef(false);
   const rcInitRef = useRef(false);
 
-  // 1. Core Data
+  // Authoritative Plan Catalog (Static-ish, limited fetch)
   const plansQuery = useMemoFirebase(() => db ? collection(db, 'plans') : null, [db]);
   const { data: plansData } = useCollection(plansQuery);
   const plans = useMemo(() => (plansData || []) as Plan[], [plansData]);
@@ -248,6 +229,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return email ? SUPER_ADMIN_EMAILS.includes(email) : false;
   }, [firebaseUser?.email]);
 
+  // Teams query is critical for the sidebar and global state
   const teamsQuery = useMemoFirebase(() => {
     if (!firebaseUser || !db) return null;
     const base = isSuperAdmin ? collection(db, 'teams') : collection(db, 'users', firebaseUser.uid, 'teamMemberships');
@@ -284,7 +266,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return teams.find(t => t.id === activeTeamId) || teams[0];
   }, [teams, activeTeamId]);
 
-  // Quota Calculation
+  // Quota Calculation (Computed locally from teams list)
   const proQuotaStatus = useMemo(() => {
     const limit = userProfile?.proTeamLimit ?? 0;
     const ownedProTeams = teams.filter(t => t.ownerUserId === firebaseUser?.uid && t.isPro);
@@ -302,7 +284,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return proQuotaStatus.remaining > 0;
   }, [isSuperAdmin, proQuotaStatus]);
 
-  // Handle Quota Decrease
+  // Handle Quota Decrease (Background correction)
   useEffect(() => {
     if (!firebaseUser || !userProfile || isTeamsLoading || proQuotaStatus.limit === null) return;
     
@@ -327,7 +309,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [proQuotaStatus.limit, proQuotaStatus.current, teams, firebaseUser, userProfile, isTeamsLoading, db]);
 
-  // 2. Feature Gating Logic
+  // Gating Logic (Computed from in-memory plan catalog)
   const activePlanFeatures = useMemo(() => {
     const pid = simulationPlanId || activeTeam?.planId;
     if (!pid || !plans) return {};
@@ -369,25 +351,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return false;
   }, [simulationPlanId, activeTeam]);
 
-  // Members
-  const membersQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || !db) return null;
-    return collection(db, 'teams', activeTeam.id, 'members');
-  }, [activeTeam?.id, db]);
-  const { data: membersData } = useCollection(membersQuery);
-  const members = useMemo(() => (membersData || []).map(m => ({
-    id: m.id, userId: m.userId, teamId: m.teamId, name: m.name || 'Member', role: m.role, position: m.position || 'Player', jersey: m.jersey || 'TBD', avatar: m.avatar || `https://picsum.photos/seed/${m.userId}/150/150`, phone: m.phone, feesPaid: m.feesPaid || false, amountOwed: m.amountOwed || 0, fees: m.fees || [], birthdate: m.birthdate, parentName: m.parentName, parentEmail: m.parentEmail, parentPhone: m.parentPhone, emergencyContactName: m.emergencyContactName, emergencyContactPhone: m.emergencyContactPhone, notes: m.notes
-  })), [membersData]);
-
-  // Alerts
-  const alertsQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || !db) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'alerts'), limit(5));
-  }, [activeTeam?.id, db]);
-  const { data: alertsData } = useCollection(alertsQuery);
-  const alerts = useMemo(() => (alertsData || []).map(a => ({ id: a.id, teamId: a.teamId, title: a.title, message: a.message, createdBy: a.createdBy, createdAt: a.createdAt })), [alertsData]);
-
-  // Demo Heartbeat & Reset
+  // Demo Logic (Heartbeat Reset)
   useEffect(() => {
     if (!userProfile?.isDemo || !userProfile?.createdAt) {
       setSecondsUntilReset(null);
@@ -419,19 +383,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const interval = setInterval(checkReset, 1000);
     return () => clearInterval(interval);
   }, [userProfile, activeTeamId, db]);
-
-  // Best effort reset on page leave
-  useEffect(() => {
-    const handleUnload = () => {
-      if (userProfile?.isDemo && !isSuperAdmin) {
-        // We can't reliably await Firestore here, but we can attempt a navigator.sendBeacon
-        // or just let the next session handle the stale data if needed.
-        // For this prototype, the heartbeat is the primary mechanism.
-      }
-    };
-    window.addEventListener('beforeunload', handleUnload);
-    return () => window.removeEventListener('beforeunload', handleUnload);
-  }, [userProfile, isSuperAdmin]);
 
   useEffect(() => {
     if (isSuperAdmin && db && firebaseUser) {
@@ -530,10 +481,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     },
     teams, 
     isTeamsLoading,
-    members, 
-    updateMember: (id: string, u: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'members', id), u),
-    alerts, 
-    createAlert: (t: string, m: string) => { if (activeTeam?.id && firebaseUser) { setDocumentNonBlocking(doc(collection(db, 'teams', activeTeam.id, 'alerts')), { teamId: activeTeam.id, title: t, message: m, createdBy: firebaseUser.uid, createdAt: new Date().toISOString() }, { merge: true }); } },
     createNewTeam: async (name: string, pos: string, description?: string, planId?: string) => { 
       if (!firebaseUser) return ''; 
       const tid = `team_${Date.now()}`; 
@@ -710,7 +657,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `users/${targetUserId}`, operation: 'update' }));
       }
     }
-  }), [userProfile, activeTeam, teams, isTeamsLoading, members, alerts, isUserLoading, isSuperAdmin, isPaywallOpen, isRCInitialized, db, firebaseUser, activePlanFeatures, plans, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro, proQuotaStatus, canAddProTeam, router]);
+  }), [userProfile, activeTeam, teams, isTeamsLoading, isUserLoading, isSuperAdmin, isPaywallOpen, isRCInitialized, db, firebaseUser, activePlanFeatures, plans, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro, proQuotaStatus, canAddProTeam, router]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;
 }

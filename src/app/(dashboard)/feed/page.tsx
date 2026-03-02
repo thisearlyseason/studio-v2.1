@@ -55,7 +55,7 @@ import { addDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlo
 
 function CommentList({ postId, teamId, isAdmin, currentUserId }: { postId: string, teamId: string, isAdmin: boolean, currentUserId: string }) {
   const db = useFirestore();
-  const q = useMemoFirebase(() => query(collection(db, 'teams', teamId, 'feedPosts', postId, 'comments'), orderBy('createdAt', 'asc')), [db, teamId, postId]);
+  const q = useMemoFirebase(() => query(collection(db, 'teams', teamId, 'feedPosts', postId, 'comments'), orderBy('createdAt', 'asc'), limit(50)), [db, teamId, postId]);
   const { data: comments, isLoading } = useCollection(q);
 
   if (isLoading) return <div className="p-2 text-[10px] text-muted-foreground animate-pulse">Loading comments...</div>;
@@ -66,7 +66,7 @@ function CommentList({ postId, teamId, isAdmin, currentUserId }: { postId: strin
       {comments.map((comment) => (
         <div key={comment.id} className="flex gap-3 items-start animate-in fade-in slide-in-from-left-2 duration-300 group">
           <Avatar className="h-7 w-7 shrink-0 border border-muted">
-            <AvatarFallback className="text-[10px] font-bold">{comment.authorName[0]}</AvatarFallback>
+            <AvatarFallback className="text-[10px] font-bold">{comment.authorName?.[0] || '?'}</AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0 bg-muted/30 p-2.5 rounded-2xl relative">
             <div className="flex items-center justify-between mb-0.5">
@@ -87,13 +87,13 @@ function CommentList({ postId, teamId, isAdmin, currentUserId }: { postId: strin
 }
 
 export default function FeedPage() {
-  const { activeTeam, user, updateTeamHero, formatTime, isSuperAdmin, members, hasFeature, purchasePro } = useTeam();
+  const { activeTeam, user, updateTeamHero, isSuperAdmin, purchasePro, hasFeature } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
   const postsQ = useMemoFirebase(() => activeTeam ? query(collection(db, 'teams', activeTeam.id, 'feedPosts'), orderBy('createdAt', 'desc'), limit(20)) : null, [db, activeTeam?.id]);
-  const eventsQ = useMemoFirebase(() => activeTeam ? query(collection(db, 'teams', activeTeam.id, 'events'), limit(3)) : null, [db, activeTeam?.id]);
-  const gamesQ = useMemoFirebase(() => activeTeam ? query(collection(db, 'teams', activeTeam.id, 'games'), limit(10)) : null, [db, activeTeam?.id]);
+  const eventsQ = useMemoFirebase(() => activeTeam ? query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc'), limit(3)) : null, [db, activeTeam?.id]);
+  const gamesQ = useMemoFirebase(() => activeTeam ? query(collection(db, 'teams', activeTeam.id, 'games'), orderBy('date', 'desc'), limit(10)) : null, [db, activeTeam?.id]);
 
   const { data: posts } = useCollection(postsQ);
   const { data: events } = useCollection(eventsQ);
@@ -216,7 +216,7 @@ export default function FeedPage() {
               <div className="flex flex-col sm:flex-row gap-6 items-start">
                 <Avatar className="h-12 w-12 shrink-0 border-2 border-primary/10">
                   <AvatarImage src={user?.avatar} />
-                  <AvatarFallback className="font-black">{user?.name?.[0]}</AvatarFallback>
+                  <AvatarFallback className="font-black">{user?.name?.[0] || '?'}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0 w-full">
                   <Textarea placeholder={`What's the play, ${user?.name}?`} value={newPostContent} onChange={(e) => setNewPostContent(e.target.value)} className="min-h-[100px] w-full resize-none border-none focus-visible:ring-0 p-4 text-lg font-medium placeholder:text-muted-foreground/30 bg-transparent" />
@@ -253,7 +253,7 @@ export default function FeedPage() {
               <CardHeader className="flex flex-row items-center gap-5 pb-4 pt-8 px-8">
                 <Avatar className="h-12 w-12 border-2 border-background shadow-md">
                   <AvatarImage src={post.author?.avatar} />
-                  <AvatarFallback className="font-black">{post.author?.name?.[0]}</AvatarFallback>
+                  <AvatarFallback className="font-black">{post.author?.name?.[0] || '?'}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <div className="font-black text-base tracking-tight">{post.author?.name}</div>

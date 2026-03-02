@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -32,7 +32,8 @@ import {
   Eye,
   XCircle,
   Clock,
-  MessageSquare
+  MessageSquare,
+  Loader2
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { useTeam, Member, FeeItem } from '@/components/providers/team-provider';
@@ -60,9 +61,12 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format, differenceInYears } from 'date-fns';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, orderBy, limit } from 'firebase/firestore';
 
 export default function RosterPage() {
-  const { activeTeam, members, updateMember, user, isPro, isSuperAdmin, purchasePro, hasFeature } = useTeam();
+  const { activeTeam, updateMember, user, isPro, isSuperAdmin, purchasePro, hasFeature } = useTeam();
+  const db = useFirestore();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -72,6 +76,15 @@ export default function RosterPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Member>>({});
   const [newFee, setNewFee] = useState({ title: '', amount: '' });
+
+  // Localized members listener for read optimization
+  const membersQuery = useMemoFirebase(() => {
+    if (!activeTeam?.id || !db) return null;
+    return query(collection(db, 'teams', activeTeam.id, 'members'), orderBy('name', 'asc'), limit(100));
+  }, [activeTeam?.id, db]);
+
+  const { data: membersRaw, isLoading: isMembersLoading } = useCollection(membersQuery);
+  const members = useMemo(() => (membersRaw || []) as Member[], [membersRaw]);
 
   useEffect(() => {
     setMounted(true);
@@ -96,7 +109,7 @@ export default function RosterPage() {
     }
   }, [selectedMember]);
 
-  if (!mounted || !activeTeam) {
+  if (!mounted || !activeTeam || isMembersLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center animate-pulse">
         <div className="h-12 w-12 bg-primary/10 rounded-full mb-4" />
@@ -108,9 +121,7 @@ export default function RosterPage() {
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
   const canEditDetails = hasFeature('full_roster_details');
 
-  const teamRoster = members.filter(member => member.teamId === activeTeam.id);
-  
-  const filteredRoster = teamRoster.filter(member => 
+  const filteredRoster = members.filter(member => 
     member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     member.position.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -204,7 +215,6 @@ export default function RosterPage() {
     } catch { return null; }
   };
 
-  // Club Manager Protection Logic
   const isProtectedManager = (memberUserId: string) => {
     return memberUserId === activeTeam?.createdBy;
   };
@@ -369,8 +379,6 @@ export default function RosterPage() {
               {/* Content Area */}
               <div className="flex-1 overflow-y-auto custom-scrollbar">
                 <div className="grid grid-cols-1 lg:grid-cols-12 h-full">
-                  
-                  {/* LEFT: Financials & Status */}
                   <div className="lg:col-span-4 p-8 border-r bg-muted/5 space-y-8">
                     <div className="space-y-6">
                       <div className="flex items-center gap-3 px-1">
@@ -433,7 +441,6 @@ export default function RosterPage() {
                     </div>
                   </div>
 
-                  {/* RIGHT: Detailed Info */}
                   <div className="lg:col-span-8 p-8 space-y-10">
                     {isEditing ? (
                       <div className="space-y-8 animate-in fade-in slide-in-from-right-4">

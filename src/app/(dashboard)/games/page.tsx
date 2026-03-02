@@ -42,10 +42,10 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export default function GamesPage() {
-  const { activeTeam, addGame, updateGame, isPro, isSuperAdmin, purchasePro, hasFeature } = useTeam();
+  const { activeTeam, addGame, updateGame, isSuperAdmin, purchasePro, hasFeature } = useTeam();
   const db = useFirestore();
   
-  // Localized data fetching for performance
+  // Localized data fetching for performance with strict limits
   const gamesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
     return query(collection(db, 'teams', activeTeam.id, 'games'), orderBy('date', 'desc'), limit(50));
@@ -218,7 +218,6 @@ export default function GamesPage() {
         )}
       </div>
 
-      {/* Encouragement Brief */}
       <Card className={cn(
         "rounded-[2.5rem] border-none shadow-xl overflow-hidden relative group",
         momentum.type === 'positive' ? "bg-primary text-white" : "bg-black text-white"
@@ -255,8 +254,7 @@ export default function GamesPage() {
             <div className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground opacity-40">Ties</div>
             <div className="text-4xl font-black text-muted-foreground group-hover:scale-110 transition-transform">{stats.ties}</div>
           </CardContent>
-        </Card>
-      </div>
+        </div>
 
       {games.length > 0 ? (
         <div className="space-y-10">
