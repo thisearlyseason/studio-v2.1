@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Megaphone, Bell, Info, History, Clock, X } from 'lucide-react';
+import { Megaphone, Bell, Info, History, Clock, X, Lock } from 'lucide-react';
 import { useTeam, TeamAlert } from '@/components/providers/team-provider';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -208,15 +208,30 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
 }
 
 export function CreateAlertButton() {
-  const { createAlert, user, activeTeam, isSuperAdmin } = useTeam();
+  const { createAlert, user, activeTeam, isSuperAdmin, hasFeature, purchasePro } = useTeam();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
 
   // Unified Admin Check
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
+  const canAlert = hasFeature('high_priority_alerts');
 
   if (!isAdmin) return null;
+
+  if (!canAlert) {
+    return (
+      <Button 
+        variant="outline" 
+        size="icon" 
+        className="h-9 w-9 rounded-full border-primary/20 text-primary/40 opacity-50 cursor-pointer relative"
+        onClick={purchasePro}
+      >
+        <Megaphone className="h-4 w-4" />
+        <Lock className="absolute -top-1 -right-1 h-3 w-3 bg-black text-white p-0.5 rounded-full border-2 border-background" />
+      </Button>
+    );
+  }
 
   const handleCreate = () => {
     if (!title || !message) return;

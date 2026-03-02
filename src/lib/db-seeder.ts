@@ -37,6 +37,7 @@ export async function seedSubscriptionData(db: Firestore) {
         { id: 'stats_basic', description: 'Basic performance metrics and trends.', defaultEnabled: false },
         { id: 'media_uploads', description: 'Upload and share playbooks, photos, and files.', defaultEnabled: false },
         { id: 'history_unlimited', description: 'Retain full history of posts, chats, and results.', defaultEnabled: false },
+        { id: 'high_priority_alerts', description: 'Broadcast urgent team-wide popups.', defaultEnabled: false },
         { id: 'multi_team_admin_dashboard', description: 'Centralized dashboard for multi-team owners.', defaultEnabled: false },
         { id: 'cross_team_announcements', description: 'Broadcast alerts to multiple squads at once.', defaultEnabled: false },
         { id: 'priority_support', description: 'Direct access to support specialists.', defaultEnabled: false },
@@ -61,7 +62,8 @@ export async function seedSubscriptionData(db: Firestore) {
       const proFeaturesMap = {
         schedule_games_events: true, tournaments: true, basic_roster: true, full_roster_details: true,
         attendance_tracking: true, live_feed_read: true, live_feed_post: true, group_chat: true,
-        score_tracking: true, stats_basic: true, media_uploads: true, history_unlimited: true
+        score_tracking: true, stats_basic: true, media_uploads: true, history_unlimited: true,
+        high_priority_alerts: true
       };
 
       const starterFeatures = {

@@ -362,6 +362,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       baseFeatures.group_chat = true;
       baseFeatures.media_uploads = true;
       baseFeatures.live_feed_post = true;
+      baseFeatures.high_priority_alerts = true;
       
       const teamCount = teams.length;
       if (teamCount >= 2) {
