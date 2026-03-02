@@ -131,7 +131,7 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "creatorId": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", format: "date-time" },
         "sport": { "type": "string" },
         "teams": {
           "type": "object",
@@ -139,6 +139,7 @@
             "type": "object",
             "properties": {
               "teamName": { "type": "string" },
+              "teamLogoUrl": { "type": "string" },
               "wins": { "type": "number" },
               "losses": { "type": "number" },
               "ties": { "type": "number" },
@@ -149,20 +150,35 @@
       },
       "required": ["id", "name", "creatorId"]
     },
-    "LeagueInvite": {
+    "TeamEvent": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "LeagueInvite",
+      "title": "TeamEvent",
       "type": "object",
-      "description": "An invitation for a team to join a league.",
       "properties": {
         "id": { "type": "string" },
-        "leagueId": { "type": "string" },
-        "leagueName": { "type": "string" },
-        "invitedEmail": { "type": "string", "format": "email" },
-        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["leagueId", "invitedEmail", "status"]
+        "teamId": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "endDate": { "type": "string" },
+        "isTournament": { "type": "boolean" },
+        "tournamentGames": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "team1": { "type": "string" },
+              "team2": { "type": "string" },
+              "score1": { "type": "number" },
+              "score2": { "type": "number" },
+              "date": { "type": "string" },
+              "time": { "type": "string" },
+              "winnerId": { "type": "string" }
+            }
+          }
+        },
+        "lastUpdated": { "type": "string" }
+      }
     },
     "Subscription": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -230,17 +246,17 @@
       },
       "description": "Collaborative team hubs."
     },
+    "/teams/{teamId}/events/{eventId}": {
+      "schema": {
+        "$ref": "#/backend/entities/TeamEvent"
+      },
+      "description": "Team schedule and tournament data."
+    },
     "/leagues/{leagueId}": {
       "schema": {
         "$ref": "#/backend/entities/League"
       },
       "description": "Competitive league hubs."
-    },
-    "/leagues/{leagueId}/invites/{inviteId}": {
-      "schema": {
-        "$ref": "#/backend/entities/LeagueInvite"
-      },
-      "description": "Invitations to join a league."
     }
   }
 }

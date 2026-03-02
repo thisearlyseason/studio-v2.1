@@ -117,6 +117,18 @@ export type Member = {
   mediaRelease?: boolean;
 };
 
+export type TournamentGame = {
+  id: string;
+  team1: string;
+  team2: string;
+  score1: number;
+  score2: number;
+  date: string;
+  time: string;
+  winnerId?: string; // ID of the team that won
+  isCompleted: boolean;
+};
+
 export type TeamEvent = {
   id: string;
   teamId: string;
@@ -130,12 +142,15 @@ export type TeamEvent = {
   userRsvps?: Record<string, string>;
   isTournament?: boolean;
   tournamentSchedule?: any[];
+  tournamentGames?: TournamentGame[];
+  tournamentTeams?: string[]; // List of team names involved
   allowExternalRegistration?: boolean;
   isRegistrationRequired?: boolean;
   customFormFields?: any[];
   requiresSpecialWaiver?: boolean;
   specialWaiverText?: string;
   specialWaiverResponses?: Record<string, { agreed: boolean; timestamp: string }>;
+  lastUpdated?: string;
 };
 
 export type TeamAlert = {
@@ -579,8 +594,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         await batch.commit(); setActiveTeamId(tid); return true; 
       } catch (e) { return false; }
     },
-    addEvent: (e: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'events'), { ...e, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString(), userRsvps: {}, specialWaiverResponses: {} }),
-    updateEvent: (id: string, e: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', id), e),
+    addEvent: (e: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'events'), { ...e, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString(), userRsvps: {}, specialWaiverResponses: {}, lastUpdated: new Date().toISOString() }),
+    updateEvent: (id: string, e: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', id), { ...e, lastUpdated: new Date().toISOString() }),
     deleteEvent: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', id)),
     submitEventWaiver: async (eid: string, agreed: boolean) => {
       if (!activeTeam?.id || !firebaseUser) return;
