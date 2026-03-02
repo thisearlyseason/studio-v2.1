@@ -66,29 +66,44 @@ export async function seedSubscriptionData(db: Firestore) {
 
       const plans = [
         {
-          id: 'starter_squad', name: 'Starter Squad', description: 'Essential coordination for unlimited teams.',
+          id: 'starter_squad', name: 'Starter Squad', description: 'Essential coordination for growing teams.',
           priceDisplay: 'Free', annualPriceDisplay: 'Free', billingCycle: '', isPublic: true, isContactOnly: false,
           billingType: 'free', teamLimit: null, features: starterFeatures, proTeamLimit: 0
         },
         {
-          id: 'squad_pro', name: 'Elite Pro', description: 'Professional features for a single competitive team.',
-          priceDisplay: '$9.99', annualPriceDisplay: '$100', billingCycle: '/mo', isPublic: true, isContactOnly: false,
+          id: 'squad_pro', name: 'Squad Pro', description: 'Full-scale coordination and analytics for elite squads.',
+          priceDisplay: '$12.99', annualPriceDisplay: '$99', billingCycle: '/mo', isPublic: true, isContactOnly: false,
           billingType: 'monthly', teamLimit: 1, features: proFeaturesMap, proTeamLimit: 1
         },
         {
-          id: 'squad_duo', name: 'Dynamic Duo', description: 'Power up two elite squads.',
-          priceDisplay: '$18.99', annualPriceDisplay: '$190', billingCycle: '/mo', isPublic: true, isContactOnly: false,
+          id: 'squad_duo', name: 'Club Duo', description: 'Elite features for 2 professional squads.',
+          priceDisplay: '$23.99', annualPriceDisplay: '$180', billingCycle: '/mo', isPublic: true, isContactOnly: false,
           billingType: 'monthly', teamLimit: 2, features: proFeaturesMap, proTeamLimit: 2
         },
         {
-          id: 'squad_crew', name: 'The Crew', description: 'Coordination suite for up to 4 teams.',
-          priceDisplay: '$34.99', annualPriceDisplay: '$350', billingCycle: '/mo', isPublic: true, isContactOnly: false,
+          id: 'squad_crew', name: 'Club Crew', description: 'Full coordination for up to 4 elite teams.',
+          priceDisplay: '$44.99', annualPriceDisplay: '$340', billingCycle: '/mo', isPublic: true, isContactOnly: false,
           billingType: 'monthly', teamLimit: 4, features: proFeaturesMap, proTeamLimit: 4
         },
         {
-          id: 'squad_organization', name: 'Organization', description: 'Custom enterprise-grade infrastructure for large clubs.',
+          id: 'squad_league', name: 'Club League', description: 'Management for up to 9 competitive teams.',
+          priceDisplay: '$89.99', annualPriceDisplay: '$680', billingCycle: '/mo', isPublic: true, isContactOnly: false,
+          billingType: 'monthly', teamLimit: 9, features: proFeaturesMap, proTeamLimit: 9
+        },
+        {
+          id: 'squad_division', name: 'Club Division', description: 'Coordination for 12 elite squads.',
+          priceDisplay: '$119.99', annualPriceDisplay: '$900', billingCycle: '/mo', isPublic: true, isContactOnly: false,
+          billingType: 'monthly', teamLimit: 12, features: proFeaturesMap, proTeamLimit: 12
+        },
+        {
+          id: 'squad_conference', name: 'Club Conference', description: 'Professional hub for 15 elite teams.',
+          priceDisplay: '$149.99', annualPriceDisplay: '$1,120', billingCycle: '/mo', isPublic: true, isContactOnly: false,
+          billingType: 'monthly', teamLimit: 15, features: proFeaturesMap, proTeamLimit: 15
+        },
+        {
+          id: 'squad_organization', name: 'Club Custom', description: 'Enterprise solutions for leagues and multi-team organizations.',
           priceDisplay: 'Custom', annualPriceDisplay: 'Custom', billingCycle: '', isPublic: true, isContactOnly: true,
-          billingType: 'manual', teamLimit: null, features: proFeaturesMap, proTeamLimit: 15
+          billingType: 'manual', teamLimit: null, features: proFeaturesMap, proTeamLimit: 100
         }
       ];
 
