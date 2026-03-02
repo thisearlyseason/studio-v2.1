@@ -34,7 +34,9 @@ import {
   Loader2,
   CalendarCheck,
   CalendarX,
-  CircleHelp
+  CircleHelp,
+  ShieldCheck,
+  FileCheck
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -74,10 +76,11 @@ interface EventDetailDialogProps {
 }
 
 function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit, onDelete, hasAttendance, purchasePro, children }: EventDetailDialogProps) {
-  const { members = [], user, addRegistration } = useTeam();
+  const { members = [], user, addRegistration, submitEventWaiver } = useTeam();
   const db = useFirestore();
   
   const [showInternalForm, setShowInternalForm] = useState(false);
+  const [showWaiverStep, setShowWaiverStep] = useState(false);
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [isSubmittingInternal, setIsSubmittingInternal] = useState(false);
 
@@ -102,7 +105,8 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
         avatar: member?.avatar,
         role: member?.position || 'Member',
         status,
-        isExternal: false
+        isExternal: false,
+        waiverAgreed: event.specialWaiverResponses?.[uid]?.agreed || false
       };
     });
 
@@ -113,23 +117,47 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
       role: 'Public Registrant',
       status: 'going',
       isExternal: true,
-      regData: reg
+      regData: reg,
+      waiverAgreed: true // Externals agree during registration form usually
     }));
 
     return [...internal, ...external];
-  }, [event.userRsvps, members, registrations]);
+  }, [event.userRsvps, event.specialWaiverResponses, members, registrations]);
 
   const goingList = attendanceData.filter(a => a.status === 'going');
   const maybeList = attendanceData.filter(a => a.status === 'maybe');
   const notGoingList = attendanceData.filter(a => a.status === 'notGoing');
 
-  // Unified RSVP logic with form gating
+  const hasAgreedToWaiver = user ? !!event.specialWaiverResponses?.[user.id]?.agreed : false;
+
   const handleRSVPAction = (status: string) => {
-    const currentRSVP = event.userRsvps?.[user?.id || ''];
-    if (status === 'going' && event.isRegistrationRequired && currentRSVP !== 'going') {
-      setShowInternalForm(true);
+    if (status === 'going') {
+      if (event.requiresSpecialWaiver && !hasAgreedToWaiver) {
+        setShowWaiverStep(true);
+        return;
+      }
+      if (event.isRegistrationRequired) {
+        setShowInternalForm(true);
+        return;
+      }
+    }
+    updateRSVP(event.id, status);
+  };
+
+  const handleWaiverAgreement = async (agreed: boolean) => {
+    if (!user) return;
+    await submitEventWaiver(event.id, agreed);
+    if (agreed) {
+      setShowWaiverStep(false);
+      // Proceed to form or RSVP
+      if (event.isRegistrationRequired) {
+        setShowInternalForm(true);
+      } else {
+        updateRSVP(event.id, 'going');
+      }
     } else {
-      updateRSVP(event.id, status);
+      setShowWaiverStep(false);
+      toast({ title: "Waiver Declined", description: "You cannot join this event without accepting the waiver.", variant: "destructive" });
     }
   };
 
@@ -176,13 +204,33 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
   const currentStatus = event.userRsvps?.[user?.id || ''];
 
   return (
-    <Dialog onOpenChange={(open) => { if(!open) setShowInternalForm(false); }}>
+    <Dialog onOpenChange={(open) => { if(!open) { setShowInternalForm(false); setShowWaiverStep(false); } }}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="sm:max-w-5xl p-0 overflow-hidden rounded-3xl lg:rounded-[2.5rem] max-h-[95vh] flex flex-col border-none shadow-2xl">
         <DialogTitle className="sr-only">{event.title}</DialogTitle>
         <DialogDescription className="sr-only">Roster and logistics for {event.title}</DialogDescription>
         
-        {showInternalForm ? (
+        {showWaiverStep ? (
+          <div className="flex-1 flex flex-col bg-background animate-in slide-in-from-right duration-300">
+            <div className="p-6 lg:p-10 space-y-8 max-w-2xl mx-auto w-full">
+              <Button variant="ghost" onClick={() => setShowWaiverStep(false)} className="rounded-full h-10 px-4 -ml-4 font-black uppercase text-[10px] tracking-widest"><ChevronLeft className="h-4 w-4 mr-2" /> Back</Button>
+              <div className="space-y-4">
+                <Badge className="bg-amber-100 text-amber-700 border-none font-black px-3 h-6 uppercase tracking-widest text-[9px]">Mandatory Event Waiver</Badge>
+                <h3 className="text-3xl font-black tracking-tight leading-tight">Review Requirements</h3>
+                <p className="text-muted-foreground font-bold leading-relaxed">This event requires your explicit acknowledgment of the following terms before you can join the squad roster.</p>
+              </div>
+              <div className="bg-muted/30 p-6 lg:p-8 rounded-2xl lg:rounded-[2.5rem] border-2 border-dashed border-primary/20 overflow-y-auto max-h-[300px] custom-scrollbar">
+                <p className="text-sm lg:text-base font-bold text-foreground/80 leading-relaxed whitespace-pre-wrap italic">
+                  {event.specialWaiverText || "No special waiver text provided. Please confirm your participation and agreement to standard team safety protocols."}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+                <Button variant="outline" className="h-14 rounded-2xl font-black uppercase text-xs tracking-widest border-2 text-destructive hover:bg-destructive/5" onClick={() => handleWaiverAgreement(false)}>I Do Not Agree</Button>
+                <Button className="h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => handleWaiverAgreement(true)}>Accept & Continue</Button>
+              </div>
+            </div>
+          </div>
+        ) : showInternalForm ? (
           <div className="flex-1 flex flex-col bg-background animate-in slide-in-from-right duration-300">
             <div className="p-6 lg:p-10 space-y-8 max-w-2xl mx-auto w-full">
               <Button variant="ghost" onClick={() => setShowInternalForm(false)} className="rounded-full h-10 px-4 -ml-4 font-black uppercase text-[10px] tracking-widest"><ChevronLeft className="h-4 w-4 mr-2" /> Back</Button>
@@ -246,6 +294,16 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                     </div>
                   </div>
 
+                  {event.requiresSpecialWaiver && (
+                    <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 flex items-start gap-3">
+                      <ShieldCheck className="h-5 w-5 text-amber-600 shrink-0" />
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest leading-none">Special Waiver Active</p>
+                        <p className="text-[9px] font-bold text-amber-600 uppercase tracking-tighter">Sign-off required for all participants</p>
+                      </div>
+                    </div>
+                  )}
+
                   {event.isTournament && event.tournamentSchedule && event.tournamentSchedule.length > 0 && (
                     <div className="space-y-3">
                       <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Daily Schedule</p>
@@ -295,6 +353,7 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                       <TabsList className="bg-muted/50 rounded-xl p-1 h-10 lg:h-11">
                         <TabsTrigger value="attendance" className="rounded-lg font-black text-[8px] lg:text-[10px] uppercase tracking-widest px-4 lg:px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Roster</TabsTrigger>
                         {event.isRegistrationRequired && <TabsTrigger value="responses" className="rounded-lg font-black text-[8px] lg:text-[10px] uppercase tracking-widest px-4 lg:px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Form Responses</TabsTrigger>}
+                        {event.requiresSpecialWaiver && <TabsTrigger value="waiver" className="rounded-lg font-black text-[8px] lg:text-[10px] uppercase tracking-widest px-4 lg:px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Waiver Stats</TabsTrigger>}
                         {event.allowExternalRegistration && <TabsTrigger value="links" className="rounded-lg font-black text-[8px] lg:text-[10px] uppercase tracking-widest px-4 lg:px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Links</TabsTrigger>}
                       </TabsList>
                       <DialogClose asChild><Button variant="ghost" size="icon" className="rounded-full h-8 w-8"><XCircle className="h-5 w-5 text-muted-foreground" /></Button></DialogClose>
@@ -316,6 +375,9 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                                     <div className="flex items-center gap-1.5 min-w-0">
                                       <span className="text-[11px] lg:text-xs font-black truncate">{person.name}</span>
                                       {person.isExternal && <Badge className="text-[6px] h-3 bg-primary text-white font-black uppercase px-1 shrink-0">Public</Badge>}
+                                      {event.requiresSpecialWaiver && (
+                                        person.waiverAgreed ? <FileCheck className="h-3 w-3 text-green-600" /> : <ShieldCheck className="h-3 w-3 text-red-600 opacity-40" />
+                                      )}
                                     </div>
                                     <span className="text-[7px] lg:text-[8px] text-muted-foreground font-black uppercase tracking-widest truncate">{person.role}</span>
                                   </div>
@@ -326,6 +388,33 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                               </div>
                             )) : <p className="text-[10px] lg:text-xs text-muted-foreground font-black italic px-1">No responses yet...</p>}
                           </div>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="waiver" className="mt-0 pt-4 space-y-6">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Special Waiver Compliance</h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {members.map(member => {
+                            const response = event.specialWaiverResponses?.[member.userId];
+                            const status = response ? (response.agreed ? 'Agreed' : 'Declined') : 'Pending';
+                            return (
+                              <div key={member.id} className="flex items-center justify-between p-4 bg-muted/10 rounded-2xl border">
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-8 w-8"><AvatarImage src={member.avatar} /><AvatarFallback className="font-black text-[10px]">{member.name[0]}</AvatarFallback></Avatar>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-black truncate">{member.name}</p>
+                                    <p className="text-[8px] font-bold text-muted-foreground uppercase">{member.position}</p>
+                                  </div>
+                                </div>
+                                <Badge className={cn(
+                                  "text-[8px] font-black uppercase tracking-widest border-none px-2 h-5",
+                                  status === 'Agreed' ? "bg-green-600 text-white" : status === 'Declined' ? "bg-red-600 text-white" : "bg-muted text-muted-foreground"
+                                )}>{status}</Badge>
+                              </div>
+                            );
+                          })}
                         </div>
                       </TabsContent>
 
@@ -472,6 +561,10 @@ export default function EventsPage() {
   const [maxRegs, setMaxRegs] = useState('');
   const [customFormFields, setCustomFormFields] = useState<CustomFormField[]>([]);
   const [tournamentSchedule, setTournamentSchedule] = useState<any[]>([]);
+  
+  // Special Waiver State
+  const [useSpecialWaiver, setUseSpecialWaiver] = useState(false);
+  const [specialWaiverText, setSpecialWaiverText] = useState('');
 
   useEffect(() => {
     setMounted(true);
@@ -525,7 +618,10 @@ export default function EventsPage() {
     setIsRegRequired(!!event.isRegistrationRequired);
     setMaxRegs(event.maxRegistrations?.toString() || '');
     setCustomFormFields(event.customFormFields || []);
-    setTournamentSchedule(event.tournamentSchedule || []); setIsCreateOpen(true);
+    setTournamentSchedule(event.tournamentSchedule || []); 
+    setUseSpecialWaiver(!!event.requiresSpecialWaiver);
+    setSpecialWaiverText(event.specialWaiverText || '');
+    setIsCreateOpen(true);
   };
 
   const handleCreateEvent = () => {
@@ -540,7 +636,9 @@ export default function EventsPage() {
       isRegistrationRequired: isRegRequired,
       customFormFields: customFormFields,
       isTournament: isTournamentMode, 
-      tournamentSchedule: tournamentSchedule.map((m, idx) => ({ ...m, id: `tm_${idx}_${Date.now()}` })) 
+      tournamentSchedule: tournamentSchedule.map((m, idx) => ({ ...m, id: `tm_${idx}_${Date.now()}` })),
+      requiresSpecialWaiver: useSpecialWaiver,
+      specialWaiverText: useSpecialWaiver ? specialWaiverText : ''
     };
     if (isTournamentMode && newEndDate) payload.endDate = new Date(newEndDate).toISOString();
     const regLimit = parseInt(maxRegs); if (!isNaN(regLimit)) payload.maxRegistrations = regLimit;
@@ -548,7 +646,7 @@ export default function EventsPage() {
     setIsCreateOpen(false); resetForm();
   };
 
-  const resetForm = () => { setEditingEvent(null); setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setAllowExternal(false); setIsRegRequired(false); setMaxRegs(''); setCustomFormFields([]); setTournamentSchedule([]); };
+  const resetForm = () => { setEditingEvent(null); setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setAllowExternal(false); setIsRegRequired(false); setMaxRegs(''); setCustomFormFields([]); setTournamentSchedule([]); setUseSpecialWaiver(false); setSpecialWaiverText(''); };
 
   const addFormField = (type: FormFieldType) => {
     const newField: CustomFormField = { id: `field_${Date.now()}`, label: 'New Field Label', type, required: false };
@@ -594,7 +692,7 @@ export default function EventsPage() {
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="sm:max-w-5xl rounded-3xl lg:rounded-[2.5rem] overflow-hidden p-0 max-h-[95vh] flex flex-col border-none shadow-2xl">
+        <DialogContent className="sm:max-w-5xl rounded-3xl lg:rounded-[2.5rem] overflow-hidden p-0 max-h-[90vh] flex flex-col border-none shadow-2xl">
           <DialogTitle className="sr-only">Event Form Builder</DialogTitle>
           <ScrollArea className="flex-1">
             <div className="grid grid-cols-1 lg:grid-cols-12 h-full min-h-[500px]">
@@ -641,6 +739,7 @@ export default function EventsPage() {
                   <TabsList className="bg-muted/50 rounded-xl p-1 h-10 mb-6">
                     {isTournamentMode && <TabsTrigger value="schedule" className="font-black text-[8px] uppercase px-4">Daily Games</TabsTrigger>}
                     <TabsTrigger value="registration" className="font-black text-[8px] uppercase px-4">Reg Form</TabsTrigger>
+                    {hasAttendanceTracking && <TabsTrigger value="waiver" className="font-black text-[8px] uppercase px-4">Waiver</TabsTrigger>}
                   </TabsList>
 
                   <TabsContent value="schedule" className="space-y-4">
@@ -723,6 +822,34 @@ export default function EventsPage() {
                       </div>
                     )}
                   </TabsContent>
+
+                  <TabsContent value="waiver" className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4 text-amber-600" />
+                        <h3 className="text-sm font-black uppercase tracking-widest">Special Event Waiver</h3>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Label htmlFor="special-waiver" className="text-[10px] font-black uppercase tracking-widest opacity-60">Enable?</Label>
+                        <Checkbox id="special-waiver" checked={useSpecialWaiver} onCheckedChange={v => setUseSpecialWaiver(!!v)} />
+                      </div>
+                    </div>
+
+                    {useSpecialWaiver && (
+                      <div className="space-y-4 animate-in fade-in zoom-in-95 duration-300">
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Waiver Terms & Conditions</Label>
+                          <Textarea 
+                            placeholder="Provide detailed legal terms for this specific event..." 
+                            value={specialWaiverText} 
+                            onChange={e => setSpecialWaiverText(e.target.value)}
+                            className="min-h-[200px] rounded-2xl p-4 text-xs font-medium leading-relaxed bg-muted/10 border-2"
+                          />
+                          <p className="text-[9px] text-amber-600 font-bold italic ml-1 flex items-center gap-1.5"><Info className="h-3 w-3" /> All players must agree to these terms before they can RSVP "Going".</p>
+                        </div>
+                      </div>
+                    )}
+                  </TabsContent>
                 </Tabs>
                 <Button className="w-full h-14 rounded-2xl text-base lg:text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all mt-4" onClick={handleCreateEvent}>Save Event Hub</Button>
               </div>
@@ -757,6 +884,7 @@ export default function EventsPage() {
                         <div className="space-y-0.5 lg:space-y-1 min-w-0">
                           <div className="flex gap-2 mb-1">
                             {event.isTournament && <Badge className="bg-primary text-white font-black text-[7px] lg:text-[8px] uppercase tracking-widest px-1.5 h-3.5 lg:h-4 border-none shadow-sm">Tourney</Badge>}
+                            {event.requiresSpecialWaiver && <Badge className="bg-amber-500 text-white font-black text-[7px] lg:text-[8px] uppercase tracking-widest px-1.5 h-3.5 lg:h-4 border-none shadow-sm">Waiver</Badge>}
                             {event.isRegistrationRequired && <Badge variant="outline" className="text-[7px] lg:text-[8px] font-black uppercase tracking-widest px-1.5 h-3.5 lg:h-4 border-blue-600/30 text-blue-600">Register</Badge>}
                             {showStatus && (
                               <Badge className={cn("text-[7px] lg:text-[8px] font-black uppercase px-1.5 h-3.5 lg:h-4 border-none", currentRSVP === 'going' ? 'bg-green-600' : currentRSVP === 'maybe' ? 'bg-amber-500' : 'bg-red-600')}>

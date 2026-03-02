@@ -88,6 +88,10 @@ export type TeamEvent = {
   isRegistrationRequired?: boolean;
   maxRegistrations?: number;
   customFormFields?: CustomFormField[];
+  // Special Waiver Fields
+  requiresSpecialWaiver?: boolean;
+  specialWaiverText?: string;
+  specialWaiverResponses?: Record<string, { agreed: boolean; timestamp: string }>;
 };
 
 export type MemberPosition = 'Coach' | 'Team Lead' | 'Assistant Coach' | 'Squad Leader' | 'Player' | 'Parent' | string;
@@ -140,6 +144,9 @@ export type TeamFile = {
   date: string;
   category: string;
   complianceType?: string;
+  // Context for special event waivers
+  eventId?: string;
+  isEventWaiver?: boolean;
 };
 
 export type Message = {
@@ -191,6 +198,7 @@ interface TeamContextType {
   addEvent: (event: any) => void;
   updateEvent: (id: string, event: any) => void;
   deleteEvent: (id: string) => void;
+  submitEventWaiver: (eventId: string, agreed: boolean) => Promise<void>;
   addGame: (game: any) => void;
   updateGame: (id: string, game: any) => void;
   addDrill: (drill: any) => void;
@@ -565,9 +573,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    addEvent: (e: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'events'), { ...e, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString(), userRsvps: {} }),
+    addEvent: (e: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'events'), { ...e, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString(), userRsvps: {}, specialWaiverResponses: {} }),
     updateEvent: (id: string, e: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', id), e),
     deleteEvent: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', id)),
+    submitEventWaiver: async (eid: string, agreed: boolean) => {
+      if (!activeTeam?.id || !firebaseUser) return;
+      const ref = doc(db, 'teams', activeTeam.id, 'events', eid);
+      updateDocumentNonBlocking(ref, {
+        [`specialWaiverResponses.${firebaseUser.uid}`]: {
+          agreed,
+          timestamp: new Date().toISOString()
+        }
+      });
+    },
     addGame: (g: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'games'), { ...g, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString() }),
     updateGame: (id: string, g: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'games', id), g),
     addDrill: (d: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'drills'), { ...d, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString() }),

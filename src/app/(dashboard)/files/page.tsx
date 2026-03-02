@@ -25,11 +25,13 @@ import {
   Check,
   XCircle,
   AlertTriangle,
-  FileCheck
+  FileCheck,
+  ExternalLink,
+  ChevronRight
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { useTeam, TeamFile, Member } from '@/components/providers/team-provider';
+import { useTeam, TeamFile, Member, TeamEvent } from '@/components/providers/team-provider';
 import { 
   Dialog, 
   DialogContent, 
@@ -62,6 +64,8 @@ import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 export default function FilesPage() {
   const { activeTeam, addFile, addExternalLink, deleteFile, user, isPro, hasFeature, purchasePro, isSuperAdmin, members, updateMember, createAlert } = useTeam();
@@ -75,6 +79,8 @@ export default function FilesPage() {
   const [linkUrl, setLinkUrl] = useState('');
   const [linkCompliance, setLinkCompliance] = useState<string>('none');
   const [uploadCompliance, setUploadCompliance] = useState<string>('none');
+  const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [auditEvent, setAuditEvent] = useState<TeamEvent | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Localized data fetching for performance
@@ -85,6 +91,37 @@ export default function FilesPage() {
 
   const { data: rawFiles, isLoading } = useCollection<TeamFile>(filesQuery);
   const teamFiles = useMemo(() => rawFiles || [], [rawFiles]);
+
+  // Special: Fetch events with waivers to display in library
+  const eventsQuery = useMemoFirebase(() => {
+    if (!activeTeam || !db) return null;
+    return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'desc'));
+  }, [activeTeam?.id, db]);
+  const { data: rawEvents } = useCollection<TeamEvent>(eventsQuery);
+  
+  const eventWaivers = useMemo(() => {
+    return (rawEvents || [])
+      .filter(e => e.requiresSpecialWaiver)
+      .map(e => ({
+        id: `waiver_${e.id}`,
+        name: `Waiver: ${e.title}`,
+        type: 'waiver',
+        size: 'N/A',
+        url: '',
+        teamId: e.teamId,
+        uploadedBy: 'System',
+        uploaderId: 'system',
+        date: e.createdAt || new Date().toISOString(),
+        category: 'compliance',
+        eventId: e.id,
+        isEventWaiver: true,
+        eventData: e
+      } as any));
+  }, [rawEvents]);
+
+  const allLibraryItems = useMemo(() => {
+    return [...teamFiles, ...eventWaivers].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [teamFiles, eventWaivers]);
 
   useEffect(() => {
     setMounted(true);
@@ -174,6 +211,7 @@ export default function FilesPage() {
 
   const getFileIcon = (type: string) => {
     const t = type.toLowerCase();
+    if (t === 'waiver') return <ShieldCheck className="h-6 w-6 text-amber-600" />;
     if (t === 'link') return <LinkIcon className="h-6 w-6 text-primary" />;
     if (t === 'pdf') return <FileText className="h-6 w-6 text-primary" />;
     if (['jpg', 'png', 'jpeg', 'gif', 'webp'].includes(t)) return <ImageIcon className="h-6 w-6 text-primary" />;
@@ -185,6 +223,7 @@ export default function FilesPage() {
       window.open(file.url, '_blank');
       return;
     }
+    if (file.type === 'waiver') return;
     if (!file.url) return;
     const link = document.body.appendChild(document.createElement('a'));
     link.href = file.url;
@@ -223,6 +262,11 @@ export default function FilesPage() {
 
     setSelectedFile(null);
     toast({ title: "Status Recorded", description: "The coaching staff has been notified of your decline.", variant: "destructive" });
+  };
+
+  const openAudit = (e: any) => {
+    setAuditEvent(e);
+    setIsAuditOpen(true);
   };
 
   return (
@@ -316,9 +360,11 @@ export default function FilesPage() {
         </div>
       ) : (
         <div className="grid gap-3 w-full">
-          {teamFiles.length > 0 ? teamFiles.map((file) => {
+          {allLibraryItems.length > 0 ? allLibraryItems.map((file: any) => {
+            const isEventWaiver = !!file.isEventWaiver;
             const canDelete = isAdmin || (file.uploaderId === user?.id);
-            const isCompliance = file.complianceType && file.complianceType !== 'none';
+            const isCompliance = (file.complianceType && file.complianceType !== 'none') || isEventWaiver;
+            const userResponse = isEventWaiver ? file.eventData.specialWaiverResponses?.[user?.id || ''] : null;
             
             return (
               <Card key={file.id} className="hover:bg-muted/30 transition-all border-none shadow-sm overflow-hidden w-full ring-1 ring-black/5 rounded-2xl group">
@@ -332,35 +378,47 @@ export default function FilesPage() {
                       {isCompliance && <Badge className="bg-amber-100 text-amber-700 border-none h-4 text-[7px] font-black uppercase tracking-widest px-1.5"><ShieldCheck className="h-2 w-2 mr-1" /> Ack Required</Badge>}
                     </div>
                     <div className="flex items-center gap-3 text-[10px] font-black text-muted-foreground uppercase mt-1 flex-wrap tracking-widest">
-                      <span className={cn(file.type === 'link' ? "text-blue-600" : "text-primary")}>{file.size}</span>
+                      <span className={cn(file.type === 'link' ? "text-blue-600" : file.type === 'waiver' ? "text-amber-600" : "text-primary")}>{file.size}</span>
                       <span className="flex items-center gap-1.5">
                         <Calendar className="h-3 w-3" />
                         {mounted ? format(new Date(file.date), 'MMM d, yyyy') : '...'}
                       </span>
-                      <Badge variant="secondary" className="text-[9px] py-0 px-2 h-4 bg-muted text-muted-foreground font-black tracking-tighter">
-                        {file.uploadedBy}
-                      </Badge>
+                      {isEventWaiver && userResponse && (
+                        <Badge variant="outline" className={cn("text-[8px] h-4 font-black uppercase border-none", userResponse.agreed ? "text-green-600" : "text-red-600")}>
+                          My Status: {userResponse.agreed ? 'Agreed' : 'Declined'}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0 ml-auto sm:ml-0">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className={cn("h-10 w-10 rounded-full text-muted-foreground hover:bg-primary/5", isCompliance ? "text-amber-600 hover:text-amber-700" : "hover:text-primary")}
-                      onClick={() => setSelectedFile(file)}
-                    >
-                      {isCompliance ? <FileCheck className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-10 w-10 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5"
-                      onClick={() => handleDownload(file)}
-                    >
-                      {file.type === 'link' ? <Globe className="h-5 w-5" /> : <Download className="h-5 w-5" />}
-                    </Button>
+                    {!isEventWaiver && (
+                      <>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className={cn("h-10 w-10 rounded-full text-muted-foreground hover:bg-primary/5", isCompliance ? "text-amber-600 hover:text-amber-700" : "hover:text-primary")}
+                          onClick={() => setSelectedFile(file)}
+                        >
+                          {isCompliance ? <FileCheck className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-10 w-10 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5"
+                          onClick={() => handleDownload(file)}
+                        >
+                          {file.type === 'link' ? <Globe className="h-5 w-5" /> : <Download className="h-5 w-5" />}
+                        </Button>
+                      </>
+                    )}
                     
-                    {isAdmin && (
+                    {isEventWaiver && isAdmin && (
+                      <Button variant="ghost" className="h-10 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest text-primary hover:bg-primary/5" onClick={() => openAudit(file.eventData)}>
+                        View Audit <ChevronRight className="h-3 w-3 ml-1" />
+                      </Button>
+                    )}
+
+                    {isAdmin && !isEventWaiver && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground">
@@ -397,6 +455,47 @@ export default function FilesPage() {
           )}
         </div>
       )}
+
+      {/* Audit Dialog */}
+      <Dialog open={isAuditOpen} onOpenChange={setIsAuditOpen}>
+        <DialogContent className="sm:max-w-2xl rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+          <div className="h-2 bg-amber-500 w-full" />
+          <div className="p-8 space-y-6">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-black tracking-tight uppercase">Waiver Compliance Audit</DialogTitle>
+              <DialogDescription className="font-bold text-amber-600 uppercase tracking-widest text-[10px]">
+                {auditEvent?.title}
+              </DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="max-h-[400px]">
+              <div className="space-y-3 pr-4">
+                {members.map(member => {
+                  const resp = auditEvent?.specialWaiverResponses?.[member.userId];
+                  const status = resp ? (resp.agreed ? 'Agreed' : 'Declined') : 'Pending';
+                  return (
+                    <div key={member.id} className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-8 w-8"><AvatarImage src={member.avatar} /><AvatarFallback className="font-black text-[10px]">{member.name[0]}</AvatarFallback></Avatar>
+                        <div>
+                          <p className="text-xs font-black">{member.name}</p>
+                          <p className="text-[8px] font-bold text-muted-foreground uppercase">{member.position}</p>
+                        </div>
+                      </div>
+                      <Badge className={cn(
+                        "text-[8px] font-black uppercase tracking-widest h-5 px-3 border-none shadow-sm",
+                        status === 'Agreed' ? "bg-green-600 text-white" : status === 'Declined' ? "bg-red-600 text-white" : "bg-muted text-muted-foreground"
+                      )}>{status}</Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+            <DialogFooter>
+              <Button className="w-full h-12 rounded-xl font-black uppercase text-xs tracking-widest" onClick={() => setIsAuditOpen(false)}>Close Audit</Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Viewer Dialog */}
       <Dialog open={!!selectedFile} onOpenChange={(open) => !open && setSelectedFile(null)}>
@@ -480,7 +579,7 @@ export default function FilesPage() {
             ) : (
               <>
                 <Button variant="ghost" onClick={() => setSelectedFile(null)} className="text-white hover:bg-white/10 font-black uppercase tracking-widest text-[10px] h-12 px-8">Dismiss</Button>
-                {selectedFile && (
+                {selectedFile && selectedFile.type !== 'waiver' && (
                   <Button onClick={() => handleDownload(selectedFile)} className="bg-primary text-white hover:bg-primary/90 font-black uppercase tracking-widest text-[10px] h-12 px-10 rounded-2xl shadow-xl shadow-primary/20">
                     <Download className="h-4 w-4 mr-2" />
                     Download
