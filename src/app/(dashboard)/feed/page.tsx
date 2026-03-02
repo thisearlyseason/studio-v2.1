@@ -197,7 +197,7 @@ export default function FeedPage() {
                 }
               }} />
               <Button variant="secondary" size="sm" disabled={isUpdatingHero} className="bg-white/20 backdrop-blur-md text-white hover:bg-white/40 border-none rounded-full h-10 px-5 font-bold" onClick={() => heroInputRef.current?.click()}>
-                {isUpdatingHero ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Camera className="h-4 w-4 mr-2" />}
+                {isUpdatingHero ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4 mr-2" />}
                 {isUpdatingHero ? "Updating..." : "Change Cover"}
               </Button>
             </div>

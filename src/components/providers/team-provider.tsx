@@ -172,6 +172,8 @@ interface TeamContextType {
   addRegistration: (teamId: string, eventId: string, data: any) => Promise<boolean>;
   promoteToRoster: (teamId: string, eventId: string, reg: any) => Promise<void>;
   submitLead: (data: any) => Promise<boolean>;
+  alerts: TeamAlert[];
+  createAlert: (title: string, message: string) => Promise<void>;
   isLoading: boolean;
   isSuperAdmin: boolean;
   isPro: boolean;
@@ -214,6 +216,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [simulationPlanId, setSimulationPlanId] = useState<string | null>(null);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
   const [secondsUntilReset, setSecondsUntilReset] = useState<number | null>(null);
+  const [alerts, setAlerts] = useState<TeamAlert[]>([]);
   
   const seedingRef = useRef(false);
   const resetLockRef = useRef(false);
@@ -265,6 +268,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!teams.length) return null;
     return teams.find(t => t.id === activeTeamId) || teams[0];
   }, [teams, activeTeamId]);
+
+  // Alerts listener (Targeted to active team)
+  useEffect(() => {
+    if (!activeTeam?.id || !db) {
+      setAlerts([]);
+      return;
+    }
+    const q = query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10));
+    const unsub = onSnapshot(q, (snap) => {
+      setAlerts(snap.docs.map(d => ({ id: d.id, ...d.data() } as TeamAlert)));
+    }, (error) => {
+      errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `teams/${activeTeam.id}/alerts`, operation: 'list' }));
+    });
+    return () => unsub();
+  }, [activeTeam?.id, db]);
 
   // Quota Calculation (Computed locally from teams list)
   const proQuotaStatus = useMemo(() => {
@@ -582,6 +600,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       } 
     },
     submitLead: async (data: any) => { try { await addDoc(collection(db, 'leads'), { ...data, createdAt: new Date().toISOString() }); return true; } catch { return false; } },
+    alerts,
+    createAlert: async (title: string, message: string) => {
+      if (!activeTeam?.id || !firebaseUser) return;
+      addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'alerts'), {
+        teamId: activeTeam.id,
+        title,
+        message,
+        createdBy: firebaseUser.uid,
+        createdAt: new Date().toISOString()
+      });
+    },
     isLoading: isUserLoading, 
     isSuperAdmin,
     isPro,
@@ -657,7 +686,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `users/${targetUserId}`, operation: 'update' }));
       }
     }
-  }), [userProfile, activeTeam, teams, isTeamsLoading, isUserLoading, isSuperAdmin, isPaywallOpen, isRCInitialized, db, firebaseUser, activePlanFeatures, plans, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro, proQuotaStatus, canAddProTeam, router]);
+  }), [userProfile, activeTeam, teams, isTeamsLoading, isUserLoading, isSuperAdmin, isPaywallOpen, isRCInitialized, db, firebaseUser, activePlanFeatures, plans, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro, proQuotaStatus, canAddProTeam, alerts, router]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;
 }

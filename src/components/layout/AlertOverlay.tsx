@@ -27,7 +27,7 @@ const SEEN_ALERTS_KEY = 'squad_seen_alerts_ids';
  * Handles the automatic one-time popup for high priority alerts
  */
 export function AlertOverlay() {
-  const { alerts } = useTeam();
+  const { alerts = [] } = useTeam();
   const [currentAlertId, setCurrentAlertId] = useState<string | null>(null);
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [seenIds, setSeenIds] = useState<string[]>([]);
@@ -121,7 +121,7 @@ export function AlertOverlay() {
  * A dialog that shows the history of all alerts for the team
  */
 export function AlertsHistoryDialog({ children }: { children: React.ReactNode }) {
-  const { alerts } = useTeam();
+  const { alerts = [] } = useTeam();
   const [isOpen, setIsOpen] = useState(false);
   const [seenIds, setSeenIds] = useState<string[]>([]);
 
