@@ -34,7 +34,7 @@ import {
   Loader2,
   CalendarCheck,
   CalendarX,
-  CalendarQuestion
+  CircleHelp
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -123,8 +123,10 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
   const maybeList = attendanceData.filter(a => a.status === 'maybe');
   const notGoingList = attendanceData.filter(a => a.status === 'notGoing');
 
-  const handleRSVP = (status: string) => {
-    if (status === 'going' && event.isRegistrationRequired && event.userRsvp !== 'going') {
+  // Unified RSVP logic with form gating
+  const handleRSVPAction = (status: string) => {
+    const currentRSVP = event.userRsvps?.[user?.id || ''];
+    if (status === 'going' && event.isRegistrationRequired && currentRSVP !== 'going') {
       setShowInternalForm(true);
     } else {
       updateRSVP(event.id, status);
@@ -170,6 +172,8 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
     link.download = `registrations_${event.title.replace(/\s+/g, '_')}.csv`;
     link.click();
   };
+
+  const currentStatus = event.userRsvps?.[user?.id || ''];
 
   return (
     <Dialog onOpenChange={(open) => { if(!open) setShowInternalForm(false); }}>
@@ -384,9 +388,9 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                           variant="outline"
                           className={cn(
                             "rounded-xl lg:rounded-2xl h-12 lg:h-14 font-black text-[8px] lg:text-[10px] uppercase transition-all duration-300", 
-                            event.userRsvp === 'notGoing' ? "bg-red-600 text-black border-red-600 shadow-lg" : "hover:bg-red-600 hover:text-black hover:border-red-600"
+                            currentStatus === 'notGoing' ? "bg-red-600 text-black border-red-600 shadow-lg" : "hover:bg-red-600 hover:text-black hover:border-red-600"
                           )} 
-                          onClick={() => handleRSVP('notGoing')}
+                          onClick={() => handleRSVPAction('notGoing')}
                         >
                           NO
                         </Button>
@@ -394,9 +398,9 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                           variant="outline"
                           className={cn(
                             "rounded-xl lg:rounded-2xl h-12 lg:h-14 font-black text-[8px] lg:text-[10px] uppercase transition-all duration-300", 
-                            event.userRsvp === 'maybe' ? "bg-amber-500 text-black border-amber-500 shadow-lg" : "hover:bg-amber-500 hover:text-black hover:border-amber-500"
+                            currentStatus === 'maybe' ? "bg-amber-500 text-black border-amber-500 shadow-lg" : "hover:bg-amber-500 hover:text-black hover:border-amber-500"
                           )} 
-                          onClick={() => handleRSVP('maybe')}
+                          onClick={() => handleRSVPAction('maybe')}
                         >
                           Maybe
                         </Button>
@@ -404,9 +408,9 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                           variant="outline"
                           className={cn(
                             "rounded-xl lg:rounded-2xl h-12 lg:h-14 font-black text-[8px] lg:text-[10px] uppercase transition-all duration-300", 
-                            event.userRsvp === 'going' ? "bg-green-600 text-black border-green-600 shadow-lg" : "hover:bg-green-600 hover:text-black hover:border-green-600"
+                            currentStatus === 'going' ? "bg-green-600 text-black border-green-600 shadow-lg" : "hover:bg-green-600 hover:text-black hover:border-green-600"
                           )} 
-                          onClick={() => handleRSVP('going')}
+                          onClick={() => handleRSVPAction('going')}
                         >
                           Going
                         </Button>
@@ -733,39 +737,42 @@ export default function EventsPage() {
           <TabsTrigger value="calendar" className="rounded-full h-full font-black text-[9px] lg:text-[10px] uppercase tracking-widest data-[state=active]:bg-primary data-[state=active]:text-white">Calendar</TabsTrigger>
         </TabsList>
         <TabsContent value="list" className="space-y-3 lg:space-y-4 mt-6 lg:mt-8">
-          {events.length > 0 ? events.map((event) => (
-            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} promoteToRoster={promoteToRoster} onEdit={handleEdit} onDelete={(id) => { if(confirm("Delete?")) deleteEvent(id); }} hasAttendance={hasAttendanceTracking} purchasePro={purchasePro}>
-              <Card className={cn("overflow-hidden hover:border-primary/30 transition-all duration-500 cursor-pointer group border-none shadow-sm hover:shadow-xl ring-1 ring-black/5 rounded-2xl lg:rounded-[2rem]", event.isTournament && "ring-primary/20")}>
-                <div className="flex items-stretch">
-                  <div className={cn("w-16 sm:w-24 flex flex-col items-center justify-center border-r-2 shrink-0 transition-colors group-hover:bg-primary/10 p-2 lg:p-4", event.userRsvp === 'going' ? 'bg-green-50' : event.userRsvp === 'maybe' ? 'bg-amber-50' : event.userRsvp === 'notGoing' ? 'bg-red-50' : 'bg-primary/5')}>
-                    <span className="text-[8px] lg:text-[10px] font-black uppercase tracking-widest mb-0.5 text-primary">{format(new Date(event.date), 'MMM')}</span>
-                    <span className="text-xl lg:text-3xl font-black tracking-tighter text-primary">{format(new Date(event.date), 'dd')}</span>
-                  </div>
-                  <div className="flex-1 p-4 lg:p-6 space-y-2 lg:space-y-3 min-w-0">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-0.5 lg:space-y-1 min-w-0">
-                        <div className="flex gap-2 mb-1">
-                          {event.isTournament && <Badge className="bg-primary text-white font-black text-[7px] lg:text-[8px] uppercase tracking-widest px-1.5 h-3.5 lg:h-4 border-none shadow-sm">Tourney</Badge>}
-                          {event.isRegistrationRequired && <Badge variant="outline" className="text-[7px] lg:text-[8px] font-black uppercase tracking-widest px-1.5 h-3.5 lg:h-4 border-blue-600/30 text-blue-600">Register</Badge>}
-                          {event.userRsvp && (
-                            <Badge className={cn("text-[7px] lg:text-[8px] font-black uppercase px-1.5 h-3.5 lg:h-4 border-none", event.userRsvp === 'going' ? 'bg-green-600' : event.userRsvp === 'maybe' ? 'bg-amber-500' : 'bg-red-600')}>
-                              {event.userRsvp === 'going' ? 'Going' : event.userRsvp === 'maybe' ? 'Maybe' : 'No'}
-                            </Badge>
-                          )}
+          {events.length > 0 ? events.map((event) => {
+            const currentRSVP = event.userRsvps?.[user?.id || ''];
+            return (
+              <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} promoteToRoster={promoteToRoster} onEdit={handleEdit} onDelete={(id) => { if(confirm("Delete?")) deleteEvent(id); }} hasAttendance={hasAttendanceTracking} purchasePro={purchasePro}>
+                <Card className={cn("overflow-hidden hover:border-primary/30 transition-all duration-500 cursor-pointer group border-none shadow-sm hover:shadow-xl ring-1 ring-black/5 rounded-2xl lg:rounded-[2rem]", event.isTournament && "ring-primary/20")}>
+                  <div className="flex items-stretch">
+                    <div className={cn("w-16 sm:w-24 flex flex-col items-center justify-center border-r-2 shrink-0 transition-colors group-hover:bg-primary/10 p-2 lg:p-4", currentRSVP === 'going' ? 'bg-green-50' : currentRSVP === 'maybe' ? 'bg-amber-50' : currentRSVP === 'notGoing' ? 'bg-red-50' : 'bg-primary/5')}>
+                      <span className="text-[8px] lg:text-[10px] font-black uppercase tracking-widest mb-0.5 text-primary">{format(new Date(event.date), 'MMM')}</span>
+                      <span className="text-xl lg:text-3xl font-black tracking-tighter text-primary">{format(new Date(event.date), 'dd')}</span>
+                    </div>
+                    <div className="flex-1 p-4 lg:p-6 space-y-2 lg:space-y-3 min-w-0">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-0.5 lg:space-y-1 min-w-0">
+                          <div className="flex gap-2 mb-1">
+                            {event.isTournament && <Badge className="bg-primary text-white font-black text-[7px] lg:text-[8px] uppercase tracking-widest px-1.5 h-3.5 lg:h-4 border-none shadow-sm">Tourney</Badge>}
+                            {event.isRegistrationRequired && <Badge variant="outline" className="text-[7px] lg:text-[8px] font-black uppercase tracking-widest px-1.5 h-3.5 lg:h-4 border-blue-600/30 text-blue-600">Register</Badge>}
+                            {currentRSVP && (
+                              <Badge className={cn("text-[7px] lg:text-[8px] font-black uppercase px-1.5 h-3.5 lg:h-4 border-none", currentRSVP === 'going' ? 'bg-green-600' : currentRSVP === 'maybe' ? 'bg-amber-500' : 'bg-red-600')}>
+                                {currentRSVP === 'going' ? 'Going' : currentRSVP === 'maybe' ? 'Maybe' : 'No'}
+                              </Badge>
+                            )}
+                          </div>
+                          <h3 className="font-black text-base lg:text-xl leading-tight group-hover:text-primary transition-colors truncate pr-4">{event.title}</h3>
                         </div>
-                        <h3 className="font-black text-base lg:text-xl leading-tight group-hover:text-primary transition-colors truncate pr-4">{event.title}</h3>
+                        <ChevronRight className="h-4 w-4 text-primary opacity-30 shrink-0 mt-1" />
                       </div>
-                      <ChevronRight className="h-4 w-4 text-primary opacity-30 shrink-0 mt-1" />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[9px] lg:text-[11px] font-black text-muted-foreground uppercase tracking-widest">
-                      <div className="flex items-center"><Clock className="h-3 w-3 lg:h-4 lg:w-4 mr-1.5 text-primary shrink-0" />{event.startTime}</div>
-                      {event.location && <div className="flex items-center truncate max-w-[120px] sm:max-w-[200px]"><MapPin className="h-3 w-3 lg:h-4 lg:w-4 mr-1.5 text-primary shrink-0" />{event.location}</div>}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[9px] lg:text-[11px] font-black text-muted-foreground uppercase tracking-widest">
+                        <div className="flex items-center"><Clock className="h-3 w-3 lg:h-4 lg:w-4 mr-1.5 text-primary shrink-0" />{event.startTime}</div>
+                        {event.location && <div className="flex items-center truncate max-w-[120px] sm:max-w-[200px]"><MapPin className="h-3 w-3 lg:h-4 lg:w-4 mr-1.5 text-primary shrink-0" />{event.location}</div>}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Card>
-            </EventDetailDialog>
-          )) : (
+                </Card>
+              </EventDetailDialog>
+            );
+          }) : (
             <div className="text-center py-20 lg:py-24 border-2 border-dashed rounded-[2rem] lg:rounded-[3rem] bg-muted/10"><p className="text-muted-foreground font-black uppercase tracking-widest text-[10px] lg:text-xs opacity-40">No events scheduled.</p></div>
           )}
         </TabsContent>
@@ -779,20 +786,23 @@ export default function EventsPage() {
             <div className="space-y-4 lg:space-y-6">
               <h3 className="font-black text-base lg:text-lg px-2">{date ? format(date, 'MMMM d') : 'Select date'}</h3>
               <div className="space-y-3 lg:space-y-4">
-                {selectedDayEvents.length > 0 ? selectedDayEvents.map(event => (
-                  <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} promoteToRoster={promoteToRoster} onEdit={handleEdit} onDelete={(id) => { if(confirm("Delete?")) deleteEvent(id); }} hasAttendance={hasAttendanceTracking} purchasePro={purchasePro}>
-                    <Card className="cursor-pointer hover:scale-[1.02] transition-all border-none shadow-sm rounded-xl lg:rounded-2xl p-3 lg:p-4 space-y-1.5 lg:space-y-2 ring-1 ring-black/5 relative overflow-hidden bg-white">
-                      {event.userRsvp && (
-                        <div className={cn("absolute top-0 right-0 p-1.5 rounded-bl-xl", event.userRsvp === 'going' ? 'bg-green-600 text-white' : event.userRsvp === 'maybe' ? 'bg-amber-500 text-white' : 'bg-red-600 text-white')}>
-                          {event.userRsvp === 'going' ? <CalendarCheck className="h-3 w-3" /> : event.userRsvp === 'maybe' ? <CalendarQuestion className="h-3 w-3" /> : <CalendarX className="h-3 w-3" />}
-                        </div>
-                      )}
-                      <span className="text-[7px] lg:text-[8px] font-black uppercase text-primary tracking-[0.2em]">{event.isTournament ? "TOURNAMENT" : "MATCH"}</span>
-                      <h4 className="font-black text-sm lg:text-base leading-tight truncate">{event.title}</h4>
-                      <p className="text-[9px] lg:text-[10px] font-black text-muted-foreground uppercase">{event.startTime} • {event.location || 'TBD'}</p>
-                    </Card>
-                  </EventDetailDialog>
-                )) : (
+                {selectedDayEvents.length > 0 ? selectedDayEvents.map(event => {
+                  const currentRSVP = event.userRsvps?.[user?.id || ''];
+                  return (
+                    <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} promoteToRoster={promoteToRoster} onEdit={handleEdit} onDelete={(id) => { if(confirm("Delete?")) deleteEvent(id); }} hasAttendance={hasAttendanceTracking} purchasePro={purchasePro}>
+                      <Card className="cursor-pointer hover:scale-[1.02] transition-all border-none shadow-sm rounded-xl lg:rounded-2xl p-3 lg:p-4 space-y-1.5 lg:space-y-2 ring-1 ring-black/5 relative overflow-hidden bg-white">
+                        {currentRSVP && (
+                          <div className={cn("absolute top-0 right-0 p-1.5 rounded-bl-xl", currentRSVP === 'going' ? 'bg-green-600 text-white' : currentRSVP === 'maybe' ? 'bg-amber-500 text-white' : 'bg-red-600 text-white')}>
+                            {currentRSVP === 'going' ? <CalendarCheck className="h-3 w-3" /> : currentRSVP === 'maybe' ? <CircleHelp className="h-3 w-3" /> : <CalendarX className="h-3 w-3" />}
+                          </div>
+                        )}
+                        <span className="text-[7px] lg:text-[8px] font-black uppercase text-primary tracking-[0.2em]">{event.isTournament ? "TOURNAMENT" : "MATCH"}</span>
+                        <h4 className="font-black text-sm lg:text-base leading-tight truncate">{event.title}</h4>
+                        <p className="text-[9px] lg:text-[10px] font-black text-muted-foreground uppercase">{event.startTime} • {event.location || 'TBD'}</p>
+                      </Card>
+                    </EventDetailDialog>
+                  );
+                }) : (
                   <div className="p-8 lg:p-10 text-center border-2 border-dashed rounded-2xl lg:rounded-3xl opacity-40">
                     <CalendarDays className="h-6 w-6 lg:h-8 lg:w-8 mx-auto mb-2 text-muted-foreground" />
                     <p className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest text-center">Open Date</p>

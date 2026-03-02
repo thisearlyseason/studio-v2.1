@@ -45,7 +45,6 @@ export default function DrillsPage() {
   const { activeTeam, addDrill, deleteDrill, hasFeature, isSuperAdmin, purchasePro } = useTeam();
   const db = useFirestore();
 
-  // Localized data fetching for performance
   const drillsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
     return query(collection(db, 'teams', activeTeam.id, 'drills'), orderBy('createdAt', 'desc'));
@@ -59,7 +58,6 @@ export default function DrillsPage() {
   const [selectedDrill, setSelectedDrill] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
   
-  // Form state
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newVideoUrl, setNewVideoUrl] = useState('');
@@ -308,7 +306,7 @@ export default function DrillsPage() {
               <p className="font-black text-lg uppercase tracking-tight">No drills found</p>
               <p className="text-sm text-muted-foreground font-bold uppercase tracking-widest opacity-60">Time to build your squad's playbook.</p>
             </div>
-            {isAdmin && <Button variant="outline" className="rounded-full px-8 font-black uppercase text-xs tracking-widest border-2" onClick={() => setIsAddOpen(true)}>Create First Drill</Button>}
+            {isAdmin && <Button variant="outline" className="rounded-full px-8 lg:px-10 font-black uppercase text-[10px] tracking-widest border-2 h-10 lg:h-12" onClick={() => setIsAddOpen(true)}>Create First Drill</Button>}
           </div>
         )}
       </div>
