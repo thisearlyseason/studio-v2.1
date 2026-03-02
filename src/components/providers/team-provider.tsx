@@ -76,6 +76,7 @@ export type League = {
     losses: number;
     ties: number;
     points: number;
+    coachEmail?: string;
   }>;
 };
 
@@ -234,6 +235,7 @@ interface TeamContextType {
   createLeague: (name: string, sport?: string) => Promise<string>;
   inviteTeamToLeague: (leagueId: string, leagueName: string, email: string) => Promise<void>;
   acceptLeagueInvite: (inviteId: string, leagueId: string) => Promise<void>;
+  manuallyAddTeamToLeague: (leagueId: string, teamName: string, email: string, logoUrl?: string) => Promise<void>;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -701,6 +703,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       batch.update(doc(db, 'teams', activeTeam.id), { leagueIds: [...(activeTeam.leagueIds || []), leagueId] });
       batch.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), { leagueIds: [...(activeTeam.leagueIds || []), leagueId] });
       await batch.commit(); toast({ title: "Joined League" });
+    },
+    manuallyAddTeamToLeague: async (leagueId: string, teamName: string, email: string, logoUrl?: string) => {
+      const teamId = `manual_${Date.now()}`;
+      await updateDoc(doc(db, 'leagues', leagueId), {
+        [`teams.${teamId}`]: {
+          teamName,
+          teamLogoUrl: logoUrl || '',
+          wins: 0,
+          losses: 0,
+          ties: 0,
+          points: 0,
+          coachEmail: email
+        }
+      });
+      toast({ title: "Squad Enrolled", description: `${teamName} added to ledger.` });
     }
   }), [userProfile, activeTeam, teams, isTeamsLoading, members, isMembersLoading, isUserLoading, isSuperAdmin, isPaywallOpen, isRCInitialized, db, firebaseUser, activePlanFeatures, plans, isPlansLoading, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro, proQuotaStatus, canAddProTeam, alerts, router]);
 

@@ -21,7 +21,10 @@ import {
   Loader2,
   Table as TableIcon,
   MessageSquare,
-  Users
+  Users,
+  Settings,
+  Globe,
+  Info
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -47,7 +50,7 @@ function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: 
   const db = useFirestore();
   
   const rosterQuery = useMemoFirebase(() => {
-    if (!teamId || !db) return null;
+    if (!teamId || !db || teamId.startsWith('manual_')) return null;
     return query(collection(db, 'teams', teamId, 'members'), orderBy('name', 'asc'));
   }, [teamId, db]);
 
@@ -66,7 +69,12 @@ function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: 
           </DialogHeader>
           
           <ScrollArea className="h-[300px] pr-4">
-            {isLoading ? (
+            {teamId?.startsWith('manual_') ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+                <Info className="h-10 w-10 text-muted-foreground opacity-30" />
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground max-w-[200px]">Roster scouting unavailable for manually enrolled teams.</p>
+              </div>
+            ) : isLoading ? (
               <div className="flex flex-col items-center justify-center py-10 gap-3">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Scouting Roster...</p>
@@ -104,7 +112,7 @@ function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: 
 }
 
 export default function LeaguesPage() {
-  const { activeTeam, user, createLeague, inviteTeamToLeague, acceptLeagueInvite, hasFeature, purchasePro, createChat } = useTeam();
+  const { activeTeam, user, createLeague, inviteTeamToLeague, manuallyAddTeamToLeague, acceptLeagueInvite, hasFeature, purchasePro, createChat } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
@@ -112,6 +120,9 @@ export default function LeaguesPage() {
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [leagueName, setLeagueName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
+  const [manualTeamName, setManualTeamName] = useState('');
+  const [manualLogoUrl, setManualLogoUrl] = useState('');
+  const [manualCoachEmail, setManualCoachEmail] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [scoutTeamId, setScoutTeamId] = useState<string | null>(null);
   const [scoutTeamName, setScoutTeamName] = useState<string | null>(null);
@@ -162,6 +173,17 @@ export default function LeaguesPage() {
     await inviteTeamToLeague(activeLeague.id, activeLeague.name, inviteEmail.toLowerCase());
     setIsInviteOpen(false);
     setInviteEmail('');
+    setIsProcessing(false);
+  };
+
+  const handleManualEnroll = async () => {
+    if (!manualTeamName.trim() || !activeLeague) return;
+    setIsProcessing(true);
+    await manuallyAddTeamToLeague(activeLeague.id, manualTeamName, manualCoachEmail, manualLogoUrl);
+    setIsInviteOpen(false);
+    setManualTeamName('');
+    setManualCoachEmail('');
+    setManualLogoUrl('');
     setIsProcessing(false);
   };
 
@@ -269,25 +291,60 @@ export default function LeaguesPage() {
                   <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
                     <DialogTrigger asChild>
                       <Button variant="secondary" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg">
-                        <UserPlus className="h-4 w-4 mr-2" /> Invite Opponent
+                        <UserPlus className="h-4 w-4 mr-2" /> Add/Invite Team
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="rounded-[2.5rem] sm:max-w-md">
-                      <DialogHeader>
-                        <DialogTitle className="text-xl font-black uppercase">Send Challenge</DialogTitle>
-                        <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px]">Invite an opponent coach by email</DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email</Label>
-                          <Input placeholder="coach@opposingteam.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="h-12 rounded-xl font-bold" />
+                    <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 overflow-hidden border-none shadow-2xl">
+                      <Tabs defaultValue="invite" className="w-full">
+                        <div className="bg-primary/5 p-8 border-b">
+                          <DialogHeader>
+                            <DialogTitle className="text-2xl font-black uppercase tracking-tight">Expand Competition</DialogTitle>
+                            <DialogDescription className="font-bold text-primary/60 uppercase text-[10px] tracking-widest">Enroll verified or manual squads</DialogDescription>
+                          </DialogHeader>
+                          <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 p-1 bg-muted/50 border-2 mt-6">
+                            <TabsTrigger value="invite" className="rounded-lg font-black text-[10px] uppercase tracking-widest">Digital Invite</TabsTrigger>
+                            <TabsTrigger value="manual" className="rounded-lg font-black text-[10px] uppercase tracking-widest">Manual Entry</TabsTrigger>
+                          </TabsList>
                         </div>
-                      </div>
-                      <DialogFooter>
-                        <Button className="w-full h-12 rounded-xl font-black" onClick={handleSendInvite} disabled={isProcessing || !inviteEmail.trim()}>
-                          {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Dispatch Invite"}
-                        </Button>
-                      </DialogFooter>
+
+                        <div className="p-8">
+                          <TabsContent value="invite" className="mt-0 space-y-6">
+                            <div className="space-y-4">
+                              <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Sending an invite allows a coach to link their verified squad roster and data to the league automatically once accepted.</p>
+                              <div className="space-y-2">
+                                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email</Label>
+                                <Input placeholder="coach@opposingteam.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                              </div>
+                            </div>
+                            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleSendInvite} disabled={isProcessing || !inviteEmail.trim()}>
+                              {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Dispatch Digital Invite"}
+                            </Button>
+                          </TabsContent>
+
+                          <TabsContent value="manual" className="mt-0 space-y-6">
+                            <div className="space-y-4">
+                              <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Manually enroll a team that doesn't yet have an account. You can update their scores directly in the standings.</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label>
+                                  <Input placeholder="e.g. Southside United" value={manualTeamName} onChange={e => setManualTeamName(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email (Opt)</Label>
+                                  <Input type="email" placeholder="coach@manual.com" value={manualCoachEmail} onChange={e => setManualCoachEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Logo URL (Optional)</Label>
+                                <Input placeholder="https://..." value={manualLogoUrl} onChange={e => setManualLogoUrl(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                              </div>
+                            </div>
+                            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleManualEnroll} disabled={isProcessing || !manualTeamName.trim()}>
+                              {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Enroll Manual Squad"}
+                            </Button>
+                          </TabsContent>
+                        </div>
+                      </Tabs>
                     </DialogContent>
                   </Dialog>
                 )}
@@ -332,7 +389,10 @@ export default function LeaguesPage() {
                                     <AvatarFallback className="font-black text-xs">{team.teamName[0]}</AvatarFallback>
                                   </Avatar>
                                   <div className="flex flex-col min-w-0">
-                                    <span className="font-black text-sm uppercase tracking-tight group-hover:text-primary transition-colors truncate max-w-[120px] lg:max-w-[200px]">{team.teamName}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-black text-sm uppercase tracking-tight group-hover:text-primary transition-colors truncate max-w-[120px] lg:max-w-[200px]">{team.teamName}</span>
+                                      {team.id.startsWith('manual_') && <Badge className="text-[6px] h-3 bg-muted text-muted-foreground font-black uppercase border-none px-1">MANUAL</Badge>}
+                                    </div>
                                     {team.id === activeTeam?.id && <Badge className="bg-primary/10 text-primary border-none text-[7px] font-black uppercase h-4 px-1.5 w-fit mt-1">My Squad</Badge>}
                                   </div>
                                 </div>
@@ -366,7 +426,7 @@ export default function LeaguesPage() {
                         </Avatar>
                         <div className="min-w-0">
                           <p className="text-xs font-black uppercase tracking-tight leading-none mb-1 truncate max-w-[120px]">{team.teamName}</p>
-                          <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Head Coach</p>
+                          <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">{team.id.startsWith('manual_') ? 'External Contact' : 'Head Coach'}</p>
                         </div>
                       </div>
                       <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10 hover:text-primary">
