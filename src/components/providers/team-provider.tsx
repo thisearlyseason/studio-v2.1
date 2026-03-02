@@ -16,7 +16,8 @@ import {
   deleteDoc,
   addDoc,
   updateDoc,
-  orderBy
+  orderBy,
+  increment
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { updateDocumentNonBlocking, setDocumentNonBlocking, addDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
@@ -61,37 +62,28 @@ export type Team = {
   ownerUserId?: string;
 };
 
-export type FormFieldType = 'short_text' | 'long_text' | 'checkbox';
-
-export type CustomFormField = {
+export type League = {
   id: string;
-  label: string;
-  type: FormFieldType;
-  required: boolean;
+  name: string;
+  creatorId: string;
+  createdAt: string;
+  sport?: string;
+  teams: Record<string, {
+    teamName: string;
+    wins: number;
+    losses: number;
+    ties: number;
+    points: number;
+  }>;
 };
 
-export type TeamEvent = {
+export type LeagueInvite = {
   id: string;
-  teamId: string;
-  title: string;
-  date: any;
-  endDate?: any;
-  startTime: string;
-  endTime?: string;
-  location: string;
-  description: string;
-  userRsvp?: 'going' | 'maybe' | 'notGoing';
-  userRsvps?: Record<string, string>;
-  isTournament?: boolean;
-  tournamentSchedule?: any[];
-  allowExternalRegistration?: boolean;
-  isRegistrationRequired?: boolean;
-  maxRegistrations?: number;
-  customFormFields?: CustomFormField[];
-  // Special Waiver Fields
-  requiresSpecialWaiver?: boolean;
-  specialWaiverText?: string;
-  specialWaiverResponses?: Record<string, { agreed: boolean; timestamp: string }>;
+  leagueId: string;
+  leagueName: string;
+  invitedEmail: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
 };
 
 export type MemberPosition = 'Coach' | 'Team Lead' | 'Assistant Coach' | 'Squad Leader' | 'Player' | 'Parent' | string;
@@ -116,11 +108,31 @@ export type Member = {
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   notes?: string;
-  // Compliance & Waivers
   waiverSigned?: boolean;
   transportationWaiverSigned?: boolean;
   medicalClearance?: boolean;
   mediaRelease?: boolean;
+};
+
+export type TeamEvent = {
+  id: string;
+  teamId: string;
+  title: string;
+  date: any;
+  endDate?: any;
+  startTime: string;
+  endTime?: string;
+  location: string;
+  description: string;
+  userRsvps?: Record<string, string>;
+  isTournament?: boolean;
+  tournamentSchedule?: any[];
+  allowExternalRegistration?: boolean;
+  isRegistrationRequired?: boolean;
+  customFormFields?: any[];
+  requiresSpecialWaiver?: boolean;
+  specialWaiverText?: string;
+  specialWaiverResponses?: Record<string, { agreed: boolean; timestamp: string }>;
 };
 
 export type TeamAlert = {
@@ -132,23 +144,6 @@ export type TeamAlert = {
   createdAt: string;
 };
 
-export type TeamFile = {
-  id: string;
-  name: string;
-  type: string;
-  size: string;
-  url: string;
-  teamId: string;
-  uploadedBy: string;
-  uploaderId: string;
-  date: string;
-  category: string;
-  complianceType?: string;
-  // Context for special event waivers
-  eventId?: string;
-  isEventWaiver?: boolean;
-};
-
 export type Message = {
   id: string;
   author: string;
@@ -157,14 +152,9 @@ export type Message = {
   type: 'text' | 'image' | 'poll';
   imageUrl?: string;
   createdAt: string;
-  poll?: {
-    id: string;
-    question: string;
-    options: { text: string; imageUrl?: string; votes: number }[];
-    totalVotes: number;
-    voters: Record<string, number>;
-    isClosed: boolean;
-  };
+  isOpponentCoach?: boolean;
+  opponentTeamName?: string;
+  poll?: any;
 };
 
 export type Plan = {
@@ -208,7 +198,7 @@ interface TeamContextType {
   addExternalLink: (name: string, url: string, complianceType?: string) => void;
   deleteFile: (id: string) => void;
   createChat: (name: string, memberIds: string[]) => Promise<string>;
-  addMessage: (chatId: string, author: string, content: string, type: string, imageUrl?: string, poll?: any) => void;
+  addMessage: (chatId: string, author: string, content: string, type: string, imageUrl?: string, poll?: any, isOpponentCoach?: boolean, opponentTeamName?: string) => void;
   votePoll: (chatId: string, messageId: string, optionIdx: number) => Promise<void>;
   updateRSVP: (eventId: string, status: string) => void;
   addRegistration: (teamId: string, eventId: string, data: any) => Promise<boolean>;
@@ -238,6 +228,10 @@ interface TeamContextType {
   canAddProTeam: boolean;
   resolveQuota: (selectedTeamIds: string[]) => Promise<void>;
   assignManualPlan: (targetUserId: string, planId: string, limit: number) => Promise<void>;
+  // League Functions
+  createLeague: (name: string, sport?: string) => Promise<string>;
+  inviteTeamToLeague: (leagueId: string, leagueName: string, email: string) => Promise<void>;
+  acceptLeagueInvite: (inviteId: string, leagueId: string) => Promise<void>;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -302,7 +296,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         role: m.role || (isSuperAdmin ? 'Admin' : 'Member'),
         isDemo: m.isDemo || false,
         createdBy: m.createdBy || m.userId,
-        ownerUserId: m.ownerUserId || m.createdBy || m.userId
+        ownerUserId: m.ownerUserId || m.createdBy || m.userId,
+        leagueIds: m.leagueIds || []
       };
     });
   }, [teamsRawData, isSuperAdmin]);
@@ -370,12 +365,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         schedule_games_events: true, tournaments: true, basic_roster: true,
         full_roster_details: true, attendance_tracking: true, live_feed_read: true,
         live_feed_post: true, group_chat: true, score_tracking: true,
-        media_uploads: true, high_priority_alerts: true
+        media_uploads: true, high_priority_alerts: true, leagues: true
       };
     }
 
     const plan = plans.find(p => p.id === pid);
-    return { ...(plan?.features || {}) };
+    const features = { ...(plan?.features || {}) };
+    if (pid === 'squad_pro') features.leagues = true;
+    return features;
   }, [activeTeam, plans, simulationPlanId]);
 
   const isPro = useMemo(() => {
@@ -502,6 +499,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [firebaseUser, db]);
 
+  const updateLeagueStandings = async (tid: string, wins: number, losses: number, ties: number) => {
+    if (!activeTeam?.leagueIds) return;
+    for (const lid of activeTeam.leagueIds) {
+      const lRef = doc(db, 'leagues', lid);
+      updateDocumentNonBlocking(lRef, {
+        [`teams.${tid}.wins`]: increment(wins),
+        [`teams.${tid}.losses`]: increment(losses),
+        [`teams.${tid}.ties`]: increment(ties),
+        [`teams.${tid}.points`]: increment((wins * 3) + ties)
+      });
+    }
+  };
+
   const contextValue = useMemo(() => ({
     user: userProfile, 
     updateUser: (updates: Partial<UserProfile>) => { if (firebaseUser) updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid), updates); },
@@ -540,9 +550,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       }
 
       const batch = writeBatch(db); 
-      batch.set(doc(db, 'teams', tid), { id: tid, teamName: name, description: description || '', teamCode: code, createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, createdAt: new Date().toISOString(), members: { [firebaseUser.uid]: 'Admin' }, isPro: isP, planId: pId, proAssignedAt: isP ? new Date().toISOString() : null }); 
+      batch.set(doc(db, 'teams', tid), { id: tid, teamName: name, description: description || '', teamCode: code, createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, createdAt: new Date().toISOString(), members: { [firebaseUser.uid]: 'Admin' }, isPro: isP, planId: pId, proAssignedAt: isP ? new Date().toISOString() : null, leagueIds: [] }); 
       batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), { userId: firebaseUser.uid, teamId: tid, role: 'Admin', position: pos || 'Coach', name: userProfile?.name || 'Organizer', avatar: userProfile?.avatar || '', joinedAt: new Date().toISOString() }); 
-      batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { userId: firebaseUser.uid, teamId: tid, teamName: name, description: description || '', teamCode: code, role: 'Admin', isPro: isP, planId: pId, joinedAt: new Date().toISOString(), createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid }); 
+      batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { userId: firebaseUser.uid, teamId: tid, teamName: name, description: description || '', teamCode: code, role: 'Admin', isPro: isP, planId: pId, joinedAt: new Date().toISOString(), createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, leagueIds: [] }); 
       
       try {
         await batch.commit(); 
@@ -565,7 +575,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         const batch = writeBatch(db); 
         batch.update(doc(db, 'teams', tid), { [`members.${firebaseUser.uid}`]: 'Member' }); 
         batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), { userId: firebaseUser.uid, teamId: tid, role: 'Member', position: pos || 'Player', name: userProfile.name, avatar: userProfile.avatar, joinedAt: new Date().toISOString() }); 
-        batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { userId: firebaseUser.uid, teamId: tid, teamName: tData.teamName, teamCode: code.toUpperCase(), role: 'Member', isPro: tData.isPro || false, planId: tData.planId || (tData.isPro ? 'squad_pro' : 'starter_squad'), joinedAt: new Date().toISOString(), createdBy: tData.createdBy, ownerUserId: tData.ownerUserId || tData.createdBy }); 
+        batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { userId: firebaseUser.uid, teamId: tid, teamName: tData.teamName, teamCode: code.toUpperCase(), role: 'Member', isPro: tData.isPro || false, planId: tData.planId || (tData.isPro ? 'squad_pro' : 'starter_squad'), joinedAt: new Date().toISOString(), createdBy: tData.createdBy, ownerUserId: tData.ownerUserId || tData.createdBy, leagueIds: tData.leagueIds || [] }); 
         await batch.commit(); 
         setActiveTeamId(tid); 
         return true; 
@@ -587,7 +597,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         }
       });
     },
-    addGame: (g: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'games'), { ...g, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString() }),
+    addGame: (g: any) => {
+      if (!activeTeam?.id) return;
+      addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'games'), { ...g, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString() });
+      updateLeagueStandings(activeTeam.id, g.result === 'Win' ? 1 : 0, g.result === 'Loss' ? 1 : 0, g.result === 'Tie' ? 1 : 0);
+    },
     updateGame: (id: string, g: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'games', id), g),
     addDrill: (d: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'drills'), { ...d, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString() }),
     deleteDrill: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'drills', id)),
@@ -604,7 +618,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         return '';
       }
     },
-    addMessage: (cid: string, auth: string, content: string, type: string, img?: string, poll?: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages'), { author: auth, authorId: firebaseUser?.uid, content, type, imageUrl: img || null, poll: poll || null, createdAt: new Date().toISOString() }),
+    addMessage: (cid: string, auth: string, content: string, type: string, img?: string, poll?: any, isOpponentCoach?: boolean, opponentTeamName?: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages'), { author: auth, authorId: firebaseUser?.uid, content, type, imageUrl: img || null, poll: poll || null, createdAt: new Date().toISOString(), isOpponentCoach: isOpponentCoach || false, opponentTeamName: opponentTeamName || null }),
     votePoll: async (cid: string, mid: string, oidx: number) => { 
       if (!activeTeam?.id || !firebaseUser) return; 
       try {
@@ -680,52 +694,72 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!firebaseUser || !db) return;
       const batch = writeBatch(db);
       const ownedTeams = teams.filter(t => t.ownerUserId === firebaseUser.uid && t.isPro);
-      
       ownedTeams.forEach(t => {
         const isStillPro = selectedTeamIds.includes(t.id);
-        const updates = {
-          isPro: isStillPro,
-          planId: isStillPro ? t.planId : 'starter_squad',
-          isProPendingRemoval: false
-        };
+        const updates = { isPro: isStillPro, planId: isStillPro ? t.planId : 'starter_squad', isProPendingRemoval: false };
         batch.update(doc(db, 'teams', t.id), updates);
         batch.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', t.id), updates);
       });
-
-      try {
-        await batch.commit();
-        toast({ title: "Quota Resolved" });
-      } catch (e) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `teams`, operation: 'update' }));
-      }
+      try { await batch.commit(); toast({ title: "Quota Resolved" }); } catch (e) { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `teams`, operation: 'update' })); }
     },
     assignManualPlan: async (targetUserId: string, planId: string, limit: number) => {
       if (!isSuperAdmin || !db) return;
-      
       try {
         const timestamp = new Date().toISOString();
         const batch = writeBatch(db);
-        
-        batch.update(doc(db, 'users', targetUserId), {
-          activePlanId: planId,
-          proTeamLimit: limit,
-          planSource: 'manual'
-        });
-
-        batch.set(doc(db, 'subscriptions', targetUserId), {
-          userId: targetUserId,
-          productId: planId,
-          entitlementActive: true,
-          proTeamLimit: limit,
-          source: 'manual',
-          lastSyncedAt: timestamp
-        }, { merge: true });
-
+        batch.update(doc(db, 'users', targetUserId), { activePlanId: planId, proTeamLimit: limit, planSource: 'manual' });
+        batch.set(doc(db, 'subscriptions', targetUserId), { userId: targetUserId, productId: planId, entitlementActive: true, proTeamLimit: limit, source: 'manual', lastSyncedAt: timestamp }, { merge: true });
         await batch.commit();
         toast({ title: "Organization Assigned" });
-      } catch (e) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `users/${targetUserId}`, operation: 'update' }));
-      }
+      } catch (e) { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `users/${targetUserId}`, operation: 'update' })); }
+    },
+    // League Logic
+    createLeague: async (name: string, sport?: string) => {
+      if (!firebaseUser || !activeTeam) return '';
+      const lid = `league_${Date.now()}`;
+      const lData: League = {
+        id: lid,
+        name,
+        creatorId: firebaseUser.uid,
+        createdAt: new Date().toISOString(),
+        sport: sport || activeTeam.sport,
+        teams: {
+          [activeTeam.id]: {
+            teamName: activeTeam.name,
+            wins: 0, losses: 0, ties: 0, points: 0
+          }
+        }
+      };
+      await setDoc(doc(db, 'leagues', lid), lData);
+      updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id), { leagueIds: [...(activeTeam.leagueIds || []), lid] });
+      updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), { leagueIds: [...(activeTeam.leagueIds || []), lid] });
+      return lid;
+    },
+    inviteTeamToLeague: async (leagueId: string, leagueName: string, email: string) => {
+      const inviteId = `inv_${Date.now()}`;
+      await setDoc(doc(db, 'leagues', leagueId, 'invites', inviteId), {
+        id: inviteId,
+        leagueId,
+        leagueName,
+        invitedEmail: email,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      });
+      toast({ title: "Invite Sent", description: `Tactical invite dispatched to ${email}.` });
+    },
+    acceptLeagueInvite: async (inviteId: string, leagueId: string) => {
+      if (!activeTeam || !firebaseUser) return;
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'leagues', leagueId), {
+        [`teams.${activeTeam.id}`]: {
+          teamName: activeTeam.name, wins: 0, losses: 0, ties: 0, points: 0
+        }
+      });
+      batch.update(doc(db, 'leagues', leagueId, 'invites', inviteId), { status: 'accepted' });
+      batch.update(doc(db, 'teams', activeTeam.id), { leagueIds: [...(activeTeam.leagueIds || []), leagueId] });
+      batch.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), { leagueIds: [...(activeTeam.leagueIds || []), leagueId] });
+      await batch.commit();
+      toast({ title: "Joined League", description: "Your squad is now on the standings." });
     }
   }), [userProfile, activeTeam, teams, isTeamsLoading, members, isMembersLoading, isUserLoading, isSuperAdmin, isPaywallOpen, isRCInitialized, db, firebaseUser, activePlanFeatures, plans, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro, proQuotaStatus, canAddProTeam, alerts, router]);
 

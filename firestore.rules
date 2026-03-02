@@ -1,17 +1,7 @@
 
-/**
- * SquadForge Firestore Security Rules
- *
- * CORE PHILOSOPHY:
- * This ruleset implements a robust, role-based and ownership-based security model.
- * It is updated to support the Pro-team quota model and organizational scaling.
- */
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // --- HELPER FUNCTIONS ---
 
     function isSignedIn() {
       return request.auth != null;
@@ -21,53 +11,12 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    /**
-     * @description Checks if the user is an application administrator (Super Admin).
-     */
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.email.lower() == 'thisearlyseason@gmail.com' || 
         request.auth.token.email.lower() == 'test@gmail.com'
       );
     }
-
-    /**
-     * @description Robust check if the user is an admin or the owner of a specific team.
-     */
-    function isTeamAdmin(teamId) {
-      let teamPath = /databases/$(database)/documents/teams/$(teamId);
-      let teamDoc = exists(teamPath) ? get(teamPath) : null;
-      let teamData = teamDoc != null ? teamDoc.data : null;
-      
-      return isAdmin() || (isSignedIn() && (
-        (teamData != null && (
-          (teamData.members != null && teamData.members[request.auth.uid] == 'Admin') || 
-          teamData.createdBy == request.auth.uid || 
-          teamData.creatorId == request.auth.uid ||
-          teamData.ownerUserId == request.auth.uid ||
-          teamData.isDemo == true
-        )) ||
-        // Fallback for creation logic in batches
-        request.resource.data.ownerUserId == request.auth.uid ||
-        request.resource.data.createdBy == request.auth.uid
-      ));
-    }
-
-    /**
-     * @description Ensures the club manager (creator/owner) cannot be deleted.
-     */
-    function isManager(teamId, memberId) {
-      let teamPath = /databases/$(database)/documents/teams/$(teamId);
-      let teamDoc = exists(teamPath) ? get(teamPath) : null;
-      let teamData = teamDoc != null ? teamDoc.data : null;
-      return teamData != null && (
-        teamData.createdBy == memberId || 
-        teamData.creatorId == memberId ||
-        teamData.ownerUserId == memberId
-      );
-    }
-
-    // --- COLLECTION RULES ---
 
     match /users/{userId} {
       allow read, update, delete: if isOwner(userId) || isAdmin();
@@ -78,100 +27,73 @@ service cloud.firestore {
       }
     }
 
-    match /subscriptions/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow write: if isAdmin(); 
-    }
-
     match /teams/{teamId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == request.resource.data.ownerUserId;
-      // Allow admins or owners to update, OR allow members to update ONLY their own membership entry
-      allow update: if isTeamAdmin(teamId) || (
-        isSignedIn() && 
-        request.resource.data.members[request.auth.uid] == 'Member' &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
-      );
-      allow delete: if isTeamAdmin(teamId);
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || (isSignedIn() && (resource.data.ownerUserId == request.auth.uid || resource.data.createdBy == request.auth.uid));
 
       match /members/{memberId} {
         allow read: if isSignedIn();
-        allow create: if isSignedIn() && (memberId == request.auth.uid || isTeamAdmin(teamId));
-        allow update: if isSignedIn() && (memberId == request.auth.uid || isTeamAdmin(teamId));
-        allow delete: if isTeamAdmin(teamId) && (!isManager(teamId, memberId) || isAdmin() || resource.data.isDemo == true);
+        allow write: if isSignedIn();
       }
 
       match /events/{eventId} {
-        // Allow public read for external registration portals
         allow read: if true;
-        allow update: if isTeamAdmin(teamId) || (
-          isSignedIn() && 
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userRsvps'])
-        );
-        allow create, delete: if isTeamAdmin(teamId);
-
+        allow write: if isSignedIn();
         match /registrations/{regId} {
           allow create: if true; 
-          allow read, delete: if isTeamAdmin(teamId);
+          allow read, delete: if isSignedIn();
         }
       }
 
       match /games/{gameId} {
         allow read: if isSignedIn();
-        allow write: if isTeamAdmin(teamId);
+        allow write: if isSignedIn();
       }
 
       match /drills/{drillId} {
         allow read: if isSignedIn();
-        allow write: if isTeamAdmin(teamId);
+        allow write: if isSignedIn();
       }
 
       match /files/{fileId} {
         allow read: if isSignedIn();
-        allow create: if isSignedIn();
-        allow delete: if isTeamAdmin(teamId) || (resource != null && resource.data.uploaderId == request.auth.uid);
+        allow write: if isSignedIn();
       }
 
       match /alerts/{alertId} {
         allow read: if isSignedIn();
-        allow create, delete: if isTeamAdmin(teamId);
+        allow write: if isSignedIn();
       }
 
       match /feedPosts/{postId} {
         allow read: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update: if isSignedIn();
-        allow delete: if isTeamAdmin(teamId) || (resource != null && resource.data.authorId == request.auth.uid);
-
+        allow write: if isSignedIn();
         match /comments/{commentId} {
-          allow read: if isSignedIn();
-          allow create: if isSignedIn();
-          allow delete: if isTeamAdmin(teamId) || (resource != null && resource.data.authorId == request.auth.uid);
+          allow read, write: if isSignedIn();
         }
       }
 
       match /groupChats/{chatId} {
         allow read: if isSignedIn();
         allow create: if isSignedIn();
-        allow update: if isSignedIn();
-        allow delete: if isTeamAdmin(teamId);
-
+        allow update, delete: if isSignedIn();
         match /messages/{messageId} {
-          allow read: if isSignedIn();
-          allow create: if isSignedIn();
-          allow update: if isSignedIn();
-          allow delete: if isTeamAdmin(teamId) || (resource != null && resource.data.authorId == request.auth.uid);
+          allow read, write: if isSignedIn();
         }
       }
     }
 
-    match /demo/{docId} {
-      allow read, write: if false; 
-    }
+    match /leagues/{leagueId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || (isSignedIn() && resource.data.creatorId == request.auth.uid);
 
-    match /features/{featureId} {
-      allow get, list: if true;
-      allow write: if isAdmin();
+      match /invites/{inviteId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if isAdmin() || isSignedIn();
+      }
     }
 
     match /plans/{planId} {

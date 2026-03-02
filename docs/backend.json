@@ -76,89 +76,93 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Team",
       "type": "object",
-      "description": "Represents a sports team or group within the application, providing a collaborative space for its members.",
+      "description": "Represents a sports team or group within the application.",
       "properties": {
         "id": {
-          "type": "string",
-          "description": "Unique identifier for the Team entity."
+          "type": "string"
         },
         "teamName": {
-          "type": "string",
-          "description": "The official name of the team."
+          "type": "string"
         },
         "sport": {
-          "type": "string",
-          "description": "The sport the team is associated with."
+          "type": "string"
         },
         "description": {
-          "type": "string",
-          "description": "A brief bio or description of the team."
+          "type": "string"
         },
         "teamLogoUrl": {
           "type": "string",
-          "description": "URL to the team's logo image (optional).",
           "format": "uri"
         },
         "teamCode": {
-          "type": "string",
-          "description": "A unique 6-character alphanumeric code used for joining the team."
-        },
-        "creatorId": {
-          "type": "string",
-          "description": "Reference to the User who created this team."
+          "type": "string"
         },
         "ownerUserId": {
-          "type": "string",
-          "description": "The primary owner of the team, responsible for subscription assignment."
-        },
-        "createdBy": {
-          "type": "string",
-          "description": "Alias for creatorId used in Firestore implementation."
+          "type": "string"
         },
         "createdAt": {
           "type": "string",
-          "description": "Timestamp when the team was created.",
           "format": "date-time"
         },
         "planId": {
-          "type": "string",
-          "description": "The ID of the active subscription plan for this team."
+          "type": "string"
         },
         "isPro": {
-          "type": "boolean",
-          "default": false,
-          "description": "Indicates if the team has an active Pro subscription."
+          "type": "boolean"
         },
-        "proAssignedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Timestamp when Pro features were last assigned to this team."
-        },
-        "isProPendingRemoval": {
-          "type": "boolean",
-          "default": false,
-          "description": "Indicates if Pro features are scheduled for removal (e.g., due to cancellation)."
-        },
-        "isDemo": {
-          "type": "boolean",
-          "description": "Flag indicating if this is a pre-populated demo squad."
-        },
-        "members": {
-          "type": "object",
-          "description": "A map of user IDs to their roles (e.g., 'Admin', 'Member') for rapid rule checks.",
-          "additionalProperties": {
-            "type": "string"
-          }
+        "leagueIds": {
+          "type": "array",
+          "items": { "type": "string" }
         }
       },
       "required": [
         "id",
         "teamName",
-        "sport",
         "teamCode",
-        "createdBy",
-        "createdAt"
+        "ownerUserId"
       ]
+    },
+    "League": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "League",
+      "type": "object",
+      "description": "A competitive grouping of multiple teams.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "sport": { "type": "string" },
+        "teams": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "teamName": { "type": "string" },
+              "wins": { "type": "number" },
+              "losses": { "type": "number" },
+              "ties": { "type": "number" },
+              "points": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["id", "name", "creatorId"]
+    },
+    "LeagueInvite": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "LeagueInvite",
+      "type": "object",
+      "description": "An invitation for a team to join a league.",
+      "properties": {
+        "id": { "type": "string" },
+        "leagueId": { "type": "string" },
+        "leagueName": { "type": "string" },
+        "invitedEmail": { "type": "string", "format": "email" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["leagueId", "invitedEmail", "status"]
     },
     "Subscription": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -199,136 +203,6 @@
         "source",
         "lastSyncedAt"
       ]
-    },
-    "Feature": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Feature",
-      "type": "object",
-      "description": "Represents a distinct feature or capability within the application.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique key for the feature (e.g., 'group_chat')."
-        },
-        "description": {
-          "type": "string",
-          "description": "Human-readable description of the feature."
-        },
-        "defaultEnabled": {
-          "type": "boolean",
-          "description": "Whether the feature is enabled by default for new teams."
-        }
-      },
-      "required": [
-        "id",
-        "description",
-        "defaultEnabled"
-      ]
-    },
-    "Plan": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Plan",
-      "type": "object",
-      "description": "Defines a subscription plan with a set of enabled features.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the plan."
-        },
-        "name": {
-          "type": "string",
-          "description": "Display name of the plan."
-        },
-        "description": {
-          "type": "string",
-          "description": "Description of what the plan offers."
-        },
-        "priceDisplay": {
-          "type": "string",
-          "description": "Monthly display price (e.g. '$9.99')"
-        },
-        "annualPriceDisplay": {
-          "type": "string",
-          "description": "Annual display price (e.g. '$100')"
-        },
-        "billingCycle": {
-          "type": "string",
-          "description": "Cycle (e.g. '/mo' or '/yr')"
-        },
-        "isPublic": {
-          "type": "boolean",
-          "description": "Whether the plan is visible to all users in the pricing section."
-        },
-        "isContactOnly": {
-          "type": "boolean",
-          "description": "If true, requires manual sales contact to activate."
-        },
-        "billingType": {
-          "type": "string",
-          "enum": [
-            "free",
-            "monthly",
-            "annual",
-            "manual"
-          ]
-        },
-        "teamLimit": {
-          "type": "number",
-          "description": "The number of teams allowed on this plan (null for unlimited)."
-        },
-        "features": {
-          "type": "object",
-          "description": "A map of feature IDs to booleans indicating if they are enabled for this plan.",
-          "additionalProperties": {
-            "type": "boolean"
-          }
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "isPublic",
-        "isContactOnly",
-        "billingType",
-        "features"
-      ]
-    },
-    "Lead": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Lead",
-      "type": "object",
-      "description": "A contact inquiry for custom plans.",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "email": {
-          "type": "string",
-          "format": "email"
-        },
-        "organization": {
-          "type": "string"
-        },
-        "teamCount": {
-          "type": "number"
-        },
-        "message": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "name",
-        "email",
-        "organization",
-        "createdAt"
-      ]
     }
   },
   "auth": {
@@ -338,23 +212,11 @@
     ]
   },
   "firestore": {
-    "/features/{featureId}": {
-      "schema": {
-        "$ref": "#/backend/entities/Feature"
-      },
-      "description": "Global collection defining available application capabilities."
-    },
     "/plans/{planId}": {
       "schema": {
         "$ref": "#/backend/entities/Plan"
       },
-      "description": "Global collection defining subscription tiers and their associated features."
-    },
-    "/leads/{leadId}": {
-      "schema": {
-        "$ref": "#/backend/entities/Lead"
-      },
-      "description": "Storage for custom plan inquiries."
+      "description": "Global collection defining subscription tiers."
     },
     "/users/{userId}": {
       "schema": {
@@ -368,11 +230,17 @@
       },
       "description": "Collaborative team hubs."
     },
-    "/subscriptions/{userId}": {
+    "/leagues/{leagueId}": {
       "schema": {
-        "$ref": "#/backend/entities/Subscription"
+        "$ref": "#/backend/entities/League"
       },
-      "description": "Read-only subscription state for the user."
+      "description": "Competitive league hubs."
+    },
+    "/leagues/{leagueId}/invites/{inviteId}": {
+      "schema": {
+        "$ref": "#/backend/entities/LeagueInvite"
+      },
+      "description": "Invitations to join a league."
     }
   }
 }

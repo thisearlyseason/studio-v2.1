@@ -27,7 +27,7 @@ import {
   History,
   Timer,
   ChevronRight,
-  Layers
+  Shield
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -72,6 +72,7 @@ import {
 const tabs = [
   { name: 'Feed', href: '/feed', icon: LayoutDashboard, pro: false },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
+  { name: 'Leagues', href: '/leagues', icon: Shield, pro: true },
   { name: 'Games', href: '/games', icon: Trophy, pro: true },
   { name: 'Drills', href: '/drills', icon: Dumbbell, pro: true },
   { name: 'Chats', href: '/chats', icon: MessageCircle, pro: true },
@@ -287,50 +288,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-                {isSuperAdmin && (
-                  <>
-                    <SidebarMenuItem>
-                      <SidebarMenuButton 
-                        asChild 
-                        isActive={pathname === '/admin/plans'}
-                        className={cn(
-                          "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                          pathname === '/admin/plans' 
-                            ? "bg-black text-white shadow-lg" 
-                            : "text-red-600 hover:bg-red-50"
-                        )}
-                      >
-                        <Link href="/admin/plans" className="flex items-center gap-4">
-                          <ShieldAlert className="h-5 w-5" />
-                          <span>Admin Suite</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                    
-                    <div className="px-4 pt-4 pb-2">
-                      <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-3">Simulation Mode</p>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" className="w-full h-10 rounded-xl border-dashed border-2 text-[10px] font-black uppercase tracking-widest justify-between">
-                            <div className="flex items-center gap-2">
-                              <Eye className="h-3.5 w-3.5 text-primary" />
-                              {simulationPlanId ? simulationPlanId.replace('_', ' ') : 'Live View'}
-                            </div>
-                            <ChevronDown className="h-3 w-3 opacity-40" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-56 rounded-xl p-2">
-                          <DropdownMenuRadioGroup value={simulationPlanId || 'none'} onValueChange={(v) => setSimulationPlanId(v === 'none' ? null : v)}>
-                            <DropdownMenuRadioItem value="none" className="text-xs font-bold uppercase tracking-widest p-3">Normal Mode</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value="starter_squad" className="text-xs font-bold uppercase tracking-widest p-3">Starter Simulation</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value="squad_pro" className="text-xs font-bold uppercase tracking-widest p-3">Pro Simulation</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value="club_custom" className="text-xs font-bold uppercase tracking-widest p-3">Club Simulation</DropdownMenuRadioItem>
-                          </DropdownMenuRadioGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </>
-                )}
               </SidebarMenu>
             </SidebarContent>
 
@@ -355,104 +312,19 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="flex items-center gap-4 min-w-0">
                 <div className="flex flex-col min-w-0">
                   <h2 className="text-xl lg:text-2xl font-black tracking-tighter uppercase truncate">
-                    {pathname === '/pricing' ? 'Pricing' : (pathname === '/admin/plans' ? 'Admin Suite' : (pathname === '/club' ? 'Club Hub' : (tabs.find(t => pathname.startsWith(t.href))?.name || 'Dashboard')))}
+                    {pathname === '/pricing' ? 'Pricing' : (pathname === '/leagues' ? 'League Control' : (tabs.find(t => pathname.startsWith(t.href))?.name || 'Dashboard'))}
                   </h2>
                   <p className="text-[9px] lg:text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em] lg:tracking-[0.3em] ml-0.5 truncate">The Squad Hub • {activeTeam?.name}</p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {activeTeam?.isDemo && (
-                    <Badge className="bg-primary text-white font-black uppercase tracking-widest text-[8px] lg:text-[9px] h-5 lg:h-6 px-2 lg:px-3 shadow-lg shadow-primary/20">Demo</Badge>
-                  )}
-                  {simulationPlanId && (
-                    <Badge variant="outline" className="hidden lg:inline-flex border-primary/20 text-primary font-black uppercase tracking-widest text-[9px] h-6 px-3 italic">Simulating: {simulationPlanId.replace('_', ' ')}</Badge>
-                  )}
-                </div>
               </div>
-              
               <div className="flex items-center gap-4 lg:gap-6 shrink-0">
-                <div className="flex items-center gap-2">
-                  <CreateAlertButton />
-                  <AlertsHistoryDialog>
-                    <Button variant="ghost" size="icon" className="h-10 w-10 rounded-2xl hover:bg-primary/5 hover:text-primary transition-all relative">
-                      <Bell className="h-5 w-5" />
-                      {hasUnreadAlerts && <span className="absolute top-2.5 right-2.5 h-2 w-2 bg-red-500 rounded-full border-2 border-background" />}
-                    </Button>
-                  </AlertsHistoryDialog>
-                </div>
-              </div>
-            </header>
-
-            <header className="flex md:hidden sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 items-center px-4 justify-between shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="p-0 hover:bg-transparent flex items-center gap-2 shrink-0">
-                      <Avatar className="h-8 w-8 rounded-lg border shadow-sm">
-                        <AvatarImage src={activeTeam?.teamLogoUrl} className="object-cover" />
-                        <AvatarFallback className="hero-gradient text-white font-black text-[10px]">
-                          {activeTeam?.name?.[0] || 'T'}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex flex-col items-start min-w-0">
-                        <span className="font-black text-xs tracking-tight truncate w-24 text-left leading-none">{activeTeam?.name}</span>
-                        {activeTeam?.isDemo && <span className="text-[7px] font-black text-primary uppercase leading-none mt-0.5">Demo</span>}
-                      </div>
-                      <ChevronDown className="h-3 w-3 opacity-40" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-64 rounded-xl shadow-2xl border-muted p-2">
-                    <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest opacity-50 px-3 py-2">My Squads</DropdownMenuLabel>
-                    <DropdownMenuSeparator className="my-1" />
-                    {teams.map((team) => (
-                      <DropdownMenuItem 
-                        key={team.id} 
-                        onClick={() => setActiveTeam(team)}
-                        className={cn(
-                          "flex items-center justify-between p-3 cursor-pointer rounded-xl transition-colors",
-                          team.id === activeTeam?.id ? "bg-primary/10 text-primary" : "hover:bg-muted"
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8 rounded-lg shrink-0 border">
-                            <AvatarImage src={team.teamLogoUrl} className="object-cover" />
-                            <AvatarFallback className="bg-muted font-black text-xs">{team.name[0]}</AvatarFallback>
-                          </Avatar>
-                          <span className="font-bold text-sm truncate max-w-[120px]">{team.name}</span>
-                        </div>
-                        {team.isDemo && <Badge className="bg-primary text-[8px] h-3 px-1">DEMO</Badge>}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator className="my-1" />
-                    <DropdownMenuItem onClick={() => router.push('/team')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-2">
-                      <Info className="h-4 w-4 text-muted-foreground" /> Squad Profile
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push('/teams/new')} className="p-3 text-primary cursor-pointer rounded-xl font-bold text-xs gap-2">
-                      <PlusCircle className="h-4 w-4" /> New Squad
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                {isClubManager && (
-                  <Link href="/club">
-                    <Button variant="ghost" size="icon" className={cn("h-9 w-9 rounded-xl transition-all shadow-sm", pathname === '/club' ? "bg-black text-white" : "bg-primary/10 text-primary border border-primary/20")}>
-                      <Building className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                )}
+                <CreateAlertButton />
                 <AlertsHistoryDialog>
-                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl relative">
-                    <Bell className="h-4 w-4" />
-                    {hasUnreadAlerts && <span className="absolute top-2 right-2 h-1.5 w-1.5 bg-red-500 rounded-full border border-background" />}
+                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-2xl hover:bg-primary/5 hover:text-primary transition-all relative">
+                    <Bell className="h-5 w-5" />
+                    {hasUnreadAlerts && <span className="absolute top-2.5 right-2.5 h-2 w-2 bg-red-500 rounded-full border-2 border-background" />}
                   </Button>
                 </AlertsHistoryDialog>
-                <Link href="/settings">
-                  <Avatar className="h-8 w-8 border shadow-sm">
-                    <AvatarImage src={user?.avatar} />
-                    <AvatarFallback className="text-[10px] font-black">{user?.name?.[0]}</AvatarFallback>
-                  </Avatar>
-                </Link>
               </div>
             </header>
 
@@ -481,10 +353,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     </Link>
                   );
                 })}
-                <Link href="/settings" className={cn("flex flex-col items-center justify-center gap-1 px-1 py-1 rounded-xl transition-all relative min-w-[42px]", pathname === '/settings' ? "text-primary bg-primary/5" : "text-muted-foreground")}>
-                  <Settings className={cn("h-4 w-4 sm:h-5 sm:w-5", pathname === '/settings' && "scale-110")} />
-                  <span className="text-[7px] sm:text-[8px] font-black tracking-tight uppercase truncate max-w-[40px]">Profile</span>
-                </Link>
               </div>
             </nav>
           </div>
