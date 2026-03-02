@@ -13,9 +13,14 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email.lower() == 'thisearlyseason@gmail.com' || 
-        request.auth.token.email.lower() == 'test@gmail.com'
+        request.auth.token.get('email', '').lower() == 'thisearlyseason@gmail.com' || 
+        request.auth.token.get('email', '').lower() == 'test@gmail.com'
       );
+    }
+
+    // Support for collectionGroup queries on events (External Invitations)
+    match /{path=**}/events/{eventId} {
+      allow read: if isSignedIn();
     }
 
     match /users/{userId} {
