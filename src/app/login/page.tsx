@@ -15,7 +15,7 @@ import { toast } from '@/hooks/use-toast';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import BrandLogo from '@/components/BrandLogo';
 import Image from 'next/image';
-import { Sparkles, Trophy, Users, Zap, Loader2 } from 'lucide-react';
+import { Sparkles, Trophy, Users, Zap, Loader2, Table as TableIcon } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -27,7 +27,6 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Select a random sports image from the library
     const sportsImages = PlaceHolderImages.filter(img => img.id.startsWith('sport-'));
     if (sportsImages.length > 0) {
       const randomIdx = Math.floor(Math.random() * sportsImages.length);
@@ -55,10 +54,8 @@ export default function LoginPage() {
   const handleLaunchDemo = async (planId: string) => {
     setIsDemoLoading(true);
     try {
-      // CRITICAL: Sign out first to ensure a fresh anonymous UID for each demo tier
       await signOut(auth);
       await signInAnonymously(auth);
-      // We pass the demo intent via a URL parameter which the TeamProvider will pick up
       router.push(`/feed?seed_demo=${planId}`);
     } catch (error: any) {
       toast({
@@ -72,7 +69,6 @@ export default function LoginPage() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-6 relative overflow-hidden">
-      {/* Dynamic Sports Background */}
       {backgroundImage && (
         <>
           <div className="absolute inset-0 w-full h-full">
@@ -88,13 +84,11 @@ export default function LoginPage() {
         </>
       )}
       
-      {/* Centralized Brand Logo for Dark Background */}
       <div className="relative z-20 mb-8 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-1000">
         <BrandLogo variant="dark-background" className="h-16 w-48 drop-shadow-2xl" priority />
       </div>
 
       <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-center relative z-10">
-        {/* Main Login Card */}
         <Card className="border-none shadow-2xl rounded-[2.5rem] animate-in fade-in slide-in-from-bottom-8 duration-700 bg-white/95 backdrop-blur-sm">
           <CardHeader className="space-y-2 pt-10 text-center">
             <CardTitle className="text-4xl font-black tracking-tighter uppercase">Welcome Back</CardTitle>
@@ -143,7 +137,6 @@ export default function LoginPage() {
           </form>
         </Card>
 
-        {/* Demo Experience Hub */}
         <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-1000">
           <div className="bg-primary text-white p-8 rounded-[3rem] shadow-2xl relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
@@ -160,9 +153,10 @@ export default function LoginPage() {
 
           <div className="grid grid-cols-1 gap-4">
             {[
-              { id: 'starter_squad', name: 'Starter Demo (FREE)', icon: Users, desc: 'Grassroots essentials' },
-              { id: 'squad_pro', name: 'Elite Squad Demo (PRO)', icon: Zap, desc: 'Advanced analytics & strategy' },
-              { id: 'squad_organization', name: 'Club Demo (CUSTOM)', icon: Trophy, desc: 'Multi-team organization' }
+              { id: 'starter_squad', name: 'Starter Demo', icon: Users, desc: 'Grassroots essentials' },
+              { id: 'squad_pro', name: 'Elite Squad Demo', icon: Zap, desc: 'Advanced analytics & strategy' },
+              { id: 'tournament_pro', name: 'Tournament Demo', icon: TableIcon, desc: 'Brackets & Live Scores ($50)' },
+              { id: 'squad_organization', name: 'Club Demo', icon: Trophy, desc: 'Multi-team organization' }
             ].map((demo) => (
               <Button 
                 key={demo.id} 

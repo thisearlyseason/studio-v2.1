@@ -125,7 +125,7 @@ export type TournamentGame = {
   score2: number;
   date: string;
   time: string;
-  winnerId?: string; // ID of the team that won
+  winnerId?: string;
   isCompleted: boolean;
 };
 
@@ -141,9 +141,10 @@ export type TeamEvent = {
   description: string;
   userRsvps?: Record<string, string>;
   isTournament?: boolean;
+  isTournamentPaid?: boolean;
   tournamentSchedule?: any[];
   tournamentGames?: TournamentGame[];
-  tournamentTeams?: string[]; // List of team names involved
+  tournamentTeams?: string[];
   allowExternalRegistration?: boolean;
   isRegistrationRequired?: boolean;
   customFormFields?: any[];
@@ -396,7 +397,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const isPro = useMemo(() => {
     if (simulationPlanId === 'starter_squad') return false;
-    if (simulationPlanId === 'squad_pro' || simulationPlanId === 'squad_organization') return true;
+    if (simulationPlanId === 'squad_pro' || simulationPlanId === 'squad_organization' || simulationPlanId === 'tournament_pro') return true;
     if (isSuperAdmin && !activeTeam?.isDemo) return true;
     if (isProEntitlementActive) return true;
     
@@ -528,7 +529,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const winInc = result === 'Win' ? 1 : 0;
     const lossInc = result === 'Loss' ? 1 : 0;
     const tieInc = result === 'Tie' ? 1 : 0;
-    // Calculation: Win = +1, Loss = -1, Tie = 0
     const pointsInc = winInc - lossInc;
 
     updateDocumentNonBlocking(lRef, {

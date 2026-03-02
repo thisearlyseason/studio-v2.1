@@ -15,9 +15,6 @@ import {
   addDoc
 } from 'firebase/firestore';
 
-/**
- * Seeds the Firestore database with default plans and features if they don't exist.
- */
 export async function seedSubscriptionData(db: Firestore) {
   try {
     const featuresSnapshot = await getDocs(collection(db, 'features'));
@@ -119,29 +116,19 @@ export async function seedSubscriptionData(db: Firestore) {
   }
 }
 
-/**
- * Seeds realistic demo data for a team roster and sub-collections.
- * Uses teamId to diversify mock data.
- */
-export async function seedDemoData(db: Firestore, teamId: string, planId: string, userId: string) {
-  console.log(`[Seeder] Seeding unique sub-collections for team ${teamId} (${planId})`);
+export async function seedDemoData(db: Firestore, teamId: string, planId: string, userId: string, extraOptions?: any) {
   const batch = writeBatch(db);
   const now = new Date();
   const isStarter = planId === 'starter_squad';
-  const isPro = !isStarter;
+  const isPro = !isStarter || planId === 'tournament_pro';
 
-  const teamType = teamId.includes('sub') ? 'sub' : (teamId.includes('pro') ? 'pro' : 'base');
-  const teamSuffix = teamId.slice(-1);
-
-  // 1. Setup Team Roster
-  const count = isStarter ? 10 : 15;
   const names = [
     'Jordan Smith', 'Alex Rivera', 'Sam Taylor', 'Casey Morgan', 'Riley Jones', 
     'Morgan Lee', 'Taylor Quinn', 'Chris Brooks', 'Jamie Day', 'Robin Hood',
     'Sidney Vane', 'Blake Bell', 'Charlie Reed', 'Avery Hill', 'Parker Pen'
   ];
   
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < (isStarter ? 10 : 15); i++) {
     const mid = `demo_mem_${teamId}_${i}`;
     batch.set(doc(db, 'teams', teamId, 'members', mid), {
       id: mid, userId: `demo_user_${teamId}_${i}`, teamId, name: names[i] || `Teammate ${i+1}`, 
@@ -151,36 +138,41 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
     });
   }
 
-  // 2. Setup Events
-  const eventTitles = teamType === 'sub' 
-    ? [`U${teamSuffix} Regional Qualifier`, 'Tactical Review', 'Squad Lunch']
-    : ['Championship Finals', 'Intensive Training', 'Video Analysis'];
-
-  eventTitles.forEach((title, i) => {
-    const eid = `demo_evt_${teamId}_${i}`;
+  // Add a tournament if requested
+  if (planId === 'tournament_pro' || extraOptions?.includeTournament) {
+    const eid = `demo_tournament_${teamId}`;
     batch.set(doc(db, 'teams', teamId, 'events', eid), {
-      id: eid, teamId, title, date: new Date(now.getTime() + 86400000 * (i + 1)).toISOString(),
+      id: eid, teamId, title: 'Summer Regional Finals', 
+      date: new Date(now.getTime() + 86400000).toISOString(),
+      endDate: new Date(now.getTime() + 86400000 * 3).toISOString(),
+      startTime: '09:00 AM', location: 'Metropolitan Stadium', 
+      description: 'Grand finale tournament for the region.',
+      isTournament: true,
+      isTournamentPaid: true,
+      tournamentTeams: ['Westside Warriors', 'Eastside Elite', 'Northside Knights', 'Southside Strikers'],
+      tournamentGames: [
+        {
+          id: 'g1', team1: 'Westside Warriors', team2: 'Eastside Elite', 
+          score1: 4, score2: 2, date: now.toISOString().split('T')[0], 
+          time: '10:00 AM', isCompleted: true, winnerId: 'Westside Warriors'
+        },
+        {
+          id: 'g2', team1: 'Northside Knights', team2: 'Southside Strikers', 
+          score1: 0, score2: 0, date: now.toISOString().split('T')[0], 
+          time: '12:00 PM', isCompleted: false
+        }
+      ],
+      userRsvps: { [userId]: 'going' }, isDemo: true, createdAt: now.toISOString(), lastUpdated: now.toISOString()
+    });
+  } else {
+    batch.set(doc(db, 'teams', teamId, 'events', `demo_evt_${teamId}_0`), {
+      id: `demo_evt_${teamId}_0`, teamId, title: 'Squad Training', 
+      date: new Date(now.getTime() + 86400000).toISOString(),
       startTime: '10:00 AM', location: 'Team Grounds', description: 'High priority event.',
       userRsvps: { [userId]: 'going' }, isDemo: true, createdAt: now.toISOString()
     });
-  });
-
-  // 3. Setup Drills
-  if (isPro) {
-    const drills = teamType === 'sub' && teamSuffix === '1'
-      ? [{ title: 'Dribbling Fundamentals', desc: 'Eyes up coordination drills.' }, { title: 'The Triangle Play', desc: 'Rapid sequence passing.' }]
-      : [{ title: 'Full Court Defensive Trap', desc: 'High energy pressure setup.' }, { title: 'Set Piece Wizardry', desc: 'Mastering set piece execution.' }];
-
-    drills.forEach((d, i) => {
-      const did = `demo_drill_${teamId}_${i}`;
-      batch.set(doc(db, 'teams', teamId, 'drills', did), {
-        ...d, id: did, teamId, createdBy: userId, createdAt: now.toISOString(), 
-        thumbnailUrl: `https://picsum.photos/seed/drill_${teamId}_${i}/400/300`, isDemo: true
-      });
-    });
   }
 
-  // 4. Setup Games
   const games = [
     { opponent: 'Wildcats', result: 'Win', myScore: 4, opponentScore: 2 },
     { opponent: 'Storm', result: 'Loss', myScore: 1, opponentScore: 3 }
@@ -193,63 +185,47 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
     });
   });
 
-  // 5. Setup Chat & Messages
   if (isPro) {
     const cid = `demo_chat_${teamId}`;
-    const chatName = teamType === 'sub' ? `Academy Team ${teamSuffix}` : 'Tactical Command';
     batch.set(doc(db, 'teams', teamId, 'groupChats', cid), {
-      id: cid, teamId, name: chatName, memberIds: [userId], createdBy: userId, 
+      id: cid, teamId, name: 'Tactical Command', memberIds: [userId], createdBy: userId, 
       createdAt: now.toISOString(), lastMessage: 'Review the plays.', unread: 0, isDemo: true
-    });
-
-    const messages = [
-      { content: `Initializing ${chatName} channel.`, author: 'System' },
-      { content: 'New drill added to the library.', author: 'Guest Coordinator' },
-      { content: 'Strategy for the weekend is now live.', author: 'Guest Coordinator' }
-    ];
-
-    messages.forEach((m, i) => {
-      const mid = `demo_msg_${teamId}_${i}`;
-      batch.set(doc(db, 'teams', teamId, 'groupChats', cid, 'messages', mid), {
-        ...m, id: mid, authorId: userId, type: 'text', createdAt: new Date(now.getTime() + (i * 1000)).toISOString()
-      });
     });
   }
 
   await batch.commit();
 }
 
-/**
- * Creates a fresh demo team for a guest user session.
- */
 export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string) {
   const timestamp = Date.now();
   const teamId = `demo_guest_${userId.slice(-4)}_${timestamp}`;
   const teamName = planId === 'starter_squad' ? 'Guest Grassroots Stars' : 
-                   planId === 'squad_pro' ? 'Guest Pro Elite' : 'Metro Academy Hub';
+                   planId === 'squad_pro' ? 'Guest Pro Elite' : 
+                   planId === 'tournament_pro' ? 'Regional Tournament Hub' : 'Metro Academy Hub';
   
   const code = teamId.slice(-6).toUpperCase();
-  const isPro = planId !== 'starter_squad';
+  const actualPlanId = planId === 'tournament_pro' ? 'squad_pro' : planId;
+  const isPro = actualPlanId !== 'starter_squad';
   const batch = writeBatch(db);
   
   batch.set(doc(db, 'users', userId), {
     id: userId, fullName: 'Guest Coordinator', email: 'guest@thesquad.io',
     notificationsEnabled: true, createdAt: new Date().toISOString(),
     isDemo: true, avatarUrl: `https://picsum.photos/seed/${userId}/150/150`,
-    activePlanId: planId, proTeamLimit: planId === 'squad_organization' ? 15 : (planId === 'squad_pro' ? 1 : 0),
+    activePlanId: actualPlanId, proTeamLimit: planId === 'squad_organization' ? 15 : 1,
     planSource: 'free'
   }, { merge: true });
 
   batch.set(doc(db, 'teams', teamId), {
     id: teamId, teamName, teamCode: code, createdBy: userId, ownerUserId: userId,
     createdAt: new Date().toISOString(), members: { [userId]: 'Admin' },
-    isPro, planId, sport: 'Multi-Sport', isDemo: true,
+    isPro, planId: actualPlanId, sport: 'Multi-Sport', isDemo: true,
     description: planId === 'squad_organization' ? 'Enterprise organization management.' : 'Professional coordination suite.'
   });
   
   batch.set(doc(db, 'users', userId, 'teamMemberships', teamId), {
     userId, teamId, teamName, teamCode: code, role: 'Admin', 
-    isPro, planId, isDemo: true, 
+    isPro, planId: actualPlanId, isDemo: true, 
     joinedAt: new Date().toISOString(), createdBy: userId, ownerUserId: userId
   });
 
@@ -260,116 +236,67 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     phone: '(555) 000-9999', amountOwed: 0, feesPaid: true, isDemo: true
   });
 
-  if (planId === 'squad_organization') {
-    const subTeams = [
-      { id: `demo_sub_${userId.slice(-4)}_1`, name: 'Elite Development U14' },
-      { id: `demo_sub_${userId.slice(-4)}_2`, name: 'Varsity Regional U16' }
-    ];
-
-    for (const sub of subTeams) {
-      batch.set(doc(db, 'teams', sub.id), {
-        id: sub.id, teamName: sub.name, teamCode: sub.id.slice(-6).toUpperCase(), createdBy: userId, ownerUserId: userId,
-        createdAt: new Date().toISOString(), members: { [userId]: 'Admin' },
-        isPro: true, planId: 'squad_organization', isDemo: true, sport: 'Club'
-      });
-      batch.set(doc(db, 'users', userId, 'teamMemberships', sub.id), {
-        userId, teamId: sub.id, teamName: sub.name, role: 'Admin', isPro: true, 
-        planId: 'squad_organization', isDemo: true, joinedAt: new Date().toISOString(), 
-        createdBy: userId, ownerUserId: userId
-      });
-      batch.set(doc(db, 'teams', sub.id, 'members', userId), {
-        id: userId, userId, teamId: sub.id, name: 'Guest Coordinator', role: 'Admin',
-        position: 'Club Manager', avatar: `https://picsum.photos/seed/${userId}/150/150`, 
-        isDemo: true, joinedAt: new Date().toISOString()
-      });
-    }
-  }
-  
   await batch.commit();
   
-  await seedDemoData(db, teamId, planId, userId);
-  if (planId === 'squad_organization') {
-    await seedDemoData(db, `demo_sub_${userId.slice(-4)}_1`, 'squad_organization', userId);
-    await seedDemoData(db, `demo_sub_${userId.slice(-4)}_2`, 'squad_organization', userId);
-  }
+  await seedDemoData(db, teamId, planId, userId, { includeTournament: planId === 'tournament_pro' });
 
   return teamId;
 }
 
-/**
- * Atomic reset for demo environments.
- */
 export async function resetDemoEnvironment(db: Firestore, teamId: string, planId: string, userId: string) {
   try {
     const membershipsSnap = await getDocs(collection(db, 'users', userId, 'teamMemberships'));
     const teamIds = membershipsSnap.docs.map(d => d.id);
-
     const subcollections = ['events', 'games', 'drills', 'files', 'alerts', 'feedPosts', 'groupChats', 'members'];
     
     for (const tid of teamIds) {
       for (const sub of subcollections) {
         const snap = await getDocs(collection(db, 'teams', tid, sub));
         if (snap.empty) continue;
-
         const batch = writeBatch(db);
         for (const docSnap of snap.docs) {
           if (sub === 'members' && docSnap.data().userId === userId) continue;
-          
           if (sub === 'groupChats') {
             const msgs = await getDocs(collection(db, 'teams', tid, sub, docSnap.id, 'messages'));
             const msgBatch = writeBatch(db);
             msgs.forEach(m => msgBatch.delete(m.ref));
             if (msgs.size > 0) await msgBatch.commit();
           }
-          if (sub === 'events') {
-            const regs = await getDocs(collection(db, 'teams', tid, sub, docSnap.id, 'registrations'));
-            const regBatch = writeBatch(db);
-            regs.forEach(r => regBatch.delete(r.ref));
-            if (regs.size > 0) await regBatch.commit();
-          }
-
           batch.delete(docSnap.ref);
         }
         if (snap.size > 0) await batch.commit();
       }
     }
-
     await updateDoc(doc(db, 'users', userId), { createdAt: new Date().toISOString() });
-
     for (const tid of teamIds) {
       await seedDemoData(db, tid, planId, userId);
     }
-  } catch (error) {
-    console.error("Demo reset error:", error);
-    throw error;
-  }
+  } catch (error) { throw error; }
 }
 
-/**
- * Initializes global baseline demo environments.
- */
 export async function launchDemoEnvironments(db: Firestore, superAdminId: string) {
   const demoTeams = [
     { id: 'demo_starter_team', name: 'U10 Grassroots Stars', planId: 'starter_squad', sport: 'Soccer' },
     { id: 'demo_pro_team', name: 'Elite Pro Squad', planId: 'squad_pro', sport: 'Basketball' },
+    { id: 'demo_tournament_team', name: 'Regionals Tournament', planId: 'tournament_pro', sport: 'Baseball' },
     { id: 'demo_club_team_1', name: 'City Central United', planId: 'squad_organization', sport: 'Academy' }
   ];
 
   for (const dt of demoTeams) {
     const teamRef = doc(db, 'teams', dt.id);
     const snap = await getDocs(query(collection(db, 'teams'), where('id', '==', dt.id)));
-    
     if (snap.empty) {
       const code = dt.id.slice(0, 6).toUpperCase();
+      const actualPid = dt.planId === 'tournament_pro' ? 'squad_pro' : dt.planId;
       const batch = writeBatch(db);
       batch.set(teamRef, {
         id: dt.id, teamName: dt.name, teamCode: code, createdBy: superAdminId, ownerUserId: superAdminId,
         createdAt: new Date().toISOString(), members: { [superAdminId]: 'Admin' },
-        isPro: dt.planId !== 'starter_squad', planId: dt.planId, sport: dt.sport, isDemo: true
+        isPro: actualPid !== 'starter_squad', planId: actualPid, sport: dt.sport, isDemo: true
       });
       batch.set(doc(db, 'users', superAdminId, 'teamMemberships', dt.id), {
         userId: superAdminId, teamId: dt.id, teamName: dt.name, teamCode: code,
-        role: 'Admin', isPro: dt.planId !== 'starter_squad', planId: dt.planId, isDemo: true, joinedAt: new Date().toISOString(),
+        role: 'Admin', isPro: actualPid !== 'starter_squad', planId: actualPid, isDemo: true, joinedAt: new Date().toISOString(),
         createdBy: superAdminId, ownerUserId: superAdminId
       });
       batch.set(doc(db, 'teams', dt.id, 'members', superAdminId), {
@@ -378,7 +305,7 @@ export async function launchDemoEnvironments(db: Firestore, superAdminId: string
         joinedAt: new Date().toISOString(), phone: '(555) 000-0000', amountOwed: 0, feesPaid: true, isDemo: true
       });
       await batch.commit();
-      await seedDemoData(db, dt.id, dt.planId, superAdminId);
+      await seedDemoData(db, dt.id, dt.planId, superAdminId, { includeTournament: dt.planId === 'tournament_pro' });
     }
   }
 }

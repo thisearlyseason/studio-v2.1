@@ -115,6 +115,26 @@ function calculateTournamentStandings(teams: string[], games: TournamentGame[]) 
   return Object.values(standings).sort((a, b) => b.points - a.points || b.wins - a.wins);
 }
 
+function TournamentPaywall({ purchasePro }: { purchasePro: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 px-6 text-center space-y-6 animate-in fade-in slide-in-from-bottom-4">
+      <div className="bg-primary/10 p-6 rounded-[2rem] relative">
+        <Trophy className="h-12 w-12 text-primary" />
+        <Lock className="absolute -top-2 -right-2 h-6 w-6 bg-black text-white p-1 rounded-full border-2 border-background shadow-lg" />
+      </div>
+      <div className="space-y-2">
+        <h3 className="text-xl font-black uppercase tracking-tight">Elite Features Gated</h3>
+        <p className="text-sm text-muted-foreground font-bold uppercase tracking-widest max-w-xs mx-auto leading-relaxed">
+          Live Scores, Automated Standings, and Waiver Audits require the $50 Tournament Add-on.
+        </p>
+      </div>
+      <Button className="rounded-xl h-12 px-8 font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20" onClick={purchasePro}>
+        Unlock Tournament Suite
+      </Button>
+    </div>
+  );
+}
+
 function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit, onDelete, hasAttendance, purchasePro, children }: EventDetailDialogProps) {
   const { members = [], user, addRegistration, submitEventWaiver } = useTeam();
   const db = useFirestore();
@@ -129,6 +149,8 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
   }, [db, event.id, event.teamId]);
   
   const { data: registrations } = useCollection<any>(regQuery);
+
+  const isTournamentModuleUnlocked = event.isTournamentPaid || !event.isTournament;
 
   const copyPublicLink = () => {
     const url = `${window.location.origin}/tournaments/public/${event.teamId}/${event.id}`;
@@ -281,7 +303,7 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                       <span>{event.location}</span>
                     </div>
                   </div>
-                  {event.isTournament && (
+                  {event.isTournament && isTournamentModuleUnlocked && (
                     <Button onClick={copyPublicLink} variant="outline" className="w-full rounded-xl h-11 font-black text-[10px] uppercase gap-2 border-2">
                       <Share2 className="h-3.5 w-3.5" /> Share Public Hub
                     </Button>
@@ -293,7 +315,7 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                   )}
                 </div>
 
-                {event.isTournament && tournamentStandings.length > 0 && (
+                {event.isTournament && isTournamentModuleUnlocked && tournamentStandings.length > 0 && (
                   <div className="pt-6 border-t space-y-4">
                     <h4 className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Live Standings</h4>
                     <div className="bg-white p-4 rounded-2xl shadow-sm border space-y-2">
@@ -329,33 +351,37 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
 
                   <div className="flex-1 p-8 overflow-y-auto">
                     <TabsContent value="bracket" className="mt-0 space-y-6">
-                      <div className="grid grid-cols-1 gap-4">
-                        {event.tournamentGames?.map((game) => (
-                          <div key={game.id} className="p-5 bg-muted/20 rounded-2xl border-2 border-transparent hover:border-primary/10 transition-all">
-                            <div className="flex justify-between items-center mb-4">
-                              <span className="text-[10px] font-black uppercase text-muted-foreground">{game.date} @ {game.time}</span>
-                              <Badge variant="secondary" className="text-[8px] font-black">{game.isCompleted ? "Final" : "Scheduled"}</Badge>
-                            </div>
-                            <div className="grid grid-cols-7 items-center gap-4">
-                              <div className="col-span-3 text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  {game.winnerId === game.team1 && <CheckCircle2 className="h-4 w-4 text-green-600" />}
-                                  <p className="font-black text-sm uppercase truncate">{game.team1}</p>
-                                </div>
-                                <p className="text-2xl font-black text-primary">{game.score1}</p>
+                      {!isTournamentModuleUnlocked ? (
+                        <TournamentPaywall purchasePro={purchasePro} />
+                      ) : (
+                        <div className="grid grid-cols-1 gap-4">
+                          {event.tournamentGames?.map((game) => (
+                            <div key={game.id} className="p-5 bg-muted/20 rounded-2xl border-2 border-transparent hover:border-primary/10 transition-all">
+                              <div className="flex justify-between items-center mb-4">
+                                <span className="text-[10px] font-black uppercase text-muted-foreground">{game.date} @ {game.time}</span>
+                                <Badge variant="secondary" className="text-[8px] font-black">{game.isCompleted ? "Final" : "Scheduled"}</Badge>
                               </div>
-                              <div className="col-span-1 text-center opacity-30 font-black text-xs">VS</div>
-                              <div className="col-span-3">
-                                <div className="flex items-center gap-2">
-                                  <p className="font-black text-sm uppercase truncate">{game.team2}</p>
-                                  {game.winnerId === game.team2 && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                              <div className="grid grid-cols-7 items-center gap-4">
+                                <div className="col-span-3 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    {game.winnerId === game.team1 && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                                    <p className="font-black text-sm uppercase truncate">{game.team1}</p>
+                                  </div>
+                                  <p className="text-2xl font-black text-primary">{game.score1}</p>
                                 </div>
-                                <p className="text-2xl font-black text-primary">{game.score2}</p>
+                                <div className="col-span-1 text-center opacity-30 font-black text-xs">VS</div>
+                                <div className="col-span-3">
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-black text-sm uppercase truncate">{game.team2}</p>
+                                    {game.winnerId === game.team2 && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                                  </div>
+                                  <p className="text-2xl font-black text-primary">{game.score2}</p>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </TabsContent>
 
                     <TabsContent value="roster" className="mt-0">
@@ -373,24 +399,28 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                     </TabsContent>
 
                     <TabsContent value="admin" className="mt-0 space-y-6">
-                      <div className="space-y-4">
-                        <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Waiver Compliance Audit</h4>
-                        <div className="grid grid-cols-1 gap-2">
-                          {members.map(m => {
-                            const res = event.specialWaiverResponses?.[m.userId];
-                            return (
-                              <div key={m.id} className="flex items-center justify-between p-3 rounded-xl border bg-muted/10">
-                                <span className="font-bold text-xs uppercase">{m.name}</span>
-                                {res?.agreed ? (
-                                  <Badge className="bg-green-100 text-green-700 h-5 px-2 border-none font-black text-[8px] uppercase">Agreed • {format(new Date(res.timestamp), 'MMM d')}</Badge>
-                                ) : (
-                                  <Badge variant="outline" className="h-5 px-2 font-black text-[8px] uppercase opacity-40">Pending Signature</Badge>
-                                )}
-                              </div>
-                            );
-                          })}
+                      {!isTournamentModuleUnlocked ? (
+                        <TournamentPaywall purchasePro={purchasePro} />
+                      ) : (
+                        <div className="space-y-4">
+                          <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Waiver Compliance Audit</h4>
+                          <div className="grid grid-cols-1 gap-2">
+                            {members.map(m => {
+                              const res = event.specialWaiverResponses?.[m.userId];
+                              return (
+                                <div key={m.id} className="flex items-center justify-between p-3 rounded-xl border bg-muted/10">
+                                  <span className="font-bold text-xs uppercase">{m.name}</span>
+                                  {res?.agreed ? (
+                                    <Badge className="bg-green-100 text-green-700 h-5 px-2 border-none font-black text-[8px] uppercase">Agreed • {format(new Date(res.timestamp), 'MMM d')}</Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="h-5 px-2 font-black text-[8px] uppercase opacity-40">Pending Signature</Badge>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </TabsContent>
                   </div>
 

@@ -39,7 +39,8 @@ service cloud.firestore {
 
       match /events/{eventId} {
         allow read: if true;
-        allow write: if isSignedIn();
+        allow write: if isAdmin() || (isSignedIn() && (get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid || get(/databases/$(database)/documents/teams/$(teamId)).data.members[request.auth.uid] == 'Admin'));
+        
         match /registrations/{regId} {
           allow create: if true; 
           allow read, delete: if isSignedIn();
@@ -98,7 +99,7 @@ service cloud.firestore {
 
     match /plans/{planId} {
       allow get, list: if true;
-      allow write: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     match /leads/{leadId} {
@@ -108,7 +109,7 @@ service cloud.firestore {
 
     match /features/{featureId} {
       allow get, list: if true;
-      allow write: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }
