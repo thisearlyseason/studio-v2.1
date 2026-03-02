@@ -33,7 +33,11 @@ import {
   XCircle,
   Clock,
   MessageSquare,
-  Loader2
+  Loader2,
+  FileCheck,
+  Truck,
+  HeartPulse,
+  Camera as CameraIcon
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { useTeam, Member, FeeItem } from '@/components/providers/team-provider';
@@ -95,7 +99,11 @@ export default function RosterPage() {
         parentPhone: selectedMember.parentPhone || '',
         emergencyContactName: selectedMember.emergencyContactName || '',
         emergencyContactPhone: selectedMember.emergencyContactPhone || '',
-        notes: selectedMember.notes || ''
+        notes: selectedMember.notes || '',
+        waiverSigned: !!selectedMember.waiverSigned,
+        transportationWaiverSigned: !!selectedMember.transportationWaiverSigned,
+        medicalClearance: !!selectedMember.medicalClearance,
+        mediaRelease: !!selectedMember.mediaRelease,
       });
     }
   }, [selectedMember]);
@@ -446,10 +454,35 @@ export default function RosterPage() {
                           </div>
                         </div>
 
-                        <div className="bg-primary/5 p-6 lg:p-8 rounded-2xl lg:rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-4 lg:space-y-6">
+                        <div className="bg-primary/5 p-6 lg:p-8 rounded-2xl lg:rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-6">
                           <div className="flex items-center gap-3">
-                            <div className="bg-primary/10 p-2 rounded-lg text-primary"><Baby className="h-4 w-4" /></div>
-                            <h4 className="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em] text-primary">Emergency Network</h4>
+                            <div className="bg-primary/10 p-2 rounded-lg text-primary"><FileCheck className="h-4 w-4" /></div>
+                            <h4 className="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em] text-primary">Compliance & Waivers</h4>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="flex items-center space-x-3 bg-white p-3 rounded-xl border shadow-sm">
+                              <Checkbox id="waiverSigned" checked={editForm.waiverSigned} onCheckedChange={v => setEditForm(p => ({ ...p, waiverSigned: !!v }))} />
+                              <Label htmlFor="waiverSigned" className="text-[10px] font-black uppercase tracking-tight">General Waiver</Label>
+                            </div>
+                            <div className="flex items-center space-x-3 bg-white p-3 rounded-xl border shadow-sm">
+                              <Checkbox id="transportationWaiverSigned" checked={editForm.transportationWaiverSigned} onCheckedChange={v => setEditForm(p => ({ ...p, transportationWaiverSigned: !!v }))} />
+                              <Label htmlFor="transportationWaiverSigned" className="text-[10px] font-black uppercase tracking-tight">Transport Waiver</Label>
+                            </div>
+                            <div className="flex items-center space-x-3 bg-white p-3 rounded-xl border shadow-sm">
+                              <Checkbox id="medicalClearance" checked={editForm.medicalClearance} onCheckedChange={v => setEditForm(p => ({ ...p, medicalClearance: !!v }))} />
+                              <Label htmlFor="medicalClearance" className="text-[10px] font-black uppercase tracking-tight">Medical Cleared</Label>
+                            </div>
+                            <div className="flex items-center space-x-3 bg-white p-3 rounded-xl border shadow-sm">
+                              <Checkbox id="mediaRelease" checked={editForm.mediaRelease} onCheckedChange={v => setEditForm(p => ({ ...p, mediaRelease: !!v }))} />
+                              <Label htmlFor="mediaRelease" className="text-[10px] font-black uppercase tracking-tight">Media Release</Label>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-black/5 p-6 lg:p-8 rounded-2xl lg:rounded-[2.5rem] border-2 border-dashed border-black/10 space-y-4 lg:space-y-6">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-black/10 p-2 rounded-lg text-black"><Baby className="h-4 w-4" /></div>
+                            <h4 className="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em] text-black">Emergency Network</h4>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6">
                             <div className="space-y-1.5 lg:space-y-2">
@@ -515,7 +548,27 @@ export default function RosterPage() {
                         </div>
 
                         {canEditDetails ? (
-                          <>
+                          <div className="space-y-8">
+                            <div className="space-y-4 lg:space-y-6">
+                              <div className="flex items-center gap-3 px-1">
+                                <div className="bg-primary/10 p-2 rounded-lg text-primary"><FileCheck className="h-4 w-4" /></div>
+                                <h4 className="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em] text-primary">Compliance Status</h4>
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                {[
+                                  { icon: FileCheck, label: 'Waiver', active: selectedMember.waiverSigned },
+                                  { icon: Truck, label: 'Transport', active: selectedMember.transportationWaiverSigned },
+                                  { icon: HeartPulse, label: 'Medical', active: selectedMember.medicalClearance },
+                                  { icon: CameraIcon, label: 'Media', active: selectedMember.mediaRelease }
+                                ].map((item, i) => (
+                                  <div key={i} className={cn("flex flex-col items-center justify-center p-3 rounded-2xl border transition-all shadow-sm", item.active ? "bg-primary/5 border-primary text-primary" : "bg-muted/30 border-transparent text-muted-foreground opacity-40")}>
+                                    <item.icon className="h-5 w-5 mb-1.5" />
+                                    <span className="text-[8px] font-black uppercase tracking-tighter">{item.label}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
                             {(selectedMember.parentName || selectedMember.emergencyContactName) && (
                               <div className="space-y-4 lg:space-y-6">
                                 <div className="flex items-center gap-3 px-1">
@@ -540,7 +593,7 @@ export default function RosterPage() {
                                 </div>
                               </div>
                             )}
-                          </>
+                          </div>
                         ) : (
                           <div className="bg-primary/5 p-8 lg:p-10 rounded-2xl lg:rounded-[3rem] border-2 border-dashed border-primary/20 text-center space-y-4 lg:space-y-6">
                             <div className="bg-white w-12 h-12 lg:w-16 lg:h-16 rounded-xl lg:rounded-3xl flex items-center justify-center mx-auto shadow-lg relative">
@@ -550,7 +603,7 @@ export default function RosterPage() {
                             <div className="space-y-1.5 lg:space-y-2">
                               <h4 className="text-lg lg:text-xl font-black tracking-tight">Pro Roster Logic</h4>
                               <p className="text-[10px] lg:text-sm text-muted-foreground font-bold leading-relaxed max-w-xs mx-auto">
-                                Upgrade to track emergency contacts and private coaching notes.
+                                Upgrade to track emergency contacts, medical waivers, and private coaching notes.
                               </p>
                             </div>
                             <Button className="h-10 lg:h-12 rounded-xl px-8 lg:px-10 font-black uppercase text-[9px] lg:text-xs tracking-widest shadow-xl shadow-primary/20" onClick={purchasePro}>

@@ -61,6 +61,15 @@ export type Team = {
   ownerUserId?: string;
 };
 
+export type FormFieldType = 'short_text' | 'long_text' | 'checkbox';
+
+export type CustomFormField = {
+  id: string;
+  label: string;
+  type: FormFieldType;
+  required: boolean;
+};
+
 export type TeamEvent = {
   id: string;
   teamId: string;
@@ -76,7 +85,9 @@ export type TeamEvent = {
   isTournament?: boolean;
   tournamentSchedule?: any[];
   allowExternalRegistration?: boolean;
+  isRegistrationRequired?: boolean;
   maxRegistrations?: number;
+  customFormFields?: CustomFormField[];
 };
 
 export type MemberPosition = 'Coach' | 'Team Lead' | 'Assistant Coach' | 'Squad Leader' | 'Player' | 'Parent' | string;
@@ -101,6 +112,11 @@ export type Member = {
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   notes?: string;
+  // Compliance & Waivers
+  waiverSigned?: boolean;
+  transportationWaiverSigned?: boolean;
+  medicalClearance?: boolean;
+  mediaRelease?: boolean;
 };
 
 export type TeamAlert = {
@@ -166,6 +182,7 @@ interface TeamContextType {
   addDrill: (drill: any) => void;
   deleteDrill: (id: string) => void;
   addFile: (name: string, type: string, size: string, url: string) => void;
+  addExternalLink: (name: string, url: string) => void;
   deleteFile: (id: string) => void;
   createChat: (name: string, memberIds: string[]) => Promise<string>;
   addMessage: (chatId: string, author: string, content: string, type: string, imageUrl?: string, poll?: any) => void;
@@ -324,9 +341,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const activePlanFeatures = useMemo(() => {
     const pid = simulationPlanId || activeTeam?.planId;
     if (!pid) return {};
-    
-    // Static base features for core plans to prevent loading flicker
-    const baseFeatures: Record<string, boolean> = {};
     
     if (pid === 'squad_organization') {
       return {
@@ -544,7 +558,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     updateGame: (id: string, g: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'games', id), g),
     addDrill: (d: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'drills'), { ...d, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString() }),
     deleteDrill: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'drills', id)),
-    addFile: (n: string, t: string, s: string, u: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: t, size: s, url: u, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString() }),
+    addFile: (n: string, t: string, s: string, u: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: t, size: s, url: u, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString(), category: 'file' }),
+    addExternalLink: (n: string, u: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: 'link', size: 'URL', url: u, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString(), category: 'link' }),
     deleteFile: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'files', id)),
     createChat: async (name: string, memberIds: string[]) => { 
       if (!activeTeam?.id || !firebaseUser) return ''; 

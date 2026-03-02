@@ -17,7 +17,10 @@ import {
   Lock,
   Sparkles,
   FolderClosed,
-  Loader2
+  Loader2,
+  Link as LinkIcon,
+  Globe,
+  Plus
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -47,16 +50,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
+import { toast } from '@/hooks/use-toast';
 
 export default function FilesPage() {
-  const { activeTeam, addFile, deleteFile, user, isPro, hasFeature, purchasePro } = useTeam();
+  const { activeTeam, addFile, addExternalLink, deleteFile, user, isPro, hasFeature, purchasePro, isSuperAdmin } = useTeam();
   const db = useFirestore();
   
   const [mounted, setMounted] = useState(false);
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
+  const [isLinkOpen, setIsLinkOpen] = useState(false);
+  const [linkTitle, setLinkTitle] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Localized data fetching for performance
@@ -81,9 +90,10 @@ export default function FilesPage() {
     );
   }
 
-  const canUpload = hasFeature('media_uploads');
+  const canAccess = hasFeature('media_uploads');
+  const isAdmin = activeTeam.role === 'Admin' || isSuperAdmin;
 
-  if (!canUpload) {
+  if (!canAccess) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
         <div className="relative">
@@ -109,9 +119,9 @@ export default function FilesPage() {
               <Badge className="bg-primary text-white border-none font-bold">Premium Storage</Badge>
             </div>
             <ul className="space-y-4">
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> 10GB Shared Storage</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Shared Repository</li>
               <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> PDF & Image Previews</li>
-              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Multi-Member Uploads</li>
+              <li className="flex items-center gap-3 font-bold text-sm text-foreground/80"><Sparkles className="h-4 w-4 text-primary" /> Tactical Link Hub</li>
             </ul>
             <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 hover:bg-primary/90" onClick={purchasePro}>
               Unlock Team Library
@@ -121,8 +131,6 @@ export default function FilesPage() {
       </div>
     );
   }
-
-  const isAdmin = activeTeam.role === 'Admin';
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -138,19 +146,34 @@ export default function FilesPage() {
       reader.onload = (event) => {
         const url = event.target?.result as string;
         addFile(file.name, type, size, url);
+        toast({ title: "Resource Added", description: `${file.name} is now available to the squad.` });
       };
       reader.readAsDataURL(file);
     }
   };
 
+  const handleAddLink = () => {
+    if (!linkTitle || !linkUrl) return;
+    addExternalLink(linkTitle, linkUrl);
+    setIsLinkOpen(false);
+    setLinkTitle('');
+    setLinkUrl('');
+    toast({ title: "Link Synchronized", description: `${linkTitle} added to library.` });
+  };
+
   const getFileIcon = (type: string) => {
     const t = type.toLowerCase();
+    if (t === 'link') return <LinkIcon className="h-6 w-6 text-primary" />;
     if (t === 'pdf') return <FileText className="h-6 w-6 text-primary" />;
     if (['jpg', 'png', 'jpeg', 'gif', 'webp'].includes(t)) return <ImageIcon className="h-6 w-6 text-primary" />;
     return <FileIcon className="h-6 w-6 text-muted-foreground" />;
   };
 
   const handleDownload = (file: any) => {
+    if (file.type === 'link') {
+      window.open(file.url, '_blank');
+      return;
+    }
     if (!file.url) return;
     const link = document.body.appendChild(document.createElement('a'));
     link.href = file.url;
@@ -173,16 +196,52 @@ export default function FilesPage() {
           <h1 className="text-3xl font-black tracking-tight">Team Library</h1>
           <p className="text-sm font-bold text-muted-foreground">Official squad repository and playbooks.</p>
         </div>
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          className="hidden" 
-          onChange={handleFileChange} 
-        />
-        <Button size="sm" className="rounded-full px-6 font-black uppercase text-xs h-11 tracking-widest shadow-lg shadow-primary/20" onClick={handleUploadClick}>
-          <Upload className="h-4 w-4 mr-2" />
-          Upload Resource
-        </Button>
+        {isAdmin && (
+          <div className="flex gap-2">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              onChange={handleFileChange} 
+            />
+            <Dialog open={isLinkOpen} onOpenChange={setIsLinkOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" className="rounded-full px-6 font-black uppercase text-[10px] h-11 tracking-widest border-2">
+                  <LinkIcon className="h-3.5 w-3.5 mr-2" />
+                  Add Link
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl overflow-hidden p-0">
+                <div className="h-2 bg-primary w-full" />
+                <div className="p-8 space-y-6">
+                  <DialogHeader>
+                    <DialogTitle className="text-2xl font-black uppercase tracking-tight">Add Tactical Link</DialogTitle>
+                    <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Reference external strategy or media</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Link Title</Label>
+                      <Input placeholder="e.g. Hudl Game Tape" value={linkTitle} onChange={e => setLinkTitle(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Destination URL</Label>
+                      <Input placeholder="https://..." value={linkUrl} onChange={e => setLinkUrl(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleAddLink} disabled={!linkTitle || !linkUrl}>
+                      Save Link to Library
+                    </Button>
+                  </DialogFooter>
+                </div>
+              </DialogContent>
+            </Dialog>
+            <Button size="sm" className="rounded-full px-6 font-black uppercase text-[10px] h-11 tracking-widest shadow-lg shadow-primary/20" onClick={handleUploadClick}>
+              <Upload className="h-3.5 w-3.5 mr-2" />
+              Upload File
+            </Button>
+          </div>
+        )}
       </div>
 
       {isLoading ? (
@@ -204,7 +263,7 @@ export default function FilesPage() {
                   <div className="flex-1 min-w-0">
                     <h3 className="font-black text-base truncate pr-2" title={file.name}>{file.name}</h3>
                     <div className="flex items-center gap-3 text-[10px] font-black text-muted-foreground uppercase mt-1 flex-wrap tracking-widest">
-                      <span className="text-primary">{file.size}</span>
+                      <span className={cn(file.type === 'link' ? "text-blue-600" : "text-primary")}>{file.size}</span>
                       <span className="flex items-center gap-1.5">
                         <Calendar className="h-3 w-3" />
                         {mounted ? format(new Date(file.date), 'MMM d, yyyy') : '...'}
@@ -215,45 +274,49 @@ export default function FilesPage() {
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0 ml-auto sm:ml-0">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-10 w-10 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5"
-                      onClick={() => setSelectedFile(file)}
-                    >
-                      <Eye className="h-5 w-5" />
-                    </Button>
+                    {file.type !== 'link' && (
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-10 w-10 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5"
+                        onClick={() => setSelectedFile(file)}
+                      >
+                        <Eye className="h-5 w-5" />
+                      </Button>
+                    )}
                     <Button 
                       variant="ghost" 
                       size="icon" 
                       className="h-10 w-10 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5"
                       onClick={() => handleDownload(file)}
                     >
-                      <Download className="h-5 w-5" />
+                      {file.type === 'link' ? <Globe className="h-5 w-5" /> : <Download className="h-5 w-5" />}
                     </Button>
                     
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground">
-                          <MoreVertical className="h-5 w-5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="rounded-xl shadow-xl border-none p-2 min-w-[160px]">
-                        <DropdownMenuItem onSelect={() => handleDownload(file)} className="font-black text-xs uppercase tracking-widest p-3 cursor-pointer">
-                          <Download className="h-4 w-4 mr-2" />
-                          Download
-                        </DropdownMenuItem>
-                        {canDelete && (
-                          <DropdownMenuItem 
-                            onSelect={() => setFileToDelete(file.id)}
-                            className="text-destructive focus:text-destructive font-black text-xs uppercase tracking-widest p-3 cursor-pointer"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Purge Resource
+                    {isAdmin && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full text-muted-foreground">
+                            <MoreVertical className="h-5 w-5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="rounded-xl shadow-xl border-none p-2 min-w-[160px]">
+                          <DropdownMenuItem onSelect={() => handleDownload(file)} className="font-black text-xs uppercase tracking-widest p-3 cursor-pointer">
+                            {file.type === 'link' ? <Globe className="h-4 w-4 mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+                            {file.type === 'link' ? 'Open URL' : 'Download'}
                           </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                          {canDelete && (
+                            <DropdownMenuItem 
+                              onSelect={() => setFileToDelete(file.id)}
+                              className="text-destructive focus:text-destructive font-black text-xs uppercase tracking-widest p-3 cursor-pointer"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Purge Resource
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -262,7 +325,7 @@ export default function FilesPage() {
             <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[2.5rem] w-full space-y-4">
               <FolderClosed className="h-12 w-12 text-muted-foreground opacity-20 mx-auto" />
               <p className="text-muted-foreground font-black uppercase tracking-widest text-xs">Repository is currently empty.</p>
-              <Button variant="outline" className="rounded-full font-black text-[10px] uppercase tracking-widest border-2" onClick={handleUploadClick}>Browse Local Files</Button>
+              {isAdmin && <Button variant="outline" className="rounded-full font-black text-[10px] uppercase tracking-widest border-2" onClick={handleUploadClick}>Browse Local Files</Button>}
             </div>
           )}
         </div>
@@ -333,7 +396,7 @@ export default function FilesPage() {
             <AlertDialogHeader>
               <AlertDialogTitle className="font-black text-2xl tracking-tight">Purge Resource?</AlertDialogTitle>
               <AlertDialogDescription className="font-bold text-base pt-2 text-foreground/70">
-                This action is permanent and will remove the document from the shared squad repository for all members.
+                This action is permanent and will remove the item from the shared squad repository for all members.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="mt-8 gap-3">

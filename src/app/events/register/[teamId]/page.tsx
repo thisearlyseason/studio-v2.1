@@ -7,9 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useFirestore } from '@/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { useTeam } from '@/components/providers/team-provider';
+import { useTeam, TeamEvent } from '@/components/providers/team-provider';
 import { CheckCircle2, AlertCircle, Clock, MapPin, Loader2 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 
@@ -20,10 +22,11 @@ function RegistrationForm() {
   const db = useFirestore();
   const { addRegistration } = useTeam();
 
-  const [event, setEvent] = useState<any>(null);
+  const [event, setEvent] = useState<TeamEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
+  const [customResponses, setCustomResponses] = useState<Record<string, any>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -32,7 +35,7 @@ function RegistrationForm() {
       try {
         const eventSnap = await getDoc(doc(db, 'teams', teamId as string, 'events', eventId));
         if (eventSnap.exists()) {
-          setEvent(eventSnap.data());
+          setEvent({ id: eventSnap.id, ...eventSnap.data() } as TeamEvent);
         }
       } catch (e) {
         console.error("Error loading event details:", e);
@@ -43,13 +46,20 @@ function RegistrationForm() {
     loadEvent();
   }, [db, teamId, eventId]);
 
+  const handleCustomChange = (id: string, value: any) => {
+    setCustomResponses(prev => ({ ...prev, [id]: value }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email || isSubmitting) return;
     
     setIsSubmitting(true);
-    // Capacity check is handled on the server/admin side or by the link visibility
-    const success = await addRegistration(teamId as string, eventId as string, formData);
+    const success = await addRegistration(teamId as string, eventId as string, {
+      ...formData,
+      responses: customResponses
+    });
+    
     if (success) {
       setSubmitted(true);
     } else {
@@ -97,7 +107,7 @@ function RegistrationForm() {
         <div className="h-2 hero-gradient w-full" />
         <CardHeader className="space-y-1 pb-2">
           <CardTitle className="text-3xl font-black tracking-tighter">{event.title}</CardTitle>
-          <CardDescription className="text-base font-medium">Event Registration</CardDescription>
+          <CardDescription className="text-base font-medium">Event Registration Hub</CardDescription>
         </CardHeader>
         
         <CardContent className="space-y-6 pt-4">
@@ -112,44 +122,85 @@ function RegistrationForm() {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Full Name</Label>
-              <Input 
-                id="name" 
-                placeholder="John Doe" 
-                required 
-                value={formData.name}
-                onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
-                className="rounded-xl h-12"
-              />
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-4">
+              <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest border-b pb-1">Basic Contact Info</p>
+              <div className="space-y-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input 
+                  id="name" 
+                  placeholder="John Doe" 
+                  required 
+                  value={formData.name}
+                  onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
+                  className="rounded-xl h-12"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email Address</Label>
+                <Input 
+                  id="email" 
+                  type="email" 
+                  placeholder="john@example.com" 
+                  required 
+                  value={formData.email}
+                  onChange={e => setFormData(p => ({ ...p, email: e.target.value }))}
+                  className="rounded-xl h-12"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone Number</Label>
+                <Input 
+                  id="phone" 
+                  type="tel" 
+                  placeholder="(555) 000-0000" 
+                  required 
+                  value={formData.phone}
+                  onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))}
+                  className="rounded-xl h-12"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <Input 
-                id="email" 
-                type="email" 
-                placeholder="john@example.com" 
-                required 
-                value={formData.email}
-                onChange={e => setFormData(p => ({ ...p, email: e.target.value }))}
-                className="rounded-xl h-12"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="phone">Phone Number</Label>
-              <Input 
-                id="phone" 
-                type="tel" 
-                placeholder="(555) 000-0000" 
-                required 
-                value={formData.phone}
-                onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))}
-                className="rounded-xl h-12"
-              />
-            </div>
-            <Button type="submit" className="w-full h-14 rounded-2xl text-lg font-black mt-4" disabled={isSubmitting}>
-              {isSubmitting ? "Submitting..." : "Confirm Registration"}
+
+            {event.customFormFields && event.customFormFields.length > 0 && (
+              <div className="space-y-4 pt-4 border-t">
+                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest border-b pb-1">Required Information</p>
+                {event.customFormFields.map((field) => (
+                  <div key={field.id} className="space-y-2">
+                    <Label>{field.label}</Label>
+                    {field.type === 'short_text' && (
+                      <Input 
+                        required={field.required}
+                        value={customResponses[field.id] || ''}
+                        onChange={e => handleCustomChange(field.id, e.target.value)}
+                        className="rounded-xl h-12"
+                      />
+                    )}
+                    {field.type === 'long_text' && (
+                      <Textarea 
+                        required={field.required}
+                        value={customResponses[field.id] || ''}
+                        onChange={e => handleCustomChange(field.id, e.target.value)}
+                        className="rounded-xl min-h-[80px]"
+                      />
+                    )}
+                    {field.type === 'checkbox' && (
+                      <div className="flex items-center space-x-3 p-3 bg-muted/20 rounded-xl">
+                        <Checkbox 
+                          id={field.id}
+                          checked={customResponses[field.id] || false}
+                          onCheckedChange={v => handleCustomChange(field.id, !!v)}
+                        />
+                        <Label htmlFor={field.id} className="cursor-pointer">{field.label}</Label>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Button type="submit" className="w-full h-14 rounded-2xl text-lg font-black mt-4 shadow-xl shadow-primary/20 active:scale-95 transition-all" disabled={isSubmitting}>
+              {isSubmitting ? "Processing..." : "Confirm Registration"}
             </Button>
           </form>
         </CardContent>

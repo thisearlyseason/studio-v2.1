@@ -26,7 +26,10 @@ import {
   CalendarDays,
   ArrowRight,
   Lock,
-  Sparkles
+  Sparkles,
+  Download,
+  ListPlus,
+  Table as TableIcon
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -42,7 +45,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useTeam, TeamEvent } from '@/components/providers/team-provider';
+import { useTeam, TeamEvent, CustomFormField, FormFieldType } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
@@ -50,6 +53,7 @@ import { toast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface EventDetailDialogProps {
   event: TeamEvent;
@@ -69,9 +73,8 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
   const db = useFirestore();
   
   const regQuery = useMemoFirebase(() => {
-    if (!isAdmin) return null;
     return query(collection(db, 'teams', event.teamId, 'events', event.id, 'registrations'), orderBy('createdAt', 'desc'));
-  }, [db, event.id, event.teamId, isAdmin]);
+  }, [db, event.id, event.teamId]);
   
   const { data: registrations } = useCollection<any>(regQuery);
 
@@ -110,6 +113,31 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
   const goingList = attendanceData.filter(a => a.status === 'going');
   const maybeList = attendanceData.filter(a => a.status === 'maybe');
   const notGoingList = attendanceData.filter(a => a.status === 'notGoing');
+
+  const handleDownloadCSV = () => {
+    if (!registrations || registrations.length === 0) return;
+    
+    // Headers: Basic Info + Custom Fields
+    const customFieldIds = event.customFormFields?.map(f => f.id) || [];
+    const customFieldLabels = event.customFormFields?.map(f => f.label) || [];
+    const headers = ['Name', 'Email', 'Phone', 'Status', ...customFieldLabels];
+    
+    const rows = registrations.map(reg => {
+      const basic = [reg.name, reg.email, reg.phone, reg.status];
+      const customValues = customFieldIds.map(fid => {
+        const val = reg.responses?.[fid];
+        return typeof val === 'boolean' ? (val ? 'Yes' : 'No') : (val || '');
+      });
+      return [...basic, ...customValues].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `registrations_${event.title.replace(/\s+/g, '_')}.csv`;
+    link.click();
+  };
 
   return (
     <Dialog>
@@ -159,7 +187,7 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
 
               <div className="pt-4 lg:pt-8 space-y-4">
                 <div className="flex items-center justify-between gap-4">
-                  {event.allowExternalRegistration && <Badge className="bg-primary text-white font-black px-2 lg:px-3 h-6 lg:h-7 text-[8px] lg:text-[10px] uppercase shadow-lg shadow-primary/20">Public</Badge>}
+                  {event.isRegistrationRequired && <Badge className="bg-blue-600 text-white font-black px-2 lg:px-3 h-6 lg:h-7 text-[8px] lg:text-[10px] uppercase shadow-lg">Registration On</Badge>}
                   {isAdmin && (
                     <div className="flex gap-2">
                       <Button variant="outline" size="icon" className="h-9 w-9 lg:h-10 lg:w-10 rounded-xl border-primary/20 text-primary" onClick={() => onEdit(event)}><Edit3 className="h-4 w-4" /></Button>
@@ -183,6 +211,7 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                   <div className="px-6 lg:px-8 pt-6 lg:pt-8 pb-4 border-b flex items-center justify-between">
                     <TabsList className="bg-muted/50 rounded-xl p-1 h-10 lg:h-11">
                       <TabsTrigger value="attendance" className="rounded-lg font-black text-[8px] lg:text-[10px] uppercase tracking-widest px-4 lg:px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Roster</TabsTrigger>
+                      {event.isRegistrationRequired && <TabsTrigger value="responses" className="rounded-lg font-black text-[8px] lg:text-[10px] uppercase tracking-widest px-4 lg:px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Form Responses</TabsTrigger>}
                       {event.allowExternalRegistration && <TabsTrigger value="links" className="rounded-lg font-black text-[8px] lg:text-[10px] uppercase tracking-widest px-4 lg:px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Links</TabsTrigger>}
                     </TabsList>
                     <DialogClose asChild><Button variant="ghost" size="icon" className="rounded-full h-8 w-8"><XCircle className="h-5 w-5 text-muted-foreground" /></Button></DialogClose>
@@ -215,6 +244,47 @@ function EventDetailDialog({ event, updateRSVP, promoteToRoster, isAdmin, onEdit
                           )) : <p className="text-[10px] lg:text-xs text-muted-foreground font-black italic px-1">No responses yet...</p>}
                         </div>
                       </div>
+                    </TabsContent>
+
+                    <TabsContent value="responses" className="mt-0 pt-4 space-y-6">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Detailed Registration Submissions</h4>
+                        {isAdmin && registrations && registrations.length > 0 && (
+                          <Button variant="outline" size="sm" className="rounded-full h-8 px-4 font-black uppercase text-[8px] tracking-widest gap-2" onClick={handleDownloadCSV}>
+                            <Download className="h-3 w-3" /> Export CSV
+                          </Button>
+                        )}
+                      </div>
+                      <ScrollArea className="h-[400px]">
+                        <div className="space-y-4 pr-4">
+                          {registrations && registrations.length > 0 ? registrations.map((reg) => (
+                            <div key={reg.id} className="p-4 rounded-2xl border bg-muted/10 space-y-3">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="font-black text-sm">{reg.name}</p>
+                                  <p className="text-[10px] font-bold text-muted-foreground">{reg.email} • {reg.phone}</p>
+                                </div>
+                                <Badge variant="secondary" className="text-[8px] font-black uppercase">{reg.status}</Badge>
+                              </div>
+                              {event.customFormFields?.map((field) => (
+                                <div key={field.id} className="pt-2 border-t border-dashed">
+                                  <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest mb-1">{field.label}</p>
+                                  <p className="text-xs font-medium">
+                                    {field.type === 'checkbox' 
+                                      ? (reg.responses?.[field.id] ? 'Yes' : 'No')
+                                      : (reg.responses?.[field.id] || 'N/A')}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )) : (
+                            <div className="text-center py-20 opacity-30">
+                              <ListPlus className="h-10 w-10 mx-auto mb-2" />
+                              <p className="text-[10px] font-black uppercase tracking-widest">No detailed responses found.</p>
+                            </div>
+                          )}
+                        </div>
+                      </ScrollArea>
                     </TabsContent>
 
                     <TabsContent value="links" className="mt-0 pt-4">
@@ -287,7 +357,9 @@ export default function EventsPage() {
   const [newLocation, setNewLocation] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [allowExternal, setAllowExternal] = useState(false);
+  const [isRegRequired, setIsRegRequired] = useState(false);
   const [maxRegs, setMaxRegs] = useState('');
+  const [customFormFields, setCustomFormFields] = useState<CustomFormField[]>([]);
   const [tournamentSchedule, setTournamentSchedule] = useState<any[]>([]);
 
   useEffect(() => {
@@ -338,20 +410,47 @@ export default function EventsPage() {
     setNewDate(new Date(event.date).toISOString().split('T')[0]);
     if (event.endDate) setNewEndDate(new Date(event.endDate).toISOString().split('T')[0]);
     setNewTime(event.startTime); setNewLocation(event.location); setNewDescription(event.description);
-    setAllowExternal(!!event.allowExternalRegistration); setMaxRegs(event.maxRegistrations?.toString() || '');
+    setAllowExternal(!!event.allowExternalRegistration); 
+    setIsRegRequired(!!event.isRegistrationRequired);
+    setMaxRegs(event.maxRegistrations?.toString() || '');
+    setCustomFormFields(event.customFormFields || []);
     setTournamentSchedule(event.tournamentSchedule || []); setIsCreateOpen(true);
   };
 
   const handleCreateEvent = () => {
     if (!newTitle || !newDate) return;
-    const payload: any = { title: newTitle, date: new Date(newDate).toISOString(), startTime: newTime || 'TBD', location: newLocation, description: newDescription, allowExternalRegistration: allowExternal, isTournament: isTournamentMode, tournamentSchedule: tournamentSchedule.map((m, idx) => ({ ...m, id: `tm_${idx}_${Date.now()}` })) };
+    const payload: any = { 
+      title: newTitle, 
+      date: new Date(newDate).toISOString(), 
+      startTime: newTime || 'TBD', 
+      location: newLocation, 
+      description: newDescription, 
+      allowExternalRegistration: allowExternal, 
+      isRegistrationRequired: isRegRequired,
+      customFormFields: customFormFields,
+      isTournament: isTournamentMode, 
+      tournamentSchedule: tournamentSchedule.map((m, idx) => ({ ...m, id: `tm_${idx}_${Date.now()}` })) 
+    };
     if (isTournamentMode && newEndDate) payload.endDate = new Date(newEndDate).toISOString();
     const regLimit = parseInt(maxRegs); if (!isNaN(regLimit)) payload.maxRegistrations = regLimit;
     if (editingEvent) updateEvent(editingEvent.id, payload); else addEvent(payload);
     setIsCreateOpen(false); resetForm();
   };
 
-  const resetForm = () => { setEditingEvent(null); setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setAllowExternal(false); setMaxRegs(''); setTournamentSchedule([]); };
+  const resetForm = () => { setEditingEvent(null); setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setAllowExternal(false); setIsRegRequired(false); setMaxRegs(''); setCustomFormFields([]); setTournamentSchedule([]); };
+
+  const addFormField = (type: FormFieldType) => {
+    const newField: CustomFormField = { id: `field_${Date.now()}`, label: 'New Field', type, required: false };
+    setCustomFormFields([...customFormFields, newField]);
+  };
+
+  const updateFieldLabel = (id: string, label: string) => {
+    setCustomFormFields(customFormFields.map(f => f.id === id ? { ...f, label } : f));
+  };
+
+  const removeFormField = (id: string) => {
+    setCustomFormFields(customFormFields.filter(f => f.id !== id));
+  };
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -372,50 +471,107 @@ export default function EventsPage() {
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="sm:max-w-4xl rounded-3xl lg:rounded-[2.5rem] overflow-hidden p-0 max-h-[95vh] flex flex-col border-none shadow-2xl">
-          <DialogTitle className="sr-only">Event Form</DialogTitle>
+        <DialogContent className="sm:max-w-5xl rounded-3xl lg:rounded-[2.5rem] overflow-hidden p-0 max-h-[95vh] flex flex-col border-none shadow-2xl">
+          <DialogTitle className="sr-only">Event Form Builder</DialogTitle>
           <ScrollArea className="flex-1">
-            <div className="grid grid-cols-1 lg:grid-cols-2 h-full min-h-[450px]">
-              <div className="p-6 lg:p-8 lg:border-r space-y-4 lg:space-y-6 bg-primary/5">
+            <div className="grid grid-cols-1 lg:grid-cols-12 h-full min-h-[500px]">
+              <div className="lg:col-span-5 p-6 lg:p-8 lg:border-r space-y-4 lg:space-y-6 bg-primary/5">
                 <DialogHeader>
                   <h2 className="text-xl lg:text-2xl font-black tracking-tight">{editingEvent ? "Update" : "New"} {isTournamentMode ? "Tournament" : "Match"}</h2>
                   <p className="font-black text-primary uppercase tracking-widest text-[8px] lg:text-[10px]">Logistics Hub</p>
                 </DialogHeader>
                 <div className="space-y-4">
-                  <div className="space-y-1.5 lg:space-y-2">
+                  <div className="space-y-1.5">
                     <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Event Title</Label>
                     <Input placeholder="e.g. League Match" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-11 lg:h-12 rounded-xl font-black text-sm" />
                   </div>
                   <div className="grid grid-cols-2 gap-3 lg:gap-4">
-                    <div className="space-y-1.5 lg:space-y-2">
+                    <div className="space-y-1.5">
                       <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label>
                       <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-11 lg:h-12 rounded-xl font-black text-[10px] lg:text-xs" />
                     </div>
                     {isTournamentMode ? (
-                      <div className="space-y-1.5 lg:space-y-2">
+                      <div className="space-y-1.5">
                         <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label>
                         <Input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="h-11 lg:h-12 rounded-xl font-black text-[10px] lg:text-xs" />
                       </div>
                     ) : (
-                      <div className="space-y-1.5 lg:space-y-2">
+                      <div className="space-y-1.5">
                         <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Time</Label>
                         <Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-11 lg:h-12 rounded-xl font-black text-[10px] lg:text-xs" />
                       </div>
                     )}
                   </div>
-                  <div className="space-y-1.5 lg:space-y-2">
+                  <div className="space-y-1.5">
                     <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Location</Label>
                     <Input placeholder="Stadium name..." value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-11 lg:h-12 rounded-xl font-black text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Notes</Label>
+                    <Textarea placeholder="Instructions..." value={newDescription} onChange={e => setNewDescription(e.target.value)} className="min-h-[80px] rounded-xl font-bold text-xs" />
                   </div>
                 </div>
               </div>
               
-              <div className="p-6 lg:p-8 space-y-6 flex flex-col justify-between">
-                <div className="space-y-2">
-                  <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Notes</Label>
-                  <Textarea placeholder="Instructions..." value={newDescription} onChange={e => setNewDescription(e.target.value)} className="min-h-[100px] lg:min-h-[150px] rounded-2xl font-black text-sm" />
+              <div className="lg:col-span-7 p-6 lg:p-8 space-y-6 flex flex-col justify-between">
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ListPlus className="h-4 w-4 text-primary" />
+                      <h3 className="text-sm font-black uppercase tracking-widest">Registration Form Builder</h3>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Label htmlFor="req-reg" className="text-[10px] font-black uppercase tracking-widest opacity-60">Required?</Label>
+                      <Checkbox id="req-reg" checked={isRegRequired} onCheckedChange={v => setIsRegRequired(!!v)} />
+                    </div>
+                  </div>
+
+                  {isRegRequired && (
+                    <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest">Max Regs</Label>
+                          <Input type="number" placeholder="Unlimited" value={maxRegs} onChange={e => setMaxRegs(e.target.value)} className="h-10 rounded-xl" />
+                        </div>
+                        <div className="flex items-center gap-3 self-end h-10 px-3 bg-muted/30 rounded-xl border">
+                          <Checkbox id="ext-reg" checked={allowExternal} onCheckedChange={v => setAllowExternal(!!v)} />
+                          <Label htmlFor="ext-reg" className="text-[9px] font-black uppercase cursor-pointer">Public Link?</Label>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between px-1">
+                          <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Custom Fields</Label>
+                          <div className="flex gap-2">
+                            <Button variant="ghost" size="sm" className="h-7 text-[8px] font-black uppercase" onClick={() => addFormField('short_text')}>+ Text</Button>
+                            <Button variant="ghost" size="sm" className="h-7 text-[8px] font-black uppercase" onClick={() => addFormField('checkbox')}>+ Check</Button>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-2 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar">
+                          {customFormFields.length > 0 ? customFormFields.map((field) => (
+                            <div key={field.id} className="flex gap-2 items-center p-2 bg-muted/20 rounded-xl border group">
+                              <Badge variant="outline" className="text-[7px] font-black h-5 uppercase shrink-0">{field.type.replace('_', ' ')}</Badge>
+                              <Input 
+                                value={field.label} 
+                                onChange={e => updateFieldLabel(field.id, e.target.value)}
+                                className="h-8 text-xs font-bold bg-transparent border-none focus-visible:ring-0"
+                              />
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => removeFormField(field.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          )) : (
+                            <div className="text-center py-8 bg-muted/10 rounded-xl border-2 border-dashed opacity-40">
+                              <p className="text-[10px] font-black uppercase">No custom fields added</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <Button className="w-full h-14 rounded-2xl text-base lg:text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all mt-4" onClick={handleCreateEvent}>Save Event</Button>
+                <Button className="w-full h-14 rounded-2xl text-base lg:text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all mt-4" onClick={handleCreateEvent}>Save Event Hub</Button>
               </div>
             </div>
           </ScrollArea>
@@ -439,7 +595,10 @@ export default function EventsPage() {
                   <div className="flex-1 p-4 lg:p-6 space-y-2 lg:space-y-3 min-w-0">
                     <div className="flex items-start justify-between">
                       <div className="space-y-0.5 lg:space-y-1 min-w-0">
-                        {event.isTournament && <Badge className="bg-primary text-white font-black text-[7px] lg:text-[8px] uppercase tracking-widest px-1.5 h-3.5 lg:h-4 border-none shadow-sm">Tourney</Badge>}
+                        <div className="flex gap-2 mb-1">
+                          {event.isTournament && <Badge className="bg-primary text-white font-black text-[7px] lg:text-[8px] uppercase tracking-widest px-1.5 h-3.5 lg:h-4 border-none shadow-sm">Tourney</Badge>}
+                          {event.isRegistrationRequired && <Badge variant="outline" className="text-[7px] lg:text-[8px] font-black uppercase tracking-widest px-1.5 h-3.5 lg:h-4 border-blue-600/30 text-blue-600">Register</Badge>}
+                        </div>
                         <h3 className="font-black text-base lg:text-xl leading-tight group-hover:text-primary transition-colors truncate pr-4">{event.title}</h3>
                       </div>
                       <ChevronRight className="h-4 w-4 text-primary opacity-30 shrink-0 mt-1" />
