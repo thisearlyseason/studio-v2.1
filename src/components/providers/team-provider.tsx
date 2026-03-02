@@ -513,7 +513,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const winInc = result === 'Win' ? 1 : 0;
     const lossInc = result === 'Loss' ? 1 : 0;
     const tieInc = result === 'Tie' ? 1 : 0;
-    const pointsInc = (winInc * 3) + tieInc;
+    // Calculation: Win = +1, Loss = -1, Tie = 0
+    const pointsInc = winInc - lossInc;
 
     updateDocumentNonBlocking(lRef, {
       [`teams.${tid}.wins`]: increment(winInc),
