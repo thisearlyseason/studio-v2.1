@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useRef } from 'react';
@@ -22,6 +23,8 @@ import { updateDocumentNonBlocking, setDocumentNonBlocking, addDocumentNonBlocki
 import { Purchases } from '@revenuecat/purchases-js';
 import { seedSubscriptionData, launchDemoEnvironments, resetDemoEnvironment, seedGuestDemoTeam } from '@/lib/db-seeder';
 import { useSearchParams } from 'next/navigation';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 export type UserProfile = {
   id: string;
@@ -298,16 +301,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return proQuotaStatus.remaining > 0;
   }, [isSuperAdmin, proQuotaStatus]);
 
-  // Handle Quota Decrease (Mark excess as pending)
+  // Handle Quota Decrease
   useEffect(() => {
     if (!firebaseUser || !userProfile || isTeamsLoading || proQuotaStatus.limit === null) return;
     
     if (proQuotaStatus.exceeded) {
-      // Find Pro teams that are not yet marked as pending removal
       const ownedProTeams = teams
         .filter(t => t.ownerUserId === firebaseUser.uid && t.isPro)
         .sort((a, b) => {
-          // Sort by assignment date, newest first
           const dateA = a.proAssignedAt ? new Date(a.proAssignedAt).getTime() : 0;
           const dateB = b.proAssignedAt ? new Date(b.proAssignedAt).getTime() : 0;
           return dateB - dateA;
@@ -321,11 +322,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           updateDocumentNonBlocking(doc(db, 'teams', t.id), { isProPendingRemoval: true });
           updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', t.id), { isProPendingRemoval: true });
         });
-        toast({ 
-          title: "Pro Quota Exceeded", 
-          description: "Your limit has changed. Please select which teams should remain Pro.",
-          variant: "destructive"
-        });
       }
     }
   }, [proQuotaStatus.limit, proQuotaStatus.current, teams, firebaseUser, userProfile, isTeamsLoading, db]);
@@ -337,7 +333,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const plan = plans.find(p => p.id === pid);
     const baseFeatures = { ...(plan?.features || {}) };
 
-    // Dynamic Club Scaling
     if (pid === 'club_custom') {
       const teamCount = teams.length;
       if (teamCount >= 2) {
@@ -409,14 +404,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
       if (remaining < 1000 && !resetLockRef.current) {
         resetLockRef.current = true;
-        toast({ title: "Environment Resetting", description: "Demo session expired. Restoring baseline data..." });
-        
         try {
           const planId = teams.find(t => t.id === activeTeamId)?.planId || 'starter_squad';
           await resetDemoEnvironment(db, activeTeamId, planId, userProfile.id);
-          toast({ title: "Reset Complete", description: "Welcome back to the baseline squad." });
         } catch (e) {
-          console.error("Auto reset failed", e);
+          errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `teams/${activeTeamId}`, operation: 'delete' }));
         } finally {
           resetLockRef.current = false;
         }
@@ -446,9 +438,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           const url = new URL(window.location.href);
           url.searchParams.delete('seed_demo');
           window.history.replaceState({}, '', url.toString());
-          toast({ title: "Demo Ready", description: `Exploring the ${demoIntent.replace('_', ' ')} environment.` });
         } catch (e) {
-          console.error("Demo seeding failed", e);
           seedingRef.current = false;
         } finally {
           setIsSeedingDemo(false);
@@ -495,6 +485,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
             revenueCatUserId: data.revenueCatUserId || null
           });
         }
+      }, (error) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `users/${firebaseUser.uid}`, operation: 'get' }));
       });
       return () => unsub();
     }
@@ -506,7 +498,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     activeTeam, 
     setActiveTeam: (t: Team) => setActiveTeamId(t.id),
     updateTeamHero: async (url: string) => { if (activeTeam?.id && firebaseUser) { updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id), { heroImageUrl: url }); updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), { heroImageUrl: url }); } },
-    updateTeamDetails: async (updates: Partial<Team>) => { if (activeTeam?.id && firebaseUser) { const f: any = {}; if (updates.name) f.teamName = updates.name; if (updates.sport) f.sport = updates.sport; if (updates.description) f.description = updates.description; if (updates.teamLogoUrl) f.teamLogoUrl = updates.teamLogoUrl; if (Object.keys(f).length > 0) { updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id), f); updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), f); } toast({ title: "Squad Updated" }); } },
+    updateTeamDetails: async (updates: Partial<Team>) => { if (activeTeam?.id && firebaseUser) { const f: any = {}; if (updates.name) f.teamName = updates.name; if (updates.sport) f.sport = updates.sport; if (updates.description) f.description = updates.description; if (updates.teamLogoUrl) f.teamLogoUrl = updates.teamLogoUrl; if (Object.keys(f).length > 0) { updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id), f); updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), f); } } },
     updateTeamPlan: async (tid: string, pid: string) => { 
       if (db) { 
         const p = plans.find(p => p.id === pid);
@@ -517,11 +509,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const tRef = doc(db, 'teams', tid); 
-        updateDocumentNonBlocking(tRef, { planId: pid, isPro: isTurningPro, proAssignedAt: new Date().toISOString(), isProPendingRemoval: false }); 
-        const memRef = doc(db, 'users', firebaseUser?.uid || '', 'teamMemberships', tid);
-        updateDocumentNonBlocking(memRef, { planId: pid, isPro: isTurningPro, proAssignedAt: new Date().toISOString(), isProPendingRemoval: false });
-        toast({ title: "Plan Synchronized" }); 
+        updateDocumentNonBlocking(doc(db, 'teams', tid), { planId: pid, isPro: isTurningPro, proAssignedAt: new Date().toISOString(), isProPendingRemoval: false }); 
+        updateDocumentNonBlocking(doc(db, 'users', firebaseUser?.uid || '', 'teamMemberships', tid), { planId: pid, isPro: isTurningPro, proAssignedAt: new Date().toISOString(), isProPendingRemoval: false });
       } 
     },
     teams, 
@@ -546,11 +535,37 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       batch.set(doc(db, 'teams', tid), { id: tid, teamName: name, description: description || '', teamCode: code, createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, createdAt: new Date().toISOString(), members: { [firebaseUser.uid]: 'Admin' }, isPro: isP, planId: pId, proAssignedAt: isP ? new Date().toISOString() : null }); 
       batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), { userId: firebaseUser.uid, teamId: tid, role: 'Admin', position: pos || 'Coach', name: userProfile?.name || 'Organizer', avatar: userProfile?.avatar || '', joinedAt: new Date().toISOString() }); 
       batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { userId: firebaseUser.uid, teamId: tid, teamName: name, description: description || '', teamCode: code, role: 'Admin', isPro: isP, planId: pId, joinedAt: new Date().toISOString(), createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid }); 
-      await batch.commit(); 
-      setActiveTeamId(tid);
-      return tid;
+      
+      try {
+        await batch.commit(); 
+        setActiveTeamId(tid);
+        return tid;
+      } catch (e) {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `teams/${tid}`, operation: 'create', requestResourceData: { teamName: name } }));
+        return '';
+      }
     },
-    joinTeamWithCode: async (code: string, pos: string) => { if (!firebaseUser || !userProfile) return false; const qT = query(collection(db, 'teams'), where('teamCode', '==', code.toUpperCase()), limit(1)); const snap = await getDocs(qT); if (snap.empty) return false; const tDoc = snap.docs[0]; const tData = tDoc.data(); const tid = tDoc.id; const batch = writeBatch(db); batch.update(doc(db, 'teams', tid), { [`members.${firebaseUser.uid}`]: 'Member' }); batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), { userId: firebaseUser.uid, teamId: tid, role: 'Member', position: pos || 'Player', name: userProfile.name, avatar: userProfile.avatar, joinedAt: new Date().toISOString() }); batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { userId: firebaseUser.uid, teamId: tid, teamName: tData.teamName, teamCode: code.toUpperCase(), role: 'Member', isPro: tData.isPro || false, planId: tData.planId || (tData.isPro ? 'squad_pro' : 'starter_squad'), joinedAt: new Date().toISOString(), createdBy: tData.createdBy, ownerUserId: tData.ownerUserId || tData.createdBy }); await batch.commit(); setActiveTeamId(tid); return true; },
+    joinTeamWithCode: async (code: string, pos: string) => { 
+      if (!firebaseUser || !userProfile) return false; 
+      try {
+        const qT = query(collection(db, 'teams'), where('teamCode', '==', code.toUpperCase()), limit(1)); 
+        const snap = await getDocs(qT); 
+        if (snap.empty) return false; 
+        const tDoc = snap.docs[0]; 
+        const tData = tDoc.data(); 
+        const tid = tDoc.id; 
+        const batch = writeBatch(db); 
+        batch.update(doc(db, 'teams', tid), { [`members.${firebaseUser.uid}`]: 'Member' }); 
+        batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), { userId: firebaseUser.uid, teamId: tid, role: 'Member', position: pos || 'Player', name: userProfile.name, avatar: userProfile.avatar, joinedAt: new Date().toISOString() }); 
+        batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { userId: firebaseUser.uid, teamId: tid, teamName: tData.teamName, teamCode: code.toUpperCase(), role: 'Member', isPro: tData.isPro || false, planId: tData.planId || (tData.isPro ? 'squad_pro' : 'starter_squad'), joinedAt: new Date().toISOString(), createdBy: tData.createdBy, ownerUserId: tData.ownerUserId || tData.createdBy }); 
+        await batch.commit(); 
+        setActiveTeamId(tid); 
+        return true; 
+      } catch (e) {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `teams`, operation: 'list' }));
+        return false;
+      }
+    },
     addEvent: (e: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'events'), { ...e, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString(), userRsvps: {} }),
     updateEvent: (id: string, e: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', id), e),
     deleteEvent: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', id)),
@@ -560,13 +575,51 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     deleteDrill: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'drills', id)),
     addFile: (n: string, t: string, s: string, u: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: t, size: s, url: u, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString() }),
     deleteFile: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'files', id)),
-    createChat: async (name: string, memberIds: string[]) => { if (!activeTeam?.id || !firebaseUser) return ''; const docRef = await addDoc(collection(db, 'teams', activeTeam.id, 'groupChats'), { teamId: activeTeam.id, name, memberIds: [...memberIds, firebaseUser.uid], createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), lastMessage: '', unread: 0 }); return docRef.id; },
+    createChat: async (name: string, memberIds: string[]) => { 
+      if (!activeTeam?.id || !firebaseUser) return ''; 
+      try {
+        const docRef = await addDoc(collection(db, 'teams', activeTeam.id, 'groupChats'), { teamId: activeTeam.id, name, memberIds: [...memberIds, firebaseUser.uid], createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), lastMessage: '', unread: 0 }); 
+        return docRef.id; 
+      } catch (e) {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `teams/${activeTeam.id}/groupChats`, operation: 'create' }));
+        return '';
+      }
+    },
     addMessage: (cid: string, auth: string, content: string, type: string, img?: string, poll?: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages'), { author: auth, authorId: firebaseUser?.uid, content, type, imageUrl: img || null, poll: poll || null, createdAt: new Date().toISOString() }),
-    votePoll: async (cid: string, mid: string, oidx: number) => { if (!activeTeam?.id || !firebaseUser) return; const ref = doc(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages', mid); const snap = await getDocs(query(collection(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages'), where('__name__', '==', mid))); if (snap.empty) return; const poll = snap.docs[0].data().poll; const current = poll.voters?.[firebaseUser.uid]; const u: any = { [`poll.voters.${firebaseUser.uid}`]: oidx }; if (current === undefined) { u[`poll.options.${oidx}.votes`] = poll.options[oidx].votes + 1; u['poll.totalVotes'] = poll.totalVotes + 1; } else if (current !== oidx) { u[`poll.options.${current}.votes`] = poll.options[current].votes - 1; u[`poll.options.${oidx}.votes`] = poll.options[oidx].votes + 1; } updateDocumentNonBlocking(ref, u); },
-    updateRSVP: (eid: string, s: string) => { if (activeTeam?.id && firebaseUser) { const ref = doc(db, 'teams', activeTeam.id, 'events', eid); updateDocumentNonBlocking(ref, { [`userRsvps.${firebaseUser.uid}`]: s }); toast({ title: `RSVP Updated: ${s}` }); } },
+    votePoll: async (cid: string, mid: string, oidx: number) => { 
+      if (!activeTeam?.id || !firebaseUser) return; 
+      try {
+        const ref = doc(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages', mid); 
+        const snap = await getDocs(query(collection(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages'), where('__name__', '==', mid))); 
+        if (snap.empty) return; 
+        const poll = snap.docs[0].data().poll; 
+        const current = poll.voters?.[firebaseUser.uid]; 
+        const u: any = { [`poll.voters.${firebaseUser.uid}`]: oidx }; 
+        if (current === undefined) { u[`poll.options.${oidx}.votes`] = poll.options[oidx].votes + 1; u['poll.totalVotes'] = poll.totalVotes + 1; } else if (current !== oidx) { u[`poll.options.${current}.votes`] = poll.options[current].votes - 1; u[`poll.options.${oidx}.votes`] = poll.options[oidx].votes + 1; } 
+        updateDocumentNonBlocking(ref, u); 
+      } catch (e) {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `teams/${activeTeam.id}/groupChats/${cid}/messages/${mid}`, operation: 'update' }));
+      }
+    },
+    updateRSVP: (eid: string, s: string) => { 
+      if (activeTeam?.id && firebaseUser) { 
+        const ref = doc(db, 'teams', activeTeam.id, 'events', eid); 
+        updateDocumentNonBlocking(ref, { [`userRsvps.${firebaseUser.uid}`]: s }); 
+      } 
+    },
     addRegistration: async (tid: string, eid: string, d: any) => { try { await addDoc(collection(db, 'teams', tid, 'events', eid, 'registrations'), { ...d, status: 'pending', createdAt: new Date().toISOString() }); return true; } catch { return false; } },
-    promoteToRoster: async (tid: string, eid: string, reg: any) => { if (!firebaseUser) return; try { const mid = `member_${Date.now()}`; await setDoc(doc(db, 'teams', tid, 'members', mid), { userId: `ext_${Date.now()}`, teamId: tid, name: reg.name, role: 'Member', position: 'Player', avatar: '', joinedAt: new Date().toISOString() }); await deleteDoc(doc(db, 'teams', tid, 'events', eid, 'registrations', reg.id)); toast({ title: "Promoted to Roster" }); } catch { toast({ title: "Promotion Failed", variant: "destructive" }); } },
-    submitLead: async (data: any) => { try { await addDoc(collection(db, 'leads'), { ...data, createdAt: new Date().toISOString() }); toast({ title: "Inquiry Sent", description: "Our team will reach out shortly." }); return true; } catch { toast({ title: "Submission Failed", variant: "destructive" }); return false; } },
+    promoteToRoster: async (tid: string, eid: string, reg: any) => { 
+      if (!firebaseUser) return; 
+      try { 
+        const mid = `member_${Date.now()}`; 
+        await setDoc(doc(db, 'teams', tid, 'members', mid), { userId: `ext_${Date.now()}`, teamId: tid, name: reg.name, role: 'Member', position: 'Player', avatar: '', joinedAt: new Date().toISOString() }); 
+        await deleteDoc(doc(db, 'teams', tid, 'events', eid, 'registrations', reg.id)); 
+        toast({ title: "Promoted to Roster" }); 
+      } catch (e) { 
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `teams/${tid}/members`, operation: 'create' }));
+      } 
+    },
+    submitLead: async (data: any) => { try { await addDoc(collection(db, 'leads'), { ...data, createdAt: new Date().toISOString() }); return true; } catch { return false; } },
     isLoading: isUserLoading, 
     isSuperAdmin,
     isPro,
@@ -585,7 +638,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     formatTime: (d: any) => (typeof d === 'string' ? new Date(d) : d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }),
     plans,
     simulationPlanId, setSimulationPlanId,
-    resetDemo: async () => { if (activeTeam?.isDemo && db && firebaseUser) { await resetDemoEnvironment(db, activeTeam.id, activeTeam.planId!, firebaseUser.uid); toast({ title: "Environment Reset", description: "Demo data has been restored." }); } },
+    resetDemo: async () => { if (activeTeam?.isDemo && db && firebaseUser) { await resetDemoEnvironment(db, activeTeam.id, activeTeam.planId!, firebaseUser.uid); } },
     isSeedingDemo,
     isClubManager,
     secondsUntilReset,
@@ -607,8 +660,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         batch.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', t.id), updates);
       });
 
-      await batch.commit();
-      toast({ title: "Quota Resolved", description: "Your Elite Squad assignments have been updated." });
+      try {
+        await batch.commit();
+        toast({ title: "Quota Resolved" });
+      } catch (e) {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `teams`, operation: 'update' }));
+      }
     },
     assignManualPlan: async (targetUserId: string, planId: string, limit: number) => {
       if (!isSuperAdmin || !db) return;
@@ -617,14 +674,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         const timestamp = new Date().toISOString();
         const batch = writeBatch(db);
         
-        // Update User Profile
         batch.update(doc(db, 'users', targetUserId), {
           activePlanId: planId,
           proTeamLimit: limit,
           planSource: 'manual'
         });
 
-        // Update Subscription Record
         batch.set(doc(db, 'subscriptions', targetUserId), {
           userId: targetUserId,
           productId: planId,
@@ -635,10 +690,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         }, { merge: true });
 
         await batch.commit();
-        toast({ title: "Organization Assigned", description: `Plan ${planId} (Limit: ${limit}) assigned to user.` });
+        toast({ title: "Organization Assigned" });
       } catch (e) {
-        toast({ title: "Assignment Failed", variant: "destructive" });
-        console.error("Manual Provisioning Error:", e);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `users/${targetUserId}`, operation: 'update' }));
       }
     }
   }), [userProfile, activeTeam, teams, isTeamsLoading, members, alerts, isUserLoading, isSuperAdmin, isPaywallOpen, isRCInitialized, db, firebaseUser, activePlanFeatures, plans, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro, proQuotaStatus, canAddProTeam]);

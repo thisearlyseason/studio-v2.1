@@ -33,7 +33,6 @@ service cloud.firestore {
 
     /**
      * @description Robust check if the user is an admin of a specific team.
-     * Updated to prioritize the new ownerUserId field.
      */
     function isTeamAdmin(teamId) {
       let teamPath = /databases/$(database)/documents/teams/$(teamId);
@@ -66,7 +65,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, update, delete: if isOwner(userId) || isAdmin();
-      allow create: if isSignedIn(); // Allow user profile creation on signup
+      allow create: if isSignedIn(); 
       
       match /teamMemberships/{membershipId} {
         allow read, write: if isOwner(userId) || isAdmin();
@@ -75,26 +74,35 @@ service cloud.firestore {
 
     match /subscriptions/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      // Write access is server-controlled via webhooks or manually by Super Admins.
       allow write: if isAdmin(); 
     }
 
     match /teams/{teamId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.auth.uid == request.resource.data.ownerUserId;
-      allow update, delete: if isTeamAdmin(teamId);
+      // Allow admins to update anything, OR allow any member to update ONLY their own membership status
+      allow update: if isTeamAdmin(teamId) || (
+        isSignedIn() && 
+        request.resource.data.members[request.auth.uid] == 'Member' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+      );
+      allow delete: if isTeamAdmin(teamId);
 
       match /members/{memberId} {
         allow read: if isSignedIn();
         allow create: if isSignedIn() && (memberId == request.auth.uid || isTeamAdmin(teamId));
         allow update: if isSignedIn() && (memberId == request.auth.uid || isTeamAdmin(teamId));
-        // Protect manager from deletion by other admins/coaches, unless it is a demo team or super admin
         allow delete: if isTeamAdmin(teamId) && (!isManager(teamId, memberId) || isAdmin() || resource.data.isDemo == true);
       }
 
       match /events/{eventId} {
         allow read: if isSignedIn();
-        allow write: if isTeamAdmin(teamId);
+        // Allow members to update their own RSVP, but admins to update anything
+        allow update: if isTeamAdmin(teamId) || (
+          isSignedIn() && 
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userRsvps'])
+        );
+        allow create, delete: if isTeamAdmin(teamId);
 
         match /registrations/{regId} {
           allow create: if true; 
@@ -152,7 +160,7 @@ service cloud.firestore {
     }
 
     match /demo/{docId} {
-      allow read, write: if false; // Reserved for system-only session flags
+      allow read, write: if false; 
     }
 
     match /features/{featureId} {
