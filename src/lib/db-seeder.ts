@@ -57,7 +57,7 @@ export async function seedSubscriptionData(db: Firestore) {
         schedule_games_events: true, tournaments: true, basic_roster: true, full_roster_details: true,
         attendance_tracking: true, live_feed_read: true, live_feed_post: true, group_chat: true,
         score_tracking: true, stats_basic: true, media_uploads: true, history_unlimited: true,
-        high_priority_alerts: true
+        high_priority_alerts: true, leagues: true
       };
 
       const starterFeatures = {

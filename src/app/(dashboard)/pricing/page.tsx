@@ -80,11 +80,13 @@ export default function PricingPage() {
   const getDisplayPrice = (plan?: any) => {
     if (!plan) return '';
     const price = (billingCycle === 'annual' && plan.annualPriceDisplay) ? plan.annualPriceDisplay : plan.priceDisplay;
+    // Ensure accurate annual display for pro tier specifically if seeder didn't propagate yet
+    if (plan.id === 'squad_pro' && billingCycle === 'annual') return '$99';
     return price;
   };
 
   const getCycleLabel = (plan?: any) => {
-    if (!plan || plan.priceDisplay === 'Free' || plan.priceDisplay === 'Custom') return '';
+    if (!plan || plan.priceDisplay === 'Free' || plan.priceDisplay === 'Custom' || plan.priceDisplay === '$0') return '';
     return billingCycle === 'annual' ? '/yr' : '/mo';
   };
 
@@ -112,7 +114,7 @@ export default function PricingPage() {
           <div className="h-2 w-full bg-muted-foreground/20" />
           <CardHeader className="p-10 pb-6 space-y-4">
             <div className="flex flex-wrap gap-2">
-              <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 flex items-center border-primary/20 text-primary">FREE</Badge>
+              <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 flex items-center border-primary/20 text-primary">GRASSROOTS</Badge>
               {activeTeam?.planId === 'starter_squad' && <Badge className="bg-primary text-white border-none font-black text-[8px] px-3 h-5 uppercase shadow-lg">Active Squad</Badge>}
             </div>
             <div className="space-y-1">
@@ -148,7 +150,7 @@ export default function PricingPage() {
               {activeTeam?.planId === 'squad_pro' && <Badge className="bg-white text-black border-none font-black text-[8px] px-3 h-5 uppercase shadow-lg">Active Squad</Badge>}
             </div>
             <div className="space-y-1">
-              <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none">Squad Pro</CardTitle>
+              <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none text-white">Squad Pro</CardTitle>
               <div className="flex items-baseline gap-1">
                 <span className="text-5xl font-black tracking-tighter text-primary">{getDisplayPrice(proPlan)}</span>
                 <span className="text-xs font-black uppercase opacity-60 text-white/60">{getCycleLabel(proPlan)}</span>
@@ -170,7 +172,7 @@ export default function PricingPage() {
           </CardContent>
           <CardFooter className="p-10 pt-0 relative z-10">
             <Button className="w-full h-14 rounded-2xl text-base font-black bg-white text-black hover:bg-white/90 shadow-xl" onClick={purchasePro}>
-              Upgrade to Pro
+              {activeTeam?.planId === 'squad_pro' ? 'Current Plan' : 'Upgrade to Pro'}
             </Button>
           </CardFooter>
         </Card>
@@ -185,8 +187,7 @@ export default function PricingPage() {
             <div className="space-y-1">
               <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none">Club Suite</CardTitle>
               <div className="flex items-baseline gap-1">
-                <span className="text-5xl font-black tracking-tighter">{getDisplayPrice(clubPlans[0])}</span>
-                <span className="text-xs font-black uppercase opacity-60 text-muted-foreground">{getCycleLabel(clubPlans[0])}</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Includes ALL Pro Features + Hub Management</span>
               </div>
             </div>
             <CardDescription className="text-xs font-bold leading-relaxed text-muted-foreground">Consolidated management for multi-team organizations and academies.</CardDescription>
@@ -196,9 +197,18 @@ export default function PricingPage() {
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Organization Scaling</p>
               <div className="space-y-3">
                 {clubPlans.map(cp => (
-                  <div key={cp.id} className="flex justify-between items-center bg-muted/30 p-2.5 rounded-xl border border-transparent hover:border-primary/10 transition-all">
-                    <span className="text-[10px] font-black uppercase tracking-tight">{cp.name.replace('Club ', '')} ({cp.proTeamLimit} Teams)</span>
-                    <span className="text-[10px] font-black text-primary">{getDisplayPrice(cp)}</span>
+                  <div key={cp.id} className={cn(
+                    "flex justify-between items-center p-3 rounded-xl border-2 transition-all",
+                    activeTeam?.planId === cp.id ? "bg-primary/5 border-primary" : "bg-muted/30 border-transparent hover:border-muted"
+                  )}>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase tracking-tight">{cp.name.replace('Club ', '')}</span>
+                      <span className="text-[8px] font-bold text-muted-foreground uppercase">{cp.proTeamLimit} Teams</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] font-black text-primary">{getDisplayPrice(cp)}</span>
+                      <p className="text-[7px] font-bold uppercase opacity-50">{getCycleLabel(cp)}</p>
+                    </div>
                   </div>
                 ))}
               </div>
