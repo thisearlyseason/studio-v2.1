@@ -30,7 +30,8 @@ import {
   Zap,
   ArrowRight,
   RotateCcw,
-  AlertTriangle
+  AlertTriangle,
+  BookOpen
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -57,6 +58,7 @@ import { useAuth } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
+import Link from 'next/link';
 
 export default function SettingsPage() {
   const { user, updateUser, members, activeTeam, updateMember, manageSubscription, isPro, isClubManager, resetSeasonData } = useTeam();
@@ -181,6 +183,18 @@ export default function SettingsPage() {
           <CardContent className="p-0">
             <div className="divide-y divide-muted/50">
               <div className="p-4 flex items-center justify-between"><div className="flex items-center gap-3"><div className="bg-primary/10 p-2.5 rounded-2xl text-primary"><Bell className="h-5 w-5" /></div><div><p className="text-sm font-bold">Push Notifications</p><p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Alerts for posts, events & chats</p></div></div><Switch checked={notifications} onCheckedChange={setNotifications} /></div>
+              
+              <Link href="/how-to" className="w-full p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group">
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 p-2.5 rounded-2xl text-primary"><BookOpen className="h-5 w-5" /></div>
+                  <div className="text-left">
+                    <p className="text-sm font-bold">How To Guide</p>
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Tactical step-by-step manual</p>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground opacity-30 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+              </Link>
+
               {isPro && (<button onClick={manageSubscription} className="w-full p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group"><div className="flex items-center gap-3"><div className="bg-amber-100 p-2.5 rounded-2xl text-amber-600"><CreditCard className="h-5 w-5" /></div><div className="text-left"><p className="text-sm font-bold">Manage Subscription</p><p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Billing & plan management</p></div></div><ExternalLink className="h-4 w-4 text-muted-foreground opacity-30 group-hover:opacity-100 transition-all" /></button>)}
               {isAdmin && (
                 <AlertDialog>
@@ -204,8 +218,8 @@ export default function SettingsPage() {
                     </AlertDialogHeader>
                     <AlertDialogFooter className="mt-6">
                       <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={resetSeasonData} className="rounded-xl font-black bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/20">Purge & Reset</AlertDialogAction>
-                    </AlertDialogFooter>
+                      <AlertDialogAction onClick={resetSeasonData} className="rounded-xl font-black bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/20">Purge & Reset</AccordionAction>
+                    </AccordionFooter>
                   </AlertDialogContent>
                 </AlertDialog>
               )}

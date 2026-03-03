@@ -27,7 +27,8 @@ import {
   History,
   Timer,
   ChevronRight,
-  Shield
+  Shield,
+  BookOpen
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -275,8 +276,28 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     isLocked={tab.pro && !isPro} 
                   />
                 ))}
+                
                 <SidebarSeparator className="my-4 opacity-10" />
                 
+                <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground mb-2 px-2">Resources</p>
+                <SidebarMenuItem>
+                  <SidebarMenuButton 
+                    asChild 
+                    isActive={pathname === '/how-to'}
+                    className={cn(
+                      "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
+                      pathname === '/how-to' 
+                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
+                        : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
+                    )}
+                  >
+                    <Link href="/how-to" className="flex items-center gap-4">
+                      <BookOpen className="h-5 w-5" />
+                      <span>Tactical Manual</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+
                 <SidebarMenuItem>
                   <SidebarMenuButton 
                     asChild 
@@ -319,7 +340,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="hidden md:flex items-center gap-4 min-w-0">
                 <div className="flex flex-col min-w-0">
                   <h2 className="text-xl lg:text-2xl font-black tracking-tighter uppercase truncate">
-                    {pathname === '/pricing' ? 'Pricing' : (pathname === '/leagues' ? 'League Control' : (tabs.find(t => pathname.startsWith(t.href))?.name || 'Dashboard'))}
+                    {pathname === '/pricing' ? 'Pricing' : pathname === '/how-to' ? 'Tactical Manual' : (pathname === '/leagues' ? 'League Control' : (tabs.find(t => pathname.startsWith(t.href))?.name || 'Dashboard'))}
                   </h2>
                   <p className="text-[9px] lg:text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em] lg:tracking-[0.3em] ml-0.5 truncate">The Squad Hub • {activeTeam?.name}</p>
                 </div>
