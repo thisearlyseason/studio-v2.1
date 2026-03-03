@@ -203,7 +203,7 @@ export default function PricingPage() {
           </CardFooter>
         </Card>
 
-        {/* CLUB SUITE - AS SPECIFIED IN IMAGE */}
+        {/* CLUB SUITE */}
         <Card className={cn(
           "rounded-[3rem] border-none shadow-xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.02] ring-1 ring-black/5 bg-white",
           hasClubPlan && "ring-4 ring-primary/20"
@@ -221,7 +221,7 @@ export default function PricingPage() {
             
             <div className="space-y-1">
               <p className="text-[13px] font-black uppercase tracking-tight text-primary leading-tight">
-                INCLUDES ALL SQUAD PRO FEATURES + HUB MANAGEMENT
+                INCLUDES ALL SQUAD PRO FEATURES + CLUB HUB MANAGEMENT
               </p>
             </div>
           </CardHeader>
@@ -243,16 +243,16 @@ export default function PricingPage() {
               {/* Organization Scaling Ledger */}
               <div className="space-y-4">
                 <p className="text-[11px] font-black uppercase tracking-[0.3em] text-black">ORGANIZATION SCALING</p>
-                <div className="space-y-2 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
-                  {clubPlans.map(cp => {
+                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  {clubPlans.length > 0 ? clubPlans.map(cp => {
                     const isCurrentSub = activeTeam?.planId === cp.id;
                     return (
                       <div key={cp.id} className={cn(
                         "flex items-center justify-between p-4 rounded-2xl border-2 transition-all group",
-                        isCurrentSub ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/20 border-transparent hover:bg-muted/40"
+                        isCurrentSub ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/20 border-transparent hover:border-muted/40"
                       )}>
                         <div className="flex flex-col min-w-0">
-                          <span className="text-[11px] font-black uppercase truncate tracking-tight">{cp.name.replace('Club ', '')}</span>
+                          <span className="text-[11px] font-black uppercase truncate tracking-tight">{cp.name}</span>
                           <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{cp.proTeamLimit} Teams</span>
                         </div>
                         <div className="flex items-center gap-4">
@@ -274,7 +274,11 @@ export default function PricingPage() {
                         </div>
                       </div>
                     );
-                  })}
+                  }) : (
+                    <div className="text-center py-10 opacity-40">
+                      <p className="text-[10px] font-black uppercase tracking-widest">No tiers found.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
