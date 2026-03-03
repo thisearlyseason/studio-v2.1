@@ -152,30 +152,6 @@ export default function FilesPage() {
   const canAccess = hasFeature('media_uploads');
   const isAdmin = activeTeam.role === 'Admin' || isSuperAdmin;
 
-  if (!canAccess) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
-        <div className="relative">
-          <div className="bg-primary/10 p-6 rounded-[2.5rem] shadow-xl">
-            <FolderClosed className="h-16 w-16 text-primary" />
-          </div>
-          <div className="absolute -top-2 -right-2 bg-black text-white p-2 rounded-full shadow-lg border-2 border-background">
-            <Lock className="h-4 w-4" />
-          </div>
-        </div>
-        <div className="text-center max-w-sm space-y-3">
-          <h1 className="text-3xl font-black tracking-tight">Media Vault</h1>
-          <p className="text-muted-foreground font-bold leading-relaxed">
-            Store playbooks, video lessons, and match highlights securely in your squad's private repository.
-          </p>
-        </div>
-        <Button className="h-14 px-10 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={purchasePro}>
-          Unlock Media Hub
-        </Button>
-      </div>
-    );
-  }
-
   const handleUploadClick = () => fileInputRef.current?.click();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -247,7 +223,9 @@ export default function FilesPage() {
                 </Button>
               </DialogTrigger>
               <DialogContent className="rounded-3xl border-none shadow-2xl">
-                <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Tactical Destination</DialogTitle></DialogHeader>
+                <DialogHeader>
+                  <DialogTitle className="text-2xl font-black uppercase">Tactical Destination</DialogTitle>
+                </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title</Label><Input placeholder="e.g. Game Film Highlights" value={linkTitle} onChange={e => setLinkTitle(e.target.value)} /></div>
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">URL</Label><Input placeholder="https://youtube.com/..." value={linkUrl} onChange={e => setLinkUrl(e.target.value)} /></div>
@@ -401,122 +379,125 @@ export default function FilesPage() {
       <Dialog open={!!selectedFile} onOpenChange={o => !o && setSelectedFile(null)}>
         <DialogContent className="sm:max-w-7xl h-full sm:h-[90vh] p-0 overflow-hidden rounded-none sm:rounded-[3rem] border-none shadow-2xl flex flex-col">
           {selectedFile && (
-            <div className="flex flex-col lg:flex-row h-full">
-              <div className="flex-1 bg-black flex flex-col relative">
-                <div className="flex-1 flex items-center justify-center p-4">
-                  {selectedFile.type === 'link' ? (
-                    <div className="text-center space-y-8 bg-white/5 p-12 rounded-[3rem] border-2 border-dashed border-white/10 max-w-lg">
-                      <Globe className="h-20 w-20 text-primary mx-auto opacity-40" />
-                      <div className="space-y-2">
-                        <h4 className="text-2xl font-black uppercase text-white tracking-tight leading-none">{selectedFile.name}</h4>
-                        <p className="text-white/40 font-mono text-[10px] break-all">{selectedFile.url}</p>
+            <>
+              <DialogTitle className="sr-only">Previewing {selectedFile.name}</DialogTitle>
+              <div className="flex flex-col lg:flex-row h-full">
+                <div className="flex-1 bg-black flex flex-col relative">
+                  <div className="flex-1 flex items-center justify-center p-4">
+                    {selectedFile.type === 'link' ? (
+                      <div className="text-center space-y-8 bg-white/5 p-12 rounded-[3rem] border-2 border-dashed border-white/10 max-w-lg">
+                        <Globe className="h-20 w-20 text-primary mx-auto opacity-40" />
+                        <div className="space-y-2">
+                          <h4 className="text-2xl font-black uppercase text-white tracking-tight leading-none">{selectedFile.name}</h4>
+                          <p className="text-white/40 font-mono text-[10px] break-all">{selectedFile.url}</p>
+                        </div>
+                        <Button onClick={() => window.open(selectedFile.url, '_blank')} className="rounded-full h-14 px-10 font-black uppercase">Launch Strategy Hub</Button>
                       </div>
-                      <Button onClick={() => window.open(selectedFile.url, '_blank')} className="rounded-full h-14 px-10 font-black uppercase">Launch Strategy Hub</Button>
+                    ) : (
+                      <video src={selectedFile.url} controls className="max-w-full max-h-full rounded-2xl shadow-2xl" />
+                    )}
+                  </div>
+                  {/* Annotations bar for video */}
+                  {selectedFile.type !== 'link' && (
+                    <div className="bg-black/50 backdrop-blur-md p-4 border-t border-white/10 shrink-0 overflow-x-auto no-scrollbar flex gap-3">
+                      <Badge className="bg-primary text-white border-none h-10 px-4 flex items-center gap-2 font-black uppercase text-[10px] shrink-0">
+                        Tactical Moments <ChevronRight className="h-3 w-3" />
+                      </Badge>
+                      {selectedFile.annotations?.map(anno => (
+                        <button key={anno.id} className="h-10 px-4 rounded-xl bg-white/10 border border-white/10 hover:bg-white/20 transition-all flex items-center gap-3 shrink-0 group">
+                          <span className="text-[10px] font-black text-primary group-hover:scale-110 transition-transform">{Math.floor(anno.timestamp / 60)}:{String(anno.timestamp % 60).padStart(2, '0')}</span>
+                          <span className="text-[10px] font-bold text-white/80">{anno.label}</span>
+                        </button>
+                      ))}
+                      {isAdmin && (
+                        <Dialog>
+                          <DialogTrigger asChild><Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl bg-white/5 border border-dashed border-white/20 hover:border-primary"><Plus className="h-4 w-4" /></Button></DialogTrigger>
+                          <DialogContent className="sm:max-w-md rounded-[2.5rem]">
+                            <DialogHeader><DialogTitle className="text-xl font-black uppercase">Tag Moment</DialogTitle></DialogHeader>
+                            <div className="space-y-4 py-4">
+                              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Timestamp (seconds)</Label><Input type="number" value={annoTime} onChange={e => setAnnoTime(e.target.value)} /></div>
+                              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Label</Label><Input placeholder="e.g. Offensive Break" value={annoLabel} onChange={e => setAnnoLabel(e.target.value)} /></div>
+                            </div>
+                            <DialogFooter><Button className="w-full h-12 rounded-xl" onClick={handleAnnotation}>Mark Sequence</Button></DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      )}
                     </div>
-                  ) : (
-                    <video src={selectedFile.url} controls className="max-w-full max-h-full rounded-2xl shadow-2xl" />
                   )}
                 </div>
-                {/* Annotations bar for video */}
-                {selectedFile.type !== 'link' && (
-                  <div className="bg-black/50 backdrop-blur-md p-4 border-t border-white/10 shrink-0 overflow-x-auto no-scrollbar flex gap-3">
-                    <Badge className="bg-primary text-white border-none h-10 px-4 flex items-center gap-2 font-black uppercase text-[10px] shrink-0">
-                      Tactical Moments <ChevronRight className="h-3 w-3" />
-                    </Badge>
-                    {selectedFile.annotations?.map(anno => (
-                      <button key={anno.id} className="h-10 px-4 rounded-xl bg-white/10 border border-white/10 hover:bg-white/20 transition-all flex items-center gap-3 shrink-0 group">
-                        <span className="text-[10px] font-black text-primary group-hover:scale-110 transition-transform">{Math.floor(anno.timestamp / 60)}:{String(anno.timestamp % 60).padStart(2, '0')}</span>
-                        <span className="text-[10px] font-bold text-white/80">{anno.label}</span>
-                      </button>
-                    ))}
-                    {isAdmin && (
-                      <Dialog>
-                        <DialogTrigger asChild><Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl bg-white/5 border border-dashed border-white/20 hover:border-primary"><Plus className="h-4 w-4" /></Button></DialogTrigger>
-                        <DialogContent className="sm:max-w-md rounded-[2.5rem]">
-                          <DialogHeader><DialogTitle className="text-xl font-black uppercase">Tag Moment</DialogTitle></DialogHeader>
-                          <div className="space-y-4 py-4">
-                            <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Timestamp (seconds)</Label><Input type="number" value={annoTime} onChange={e => setAnnoTime(e.target.value)} /></div>
-                            <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Label</Label><Input placeholder="e.g. Offensive Break" value={annoLabel} onChange={e => setAnnoLabel(e.target.value)} /></div>
-                          </div>
-                          <DialogFooter><Button className="w-full h-12 rounded-xl" onClick={handleAnnotation}>Mark Sequence</Button></DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    )}
-                  </div>
-                )}
-              </div>
 
-              <aside className="w-full lg:w-96 bg-white flex flex-col border-l">
-                <div className="p-6 border-b space-y-4">
-                  <div className="flex justify-between items-start">
-                    <div className="space-y-1">
-                      <Badge className="bg-primary/10 text-primary border-none text-[8px] uppercase font-black px-2">{selectedFile.category}</Badge>
-                      <h3 className="text-xl font-black uppercase tracking-tight">{selectedFile.name}</h3>
-                    </div>
-                    <Button variant="ghost" size="icon" onClick={() => setSelectedFile(null)}><XCircle className="h-5 w-5" /></Button>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {selectedFile.tags?.map(tag => (
-                      <Badge key={tag} className="bg-muted text-muted-foreground border-none text-[8px] px-2 h-5 font-bold">{tag}</Badge>
-                    ))}
-                    {isAdmin && (
-                      <div className="flex gap-1">
-                        <Input size={1} className="h-5 text-[8px] w-16 px-1 rounded-md" placeholder="+ tag" value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddTag()} />
+                <aside className="w-full lg:w-96 bg-white flex flex-col border-l">
+                  <div className="p-6 border-b space-y-4">
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-1">
+                        <Badge className="bg-primary/10 text-primary border-none text-[8px] uppercase font-black px-2">{selectedFile.category}</Badge>
+                        <h3 className="text-xl font-black uppercase tracking-tight">{selectedFile.name}</h3>
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                <ScrollArea className="flex-1 p-6">
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-2 px-1">
-                      <MessageSquare className="h-4 w-4 text-primary" />
-                      <h4 className="text-[10px] font-black uppercase tracking-widest">Discussion</h4>
+                      <Button variant="ghost" size="icon" onClick={() => setSelectedFile(null)}><XCircle className="h-5 w-5" /></Button>
                     </div>
-                    <div className="space-y-4">
-                      {selectedFile.comments?.map(comment => (
-                        <div key={comment.id} className="flex gap-3">
-                          <Avatar className="h-8 w-8 rounded-lg border shadow-sm shrink-0">
-                            <AvatarFallback className="font-black text-[10px]">{comment.authorName[0]}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0 bg-muted/30 p-3 rounded-2xl space-y-1">
-                            <div className="flex justify-between items-center">
-                              <span className="text-[10px] font-black truncate max-w-[100px]">{comment.authorName}</span>
-                              <span className="text-[8px] font-bold text-muted-foreground">{format(new Date(comment.createdAt), 'MMM d, HH:mm')}</span>
-                            </div>
-                            <p className="text-[11px] font-medium text-foreground/80 leading-relaxed">{comment.text}</p>
-                          </div>
-                        </div>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedFile.tags?.map(tag => (
+                        <Badge key={tag} className="bg-muted text-muted-foreground border-none text-[8px] px-2 h-5 font-bold">{tag}</Badge>
                       ))}
-                      {(!selectedFile.comments || selectedFile.comments.length === 0) && (
-                        <div className="text-center py-8 opacity-30"><p className="text-[10px] font-black uppercase tracking-widest">No study notes yet</p></div>
+                      {isAdmin && (
+                        <div className="flex gap-1">
+                          <Input size={1} className="h-5 text-[8px] w-16 px-1 rounded-md" placeholder="+ tag" value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddTag()} />
+                        </div>
                       )}
                     </div>
                   </div>
-                </ScrollArea>
 
-                <div className="p-6 border-t space-y-4">
-                  <div className="flex gap-2">
-                    <Input 
-                      placeholder="Add study note..." 
-                      className="rounded-xl h-11 text-xs" 
-                      value={newComment} 
-                      onChange={e => setNewPostComment(e.target.value)} 
-                      onKeyDown={e => e.key === 'Enter' && handleComment()}
-                    />
-                    <Button size="icon" className="h-11 w-11 rounded-xl shadow-lg" onClick={handleComment}><Send className="h-4 w-4" /></Button>
+                  <ScrollArea className="flex-1 p-6">
+                    <div className="space-y-6">
+                      <div className="flex items-center gap-2 px-1">
+                        <MessageSquare className="h-4 w-4 text-primary" />
+                        <h4 className="text-[10px] font-black uppercase tracking-widest">Discussion</h4>
+                      </div>
+                      <div className="space-y-4">
+                        {selectedFile.comments?.map(comment => (
+                          <div key={comment.id} className="flex gap-3">
+                            <Avatar className="h-8 w-8 rounded-lg border shadow-sm shrink-0">
+                              <AvatarFallback className="font-black text-[10px]">{comment.authorName[0]}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0 bg-muted/30 p-3 rounded-2xl space-y-1">
+                              <div className="flex justify-between items-center">
+                                <span className="text-[10px] font-black truncate max-w-[100px]">{comment.authorName}</span>
+                                <span className="text-[8px] font-bold text-muted-foreground">{format(new Date(comment.createdAt), 'MMM d, HH:mm')}</span>
+                              </div>
+                              <p className="text-[11px] font-medium text-foreground/80 leading-relaxed">{comment.text}</p>
+                            </div>
+                          </div>
+                        ))}
+                        {(!selectedFile.comments || selectedFile.comments.length === 0) && (
+                          <div className="text-center py-8 opacity-30"><p className="text-[10px] font-black uppercase tracking-widest">No study notes yet</p></div>
+                        )}
+                      </div>
+                    </div>
+                  </ScrollArea>
+
+                  <div className="p-6 border-t space-y-4">
+                    <div className="flex gap-2">
+                      <Input 
+                        placeholder="Add study note..." 
+                        className="rounded-xl h-11 text-xs" 
+                        value={newComment} 
+                        onChange={e => setNewPostComment(e.target.value)} 
+                        onKeyDown={e => e.key === 'Enter' && handleComment()}
+                      />
+                      <Button size="icon" className="h-11 w-11 rounded-xl shadow-lg" onClick={handleComment}><Send className="h-4 w-4" /></Button>
+                    </div>
+                    <div className="flex gap-2">
+                      {isAdmin && (
+                        <Button variant="ghost" className="h-11 w-11 rounded-xl text-destructive hover:bg-destructive/10" onClick={() => setFileToDelete(selectedFile.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button className="flex-1 h-11 rounded-xl font-black uppercase text-xs tracking-widest" onClick={() => setSelectedFile(null)}>Close Hub</Button>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    {isAdmin && (
-                      <Button variant="ghost" className="h-11 w-11 rounded-xl text-destructive hover:bg-destructive/10" onClick={() => setFileToDelete(selectedFile.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                    <Button className="flex-1 h-11 rounded-xl font-black uppercase text-xs tracking-widest" onClick={() => setSelectedFile(null)}>Close Hub</Button>
-                  </div>
-                </div>
-              </aside>
-            </div>
+                </aside>
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
