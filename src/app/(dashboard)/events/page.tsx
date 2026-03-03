@@ -526,9 +526,12 @@ export default function EventsPage() {
   const invitedTournamentsQuery = useMemoFirebase(() => {
     // CRITICAL: Block unauthorized or placeholder searches to prevent root-level list denials
     const teamName = activeTeam?.name;
-    if (!teamName || teamName === 'Select Squad' || teamName === 'Unnamed Team' || teamName.trim() === '' || !db || !user) {
+    const isPlaceholder = !teamName || teamName === 'Select Squad' || teamName === 'Unnamed Team' || teamName.trim() === '';
+    
+    if (isPlaceholder || !db || !user) {
       return null;
     }
+    
     return query(
       collectionGroup(db, 'events'), 
       where('tournamentTeams', 'array-contains', teamName), 
