@@ -35,7 +35,6 @@ export function RevenueCatPaywall() {
           .catch(err => {
             console.error("RC Offering Error:", err);
             setIsLoading(false);
-            // Don't show toast for common network flakes if dialog is still initializing
           });
       } catch (e) {
         console.warn("Purchases not ready for offerings", e);
@@ -58,27 +57,6 @@ export function RevenueCatPaywall() {
       setIsPurchasing(false);
     }
   };
-
-  if (isPro && isPaywallOpen) {
-    return (
-      <Dialog open={isPaywallOpen} onOpenChange={setIsPaywallOpen}>
-        <DialogContent className="sm:max-w-md rounded-[2.5rem] text-center">
-          <DialogHeader>
-            <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Trophy className="h-8 w-8 text-primary" />
-            </div>
-            <DialogTitle className="text-3xl font-black tracking-tight">Status: Elite</DialogTitle>
-            <DialogDescription className="text-lg font-medium">
-              Your account already has full access to the Pro features.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-6">
-            <Button className="w-full h-12 rounded-xl font-bold" onClick={() => setIsPaywallOpen(false)}>Continue Coordination</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
 
   return (
     <Dialog open={isPaywallOpen} onOpenChange={setIsPaywallOpen}>
