@@ -443,19 +443,22 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                   </TabsContent>
                 </div>
 
-                <div className="p-8 border-t bg-muted/20 shrink-0">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-6 max-w-4xl mx-auto">
-                    <div className="text-center sm:text-left space-y-1">
-                      <p className="text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em]">Attendance Response</p>
-                      <p className="text-xs font-medium text-foreground/60 italic">Your status updates the roster in real-time.</p>
-                    </div>
-                    <div className="flex gap-3 w-full sm:w-auto">
-                      <Button variant="outline" className={cn("flex-1 sm:w-32 h-14 rounded-2xl font-black text-[10px] uppercase", currentStatus === 'notGoing' ? "bg-red-600 text-white" : "bg-white border-2")} onClick={() => handleRSVPAction('notGoing')}>Decline</Button>
-                      <Button variant="outline" className={cn("flex-1 sm:w-32 h-14 rounded-2xl font-black text-[10px] uppercase", currentStatus === 'maybe' ? "bg-amber-500 text-white" : "bg-white border-2")} onClick={() => handleRSVPAction('maybe')}>Maybe</Button>
-                      <Button variant="outline" className={cn("flex-1 sm:w-48 h-14 rounded-2xl font-black text-xs uppercase", currentStatus === 'going' ? "bg-primary text-white" : "bg-white border-2")} onClick={() => handleRSVPAction('going')}><CheckCircle2 className="h-4 w-4 mr-2" /> I'm Going</Button>
+                {/* RSVP Section - Hidden for Squad Organizers */}
+                {!isAdmin && (
+                  <div className="p-8 border-t bg-muted/20 shrink-0">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-6 max-w-4xl mx-auto">
+                      <div className="text-center sm:text-left space-y-1">
+                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em]">Attendance Response</p>
+                        <p className="text-xs font-medium text-foreground/60 italic">Your status updates the roster in real-time.</p>
+                      </div>
+                      <div className="flex gap-3 w-full sm:w-auto">
+                        <Button variant="outline" className={cn("flex-1 sm:w-32 h-14 rounded-2xl font-black text-[10px] uppercase", currentStatus === 'notGoing' ? "bg-red-600 text-white" : "bg-white border-2")} onClick={() => handleRSVPAction('notGoing')}>Decline</Button>
+                        <Button variant="outline" className={cn("flex-1 sm:w-32 h-14 rounded-2xl font-black text-[10px] uppercase", currentStatus === 'maybe' ? "bg-amber-500 text-white" : "bg-white border-2")} onClick={() => handleRSVPAction('maybe')}>Maybe</Button>
+                        <Button variant="outline" className={cn("flex-1 sm:w-48 h-14 rounded-2xl font-black text-xs uppercase", currentStatus === 'going' ? "bg-primary text-white" : "bg-white border-2")} onClick={() => handleRSVPAction('going')}><CheckCircle2 className="h-4 w-4 mr-2" /> I'm Going</Button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </Tabs>
             </div>
           </div>
@@ -524,14 +527,9 @@ export default function EventsPage() {
   const events = rawEvents || [];
 
   const invitedTournamentsQuery = useMemoFirebase(() => {
-    // Explicitly check for team identity and user to ensure query is valid and authorized
-    // Blocks placeholder names to prevent root-level list denials during initial boot
     if (!activeTeam?.id || !activeTeam?.name || !db || !user) return null;
     
     const teamName = activeTeam.name.trim();
-    
-    // Prevent queries with generic or placeholder names that might trigger broad rule denials
-    // Also skip discovery for demo teams during seeding to avoid cross-tenant evaluation errors
     const isPlaceholder = 
       activeTeam.isDemo ||
       teamName === '' || 
@@ -568,7 +566,6 @@ export default function EventsPage() {
   const [newTeamName, setNewTeamName] = useState('');
 
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
-  const canPlanTournaments = hasFeature('tournaments');
 
   const handleEdit = (event: TeamEvent) => {
     setEditingEvent(event);
@@ -614,10 +611,7 @@ export default function EventsPage() {
         {isAdmin && (
           <div className="flex gap-2">
             <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg" onClick={() => { setIsTournamentMode(false); setIsCreateOpen(true); }}><Plus className="h-4 w-4 mr-2" /> Match</Button>
-            <Button size="sm" variant="secondary" className="rounded-full bg-black text-white h-11 px-6 font-black uppercase text-xs relative overflow-hidden" onClick={() => canPlanTournaments ? (setIsTournamentMode(true), setIsCreateOpen(true)) : purchasePro()}>
-              <Trophy className="h-4 w-4 mr-2 text-primary" /> Tournament Add-on
-              {!canPlanTournaments && <div className="absolute top-0 right-0 bg-primary h-full w-1.5"><Lock className="h-2.5 w-2.5 text-white" /></div>}
-            </Button>
+            <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg bg-black text-white" onClick={() => { setIsTournamentMode(true); setIsCreateOpen(true); }}><Trophy className="h-4 w-4 mr-2 text-primary" /> Tournament</Button>
           </div>
         )}
       </div>
