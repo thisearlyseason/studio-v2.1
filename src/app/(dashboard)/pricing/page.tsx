@@ -25,7 +25,8 @@ import {
   Layout,
   ChevronRight,
   CheckCircle2,
-  ShieldAlert
+  ShieldAlert,
+  Infinity
 } from 'lucide-react';
 import { useTeam } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
@@ -43,12 +44,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { useRouter } from 'next/navigation';
 
 export default function PricingPage() {
   const { activeTeam, purchasePro, submitLead, user, plans, isPlansLoading, proQuotaStatus, isStaff } = useTeam();
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
+  const router = useRouter();
   
   const [leadForm, setLeadForm] = useState({
     name: user?.name || '',
@@ -322,6 +325,18 @@ export default function PricingPage() {
         </Card>
       </div>
 
+      <div className="bg-muted/30 p-12 rounded-[3rem] text-center border-2 border-dashed flex flex-col items-center gap-6">
+        <div className="bg-white p-4 rounded-3xl shadow-xl">
+          <Infinity className="h-8 w-8 text-primary" />
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-2xl font-black uppercase tracking-tight">Unlimited Multi-Team Support</h3>
+          <p className="text-muted-foreground font-bold text-sm uppercase tracking-widest max-w-3xl mx-auto leading-relaxed">
+            Every user can manage an unlimited number of **FREE Starter Squads** under a single email. Professional features are enabled per-team through organization seat quotas.
+          </p>
+        </div>
+      </div>
+
       <section className="space-y-10">
         <div className="text-center space-y-2">
           <Badge className="bg-amber-100 text-amber-700 font-black uppercase tracking-widest text-[9px] h-6 px-3">Elite Add-ons</Badge>
@@ -432,7 +447,7 @@ export default function PricingPage() {
         </Dialog>
       </div>
       
-      <p className="text-center text-xs text-muted-foreground font-bold italic">Manage an unlimited amount of Starter Squad teams for free under a single email.</p>
+      <p className="text-center text-[10px] text-muted-foreground font-black uppercase tracking-[0.2em] opacity-40">The Squad Coordination Engine v1.0.0</p>
     </div>
   );
 }
