@@ -58,7 +58,13 @@ export default function PricingPage() {
 
   const starterPlan = useMemo(() => plans.find(p => p.id === 'starter_squad'), [plans]);
   const proPlan = useMemo(() => plans.find(p => p.id === 'squad_pro'), [plans]);
-  const clubPlans = useMemo(() => plans.filter(p => p.id.startsWith('squad_') && p.id !== 'squad_pro' && p.id !== 'squad_organization' && p.id !== 'starter_squad').sort((a, b) => (a.proTeamLimit || 0) - (b.proTeamLimit || 0)), [plans]);
+  
+  // Multi-team plans for the "Organization Scaling" ledger
+  const clubPlans = useMemo(() => {
+    return plans
+      .filter(p => p.id.startsWith('squad_') && p.id !== 'squad_pro' && p.id !== 'starter_squad')
+      .sort((a, b) => (a.proTeamLimit || 0) - (b.proTeamLimit || 0));
+  }, [plans]);
 
   const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,7 +102,7 @@ export default function PricingPage() {
   };
 
   const quotaPercentage = proQuotaStatus.limit > 0 ? (proQuotaStatus.current / proQuotaStatus.limit) * 100 : 0;
-  // User is on a "Club" plan if their limit is greater than 1 (Duo or higher)
+  // User is on a "Club" plan if their current or limit suggests they manage multiple teams
   const hasClubPlan = proQuotaStatus.limit > 1;
 
   return (
@@ -127,7 +133,7 @@ export default function PricingPage() {
           <CardHeader className="p-10 pb-6 space-y-4">
             <div className="flex justify-between items-start">
               <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 flex items-center border-primary/20 text-primary w-fit">GRASSROOTS</Badge>
-              {activeTeam?.planId === 'starter_squad' && <Badge className="bg-muted text-muted-foreground font-black text-[8px] px-2 h-5 border-none uppercase">Current Tier</Badge>}
+              {activeTeam?.planId === 'starter_squad' && <Badge className="bg-muted text-muted-foreground font-black text-[8px] px-2 h-5 border-none uppercase">Current Plan</Badge>}
             </div>
             <div className="space-y-1">
               <CardTitle className="text-3xl font-black uppercase tracking-tight">Starter</CardTitle>
@@ -162,7 +168,7 @@ export default function PricingPage() {
           <CardHeader className="p-10 pb-6 space-y-4 relative z-10">
             <div className="flex justify-between items-start">
               <Badge className="bg-primary text-white border-none font-black text-[8px] px-3 h-5 uppercase w-fit">ELITE PRO</Badge>
-              {activeTeam?.planId === 'squad_pro' && <Badge className="bg-white text-black font-black text-[8px] px-2 h-5 border-none uppercase">Current Tier</Badge>}
+              {activeTeam?.planId === 'squad_pro' && <Badge className="bg-white text-black font-black text-[8px] px-2 h-5 border-none uppercase">Current Plan</Badge>}
             </div>
             <div className="space-y-1">
               <CardTitle className="text-3xl font-black uppercase tracking-tight text-white">Squad Pro</CardTitle>
@@ -198,17 +204,17 @@ export default function PricingPage() {
           </CardFooter>
         </Card>
 
-        {/* CLUB SUITE - REDESIGNED PER SCREENSHOT */}
+        {/* CLUB SUITE - UNIFIED ORGANIZATION COLUMN */}
         <Card className={cn(
           "rounded-[3rem] border-none shadow-xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.02] ring-1 ring-black/5 bg-white",
-          activeTeam?.planId?.startsWith('squad_') && activeTeam?.planId !== 'squad_pro' && "ring-4 ring-primary/20"
+          hasClubPlan && "ring-4 ring-primary/20"
         )}>
           <div className="h-2 w-full bg-primary" />
           <CardHeader className="p-10 pb-6 space-y-6">
             <div className="flex justify-between items-start">
               <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-4 h-6 flex items-center border-primary/20 text-primary w-fit rounded-full">CLUB MANAGER</Badge>
-              {activeTeam?.planId?.startsWith('squad_') && activeTeam?.planId !== 'squad_pro' && activeTeam?.planId !== 'starter_squad' && (
-                <Badge className="bg-primary/10 text-primary font-black text-[8px] px-2 h-5 border-none uppercase">Current Tier</Badge>
+              {hasClubPlan && (
+                <Badge className="bg-primary/10 text-primary font-black text-[8px] px-2 h-5 border-none uppercase">Current Plan</Badge>
               )}
             </div>
             
@@ -223,7 +229,7 @@ export default function PricingPage() {
 
           <CardContent className="p-10 pt-0 flex-1 space-y-8">
             <div className="pt-6 border-t border-muted space-y-6">
-              {/* Only show seat utilization if the user has a multi-team plan */}
+              {/* Active Seat Visualization - Only for Club Managers */}
               {hasClubPlan && (
                 <div className="space-y-2">
                   <div className="flex justify-between items-end mb-1">
@@ -235,6 +241,7 @@ export default function PricingPage() {
                 </div>
               )}
               
+              {/* Organization Scaling Ledger */}
               <div className="space-y-4">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">ORGANIZATION SCALING</p>
                 <div className="space-y-2 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
@@ -282,7 +289,7 @@ export default function PricingPage() {
         </Card>
       </div>
 
-      {/* Redesigned Add-ons & Modules Section */}
+      {/* Elite Add-ons & Modules Section */}
       <section className="space-y-10">
         <div className="text-center space-y-2">
           <Badge className="bg-amber-100 text-amber-700 font-black uppercase tracking-widest text-[9px] h-6 px-3">Elite Add-ons</Badge>
@@ -330,7 +337,7 @@ export default function PricingPage() {
           <Card className="rounded-[3rem] border-none shadow-2xl bg-white overflow-hidden flex flex-col group">
             <div className="p-10 flex items-center justify-between gap-6 border-b-2">
               <div className="flex items-center gap-6">
-                <div className="bg-red-50 p-5 rounded-2xl text-red-600 group-hover:bg-red-600 group-hover:text-white transition-all duration-500">
+                <div className="bg-red-50 p-5 rounded-2xl text-red-600">
                   <TableIcon className="h-10 w-10" />
                 </div>
                 <div className="space-y-1">
