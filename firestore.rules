@@ -13,7 +13,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      // Safely handle missing email for anonymous or demo users
+      // Safely handle missing email for anonymous or demo users using .get()
       return isSignedIn() && (
         request.auth.token.get('email', '') == 'thisearlyseason@gmail.com' || 
         request.auth.token.get('email', '') == 'test@gmail.com'
@@ -21,9 +21,9 @@ service cloud.firestore {
     }
 
     // CRITICAL: Top-level Collection Group rule for global tournament discovery
-    // This MUST be outside standard paths to authorize queries across any team path.
+    // This MUST be at the top level to authorize collectionGroup queries across any team path.
     match /{path=**}/events/{eventId} {
-      allow read: if isSignedIn();
+      allow read: if request.auth != null;
     }
 
     match /users/{userId} {
@@ -46,7 +46,7 @@ service cloud.firestore {
       }
 
       match /events/{eventId} {
-        // Redundant with top-level match but added for absolute path clarity
+        // Absolute path read permission for team-scoped queries
         allow read: if isSignedIn();
         
         // Write handled by parent/specific roles (Host Admin only)
