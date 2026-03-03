@@ -531,7 +531,9 @@ export default function EventsPage() {
     const teamName = activeTeam.name.trim();
     
     // Prevent queries with generic or placeholder names that might trigger broad rule denials
+    // Also skip discovery for demo teams during seeding to avoid cross-tenant evaluation errors
     const isPlaceholder = 
+      activeTeam.isDemo ||
       teamName === '' || 
       teamName === 'Select Squad' || 
       teamName === 'Unnamed Team' || 
@@ -546,7 +548,7 @@ export default function EventsPage() {
       where('tournamentTeams', 'array-contains', teamName), 
       limit(20)
     );
-  }, [activeTeam?.id, activeTeam?.name, db, user?.uid]);
+  }, [activeTeam?.id, activeTeam?.name, activeTeam?.isDemo, db, user?.uid]);
 
   const { data: rawInvitedTournaments } = useCollection<TeamEvent>(invitedTournamentsQuery);
   const invitedTournaments = rawInvitedTournaments || [];
