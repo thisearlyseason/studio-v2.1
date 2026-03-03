@@ -15,7 +15,9 @@ import {
   Phone,
   BarChart3,
   Globe,
-  ArrowRight
+  ArrowRight,
+  Play,
+  Video
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -198,10 +200,10 @@ export default function LandingPage() {
                 hint: "tennis player"
               },
               { 
-                title: "SQUAD LIBRARY", 
-                desc: "Centralized repository for playbooks, waivers, and official documents.", 
+                title: "PLAYBOOK & FILM", 
+                desc: "Centralized hub for video study with automated watch verification and tactical notes.", 
                 img: "https://images.unsplash.com/photo-1486128105845-91daff43f404?auto=format&fit=crop&q=80&w=800",
-                hint: "ice hockey"
+                hint: "video analysis"
               }
             ].map((feature, i) => (
               <div 

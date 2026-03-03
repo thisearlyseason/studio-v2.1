@@ -76,14 +76,15 @@ export default function HowToGuidePage() {
       ]
     },
     {
-      title: "3. Playbook & Game Film",
+      title: "3. Playbook Hub (Game Film)",
       icon: Dumbbell,
-      description: "High-performance video and resource repository.",
+      description: "High-performance video study and training repository.",
       manual: [
-        { step: "Storage Quotas", details: "Starter squads have a 500MB cap. Pro squads unlock 10GB. The Storage Audit bar in the vault tracks real-time usage." },
-        { step: "Compliance Engine", details: "In Game Play mode, users must watch 75% of a video before their status is updated to 'Verified Viewed'." },
-        { step: "Resource Discussion", details: "Every file and link features a dedicated comment thread for team analysis and tactical feedback." },
-        { step: "Unlimited Links", details: "Attaching external strategy links (YouTube, Google Drive) is always free and does not count against your storage quota." }
+        { step: "Film Upload Protocol", details: "Admins navigate to 'Game Play' and tap 'Upload Film'. Select a category (Game Tape, Practice, etc.) and provide study instructions." },
+        { step: "75% Compliance Rule", details: "To ensure tactical readiness, the system monitors video playback. Teammates must watch 75% of a video before it is marked as 'Verified Viewed'." },
+        { step: "Tactical Study Notes", details: "Every film asset includes a dedicated discussion thread. Coaches can leave study notes and players can ask questions directly on the tape." },
+        { step: "Storage Quotas", details: "Starter squads have 500MB. Pro squads unlock 10GB. The Storage Audit bar in the vault tracks real-time usage across the squad." },
+        { step: "Unlimited Strategy Links", details: "Attaching external links (YouTube, Google Drive) is always free and does not count against your team's storage quota." }
       ]
     },
     {
@@ -161,7 +162,7 @@ export default function HowToGuidePage() {
                   { name: "Tactical Chats", s: true, p: true, c: true },
                   { name: "Media Vault (500MB)", s: true, p: true, c: true },
                   { name: "Media Vault (10GB)", s: false, p: true, c: true },
-                  { name: "Video Compliance", s: true, p: true, c: true },
+                  { name: "Video Compliance (75%)", s: true, p: true, c: true },
                   { name: "Live Feed Read", s: false, p: true, c: true },
                   { name: "Advanced Roster", s: false, p: true, c: true }
                 ].map((row, i) => (
