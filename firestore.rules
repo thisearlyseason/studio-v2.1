@@ -8,8 +8,6 @@ service cloud.firestore {
       allow read: if request.auth != null || (resource != null && resource.data.isTournament == true);
     }
 
-    // Rule Sync: Ensuring all coordination protocols are active.
-    
     // Helper functions
     function isSignedIn() {
       return request.auth != null;
@@ -57,12 +55,12 @@ service cloud.firestore {
       match /files/{fileId} {
         allow read: if isTeamMember(teamId);
         allow create: if isAdmin(teamId);
-        allow update: if isTeamMember(teamId);
+        allow update: if isTeamMember(teamId); // For comments, tags, and annotations
         allow delete: if isAdmin(teamId);
       }
 
       match /events/{eventId} {
-        allow update: if isTeamMember(teamId);
+        allow update: if isTeamMember(teamId); // For RSVPs
         allow create, delete: if isAdmin(teamId);
         
         match /registrations/{regId} {
@@ -83,7 +81,9 @@ service cloud.firestore {
 
       match /feedPosts/{postId} {
         allow read: if isTeamMember(teamId);
-        allow write: if isAdmin(teamId);
+        allow create, delete: if isAdmin(teamId);
+        allow update: if isTeamMember(teamId); // Required for likes and poll votes
+        
         match /comments/{commentId} {
           allow read: if isTeamMember(teamId);
           allow write: if isTeamMember(teamId);
@@ -97,6 +97,11 @@ service cloud.firestore {
         match /messages/{messageId} {
           allow read, write: if isTeamMember(teamId);
         }
+      }
+
+      match /alerts/{alertId} {
+        allow read: if isTeamMember(teamId);
+        allow write: if isAdmin(teamId);
       }
     }
 
