@@ -149,10 +149,9 @@ export async function seedDemoData(db: Firestore, teamId: string, demoTier: stri
   }
 
   // Unified Tournament (Regional Championship)
-  // Always set to start today and end in 3 days so it is live/upcoming
   const tid_tournament = `demo_tournament_${teamId}`;
-  const day1Date = now; // Today
-  const day3Date = new Date(now.getTime() + (86400000 * 3)); // 3 days from now
+  const day1Date = now; 
+  const day3Date = new Date(now.getTime() + (86400000 * 3)); 
 
   const day1Str = day1Date.toISOString().split('T')[0];
   const day2Str = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
@@ -165,7 +164,7 @@ export async function seedDemoData(db: Firestore, teamId: string, demoTier: stri
     startTime: '09:00 AM', location: 'Metropolitan Stadium', 
     description: 'The premier regional coordination event of the season.',
     isTournament: true,
-    isTournamentPaid: isEliteTournamentDemo, // ONLY TRUE FOR TOURNAMENT DEMO
+    isTournamentPaid: isEliteTournamentDemo, 
     tournamentTeams: ['Westside Warriors', 'Eastside Elite', 'Northside Knights', 'Southside Strikers', 'Metro Stars', 'City Rangers'],
     tournamentGames: [
       { id: 'g1', team1: 'Westside Warriors', team2: 'Eastside Elite', score1: 4, score2: 2, date: day1Str, time: '10:00 AM', isCompleted: true, winnerId: 'Westside Warriors' },
@@ -175,11 +174,11 @@ export async function seedDemoData(db: Firestore, teamId: string, demoTier: stri
     userRsvps: { [userId]: 'going' }, isDemo: true, createdAt: now.toISOString(), lastUpdated: now.toISOString()
   });
 
-  // Unified Match (Standard Game) - Always set to today or tomorrow
+  // Unified Match (Standard Game)
   const matchId = `demo_match_standard_${teamId}`;
   batch.set(doc(db, 'teams', teamId, 'events', matchId), {
     id: matchId, teamId, title: 'Season Match vs Wildcats',
-    date: new Date(now.getTime() + 86400000).toISOString(), // Tomorrow
+    date: new Date(now.getTime() + 86400000).toISOString(), 
     startTime: '06:00 PM', location: 'Westside Community Field',
     description: 'Standard season match. Arrive 30 minutes early for warmups.',
     isTournament: false, isTournamentPaid: false, userRsvps: { [userId]: 'going' },
@@ -246,7 +245,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const timestamp = Date.now();
   const teamId = `demo_guest_${userId.slice(-4)}_${timestamp}`;
   
-  // Define actual plan IDs for the backend logic
   const actualPlanId = planId === 'tournament_pro' ? 'squad_pro' : planId;
   const isPro = actualPlanId !== 'starter_squad';
   
@@ -258,15 +256,14 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const batch = writeBatch(db);
   const nowStr = new Date().toISOString();
   
-  // RESET USER SESSION TIMER AND CREDITS
   batch.set(doc(db, 'users', userId), {
     id: userId, fullName: 'Guest Coordinator', email: 'guest@thesquad.io',
-    notificationsEnabled: true, createdAt: nowStr, // RESET THE 5 MINUTE CLOCK
+    notificationsEnabled: true, createdAt: nowStr, 
     isDemo: true, avatarUrl: `https://picsum.photos/seed/${userId}/150/150`,
     activePlanId: actualPlanId, 
     proTeamLimit: planId === 'squad_organization' ? 15 : 1,
     planSource: 'free', 
-    tournamentCredits: planId === 'tournament_pro' ? 1 : 0 // GIVES ONE TOKEN ONLY TO TOURNAMENT DEMO
+    tournamentCredits: planId === 'tournament_pro' ? 1 : 0 
   }, { merge: true });
 
   batch.set(doc(db, 'teams', teamId), {
@@ -292,7 +289,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
   await batch.commit();
   
-  // Use UNIFIED SEEDER
   await seedDemoData(db, teamId, planId, userId);
 
   return teamId;
@@ -323,11 +319,9 @@ export async function resetDemoEnvironment(db: Firestore, teamId: string, planId
       }
     }
     
-    // RESET TIMER FOR USER
     const nowStr = new Date().toISOString();
     await updateDoc(doc(db, 'users', userId), { createdAt: nowStr });
     
-    // RE-SEED DATA
     for (const tid of teamIds) {
       await seedDemoData(db, tid, planId, userId);
     }
@@ -367,7 +361,6 @@ export async function launchDemoEnvironments(db: Firestore, superAdminId: string
       });
       await batch.commit();
       
-      // Seed unified data
       await seedDemoData(db, dt.id, dt.planId, superAdminId);
     }
   }

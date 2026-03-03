@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -116,7 +115,7 @@ function FeaturePaywall({ purchasePro, title, desc, icon: Icon }: { purchasePro:
     <div className="flex flex-col items-center justify-center py-12 px-6 text-center space-y-6 animate-in fade-in duration-500 h-full">
       <div className="bg-primary/10 p-6 rounded-[2rem] relative"><Icon className="h-12 w-12 text-primary" /><Lock className="absolute -top-2 -right-2 h-6 w-6 bg-black text-white p-1 rounded-full border-2 border-background shadow-lg" /></div>
       <div className="space-y-2"><h3 className="text-xl font-black uppercase tracking-tight">{title}</h3><p className="text-sm text-muted-foreground font-bold uppercase tracking-widest max-w-xs mx-auto leading-relaxed">{desc}</p></div>
-      <Button className="rounded-xl h-12 px-8 font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20" onClick={purchasePro}>Upgrade to Elite</Button>
+      <Button className="rounded-xl h-12 px-8 font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20" onClick={purchasePro}>Upgrade Squad</Button>
     </div>
   );
 }
@@ -140,7 +139,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const isWaiverSignedForMyTeam = myParticipatingTeamName ? !!event.teamAgreements?.[myParticipatingTeamName]?.agreed : false;
 
   const copyPublicLink = () => {
-    if (!isEliteUnlocked) { purchasePro(); return; }
+    if (!isEliteUnlocked) { toast({ title: "Elite Feature", description: "This hub requires an Elite Tournament Module." }); return; }
     const url = `${window.location.origin}/tournaments/public/${event.teamId}/${event.id}`;
     navigator.clipboard.writeText(url);
     toast({ title: "Spectator Hub Link Copied" });
@@ -220,7 +219,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                   </div>
                   {event.isTournament && (
                     <Button onClick={copyPublicLink} variant="outline" className={cn("w-full rounded-xl h-12 font-black text-xs uppercase gap-3 border-white", isEliteUnlocked ? "bg-white text-black hover:bg-white/90" : "bg-white/10 text-white/40 border-dashed")}>
-                      {isEliteUnlocked ? <Share2 className="h-4 w-4" /> : <Lock className="h-4 w-4" />}Share Spectator Hub {isEliteUnlocked ? "" : "(Elite)"}
+                      {isEliteUnlocked ? <Share2 className="h-4 w-4" /> : <Lock className="h-4 w-4" />}Share Spectator Hub {isEliteUnlocked ? "" : "(Elite Only)"}
                     </Button>
                   )}
                   {myParticipatingTeamName && !isWaiverSignedForMyTeam && (
@@ -258,10 +257,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                     <div className="p-8 text-center bg-primary/10 rounded-3xl border border-dashed border-primary/40 space-y-4">
                       <Lock className="h-8 w-8 text-primary mx-auto opacity-40" />
                       <div className="space-y-1">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-primary">Standings Locked</p>
-                        <p className="text-[8px] font-bold text-white/60 uppercase leading-relaxed">Unlock the Elite Module to automatically track rankings.</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-primary">Elite Standings Locked</p>
+                        <p className="text-[8px] font-bold text-white/60 uppercase leading-relaxed text-center">Standings and public hubs require the Elite Tournament Module Add-on.</p>
                       </div>
-                      <Button variant="secondary" size="sm" className="h-8 rounded-lg text-[8px] font-black uppercase tracking-widest w-full bg-primary text-white" onClick={purchasePro}>Get Elite Standings</Button>
+                      <Button variant="secondary" size="sm" className="h-8 rounded-lg text-[8px] font-black uppercase tracking-widest w-full bg-primary text-white" onClick={() => router.push('/pricing')}>Get Elite Module</Button>
                     </div>
                   )}
                 </div>
@@ -335,7 +334,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                   </TabsContent>
                   <TabsContent value="roster" className="mt-0 h-full">
                     {!isPro ? (
-                      <FeaturePaywall purchasePro={purchasePro} icon={Users} title="Squad Roster Locked" desc="Detailed event rosters require a Pro squad subscription." />
+                      <FeaturePaywall purchasePro={purchasePro} icon={Users} title="Squad Roster Locked" desc="Detailed event rosters and real-time RSVP tracking require a Pro squad subscription." />
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {goingList.map(person => (
@@ -356,7 +355,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                   </TabsContent>
                   <TabsContent value="admin" className="mt-0 space-y-6 h-full">
                     {!isEliteUnlocked ? (
-                      <FeaturePaywall purchasePro={purchasePro} icon={ShieldCheck} title="Audit Ledger Locked" desc="Compliance audits require the Elite Tournament module." />
+                      <FeaturePaywall purchasePro={() => router.push('/pricing')} icon={ShieldCheck} title="Audit Ledger Locked" desc="Compliance audits and digital signature tracking require the Elite Tournament Module Add-on." />
                     ) : (
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 gap-3">
@@ -404,7 +403,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                     </div>
                   </div>
                 )}
-              </Tabs>
+              </div>
             </div>
           </div>
         </ScrollArea>
