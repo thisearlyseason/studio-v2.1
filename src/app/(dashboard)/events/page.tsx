@@ -293,14 +293,41 @@ export default function EventsPage() {
   // STRICT Elite Gating: Hub creation is ONLY unlocked if the user has available credits.
   const canAccessElite = (user?.tournamentCredits || 0) > 0;
 
-  const handleEdit = (event: TeamEvent) => { setEditingEvent(event); setIsTournamentMode(!!event.isTournament); setIsEliteTournament(!!event.isTournamentPaid); setNewTitle(event.title); setNewDate(new Date(event.date).toISOString().split('T')[0]); if (event.endDate) setNewEndDate(new Date(event.endDate).toISOString().split('T')[0]); setNewTime(event.startTime); setNewLocation(event.location); setNewDescription(event.description); setTournamentTeams(event.tournamentTeams || []); setTournamentGames(event.tournamentGames || []); setSelectedLeagueId(event.leagueId || 'none'); setSelectedOpponentTeamId(event.opponentTeamId || 'manual'); setIsCreateOpen(true); };
+  const handleEdit = (event: TeamEvent) => { 
+    setEditingEvent(event); 
+    setIsTournamentMode(!!event.isTournament); 
+    setIsEliteTournament(!!event.isTournamentPaid); 
+    setNewTitle(event.title); 
+    setNewDate(new Date(event.date).toISOString().split('T')[0]); 
+    if (event.endDate) setNewEndDate(new Date(event.endDate).toISOString().split('T')[0]); 
+    setNewTime(event.startTime); 
+    setNewLocation(event.location); 
+    setNewDescription(event.description); 
+    setTournamentTeams(event.tournamentTeams || []); 
+    setTournamentGames(event.tournamentGames || []); 
+    setSelectedLeagueId(event.leagueId || 'none'); 
+    setSelectedOpponentTeamId(event.opponentTeamId || 'manual'); 
+    setIsCreateOpen(true); 
+  };
+
+  const handleOpenEliteBuilder = () => {
+    if (!canAccessElite) {
+      toast({ title: "Elite Module Required", description: "You need 1 Tournament Credit to publish an Elite event hub.", variant: "destructive" });
+      router.push('/pricing');
+      return;
+    }
+    setIsTournamentMode(true);
+    setIsEliteTournament(true);
+    setIsCreateOpen(true);
+  };
+
   const resetForm = () => { setEditingEvent(null); setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setTournamentTeams([]); setTournamentGames([]); setIsEliteTournament(false); setSelectedLeagueId('none'); setSelectedOpponentTeamId('manual'); };
   
   const handleCreateEvent = () => { 
     if (!newTitle || !newDate) return; 
     
     // Check elite access if trying to publish an elite tournament
-    if (isEliteTournament && !canAccessElite) {
+    if (isEliteTournament && !canAccessElite && !editingEvent) {
       toast({ title: "Elite Module Required", description: "You need 1 Tournament Credit to publish an Elite event hub.", variant: "destructive" });
       router.push('/pricing');
       return;
@@ -332,7 +359,7 @@ export default function EventsPage() {
             <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg bg-black text-white" onClick={() => { setIsTournamentMode(true); setIsEliteTournament(false); setIsCreateOpen(true); }}>
               <Trophy className="h-4 w-4 mr-2 text-primary" /> Tournament
             </Button>
-            <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg bg-primary text-white border-none relative group overflow-hidden" onClick={() => { setIsTournamentMode(true); setIsEliteTournament(true); setIsCreateOpen(true); }}>
+            <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg bg-primary text-white border-none relative group overflow-hidden" onClick={handleOpenEliteBuilder}>
               <Sparkles className="h-4 w-4 mr-2" /> 
               Elite Tournament Hub
               {!canAccessElite && <Lock className="absolute top-1 right-1 h-3 w-3 opacity-40" />}
