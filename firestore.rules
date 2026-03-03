@@ -5,7 +5,7 @@ service cloud.firestore {
 
     // CRITICAL: Top-level Collection Group rule for global tournament discovery & Public Spectator Hub
     match /{path=**}/events/{eventId} {
-      allow read: if request.auth != null || (resource != null && resource.data.isTournament == true);
+      allow read: if request.auth != null || (resource != null && resource.data.get('isTournament', false) == true);
     }
 
     // Helper functions
@@ -20,8 +20,8 @@ service cloud.firestore {
     function isTeamMember(teamId) {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)) ||
-        get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId))
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) ||
+        get(/databases/$(database)/documents/teams/$(teamId)).data.get('ownerUserId', '') == request.auth.uid
       );
     }
 
@@ -29,9 +29,9 @@ service cloud.firestore {
       return isSignedIn() && (
         (request.auth.token.get('email', '') == 'thisearlyseason@gmail.com') || 
         (request.auth.token.get('email', '') == 'test@gmail.com') ||
-        (get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid) ||
+        (get(/databases/$(database)/documents/teams/$(teamId)).data.get('ownerUserId', '') == request.auth.uid) ||
         (exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.role == 'Admin')
+         get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.get('role', 'Member') == 'Admin')
       );
     }
 
@@ -57,14 +57,19 @@ service cloud.firestore {
       match /files/{fileId} {
         allow read: if isTeamMember(teamId);
         allow create: if isAdmin(teamId);
-        allow update: if isTeamMember(teamId); // For comments/views
+        allow update: if isTeamMember(teamId); // For comments and view tracking
         allow delete: if isAdmin(teamId);
+        
+        match /comments/{commentId} {
+          allow read: if isTeamMember(teamId);
+          allow write: if isTeamMember(teamId);
+        }
       }
 
       match /events/{eventId} {
-        allow update: if isTeamMember(teamId); // For RSVPs
-        allow create, delete: if isAdmin(teamId);
         allow read: if isTeamMember(teamId);
+        allow create, delete: if isAdmin(teamId);
+        allow update: if isTeamMember(teamId); // Required for RSVPs and waivers
         
         match /registrations/{regId} {
           allow create: if true; 
@@ -84,7 +89,8 @@ service cloud.firestore {
 
       match /feedPosts/{postId} {
         allow read: if isTeamMember(teamId);
-        allow create, delete: if isAdmin(teamId);
+        allow create: if isAdmin(teamId);
+        allow delete: if isAdmin(teamId) || (resource != null && resource.data.get('authorId', '') == request.auth.uid);
         allow update: if isTeamMember(teamId); // Required for likes and poll votes
         
         match /comments/{commentId} {
@@ -97,14 +103,14 @@ service cloud.firestore {
         allow read: if isTeamMember(teamId);
         allow create: if isTeamMember(teamId);
         allow update, delete: if isTeamMember(teamId);
+        
         match /messages/{messageId} {
           allow read, write: if isTeamMember(teamId);
         }
       }
 
       match /alerts/{alertId} {
-        allow read: if isTeamMember(teamId);
-        allow list: if isTeamMember(teamId);
+        allow read, list: if isTeamMember(teamId);
         allow write: if isAdmin(teamId);
       }
     }
@@ -112,7 +118,7 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && (resource.data.creatorId == request.auth.uid);
+      allow update, delete: if isSignedIn() && (resource.data.get('creatorId', '') == request.auth.uid);
 
       match /invites/{inviteId} {
         allow read: if isSignedIn();
@@ -127,6 +133,11 @@ service cloud.firestore {
 
     match /leads/{leadId} {
       allow create: if true;
+    }
+
+    match /subscriptions/{subId} {
+      allow read: if isOwner(subId);
+      allow write: if false; // Only manageable via webhooks
     }
   }
 }
