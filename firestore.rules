@@ -24,8 +24,8 @@ service cloud.firestore {
     // This MUST be defined at the top level with the recursive wildcard {path=**}
     // to authorize global discovery across all team documents.
     match /{path=**}/events/{eventId} {
-      allow list: if request.auth != null;
-      allow get: if true;
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
     }
 
     match /users/{userId} {
@@ -48,6 +48,9 @@ service cloud.firestore {
       }
 
       match /events/{eventId} {
+        // Explicitly allow read for scoped queries
+        allow read: if isSignedIn();
+        
         // write handled by parent/specific rules
         allow write: if isAdmin() || (isSignedIn() && (get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid || get(/databases/$(database)/documents/teams/$(teamId)).data.members[request.auth.uid] == 'Admin'));
         
