@@ -1,3 +1,4 @@
+
 "use client";
 
 import React from 'react';
@@ -84,10 +85,23 @@ export default function PrivacyPolicyPage() {
       </main>
 
       <footer className="py-12 bg-muted/50 border-t mt-12">
-        <div className="container mx-auto px-6 text-center">
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-            © {new Date().getFullYear()} The Squad Hub. All Rights Reserved.
-          </p>
+        <div className="container mx-auto px-6">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+            <Link href="/" className="flex items-center gap-3">
+              <BrandLogo variant="light-background" className="h-8 w-32" />
+            </Link>
+            
+            <div className="flex items-center gap-8 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+              <Link href="/how-to" className="hover:text-primary transition-colors">How to Guide</Link>
+              <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
+              <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
+              <Link href="/safety" className="hover:text-primary transition-colors">Safety Center</Link>
+            </div>
+
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+              © {new Date().getFullYear()} The Squad Hub. All Rights Reserved.
+            </p>
+          </div>
         </div>
       </footer>
     </div>

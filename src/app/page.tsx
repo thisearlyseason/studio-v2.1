@@ -194,7 +194,7 @@ export default function LandingPage() {
               { 
                 title: "LIVE FEED", 
                 desc: "A high-priority broadcast hub for squad updates, media, and alerts.", 
-                img: "https://images.unsplash.com/photo-1614743653196-d969b45200b9?auto=format&fit=crop&q=80&w=800",
+                img: "https://images.unsplash.com/photo-1614743653196-d969b45200b9?auto=format&fit=crop&q=80&w=1080",
                 hint: "tennis player"
               },
               { 
@@ -365,6 +365,7 @@ export default function LandingPage() {
             </Link>
             
             <div className="flex items-center gap-8 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+              <Link href="/how-to" className="hover:text-primary transition-colors">How to Guide</Link>
               <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
               <Link href="/safety" className="hover:text-primary transition-colors">Safety Center</Link>
