@@ -71,6 +71,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format, isSameDay, isPast, isFuture } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useRouter } from 'next/navigation';
 
 interface EventDetailDialogProps {
   event: TeamEvent;
@@ -132,7 +133,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const { data: rawRegistrations } = useCollection<any>(regQuery);
   const registrations = rawRegistrations || [];
 
-  const isEliteUnlocked = !!event.isTournamentPaid;
+  // Elite Unlocked if event is paid OR it's the specific tournament demo team
+  const isEliteUnlocked = !!event.isTournamentPaid || activeTeam?.id === 'demo_tournament_team';
+  
   const myTeamNames = teams.filter(t => t.role === 'Admin').map(t => t.name);
   const myParticipatingTeamName = event.tournamentTeams?.find(tn => myTeamNames.includes(tn));
   const isWaiverSignedForMyTeam = myParticipatingTeamName ? !!event.teamAgreements?.[myParticipatingTeamName]?.agreed : false;
@@ -239,9 +242,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
 }
 
 export default function EventsPage() {
-  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, isSuperAdmin, hasFeature, purchasePro } = useTeam();
-  const { user } = useUser();
+  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, isSuperAdmin, hasFeature, purchasePro, user } = useTeam();
   const db = useFirestore();
+  const router = useRouter();
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
 
   const eventsQuery = useMemoFirebase(() => {
@@ -265,7 +268,7 @@ export default function EventsPage() {
     const teamName = activeTeam.name.trim();
     if (teamName === '' || teamName === 'Select Squad' || teamName === 'Unnamed Team' || teamName.startsWith('Guest')) return null;
     return query(collectionGroup(db, 'events'), where('tournamentTeams', 'array-contains', teamName), limit(20));
-  }, [activeTeam?.id, activeTeam?.name, activeTeam?.isDemo, db, user?.uid]);
+  }, [activeTeam?.id, activeTeam?.name, activeTeam?.isDemo, db, user?.id]);
   const { data: rawInvites } = useCollection<TeamEvent>(invitedTournamentsQuery);
   const invitedTournaments = rawInvites || [];
 
@@ -286,10 +289,28 @@ export default function EventsPage() {
   const [selectedOpponentTeamId, setSelectedOpponentTeamId] = useState<string | 'manual'>('manual');
 
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
+  const canAccessElite = (user?.tournamentCredits || 0) > 0 || activeTeam?.isDemo;
 
   const handleEdit = (event: TeamEvent) => { setEditingEvent(event); setIsTournamentMode(!!event.isTournament); setIsEliteTournament(!!event.isTournamentPaid); setNewTitle(event.title); setNewDate(new Date(event.date).toISOString().split('T')[0]); if (event.endDate) setNewEndDate(new Date(event.endDate).toISOString().split('T')[0]); setNewTime(event.startTime); setNewLocation(event.location); setNewDescription(event.description); setTournamentTeams(event.tournamentTeams || []); setTournamentGames(event.tournamentGames || []); setSelectedLeagueId(event.leagueId || 'none'); setSelectedOpponentTeamId(event.opponentTeamId || 'manual'); setIsCreateOpen(true); };
   const resetForm = () => { setEditingEvent(null); setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setTournamentTeams([]); setTournamentGames([]); setIsEliteTournament(false); setSelectedLeagueId('none'); setSelectedOpponentTeamId('manual'); };
-  const handleCreateEvent = () => { if (!newTitle || !newDate) return; const payload: any = { title: newTitle, date: new Date(newDate).toISOString(), startTime: newTime || 'TBD', location: newLocation, description: newDescription, isTournament: isTournamentMode, isTournamentPaid: isEliteTournament, tournamentTeams, tournamentGames, lastUpdated: new Date().toISOString() }; if (isTournamentMode && newEndDate) payload.endDate = new Date(newEndDate).toISOString(); if (!isTournamentMode && selectedLeagueId !== 'none') { payload.leagueId = selectedLeagueId; payload.opponentTeamId = selectedOpponentTeamId; } if (editingEvent) updateEvent(editingEvent.id, payload); else addEvent(payload); setIsCreateOpen(false); resetForm(); };
+  
+  const handleCreateEvent = () => { 
+    if (!newTitle || !newDate) return; 
+    
+    // Check elite access if trying to publish an elite tournament
+    if (isEliteTournament && !canAccessElite) {
+      toast({ title: "Elite Module Required", description: "You need 1 Tournament Credit to publish an Elite event hub.", variant: "destructive" });
+      router.push('/pricing');
+      return;
+    }
+
+    const payload: any = { title: newTitle, date: new Date(newDate).toISOString(), startTime: newTime || 'TBD', location: newLocation, description: newDescription, isTournament: isTournamentMode, isTournamentPaid: isEliteTournament, tournamentTeams, tournamentGames, lastUpdated: new Date().toISOString() }; 
+    if (isTournamentMode && newEndDate) payload.endDate = new Date(newEndDate).toISOString(); 
+    if (!isTournamentMode && selectedLeagueId !== 'none') { payload.leagueId = selectedLeagueId; payload.opponentTeamId = selectedOpponentTeamId; } 
+    if (editingEvent) updateEvent(editingEvent.id, payload); else addEvent(payload); 
+    setIsCreateOpen(false); 
+    resetForm(); 
+  };
 
   const formatBadgeDate = (start: string | Date, end?: string | Date) => {
     const startDate = new Date(start); const startDay = format(startDate, 'dd');

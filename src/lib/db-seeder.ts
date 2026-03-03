@@ -141,27 +141,31 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
   // Add a multi-day tournament if requested
   if (planId === 'tournament_pro' || extraOptions?.includeTournament) {
     const eid = `demo_tournament_${teamId}`;
-    const day1Str = now.toISOString().split('T')[0];
-    const day2Str = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
-    const day3Str = new Date(now.getTime() + 172800000).toISOString().split('T')[0];
+    const day1Date = new Date(now.getTime() - 86400000); // Yesterday
+    const day2Date = now; // Today
+    const day3Date = new Date(now.getTime() + 86400000); // Tomorrow
+
+    const day1Str = day1Date.toISOString().split('T')[0];
+    const day2Str = day2Date.toISOString().split('T')[0];
+    const day3Str = day3Date.toISOString().split('T')[0];
 
     batch.set(doc(db, 'teams', teamId, 'events', eid), {
       id: eid, teamId, title: 'Summer Regional Finals', 
-      date: new Date(now.getTime() + 86400000).toISOString(),
-      endDate: new Date(now.getTime() + 86400000 * 3).toISOString(),
+      date: day1Date.toISOString(),
+      endDate: day3Date.toISOString(),
       startTime: '09:00 AM', location: 'Metropolitan Stadium', 
-      description: 'Grand finale tournament for the region.',
+      description: 'Grand finale tournament for the region. Elite bracket deployment active.',
       isTournament: true,
       isTournamentPaid: true,
       tournamentTeams: ['Westside Warriors', 'Eastside Elite', 'Northside Knights', 'Southside Strikers', 'Metro Stars', 'City Rangers'],
       tournamentGames: [
-        // DAY 1
+        // DAY 1 - Completed
         { id: 'g1', team1: 'Westside Warriors', team2: 'Eastside Elite', score1: 4, score2: 2, date: day1Str, time: '10:00 AM', isCompleted: true, winnerId: 'Westside Warriors' },
         { id: 'g2', team1: 'Northside Knights', team2: 'Southside Strikers', score1: 1, score2: 1, date: day1Str, time: '12:00 PM', isCompleted: true },
-        // DAY 2
+        // DAY 2 - Active
         { id: 'g3', team1: 'Metro Stars', team2: 'City Rangers', score1: 0, score2: 3, date: day2Str, time: '09:00 AM', isCompleted: true, winnerId: 'City Rangers' },
         { id: 'g4', team1: 'Westside Warriors', team2: 'Northside Knights', score1: 0, score2: 0, date: day2Str, time: '02:00 PM', isCompleted: false },
-        // DAY 3
+        // DAY 3 - Future
         { id: 'g5', team1: 'City Rangers', team2: 'Eastside Elite', score1: 0, score2: 0, date: day3Str, time: '11:00 AM', isCompleted: false }
       ],
       userRsvps: { [userId]: 'going' }, isDemo: true, createdAt: now.toISOString(), lastUpdated: now.toISOString()
@@ -175,15 +179,15 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
     });
   }
 
-  const games = [
+  const gamesList = [
     { opponent: 'Wildcats', result: 'Win', myScore: 4, opponentScore: 2 },
     { opponent: 'Storm', result: 'Loss', myScore: 1, opponentScore: 3 }
   ];
-  games.forEach((g, i) => {
+  gamesList.forEach((g, i) => {
     const gid = `demo_game_${teamId}_${i}`;
     batch.set(doc(db, 'teams', teamId, 'games', gid), {
       ...g, id: gid, teamId, date: new Date(now.getTime() - 86400000 * (i + 2)).toISOString(),
-      location: 'Arena Central', notes: isPro ? 'Elite execution.' : '', isDemo: true, createdAt: now.toISOString()
+      location: 'Arena Central', notes: isPro ? 'Elite execution under pressure.' : '', isDemo: true, createdAt: now.toISOString()
     });
   });
 
@@ -191,7 +195,7 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
     const cid = `demo_chat_${teamId}`;
     batch.set(doc(db, 'teams', teamId, 'groupChats', cid), {
       id: cid, teamId, name: 'Tactical Command', memberIds: [userId], createdBy: userId, 
-      createdAt: now.toISOString(), lastMessage: 'Review the plays.', unread: 0, isDemo: true
+      createdAt: now.toISOString(), lastMessage: 'Review the plays for the regional finals.', unread: 0, isDemo: true
     });
   }
 
@@ -209,32 +213,33 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const actualPlanId = planId === 'tournament_pro' ? 'squad_pro' : planId;
   const isPro = actualPlanId !== 'starter_squad';
   const batch = writeBatch(db);
+  const nowStr = new Date().toISOString();
   
   batch.set(doc(db, 'users', userId), {
     id: userId, fullName: 'Guest Coordinator', email: 'guest@thesquad.io',
-    notificationsEnabled: true, createdAt: new Date().toISOString(),
+    notificationsEnabled: true, createdAt: nowStr,
     isDemo: true, avatarUrl: `https://picsum.photos/seed/${userId}/150/150`,
     activePlanId: actualPlanId, proTeamLimit: planId === 'squad_organization' ? 15 : 1,
-    planSource: 'free'
+    planSource: 'free', tournamentCredits: planId === 'tournament_pro' ? 1 : 0
   }, { merge: true });
 
   batch.set(doc(db, 'teams', teamId), {
     id: teamId, teamName, teamCode: code, createdBy: userId, ownerUserId: userId,
-    createdAt: new Date().toISOString(), members: { [userId]: 'Admin' },
+    createdAt: nowStr, members: { [userId]: 'Admin' },
     isPro, planId: actualPlanId, sport: 'Multi-Sport', isDemo: true,
-    description: planId === 'squad_organization' ? 'Enterprise organization management.' : 'Professional coordination suite.'
+    description: planId === 'squad_organization' ? 'Enterprise organization management demo.' : 'Professional coordination suite demo.'
   });
   
   batch.set(doc(db, 'users', userId, 'teamMemberships', teamId), {
     userId, teamId, teamName, teamCode: code, role: 'Admin', 
     isPro, planId: actualPlanId, isDemo: true, 
-    joinedAt: new Date().toISOString(), createdBy: userId, ownerUserId: userId
+    joinedAt: nowStr, createdBy: userId, ownerUserId: userId
   });
 
   batch.set(doc(db, 'teams', teamId, 'members', userId), {
     id: userId, userId, teamId, name: 'Guest Coordinator', role: 'Admin',
     position: planId === 'squad_organization' ? 'Club Manager' : 'Coach', jersey: 'HQ',
-    avatar: `https://picsum.photos/seed/${userId}/150/150`, joinedAt: new Date().toISOString(),
+    avatar: `https://picsum.photos/seed/${userId}/150/150`, joinedAt: nowStr,
     phone: '(555) 000-9999', amountOwed: 0, feesPaid: true, isDemo: true
   });
 
@@ -269,7 +274,8 @@ export async function resetDemoEnvironment(db: Firestore, teamId: string, planId
         if (snap.size > 0) await batch.commit();
       }
     }
-    await updateDoc(doc(db, 'users', userId), { createdAt: new Date().toISOString() });
+    const nowStr = new Date().toISOString();
+    await updateDoc(doc(db, 'users', userId), { createdAt: nowStr });
     for (const tid of teamIds) {
       await seedDemoData(db, tid, planId, userId);
     }
@@ -291,20 +297,21 @@ export async function launchDemoEnvironments(db: Firestore, superAdminId: string
       const code = dt.id.slice(0, 6).toUpperCase();
       const actualPid = dt.planId === 'tournament_pro' ? 'squad_pro' : dt.planId;
       const batch = writeBatch(db);
+      const nowStr = new Date().toISOString();
       batch.set(teamRef, {
         id: dt.id, teamName: dt.name, teamCode: code, createdBy: superAdminId, ownerUserId: superAdminId,
-        createdAt: new Date().toISOString(), members: { [superAdminId]: 'Admin' },
+        createdAt: nowStr, members: { [superAdminId]: 'Admin' },
         isPro: actualPid !== 'starter_squad', planId: actualPid, sport: dt.sport, isDemo: true
       });
       batch.set(doc(db, 'users', superAdminId, 'teamMemberships', dt.id), {
         userId: superAdminId, teamId: dt.id, teamName: dt.name, teamCode: code,
-        role: 'Admin', isPro: actualPid !== 'starter_squad', planId: actualPid, isDemo: true, joinedAt: new Date().toISOString(),
+        role: 'Admin', isPro: actualPid !== 'starter_squad', planId: actualPid, isDemo: true, joinedAt: nowStr,
         createdBy: superAdminId, ownerUserId: superAdminId
       });
       batch.set(doc(db, 'teams', dt.id, 'members', superAdminId), {
         id: superAdminId, userId: superAdminId, teamId: dt.id, name: 'Platform Admin', role: 'Admin',
         position: 'Platform Admin', jersey: 'HQ', avatar: `https://picsum.photos/seed/${superAdminId}/150/150`,
-        joinedAt: new Date().toISOString(), phone: '(555) 000-0000', amountOwed: 0, feesPaid: true, isDemo: true
+        joinedAt: nowStr, phone: '(555) 000-0000', amountOwed: 0, feesPaid: true, isDemo: true
       });
       await batch.commit();
       await seedDemoData(db, dt.id, dt.planId, superAdminId, { includeTournament: dt.planId === 'tournament_pro' });

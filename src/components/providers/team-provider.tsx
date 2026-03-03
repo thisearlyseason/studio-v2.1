@@ -530,21 +530,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [firebaseUser, db]);
 
-  const updateLeagueStandings = async (tid: string, lid: string, result: 'Win' | 'Loss' | 'Tie') => {
-    const lRef = doc(db, 'leagues', lid);
-    const winInc = result === 'Win' ? 1 : 0;
-    const lossInc = result === 'Loss' ? 1 : 0;
-    const tieInc = result === 'Tie' ? 1 : 0;
-    const pointsInc = winInc - lossInc;
-
-    updateDocumentNonBlocking(lRef, {
-      [`teams.${tid}.wins`]: increment(winInc),
-      [`teams.${tid}.losses`]: increment(lossInc),
-      [`teams.${tid}.ties`]: increment(tieInc),
-      [`teams.${tid}.points`]: increment(pointsInc)
-    });
-  };
-
   const contextValue = useMemo(() => ({
     user: userProfile, 
     updateUser: (updates: Partial<UserProfile>) => { if (firebaseUser) updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid), updates); },
@@ -623,11 +608,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addGame: (g: any) => {
       if (!activeTeam?.id) return;
       addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'games'), { ...g, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString() });
-      if (g.leagueId && g.opponentTeamId) {
-        updateLeagueStandings(activeTeam.id, g.leagueId, g.result);
-        const oppRes = g.result === 'Win' ? 'Loss' : (g.result === 'Loss' ? 'Win' : 'Tie');
-        updateLeagueStandings(g.opponentTeamId, g.leagueId, oppRes);
-      }
     },
     updateGame: (id: string, g: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'games', id), g),
     addDrill: (d: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'drills'), { ...d, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString() }),
