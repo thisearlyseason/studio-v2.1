@@ -148,6 +148,58 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     }
   }, [alerts]);
 
+  const TeamSwitcherContent = () => (
+    <>
+      <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest opacity-50 px-3 py-2">Switch Squad</DropdownMenuLabel>
+      <DropdownMenuSeparator className="my-1" />
+      {teams.map((team) => (
+        <DropdownMenuItem 
+          key={team.id} 
+          onClick={() => setActiveTeam(team)}
+          className="flex items-center justify-between p-3 cursor-pointer rounded-xl hover:bg-primary/5 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Avatar className="h-8 w-8 rounded-lg shrink-0 border">
+              <AvatarImage src={team.teamLogoUrl} className="object-cover" />
+              <AvatarFallback className="bg-muted font-black text-xs">{team.name[0]}</AvatarFallback>
+            </Avatar>
+            <span className="font-bold text-sm truncate">{team.name}</span>
+          </div>
+          {team.isDemo && <Badge className="bg-primary text-[8px] h-3 px-1">DEMO</Badge>}
+          {team.isPro && !team.isDemo && <Badge className="bg-amber-500 text-[8px] h-3 px-1">PRO</Badge>}
+        </DropdownMenuItem>
+      ))}
+      <DropdownMenuSeparator className="my-1" />
+      {activeTeam?.isDemo && (
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="p-3 text-red-600 cursor-pointer rounded-xl font-bold text-xs gap-2">
+              <RotateCcw className="h-4 w-4" /> Reset Demo Data
+            </DropdownMenuItem>
+          </AlertDialogTrigger>
+          <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-2xl font-black">Restore Original State?</AlertDialogTitle>
+              <AlertDialogDescription className="font-medium text-base pt-2">
+                This will permanently delete all modifications made to this demo environment and re-seed the baseline squad data.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="mt-6">
+              <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={resetDemo} className="rounded-xl font-black bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/20">Purge & Re-seed</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+      <DropdownMenuItem onClick={() => router.push('/team')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-2">
+        <Info className="h-4 w-4 text-muted-foreground" /> Squad Profile
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => router.push('/pricing')} className="p-3 text-primary cursor-pointer rounded-xl font-bold text-xs gap-2">
+        <PlusCircle className="h-4 w-4" /> Create New Squad
+      </DropdownMenuItem>
+    </>
+  );
+
   return (
     <SidebarProvider>
       <div className="flex flex-col min-h-screen w-full bg-background selection:bg-primary/20">
@@ -206,53 +258,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-64 rounded-xl shadow-2xl border-muted p-2">
-                    <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest opacity-50 px-3 py-2">Switch Squad</DropdownMenuLabel>
-                    <DropdownMenuSeparator className="my-1" />
-                    {teams.map((team) => (
-                      <DropdownMenuItem 
-                        key={team.id} 
-                        onClick={() => setActiveTeam(team)}
-                        className="flex items-center justify-between p-3 cursor-pointer rounded-xl hover:bg-primary/5 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8 rounded-lg shrink-0 border">
-                            <AvatarImage src={team.teamLogoUrl} className="object-cover" />
-                            <AvatarFallback className="bg-muted font-black text-xs">{team.name[0]}</AvatarFallback>
-                          </Avatar>
-                          <span className="font-bold text-sm truncate">{team.name}</span>
-                        </div>
-                        {team.isDemo && <Badge className="bg-primary text-[8px] h-3 px-1">DEMO</Badge>}
-                        {team.isPro && !team.isDemo && <Badge className="bg-amber-500 text-[8px] h-3 px-1">PRO</Badge>}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator className="my-1" />
-                    {activeTeam?.isDemo && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="p-3 text-red-600 cursor-pointer rounded-xl font-bold text-xs gap-2">
-                            <RotateCcw className="h-4 w-4" /> Reset Demo Data
-                          </DropdownMenuItem>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
-                          <AlertDialogHeader>
-                            <AlertDialogTitle className="text-2xl font-black">Restore Original State?</AlertDialogTitle>
-                            <AlertDialogDescription className="font-medium text-base pt-2">
-                              This will permanently delete all modifications made to this demo environment and re-seed the baseline squad data.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter className="mt-6">
-                            <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={resetDemo} className="rounded-xl font-black bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/20">Purge & Re-seed</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
-                    <DropdownMenuItem onClick={() => router.push('/team')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-2">
-                      <Info className="h-4 w-4 text-muted-foreground" /> Squad Profile
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push('/teams/new')} className="p-3 text-primary cursor-pointer rounded-xl font-bold text-xs gap-2">
-                      <PlusCircle className="h-4 w-4" /> Create New Squad
-                    </DropdownMenuItem>
+                    <TeamSwitcherContent />
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -308,8 +314,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </Sidebar>
 
           <div className="flex flex-col flex-1 min-w-0 h-screen overflow-hidden bg-background">
-            <header className="hidden md:flex sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-20 items-center px-6 lg:px-10 justify-between shrink-0">
-              <div className="flex items-center gap-4 min-w-0">
+            <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between shrink-0">
+              {/* Desktop Content (Title) */}
+              <div className="hidden md:flex items-center gap-4 min-w-0">
                 <div className="flex flex-col min-w-0">
                   <h2 className="text-xl lg:text-2xl font-black tracking-tighter uppercase truncate">
                     {pathname === '/pricing' ? 'Pricing' : (pathname === '/leagues' ? 'League Control' : (tabs.find(t => pathname.startsWith(t.href))?.name || 'Dashboard'))}
@@ -317,14 +324,50 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   <p className="text-[9px] lg:text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em] lg:tracking-[0.3em] ml-0.5 truncate">The Squad Hub • {activeTeam?.name}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-4 lg:gap-6 shrink-0">
-                <CreateAlertButton />
-                <AlertsHistoryDialog>
-                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-2xl hover:bg-primary/5 hover:text-primary transition-all relative">
-                    <Bell className="h-5 w-5" />
-                    {hasUnreadAlerts && <span className="absolute top-2.5 right-2.5 h-2 w-2 bg-red-500 rounded-full border-2 border-background" />}
-                  </Button>
-                </AlertsHistoryDialog>
+
+              {/* Mobile Content (Logo) */}
+              <div className="flex md:hidden items-center shrink-0">
+                <Link href="/feed">
+                  <BrandLogo variant="light-background" className="h-6 w-28" />
+                </Link>
+              </div>
+
+              {/* Right Actions / Switcher */}
+              <div className="flex items-center gap-3 lg:gap-6 shrink-0">
+                {/* Mobile Team Switcher */}
+                <div className="md:hidden">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-10 px-3 gap-2 border-muted-foreground/10 bg-background/50 rounded-xl shadow-sm font-black text-[10px] uppercase tracking-tighter max-w-[140px]">
+                        <span className="truncate">{activeTeam?.name || 'Squad'}</span>
+                        <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64 rounded-xl shadow-2xl p-2">
+                      <TeamSwitcherContent />
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="hidden md:block">
+                    <CreateAlertButton />
+                  </div>
+                  <AlertsHistoryDialog>
+                    <Button variant="ghost" size="icon" className="h-10 w-10 rounded-2xl hover:bg-primary/5 hover:text-primary transition-all relative">
+                      <Bell className="h-5 w-5" />
+                      {hasUnreadAlerts && <span className="absolute top-2.5 right-2.5 h-2 w-2 bg-red-500 rounded-full border-2 border-background" />}
+                    </Button>
+                  </AlertsHistoryDialog>
+                  
+                  {/* Avatar -> Settings (Shared) */}
+                  <Link href="/settings">
+                    <Avatar className="h-8 w-8 md:h-10 md:w-10 border-2 border-background shadow-md">
+                      <AvatarImage src={user?.avatar} alt={user?.name} className="object-cover" />
+                      <AvatarFallback className="font-black text-[10px] md:text-xs">{user?.name?.[0] || '?'}</AvatarFallback>
+                    </Avatar>
+                  </Link>
+                </div>
               </div>
             </header>
 
