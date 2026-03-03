@@ -22,6 +22,7 @@ service cloud.firestore {
 
     // CRITICAL: Top-level Collection Group rule for global tournament discovery
     // This MUST be at the top level to authorize collectionGroup queries across any team path.
+    // It allows authenticated users to search for tournaments they are invited to.
     match /{path=**}/events/{eventId} {
       allow read: if isSignedIn();
     }
@@ -46,7 +47,8 @@ service cloud.firestore {
       }
 
       match /events/{eventId} {
-        // Read permission is inherited from the global recursive match above
+        // Local read permission for standard collection queries
+        allow read: if isSignedIn();
         
         // Write handled by parent/specific roles (Host Admin only)
         allow write: if isAdmin() || (isSignedIn() && (get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid || get(/databases/$(database)/documents/teams/$(teamId)).data.members[request.auth.uid] == 'Admin'));
