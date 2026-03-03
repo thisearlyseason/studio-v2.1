@@ -396,7 +396,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
     const plan = plans.find(p => p.id === pid);
     const features = { ...(plan?.features || {}) };
-    if (pid === 'squad_pro') features.leagues = true;
+    
+    // Explicit overrides for Starter vs Pro logic
+    if (pid === 'starter_squad') {
+      features.group_chat = true;
+      features.live_feed_read = false;
+      features.live_feed_post = false;
+    } else {
+      features.leagues = true;
+    }
+    
     return features;
   }, [activeTeam, plans, simulationPlanId]);
 
@@ -436,7 +445,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const elapsed = now - start;
       const safeElapsed = Math.max(0, elapsed);
       
-      // Calculate time remaining relative to the FRESH createdAt timestamp
       const remaining = DEMO_RESET_INTERVAL_MS - (safeElapsed % DEMO_RESET_INTERVAL_MS);
       
       setSecondsUntilReset(Math.ceil(remaining / 1000));

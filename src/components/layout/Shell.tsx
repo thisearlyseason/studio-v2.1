@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, memo } from 'react';
@@ -70,7 +71,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const tabs = [
-  { name: 'Feed', href: '/feed', icon: LayoutDashboard, pro: false },
+  { name: 'Feed', href: '/feed', icon: LayoutDashboard, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Leagues', href: '/leagues', icon: Shield, pro: true },
   { name: 'Games', href: '/games', icon: Trophy, pro: false },

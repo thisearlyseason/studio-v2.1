@@ -27,7 +27,8 @@ import {
   XCircle,
   ImageIcon,
   Lock,
-  Sparkles
+  Sparkles,
+  ShieldCheck
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -115,7 +116,47 @@ export default function FeedPage() {
 
   if (!activeTeam) return null;
   const isAdmin = activeTeam.role === 'Admin' || isSuperAdmin;
+  const canReadFeed = hasFeature('live_feed_read');
   const canPost = hasFeature('live_feed_post');
+
+  if (!canReadFeed) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
+        <div className="relative">
+          <div className="bg-primary/10 p-10 rounded-[3rem] shadow-2xl">
+            <LayoutDashboard className="h-24 w-24 text-primary" />
+          </div>
+          <div className="absolute -top-4 -right-4 bg-black text-white p-3 rounded-full shadow-lg border-4 border-background">
+            <Lock className="h-6 w-6" />
+          </div>
+        </div>
+        
+        <div className="text-center max-w-md space-y-4">
+          <h1 className="text-4xl font-black tracking-tight uppercase">Squad Feed Locked</h1>
+          <p className="text-muted-foreground font-bold leading-relaxed text-lg uppercase tracking-wide">
+            The Live Broadcast hub is reserved for Pro Elite squads. Upgrade to coordinate updates, polls, and media in real-time.
+          </p>
+        </div>
+
+        <Card className="w-full max-w-sm border-none shadow-2xl rounded-[3rem] overflow-hidden bg-white ring-1 ring-black/5">
+          <div className="p-10 space-y-8">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-primary tracking-[0.2em]">Elite Strategy</span>
+              <Badge className="bg-primary text-white border-none font-black text-[10px] px-3 h-6">PRO HUB</Badge>
+            </div>
+            <ul className="space-y-5">
+              <li className="flex items-center gap-4 text-xs font-black uppercase tracking-tight text-foreground/80"><Sparkles className="h-5 w-5 text-primary" /> Real-time Broadcasts</li>
+              <li className="flex items-center gap-4 text-xs font-black uppercase tracking-tight text-foreground/80"><Sparkles className="h-5 w-5 text-primary" /> Tactical Image Polls</li>
+              <li className="flex items-center gap-4 text-xs font-black uppercase tracking-tight text-foreground/80"><Sparkles className="h-5 w-5 text-primary" /> Historical Content Logs</li>
+            </ul>
+            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 hover:scale-[1.02] transition-transform" onClick={purchasePro}>
+              Unlock Live Feed
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   const handlePost = () => {
     if (!newPostContent.trim() && !imageUrl) return;
