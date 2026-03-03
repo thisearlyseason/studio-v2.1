@@ -19,10 +19,10 @@ service cloud.firestore {
       );
     }
 
-    // CRITICAL: Top-level Collection Group rule for global tournament discovery
-    // This MUST be at the top level to authorize collectionGroup queries across any team path.
+    // CRITICAL: Top-level Collection Group rule for global tournament discovery & Public Spectator Hub
+    // Allowing read if it's a tournament allows the public Spectator Hub to function
     match /{path=**}/events/{eventId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || (resource != null && resource.data.isTournament == true);
     }
 
     match /users/{userId} {

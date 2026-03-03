@@ -82,6 +82,18 @@ interface EventDetailDialogProps {
   children: React.ReactNode;
 }
 
+const formatDateRange = (start: string | Date, end?: string | Date) => {
+  const startDate = new Date(start);
+  if (!end) return format(startDate, 'MMM dd');
+  const endDate = new Date(end);
+  if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
+  
+  if (startDate.getMonth() === endDate.getMonth()) {
+    return `${format(startDate, 'MMM d')}-${format(endDate, 'd')}`;
+  }
+  return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
+};
+
 function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
     acc[team] = { name: team, wins: 0, losses: 0, ties: 0, points: 0 };
@@ -116,7 +128,7 @@ function calculateTournamentStandings(teams: string[], games: TournamentGame[]) 
   return Object.values(standings).sort((a, b) => b.points - a.points || b.wins - a.wins);
 }
 
-function TournamentPaywall({ purchasePro }: { purchasePro: () => void }) {
+function TournamentPaywall({ purchasePro, title, desc }: { purchasePro: () => void, title: string, desc: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 px-6 text-center space-y-6 animate-in fade-in duration-500">
       <div className="bg-primary/10 p-6 rounded-[2rem] relative">
@@ -124,13 +136,13 @@ function TournamentPaywall({ purchasePro }: { purchasePro: () => void }) {
         <Lock className="absolute -top-2 -right-2 h-6 w-6 bg-black text-white p-1 rounded-full border-2 border-background shadow-lg" />
       </div>
       <div className="space-y-2">
-        <h3 className="text-xl font-black uppercase tracking-tight">Elite Features Gated</h3>
+        <h3 className="text-xl font-black uppercase tracking-tight">{title}</h3>
         <p className="text-sm text-muted-foreground font-bold uppercase tracking-widest max-w-xs mx-auto leading-relaxed">
-          Live Scores, Automated Standings, and Waiver Audits require the $50 Tournament Add-on.
+          {desc}
         </p>
       </div>
       <Button className="rounded-xl h-12 px-8 font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20" onClick={purchasePro}>
-        Unlock Tournament Suite
+        Upgrade to Elite
       </Button>
     </div>
   );
@@ -154,7 +166,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const { data: rawRegistrations } = useCollection<any>(regQuery);
   const registrations = rawRegistrations || [];
 
-  const isTournamentModuleUnlocked = event.isTournamentPaid || !event.isTournament;
+  const isEliteUnlocked = !!event.isTournamentPaid;
 
   const myTeamNames = teams.filter(t => t.role === 'Admin').map(t => t.name);
   const myParticipatingTeamName = event.tournamentTeams?.find(tn => myTeamNames.includes(tn));
@@ -163,7 +175,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const copyPublicLink = () => {
     const url = `${window.location.origin}/tournaments/public/${event.teamId}/${event.id}`;
     navigator.clipboard.writeText(url);
-    toast({ title: "Public Link Copied" });
+    toast({ title: "Spectator Hub Link Copied" });
   };
 
   const attendanceData = useMemo(() => {
@@ -202,31 +214,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
     updateRSVP(event.id, status);
   };
 
-  const handleWaiverAgreement = async (agreed: boolean) => {
-    if (!user) return;
-    await submitEventWaiver(event.id, agreed);
-    if (agreed) { setShowWaiverStep(false); updateRSVP(event.id, 'going'); }
-    else setShowWaiverStep(false);
-  };
-
-  const handleTeamWaiverSign = async () => {
-    if (!myParticipatingTeamName) return;
-    await signTeamTournamentWaiver(event.teamId, event.id, myParticipatingTeamName);
-  };
-
-  const handleManualTeamVerify = async (teamName: string, currentStatus: boolean) => {
-    if (!isAdmin) return;
-    updateEvent(event.id, {
-      [`teamAgreements.${teamName}`]: {
-        agreed: !currentStatus,
-        captainName: user?.name || 'Verified by Host',
-        timestamp: new Date().toISOString()
-      }
-    });
-  };
-
   const currentStatus = event.userRsvps?.[user?.id || ''];
-  const isUserStaff = members.find(m => m.userId === user?.id && ['Coach', 'Team Lead', 'Assistant Coach', 'Squad Leader', 'Manager'].includes(m.position));
+  const isUserStaff = members.find(m => m.userId === user?.id && ['Coach', 'Team Lead', 'Assistant Coach', 'Squad Leader', 'Manager', 'Platform Admin'].includes(m.position));
 
   return (
     <Dialog onOpenChange={(open) => { if(!open) { setShowInternalForm(false); setShowWaiverStep(false); setEditingGame(null); } }}>
@@ -240,7 +229,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
               <div className="space-y-6">
                 <div className="flex justify-between items-start">
                   <Badge className={cn("uppercase font-black tracking-widest text-[9px] px-3 h-6", event.isTournament ? "bg-primary text-white" : "bg-white/20 text-white")}>
-                    {event.isTournament ? "Tournament Hub" : "Team Match"}
+                    {event.isTournament ? (event.isTournamentPaid ? "Elite Tournament" : "Basic Tournament") : "Team Match"}
                   </Badge>
                   <DialogClose asChild>
                     <X className="h-5 w-5 text-white/40 cursor-pointer hover:text-white" />
@@ -256,27 +245,27 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                   <div className="bg-white/5 p-4 rounded-2xl border border-white/10 space-y-3">
                     <div className="flex items-center gap-3 font-bold text-sm">
                       <CalendarDays className="h-4 w-4 text-primary" />
-                      <span>{format(new Date(event.date), 'EEEE, MMM do')}</span>
+                      <span>{formatDateRange(event.date, event.endDate)}</span>
                     </div>
                     <div className="flex items-center gap-3 font-bold text-sm">
                       <MapPin className="h-4 w-4 text-primary" />
                       <span className="truncate">{event.location}</span>
                     </div>
                   </div>
-                  {event.isTournament && isTournamentModuleUnlocked && (
+                  {event.isTournament && (
                     <Button onClick={copyPublicLink} variant="outline" className="w-full rounded-xl h-12 font-black text-xs uppercase gap-3 bg-white border-white text-black hover:bg-white/90">
                       <Share2 className="h-4 w-4" /> Share Spectator Hub
                     </Button>
                   )}
                   {myParticipatingTeamName && !isWaiverSignedForMyTeam && (
-                    <Button onClick={handleTeamWaiverSign} className="w-full rounded-xl h-14 font-black text-sm uppercase gap-3 bg-primary text-white shadow-xl shadow-primary/20">
+                    <Button onClick={() => signTeamTournamentWaiver(event.teamId, event.id, myParticipatingTeamName)} className="w-full rounded-xl h-14 font-black text-sm uppercase gap-3 bg-primary text-white shadow-xl shadow-primary/20">
                       <Signature className="h-5 w-5" /> Sign Team Waiver
                     </Button>
                   )}
                 </div>
               </div>
 
-              {event.isTournament && isTournamentModuleUnlocked && tournamentStandings.length > 0 && (
+              {event.isTournament && isEliteUnlocked && tournamentStandings.length > 0 && (
                 <div className="space-y-4 flex-1">
                   <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em] px-1">Global Standings</h4>
                   <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
@@ -329,49 +318,45 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
 
                 <div className="flex-1 p-10 overflow-y-auto custom-scrollbar">
                   <TabsContent value="bracket" className="mt-0 space-y-10">
-                    {!isTournamentModuleUnlocked ? (
-                      <TournamentPaywall purchasePro={purchasePro} />
-                    ) : (
-                      <div className="space-y-12">
-                        {Object.entries(groupedGames).map(([date, games]) => (
-                          <div key={date} className="space-y-6">
-                            <div className="flex items-center gap-4 px-2">
-                              <Badge className="bg-black text-white font-black uppercase text-[10px] px-4 h-7 shadow-lg">
-                                {format(new Date(date), 'EEEE, MMM d')}
-                              </Badge>
-                              <div className="h-px bg-muted flex-1" />
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              {games.map((game) => (
-                                <button key={game.id} onClick={() => isAdmin && setEditingGame(game)} className="p-5 bg-white rounded-3xl border shadow-sm transition-all text-left relative overflow-hidden group ring-1 ring-black/5">
-                                  <div className="flex justify-between items-center mb-4">
-                                    <Badge variant="outline" className="text-[8px] font-black uppercase border-black/10 tracking-widest px-2 h-5">{game.time}</Badge>
-                                    {game.isCompleted && <Badge className="text-[8px] font-black uppercase h-5 px-2 bg-black text-white">Final</Badge>}
-                                  </div>
-                                  <div className="grid grid-cols-7 items-center gap-4">
-                                    <div className="col-span-3 text-right">
-                                      <div className="flex items-center justify-end gap-2 mb-1">
-                                        <p className="font-black text-xs uppercase truncate">{game.team1}</p>
-                                        {game.winnerId === game.team1 && <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />}
-                                      </div>
-                                      <p className="text-3xl font-black text-primary leading-none">{game.score1}</p>
-                                    </div>
-                                    <div className="col-span-1 flex items-center justify-center opacity-20 font-black text-[10px]">VS</div>
-                                    <div className="col-span-3">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        {game.winnerId === game.team2 && <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />}
-                                        <p className="font-black text-xs uppercase truncate">{game.team2}</p>
-                                      </div>
-                                      <p className="text-3xl font-black text-primary leading-none">{game.score2}</p>
-                                    </div>
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
+                    <div className="space-y-12">
+                      {Object.entries(groupedGames).map(([date, games]) => (
+                        <div key={date} className="space-y-6">
+                          <div className="flex items-center gap-4 px-2">
+                            <Badge className="bg-black text-white font-black uppercase text-[10px] px-4 h-7 shadow-lg">
+                              {format(new Date(date), 'EEEE, MMM d')}
+                            </Badge>
+                            <div className="h-px bg-muted flex-1" />
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {games.map((game) => (
+                              <button key={game.id} onClick={() => isAdmin && setEditingGame(game)} className="p-5 bg-white rounded-3xl border shadow-sm transition-all text-left relative overflow-hidden group ring-1 ring-black/5">
+                                <div className="flex justify-between items-center mb-4">
+                                  <Badge variant="outline" className="text-[8px] font-black uppercase border-black/10 tracking-widest px-2 h-5">{game.time}</Badge>
+                                  {game.isCompleted && <Badge className="text-[8px] font-black uppercase h-5 px-2 bg-black text-white">Final</Badge>}
+                                </div>
+                                <div className="grid grid-cols-7 items-center gap-4">
+                                  <div className="col-span-3 text-right">
+                                    <div className="flex items-center justify-end gap-2 mb-1">
+                                      <p className="font-black text-xs uppercase truncate">{game.team1}</p>
+                                      {game.winnerId === game.team1 && <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />}
+                                    </div>
+                                    <p className="text-3xl font-black text-primary leading-none">{game.score1}</p>
+                                  </div>
+                                  <div className="col-span-1 flex items-center justify-center opacity-20 font-black text-[10px]">VS</div>
+                                  <div className="col-span-3">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      {game.winnerId === game.team2 && <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />}
+                                      <p className="font-black text-xs uppercase truncate">{game.team2}</p>
+                                    </div>
+                                    <p className="text-3xl font-black text-primary leading-none">{game.score2}</p>
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </TabsContent>
 
                   <TabsContent value="roster" className="mt-0">
@@ -393,8 +378,12 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                   </TabsContent>
 
                   <TabsContent value="admin" className="mt-0 space-y-6">
-                    {!isTournamentModuleUnlocked ? (
-                      <TournamentPaywall purchasePro={purchasePro} />
+                    {!isEliteUnlocked ? (
+                      <TournamentPaywall 
+                        purchasePro={purchasePro} 
+                        title="Audit Ledger Locked"
+                        desc="Compliance audits and team enrollment verification require the $50 Tournament Add-on."
+                      />
                     ) : (
                       <div className="space-y-4">
                         <div className="flex items-center justify-between px-2 mb-6">
@@ -430,7 +419,15 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                                   {isAdmin && (
                                     <Checkbox 
                                       checked={res?.agreed || false} 
-                                      onCheckedChange={() => handleManualTeamVerify(teamName, !!res?.agreed)}
+                                      onCheckedChange={() => {
+                                        updateEvent(event.id, {
+                                          [`teamAgreements.${teamName}`]: {
+                                            agreed: !res?.agreed,
+                                            captainName: user?.name || 'Verified by Host',
+                                            timestamp: new Date().toISOString()
+                                          }
+                                        });
+                                      }}
                                       className="h-6 w-6 rounded-lg"
                                     />
                                   )}
@@ -444,8 +441,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                   </TabsContent>
                 </div>
 
-                {/* RSVP Section - Hidden for Squad Organizers & Staff */}
-                {!isAdmin && !isUserStaff && (
+                {/* RSVP Section - Hidden for Organizers/Staff */}
+                {!isUserStaff && (
                   <div className="p-8 border-t bg-muted/20 shrink-0">
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-6 max-w-4xl mx-auto">
                       <div className="text-center sm:text-left space-y-1">
@@ -528,19 +525,10 @@ export default function EventsPage() {
   const events = rawEvents || [];
 
   const invitedTournamentsQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || !activeTeam?.name || !db || !user) return null;
+    if (!activeTeam?.id || !activeTeam?.name || !db || !user || activeTeam.isDemo) return null;
     
     const teamName = activeTeam.name.trim();
-    const isPlaceholder = 
-      activeTeam.isDemo ||
-      teamName === '' || 
-      teamName === 'Select Squad' || 
-      teamName === 'Unnamed Team' || 
-      teamName.startsWith('Guest ') || 
-      teamName.includes('Demo') ||
-      teamName.length < 3;
-    
-    if (isPlaceholder) return null;
+    if (teamName === '' || teamName === 'Select Squad' || teamName === 'Unnamed Team') return null;
     
     return query(
       collectionGroup(db, 'events'), 
@@ -707,13 +695,24 @@ export default function EventsPage() {
               <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={(id) => { if(confirm("Delete?")) deleteEvent(id); }} hasAttendance={true} purchasePro={purchasePro}>
                 <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                   <div className="flex items-stretch h-32">
-                    <div className="w-24 bg-primary/5 flex flex-col items-center justify-center border-r-2 shrink-0"><span className="text-[10px] font-black uppercase text-primary mb-1">{format(new Date(event.date), 'MMM')}</span><span className="text-4xl font-black text-primary tracking-tighter">{format(new Date(event.date), 'dd')}</span></div>
+                    <div className="w-24 bg-primary/5 flex flex-col items-center justify-center border-r-2 shrink-0">
+                      <span className="text-[10px] font-black uppercase text-primary mb-1">{format(new Date(event.date), 'MMM')}</span>
+                      <span className="text-4xl font-black text-primary tracking-tighter">{format(new Date(event.date), 'dd')}</span>
+                    </div>
                     <div className="flex-1 p-6 flex flex-col justify-center min-w-0">
                       <div className="flex items-start justify-between">
                         <div>
-                          <div className="flex gap-2 mb-1.5">{event.isTournament && <Badge className={cn("text-[8px] font-black uppercase h-4 px-2", event.isTournamentPaid ? "bg-amber-500 text-white" : "bg-black text-white")}>{event.isTournamentPaid ? "Elite Tournament" : "Basic Tournament"}</Badge>}<Badge variant="outline" className="text-[8px] font-black uppercase h-4 px-2">{event.startTime}</Badge></div>
+                          <div className="flex gap-2 mb-1.5">
+                            {event.isTournament && <Badge className={cn("text-[8px] font-black uppercase h-4 px-2", event.isTournamentPaid ? "bg-amber-500 text-white" : "bg-black text-white")}>{event.isTournamentPaid ? "Elite Tournament" : "Basic Tournament"}</Badge>}
+                            <Badge variant="outline" className="text-[8px] font-black uppercase h-4 px-2">{event.startTime}</Badge>
+                          </div>
                           <h3 className="text-xl font-black tracking-tight leading-none truncate">{event.title}</h3>
-                          <p className="text-[10px] font-bold text-muted-foreground uppercase mt-1 flex items-center gap-1"><MapPin className="h-3 w-3 text-primary" /> {event.location}</p>
+                          <div className="flex flex-col gap-1 mt-1">
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1"><MapPin className="h-3 w-3 text-primary" /> {event.location}</p>
+                            {event.isTournament && event.endDate && !isSameDay(new Date(event.date), new Date(event.endDate)) && (
+                              <p className="text-[9px] font-black text-primary uppercase tracking-widest">{formatDateRange(event.date, event.endDate)}</p>
+                            )}
+                          </div>
                         </div>
                         <ChevronRight className="h-5 w-5 text-primary opacity-20 group-hover:opacity-100 transition-all group-hover:translate-x-1 mt-2" />
                       </div>
@@ -741,13 +740,21 @@ export default function EventsPage() {
                 <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={false} onEdit={() => {}} onDelete={() => {}} hasAttendance={false} purchasePro={purchasePro}>
                   <Card className="hover:border-amber-500/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-2 ring-amber-500/10 overflow-hidden bg-amber-50/30">
                     <div className="flex items-stretch h-32">
-                      <div className="w-24 bg-amber-500/5 flex flex-col items-center justify-center border-r-2 shrink-0"><span className="text-[10px] font-black uppercase text-amber-600 mb-1">{format(new Date(event.date), 'MMM')}</span><span className="text-4xl font-black text-amber-600 tracking-tighter">{format(new Date(event.date), 'dd')}</span></div>
+                      <div className="w-24 bg-amber-500/5 flex flex-col items-center justify-center border-r-2 shrink-0">
+                        <span className="text-[10px] font-black uppercase text-amber-600 mb-1">{format(new Date(event.date), 'MMM')}</span>
+                        <span className="text-4xl font-black text-amber-600 tracking-tighter">{format(new Date(event.date), 'dd')}</span>
+                      </div>
                       <div className="flex-1 p-6 flex flex-col justify-center min-w-0">
                         <div className="flex items-start justify-between">
                           <div>
                             <div className="flex gap-2 mb-1.5"><Badge className="bg-amber-600 text-white text-[8px] font-black uppercase h-4 px-2">Invited Participant</Badge></div>
                             <h3 className="text-xl font-black tracking-tight leading-none truncate">{event.title}</h3>
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase mt-1 flex items-center gap-1"><MapPin className="h-3 w-3 text-amber-600" /> {event.location}</p>
+                            <div className="flex flex-col gap-1 mt-1">
+                              <p className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1"><MapPin className="h-3 w-3 text-amber-600" /> {event.location}</p>
+                              {event.endDate && !isSameDay(new Date(event.date), new Date(event.endDate)) && (
+                                <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">{formatDateRange(event.date, event.endDate)}</p>
+                              )}
+                            </div>
                           </div>
                           <div className="flex flex-col items-end gap-2">
                             <ChevronRight className="h-5 w-5 text-amber-600 opacity-20 group-hover:opacity-100 transition-all group-hover:translate-x-1 mt-2" />

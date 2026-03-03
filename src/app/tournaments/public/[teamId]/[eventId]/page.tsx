@@ -1,31 +1,32 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Trophy, 
-  CalendarDays, 
-  MapPin, 
-  Clock, 
-  CheckCircle2, 
-  Loader2,
-  Table as TableIcon,
-  ChevronRight,
-  Shield,
-  Zap,
-  Timer
-} from 'lucide-react';
-import { useFirestore } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
 import { TeamEvent, TournamentGame } from '@/components/providers/team-provider';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Trophy, CalendarDays, MapPin, Loader2, CheckCircle2, ChevronRight, Share2 } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { format, isSameDay } from 'date-fns';
 import BrandLogo from '@/components/BrandLogo';
-import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { Progress } from '@/components/ui/progress';
 
-function calculateStandings(teams: string[], games: TournamentGame[]) {
+const formatDateRange = (start: string | Date, end?: string | Date) => {
+  const startDate = new Date(start);
+  if (!end) return format(startDate, 'MMM dd');
+  const endDate = new Date(end);
+  if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
+  
+  if (startDate.getMonth() === endDate.getMonth()) {
+    return `${format(startDate, 'MMM d')}-${format(endDate, 'd')}`;
+  }
+  return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
+};
+
+function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
     acc[team] = { name: team, wins: 0, losses: 0, ties: 0, points: 0 };
     return acc;
@@ -35,6 +36,8 @@ function calculateStandings(teams: string[], games: TournamentGame[]) {
     if (!game.isCompleted) return;
     const t1 = game.team1;
     const t2 = game.team2;
+    if (!standings[t1]) standings[t1] = { name: t1, wins: 0, losses: 0, ties: 0, points: 0 };
+    if (!standings[t2]) standings[t2] = { name: t2, wins: 0, losses: 0, ties: 0, points: 0 };
     if (game.score1 > game.score2) {
       standings[t1].wins += 1; standings[t1].points += 1;
       standings[t2].losses += 1; standings[t2].points -= 1;
@@ -45,32 +48,19 @@ function calculateStandings(teams: string[], games: TournamentGame[]) {
       standings[t1].ties += 1; standings[t2].ties += 1;
     }
   });
-
   return Object.values(standings).sort((a, b) => b.points - a.points || b.wins - a.wins);
 }
 
-export default function PublicTournamentPage() {
+export default function PublicSpectatorHub() {
   const { teamId, eventId } = useParams();
   const db = useFirestore();
-  const [event, setEvent] = useState<TeamEvent | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function load() {
-      if (!teamId || !eventId) return;
-      try {
-        const snap = await getDoc(doc(db, 'teams', teamId as string, 'events', eventId as string));
-        if (snap.exists()) setEvent({ id: snap.id, ...snap.data() } as TeamEvent);
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
-    }
-    load();
+  const eventRef = useMemoFirebase(() => {
+    if (!db || !teamId || !eventId) return null;
+    return doc(db, 'teams', teamId as string, 'events', eventId as string);
   }, [db, teamId, eventId]);
 
-  const standings = useMemo(() => {
-    if (!event?.tournamentTeams || !event.tournamentGames) return [];
-    return calculateStandings(event.tournamentTeams, event.tournamentGames);
-  }, [event]);
+  const { data: event, isLoading } = useDoc<TeamEvent>(eventRef);
 
   const groupedGames = useMemo(() => {
     if (!event?.tournamentGames) return {};
@@ -84,118 +74,191 @@ export default function PublicTournamentPage() {
     return groups;
   }, [event?.tournamentGames]);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-black"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
-  if (!event) return <div className="min-h-screen flex items-center justify-center bg-black text-white text-3xl font-black">TOURNAMENT NOT FOUND</div>;
+  const standings = useMemo(() => {
+    if (!event?.isTournament || !event?.tournamentTeams) return [];
+    return calculateTournamentStandings(event.tournamentTeams, event.tournamentGames || []);
+  }, [event]);
+
+  if (isLoading) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30">
+      <Loader2 className="h-10 w-10 animate-spin text-primary" />
+      <p className="mt-4 font-black uppercase tracking-widest text-xs opacity-40">Opening Spectator Hub...</p>
+    </div>
+  );
+
+  if (!event || !event.isTournament) return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-muted/30 text-center space-y-4">
+      <div className="bg-white p-8 rounded-[3rem] shadow-xl">
+        <Trophy className="h-16 w-16 text-primary/20 mx-auto mb-4" />
+        <h1 className="text-3xl font-black uppercase tracking-tight">Tournament Not Found</h1>
+        <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px]">The link may be broken or the event is private.</p>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white pb-20 selection:bg-primary/30">
-      <nav className="h-20 border-b border-white/10 bg-black/50 backdrop-blur-xl sticky top-0 z-50 flex items-center px-6 lg:px-12 justify-between">
-        <BrandLogo variant="dark-background" className="h-10 w-40" />
-        <Badge className="bg-primary text-white font-black uppercase text-[10px] tracking-widest px-4 h-8 animate-pulse">Live Tournament Hub</Badge>
-      </nav>
-
-      <header className="py-16 lg:py-24 px-6 lg:px-12 relative overflow-hidden">
-        <div className="absolute inset-0 bg-primary/5 pointer-events-none" />
-        <div className="max-w-7xl mx-auto space-y-6 relative z-10">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <Badge variant="outline" className="text-primary border-primary/30 font-black uppercase text-[10px] tracking-widest px-3 h-6">Sanctioned Event</Badge>
-              <span className="text-[10px] font-black uppercase tracking-widest text-white/40 flex items-center gap-2"><Timer className="h-3 w-3" /> Updated {event.lastUpdated ? format(new Date(event.lastUpdated), 'h:mm a') : 'Recently'}</span>
-            </div>
-            <h1 className="text-5xl lg:text-8xl font-black tracking-tighter leading-none uppercase">{event.title}</h1>
-          </div>
-          <div className="flex flex-wrap gap-8 pt-4">
-            <div className="flex items-center gap-3"><CalendarDays className="h-5 w-5 text-primary" /><span className="font-bold text-lg">{format(new Date(event.date), 'MMM d, yyyy')} {event.endDate && ` - ${format(new Date(event.endDate), 'MMM d')}`}</span></div>
-            <div className="flex items-center gap-3"><MapPin className="h-5 w-5 text-primary" /><span className="font-bold text-lg">{event.location}</span></div>
-          </div>
+    <div className="min-h-screen bg-muted/30 flex flex-col items-center p-4 md:p-8">
+      <div className="w-full max-w-6xl space-y-8">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+          <BrandLogo variant="light-background" className="h-10 w-40" />
+          <Badge className="bg-primary text-white border-none font-black uppercase tracking-widest text-[10px] px-4 h-8 shadow-lg shadow-primary/20">
+            Public Spectator Hub
+          </Badge>
         </div>
-      </header>
 
-      <main className="max-w-7xl mx-auto px-6 lg:px-12 grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-20">
-        <section className="lg:col-span-8 space-y-16">
-          {Object.entries(groupedGames).length > 0 ? Object.entries(groupedGames).map(([date, games]) => (
-            <div key={date} className="space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
-              <div className="flex items-center gap-6">
-                <h3 className="text-2xl font-black uppercase tracking-tight text-primary whitespace-nowrap">{format(new Date(date), 'EEEE, MMM d')}</h3>
-                <div className="h-px bg-white/10 flex-1" />
+        <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-black text-white relative">
+          <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none">
+            <Trophy className="h-64 w-64" />
+          </div>
+          <CardContent className="p-10 md:p-16 relative z-10 space-y-8">
+            <div className="space-y-4 max-w-2xl">
+              <Badge className="bg-white/20 text-white border-none font-black uppercase tracking-widest text-[9px] px-3 h-6">
+                Live Coverage
+              </Badge>
+              <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] uppercase">
+                {event.title}
+              </h1>
+              <div className="flex flex-wrap items-center gap-6 pt-4">
+                <div className="flex items-center gap-3 bg-white/10 px-5 py-3 rounded-2xl border border-white/10">
+                  <CalendarDays className="h-5 w-5 text-primary" />
+                  <span className="font-bold text-sm">{formatDateRange(event.date, event.endDate)}</span>
+                </div>
+                <div className="flex items-center gap-3 bg-white/10 px-5 py-3 rounded-2xl border border-white/10">
+                  <MapPin className="h-5 w-5 text-primary" />
+                  <span className="font-bold text-sm truncate max-w-[200px]">{event.location}</span>
+                </div>
               </div>
-              <div className="grid gap-6">
-                {games.map((game) => (
-                  <Card key={game.id} className="bg-white/5 border-white/10 rounded-[2.5rem] overflow-hidden hover:bg-white/10 transition-all border-2">
-                    <CardContent className="p-8 lg:p-10 flex items-center gap-10">
-                      <div className="flex-1 space-y-3 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <p className="text-lg font-black uppercase tracking-tight truncate">{game.team1}</p>
-                          {game.winnerId === game.team1 && <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Tabs defaultValue="bracket" className="w-full space-y-8">
+          <div className="flex justify-center">
+            <TabsList className="bg-white h-16 p-1.5 rounded-3xl shadow-xl border w-fit">
+              <TabsTrigger value="bracket" className="rounded-2xl font-black text-xs uppercase px-10 data-[state=active]:bg-black data-[state=active]:text-white">
+                Match Schedule
+              </TabsTrigger>
+              {event.isTournamentPaid && (
+                <TabsTrigger value="standings" className="rounded-2xl font-black text-xs uppercase px-10 data-[state=active]:bg-black data-[state=active]:text-white">
+                  Live Standings
+                </TabsTrigger>
+              )}
+            </TabsList>
+          </div>
+
+          <TabsContent value="bracket" className="mt-0">
+            <div className="space-y-12">
+              {Object.entries(groupedGames).length > 0 ? Object.entries(groupedGames).map(([date, games]) => (
+                <div key={date} className="space-y-6">
+                  <div className="flex items-center gap-4 px-2">
+                    <Badge className="bg-black text-white font-black uppercase text-[10px] px-4 h-7 shadow-lg">
+                      {format(new Date(date), 'EEEE, MMM d')}
+                    </Badge>
+                    <div className="h-px bg-muted-foreground/20 flex-1" />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {games.map((game) => (
+                      <div key={game.id} className="p-6 md:p-8 bg-white rounded-[2.5rem] shadow-xl border-none transition-all relative overflow-hidden group ring-1 ring-black/5">
+                        <div className="flex justify-between items-center mb-6">
+                          <Badge variant="outline" className="text-[9px] font-black uppercase border-black/10 tracking-widest px-3 h-6">{game.time}</Badge>
+                          {game.isCompleted && <Badge className="text-[9px] font-black uppercase h-6 px-3 bg-black text-white shadow-lg">Final Result</Badge>}
                         </div>
-                        <p className={cn("text-5xl font-black tracking-tighter", game.winnerId === game.team1 ? "text-primary" : "opacity-20")}>{game.score1}</p>
-                      </div>
-                      <div className="text-xs font-black opacity-10 uppercase tracking-widest">VS</div>
-                      <div className="flex-1 space-y-3 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          {game.winnerId === game.team2 && <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />}
-                          <p className="text-lg font-black uppercase tracking-tight truncate">{game.team2}</p>
+                        <div className="grid grid-cols-7 items-center gap-4">
+                          <div className="col-span-3 text-right">
+                            <div className="flex items-center justify-end gap-3 mb-2">
+                              <p className="font-black text-sm uppercase truncate">{game.team1}</p>
+                              {game.winnerId === game.team1 && <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />}
+                            </div>
+                            <p className="text-4xl md:text-5xl font-black text-primary leading-none">{game.score1}</p>
+                          </div>
+                          <div className="col-span-1 flex items-center justify-center opacity-20 font-black text-xs">VS</div>
+                          <div className="col-span-3">
+                            <div className="flex items-center gap-3 mb-2">
+                              {game.winnerId === game.team2 && <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />}
+                              <p className="font-black text-sm uppercase truncate">{game.team2}</p>
+                            </div>
+                            <p className="text-4xl md:text-5xl font-black text-primary leading-none">{game.score2}</p>
+                          </div>
                         </div>
-                        <p className={cn("text-5xl font-black tracking-tighter", game.winnerId === game.team2 ? "text-primary" : "opacity-20")}>{game.score2}</p>
                       </div>
-                      <div className="hidden lg:flex flex-col items-center gap-2 min-w-[120px] border-l border-white/10 pl-10">
-                        <Badge variant="outline" className="text-[10px] font-black uppercase tracking-widest border-white/20 h-6">{game.time}</Badge>
-                        {game.isCompleted ? <Badge className="bg-white text-black font-black uppercase text-[8px] h-5">Final</Badge> : <Badge className="bg-green-600 text-white font-black uppercase text-[8px] h-5 animate-pulse">Live</Badge>}
+                    ))}
+                  </div>
+                </div>
+              )) : (
+                <div className="text-center py-24 bg-white rounded-[3rem] shadow-xl space-y-4">
+                  <CalendarDays className="h-16 w-16 text-muted-foreground/20 mx-auto" />
+                  <p className="font-black uppercase tracking-widest text-xs opacity-40">No matches published yet.</p>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {event.isTournamentPaid && (
+            <TabsContent value="standings" className="mt-0">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div className="lg:col-span-8">
+                  <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5">
+                    <CardContent className="p-0">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b">
+                            <tr>
+                              <th className="px-10 py-6">Squad</th>
+                              <th className="px-4 py-6 text-center">W</th>
+                              <th className="px-4 py-6 text-center">L</th>
+                              <th className="px-4 py-6 text-center">T</th>
+                              <th className="px-10 py-6 text-right text-primary">PTS</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-muted/50">
+                            {standings.map((team, idx) => (
+                              <tr key={team.name} className="hover:bg-primary/5 transition-colors group">
+                                <td className="px-10 py-8">
+                                  <div className="flex items-center gap-6">
+                                    <span className="text-xs font-black text-muted-foreground/40 w-4">{idx + 1}</span>
+                                    <span className="font-black text-base uppercase tracking-tight group-hover:text-primary transition-colors">{team.name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-8 text-center font-bold text-base">{team.wins}</td>
+                                <td className="px-4 py-8 text-center font-bold text-base text-muted-foreground">{team.losses}</td>
+                                <td className="px-4 py-8 text-center font-bold text-base text-muted-foreground">{team.ties}</td>
+                                <td className="px-10 py-8 text-right font-black text-2xl text-primary">{team.points}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                </div>
+                <div className="lg:col-span-4 space-y-6">
+                  <div className="bg-black text-white p-10 rounded-[3rem] shadow-2xl space-y-6 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-6 opacity-10">
+                      <Share2 className="h-20 w-20" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-2xl font-black uppercase tracking-tight leading-none">Global Link</h3>
+                      <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest">Share results with fans</p>
+                    </div>
+                    <div className="p-4 bg-white/10 rounded-2xl border border-white/10 break-all text-[10px] font-mono text-white/80">
+                      {typeof window !== 'undefined' ? window.location.href : ''}
+                    </div>
+                    <p className="text-[10px] font-bold italic opacity-40">Powered by The Squad Professional Coordination Suite.</p>
+                  </div>
+                </div>
               </div>
-            </div>
-          )) : (
-            <div className="py-24 text-center space-y-6 bg-white/5 rounded-[3rem] border-2 border-dashed border-white/10">
-              <TableIcon className="h-16 w-16 mx-auto text-white/20" />
-              <p className="text-xl font-black uppercase tracking-widest opacity-40">Schedule Pending Publication</p>
-            </div>
+            </TabsContent>
           )}
-        </section>
-
-        <aside className="lg:col-span-4 space-y-10">
-          <div className="space-y-6 sticky top-32">
-            <div className="flex items-center gap-3">
-              <Trophy className="h-6 w-6 text-primary" />
-              <h3 className="text-xl font-black uppercase tracking-tight">Tournament Standings</h3>
-            </div>
-            <div className="bg-white/5 rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
-              <table className="w-full text-left">
-                <thead className="bg-white/5 text-[10px] font-black uppercase tracking-widest text-white/40 border-b border-white/10">
-                  <tr>
-                    <th className="px-6 py-4">Squad</th>
-                    <th className="px-4 py-4 text-center">W-L</th>
-                    <th className="px-6 py-4 text-right text-primary">PTS</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {standings.map((team, i) => (
-                    <tr key={team.name} className="hover:bg-white/5 transition-colors">
-                      <td className="px-6 py-5">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs font-black text-primary w-4">{i + 1}</span>
-                          <span className="text-xs font-black uppercase truncate pr-2">{team.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-5 text-center font-bold text-[10px]">{team.wins}-{team.losses}</td>
-                      <td className="px-6 py-5 text-right font-black text-primary text-sm">{team.points}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="p-8 bg-primary/5 rounded-[2rem] border border-primary/20 space-y-4">
-              <Zap className="h-6 w-6 text-primary" />
-              <p className="text-xs font-bold text-white/60 leading-relaxed uppercase">Scoring Logic: Win (+1), Loss (-1), Tie (0). Points decide final tournament seeding.</p>
-            </div>
-          </div>
-        </aside>
-      </main>
-
-      <footer className="mt-32 pt-12 border-t border-white/10 text-center opacity-40">
-        <p className="text-[10px] font-black uppercase tracking-[0.3em]">Official Tournament Hub • Powered by The Squad</p>
+        </Tabs>
+      </div>
+      
+      <footer className="mt-20 py-12 border-t w-full max-w-6xl flex flex-col md:flex-row items-center justify-between gap-8 text-muted-foreground opacity-40">
+        <p className="text-[10px] font-black uppercase tracking-widest">© {new Date().getFullYear()} The Squad Hub • Professional Tournament Delivery</p>
+        <div className="flex gap-8">
+          <span className="text-[10px] font-black uppercase tracking-widest">Privacy</span>
+          <span className="text-[10px] font-black uppercase tracking-widest">Safety</span>
+          <span className="text-[10px] font-black uppercase tracking-widest">Terms</span>
+        </div>
       </footer>
     </div>
   );
