@@ -54,7 +54,6 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background selection:bg-primary/20">
-      {/* Navigation */}
       <nav className={cn(
         "fixed top-0 w-full z-50 transition-all duration-300 border-b",
         isScrolled ? "bg-white/80 backdrop-blur-md py-3 shadow-sm border-border" : "bg-transparent py-5 border-transparent"
@@ -89,7 +88,6 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* Hero Section */}
       <section className="relative h-screen flex items-center justify-center overflow-hidden">
         {sportsImages.map((img, idx) => (
           <div 
@@ -127,13 +125,14 @@ export default function LandingPage() {
                 Start Your Squad <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
-            <Button size="lg" variant="outline" className="h-16 px-10 rounded-full text-lg font-black bg-white/10 border-white/20 text-white backdrop-blur-md hover:bg-white/20 active:scale-95 transition-all w-full sm:w-auto">
-              See the Demo
-            </Button>
+            <Link href="/login#demos">
+              <Button size="lg" variant="outline" className="h-16 px-10 rounded-full text-lg font-black bg-white/10 border-white/20 text-white backdrop-blur-md hover:bg-white/20 active:scale-95 transition-all w-full sm:w-auto">
+                See the Demo
+              </Button>
+            </Link>
           </div>
         </div>
 
-        {/* Floating Stats */}
         <div className="absolute bottom-12 left-0 right-0 hidden md:block">
           <div className="container mx-auto px-6 flex justify-center gap-20 text-white">
             <div className="text-center">
@@ -152,7 +151,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Features Section - Revamped editorial style */}
       <section id="features" className="py-32 bg-white relative overflow-hidden">
         <div className="container mx-auto px-6">
           <div className="text-center space-y-4 mb-24 max-w-3xl mx-auto">
@@ -239,7 +237,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing Section */}
       <section id="pricing" className="py-24 bg-muted/30 relative">
         <div className="container mx-auto px-6">
           <div className="text-center space-y-4 mb-16">
@@ -249,7 +246,6 @@ export default function LandingPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-            {/* Monthly Plan */}
             <Card className="border-none shadow-2xl rounded-[3rem] p-10 space-y-8 relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none group-hover:scale-110 transition-transform duration-700">
                 <Trophy className="h-40 w-40 -rotate-12" />
@@ -272,7 +268,6 @@ export default function LandingPage() {
               </Button>
             </Card>
 
-            {/* Yearly Plan */}
             <Card className="border-2 border-primary shadow-2xl rounded-[3rem] p-10 space-y-8 relative overflow-hidden bg-primary text-primary-foreground group">
               <div className="absolute -top-4 -right-4 bg-white text-primary text-[10px] font-black px-4 py-2 rotate-12 shadow-lg z-10">
                 BEST VALUE
@@ -299,7 +294,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Contact Section */}
       <section id="contact" className="py-24 bg-white">
         <div className="container mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
@@ -363,7 +357,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="py-12 bg-muted/50 border-t">
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">

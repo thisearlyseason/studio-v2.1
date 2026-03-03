@@ -60,7 +60,6 @@ export default function PricingPage() {
   const starterPlan = useMemo(() => plans.find(p => p.id === 'starter_squad'), [plans]);
   const proPlan = useMemo(() => plans.find(p => p.id === 'squad_pro'), [plans]);
   
-  // High-fidelity fallback data for the scaling ledger
   const CLUB_TIERS = [
     { id: 'squad_duo', name: 'Club Duo', limit: 2, monthly: '$23.99', annual: '$180' },
     { id: 'squad_crew', name: 'Club Crew', limit: 4, monthly: '$44.99', annual: '$340' },
@@ -71,11 +70,9 @@ export default function PricingPage() {
   ];
 
   const clubPlans = useMemo(() => {
-    // Merge database plans with our static targets to ensure visibility
     const targets = ['squad_duo', 'squad_crew', 'squad_league', 'squad_division', 'squad_conference', 'squad_organization'];
     const dbPlans = plans.filter(p => targets.includes(p.id));
     
-    // Map our UI targets to either DB data or fallbacks
     return targets.map(targetId => {
       const dbPlan = dbPlans.find(p => p.id === targetId);
       const fallback = CLUB_TIERS.find(t => t.id === targetId);
@@ -148,7 +145,6 @@ export default function PricingPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
-        {/* STARTER SQUAD */}
         <Card className={cn(
           "rounded-[3rem] border-none shadow-xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.02] ring-1 ring-black/5 bg-white",
           activeTeam?.planId === 'starter_squad' && "ring-4 ring-muted-foreground/20"
@@ -182,7 +178,6 @@ export default function PricingPage() {
           </CardFooter>
         </Card>
 
-        {/* SQUAD PRO */}
         <Card className={cn(
           "rounded-[3rem] border-none shadow-2xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.05] ring-4 ring-primary bg-black text-white relative z-10 animate-in zoom-in-95",
           activeTeam?.planId === 'squad_pro' && "ring-offset-4 ring-offset-background"
@@ -228,7 +223,6 @@ export default function PricingPage() {
           </CardFooter>
         </Card>
 
-        {/* CLUB SUITE */}
         <Card className={cn(
           "rounded-[3rem] border-none shadow-xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.02] ring-1 ring-black/5 bg-white",
           hasClubPlan && "ring-4 ring-primary/20"
@@ -253,7 +247,6 @@ export default function PricingPage() {
 
           <CardContent className="p-10 pt-0 flex-1 space-y-8">
             <div className="pt-6 border-t border-muted space-y-6">
-              {/* Active Seat Visualization - Only for Club Managers */}
               {hasClubPlan && (
                 <div className="space-y-2">
                   <div className="flex justify-between items-end mb-1">
@@ -265,7 +258,6 @@ export default function PricingPage() {
                 </div>
               )}
               
-              {/* Organization Scaling Ledger */}
               <div className="space-y-4">
                 <p className="text-[11px] font-black uppercase tracking-[0.3em] text-black">ORGANIZATION SCALING</p>
                 <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
@@ -316,7 +308,6 @@ export default function PricingPage() {
         </Card>
       </div>
 
-      {/* Elite Add-ons Section */}
       <section className="space-y-10">
         <div className="text-center space-y-2">
           <Badge className="bg-amber-100 text-amber-700 font-black uppercase tracking-widest text-[9px] h-6 px-3">Elite Add-ons</Badge>
@@ -324,7 +315,6 @@ export default function PricingPage() {
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
-          {/* Inventory Card */}
           <Card className="rounded-[3rem] border-none shadow-2xl bg-black text-white overflow-hidden relative group">
             <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
               <LayoutGrid className="h-32 w-32" />
@@ -360,7 +350,6 @@ export default function PricingPage() {
             </CardContent>
           </Card>
 
-          {/* Feature Hub Card */}
           <Card className="rounded-[3rem] border-none shadow-2xl bg-white overflow-hidden flex flex-col group">
             <div className="p-10 flex items-center justify-between gap-6 border-b-2">
               <div className="flex items-center gap-6">

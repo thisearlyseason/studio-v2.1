@@ -137,7 +137,7 @@ export default function LoginPage() {
           </form>
         </Card>
 
-        <div className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-1000">
+        <div id="demos" className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-1000 scroll-mt-10">
           <div className="bg-primary text-white p-8 rounded-[3rem] shadow-2xl relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
               <Trophy className="h-48 w-48" />
