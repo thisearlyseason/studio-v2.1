@@ -60,6 +60,7 @@ export default function PricingPage() {
   const starterPlan = useMemo(() => plans.find(p => p.id === 'starter_squad'), [plans]);
   const proPlan = useMemo(() => plans.find(p => p.id === 'squad_pro'), [plans]);
   
+  // Authoritative Tiers for the Scaling Ledger
   const CLUB_TIERS = [
     { id: 'squad_duo', name: 'Club Duo', limit: 2, monthly: '$23.99', annual: '$180' },
     { id: 'squad_crew', name: 'Club Crew', limit: 4, monthly: '$44.99', annual: '$340' },
@@ -70,22 +71,17 @@ export default function PricingPage() {
   ];
 
   const clubPlans = useMemo(() => {
-    const targets = ['squad_duo', 'squad_crew', 'squad_league', 'squad_division', 'squad_conference', 'squad_organization'];
-    const dbPlans = plans.filter(p => targets.includes(p.id));
-    
-    return targets.map(targetId => {
-      const dbPlan = dbPlans.find(p => p.id === targetId);
-      const fallback = CLUB_TIERS.find(t => t.id === targetId);
-      
+    return CLUB_TIERS.map(tier => {
+      const dbPlan = plans.find(p => p.id === tier.id);
       return {
-        id: targetId,
-        name: dbPlan?.name || fallback?.name || 'Club Tier',
-        proTeamLimit: dbPlan?.proTeamLimit || fallback?.limit || 0,
-        monthlyPrice: dbPlan?.priceDisplay || fallback?.monthly || '$0',
-        annualPrice: dbPlan?.annualPriceDisplay || fallback?.annual || '$0',
-        isContactOnly: dbPlan?.isContactOnly || (targetId === 'squad_organization')
+        id: tier.id,
+        name: dbPlan?.name || tier.name,
+        proTeamLimit: dbPlan?.proTeamLimit || tier.limit,
+        priceDisplay: dbPlan?.priceDisplay || tier.monthly,
+        annualPriceDisplay: dbPlan?.annualPriceDisplay || tier.annual,
+        isContactOnly: dbPlan?.isContactOnly || (tier.id === 'squad_organization')
       };
-    }).sort((a, b) => (a.proTeamLimit || 0) - (b.proTeamLimit || 0));
+    });
   }, [plans]);
 
   const handleContactSubmit = async (e: React.FormEvent) => {
@@ -145,6 +141,7 @@ export default function PricingPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
+        {/* Starter Plan */}
         <Card className={cn(
           "rounded-[3rem] border-none shadow-xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.02] ring-1 ring-black/5 bg-white",
           activeTeam?.planId === 'starter_squad' && "ring-4 ring-muted-foreground/20"
@@ -178,6 +175,7 @@ export default function PricingPage() {
           </CardFooter>
         </Card>
 
+        {/* Squad Pro Plan */}
         <Card className={cn(
           "rounded-[3rem] border-none shadow-2xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.05] ring-4 ring-primary bg-black text-white relative z-10 animate-in zoom-in-95",
           activeTeam?.planId === 'squad_pro' && "ring-offset-4 ring-offset-background"
@@ -223,6 +221,7 @@ export default function PricingPage() {
           </CardFooter>
         </Card>
 
+        {/* Club Suite Plan */}
         <Card className={cn(
           "rounded-[3rem] border-none shadow-xl overflow-hidden flex flex-col transition-all duration-500 hover:scale-[1.02] ring-1 ring-black/5 bg-white",
           hasClubPlan && "ring-4 ring-primary/20"
@@ -263,7 +262,7 @@ export default function PricingPage() {
                 <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                   {clubPlans.map(cp => {
                     const isCurrentSub = activeTeam?.planId === cp.id;
-                    const priceLabel = billingCycle === 'annual' ? cp.annualPrice : cp.monthlyPrice;
+                    const priceLabel = billingCycle === 'annual' ? cp.annualPriceDisplay : cp.priceDisplay;
                     const cycleLabel = (priceLabel === 'Custom' || priceLabel === '$0') ? '' : (billingCycle === 'annual' ? '/yr' : '/mo');
 
                     return (
@@ -308,6 +307,7 @@ export default function PricingPage() {
         </Card>
       </div>
 
+      {/* Functional Modules Section */}
       <section className="space-y-10">
         <div className="text-center space-y-2">
           <Badge className="bg-amber-100 text-amber-700 font-black uppercase tracking-widest text-[9px] h-6 px-3">Elite Add-ons</Badge>
@@ -315,6 +315,7 @@ export default function PricingPage() {
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
+          {/* Inventory Ledger Card */}
           <Card className="rounded-[3rem] border-none shadow-2xl bg-black text-white overflow-hidden relative group">
             <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
               <LayoutGrid className="h-32 w-32" />
@@ -350,6 +351,7 @@ export default function PricingPage() {
             </CardContent>
           </Card>
 
+          {/* Feature Hub Card */}
           <Card className="rounded-[3rem] border-none shadow-2xl bg-white overflow-hidden flex flex-col group">
             <div className="p-10 flex items-center justify-between gap-6 border-b-2">
               <div className="flex items-center gap-6">
@@ -390,6 +392,7 @@ export default function PricingPage() {
         </div>
       </section>
 
+      {/* Club Solutions Banner */}
       <div className="bg-black text-white rounded-[3rem] p-12 flex flex-col md:flex-row items-center justify-between gap-10 shadow-2xl relative overflow-hidden mt-20">
         <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none -rotate-12"><Building className="h-64 w-64" /></div>
         <div className="flex items-center gap-8 relative z-10">
