@@ -220,7 +220,7 @@ export default function DrillsAndGamePlayPage() {
     <div className="space-y-8 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
-          <h1 className="text-3xl font-black tracking-tight uppercase">Tactical Hub</h1>
+          <h1 className="text-3xl font-black tracking-tight uppercase">Playbook</h1>
           <p className="text-muted-foreground text-sm font-bold">Study the playbook and analyze the tape.</p>
         </div>
         
@@ -309,7 +309,7 @@ export default function DrillsAndGamePlayPage() {
             <div className="py-24 text-center space-y-6 bg-primary/5 rounded-[3rem] border-2 border-dashed border-primary/20">
               <div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl relative"><Video className="h-10 w-10 text-primary" /><Lock className="absolute -top-2 -right-2 h-6 w-6 bg-black text-white p-1 rounded-full border-2 border-background" /></div>
               <h3 className="text-2xl font-black uppercase tracking-tight">Game Film Locked</h3>
-              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-w-sm mx-auto">Film analysis and storage require a Pro subscription.</p>
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto">Film analysis and storage require a Pro subscription.</p>
               {isAdmin && <Button onClick={purchasePro} className="h-12 px-10 rounded-xl font-black uppercase">Upgrade to Elite</Button>}
             </div>
           ) : (

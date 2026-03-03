@@ -76,12 +76,12 @@ export default function HowToGuidePage() {
       ]
     },
     {
-      title: "3. Media Vault & Storage",
-      icon: FolderClosed,
+      title: "3. Playbook & Game Film",
+      icon: Dumbbell,
       description: "High-performance video and resource repository.",
       manual: [
         { step: "Storage Quotas", details: "Starter squads have a 500MB cap. Pro squads unlock 10GB. The Storage Audit bar in the vault tracks real-time usage." },
-        { step: "Tactical Momemt Tagging", details: "In Theater Mode, admins can mark specific seconds in a video (e.g., 04:20 - Scoring Play) to create a visual study guide." },
+        { step: "Compliance Engine", details: "In Game Play mode, users must watch 75% of a video before their status is updated to 'Verified Viewed'." },
         { step: "Resource Discussion", details: "Every file and link features a dedicated comment thread for team analysis and tactical feedback." },
         { step: "Unlimited Links", details: "Attaching external strategy links (YouTube, Google Drive) is always free and does not count against your storage quota." }
       ]
@@ -161,7 +161,7 @@ export default function HowToGuidePage() {
                   { name: "Tactical Chats", s: true, p: true, c: true },
                   { name: "Media Vault (500MB)", s: true, p: true, c: true },
                   { name: "Media Vault (10GB)", s: false, p: true, c: true },
-                  { name: "Video Annotations", s: false, p: true, c: true },
+                  { name: "Video Compliance", s: true, p: true, c: true },
                   { name: "Live Feed Read", s: false, p: true, c: true },
                   { name: "Advanced Roster", s: false, p: true, c: true }
                 ].map((row, i) => (

@@ -175,7 +175,7 @@ export default function GamesPage() {
     <div className="space-y-6 lg:space-y-8 pb-20">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-black tracking-tight uppercase">Games & Results</h1>
+          <h1 className="text-2xl lg:text-3xl font-black tracking-tight uppercase">Scorekeeping</h1>
           <p className="text-[10px] lg:text-sm font-bold text-muted-foreground uppercase tracking-widest">Journey to Dominance</p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
