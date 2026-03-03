@@ -156,7 +156,7 @@ export async function seedDemoData(db: Firestore, teamId: string, planId: string
       startTime: '09:00 AM', location: 'Metropolitan Stadium', 
       description: 'Grand finale tournament for the region. Elite bracket deployment active.',
       isTournament: true,
-      isTournamentPaid: true,
+      isTournamentPaid: true, // This enables the Elite standings/bracket views
       tournamentTeams: ['Westside Warriors', 'Eastside Elite', 'Northside Knights', 'Southside Strikers', 'Metro Stars', 'City Rangers'],
       tournamentGames: [
         // DAY 1 - Completed
@@ -215,6 +215,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const batch = writeBatch(db);
   const nowStr = new Date().toISOString();
   
+  // RESET THE TIMER BY UPDATING createdAt TO THE EXACT MOMENT OF SEEDING
   batch.set(doc(db, 'users', userId), {
     id: userId, fullName: 'Guest Coordinator', email: 'guest@thesquad.io',
     notificationsEnabled: true, createdAt: nowStr,
@@ -275,6 +276,7 @@ export async function resetDemoEnvironment(db: Firestore, teamId: string, planId
       }
     }
     const nowStr = new Date().toISOString();
+    // RESET TIMER ON HEARTBEAT RESET
     await updateDoc(doc(db, 'users', userId), { createdAt: nowStr });
     for (const tid of teamIds) {
       await seedDemoData(db, tid, planId, userId);

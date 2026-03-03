@@ -434,7 +434,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const start = new Date(userProfile.createdAt!).getTime();
       const now = Date.now();
       const elapsed = now - start;
-      const remaining = DEMO_RESET_INTERVAL_MS - (elapsed % DEMO_RESET_INTERVAL_MS);
+      const safeElapsed = Math.max(0, elapsed);
+      
+      // Calculate time remaining relative to the FRESH createdAt timestamp
+      const remaining = DEMO_RESET_INTERVAL_MS - (safeElapsed % DEMO_RESET_INTERVAL_MS);
       
       setSecondsUntilReset(Math.ceil(remaining / 1000));
 
