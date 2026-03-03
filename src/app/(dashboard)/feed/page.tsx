@@ -28,7 +28,8 @@ import {
   ImageIcon,
   Lock,
   Sparkles,
-  ShieldCheck
+  ShieldCheck,
+  LayoutDashboard
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -452,8 +453,7 @@ export default function FeedPage() {
             <DialogTitle className="sr-only">Image Preview</DialogTitle>
             <img src={lightboxImage} className="w-full h-auto max-h-[85vh] object-contain" alt="Enlarged view" />
           </DialogContent>
-        </Dialog>
-      )}
+        )}
     </div>
   );
 }
