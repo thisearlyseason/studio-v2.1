@@ -28,7 +28,8 @@ import {
   Timer,
   ChevronRight,
   Shield,
-  BookOpen
+  BookOpen,
+  Video
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -75,10 +76,10 @@ const tabs = [
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Leagues', href: '/leagues', icon: Shield, pro: true },
   { name: 'Games', href: '/games', icon: Trophy, pro: false },
-  { name: 'Drills', href: '/drills', icon: Dumbbell, pro: true },
+  { name: 'Drills & Game Play', href: '/drills', icon: Dumbbell, pro: true, mobileName: 'Playbook' },
   { name: 'Chats', href: '/chats', icon: MessageCircle, pro: false },
   { name: 'Roster', href: '/roster', icon: Users2, pro: false },
-  { name: 'Library', href: '/files', icon: FolderClosed, pro: true },
+  { name: 'Library', href: '/files', icon: FolderClosed, pro: false, mobileName: 'Docs' },
 ];
 
 const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boolean, isLocked: boolean }) => {
@@ -412,7 +413,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       )}
                     >
                       <Icon className={cn("h-4 w-4 sm:h-5 sm:w-5", isActive && "scale-110", isLocked && "opacity-50")} strokeWidth={isActive ? 3 : 2} />
-                      <span className="text-[7px] sm:text-[8px] font-black tracking-tight uppercase truncate max-w-[40px]">{tab.name}</span>
+                      <span className="text-[7px] sm:text-[8px] font-black tracking-tight uppercase truncate max-w-[40px]">{tab.mobileName || tab.name}</span>
                       {isLocked && <Lock className="absolute top-0.5 right-0.5 h-1.5 w-1.5 opacity-40" />}
                     </Link>
                   );

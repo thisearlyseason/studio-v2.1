@@ -55,13 +55,14 @@ service cloud.firestore {
       match /files/{fileId} {
         allow read: if isTeamMember(teamId);
         allow create: if isAdmin(teamId);
-        allow update: if isTeamMember(teamId); // For comments, tags, and annotations
+        allow update: if isTeamMember(teamId); 
         allow delete: if isAdmin(teamId);
       }
 
       match /events/{eventId} {
         allow update: if isTeamMember(teamId); // For RSVPs
         allow create, delete: if isAdmin(teamId);
+        allow read: if isTeamMember(teamId);
         
         match /registrations/{regId} {
           allow create: if true; 
