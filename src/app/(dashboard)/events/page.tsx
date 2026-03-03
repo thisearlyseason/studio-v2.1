@@ -226,6 +226,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   };
 
   const currentStatus = event.userRsvps?.[user?.id || ''];
+  const isUserStaff = members.find(m => m.userId === user?.id && ['Coach', 'Team Lead', 'Assistant Coach', 'Squad Leader', 'Manager'].includes(m.position));
 
   return (
     <Dialog onOpenChange={(open) => { if(!open) { setShowInternalForm(false); setShowWaiverStep(false); setEditingGame(null); } }}>
@@ -443,8 +444,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                   </TabsContent>
                 </div>
 
-                {/* RSVP Section - Hidden for Squad Organizers */}
-                {!isAdmin && (
+                {/* RSVP Section - Hidden for Squad Organizers & Staff */}
+                {!isAdmin && !isUserStaff && (
                   <div className="p-8 border-t bg-muted/20 shrink-0">
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-6 max-w-4xl mx-auto">
                       <div className="text-center sm:text-left space-y-1">
@@ -553,6 +554,7 @@ export default function EventsPage() {
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isTournamentMode, setIsTournamentMode] = useState(false);
+  const [isEliteTournament, setIsEliteTournament] = useState(false);
   const [editingEvent, setEditingEvent] = useState<TeamEvent | null>(null);
   
   const [newTitle, setNewTitle] = useState('');
@@ -570,6 +572,7 @@ export default function EventsPage() {
   const handleEdit = (event: TeamEvent) => {
     setEditingEvent(event);
     setIsTournamentMode(!!event.isTournament);
+    setIsEliteTournament(!!event.isTournamentPaid);
     setNewTitle(event.title);
     setNewDate(new Date(event.date).toISOString().split('T')[0]);
     if (event.endDate) setNewEndDate(new Date(event.endDate).toISOString().split('T')[0]);
@@ -586,6 +589,7 @@ export default function EventsPage() {
     const payload: any = { 
       title: newTitle, date: new Date(newDate).toISOString(), startTime: newTime || 'TBD', 
       location: newLocation, description: newDescription, isTournament: isTournamentMode,
+      isTournamentPaid: isEliteTournament,
       tournamentTeams, tournamentGames, lastUpdated: new Date().toISOString()
     };
     if (isTournamentMode && newEndDate) payload.endDate = new Date(newEndDate).toISOString();
@@ -597,6 +601,7 @@ export default function EventsPage() {
   const resetForm = () => { 
     setEditingEvent(null); setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); 
     setNewLocation(''); setNewDescription(''); setTournamentTeams([]); setTournamentGames([]); 
+    setIsEliteTournament(false);
   };
 
   const isLocked = editingEvent?.isTournamentPaid && editingEvent?.tournamentGames && editingEvent.tournamentGames.length > 0;
@@ -609,9 +614,10 @@ export default function EventsPage() {
           <h1 className="text-4xl font-black uppercase tracking-tight">Schedule</h1>
         </div>
         {isAdmin && (
-          <div className="flex gap-2">
-            <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg" onClick={() => { setIsTournamentMode(false); setIsCreateOpen(true); }}><Plus className="h-4 w-4 mr-2" /> Match</Button>
-            <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg bg-black text-white" onClick={() => { setIsTournamentMode(true); setIsCreateOpen(true); }}><Trophy className="h-4 w-4 mr-2 text-primary" /> Tournament</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg" onClick={() => { setIsTournamentMode(false); setIsEliteTournament(false); setIsCreateOpen(true); }}><Plus className="h-4 w-4 mr-2" /> Match</Button>
+            <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg bg-black text-white" onClick={() => { setIsTournamentMode(true); setIsEliteTournament(false); setIsCreateOpen(true); }}><Trophy className="h-4 w-4 mr-2 text-primary" /> Tournament</Button>
+            <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg bg-primary text-white border-none" onClick={() => { setIsTournamentMode(true); setIsEliteTournament(true); setIsCreateOpen(true); }}><Sparkles className="h-4 w-4 mr-2" /> Elite Tournament</Button>
           </div>
         )}
       </div>
@@ -623,7 +629,10 @@ export default function EventsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 h-full min-h-[600px]">
               <div className="lg:col-span-5 p-8 lg:border-r space-y-6 bg-primary/5">
                 <DialogHeader>
-                  <h2 className="text-3xl font-black tracking-tight">{editingEvent ? "Update" : "Launch"} {isTournamentMode ? "Tournament" : "Match"}</h2>
+                  <div className="flex items-center gap-2 mb-2">
+                    {isEliteTournament && <Badge className="bg-amber-500 text-white border-none font-black uppercase text-[8px] h-5 px-2">Elite Add-on</Badge>}
+                  </div>
+                  <h2 className="text-3xl font-black tracking-tight">{editingEvent ? "Update" : "Launch"} {isTournamentMode ? (isEliteTournament ? "Elite Tournament" : "Tournament") : "Match"}</h2>
                   <p className="font-black text-primary uppercase tracking-widest text-[10px]">Strategic Coordination</p>
                 </DialogHeader>
                 <div className="space-y-4">
@@ -680,7 +689,7 @@ export default function EventsPage() {
                     </TabsContent>
                   </Tabs>
                 ) : <div className="p-8 border-2 border-dashed rounded-[2rem] text-center opacity-60"><Zap className="h-10 w-10 text-primary mx-auto mb-2" /><p className="font-bold">Standard Match Protocol.</p></div>}
-                <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCreateEvent}>{editingEvent ? "Update" : "Publish"} Event Hub</Button>
+                <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all mt-6" onClick={handleCreateEvent}>{editingEvent ? "Update" : "Publish"} Event Hub</Button>
               </div>
             </div>
           </ScrollArea>
@@ -702,7 +711,7 @@ export default function EventsPage() {
                     <div className="flex-1 p-6 flex flex-col justify-center min-w-0">
                       <div className="flex items-start justify-between">
                         <div>
-                          <div className="flex gap-2 mb-1.5">{event.isTournament && <Badge className="bg-black text-white text-[8px] font-black uppercase h-4 px-2">Elite Tournament</Badge>}<Badge variant="outline" className="text-[8px] font-black uppercase h-4 px-2">{event.startTime}</Badge></div>
+                          <div className="flex gap-2 mb-1.5">{event.isTournament && <Badge className={cn("text-[8px] font-black uppercase h-4 px-2", event.isTournamentPaid ? "bg-amber-500 text-white" : "bg-black text-white")}>{event.isTournamentPaid ? "Elite Tournament" : "Basic Tournament"}</Badge>}<Badge variant="outline" className="text-[8px] font-black uppercase h-4 px-2">{event.startTime}</Badge></div>
                           <h3 className="text-xl font-black tracking-tight leading-none truncate">{event.title}</h3>
                           <p className="text-[10px] font-bold text-muted-foreground uppercase mt-1 flex items-center gap-1"><MapPin className="h-3 w-3 text-primary" /> {event.location}</p>
                         </div>

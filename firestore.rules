@@ -13,7 +13,6 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      // Safely handle missing email for anonymous or demo users using .get()
       return isSignedIn() && (
         request.auth.token.get('email', '') == 'thisearlyseason@gmail.com' || 
         request.auth.token.get('email', '') == 'test@gmail.com'
@@ -22,7 +21,6 @@ service cloud.firestore {
 
     // CRITICAL: Top-level Collection Group rule for global tournament discovery
     // This MUST be at the top level to authorize collectionGroup queries across any team path.
-    // It allows authenticated users to search for tournaments they are invited to.
     match /{path=**}/events/{eventId} {
       allow read: if isSignedIn();
     }
