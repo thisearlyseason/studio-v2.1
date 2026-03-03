@@ -228,22 +228,33 @@ export default function PricingPage() {
               )}
               
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Organization Scaling</p>
-              <div className="space-y-3 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                 {clubPlans.map(cp => {
                   const isCurrentSub = activeTeam?.planId === cp.id;
                   return (
                     <div key={cp.id} className={cn(
-                      "flex justify-between items-center p-3 rounded-xl border-2 transition-all",
+                      "flex flex-col gap-3 p-4 rounded-xl border-2 transition-all",
                       isCurrentSub ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent"
                     )}>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-[10px] font-black uppercase truncate">{cp.name.replace('Club ', '')}</span>
-                        <span className="text-[8px] font-bold text-muted-foreground uppercase">{cp.proTeamLimit} Teams</span>
+                      <div className="flex justify-between items-start">
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-[10px] font-black uppercase truncate">{cp.name.replace('Club ', '')}</span>
+                          <span className="text-[8px] font-bold text-muted-foreground uppercase">{cp.proTeamLimit} Teams</span>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-xs font-black text-primary">{getDisplayPrice(cp)}</span>
+                          <p className="text-[7px] font-bold uppercase opacity-50">{getCycleLabel(cp)}</p>
+                        </div>
                       </div>
-                      <div className="text-right shrink-0">
-                        <span className="text-[10px] font-black text-primary">{getDisplayPrice(cp)}</span>
-                        <p className="text-[7px] font-bold uppercase opacity-50">{getCycleLabel(cp)}</p>
-                      </div>
+                      <Button 
+                        size="sm" 
+                        variant={isCurrentSub ? "secondary" : "default"} 
+                        className="h-8 rounded-lg text-[8px] font-black uppercase tracking-widest shadow-sm"
+                        onClick={purchasePro}
+                        disabled={isCurrentSub}
+                      >
+                        {isCurrentSub ? "Active Tier" : "Choose " + cp.name.replace('Club ', '')}
+                      </Button>
                     </div>
                   );
                 })}
