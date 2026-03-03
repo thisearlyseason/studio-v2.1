@@ -21,7 +21,8 @@ import {
   Megaphone,
   Table as TableIcon,
   LayoutGrid,
-  Activity
+  Activity,
+  Layout
 } from 'lucide-react';
 import { useTeam } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
@@ -94,6 +95,8 @@ export default function PricingPage() {
   };
 
   const quotaPercentage = proQuotaStatus.limit > 0 ? (proQuotaStatus.current / proQuotaStatus.limit) * 100 : 0;
+  // User is on a "Club" plan if their limit is greater than 1 (Duo or higher)
+  const hasClubPlan = proQuotaStatus.limit > 1;
 
   return (
     <div className="space-y-12 pb-20 max-w-7xl mx-auto px-4 md:px-6">
@@ -212,7 +215,8 @@ export default function PricingPage() {
           </CardHeader>
           <CardContent className="p-10 pt-0 flex-1 space-y-8">
             <div className="pt-6 border-t border-muted space-y-6">
-              {proQuotaStatus.limit > 0 && (
+              {/* Only show seat utilization if the user has a multi-team plan */}
+              {hasClubPlan && (
                 <div className="space-y-2">
                   <div className="flex justify-between items-end mb-1">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Active Seats</p>
@@ -254,77 +258,101 @@ export default function PricingPage() {
         </Card>
       </div>
 
-      {/* Add-ons & Modules Section */}
-      <section className="bg-muted/50 p-10 rounded-[3rem] border-2 border-dashed space-y-10">
+      {/* Redesigned Add-ons & Modules Section */}
+      <section className="space-y-10">
         <div className="text-center space-y-2">
           <Badge className="bg-amber-100 text-amber-700 font-black uppercase tracking-widest text-[9px] h-6 px-3">Elite Add-ons</Badge>
-          <h2 className="text-3xl font-black uppercase">Functional Modules</h2>
+          <h2 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">Functional Modules</h2>
         </div>
         
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
-          {/* Tournament Module Tracker */}
-          <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden relative group h-fit">
-            <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform">
-              <LayoutGrid className="h-24 w-24" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
+          {/* Inventory Card (Black) */}
+          <Card className="rounded-[3rem] border-none shadow-2xl bg-black text-white overflow-hidden relative group">
+            <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
+              <LayoutGrid className="h-32 w-32" />
             </div>
-            <CardHeader className="p-8 pb-4">
-              <Badge className="bg-primary text-white border-none font-black text-[8px] uppercase tracking-widest px-2 h-5 w-fit mb-2">Inventory</Badge>
-              <CardTitle className="text-2xl font-black uppercase tracking-tight">Tournament Credits</CardTitle>
-              <CardDescription className="text-white/60 text-xs font-medium">Professional bracket & scoring deployments.</CardDescription>
+            <CardHeader className="p-10 pb-4">
+              <Badge className="bg-red-600 text-white border-none font-black text-[10px] uppercase tracking-widest px-3 h-6 w-fit mb-4">Inventory</Badge>
+              <CardTitle className="text-3xl font-black uppercase tracking-tight">Tournament Credits</CardTitle>
+              <CardDescription className="text-white/60 text-sm font-medium mt-2">Professional bracket & scoring deployments.</CardDescription>
             </CardHeader>
-            <CardContent className="p-8 pt-0 space-y-6">
-              <div className="flex items-center justify-between bg-white/5 p-6 rounded-[2rem] border border-white/10">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Remaining</p>
-                  <p className="text-5xl font-black text-primary">{user?.tournamentCredits || 0}</p>
-                </div>
-                <div className="text-right space-y-1">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Status</p>
-                  <Badge variant="outline" className={cn("text-[9px] font-black border-white/20 text-white", (user?.tournamentCredits || 0) > 0 ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-white/10")}>
-                    {(user?.tournamentCredits || 0) > 0 ? 'READY TO DEPLOY' : 'DEPLETED'}
-                  </Badge>
+            <CardContent className="p-10 pt-0 space-y-8">
+              <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 relative overflow-hidden">
+                <div className="flex justify-between items-start relative z-10">
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-white/40">Remaining</p>
+                    <p className="text-7xl font-black text-white leading-none">{user?.tournamentCredits || 0}</p>
+                  </div>
+                  <div className="text-right space-y-2">
+                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-white/40">Status</p>
+                    <Badge variant="outline" className={cn(
+                      "text-[10px] font-black px-4 h-7 border-2",
+                      (user?.tournamentCredits || 0) > 0 
+                        ? "bg-green-500/20 text-green-400 border-green-500/30" 
+                        : "bg-white/10 text-white/60 border-white/20"
+                    )}>
+                      {(user?.tournamentCredits || 0) > 0 ? 'READY TO DEPLOY' : 'DEPLETED'}
+                    </Badge>
+                  </div>
                 </div>
               </div>
-              <Button className="w-full h-12 rounded-xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest" onClick={purchasePro}>
+              <Button className="w-full h-16 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-sm tracking-widest shadow-2xl" onClick={purchasePro}>
                 Buy Tournament Tokens ($50)
               </Button>
             </CardContent>
           </Card>
 
-          {/* Tournament Hub Detail Card */}
-          <Card className="rounded-[2.5rem] border-none shadow-xl bg-white overflow-hidden group">
-            <div className="p-8 flex items-center justify-between gap-6 border-b">
+          {/* Feature Hub Card (White) */}
+          <Card className="rounded-[3rem] border-none shadow-2xl bg-white overflow-hidden flex flex-col group">
+            <div className="p-10 flex items-center justify-between gap-6 border-b-2">
               <div className="flex items-center gap-6">
-                <div className="bg-primary/10 p-4 rounded-2xl text-primary group-hover:bg-primary group-hover:text-white transition-all">
-                  <TableIcon className="h-8 w-8" />
+                <div className="bg-red-50 p-5 rounded-2xl text-red-600 group-hover:bg-red-600 group-hover:text-white transition-all duration-500">
+                  <TableIcon className="h-10 w-10" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-xl font-black uppercase tracking-tight leading-none">Tournament Hub</h3>
-                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Public scores & brackets</p>
+                  <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight leading-none">Tournament Hub</h3>
+                  <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">Public scores & brackets</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-black text-primary">$50</p>
-                <p className="text-[8px] font-bold uppercase text-muted-foreground">Per Event</p>
+                <p className="text-4xl font-black text-red-600 tracking-tighter">$50</p>
+                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Per Event</p>
               </div>
             </div>
-            <div className="p-8 space-y-4">
-              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
-                <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><Check className="h-3 w-3 text-primary" /> Public Schedule View</li>
-                <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><Check className="h-3 w-3 text-primary" /> Dynamic Brackets</li>
-                <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><Check className="h-3 w-3 text-primary" /> Live Score Updates</li>
-                <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><Check className="h-3 w-3 text-primary" /> Waiver Management</li>
-              </ul>
-              <div className="pt-4 flex gap-3">
-                <Button variant="outline" className="flex-1 h-12 rounded-xl font-black uppercase text-xs tracking-widest border-2" onClick={() => window.open('/safety', '_blank')}>Learn More</Button>
-                <Button className="flex-1 h-12 rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20" onClick={purchasePro}>Get Token</Button>
+            <div className="p-10 space-y-10 flex-1 flex flex-col justify-between">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-6">
+                <div className="flex items-center gap-3 text-xs font-black uppercase tracking-tight">
+                  <Check className="h-5 w-5 text-red-600 stroke-[4px]" /> 
+                  <span>Public Schedule View</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs font-black uppercase tracking-tight">
+                  <Check className="h-5 w-5 text-red-600 stroke-[4px]" /> 
+                  <span>Dynamic Brackets</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs font-black uppercase tracking-tight">
+                  <Check className="h-5 w-5 text-red-600 stroke-[4px]" /> 
+                  <span>Live Score Updates</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs font-black uppercase tracking-tight">
+                  <Check className="h-5 w-5 text-red-600 stroke-[4px]" /> 
+                  <span>Waiver Management</span>
+                </div>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Button variant="outline" className="flex-1 h-16 rounded-2xl font-black uppercase text-xs tracking-widest border-2 border-black" onClick={() => window.open('/safety', '_blank')}>
+                  Learn More
+                </Button>
+                <Button className="flex-1 h-16 rounded-2xl font-black uppercase text-xs tracking-widest bg-red-600 text-white hover:bg-red-700 shadow-xl shadow-red-600/20" onClick={purchasePro}>
+                  Get Token
+                </Button>
               </div>
             </div>
           </Card>
         </div>
       </section>
 
-      <div className="bg-black text-white rounded-[3rem] p-12 flex flex-col md:flex-row items-center justify-between gap-10 shadow-2xl relative overflow-hidden">
+      <div className="bg-black text-white rounded-[3rem] p-12 flex flex-col md:flex-row items-center justify-between gap-10 shadow-2xl relative overflow-hidden mt-20">
         <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none -rotate-12"><Building className="h-64 w-64" /></div>
         <div className="flex items-center gap-8 relative z-10">
           <div className="bg-primary w-20 h-20 rounded-[2rem] flex items-center justify-center shadow-xl shrink-0"><Star className="h-10 w-10 text-white" /></div>
