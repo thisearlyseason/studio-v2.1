@@ -19,7 +19,9 @@ import {
   Shield,
   CircleCheck,
   Megaphone,
-  Table as TableIcon
+  Table as TableIcon,
+  LayoutGrid,
+  Activity
 } from 'lucide-react';
 import { useTeam } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
@@ -36,9 +38,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 
 export default function PricingPage() {
-  const { activeTeam, purchasePro, submitLead, user, plans, isPlansLoading } = useTeam();
+  const { activeTeam, purchasePro, submitLead, user, plans, isPlansLoading, proQuotaStatus } = useTeam();
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
@@ -89,6 +92,8 @@ export default function PricingPage() {
     if (!plan || plan.priceDisplay === 'Free' || plan.priceDisplay === 'Custom' || plan.priceDisplay === '$0') return '';
     return billingCycle === 'annual' ? '/yr' : '/mo';
   };
+
+  const quotaPercentage = proQuotaStatus.limit > 0 ? (proQuotaStatus.current / proQuotaStatus.limit) * 100 : 0;
 
   return (
     <div className="space-y-12 pb-20 max-w-7xl mx-auto px-4 md:px-6">
@@ -206,9 +211,20 @@ export default function PricingPage() {
             <p className="text-[10px] font-black uppercase tracking-widest text-primary leading-tight">Includes ALL Squad Pro Features + Hub Management</p>
           </CardHeader>
           <CardContent className="p-10 pt-0 flex-1 space-y-8">
-            <div className="pt-6 border-t border-muted space-y-4">
+            <div className="pt-6 border-t border-muted space-y-6">
+              {proQuotaStatus.limit > 0 && (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-end mb-1">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Active Seats</p>
+                    <p className="text-xs font-black text-primary">{proQuotaStatus.current} / {proQuotaStatus.limit}</p>
+                  </div>
+                  <Progress value={quotaPercentage} className="h-2 bg-muted rounded-full" />
+                  <p className="text-[8px] font-bold text-muted-foreground uppercase text-center">{proQuotaStatus.remaining} Pro slots remaining</p>
+                </div>
+              )}
+              
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Organization Scaling</p>
-              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-3 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar">
                 {clubPlans.map(cp => {
                   const isCurrentSub = activeTeam?.planId === cp.id;
                   return (
@@ -238,23 +254,53 @@ export default function PricingPage() {
         </Card>
       </div>
 
-      {/* Add-ons Section */}
-      <section className="bg-muted/50 p-10 rounded-[3rem] border-2 border-dashed space-y-8">
+      {/* Add-ons & Modules Section */}
+      <section className="bg-muted/50 p-10 rounded-[3rem] border-2 border-dashed space-y-10">
         <div className="text-center space-y-2">
-          <Badge className="bg-amber-100 text-amber-700 font-black uppercase tracking-widest text-[9px] h-6 px-3">Pro Add-ons</Badge>
-          <h2 className="text-3xl font-black uppercase">Feature Modules</h2>
+          <Badge className="bg-amber-100 text-amber-700 font-black uppercase tracking-widest text-[9px] h-6 px-3">Elite Add-ons</Badge>
+          <h2 className="text-3xl font-black uppercase">Functional Modules</h2>
         </div>
         
-        <div className="max-w-xl mx-auto">
-          <Card className="rounded-[2rem] border-none shadow-xl bg-white overflow-hidden group">
-            <div className="p-8 flex items-center justify-between gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
+          {/* Tournament Module Tracker */}
+          <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden relative group h-fit">
+            <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform">
+              <LayoutGrid className="h-24 w-24" />
+            </div>
+            <CardHeader className="p-8 pb-4">
+              <Badge className="bg-primary text-white border-none font-black text-[8px] uppercase tracking-widest px-2 h-5 w-fit mb-2">Inventory</Badge>
+              <CardTitle className="text-2xl font-black uppercase tracking-tight">Tournament Credits</CardTitle>
+              <CardDescription className="text-white/60 text-xs font-medium">Professional bracket & scoring deployments.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-8 pt-0 space-y-6">
+              <div className="flex items-center justify-between bg-white/5 p-6 rounded-[2rem] border border-white/10">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Remaining</p>
+                  <p className="text-5xl font-black text-primary">{user?.tournamentCredits || 0}</p>
+                </div>
+                <div className="text-right space-y-1">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Status</p>
+                  <Badge variant="outline" className={cn("text-[9px] font-black border-white/20 text-white", (user?.tournamentCredits || 0) > 0 ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-white/10")}>
+                    {(user?.tournamentCredits || 0) > 0 ? 'READY TO DEPLOY' : 'DEPLETED'}
+                  </Badge>
+                </div>
+              </div>
+              <Button className="w-full h-12 rounded-xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest" onClick={purchasePro}>
+                Buy Tournament Tokens ($50)
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Tournament Hub Detail Card */}
+          <Card className="rounded-[2.5rem] border-none shadow-xl bg-white overflow-hidden group">
+            <div className="p-8 flex items-center justify-between gap-6 border-b">
               <div className="flex items-center gap-6">
                 <div className="bg-primary/10 p-4 rounded-2xl text-primary group-hover:bg-primary group-hover:text-white transition-all">
                   <TableIcon className="h-8 w-8" />
                 </div>
                 <div className="space-y-1">
                   <h3 className="text-xl font-black uppercase tracking-tight leading-none">Tournament Hub</h3>
-                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Public scores, brackets & standings</p>
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Public scores & brackets</p>
                 </div>
               </div>
               <div className="text-right">
@@ -262,14 +308,17 @@ export default function PricingPage() {
                 <p className="text-[8px] font-bold uppercase text-muted-foreground">Per Event</p>
               </div>
             </div>
-            <div className="px-8 pb-8 space-y-4">
-              <ul className="grid grid-cols-2 gap-x-8 gap-y-3">
+            <div className="p-8 space-y-4">
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
                 <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><Check className="h-3 w-3 text-primary" /> Public Schedule View</li>
                 <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><Check className="h-3 w-3 text-primary" /> Dynamic Brackets</li>
                 <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><Check className="h-3 w-3 text-primary" /> Live Score Updates</li>
                 <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><Check className="h-3 w-3 text-primary" /> Waiver Management</li>
               </ul>
-              <Button className="w-full h-12 rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20" onClick={purchasePro}>Deploy Tournament</Button>
+              <div className="pt-4 flex gap-3">
+                <Button variant="outline" className="flex-1 h-12 rounded-xl font-black uppercase text-xs tracking-widest border-2" onClick={() => window.open('/safety', '_blank')}>Learn More</Button>
+                <Button className="flex-1 h-12 rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20" onClick={purchasePro}>Get Token</Button>
+              </div>
             </div>
           </Card>
         </div>
@@ -292,7 +341,8 @@ export default function PricingPage() {
             </Button>
           </DialogTrigger>
           <DialogContent className="rounded-[2.5rem] p-8 border-none shadow-2xl">
-            <DialogHeader className="mb-6"><DialogTitle className="text-2xl font-black uppercase tracking-tight">Enterprise Infrastructure</DialogTitle></DialogHeader>
+            <div className="h-2 bg-primary w-full absolute top-0 left-0" />
+            <DialogHeader className="mb-6 pt-4"><DialogTitle className="text-2xl font-black uppercase tracking-tight">Enterprise Infrastructure</DialogTitle></DialogHeader>
             <form onSubmit={handleContactSubmit} className="space-y-4">
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Club Email</Label><Input required type="email" value={leadForm.email} onChange={e => setLeadForm(p => ({ ...p, email: e.target.value }))} className="h-12 rounded-xl font-bold" /></div>
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Organization</Label><Input required value={leadForm.organization} onChange={e => setLeadForm(p => ({ ...p, organization: e.target.value }))} className="h-12 rounded-xl font-bold" /></div>

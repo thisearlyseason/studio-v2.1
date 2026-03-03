@@ -39,6 +39,7 @@ export type UserProfile = {
   activePlanId?: string | null;
   planSource?: 'free' | 'revenuecat' | 'manual';
   proTeamLimit?: number | null;
+  tournamentCredits?: number;
   revenueCatUserId?: string | null;
 };
 
@@ -518,6 +519,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
             activePlanId: data.activePlanId || null,
             planSource: data.planSource || 'free',
             proTeamLimit: data.proTeamLimit || 0,
+            tournamentCredits: data.tournamentCredits || 0,
             revenueCatUserId: data.revenueCatUserId || null
           });
         }

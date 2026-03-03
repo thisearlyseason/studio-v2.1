@@ -59,6 +59,10 @@
           "type": "number",
           "description": "The maximum number of teams this user can assign Pro features to."
         },
+        "tournamentCredits": {
+          "type": "number",
+          "description": "Number of Elite Tournament module credits remaining."
+        },
         "revenueCatUserId": {
           "type": "string",
           "description": "The unique identifier for this user in RevenueCat."
