@@ -45,11 +45,13 @@ import {
   Send,
   Search,
   Filter,
-  Star
+  Star,
+  CheckCircle2,
+  Info
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { useTeam, TeamFile, Member, TeamEvent, MediaComment, VideoAnnotation } from '@/components/providers/team-provider';
+import { useTeam, TeamFile, Member, MediaComment, VideoAnnotation } from '@/components/providers/team-provider';
 import { 
   Dialog, 
   DialogContent, 
@@ -78,6 +80,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
@@ -88,7 +91,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 
 export default function FilesPage() {
-  const { activeTeam, addFile, addExternalLink, deleteFile, user, isPro, hasFeature, purchasePro, isSuperAdmin, members, updateMember, createAlert, addMediaComment, addMediaTag, addMediaAnnotation } = useTeam();
+  const { activeTeam, addFile, addExternalLink, deleteFile, user, isPro, hasFeature, purchasePro, isSuperAdmin, markMediaAsViewed, addMediaComment, addMediaTag, addMediaAnnotation } = useTeam();
   const db = useFirestore();
   
   const [mounted, setMounted] = useState(false);
@@ -97,10 +100,12 @@ export default function FilesPage() {
   const [isLinkOpen, setIsLinkOpen] = useState(false);
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
+  const [linkDescription, setLinkDescription] = useState('');
   const [linkCategory, setLinkCategory] = useState<string>('Other');
-  const [linkCompliance, setLinkCompliance] = useState<string>('none');
+  
   const [uploadCategory, setUploadCategory] = useState<string>('Other');
-  const [uploadCompliance, setUploadCompliance] = useState<string>('none');
+  const [uploadDescription, setUploadDescription] = useState('');
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('all');
   
@@ -110,6 +115,7 @@ export default function FilesPage() {
   const [annoLabel, setAnnoLabel] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const filesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
@@ -149,7 +155,6 @@ export default function FilesPage() {
 
   if (!mounted || !activeTeam) return null;
 
-  const canAccess = hasFeature('media_uploads');
   const isAdmin = activeTeam.role === 'Admin' || isSuperAdmin;
 
   const handleUploadClick = () => fileInputRef.current?.click();
@@ -164,8 +169,9 @@ export default function FilesPage() {
       const type = file.name.split('.').pop()?.toLowerCase() || 'file';
       const reader = new FileReader();
       reader.onload = (event) => {
-        addFile(file.name, type, file.size, event.target?.result as string, uploadCategory, uploadCompliance !== 'none' ? uploadCompliance : undefined);
+        addFile(file.name, type, file.size, event.target?.result as string, uploadCategory, uploadDescription);
         toast({ title: "Vault Synchronized", description: `${file.name} is now available.` });
+        setUploadDescription('');
       };
       reader.readAsDataURL(file);
     }
@@ -173,9 +179,9 @@ export default function FilesPage() {
 
   const handleAddLink = () => {
     if (!linkTitle || !linkUrl) return;
-    addExternalLink(linkTitle, linkUrl, linkCategory, linkCompliance !== 'none' ? linkCompliance : undefined);
+    addExternalLink(linkTitle, linkUrl, linkCategory, linkDescription);
     setIsLinkOpen(false);
-    setLinkTitle(''); setLinkUrl(''); setLinkCategory('Other'); setLinkCompliance('none');
+    setLinkTitle(''); setLinkUrl(''); setLinkDescription(''); setLinkCategory('Other');
     toast({ title: "Tactical Link Added" });
   };
 
@@ -185,6 +191,17 @@ export default function FilesPage() {
     if (['mp4', 'mov', 'avi', 'video'].includes(t)) return <Video className="h-6 w-6 text-primary" />;
     if (['jpg', 'png', 'jpeg', 'gif'].includes(t)) return <ImageIcon className="h-6 w-6 text-primary" />;
     return <FileText className="h-6 w-6 text-muted-foreground" />;
+  };
+
+  const handleVideoProgress = () => {
+    if (!videoRef.current || !selectedFile || !user) return;
+    const progress = videoRef.current.currentTime / videoRef.current.duration;
+    const isAlreadyViewed = selectedFile.viewedBy?.[user.id];
+    
+    if (progress >= 0.75 && !isAlreadyViewed) {
+      markMediaAsViewed(selectedFile.id);
+      toast({ title: "Watch Threshold Met", description: "Verified viewed at 75% progress." });
+    }
   };
 
   const handleAnnotation = () => {
@@ -205,6 +222,8 @@ export default function FilesPage() {
     setNewTag('');
   };
 
+  const isViewed = selectedFile?.viewedBy?.[user?.id || ''];
+
   return (
     <div className="space-y-8 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -216,42 +235,65 @@ export default function FilesPage() {
         {isAdmin && (
           <div className="flex flex-wrap gap-2">
             <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
+            
             <Dialog open={isLinkOpen} onOpenChange={setIsLinkOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="rounded-full h-11 px-6 font-black uppercase text-xs border-2">
                   <LinkIcon className="h-4 w-4 mr-2" /> Add Link
                 </Button>
               </DialogTrigger>
-              <DialogContent className="rounded-3xl border-none shadow-2xl">
-                <DialogHeader>
-                  <DialogTitle className="text-2xl font-black uppercase">Tactical Destination</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title</Label><Input placeholder="e.g. Game Film Highlights" value={linkTitle} onChange={e => setLinkTitle(e.target.value)} /></div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">URL</Label><Input placeholder="https://youtube.com/..." value={linkUrl} onChange={e => setLinkUrl(e.target.value)} /></div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Category</Label>
+              <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
+                <div className="h-2 bg-primary w-full" />
+                <div className="p-8 space-y-6">
+                  <DialogHeader>
+                    <DialogTitle className="text-2xl font-black uppercase tracking-tight">Tactical Destination</DialogTitle>
+                    <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Share External Strategy Resources</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-2">
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title</Label><Input placeholder="e.g. Game Film Highlights" value={linkTitle} onChange={e => setLinkTitle(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">URL</Label><Input placeholder="https://youtube.com/..." value={linkUrl} onChange={e => setLinkUrl(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Strategy Category</Label>
                       <Select value={linkCategory} onValueChange={setLinkCategory}>
-                        <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
-                        <SelectContent><SelectItem value="Game">Game</SelectItem><SelectItem value="Practice">Practice</SelectItem><SelectItem value="Highlight">Highlight</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent>
+                        <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                        <SelectContent className="rounded-xl"><SelectItem value="Game Tape">Game Tape</SelectItem><SelectItem value="Practice Session">Practice Session</SelectItem><SelectItem value="Highlights">Highlights</SelectItem><SelectItem value="Compliance">Compliance</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Compliance</Label>
-                      <Select value={linkCompliance} onValueChange={setLinkCompliance}>
-                        <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
-                        <SelectContent><SelectItem value="none">None</SelectItem><SelectItem value="waiverSigned">Waiver Req.</SelectItem></SelectContent>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Description (Optional)</Label><Textarea placeholder="Context for the squad..." value={linkDescription} onChange={e => setLinkDescription(e.target.value)} className="rounded-xl min-h-[80px] border-2 font-bold resize-none" /></div>
+                  </div>
+                  <DialogFooter><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleAddLink}>Save Tactical Link</Button></DialogFooter>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg">
+                  <Upload className="h-4 w-4 mr-2" /> Upload Media
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
+                <div className="h-2 bg-primary w-full" />
+                <div className="p-8 space-y-6">
+                  <DialogHeader>
+                    <DialogTitle className="text-2xl font-black uppercase tracking-tight">Vault Submission</DialogTitle>
+                    <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Enroll Local Media to Roster</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Category</Label>
+                      <Select value={uploadCategory} onValueChange={setUploadCategory}>
+                        <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                        <SelectContent className="rounded-xl"><SelectItem value="Game Tape">Game Tape</SelectItem><SelectItem value="Practice Session">Practice Session</SelectItem><SelectItem value="Highlights">Highlights</SelectItem><SelectItem value="Compliance">Compliance</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent>
                       </Select>
+                    </div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Description</Label><Textarea placeholder="Explain the tactical value..." value={uploadDescription} onChange={e => setUploadDescription(e.target.value)} className="rounded-xl min-h-[100px] border-2 font-bold resize-none" /></div>
+                    <div className="p-10 border-2 border-dashed rounded-[2rem] bg-muted/20 text-center space-y-4 group cursor-pointer hover:border-primary/20 transition-all" onClick={handleUploadClick}>
+                      <div className="bg-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm group-hover:scale-110 transition-transform"><Upload className="h-8 w-8 text-primary" /></div>
+                      <div><p className="text-sm font-black uppercase tracking-tight">Select File</p><p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Video, Photo, or PDF</p></div>
                     </div>
                   </div>
                 </div>
-                <DialogFooter><Button className="w-full h-12 rounded-xl font-black uppercase" onClick={handleAddLink}>Save Link</Button></DialogFooter>
               </DialogContent>
             </Dialog>
-            <Button className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg" onClick={handleUploadClick}>
-              <Upload className="h-4 w-4 mr-2" /> Upload Media
-            </Button>
           </div>
         )}
       </div>
@@ -292,9 +334,9 @@ export default function FilesPage() {
             <CardContent className="p-4 space-y-1">
               {[
                 { id: 'all', label: 'All Resources', icon: FolderClosed },
-                { id: 'Game', label: 'Game Tape', icon: Video },
-                { id: 'Practice', label: 'Practice Sessions', icon: BarChart2 },
-                { id: 'Highlight', label: 'Highlights', icon: Star },
+                { id: 'Game Tape', label: 'Game Tape', icon: Video },
+                { id: 'Practice Session', label: 'Practice Sessions', icon: BarChart2 },
+                { id: 'Highlights', label: 'Highlights', icon: Star },
                 { id: 'Compliance', label: 'Compliance', icon: ShieldCheck }
               ].map(cat => (
                 <button 
@@ -328,43 +370,47 @@ export default function FilesPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filteredFiles.map(file => (
-              <Card 
-                key={file.id} 
-                className="group border-none shadow-sm hover:shadow-xl transition-all duration-500 rounded-[2rem] overflow-hidden ring-1 ring-black/5 cursor-pointer bg-white"
-                onClick={() => setSelectedFile(file)}
-              >
-                <div className="aspect-video bg-muted relative flex items-center justify-center overflow-hidden">
-                  {file.type === 'link' ? (
-                    <div className="absolute inset-0 bg-primary/5 flex items-center justify-center"><Globe className="h-12 w-12 text-primary opacity-20" /></div>
-                  ) : (
-                    <div className="absolute inset-0 bg-black/5" />
-                  )}
-                  <div className="relative z-10 p-4 rounded-full bg-white/20 backdrop-blur-md text-primary opacity-0 group-hover:opacity-100 transition-all scale-50 group-hover:scale-100">
-                    <Play className="h-6 w-6 fill-current" />
-                  </div>
-                  <Badge className="absolute top-4 left-4 bg-black/50 text-white border-none font-black text-[8px] uppercase tracking-widest backdrop-blur-sm">{file.category}</Badge>
-                </div>
-                <CardContent className="p-6 space-y-3">
-                  <div className="space-y-1">
-                    <h3 className="font-black text-sm uppercase tracking-tight truncate leading-none">{file.name}</h3>
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{file.type} • {file.size}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {file.tags?.slice(0, 3).map(tag => (
-                      <Badge key={tag} variant="outline" className="text-[7px] font-black uppercase border-primary/20 text-primary">{tag}</Badge>
-                    ))}
-                  </div>
-                  <div className="pt-3 border-t flex items-center justify-between text-[9px] font-black text-muted-foreground uppercase tracking-tighter">
-                    <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {format(new Date(file.date), 'MMM d')}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" /> {file.comments?.length || 0}</span>
-                      <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> {file.tags?.length || 0}</span>
+            {filteredFiles.map(file => {
+              const viewedByMe = file.viewedBy?.[user?.id || ''];
+              return (
+                <Card 
+                  key={file.id} 
+                  className="group border-none shadow-sm hover:shadow-xl transition-all duration-500 rounded-[2rem] overflow-hidden ring-1 ring-black/5 cursor-pointer bg-white"
+                  onClick={() => setSelectedFile(file)}
+                >
+                  <div className="aspect-video bg-muted relative flex items-center justify-center overflow-hidden">
+                    {file.type === 'link' ? (
+                      <div className="absolute inset-0 bg-primary/5 flex items-center justify-center"><Globe className="h-12 w-12 text-primary opacity-20" /></div>
+                    ) : (
+                      <div className="absolute inset-0 bg-black/5" />
+                    )}
+                    <div className="relative z-10 p-4 rounded-full bg-white/20 backdrop-blur-md text-primary opacity-0 group-hover:opacity-100 transition-all scale-50 group-hover:scale-100">
+                      <Play className="h-6 w-6 fill-current" />
                     </div>
+                    <Badge className="absolute top-4 left-4 bg-black/50 text-white border-none font-black text-[8px] uppercase tracking-widest backdrop-blur-sm">{file.category}</Badge>
+                    {viewedByMe && (
+                      <div className="absolute top-4 right-4 bg-green-500 text-white rounded-full p-1 shadow-lg">
+                        <CheckCircle2 className="h-3 w-3" />
+                      </div>
+                    )}
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                  <CardContent className="p-6 space-y-3">
+                    <div className="space-y-1">
+                      <h3 className="font-black text-sm uppercase tracking-tight truncate leading-none">{file.name}</h3>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{file.type} • {file.size}</p>
+                    </div>
+                    {file.description && <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 leading-relaxed italic">"{file.description}"</p>}
+                    <div className="pt-3 border-t flex items-center justify-between text-[9px] font-black text-muted-foreground uppercase tracking-tighter">
+                      <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {format(new Date(file.date), 'MMM d')}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" /> {file.comments?.length || 0}</span>
+                        {viewedByMe && <span className="text-green-600 font-black">VIEWED</span>}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
             {filteredFiles.length === 0 && (
               <div className="col-span-full py-24 text-center bg-muted/10 rounded-[3rem] border-2 border-dashed space-y-4 opacity-40">
                 <FolderClosed className="h-12 w-12 mx-auto" />
@@ -378,131 +424,155 @@ export default function FilesPage() {
       {/* Media Detail Modal */}
       <Dialog open={!!selectedFile} onOpenChange={o => !o && setSelectedFile(null)}>
         <DialogContent className="sm:max-w-7xl h-full sm:h-[90vh] p-0 overflow-hidden rounded-none sm:rounded-[3rem] border-none shadow-2xl flex flex-col">
+          <DialogTitle className="sr-only">Previewing {selectedFile?.name}</DialogTitle>
           {selectedFile && (
-            <>
-              <DialogTitle className="sr-only">Previewing {selectedFile.name}</DialogTitle>
-              <div className="flex flex-col lg:flex-row h-full">
-                <div className="flex-1 bg-black flex flex-col relative">
-                  <div className="flex-1 flex items-center justify-center p-4">
-                    {selectedFile.type === 'link' ? (
-                      <div className="text-center space-y-8 bg-white/5 p-12 rounded-[3rem] border-2 border-dashed border-white/10 max-w-lg">
-                        <Globe className="h-20 w-20 text-primary mx-auto opacity-40" />
-                        <div className="space-y-2">
-                          <h4 className="text-2xl font-black uppercase text-white tracking-tight leading-none">{selectedFile.name}</h4>
-                          <p className="text-white/40 font-mono text-[10px] break-all">{selectedFile.url}</p>
-                        </div>
-                        <Button onClick={() => window.open(selectedFile.url, '_blank')} className="rounded-full h-14 px-10 font-black uppercase">Launch Strategy Hub</Button>
+            <div className="flex flex-col lg:flex-row h-full">
+              <div className="flex-1 bg-black flex flex-col relative">
+                <div className="flex-1 flex items-center justify-center p-4">
+                  {selectedFile.type === 'link' ? (
+                    <div className="text-center space-y-8 bg-white/5 p-12 rounded-[3rem] border-2 border-dashed border-white/10 max-w-lg">
+                      <Globe className="h-20 w-20 text-primary mx-auto opacity-40" />
+                      <div className="space-y-2">
+                        <h4 className="text-2xl font-black uppercase text-white tracking-tight leading-none">{selectedFile.name}</h4>
+                        <p className="text-white/40 font-mono text-[10px] break-all">{selectedFile.url}</p>
                       </div>
+                      <div className="space-y-4">
+                        <Button onClick={() => { window.open(selectedFile.url, '_blank'); markMediaAsViewed(selectedFile.id); }} className="rounded-full h-14 px-10 font-black uppercase">Launch Strategy Hub</Button>
+                        {!selectedFile.viewedBy?.[user?.id || ''] && (
+                          <p className="text-[10px] font-black uppercase text-amber-500 animate-pulse">Launching hub will verify your view status</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <video 
+                      ref={videoRef}
+                      src={selectedFile.url} 
+                      controls 
+                      className="max-w-full max-h-full rounded-2xl shadow-2xl" 
+                      onTimeUpdate={handleVideoProgress}
+                    />
+                  )}
+                </div>
+                
+                {/* Visual viewed confirmation for videos */}
+                {selectedFile.type !== 'link' && (
+                  <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50">
+                    {isViewed ? (
+                      <Badge className="bg-green-500 text-white border-none h-10 px-6 font-black uppercase tracking-widest shadow-2xl flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4" /> Verified Viewed
+                      </Badge>
                     ) : (
-                      <video src={selectedFile.url} controls className="max-w-full max-h-full rounded-2xl shadow-2xl" />
+                      <Badge variant="secondary" className="bg-black/50 backdrop-blur-md text-white border-white/20 h-10 px-6 font-black uppercase tracking-widest">
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" /> Watch 75% to verify
+                      </Badge>
                     )}
                   </div>
-                  {/* Annotations bar for video */}
-                  {selectedFile.type !== 'link' && (
-                    <div className="bg-black/50 backdrop-blur-md p-4 border-t border-white/10 shrink-0 overflow-x-auto no-scrollbar flex gap-3">
-                      <Badge className="bg-primary text-white border-none h-10 px-4 flex items-center gap-2 font-black uppercase text-[10px] shrink-0">
-                        Tactical Moments <ChevronRight className="h-3 w-3" />
-                      </Badge>
-                      {selectedFile.annotations?.map(anno => (
-                        <button key={anno.id} className="h-10 px-4 rounded-xl bg-white/10 border border-white/10 hover:bg-white/20 transition-all flex items-center gap-3 shrink-0 group">
-                          <span className="text-[10px] font-black text-primary group-hover:scale-110 transition-transform">{Math.floor(anno.timestamp / 60)}:{String(anno.timestamp % 60).padStart(2, '0')}</span>
-                          <span className="text-[10px] font-bold text-white/80">{anno.label}</span>
-                        </button>
-                      ))}
-                      {isAdmin && (
-                        <Dialog>
-                          <DialogTrigger asChild><Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl bg-white/5 border border-dashed border-white/20 hover:border-primary"><Plus className="h-4 w-4" /></Button></DialogTrigger>
-                          <DialogContent className="sm:max-w-md rounded-[2.5rem]">
-                            <DialogHeader><DialogTitle className="text-xl font-black uppercase">Tag Moment</DialogTitle></DialogHeader>
-                            <div className="space-y-4 py-4">
-                              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Timestamp (seconds)</Label><Input type="number" value={annoTime} onChange={e => setAnnoTime(e.target.value)} /></div>
-                              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Label</Label><Input placeholder="e.g. Offensive Break" value={annoLabel} onChange={e => setAnnoLabel(e.target.value)} /></div>
-                            </div>
-                            <DialogFooter><Button className="w-full h-12 rounded-xl" onClick={handleAnnotation}>Mark Sequence</Button></DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                      )}
+                )}
+
+                {/* Annotations bar for video */}
+                {selectedFile.type !== 'link' && (
+                  <div className="bg-black/50 backdrop-blur-md p-4 border-t border-white/10 shrink-0 overflow-x-auto no-scrollbar flex gap-3">
+                    <Badge className="bg-primary text-white border-none h-10 px-4 flex items-center gap-2 font-black uppercase text-[10px] shrink-0">
+                      Tactical Moments <ChevronRight className="h-3 w-3" />
+                    </Badge>
+                    {selectedFile.annotations?.map(anno => (
+                      <button 
+                        key={anno.id} 
+                        onClick={() => { if (videoRef.current) videoRef.current.currentTime = anno.timestamp; }}
+                        className="h-10 px-4 rounded-xl bg-white/10 border border-white/10 hover:bg-white/20 transition-all flex items-center gap-3 shrink-0 group"
+                      >
+                        <span className="text-[10px] font-black text-primary group-hover:scale-110 transition-transform">{Math.floor(anno.timestamp / 60)}:{String(anno.timestamp % 60).padStart(2, '0')}</span>
+                        <span className="text-[10px] font-bold text-white/80">{anno.label}</span>
+                      </button>
+                    ))}
+                    {isAdmin && (
+                      <Dialog>
+                        <DialogTrigger asChild><Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl bg-white/5 border border-dashed border-white/20 hover:border-primary"><Plus className="h-4 w-4" /></Button></DialogTrigger>
+                        <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl">
+                          <DialogHeader><DialogTitle className="text-xl font-black uppercase">Tag Moment</DialogTitle></DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Timestamp (seconds)</Label><Input type="number" value={annoTime} onChange={e => setAnnoTime(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
+                            <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Label</Label><Input placeholder="e.g. Offensive Break" value={annoLabel} onChange={e => setAnnoLabel(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
+                          </div>
+                          <DialogFooter><Button className="w-full h-12 rounded-xl font-black shadow-xl" onClick={handleAnnotation}>Mark Sequence</Button></DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <aside className="w-full lg:w-96 bg-white flex flex-col border-l">
+                <div className="p-6 border-b space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1">
+                      <Badge className="bg-primary/10 text-primary border-none text-[8px] uppercase font-black px-2">{selectedFile.category}</Badge>
+                      <h3 className="text-xl font-black uppercase tracking-tight">{selectedFile.name}</h3>
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => setSelectedFile(null)} className="rounded-full"><XCircle className="h-5 w-5" /></Button>
+                  </div>
+                  {selectedFile.description && (
+                    <div className="bg-muted/30 p-4 rounded-2xl border-2 border-dashed">
+                      <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1 opacity-60">Study Notes</p>
+                      <p className="text-xs font-medium leading-relaxed italic">{selectedFile.description}</p>
                     </div>
                   )}
                 </div>
 
-                <aside className="w-full lg:w-96 bg-white flex flex-col border-l">
-                  <div className="p-6 border-b space-y-4">
-                    <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <Badge className="bg-primary/10 text-primary border-none text-[8px] uppercase font-black px-2">{selectedFile.category}</Badge>
-                        <h3 className="text-xl font-black uppercase tracking-tight">{selectedFile.name}</h3>
-                      </div>
-                      <Button variant="ghost" size="icon" onClick={() => setSelectedFile(null)}><XCircle className="h-5 w-5" /></Button>
+                <ScrollArea className="flex-1 p-6">
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-2 px-1">
+                      <MessageSquare className="h-4 w-4 text-primary" />
+                      <h4 className="text-[10px] font-black uppercase tracking-widest">Tactical Discussion</h4>
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {selectedFile.tags?.map(tag => (
-                        <Badge key={tag} className="bg-muted text-muted-foreground border-none text-[8px] px-2 h-5 font-bold">{tag}</Badge>
-                      ))}
-                      {isAdmin && (
-                        <div className="flex gap-1">
-                          <Input size={1} className="h-5 text-[8px] w-16 px-1 rounded-md" placeholder="+ tag" value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddTag()} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <ScrollArea className="flex-1 p-6">
-                    <div className="space-y-6">
-                      <div className="flex items-center gap-2 px-1">
-                        <MessageSquare className="h-4 w-4 text-primary" />
-                        <h4 className="text-[10px] font-black uppercase tracking-widest">Discussion</h4>
-                      </div>
-                      <div className="space-y-4">
-                        {selectedFile.comments?.map(comment => (
-                          <div key={comment.id} className="flex gap-3">
-                            <Avatar className="h-8 w-8 rounded-lg border shadow-sm shrink-0">
-                              <AvatarFallback className="font-black text-[10px]">{comment.authorName[0]}</AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1 min-w-0 bg-muted/30 p-3 rounded-2xl space-y-1">
-                              <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-black truncate max-w-[100px]">{comment.authorName}</span>
-                                <span className="text-[8px] font-bold text-muted-foreground">{format(new Date(comment.createdAt), 'MMM d, HH:mm')}</span>
-                              </div>
-                              <p className="text-[11px] font-medium text-foreground/80 leading-relaxed">{comment.text}</p>
+                    <div className="space-y-4">
+                      {selectedFile.comments?.map(comment => (
+                        <div key={comment.id} className="flex gap-3">
+                          <Avatar className="h-8 w-8 rounded-lg border shadow-sm shrink-0">
+                            <AvatarFallback className="font-black text-[10px]">{comment.authorName[0]}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0 bg-muted/30 p-3 rounded-2xl space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-[10px] font-black truncate max-w-[100px]">{comment.authorName}</span>
+                              <span className="text-[8px] font-bold text-muted-foreground">{format(new Date(comment.createdAt), 'MMM d, HH:mm')}</span>
                             </div>
+                            <p className="text-[11px] font-medium text-foreground/80 leading-relaxed">{comment.text}</p>
                           </div>
-                        ))}
-                        {(!selectedFile.comments || selectedFile.comments.length === 0) && (
-                          <div className="text-center py-8 opacity-30"><p className="text-[10px] font-black uppercase tracking-widest">No study notes yet</p></div>
-                        )}
-                      </div>
-                    </div>
-                  </ScrollArea>
-
-                  <div className="p-6 border-t space-y-4">
-                    <div className="flex gap-2">
-                      <Input 
-                        placeholder="Add study note..." 
-                        className="rounded-xl h-11 text-xs" 
-                        value={newComment} 
-                        onChange={e => setNewPostComment(e.target.value)} 
-                        onKeyDown={e => e.key === 'Enter' && handleComment()}
-                      />
-                      <Button size="icon" className="h-11 w-11 rounded-xl shadow-lg" onClick={handleComment}><Send className="h-4 w-4" /></Button>
-                    </div>
-                    <div className="flex gap-2">
-                      {isAdmin && (
-                        <Button variant="ghost" className="h-11 w-11 rounded-xl text-destructive hover:bg-destructive/10" onClick={() => setFileToDelete(selectedFile.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        </div>
+                      ))}
+                      {(!selectedFile.comments || selectedFile.comments.length === 0) && (
+                        <div className="text-center py-8 opacity-30"><p className="text-[10px] font-black uppercase tracking-widest">No team analysis yet</p></div>
                       )}
-                      <Button className="flex-1 h-11 rounded-xl font-black uppercase text-xs tracking-widest" onClick={() => setSelectedFile(null)}>Close Hub</Button>
                     </div>
                   </div>
-                </aside>
-              </div>
-            </>
+                </ScrollArea>
+
+                <div className="p-6 border-t space-y-4 bg-muted/5">
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="Add tactical insight..." 
+                      className="rounded-xl h-11 text-xs border-2 bg-white" 
+                      value={newComment} 
+                      onChange={e => setNewPostComment(e.target.value)} 
+                      onKeyDown={e => e.key === 'Enter' && handleComment()}
+                    />
+                    <Button size="icon" className="h-11 w-11 rounded-xl shadow-lg" onClick={handleComment}><Send className="h-4 w-4" /></Button>
+                  </div>
+                  <div className="flex gap-2">
+                    {isAdmin && (
+                      <Button variant="ghost" className="h-11 w-11 rounded-xl text-destructive hover:bg-destructive/10" onClick={() => setFileToDelete(selectedFile.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <Button className="flex-1 h-11 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20" onClick={() => setSelectedFile(null)}>Close Hub</Button>
+                  </div>
+                </div>
+              </aside>
+            </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
       <AlertDialog open={!!fileToDelete} onOpenChange={o => !o && setFileToDelete(null)}>
         <AlertDialogContent className="rounded-[2.5rem]">
           <AlertDialogHeader>

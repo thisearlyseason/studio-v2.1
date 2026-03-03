@@ -187,11 +187,13 @@ export type TeamFile = {
   uploadedBy: string;
   uploaderId: string;
   date: string;
-  category: 'Game' | 'Practice' | 'Highlight' | 'Compliance' | 'Other';
+  category: 'Game Tape' | 'Practice Session' | 'Highlights' | 'Compliance' | 'Other';
+  description?: string;
   complianceType?: string;
   tags?: string[];
   comments?: MediaComment[];
   annotations?: VideoAnnotation[];
+  viewedBy?: Record<string, boolean>;
 };
 
 export type TeamAlert = {
@@ -258,9 +260,10 @@ interface TeamContextType {
   updateGame: (id: string, game: any) => void;
   addDrill: (drill: any) => void;
   deleteDrill: (id: string) => void;
-  addFile: (name: string, type: string, sizeBytes: number, url: string, category?: string, complianceType?: string) => void;
-  addExternalLink: (name: string, url: string, category?: string, complianceType?: string) => void;
+  addFile: (name: string, type: string, sizeBytes: number, url: string, category?: string, description?: string, complianceType?: string) => void;
+  addExternalLink: (name: string, url: string, category?: string, description?: string, complianceType?: string) => void;
   deleteFile: (id: string) => void;
+  markMediaAsViewed: (fileId: string) => void;
   addMediaComment: (fileId: string, text: string) => void;
   addMediaTag: (fileId: string, tag: string) => void;
   addMediaAnnotation: (fileId: string, timestamp: number, label: string, description?: string) => void;
@@ -711,9 +714,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     updateGame: (id: string, g: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'games', id), g),
     addDrill: (d: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'drills'), { ...d, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString() }),
     deleteDrill: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'drills', id)),
-    addFile: (n: string, t: string, sb: number, u: string, cat?: string, ct?: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: t, size: formatSize(sb), sizeBytes: sb, url: u, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString(), category: cat || 'Other', complianceType: ct || 'none', tags: [], comments: [], annotations: [] }),
-    addExternalLink: (n: string, u: string, cat?: string, ct?: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: 'link', size: 'URL', sizeBytes: 0, url: u, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString(), category: cat || 'Other', complianceType: ct || 'none', tags: [], comments: [], annotations: [] }),
+    addFile: (n: string, t: string, sb: number, u: string, cat?: string, desc?: string, ct?: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: t, size: formatSize(sb), sizeBytes: sb, url: u, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString(), category: cat || 'Other', description: desc || '', complianceType: ct || 'none', tags: [], comments: [], annotations: [], viewedBy: {} }),
+    addExternalLink: (n: string, u: string, cat?: string, desc?: string, ct?: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: 'link', size: 'URL', sizeBytes: 0, url: u, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString(), category: cat || 'Other', description: desc || '', complianceType: ct || 'none', tags: [], comments: [], annotations: [], viewedBy: {} }),
     deleteFile: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'files', id)),
+    markMediaAsViewed: (fid: string) => {
+      if (!activeTeam?.id || !firebaseUser) return;
+      const ref = doc(db, 'teams', activeTeam.id, 'files', fid);
+      updateDocumentNonBlocking(ref, { [`viewedBy.${firebaseUser.uid}`]: true });
+    },
     addMediaComment: (fid: string, txt: string) => {
       if (!activeTeam?.id || !userProfile) return;
       const ref = doc(db, 'teams', activeTeam.id, 'files', fid);
