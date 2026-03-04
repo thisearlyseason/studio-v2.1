@@ -477,12 +477,57 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           activePlanId: data.activePlanId,
           planSource: data.planSource,
           proTeamLimit: data.proTeamLimit,
-          tournamentCredits: data.tournamentCredits || 0
+          tournamentCredits: data.tournamentCredits || 0,
+          createdAt: data.createdAt
         });
       }
     });
     return () => unsub();
   }, [firebaseUser?.uid, db]);
+
+  // Section 1: Demo Heartbeat logic
+  useEffect(() => {
+    if (!userProfile?.isDemo || !userProfile?.createdAt) {
+      setSecondsUntilReset(null);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const created = new Date(userProfile.createdAt!).getTime();
+      const expires = created + (30 * 60 * 1000); // 30 mins reset cycle
+      const remaining = Math.max(0, Math.floor((expires - Date.now()) / 1000));
+      
+      setSecondsUntilReset(remaining);
+      
+      if (remaining <= 0 && !seedingRef.current) {
+        contextValue.resetDemo();
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [userProfile?.isDemo, userProfile?.createdAt]);
+
+  // Section 2: Demo Seeding logic
+  useEffect(() => {
+    const demoPlanId = searchParams.get('seed_demo');
+    if (demoPlanId && firebaseUser && !seedingRef.current && !isTeamsLoading) {
+      seedingRef.current = true;
+      setIsSeedingDemo(true);
+      
+      seedGuestDemoTeam(db, firebaseUser.uid, demoPlanId)
+        .then((newTid) => {
+          setActiveTeamId(newTid);
+          toast({ title: "Environment Ready", description: "Demo squad populated with elite data." });
+        })
+        .catch(() => toast({ title: "Seeding Failed", variant: "destructive" }))
+        .finally(() => {
+          setIsSeedingDemo(false);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('seed_demo');
+          router.replace(url.pathname + url.search);
+        });
+    }
+  }, [searchParams, firebaseUser, isTeamsLoading]);
 
   useEffect(() => {
     if (!activeTeam?.id || !db) {
@@ -709,7 +754,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     plans, isPlansLoading, simulationPlanId, setSimulationPlanId, resetDemo: async () => { if (userProfile?.isDemo && db && firebaseUser) { await resetDemoEnvironment(db, activeTeamId || '', userProfile.activePlanId || 'starter_squad', firebaseUser.uid); toast({ title: "Environment Re-seeded" }); } },
     resetSeasonData: async () => { if (!activeTeam?.id || !db) return; const batch = writeBatch(db); const gS = await getDocs(collection(db, 'teams', activeTeam.id, 'games')); const eS = await getDocs(collection(db, 'teams', activeTeam.id, 'events')); gS.forEach(d => batch.delete(d.ref)); eS.forEach(d => batch.delete(d.ref)); await batch.commit(); toast({ title: "Season Reset" }); },
     isSeedingDemo, isClubManager, secondsUntilReset, proQuotaStatus, canAddProTeam, resolveQuota: async (sids: string[]) => { if (!firebaseUser || !db) return; const batch = writeBatch(db); teams.filter(t => t.ownerUserId === firebaseUser.uid && t.isPro).forEach(t => { const isStillPro = sids.includes(t.id); const u = { isPro: isStillPro, planId: isStillPro ? t.planId : 'starter_squad', isProPendingRemoval: false }; batch.update(doc(db, 'teams', t.id), u); batch.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', t.id), u); }); await batch.commit(); toast({ title: "Quota Resolved" }); },
-    assignManualPlan: async (tuid: string, pid: string, lim: number) => { if (!isSuperAdmin || !db) return; const batch = writeBatch(db); batch.update(doc(db, 'users', tuid), { activePlanId: pid, proTeamLimit: lim, planSource: 'manual' }); batch.set(doc(db, 'subscriptions', tuid), { userId: tuid, productId: pid, entitlementActive: true, proTeamLimit: lim, source: 'manual', lastSyncedAt: new Date().toISOString() }, { merge: true }); await batch.commit(); toast({ title: "Organization Assigned" }); },
+    assignManualPlan: (tuid: string, pid: string, lim: number) => { if (!isSuperAdmin || !db) return Promise.resolve(); const batch = writeBatch(db); batch.update(doc(db, 'users', tuid), { activePlanId: pid, proTeamLimit: lim, planSource: 'manual' }); batch.set(doc(db, 'subscriptions', tuid), { userId: tuid, productId: pid, entitlementActive: true, proTeamLimit: lim, source: 'manual', lastSyncedAt: new Date().toISOString() }, { merge: true }); return batch.commit().then(() => { toast({ title: "Organization Assigned" }); }); },
     createLeague: async (name: string, sport?: string) => { if (!firebaseUser || !activeTeam) return ''; const lid = `league_${Date.now()}`; await setDoc(doc(db, 'leagues', lid), { id: lid, name, creatorId: firebaseUser.uid, createdAt: new Date().toISOString(), sport: sport || activeTeam.sport || 'General', teams: { [activeTeam.id]: { teamName: activeTeam.name, teamLogoUrl: activeTeam.teamLogoUrl || '', wins: 0, losses: 0, ties: 0, points: 0 } } }); updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id), { leagueIds: [...(activeTeam.leagueIds || []), lid] }); updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), { leagueIds: [...(activeTeam.leagueIds || []), lid] }); return lid; },
     inviteTeamToLeague: async (lid: string, ln: string, em: string) => { const iid = `inv_${Date.now()}`; await setDoc(doc(db, 'leagues', lid, 'invites', iid), { id: iid, leagueId: lid, leagueName: ln, invitedEmail: em, status: 'pending', createdAt: new Date().toISOString() }); toast({ title: "Invite Sent" }); },
     acceptLeagueInvite: async (iid: string, lid: string) => { if (!activeTeam || !firebaseUser) return; const batch = writeBatch(db); batch.update(doc(db, 'leagues', lid), { [`teams.${activeTeam.id}`]: { teamName: activeTeam.name, teamLogoUrl: activeTeam.teamLogoUrl || '', wins: 0, losses: 0, ties: 0, points: 0 } }); batch.update(doc(db, 'leagues', lid, 'invites', iid), { status: 'accepted' }); batch.update(doc(db, 'teams', activeTeam.id), { leagueIds: [...(activeTeam.leagueIds || []), lid] }); batch.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), { leagueIds: [...(activeTeam.leagueIds || []), lid] }); await batch.commit(); toast({ title: "Joined League" }); },
@@ -768,7 +813,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       updateDocumentNonBlocking(ref, { tournamentGames: updatedGames });
       toast({ title: "Score Dispatched", description: "Waiting for secondary verification." });
     }
-  }), [userProfile, activeTeam, teams, isTeamsLoading, members, isMembersLoading, currentMember, isStaff, isPlayer, isParent, isUserLoading, isSuperAdmin, isPaywallOpen, isRCInitialized, db, firebaseUser, activePlanFeatures, plans, isPlansLoading, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro, proQuotaStatus, canAddProTeam, alerts, router, cachedPlans]);
+  }), [userProfile, activeTeam, teams, isTeamsLoading, members, isMembersLoading, currentMember, isStaff, isPlayer, isParent, isUserLoading, isSuperAdmin, isPaywallOpen, isRCInitialized, db, firebaseUser, activePlanFeatures, plans, isPlansLoading, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro, proQuotaStatus, canAddProTeam, alerts, router, cachedPlans, searchParams]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;
 }
