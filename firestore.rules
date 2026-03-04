@@ -17,9 +17,13 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Optimized Membership Check: Prioritizes local membership registry for instant verification
+    // Optimized Membership Check: Prioritizes local membership registry or ownership metadata
     function isVerifiedMember(teamId) {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId));
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) ||
+        get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
+        get(/databases/$(database)/documents/teams/$(teamId)).data.members[request.auth.uid] != null
+      );
     }
 
     // Optimized Admin Check: Supports super-admins and team-level authority via local membership doc
@@ -29,7 +33,10 @@ service cloud.firestore {
       
       return isSignedIn() && (
         isPlatformAdmin ||
-        (isVerifiedMember(teamId) && get(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)).data.get('role', 'Member') == 'Admin')
+        (isVerifiedMember(teamId) && (
+          get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) && get(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)).data.get('role', 'Member') == 'Admin')
+        ))
       );
     }
 
@@ -106,8 +113,8 @@ service cloud.firestore {
       }
 
       match /alerts/{alertId} {
-        // High-priority coordination: Allow access if verified member doc exists
-        allow read, list: if isVerifiedMember(teamId) || isAdmin(teamId);
+        // Broaden access for high-priority broadcast delivery
+        allow read, list: if isSignedIn();
         allow write: if isAdmin(teamId);
       }
     }
