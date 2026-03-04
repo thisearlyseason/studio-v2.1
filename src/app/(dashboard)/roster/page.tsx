@@ -319,18 +319,21 @@ export default function RosterPage() {
               </div>
 
               <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-                <div className="flex flex-col items-center">
-                  <span className="text-[7px] lg:text-[8px] font-black uppercase text-muted-foreground mb-0.5 lg:mb-1 tracking-widest">Fees</span>
-                  <div className={cn(
-                    "h-7 lg:h-8 px-2 lg:px-3 rounded-lg font-black text-[8px] lg:text-[10px] border flex items-center justify-center transition-all tracking-tighter shadow-sm",
-                    member.feesPaid 
-                      ? "bg-primary text-white border-primary" 
-                      : "bg-black text-white border-black"
-                  )}>
-                    {member.feesPaid ? <Check className="h-2.5 w-2.5 lg:h-3 lg:w-3 mr-1" /> : <DollarSign className="h-2.5 w-2.5 lg:h-3 lg:w-3 mr-1" />}
-                    {member.feesPaid ? "PAID" : `$${member.amountOwed || 0}`}
+                {/* FINANCIAL SANITIZATION: Hide fees for Parent role */}
+                {member.position !== 'Parent' && (
+                  <div className="flex flex-col items-center">
+                    <span className="text-[7px] lg:text-[8px] font-black uppercase text-muted-foreground mb-0.5 lg:mb-1 tracking-widest">Fees</span>
+                    <div className={cn(
+                      "h-7 lg:h-8 px-2 lg:px-3 rounded-lg font-black text-[8px] lg:text-[10px] border flex items-center justify-center transition-all tracking-tighter shadow-sm",
+                      member.feesPaid 
+                        ? "bg-primary text-white border-primary" 
+                        : "bg-black text-white border-black"
+                    )}>
+                      {member.feesPaid ? <Check className="h-2.5 w-2.5 lg:h-3 lg:w-3 mr-1" /> : <DollarSign className="h-2.5 w-2.5 lg:h-3 lg:w-3 mr-1" />}
+                      {member.feesPaid ? "PAID" : `$${member.amountOwed || 0}`}
+                    </div>
                   </div>
-                </div>
+                )}
                 <MoreVertical className="h-4 w-4 text-muted-foreground opacity-30 group-hover:opacity-100 transition-opacity hidden sm:block" />
               </div>
             </CardContent>
@@ -386,52 +389,58 @@ export default function RosterPage() {
               {/* Content Area */}
               <div className="flex-1 overflow-y-auto custom-scrollbar">
                 <div className="grid grid-cols-1 lg:grid-cols-12 h-full">
-                  <div className="lg:col-span-4 p-6 lg:p-8 border-b lg:border-b-0 lg:border-r bg-muted/5 space-y-6 lg:space-y-8">
-                    <div className="space-y-4 lg:space-y-6">
-                      <div className="flex items-center gap-3 px-1">
-                        <div className="bg-primary/10 p-2 rounded-lg lg:rounded-xl text-primary"><CreditCard className="h-4 w-4" /></div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Financials</p>
-                      </div>
-                      
-                      <div className="bg-white p-5 lg:p-6 rounded-2xl lg:rounded-[2rem] shadow-sm border ring-1 ring-black/5 space-y-4">
-                        <div className="flex justify-between items-end">
-                          <p className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest text-muted-foreground">Owed</p>
-                          <p className="text-2xl lg:text-3xl font-black text-primary leading-none">${selectedMember.amountOwed || 0}</p>
+                  {/* FINANCIAL SANITIZATION: Entire column hidden for Parent role */}
+                  {selectedMember.position !== 'Parent' && (
+                    <div className="lg:col-span-4 p-6 lg:p-8 border-b lg:border-b-0 lg:border-r bg-muted/5 space-y-6 lg:space-y-8">
+                      <div className="space-y-4 lg:space-y-6">
+                        <div className="flex items-center gap-3 px-1">
+                          <div className="bg-primary/10 p-2 rounded-lg lg:rounded-xl text-primary"><CreditCard className="h-4 w-4" /></div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Financials</p>
                         </div>
-                        {isAdmin && (
-                          <div className="pt-2 flex flex-col gap-2">
-                            <div className="flex gap-2">
-                              <Input placeholder="Fee Title" value={newFee.title} onChange={e => setNewFee(p => ({ ...p, title: e.target.value }))} className="h-9 lg:h-10 text-[10px] lg:text-xs rounded-xl font-bold" />
-                              <div className="relative w-20 lg:w-24 shrink-0">
-                                <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                                <Input type="number" placeholder="0" value={newFee.amount} onChange={e => setNewFee(p => ({ ...p, amount: e.target.value }))} className="h-9 lg:h-10 text-[10px] lg:text-xs pl-6 lg:pl-8 rounded-xl font-bold" />
-                              </div>
-                            </div>
-                            <Button className="w-full h-9 lg:h-10 rounded-xl text-[10px] font-black" onClick={handleAddFee} disabled={!newFee.title || !newFee.amount}><Plus className="h-3 w-3 lg:h-4 lg:w-4 mr-1.5 lg:mr-2" /> Add Fee</Button>
+                        
+                        <div className="bg-white p-5 lg:p-6 rounded-2xl lg:rounded-[2rem] shadow-sm border ring-1 ring-black/5 space-y-4">
+                          <div className="flex justify-between items-end">
+                            <p className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest text-muted-foreground">Owed</p>
+                            <p className="text-2xl lg:text-3xl font-black text-primary leading-none">${selectedMember.amountOwed || 0}</p>
                           </div>
-                        )}
-                      </div>
+                          {isAdmin && (
+                            <div className="pt-2 flex flex-col gap-2">
+                              <div className="flex gap-2">
+                                <Input placeholder="Fee Title" value={newFee.title} onChange={e => setNewFee(p => ({ ...p, title: e.target.value }))} className="h-9 lg:h-10 text-[10px] lg:text-xs rounded-xl font-bold" />
+                                <div className="relative w-20 lg:w-24 shrink-0">
+                                  <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                                  <Input type="number" placeholder="0" value={newFee.amount} onChange={e => setNewFee(p => ({ ...p, amount: e.target.value }))} className="h-9 lg:h-10 text-[10px] lg:text-xs pl-6 lg:pl-8 rounded-xl font-bold" />
+                                </div>
+                              </div>
+                              <Button className="w-full h-9 lg:h-10 rounded-xl text-[10px] font-black" onClick={handleAddFee} disabled={!newFee.title || !newFee.amount}><Plus className="h-3 w-3 lg:h-4 lg:w-4 mr-1.5 lg:mr-2" /> Add Fee</Button>
+                            </div>
+                          )}
+                        </div>
 
-                      <div className="space-y-2 lg:space-y-3 max-h-[200px] lg:max-h-[250px] overflow-y-auto pr-1 lg:pr-2 custom-scrollbar">
-                        {selectedMember.fees?.length ? selectedMember.fees.map((fee) => (
-                          <div key={fee.id} className="flex items-center justify-between p-3 lg:p-4 bg-white border rounded-xl lg:rounded-2xl hover:border-primary transition-all group shadow-sm">
-                            <div className="flex items-center gap-2 lg:gap-3">
-                              {isAdmin ? <Checkbox checked={fee.paid} onCheckedChange={() => handleToggleFeePaid(fee.id)} className="h-4 w-4 lg:h-5 lg:w-5 rounded-md lg:rounded-lg" /> : (fee.paid ? <Check className="h-4 w-4 lg:h-5 lg:w-5 text-primary" /> : <Circle className="h-4 w-4 lg:h-5 lg:w-5 text-muted-foreground/20" />)}
-                              <div>
-                                <p className={cn("text-[10px] lg:text-xs font-black truncate max-w-[100px] lg:max-w-[140px]", fee.paid && "text-muted-foreground line-through")}>{fee.title}</p>
-                                <p className="text-[8px] lg:text-[9px] font-bold text-muted-foreground uppercase">${fee.amount}</p>
+                        <div className="space-y-2 lg:space-y-3 max-h-[200px] lg:max-h-[250px] overflow-y-auto pr-1 lg:pr-2 custom-scrollbar">
+                          {selectedMember.fees?.length ? selectedMember.fees.map((fee) => (
+                            <div key={fee.id} className="flex items-center justify-between p-3 lg:p-4 bg-white border rounded-xl lg:rounded-2xl hover:border-primary transition-all group shadow-sm">
+                              <div className="flex items-center gap-2 lg:gap-3">
+                                {isAdmin ? <Checkbox checked={fee.paid} onCheckedChange={() => handleToggleFeePaid(fee.id)} className="h-4 w-4 lg:h-5 lg:w-5 rounded-md lg:rounded-lg" /> : (fee.paid ? <Check className="h-4 w-4 lg:h-5 lg:w-5 text-primary" /> : <Circle className="h-4 w-4 lg:h-5 lg:w-5 text-muted-foreground/20" />)}
+                                <div>
+                                  <p className={cn("text-[10px] lg:text-xs font-black truncate max-w-[100px] lg:max-w-[140px]", fee.paid && "text-muted-foreground line-through")}>{fee.title}</p>
+                                  <p className="text-[8px] lg:text-[9px] font-bold text-muted-foreground uppercase">${fee.amount}</p>
+                                </div>
                               </div>
+                              {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 lg:h-8 lg:w-8 text-destructive hover:bg-destructive/5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleRemoveFee(fee.id)}><Trash2 className="h-3 w-3" /></Button>}
                             </div>
-                            {isAdmin && <Button variant="ghost" size="icon" className="h-7 w-7 lg:h-8 lg:w-8 text-destructive hover:bg-destructive/5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleRemoveFee(fee.id)}><Trash2 className="h-3 w-3" /></Button>}
-                          </div>
-                        )) : (
-                          <div className="text-center py-8 lg:py-10 bg-white/50 rounded-xl lg:rounded-2xl border border-dashed"><p className="text-[8px] lg:text-[9px] font-black uppercase text-muted-foreground opacity-40 tracking-widest">No history</p></div>
-                        )}
+                          )) : (
+                            <div className="text-center py-8 lg:py-10 bg-white/50 rounded-xl lg:rounded-2xl border border-dashed"><p className="text-[8px] lg:text-[9px] font-black uppercase text-muted-foreground opacity-40 tracking-widest">No history</p></div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="lg:col-span-8 p-6 lg:p-8 space-y-8 lg:space-y-10">
+                  <div className={cn(
+                    "p-6 lg:p-8 space-y-8 lg:space-y-10",
+                    selectedMember.position === 'Parent' ? "lg:col-span-12" : "lg:col-span-8"
+                  )}>
                     {isEditing ? (
                       <div className="space-y-6 lg:space-y-8 animate-in fade-in slide-in-from-right-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6">

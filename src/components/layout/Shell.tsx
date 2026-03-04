@@ -229,7 +229,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const filteredTabs = tabs.filter(tab => {
     // Hide Feed if user role doesn't have read access
     if (tab.name === 'Feed') {
+      // Basic feature check
       if (!hasFeature('live_feed_read')) return false;
+      
+      // Hide for parents by default unless coach explicitly enabled parent feed participation
+      if (isParent && !activeTeam?.parentCommentsEnabled) return false;
+
       // Also hide if non-staff and it's a "lock" tier (Player/Parent streamlined)
       if ((isParent || isPlayer) && !isPro) return false;
     }
