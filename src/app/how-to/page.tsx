@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import Link from 'link';
+import Link from 'next/link';
 import { 
   ChevronLeft, 
   LayoutDashboard, 
