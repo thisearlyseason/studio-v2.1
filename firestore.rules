@@ -17,8 +17,25 @@ service cloud.firestore {
     match /{path=**}/registrationEntries/{entryId} {
       allow read: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource.data.status == 'assigned' && isAdmin(resource.data.assigned_team_id)) ||
-        (resource.data.get('league_id', null) != null && 
+        (resource != null && resource.data.status == 'assigned' && isAdmin(resource.data.assigned_team_id)) ||
+        (resource != null && resource.data.get('league_id', null) != null && 
+         get(/databases/$(database)/documents/leagues/$(resource.data.league_id)).data.creatorId == request.auth.uid)
+      );
+      
+      // Allow creation for public signup portal
+      allow create: if true;
+      
+      // Allow updates for staff members managing their team assignments
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource != null && resource.data.get('league_id', null) != null && 
+         get(/databases/$(database)/documents/leagues/$(resource.data.league_id)).data.creatorId == request.auth.uid) ||
+        (resource != null && isAdmin(resource.data.assigned_team_id))
+      );
+      
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource != null && resource.data.get('league_id', null) != null && 
          get(/databases/$(database)/documents/leagues/$(resource.data.league_id)).data.creatorId == request.auth.uid)
       );
     }
@@ -163,23 +180,6 @@ service cloud.firestore {
       match /registration/{regId} {
         allow read: if true; // Publicly readable for the signup page
         allow write: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin());
-      }
-
-      match /registrationEntries/{entryId} {
-        allow create: if true; // Anonymous signups allowed
-        allow read: if isSignedIn() && (
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || 
-          isSuperAdmin() ||
-          // Coaches can read entries explicitly assigned to their team
-          (resource.data.status == 'assigned' && isAdmin(resource.data.assigned_team_id))
-        );
-        allow update: if isSignedIn() && (
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || 
-          isSuperAdmin() ||
-          // Coaches can only update status (Accept/Decline) if assigned to their team
-          (isAdmin(resource.data.assigned_team_id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
-        );
-        allow delete: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin());
       }
     }
 

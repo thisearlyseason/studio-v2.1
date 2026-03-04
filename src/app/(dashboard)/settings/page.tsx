@@ -158,7 +158,7 @@ export default function SettingsPage() {
               <h2 className="text-xl font-bold">{user.name}</h2>
               <div className="flex flex-col items-center gap-1 mt-1">
                 <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">
-                  Access Type: {activeTeam?.role} • {currentMember?.position || 'Teammate'}
+                  Access: {activeTeam?.role} • {currentMember?.position || 'Teammate'}
                 </p>
                 <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest">{user.email}</p>
               </div>
