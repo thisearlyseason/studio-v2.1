@@ -12,6 +12,17 @@ service cloud.firestore {
                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamAgreements']);
     }
 
+    // Support for collectionGroup query on registrationEntries
+    // This is required for coaches to see assignments across multiple leagues
+    match /{path=**}/registrationEntries/{entryId} {
+      allow read: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.status == 'assigned' && isAdmin(resource.data.assigned_team_id)) ||
+        (resource.data.get('league_id', null) != null && 
+         get(/databases/$(database)/documents/leagues/$(resource.data.league_id)).data.creatorId == request.auth.uid)
+      );
+    }
+
     // Helper functions
     function isSignedIn() {
       return request.auth != null;

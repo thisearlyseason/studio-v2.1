@@ -71,11 +71,11 @@ export default function TeamProfilePage() {
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch pending assignments for this team
+  // Fetch pending assignments for this team - Staff only
   const assignmentsQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || !db || !hasFeature('league_registration')) return null;
+    if (!activeTeam?.id || !db || !isStaff || !hasFeature('league_registration')) return null;
     return query(collectionGroup(db, 'registrationEntries'), where('assigned_team_id', '==', activeTeam.id), where('status', '==', 'assigned'));
-  }, [activeTeam?.id, db]);
+  }, [activeTeam?.id, db, isStaff]);
 
   const { data: rawAssignments } = useCollection<RegistrationEntry>(assignmentsQuery);
   const assignments = useMemo(() => rawAssignments || [], [rawAssignments]);
