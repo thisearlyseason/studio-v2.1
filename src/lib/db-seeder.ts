@@ -38,6 +38,8 @@ export async function seedSubscriptionData(db: Firestore) {
         { id: 'media_uploads', description: 'Upload and share playbooks, photos, and files.', defaultEnabled: false },
         { id: 'history_unlimited', description: 'Retain full history of posts, chats, and results.', defaultEnabled: false },
         { id: 'high_priority_alerts', description: 'Broadcast urgent team-wide popups.', defaultEnabled: false },
+        { id: 'leagues', description: 'Participate in and manage competitive leagues.', defaultEnabled: false },
+        { id: 'league_registration', description: 'Accept and manage new player signups for leagues.', defaultEnabled: false },
       ];
 
       defaultFeatures.forEach((f) => {
@@ -57,7 +59,7 @@ export async function seedSubscriptionData(db: Firestore) {
         schedule_games_events: true, tournaments: true, basic_roster: true, full_roster_details: true,
         attendance_tracking: true, live_feed_read: true, live_feed_post: true, group_chat: true,
         score_tracking: true, stats_basic: true, media_uploads: true, history_unlimited: true,
-        high_priority_alerts: true, leagues: true
+        high_priority_alerts: true, leagues: true, league_registration: true
       };
 
       const starterFeatures = {

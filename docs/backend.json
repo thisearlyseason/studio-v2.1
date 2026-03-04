@@ -154,6 +154,41 @@
       },
       "required": ["id", "name", "creatorId"]
     },
+    "LeagueRegistration": {
+      "title": "LeagueRegistration",
+      "type": "object",
+      "properties": {
+        "league_id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "payment_instructions": { "type": "string" },
+        "is_active": { "type": "boolean" },
+        "shareable_slug": { "type": "string" },
+        "created_by": { "type": "string" }
+      }
+    },
+    "RegistrationForm": {
+      "title": "RegistrationForm",
+      "type": "object",
+      "properties": {
+        "league_registration_id": { "type": "string" },
+        "version": { "type": "number" },
+        "schema_json": { "type": "string" },
+        "is_active": { "type": "boolean" }
+      }
+    },
+    "RegistrationEntry": {
+      "title": "RegistrationEntry",
+      "type": "object",
+      "properties": {
+        "league_registration_id": { "type": "string" },
+        "form_version": { "type": "number" },
+        "answers_json": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "assigned", "declined"] },
+        "assigned_team_id": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
     "TeamEvent": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "TeamEvent",
@@ -261,6 +296,20 @@
         "$ref": "#/backend/entities/League"
       },
       "description": "Competitive league hubs."
+    },
+    "/leagues/{leagueId}/registration": {
+      "schema": {
+        "$ref": "#/backend/entities/LeagueRegistration"
+      },
+      "description": "League-wide signup configuration."
+    },
+    "/leagues/{leagueId}/registrationEntries/{entryId}": {
+      "schema": {
+        "$ref": "#/backend/entities/RegistrationEntry"
+      },
+      "description": "Submitted signups for the league."
     }
   }
 }
+
+    

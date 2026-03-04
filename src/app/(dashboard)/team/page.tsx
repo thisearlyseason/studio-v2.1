@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Trophy, 
   Mail, 
@@ -23,7 +23,11 @@ import {
   ChevronDown,
   Lock,
   MessageSquare,
-  ShieldAlert
+  ShieldAlert,
+  ClipboardList,
+  CheckCircle2,
+  XCircle,
+  ArrowRight
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -33,7 +37,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { useTeam, Team } from '@/components/providers/team-provider';
+import { useTeam, Team, RegistrationEntry } from '@/components/providers/team-provider';
 import { 
   Dialog, 
   DialogContent, 
@@ -51,15 +55,30 @@ import {
 } from "@/components/ui/select";
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collectionGroup, query, where, orderBy } from 'firebase/firestore';
+import { format } from 'date-fns';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function TeamProfilePage() {
-  const { activeTeam, setActiveTeam, teams, user, members, updateTeamDetails, isSuperAdmin, plans, updateTeamPlan, isStaff } = useTeam();
+  const { activeTeam, setActiveTeam, teams, user, members, updateTeamDetails, isSuperAdmin, plans, updateTeamPlan, isStaff, hasFeature, respondToAssignment } = useTeam();
+  const db = useFirestore();
+  
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isUpdatingLogo, setIsUpdatingLogo] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch pending assignments for this team
+  const assignmentsQuery = useMemoFirebase(() => {
+    if (!activeTeam?.id || !db || !hasFeature('league_registration')) return null;
+    return query(collectionGroup(db, 'registrationEntries'), where('assigned_team_id', '==', activeTeam.id), where('status', '==', 'assigned'));
+  }, [activeTeam?.id, db]);
+
+  const { data: rawAssignments } = useCollection<RegistrationEntry>(assignmentsQuery);
+  const assignments = useMemo(() => rawAssignments || [], [rawAssignments]);
 
   // Form state
   const [editForm, setEditForm] = useState({
@@ -108,43 +127,18 @@ export default function TeamProfilePage() {
     return rank(a.position) - rank(b.position);
   });
 
-  const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const MAX_SIZE = 600;
-          let width = img.width;
-          let height = img.height;
-          if (width > height) {
-            if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
-          } else {
-            if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.85));
-        };
-      };
-    });
-  };
-
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setIsUpdatingLogo(true);
       try {
-        const compressed = await compressImage(e.target.files[0]);
-        await updateTeamDetails({ teamLogoUrl: compressed });
-        toast({ title: "Logo Updated" });
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+          await updateTeamDetails({ teamLogoUrl: ev.target?.result as string });
+          toast({ title: "Logo Updated" });
+          setIsUpdatingLogo(false);
+        };
+        reader.readAsDataURL(e.target.files[0]);
       } catch (error) {
-        toast({ title: "Upload Failed", variant: "destructive" });
-      } finally {
         setIsUpdatingLogo(false);
       }
     }
@@ -163,15 +157,6 @@ export default function TeamProfilePage() {
     if (!selectedPlanId || !activeTeam) return;
     await updateTeamPlan(activeTeam.id, selectedPlanId);
     setIsPlanOpen(false);
-  };
-
-  const toggleGovernance = async (key: 'parentCommentsEnabled' | 'parentChatEnabled', value: boolean) => {
-    try {
-      await updateTeamDetails({ [key]: value });
-      toast({ title: "Governance Updated", description: `${key === 'parentCommentsEnabled' ? 'Parent comments' : 'Parent chat'} restricted.` });
-    } catch (e) {
-      toast({ title: "Update Failed", variant: "destructive" });
-    }
   };
 
   const activePlan = plans.find(p => p.id === activeTeam.planId);
@@ -205,6 +190,58 @@ export default function TeamProfilePage() {
           <Badge className="bg-primary/10 text-primary border-none font-black text-[9px] h-6 px-3 uppercase">{activeTeam.role}</Badge>
         </div>
       </div>
+
+      {/* Pending Assignments Section */}
+      {isStaff && assignments.length > 0 && (
+        <Card className="rounded-[2.5rem] border-none shadow-xl ring-4 ring-primary/5 bg-white overflow-hidden animate-in slide-in-from-top-4 duration-500">
+          <CardHeader className="bg-primary/5 border-b p-8 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="bg-primary p-3 rounded-2xl text-white shadow-lg shadow-primary/20">
+                <ClipboardList className="h-6 w-6" />
+              </div>
+              <div>
+                <CardTitle className="text-2xl font-black uppercase tracking-tight">Pending Recruitment</CardTitle>
+                <CardDescription className="font-bold text-primary text-[10px] uppercase tracking-widest">Coach Approval Required</CardDescription>
+              </div>
+            </div>
+            <Badge className="bg-primary text-white h-6 font-black text-[10px] px-3 rounded-full">{assignments.length} NEW</Badge>
+          </CardHeader>
+          <CardContent className="p-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {assignments.map(entry => (
+                <div key={entry.id} className="p-5 bg-muted/20 rounded-3xl border-2 border-dashed flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="bg-white p-2 rounded-xl shadow-sm border shrink-0">
+                      <Users className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-black text-sm uppercase truncate tracking-tight">{entry.answers['name'] || entry.answers['fullName'] || 'New Applicant'}</p>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{entry.answers['position'] || 'Player'}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="rounded-xl h-10 w-10 text-destructive hover:bg-destructive/5"
+                      onClick={() => respondToAssignment(entry.league_id, entry.id, 'declined')}
+                    >
+                      <XCircle className="h-5 w-5" />
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      className="rounded-xl h-10 px-4 font-black uppercase text-[10px] tracking-widest shadow-lg shadow-primary/20"
+                      onClick={() => respondToAssignment(entry.league_id, entry.id, 'accepted')}
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-2" /> Accept
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <section className="relative">
         <div className="h-40 sm:h-56 w-full hero-gradient rounded-[2.5rem] shadow-2xl overflow-hidden relative">
@@ -261,7 +298,6 @@ export default function TeamProfilePage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
-          {/* Governance Section for Staff */}
           {isStaff && (
             <Card className="rounded-[2.5rem] border-none shadow-xl ring-4 ring-primary/5 bg-white overflow-hidden">
               <CardHeader className="bg-primary/5 border-b flex flex-row items-center justify-between p-8">
@@ -286,7 +322,7 @@ export default function TeamProfilePage() {
                   </div>
                   <Switch 
                     checked={activeTeam.parentCommentsEnabled} 
-                    onCheckedChange={(v) => toggleGovernance('parentCommentsEnabled', v)} 
+                    onCheckedChange={(v) => updateTeamDetails({ parentCommentsEnabled: v })} 
                   />
                 </div>
 
@@ -300,7 +336,7 @@ export default function TeamProfilePage() {
                   </div>
                   <Switch 
                     checked={activeTeam.parentChatEnabled} 
-                    onCheckedChange={(v) => toggleGovernance('parentChatEnabled', v)} 
+                    onCheckedChange={(v) => updateTeamDetails({ parentChatEnabled: v })} 
                   />
                 </div>
               </CardContent>

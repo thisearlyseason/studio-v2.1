@@ -24,7 +24,9 @@ import {
   Users,
   Settings,
   Globe,
-  Info
+  Info,
+  ClipboardList,
+  ArrowUpRight
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -45,6 +47,7 @@ import { toast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useRouter } from 'next/navigation';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import Link from 'next/link';
 
 function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: string | null, teamName: string | null, isOpen: boolean, onOpenChange: (open: boolean) => void }) {
   const db = useFirestore();
@@ -128,6 +131,7 @@ export default function LeaguesPage() {
   const [scoutTeamName, setScoutTeamName] = useState<string | null>(null);
 
   const canUseLeagues = hasFeature('leagues');
+  const canRegister = hasFeature('league_registration');
 
   const leaguesQuery = useMemoFirebase(() => {
     if (!activeTeam?.id || !db) return null;
@@ -287,67 +291,77 @@ export default function LeaguesPage() {
                     <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-2">{activeLeague.sport} • {Object.keys(activeLeague.teams || {}).length} Squads Enrolled</p>
                   </div>
                 </div>
-                {activeLeague.creatorId === user?.id && (
-                  <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
-                    <DialogTrigger asChild>
-                      <Button variant="secondary" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg">
-                        <UserPlus className="h-4 w-4 mr-2" /> Add/Invite Team
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 overflow-hidden border-none shadow-2xl">
-                      <Tabs defaultValue="invite" className="w-full">
-                        <div className="bg-primary/5 p-8 border-b">
-                          <DialogHeader>
-                            <DialogTitle className="text-2xl font-black uppercase tracking-tight">Expand Competition</DialogTitle>
-                            <DialogDescription className="font-bold text-primary/60 uppercase text-[10px] tracking-widest">Enroll verified or manual squads</DialogDescription>
-                          </DialogHeader>
-                          <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 p-1 bg-muted/50 border-2 mt-6">
-                            <TabsTrigger value="invite" className="rounded-lg font-black text-[10px] uppercase tracking-widest">Digital Invite</TabsTrigger>
-                            <TabsTrigger value="manual" className="rounded-lg font-black text-[10px] uppercase tracking-widest">Manual Entry</TabsTrigger>
-                          </TabsList>
-                        </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  {canRegister && activeLeague.creatorId === user?.id && (
+                    <Button asChild variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest border-white/20 bg-white/10 text-white hover:bg-white/20">
+                      <Link href={`/leagues/registration/${activeLeague.id}`}>
+                        <ClipboardList className="h-4 w-4 mr-2" />
+                        Registration Hub
+                      </Link>
+                    </Button>
+                  )}
+                  {activeLeague.creatorId === user?.id && (
+                    <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="secondary" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg">
+                          <UserPlus className="h-4 w-4 mr-2" /> Add/Invite Team
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 overflow-hidden border-none shadow-2xl">
+                        <Tabs defaultValue="invite" className="w-full">
+                          <div className="bg-primary/5 p-8 border-b">
+                            <DialogHeader>
+                              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Expand Competition</DialogTitle>
+                              <DialogDescription className="font-bold text-primary/60 uppercase text-[10px] tracking-widest">Enroll verified or manual squads</DialogDescription>
+                            </DialogHeader>
+                            <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 p-1 bg-muted/50 border-2 mt-6">
+                              <TabsTrigger value="invite" className="rounded-lg font-black text-[10px] uppercase tracking-widest">Digital Invite</TabsTrigger>
+                              <TabsTrigger value="manual" className="rounded-lg font-black text-[10px] uppercase tracking-widest">Manual Entry</TabsTrigger>
+                            </TabsList>
+                          </div>
 
-                        <div className="p-8">
-                          <TabsContent value="invite" className="mt-0 space-y-6">
-                            <div className="space-y-4">
-                              <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Sending an invite allows a coach to link their verified squad roster and data to the league automatically once accepted.</p>
-                              <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email</Label>
-                                <Input placeholder="coach@opposingteam.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
-                              </div>
-                            </div>
-                            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleSendInvite} disabled={isProcessing || !inviteEmail.trim()}>
-                              {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Dispatch Digital Invite"}
-                            </Button>
-                          </TabsContent>
-
-                          <TabsContent value="manual" className="mt-0 space-y-6">
-                            <div className="space-y-4">
-                              <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Manually enroll a team that doesn't yet have an account. You can update their scores directly in the standings.</p>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="p-8">
+                            <TabsContent value="invite" className="mt-0 space-y-6">
+                              <div className="space-y-4">
+                                <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Sending an invite allows a coach to link their verified squad roster and data to the league automatically once accepted.</p>
                                 <div className="space-y-2">
-                                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label>
-                                  <Input placeholder="e.g. Southside United" value={manualTeamName} onChange={e => setManualTeamName(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email (Opt)</Label>
-                                  <Input type="email" placeholder="coach@manual.com" value={manualCoachEmail} onChange={e => setManualCoachEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email</Label>
+                                  <Input placeholder="coach@opposingteam.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
                                 </div>
                               </div>
-                              <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Logo URL (Optional)</Label>
-                                <Input placeholder="https://..." value={manualLogoUrl} onChange={e => setManualLogoUrl(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleSendInvite} disabled={isProcessing || !inviteEmail.trim()}>
+                                {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Dispatch Digital Invite"}
+                              </Button>
+                            </TabsContent>
+
+                            <TabsContent value="manual" className="mt-0 space-y-6">
+                              <div className="space-y-4">
+                                <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Manually enroll a team that doesn't yet have an account. You can update their scores directly in the standings.</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label>
+                                    <Input placeholder="e.g. Southside United" value={manualTeamName} onChange={e => setManualTeamName(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email (Opt)</Label>
+                                    <Input type="email" placeholder="coach@manual.com" value={manualCoachEmail} onChange={e => setManualCoachEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Logo URL (Optional)</Label>
+                                  <Input placeholder="https://..." value={manualLogoUrl} onChange={e => setManualLogoUrl(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                                </div>
                               </div>
-                            </div>
-                            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleManualEnroll} disabled={isProcessing || !manualTeamName.trim()}>
-                              {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Enroll Manual Squad"}
-                            </Button>
-                          </TabsContent>
-                        </div>
-                      </Tabs>
-                    </DialogContent>
-                  </Dialog>
-                )}
+                              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleManualEnroll} disabled={isProcessing || !manualTeamName.trim()}>
+                                {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Enroll Manual Squad"}
+                              </Button>
+                            </TabsContent>
+                          </div>
+                        </Tabs>
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
