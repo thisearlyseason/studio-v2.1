@@ -184,13 +184,13 @@ export default function GamesPage() {
           {isAdmin && (
             <Dialog open={isRecordOpen} onOpenChange={(o) => { if(!o) resetForm(); setIsRecordOpen(o); }}>
               <DialogTrigger asChild><Button className="flex-1 sm:flex-none rounded-full shadow-lg h-10 lg:h-11 px-6 font-black uppercase text-[10px] lg:text-xs tracking-widest"><Plus className="h-3.5 w-3.5 mr-2" />Record Match</Button></DialogTrigger>
-              <DialogContent className="sm:max-w-3xl overflow-hidden p-0 sm:rounded-[2.5rem] border-none shadow-2xl h-[100dvh] sm:h-auto sm:max-h-[95vh] flex flex-col">
+              <DialogContent className="sm:max-w-3xl overflow-hidden p-0 sm:rounded-[2.5rem] border-none shadow-2xl h-[100dvh] sm:h-[90vh] flex flex-col">
                 <DialogTitle className="sr-only">Record Match Result</DialogTitle>
                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                   <ScrollArea className="flex-1 h-full">
                     <div className="flex flex-col lg:flex-row min-h-full">
                       {/* Form Pane */}
-                      <div className="lg:w-1/2 p-6 lg:p-10 bg-muted/30 lg:border-r-2 space-y-8">
+                      <div className="lg:w-1/2 p-6 lg:p-10 bg-muted/30 lg:border-r-2 space-y-8 shrink-0">
                         <DialogHeader className="flex flex-row items-center justify-between">
                           <h2 className="text-2xl lg:text-3xl font-black uppercase tracking-tight leading-none">{editingGame ? "Update Match" : "Post Match"}</h2>
                           <Button variant="ghost" size="icon" className="sm:hidden" onClick={() => setIsRecordOpen(false)}><X className="h-5 w-5" /></Button>
@@ -245,16 +245,15 @@ export default function GamesPage() {
                             )}
                           </div>
                         </div>
-                        
-                        <div className="pt-8 mt-auto flex flex-col gap-3">
-                          <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleRecordGame}>
-                            {editingGame ? "Commit Updates" : "Broadcast Result"}
-                          </Button>
-                          <Button variant="ghost" className="sm:hidden text-[10px] font-black uppercase tracking-widest" onClick={() => setIsRecordOpen(false)}>Discard</Button>
-                        </div>
                       </div>
                     </div>
                   </ScrollArea>
+                  {/* Sticky Footer */}
+                  <div className="p-6 lg:p-8 bg-background border-t shrink-0 sticky bottom-0 z-30">
+                    <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleRecordGame}>
+                      {editingGame ? "Commit Updates" : "Broadcast Result"}
+                    </Button>
+                  </div>
                 </div>
               </DialogContent>
             </Dialog>

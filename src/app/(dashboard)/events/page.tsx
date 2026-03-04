@@ -218,20 +218,21 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
         <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
           {/* Left Column - Info */}
           <div className="lg:w-1/3 p-6 lg:p-8 lg:border-r flex flex-col shrink-0 text-white bg-black transition-colors duration-500">
+            <div className="flex justify-between items-start mb-6 shrink-0">
+              <Badge className={cn(
+                "uppercase font-black tracking-widest text-[9px] px-3 h-6", 
+                event.isTournamentPaid ? "bg-primary text-white" : "bg-white text-black"
+              )}>
+                {event.isTournament ? (event.isTournamentPaid ? "Elite Hub" : "Tournament Hub") : "Team Match"}
+              </Badge>
+              <DialogClose asChild>
+                <X className="h-5 w-5 text-white/40 cursor-pointer hover:text-white" />
+              </DialogClose>
+            </div>
+            
             <ScrollArea className="flex-1 -mx-2 px-2 h-full">
               <div className="space-y-8 pb-10">
                 <div className="space-y-6">
-                  <div className="flex justify-between items-start">
-                    <Badge className={cn(
-                      "uppercase font-black tracking-widest text-[9px] px-3 h-6", 
-                      event.isTournamentPaid ? "bg-primary text-white" : "bg-white text-black"
-                    )}>
-                      {event.isTournament ? (event.isTournamentPaid ? "Elite Hub" : "Tournament Hub") : "Team Match"}
-                    </Badge>
-                    <DialogClose asChild>
-                      <X className="h-5 w-5 text-white/40 cursor-pointer hover:text-white" />
-                    </DialogClose>
-                  </div>
                   <div className="space-y-2">
                     <h2 className="text-3xl lg:text-4xl font-black tracking-tighter leading-none uppercase">{event.title}</h2>
                     <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">Official Sanctioned Hub</p>
@@ -337,7 +338,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                 </TabsList>
               </div>
               
-              <div className="flex-1 min-h-0">
+              <div className="flex-1 min-h-0 overflow-hidden">
                 <ScrollArea className="h-full">
                   <div className="p-6 lg:p-10 pb-32">
                     <TabsContent value="bracket" className="mt-0 space-y-10">
@@ -493,7 +494,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
               </div>
 
               {!isUserStaff && (
-                <div className="p-6 border-t bg-muted/20 shrink-0">
+                <div className="p-6 border-t bg-muted/20 shrink-0 sticky bottom-0 z-20 backdrop-blur-md">
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-6 max-w-4xl mx-auto">
                     <div className="text-center sm:text-left space-y-1">
                       <p className="text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em]">Match Response</p>
@@ -511,58 +512,67 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
           </div>
         </div>
 
+        {/* Individual Waiver Dialog */}
         <Dialog open={isWaiverDialogOpen} onOpenChange={setIsWaiverDialogOpen}>
-          <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Required Participant Waiver</DialogTitle>
-              <DialogDescription className="font-bold text-red-600 uppercase text-[10px] tracking-widest">Action Required for Participation</DialogDescription>
-            </DialogHeader>
-            <ScrollArea className="max-h-[300px] border-2 rounded-2xl p-6 bg-muted/30">
-              <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap">{event.specialWaiverText}</p>
-            </ScrollArea>
-            <div className="bg-primary/5 p-4 rounded-2xl border flex items-start gap-3">
-              <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-              <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">By clicking below, you officially sign this waiver for {event.title} as {user?.name}.</p>
-            </div>
-            <DialogFooter>
-              <Button className="w-full h-14 rounded-2xl text-lg font-black bg-red-600 shadow-xl shadow-red-600/20" onClick={() => { submitEventWaiver(event.id, true); setIsWaiverDialogOpen(false); toast({ title: "Waiver Signed" }); }}>Verify & Sign Legally</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={isTeamAgreementOpen} onOpenChange={setIsTeamAgreementOpen}>
-          <DialogContent className="sm:max-w-xl rounded-3xl border-none shadow-2xl">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Squad Participation Agreement</DialogTitle>
-              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Formal Enrollment Certification</DialogDescription>
-            </DialogHeader>
-            <div className="p-1 bg-muted rounded-2xl border-2">
-              <ScrollArea className="max-h-[350px] p-6 bg-white rounded-xl">
-                {event.teamWaiverText ? (
-                  <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap text-foreground/80">{event.teamWaiverText}</p>
-                ) : (
-                  <div className="text-center py-10 opacity-40 space-y-2">
-                    <FileText className="h-8 w-8 mx-auto" />
-                    <p className="text-xs font-black uppercase">Standard Participation Terms Apply</p>
-                  </div>
-                )}
+          <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl overflow-hidden p-0">
+            <div className="h-2 bg-red-600 w-full" />
+            <div className="p-8">
+              <DialogHeader className="mb-6">
+                <DialogTitle className="text-2xl font-black uppercase tracking-tight">Required Participant Waiver</DialogTitle>
+                <DialogDescription className="font-bold text-red-600 uppercase text-[10px] tracking-widest">Action Required for Participation</DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="max-h-[300px] border-2 rounded-2xl p-6 bg-muted/30 mb-6">
+                <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap">{event.specialWaiverText}</p>
               </ScrollArea>
-            </div>
-            <div className="bg-primary/5 p-5 rounded-2xl border border-primary/10 space-y-3">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-primary" />
-                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Authority Verification</p>
+              <div className="bg-primary/5 p-4 rounded-2xl border flex items-start gap-3 mb-6">
+                <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">By clicking below, you officially sign this waiver for {event.title} as {user?.name}.</p>
               </div>
-              <p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">
-                As a representative of <strong>{myParticipatingTeamName}</strong>, clicking below verifies that your squad understands and accepts all tournament coordination protocols.
-              </p>
+              <DialogFooter>
+                <Button className="w-full h-14 rounded-2xl text-lg font-black bg-red-600 shadow-xl shadow-red-600/20" onClick={() => { submitEventWaiver(event.id, true); setIsWaiverDialogOpen(false); toast({ title: "Waiver Signed" }); }}>Verify & Sign Legally</Button>
+              </DialogFooter>
             </div>
-            <DialogFooter className="pt-2">
-              <Button className="w-full h-16 rounded-2xl text-lg font-black bg-primary shadow-xl shadow-primary/20" onClick={() => { if(myParticipatingTeamName) { signTeamTournamentWaiver(event.teamId, event.id, myParticipatingTeamName); setIsTeamAgreementOpen(false); } }}>Verify & Sign for Squad</Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
 
+        {/* Team Agreement Dialog */}
+        <Dialog open={isTeamAgreementOpen} onOpenChange={setIsTeamAgreementOpen}>
+          <DialogContent className="sm:max-w-xl rounded-3xl border-none shadow-2xl overflow-hidden p-0">
+            <div className="h-2 bg-primary w-full" />
+            <div className="p-8">
+              <DialogHeader className="mb-6">
+                <DialogTitle className="text-2xl font-black uppercase tracking-tight">Squad Participation Agreement</DialogTitle>
+                <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Formal Enrollment Certification</DialogDescription>
+              </DialogHeader>
+              <div className="p-1 bg-muted rounded-2xl border-2 mb-6">
+                <ScrollArea className="max-h-[350px] p-6 bg-white rounded-xl">
+                  {event.teamWaiverText ? (
+                    <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap text-foreground/80">{event.teamWaiverText}</p>
+                  ) : (
+                    <div className="text-center py-10 opacity-40 space-y-2">
+                      <FileText className="h-8 w-8 mx-auto" />
+                      <p className="text-xs font-black uppercase">Standard Participation Terms Apply</p>
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+              <div className="bg-primary/5 p-5 rounded-2xl border border-primary/10 space-y-3 mb-6">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-primary" />
+                  <p className="text-[10px] font-black uppercase tracking-widest text-primary">Authority Verification</p>
+                </div>
+                <p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">
+                  As a representative of <strong>{myParticipatingTeamName}</strong>, clicking below verifies that your squad understands and accepts all tournament coordination protocols.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button className="w-full h-16 rounded-2xl text-lg font-black bg-primary shadow-xl shadow-primary/20" onClick={() => { if(myParticipatingTeamName) { signTeamTournamentWaiver(event.teamId, event.id, myParticipatingTeamName); setIsTeamAgreementOpen(false); } }}>Verify & Sign for Squad</Button>
+              </DialogFooter>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Game Score Editor Dialog */}
         <Dialog open={!!editingGame} onOpenChange={(o) => !o && setEditingGame(null)}>
           <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl overflow-hidden p-0">
             <div className="h-2 bg-primary w-full" />
@@ -778,7 +788,7 @@ export default function EventsPage() {
           <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
             {/* Left Section - Basic Info */}
             <div className={cn(
-              "lg:w-5/12 p-6 lg:p-8 lg:border-r space-y-6 flex flex-col",
+              "lg:w-5/12 p-6 lg:p-8 lg:border-r space-y-6 flex flex-col shrink-0",
               isEliteTournament ? "bg-primary/5" : "bg-muted/30"
             )}>
               <ScrollArea className="flex-1 -mx-2 px-2 h-full">
@@ -841,7 +851,7 @@ export default function EventsPage() {
                       </TabsList>
                     </div>
                     
-                    <div className="flex-1 min-h-0">
+                    <div className="flex-1 min-h-0 overflow-hidden">
                       <ScrollArea className="h-full px-6 lg:px-8">
                         <div className="space-y-6 py-6 pb-20">
                           {/* TEAMS MANAGEMENT */}
@@ -983,7 +993,7 @@ export default function EventsPage() {
               </div>
               
               {/* STICKY FOOTER ACTION */}
-              <div className="p-6 lg:p-8 bg-muted/10 border-t shrink-0">
+              <div className="p-6 lg:p-8 bg-muted/10 border-t shrink-0 sticky bottom-0 z-30 backdrop-blur-md">
                 <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCreateEvent}>
                   {editingEvent ? "Update" : "Publish"} Event Hub
                 </Button>
