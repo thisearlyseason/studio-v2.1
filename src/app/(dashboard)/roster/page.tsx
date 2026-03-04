@@ -72,7 +72,7 @@ import { useFirestore } from '@/firebase';
 import { doc } from 'firebase/firestore';
 
 export default function RosterPage() {
-  const { activeTeam, updateMember, user, isPro, isSuperAdmin, purchasePro, hasFeature, members, isMembersLoading } = useTeam();
+  const { activeTeam, updateMember, user, isPro, isSuperAdmin, purchasePro, hasFeature, members, isMembersLoading, isStaff } = useTeam();
   const db = useFirestore();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
@@ -129,6 +129,7 @@ export default function RosterPage() {
   );
 
   const handleMemberClick = (member: Member) => {
+    if (!isStaff) return; // Prevent non-staff from opening details
     setSelectedMember(member);
     setIsEditing(false);
   };
@@ -227,22 +228,24 @@ export default function RosterPage() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl lg:text-3xl font-black tracking-tight">Team Roster</h1>
           <div className="flex gap-2">
-            <Select onValueChange={(val) => {
-              const member = members.find(m => m.id === val);
-              if (member) handleMemberClick(member);
-            }}>
-              <SelectTrigger className="h-10 lg:h-11 rounded-full border-2 bg-background font-black text-[10px] lg:text-xs uppercase tracking-widest w-[160px] lg:w-[200px] shadow-sm">
-                <Users className="h-3.5 w-3.5 mr-2 text-primary" />
-                <SelectValue placeholder="Quick Jump" />
-              </SelectTrigger>
-              <SelectContent className="rounded-2xl p-2">
-                {members.map(m => (
-                  <SelectItem key={m.id} value={m.id} className="rounded-xl p-3 font-bold text-xs uppercase tracking-tight">
-                    {m.name} {m.jersey !== 'PAR' ? `(#${m.jersey})` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {isStaff && (
+              <Select onValueChange={(val) => {
+                const member = members.find(m => m.id === val);
+                if (member) handleMemberClick(member);
+              }}>
+                <SelectTrigger className="h-10 lg:h-11 rounded-full border-2 bg-background font-black text-[10px] lg:text-xs uppercase tracking-widest w-[160px] lg:w-[200px] shadow-sm">
+                  <Users className="h-3.5 w-3.5 mr-2 text-primary" />
+                  <SelectValue placeholder="Quick Jump" />
+                </SelectTrigger>
+                <SelectContent className="rounded-2xl p-2">
+                  {members.map(m => (
+                    <SelectItem key={m.id} value={m.id} className="rounded-xl p-3 font-bold text-xs uppercase tracking-tight">
+                      {m.name} {m.jersey !== 'PAR' ? `(#${m.jersey})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
               <DialogTrigger asChild>
                 <Button size="sm" className="rounded-full px-4 lg:px-6 font-black uppercase text-[10px] lg:text-xs h-10 lg:h-11 tracking-widest shadow-lg shadow-primary/20">
@@ -292,7 +295,10 @@ export default function RosterPage() {
         {filteredRoster.map((member) => (
           <Card 
             key={member.id} 
-            className="overflow-hidden border-none shadow-sm hover:shadow-md transition-all duration-300 ring-1 ring-black/5 rounded-2xl lg:rounded-3xl cursor-pointer group"
+            className={cn(
+              "overflow-hidden border-none shadow-sm hover:shadow-md transition-all duration-300 ring-1 ring-black/5 rounded-2xl lg:rounded-3xl",
+              isStaff ? "cursor-pointer group" : "cursor-default"
+            )}
             onClick={() => handleMemberClick(member)}
           >
             <CardContent className="p-3 lg:p-4 flex items-center gap-3 lg:gap-4">
@@ -311,16 +317,19 @@ export default function RosterPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 lg:gap-2 mb-0.5">
                   <h3 className="font-black truncate text-base lg:text-lg tracking-tight group-hover:text-primary transition-colors">{member.name}</h3>
-                  <Badge variant="outline" className="text-[8px] lg:text-[9px] py-0 px-1 lg:px-1.5 h-3.5 lg:h-4 border-primary/20 text-primary font-black uppercase tracking-tighter shrink-0">
-                    {member.jersey !== 'PAR' && member.jersey !== 'TBD' ? `#${member.jersey}` : member.jersey}
-                  </Badge>
+                  {isStaff && (
+                    <Badge variant="outline" className="text-[8px] lg:text-[9px] py-0 px-1 lg:px-1.5 h-3.5 lg:h-4 border-primary/20 text-primary font-black uppercase tracking-tighter shrink-0">
+                      {member.jersey !== 'PAR' && member.jersey !== 'TBD' ? `#${member.jersey}` : member.jersey}
+                    </Badge>
+                  )}
                 </div>
-                <p className="text-[9px] lg:text-[11px] text-muted-foreground font-black uppercase tracking-widest truncate">{member.position}</p>
+                {isStaff && (
+                  <p className="text-[9px] lg:text-[11px] text-muted-foreground font-black uppercase tracking-widest truncate">{member.position}</p>
+                )}
               </div>
 
               <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-                {/* FINANCIAL SANITIZATION: Hide fees for Parent role */}
-                {member.position !== 'Parent' && (
+                {isStaff && member.position !== 'Parent' && (
                   <div className="flex flex-col items-center">
                     <span className="text-[7px] lg:text-[8px] font-black uppercase text-muted-foreground mb-0.5 lg:mb-1 tracking-widest">Fees</span>
                     <div className={cn(
@@ -334,7 +343,9 @@ export default function RosterPage() {
                     </div>
                   </div>
                 )}
-                <MoreVertical className="h-4 w-4 text-muted-foreground opacity-30 group-hover:opacity-100 transition-opacity hidden sm:block" />
+                {isStaff && (
+                  <MoreVertical className="h-4 w-4 text-muted-foreground opacity-30 group-hover:opacity-100 transition-opacity hidden sm:block" />
+                )}
               </div>
             </CardContent>
           </Card>
