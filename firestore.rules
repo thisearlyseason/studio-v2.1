@@ -3,39 +3,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global Public Read for Tournament Events
-    match /{path=**}/events/{eventId} {
-      allow read: if request.auth != null || (resource != null && resource.data.get('isTournament', false) == true);
-      
-      // Allow public signatures for tournament team agreements
-      allow update: if (resource != null && resource.data.get('isTournament', false) == true) && 
-                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamAgreements']);
-    }
-
-    // Support for collectionGroup query on registrationEntries
-    // CRITICAL: Group queries cannot use get() or exists() in rules. 
-    // We rely on data injected at write-time for stateless verification.
-    match /{path=**}/registrationEntries/{entryId} {
-      allow read: if isSignedIn() && (
-        isSuperAdmin() || 
-        (resource != null && (
-          resource.data.get('assigned_team_owner_id', '') == request.auth.uid ||
-          resource.data.get('created_by', '') == request.auth.uid ||
-          // Demo guest check (Stateless Verification)
-          (resource.data.get('assigned_team_id', '').size() >= 15 && 
-           resource.data.get('assigned_team_id', '')[0:11] == 'demo_guest_' && 
-           resource.data.get('assigned_team_id', '')[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : request.auth.uid.size()].lower())
-        ))
-      );
-      
-      allow create: if true;
-      allow update, delete: if isSignedIn() && (
-        isSuperAdmin() || 
-        resource.data.get('assigned_team_owner_id', '') == request.auth.uid ||
-        resource.data.get('created_by', '') == request.auth.uid
-      );
-    }
-
     // Helper functions
     function isSignedIn() {
       return request.auth != null;
@@ -51,28 +18,9 @@ service cloud.firestore {
          request.auth.token.get('email', '').lower() == 'test@gmail.com');
     }
 
-    function isTeamMember(teamId) {
-      return isSignedIn() && (
-        isSuperAdmin() ||
-        (teamId.size() >= 15 && 
-         teamId[0:11] == 'demo_guest_' && 
-         teamId[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : request.auth.uid.size()].lower()) ||
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) ||
-        (exists(/databases/$(database)/documents/teams/$(teamId)) && (
-          get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
-          get(/databases/$(database)/documents/teams/$(teamId)).data.get('members', {}).get(request.auth.uid, null) != null
-        ))
-      );
-    }
-
     function isAdmin(teamId) {
       return isSignedIn() && (
         isSuperAdmin() ||
-        (teamId.size() >= 15 && 
-         teamId[0:11] == 'demo_guest_' && 
-         teamId[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : request.auth.uid.size()].lower()) ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)).data.get('role', 'Member') == 'Admin') ||
         (exists(/databases/$(database)/documents/teams/$(teamId)) && (
           get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
           get(/databases/$(database)/documents/teams/$(teamId)).data.get('members', {}).get(request.auth.uid, null) == 'Admin'
@@ -80,13 +28,42 @@ service cloud.firestore {
       );
     }
 
+    // New Legally Safe Collections for Minors
+    match /players/{playerId} {
+      allow read: if isSignedIn() && (
+        resource.data.parentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid ||
+        isSuperAdmin()
+      );
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        resource.data.parentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid
+      );
+    }
+
+    match /families/{familyId} {
+      allow read, write: if isSignedIn() && (
+        resource == null || resource.data.parentId == request.auth.uid || isSuperAdmin()
+      );
+    }
+
+    match /waivers/{waiverId} {
+      allow read: if isSignedIn() && (
+        resource.data.signedByUserId == request.auth.uid || isSuperAdmin()
+      );
+      allow create: if isSignedIn() && (
+        // Adults sign for themselves
+        (request.resource.data.signedByRole == 'player' && request.resource.data.signedByUserId == request.auth.uid) ||
+        // Parents sign for their children
+        (request.resource.data.signedByRole == 'parent' && request.resource.data.signedByUserId == request.auth.uid)
+      );
+    }
+
+    // Existing Collections
     match /users/{userId} {
       allow read, update, delete: if isOwner(userId) || isSuperAdmin();
       allow create: if isSignedIn(); 
-      
-      match /teamMemberships/{membershipId} {
-        allow read, write: if isOwner(userId) || isSuperAdmin();
-      }
     }
 
     match /teams/{teamId} {
@@ -100,56 +77,9 @@ service cloud.firestore {
       }
 
       match /events/{eventId} {
-        allow read: if isTeamMember(teamId) || (resource != null && resource.data.get('isTournament', false) == true);
+        allow read: if isSignedIn();
         allow create, delete: if isAdmin(teamId);
-        allow update: if isTeamMember(teamId) || (resource != null && resource.data.get('isTournament', false) == true); 
-        
-        match /registrations/{regId} {
-          allow create: if true; 
-          allow read, delete: if isSignedIn();
-        }
-      }
-
-      match /games/{gameId} {
-        allow read: if isTeamMember(teamId);
-        allow write: if isAdmin(teamId);
-      }
-
-      match /drills/{drillId} {
-        allow read: if isTeamMember(teamId);
-        allow create, update, delete: if isAdmin(teamId);
-      }
-
-      match /feedPosts/{postId} {
-        allow read: if isTeamMember(teamId);
-        allow create: if isTeamMember(teamId);
-        allow delete: if isAdmin(teamId) || (resource != null && resource.data.get('authorId', '') == request.auth.uid);
-        allow update: if isTeamMember(teamId); 
-        
-        match /comments/{commentId} {
-          allow read: if isTeamMember(teamId);
-          allow write: if isTeamMember(teamId);
-        }
-      }
-
-      match /groupChats/{chatId} {
-        allow read: if isTeamMember(teamId);
-        allow create: if isTeamMember(teamId);
-        allow update, delete: if isTeamMember(teamId);
-        
-        match /messages/{messageId} {
-          allow read, write: if isTeamMember(teamId);
-        }
-      }
-
-      match /alerts/{alertId} {
-        allow read: if isTeamMember(teamId);
-        allow write: if isAdmin(teamId);
-      }
-
-      match /files/{fileId} {
-        allow read: if isTeamMember(teamId);
-        allow write: if isAdmin(teamId);
+        allow update: if isSignedIn();
       }
     }
 
@@ -157,40 +87,10 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if isSignedIn() && (resource.data.get('creatorId', '') == request.auth.uid || isSuperAdmin());
-
-      match /invites/{inviteId} {
-        allow read: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if isSignedIn();
-      }
-
-      match /registration/{regId} {
-        allow read: if true; 
-        allow write: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin());
-      }
-      
-      match /registrationEntries/{entryId} {
-        allow read: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin());
-        allow write: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin());
-      }
     }
 
     match /plans/{planId} {
       allow get, list: if true;
-    }
-
-    match /subscriptions/{subId} {
-      allow read: if isOwner(subId) || isSuperAdmin();
-      allow write: if isSuperAdmin();
-    }
-
-    match /features/{featureId} {
-      allow get, list: if true;
-    }
-
-    match /leads/{leadId} {
-      allow create: if true;
-      allow read: if isSuperAdmin();
     }
   }
 }

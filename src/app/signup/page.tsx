@@ -1,46 +1,32 @@
+
 "use client";
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth, useFirestore } from '@/firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
-import { useTeam } from '@/components/providers/team-provider';
-import { Loader2 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { User, Baby, ArrowRight, Check, ShieldCheck } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
-import { PlaceHolderImages } from '@/lib/placeholder-images';
-import Image from 'next/image';
+import { cn } from '@/lib/utils';
 
-function SignupForm() {
+export default function SignupPage() {
+  const [step, setStep] = useState<'target' | 'account'>('target');
+  const [regTarget, setRegTarget] = useState<'self' | 'child' | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Player');
   const [isLoading, setIsLoading] = useState(false);
-  const [backgroundImage, setBackgroundImage] = useState('');
+  
   const auth = useAuth();
   const db = useFirestore();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const { joinTeamWithCode } = useTeam();
-  
-  const inviteCode = searchParams.get('code');
-
-  useEffect(() => {
-    const sportsImages = PlaceHolderImages.filter(img => img.id.startsWith('sport-'));
-    if (sportsImages.length > 0) {
-      const randomIdx = Math.floor(Math.random() * sportsImages.length);
-      setBackgroundImage(sportsImages[randomIdx].imageUrl);
-    }
-  }, []);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,161 +34,142 @@ function SignupForm() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
-
       await updateProfile(user, { displayName: name });
 
-      const avatarUrl = `https://picsum.photos/seed/${user.uid}/150/150`;
-      const userDocData = {
+      const role = regTarget === 'child' ? 'parent' : 'adult_player';
+      
+      await setDoc(doc(db, 'users', user.uid), {
         id: user.uid,
         fullName: name,
         email: email,
+        role: role,
         notificationsEnabled: true,
         createdAt: new Date().toISOString(),
-        avatarUrl: avatarUrl
-      };
-      
-      await setDoc(doc(db, 'users', user.uid), userDocData);
+        avatarUrl: `https://picsum.photos/seed/${user.uid}/150/150`
+      });
 
-      if (inviteCode) {
-        const joined = await joinTeamWithCode(inviteCode, role);
-        if (joined) {
-          toast({ title: "Welcome to the Squad!", description: "You've successfully joined your team." });
-        } else {
-          toast({ title: "Account Created", description: "Your account is ready, but the team code was invalid.", variant: "destructive" });
-        }
+      if (regTarget === 'self') {
+        await setDoc(doc(db, 'players', `p_${user.uid}`), {
+          firstName: name.split(' ')[0],
+          lastName: name.split(' ').slice(1).join(' '),
+          isMinor: false,
+          userId: user.uid,
+          hasLogin: true,
+          createdAt: new Date().toISOString()
+        });
       }
 
-      router.push('/feed');
+      toast({ title: "Account Created", description: "Welcome to The Squad Hub." });
+      router.push(regTarget === 'child' ? '/family' : '/feed');
     } catch (error: any) {
-      toast({
-        title: "Account Creation Failed",
-        description: error.message || "Please try again.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black p-6 relative overflow-hidden">
-      {/* Dynamic Sports Background */}
-      {backgroundImage && (
-        <>
-          <div className="absolute inset-0 w-full h-full">
-            <Image 
-              src={backgroundImage} 
-              alt="Sports Background" 
-              fill
-              className="object-cover opacity-60 animate-in fade-in duration-1000"
-              data-ai-hint="sports background"
-            />
-          </div>
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80" />
-        </>
-      )}
-
-      {/* Centralized Brand Logo for Dark Background */}
-      <div className="relative z-20 mb-8 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-1000">
-        <BrandLogo variant="dark-background" className="h-16 w-48 drop-shadow-2xl" priority />
-      </div>
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <BrandLogo variant="dark-background" className="h-12 w-40 mb-8" />
       
-      <Card className="w-full max-w-md border-none shadow-2xl rounded-[2.5rem] relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-700 bg-white/95 backdrop-blur-sm">
-        <CardHeader className="space-y-2 pt-10 text-center">
-          <CardTitle className="text-4xl font-black tracking-tighter">Join The Squad</CardTitle>
-          <CardDescription className="text-base font-medium">
-            {inviteCode ? `You've been invited to join your team!` : 'Create an account to coordinate your next win.'}
-          </CardDescription>
-        </CardHeader>
-        <form onSubmit={handleSignup}>
-          <CardContent className="space-y-5 px-8">
-            <div className="space-y-1">
-              <Label htmlFor="name" className="font-bold text-xs uppercase tracking-widest px-1">Full Name</Label>
-              <Input 
-                id="name" 
-                placeholder="John Doe" 
-                required 
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="h-12 rounded-2xl bg-muted/50 border-none focus-visible:ring-primary/30 text-base"
-              />
+      <Card className="w-full max-w-md rounded-[2.5rem] bg-white/95 backdrop-blur-md shadow-2xl border-none overflow-hidden">
+        <div className="h-2 hero-gradient w-full" />
+        
+        {step === 'target' ? (
+          <div className="p-10 space-y-8 animate-in fade-in duration-500">
+            <div className="text-center space-y-2">
+              <CardTitle className="text-3xl font-black uppercase tracking-tight">Who's Joining?</CardTitle>
+              <CardDescription className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Select registration type</CardDescription>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="email" className="font-bold text-xs uppercase tracking-widest px-1">Email Address</Label>
-              <Input 
-                id="email" 
-                type="email" 
-                placeholder="you@example.com" 
-                required 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="h-12 rounded-2xl bg-muted/50 border-none focus-visible:ring-primary/30 text-base"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="password" className="font-bold text-xs uppercase tracking-widest px-1">Password</Label>
-              <Input 
-                id="password" 
-                type="password" 
-                placeholder="••••••••"
-                required 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="h-12 rounded-2xl bg-muted/50 border-none focus-visible:ring-primary/30 text-base"
-              />
-            </div>
-            
-            {inviteCode && (
-              <div className="space-y-4 pt-2">
-                <div className="bg-primary/5 p-3 rounded-2xl border border-primary/10 flex items-center justify-between">
-                  <span className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Joining with Code</span>
-                  <Badge variant="secondary" className="font-mono bg-white border-primary/20 text-primary">{inviteCode}</Badge>
+
+            <div className="space-y-4">
+              <button 
+                onClick={() => setRegTarget('self')}
+                className={cn(
+                  "w-full p-6 rounded-3xl border-2 transition-all text-left flex items-center justify-between group",
+                  regTarget === 'self' ? "border-primary bg-primary/5 ring-4 ring-primary/10" : "border-muted bg-white hover:border-primary/20"
+                )}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={cn("p-3 rounded-2xl transition-colors", regTarget === 'self' ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>
+                    <User className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-black text-sm uppercase tracking-tight">Myself (18+)</p>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase">I am the primary player</p>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="font-bold text-xs uppercase tracking-widest px-1">Joining as</Label>
-                  <Suspense fallback={<Loader2 className="h-4 w-4 animate-spin" />}>
-                    <Select value={role} onValueChange={setRole}>
-                      <SelectTrigger className="h-12 rounded-2xl bg-muted/50 border-none focus:ring-primary/30">
-                        <SelectValue placeholder="Select your role..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Player">Teammate / Player</SelectItem>
-                        <SelectItem value="Parent">Parent / Guardian</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Suspense>
+                {regTarget === 'self' && <Check className="h-5 w-5 text-primary" />}
+              </button>
+
+              <button 
+                onClick={() => setRegTarget('child')}
+                className={cn(
+                  "w-full p-6 rounded-3xl border-2 transition-all text-left flex items-center justify-between group",
+                  regTarget === 'child' ? "border-primary bg-primary/5 ring-4 ring-primary/10" : "border-muted bg-white hover:border-primary/20"
+                )}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={cn("p-3 rounded-2xl transition-colors", regTarget === 'child' ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>
+                    <Baby className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-black text-sm uppercase tracking-tight">My Child / Children</p>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase">I am a parent or guardian</p>
+                  </div>
                 </div>
-              </div>
-            )}
-          </CardContent>
-          <CardFooter className="flex flex-col space-y-6 pb-12 px-8 pt-4">
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={isLoading}>
-              {isLoading ? "Enrolling..." : "Create Account"}
+                {regTarget === 'child' && <Check className="h-5 w-5 text-primary" />}
+              </button>
+            </div>
+
+            <Button 
+              className="w-full h-14 rounded-2xl text-lg font-black uppercase shadow-xl shadow-primary/20" 
+              disabled={!regTarget}
+              onClick={() => setStep('account')}
+            >
+              Next <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
-            <p className="text-sm font-bold text-center text-muted-foreground">
-              Already have an account?{" "}
-              <Link href="/login" className="text-primary hover:underline font-black">
-                Log In
-              </Link>
-            </p>
-          </CardFooter>
-        </form>
+          </div>
+        ) : (
+          <form onSubmit={handleSignup} className="p-10 space-y-6 animate-in slide-in-from-right-4 duration-500">
+            <div className="text-center space-y-2">
+              <CardTitle className="text-3xl font-black uppercase tracking-tight">Create Account</CardTitle>
+              <p className="text-[10px] font-black uppercase text-primary tracking-widest bg-primary/5 py-1 px-3 rounded-full w-fit mx-auto border border-primary/10">
+                {regTarget === 'child' ? 'Parent/Guardian Hub' : 'Adult Player Hub'}
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Full Legal Name</Label>
+                <Input required value={name} onChange={e => setName(e.target.value)} className="h-12 rounded-xl bg-muted/30 border-none font-bold" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Email Address</Label>
+                <Input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="h-12 rounded-xl bg-muted/30 border-none font-bold" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Password</Label>
+                <Input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="h-12 rounded-xl bg-muted/30 border-none font-bold" />
+              </div>
+            </div>
+
+            <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10 flex items-start gap-3">
+              <ShieldCheck className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+              <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">
+                By signing up, you verify that you are 18+ and authorized to manage registration data.
+              </p>
+            </div>
+
+            <CardFooter className="flex flex-col gap-4 p-0">
+              <Button type="submit" className="w-full h-14 rounded-2xl text-lg font-black uppercase shadow-xl" disabled={isLoading}>
+                {isLoading ? "Enrolling..." : "Begin Coordination"}
+              </Button>
+              <button type="button" onClick={() => setStep('target')} className="text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-primary">Back to Selection</button>
+            </CardFooter>
+          </form>
+        )}
       </Card>
     </div>
-  );
-}
-
-export default function SignupPage() {
-  return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center min-h-screen bg-black">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm font-bold text-white/70 uppercase tracking-widest">Loading Enrollment...</p>
-        </div>
-      </div>
-    }>
-      <SignupForm />
-    </Suspense>
   );
 }
