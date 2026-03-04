@@ -13,23 +13,27 @@ service cloud.firestore {
     }
 
     // Support for collectionGroup query on registrationEntries
-    // Simplified for query-ability (avoiding get() in group rules)
+    // CRITICAL: Group queries cannot use get() or exists() in rules. 
+    // We rely on assigned_team_owner_id injected at write-time for security.
     match /{path=**}/registrationEntries/{entryId} {
       allow read: if isSignedIn() && (
         isSuperAdmin() || 
-        (resource != null && resource.data.status == 'assigned' && (
-          // Demo guest check (Stateless/Queryable)
+        (resource != null && (
+          resource.data.get('assigned_team_owner_id', '') == request.auth.uid ||
+          resource.data.get('created_by', '') == request.auth.uid ||
+          // Demo guest check (Stateless)
           (resource.data.assigned_team_id.size() >= 15 && 
            resource.data.assigned_team_id[0:11] == 'demo_guest_' && 
-           resource.data.assigned_team_id[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : request.auth.uid.size()].lower()) ||
-          // Direct ownership/admin check via token or standard rules
-          isAdmin(resource.data.assigned_team_id)
-        )) ||
-        (resource != null && resource.data.get('created_by', '') == request.auth.uid)
+           resource.data.assigned_team_id[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : request.auth.uid.size()].lower())
+        ))
       );
       
       allow create: if true;
-      allow update, delete: if isSignedIn() && (isSuperAdmin() || isAdmin(resource.data.assigned_team_id));
+      allow update, delete: if isSignedIn() && (
+        isSuperAdmin() || 
+        resource.data.get('assigned_team_owner_id', '') == request.auth.uid ||
+        resource.data.get('created_by', '') == request.auth.uid
+      );
     }
 
     // Helper functions
@@ -160,13 +164,11 @@ service cloud.firestore {
         allow update, delete: if isSignedIn();
       }
 
-      // LEAGUE REGISTRATION RULES
       match /registration/{regId} {
         allow read: if true; 
         allow write: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin());
       }
       
-      // Explicit registration entries subcollection rule
       match /registrationEntries/{entryId} {
         allow read: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin());
         allow write: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin());

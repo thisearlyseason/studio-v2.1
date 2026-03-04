@@ -621,9 +621,27 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                 <p className="text-xs font-medium text-foreground/60 italic">Your status updates the squad roster.</p>
               </div>
               <div className="flex gap-2 w-full sm:w-auto">
-                <Button variant="outline" className={cn("flex-1 sm:w-28 h-12 rounded-xl font-black text-[10px] uppercase transition-all", currentStatus === 'notGoing' ? "bg-red-600 text-white border-red-600" : "bg-white border-2 hover:bg-red-50")} onClick={() => updateRSVP(event.id, 'notGoing')}>Decline</Button>
-                <Button variant="outline" className={cn("flex-1 sm:w-28 h-12 rounded-xl font-black text-[10px] uppercase transition-all", currentStatus === 'maybe' ? "bg-amber-500 text-white border-amber-500" : "bg-white border-2 hover:bg-amber-50")} onClick={() => updateRSVP(event.id, 'maybe')}>Maybe</Button>
-                <Button variant="outline" className={cn("flex-1 sm:w-40 h-12 rounded-xl font-black text-xs uppercase transition-all", currentStatus === 'going' ? "bg-green-600 text-white border-green-600" : "bg-white border-2 hover:bg-green-50")} onClick={() => updateRSVP(event.id, 'going')}><CheckCircle2 className="h-4 w-4 mr-2" /> I'm Going</Button>
+                <Button 
+                  variant="outline" 
+                  className={cn("flex-1 sm:w-28 h-12 rounded-xl font-black text-[10px] uppercase transition-all", currentStatus === 'notGoing' ? "bg-red-600 text-white border-red-600" : "bg-white border-2 hover:bg-red-50")} 
+                  onClick={() => updateRSVP(event.id, 'notGoing')}
+                >
+                  Decline
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className={cn("flex-1 sm:w-28 h-12 rounded-xl font-black text-[10px] uppercase transition-all", currentStatus === 'maybe' ? "bg-amber-500 text-white border-amber-500" : "bg-white border-2 hover:bg-amber-50")} 
+                  onClick={() => updateRSVP(event.id, 'maybe')}
+                >
+                  Maybe
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className={cn("flex-1 sm:w-40 h-12 rounded-xl font-black text-xs uppercase transition-all", currentStatus === 'going' ? "bg-green-600 text-white border-green-600" : "bg-white border-2 hover:bg-green-50")} 
+                  onClick={() => updateRSVP(event.id, 'going')}
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-2" /> I'm Going
+                </Button>
               </div>
             </div>
           </div>
@@ -645,7 +663,12 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                 <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">By clicking below, you officially sign this waiver for {event.title} as {user?.name}.</p>
               </div>
               <DialogFooter>
-                <Button className="w-full h-14 rounded-2xl text-lg font-black bg-red-600 text-white shadow-xl" onClick={() => { submitEventWaiver(event.id, true); setIsWaiverDialogOpen(false); toast({ title: "Waiver Signed" }); }}>Verify & Sign Legally</Button>
+                <Button 
+                  className="w-full h-14 rounded-2xl text-lg font-black bg-red-600 text-white shadow-xl" 
+                  onClick={() => { submitEventWaiver(event.id, true); setIsWaiverDialogOpen(false); toast({ title: "Waiver Signed" }); }}
+                >
+                  Verify & Sign Legally
+                </Button>
               </DialogFooter>
             </div>
           </DialogContent>
@@ -676,7 +699,12 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                 <p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">As a representative of <strong>{myParticipatingTeamName}</strong>, clicking below verifies that your squad understands and accepts all tournament coordination protocols.</p>
               </div>
               <DialogFooter>
-                <Button className="w-full h-16 rounded-2xl text-lg font-black bg-primary text-white shadow-xl" onClick={() => { if(myParticipatingTeamName) { signTeamTournamentWaiver(event.teamId, event.id, myParticipatingTeamName); setIsTeamAgreementOpen(false); } }}>Verify & Sign for Squad</Button>
+                <Button 
+                  className="w-full h-16 rounded-2xl text-lg font-black bg-primary text-white shadow-xl" 
+                  onClick={() => { if(myParticipatingTeamName) { signTeamTournamentWaiver(event.teamId, event.id, myParticipatingTeamName); setIsTeamAgreementOpen(false); } }}
+                >
+                  Verify & Sign for Squad
+                </Button>
               </DialogFooter>
             </div>
           </DialogContent>
@@ -686,7 +714,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
           <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl overflow-hidden p-0">
             <div className="h-2 bg-primary w-full" />
             <div className="p-8 space-y-6">
-              <DialogHeader><DialogTitle className="text-2xl font-black uppercase tracking-tight">Game Ledger Entry</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update Match Results</DialogDescription></DialogHeader>
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-black uppercase tracking-tight">Game Ledger Entry</DialogTitle>
+                <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update Match Results</DialogDescription>
+              </DialogHeader>
               {editingGame && (
                 <div className="space-y-6 py-2">
                   <div className="space-y-2">
@@ -698,15 +729,32 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                       </Button>
                     </div>
                   </div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Game Date</Label><input type="date" value={editingGame.date} onChange={e => setEditingGame({...editingGame, date: e.target.value})} className="w-full h-12 rounded-xl font-bold border-2 bg-background px-3" /></div>
-                  <div className="grid grid-cols-2 gap-6 items-end">
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase truncate">{editingGame.team1}</Label><Input type="number" value={editingGame.score1} onChange={e => setEditingGame({...editingGame, score1: parseInt(e.target.value) || 0})} className="h-12 rounded-xl font-black text-xl text-center" /></div>
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase truncate">{editingGame.team2}</Label><Input type="number" value={editingGame.score2} onChange={e => setEditingGame({...editingGame, score2: parseInt(e.target.value) || 0})} className="h-12 rounded-xl font-black text-xl text-center" /></div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Game Date</Label>
+                    <input type="date" value={editingGame.date} onChange={e => setEditingGame({...editingGame, date: e.target.value})} className="w-full h-12 rounded-xl font-bold border-2 bg-background px-3" />
                   </div>
-                  <div className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl border"><div className="space-y-0.5"><p className="text-[10px] font-black uppercase">Final Result</p><p className="text-[8px] font-bold text-muted-foreground uppercase">Mark match as complete</p></div><Checkbox checked={editingGame.isCompleted} onCheckedChange={v => setEditingGame({...editingGame, isCompleted: !!v})} className="h-6 w-6 rounded-lg border-2" /></div>
+                  <div className="grid grid-cols-2 gap-6 items-end">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase truncate">{editingGame.team1}</Label>
+                      <Input type="number" value={editingGame.score1} onChange={e => setEditingGame({...editingGame, score1: parseInt(e.target.value) || 0})} className="h-12 rounded-xl font-black text-xl text-center" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase truncate">{editingGame.team2}</Label>
+                      <Input type="number" value={editingGame.score2} onChange={e => setEditingGame({...editingGame, score2: parseInt(e.target.value) || 0})} className="h-12 rounded-xl font-black text-xl text-center" />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl border">
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] font-black uppercase">Final Result</p>
+                      <p className="text-[8px] font-bold text-muted-foreground uppercase">Mark match as complete</p>
+                    </div>
+                    <Checkbox checked={editingGame.isCompleted} onCheckedChange={v => setEditingGame({...editingGame, isCompleted: !!v})} className="h-6 w-6 rounded-lg border-2" />
+                  </div>
                 </div>
               )}
-              <DialogFooter><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={async () => { const updatedGames = (event.tournamentGames || []).map(g => g.id === editingGame?.id ? editingGame : g); await updateEvent(event.id, { tournamentGames: updatedGames }); setEditingGame(null); toast({ title: "Ledger Updated" }); }}>Commit Results</Button></DialogFooter>
+              <DialogFooter>
+                <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={async () => { const updatedGames = (event.tournamentGames || []).map(g => g.id === editingGame?.id ? editingGame : g); await updateEvent(event.id, { tournamentGames: updatedGames }); setEditingGame(null); toast({ title: "Ledger Updated" }); }}>Commit Results</Button>
+              </DialogFooter>
             </div>
           </DialogContent>
         </Dialog>
@@ -971,14 +1019,14 @@ export default function EventsPage() {
                                 </Button>
                                 <Button 
                                   variant="outline" 
-                                  className={cn("flex-1 h-8 rounded-lg text-[8px] font-black uppercase transition-all", gameRsvp === 'maybe' ? "bg-amber-500 text-white border-amber-500" : "bg-white border-amber-100 text-amber-700")} 
+                                  className={cn("flex-1 h-8 rounded-lg text-[8px] font-black uppercase transition-all", gameRsvp === 'maybe' ? "bg-amber-500 text-white border-amber-500" : "bg-white border-green-100 text-amber-700")} 
                                   onClick={() => updateRSVP(event.id, 'maybe', game.id)}
                                 >
                                   Maybe
                                 </Button>
                                 <Button 
                                   variant="outline" 
-                                  className={cn("flex-1 h-8 rounded-lg text-[8px] font-black uppercase transition-all", gameRsvp === 'notGoing' ? "bg-red-600 text-white border-red-600" : "bg-white border-red-100 text-red-700")} 
+                                  className={cn("flex-1 h-8 rounded-lg text-[8px] font-black uppercase transition-all", gameRsvp === 'notGoing' ? "bg-red-600 text-white border-red-600" : "bg-white border-green-100 text-red-700")} 
                                   onClick={() => updateRSVP(event.id, 'notGoing', game.id)}
                                 >
                                   Decline

@@ -128,6 +128,7 @@ export type RegistrationEntry = {
   status: 'pending' | 'accepted' | 'assigned' | 'declined';
   payment_received?: boolean;
   assigned_team_id: string | null;
+  assigned_team_owner_id?: string | null;
   created_at: string;
 };
 
@@ -193,7 +194,7 @@ export type TeamEvent = {
   location: string;
   description: string;
   userRsvps?: Record<string, string>;
-  gameRsvps?: Record<string, Record<string, string>>; // Outer key: gameId, Inner key: userId
+  gameRsvps?: Record<string, Record<string, string>>;
   isTournament?: boolean;
   isTournamentPaid?: boolean;
   tournamentSchedule?: any[];
@@ -708,7 +709,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         return contextValue.createNewTeam(name, pos, description, 'starter_squad');
       }
       const batch = writeBatch(db); 
-      batch.set(doc(db, 'teams', tid), { id: tid, teamName: name, description: description || '', teamCode: code, createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, createdAt: new Date().toISOString(), members: { [firebaseUser.uid]: 'Admin' }, isPro: isP, planId: pId, proAssignedAt: isP ? new Date().toISOString() : null, leagueIds: [], sport: 'General', parentCommentsEnabled: false, parentChatEnabled: true }); 
+      batch.set(doc(db, 'teams', tid), { id: tid, teamName: name, description: description || '', teamCode: code, createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, createdAt: new Date().toISOString(), members: { [firebaseUser.uid]: 'Admin' }, isPro: isP, planId: pId, proAssignedAt: iP ? new Date().toISOString() : null, leagueIds: [], sport: 'General', parentCommentsEnabled: false, parentChatEnabled: true }); 
       batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), { userId: firebaseUser.uid, teamId: tid, role: 'Admin', position: pos || 'Coach', name: userProfile?.name || 'Organizer', avatar: userProfile?.avatar || '', joinedAt: new Date().toISOString() }); 
       batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { userId: firebaseUser.uid, teamId: tid, teamName: name, description: description || '', teamCode: code, role: 'Admin', isPro: isP, planId: pId, joinedAt: new Date().toISOString(), createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, leagueIds: [], sport: 'General' }); 
       await batch.commit(); setActiveTeamId(tid); return tid;
@@ -769,7 +770,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     manuallyAddTeamToLeague: async (lid: string, tn: string, em: string, lurl?: string) => { await updateDoc(doc(db, 'leagues', lid), { [`teams.manual_${Date.now()}`]: { teamName: tn, teamLogoUrl: lurl || '', wins: 0, losses: 0, ties: 0, points: 0, coachEmail: em } }); toast({ title: "Squad Enrolled" }); },
     saveLeagueRegistrationConfig: async (lid: string, up: any) => { await setDoc(doc(db, 'leagues', lid, 'registration', 'config'), { ...up, league_id: lid, created_by: firebaseUser?.uid, updated_at: new Date().toISOString() }, { merge: true }); toast({ title: "Config Saved" }); },
     submitRegistrationEntry: async (lid: string, ans: any, v: number) => { await addDoc(collection(db, 'leagues', lid, 'registrationEntries'), { league_id: lid, form_version: v, answers: ans, status: 'pending', assigned_team_id: null, created_at: new Date().toISOString(), payment_received: false }); toast({ title: "Registration Dispatched" }); },
-    assignEntryToTeam: async (lid: string, eid: string, tid: string | null) => { await updateDoc(doc(db, 'leagues', lid, 'registrationEntries', eid), { assigned_team_id: tid, status: tid ? 'assigned' : 'pending' }); toast({ title: tid ? "Tactical Assignment" : "Assignment Cleared" }); },
+    assignEntryToTeam: async (lid: string, eid: string, tid: string | null) => { 
+      let ownerId = null;
+      if (tid) {
+        const tSnap = await getDoc(doc(db, 'teams', tid));
+        if (tSnap.exists()) {
+          ownerId = tSnap.data().ownerUserId;
+        }
+      }
+      await updateDoc(doc(db, 'leagues', lid, 'registrationEntries', eid), { 
+        assigned_team_id: tid, 
+        assigned_team_owner_id: ownerId,
+        status: tid ? 'assigned' : 'pending' 
+      }); 
+      toast({ title: tid ? "Tactical Assignment" : "Assignment Cleared" }); 
+    },
     respondToAssignment: async (leagueId: string, entryId: string, status: 'accepted' | 'declined') => { await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { status: status }); if (status === 'accepted' && activeTeam) { const snap = await getDocs(query(collection(db, 'leagues', leagueId, 'registrationEntries'), where('__name__', '==', entryId))); if (!snap.empty) { const name = snap.docs[0].data().answers['name'] || snap.docs[0].data().answers['fullName'] || 'New Player'; const mid = `member_reg_${Date.now()}`; await setDoc(doc(db, 'teams', activeTeam.id, 'members', mid), { id: mid, userId: `unlinked_${Date.now()}`, teamId: activeTeam.id, name, role: 'Member', position: 'Player', jersey: 'TBD', avatar: '', joinedAt: new Date().toISOString(), feesPaid: false, amountOwed: 0 }); toast({ title: "Roster Enrolled" }); } } },
     toggleRegistrationPaymentStatus: async (lid: string, eid: string, s: boolean) => { await updateDoc(doc(db, 'leagues', lid, 'registrationEntries', eid), { payment_received: s }); toast({ title: s ? "Payment Logged" : "Payment Pending" }); },
     addCoOrganizerByEmail: async (eventId: string, email: string) => {
@@ -808,13 +823,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           g.score2Draft = score2;
           g.score1Submitted = true;
         } else {
-          // Flip logic for team 2 submission
           g.score1Draft = score2;
           g.score2Draft = score1;
           g.score2Submitted = true;
         }
-        
-        // Finalize if both match
         if (g.score1Submitted && g.score2Submitted) {
           g.score1 = score1;
           g.score2 = score2;
