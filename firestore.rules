@@ -27,6 +27,17 @@ service cloud.firestore {
       );
     }
 
+    // Collection Group Queries - Recruitment Ledger
+    match /{path=**}/registrationEntries/{entryId} {
+      allow read: if isSignedIn() && (
+        resource.data.assigned_team_owner_id == request.auth.uid || 
+        isSuperAdmin() ||
+        // Allow demo users to audit their guest rosters
+        (resource.data.get('assigned_team_id', '').startsWith('demo_guest_'))
+      );
+      // League creators and co-organizers handled via league paths below
+    }
+
     // New Legally Safe Collections for Minors
     match /players/{playerId} {
       allow read: if isSignedIn() && (
@@ -52,9 +63,7 @@ service cloud.firestore {
         resource.data.signedByUserId == request.auth.uid || isSuperAdmin()
       );
       allow create: if isSignedIn() && (
-        // Adults sign for themselves
         (request.resource.data.signedByRole == 'player' && request.resource.data.signedByUserId == request.auth.uid) ||
-        // Parents sign for their children
         (request.resource.data.signedByRole == 'parent' && request.resource.data.signedByUserId == request.auth.uid)
       );
     }
@@ -63,6 +72,11 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, update, delete: if isOwner(userId) || isSuperAdmin();
       allow create: if isSignedIn(); 
+      
+      match /teamMemberships/{membershipId} {
+        allow read: if isOwner(userId) || isSuperAdmin();
+        allow write: if isOwner(userId) || isSuperAdmin();
+      }
     }
 
     match /teams/{teamId} {
@@ -79,6 +93,53 @@ service cloud.firestore {
         allow read: if isSignedIn();
         allow create, delete: if isAdmin(teamId);
         allow update: if isSignedIn();
+        
+        match /registrations/{regId} {
+          allow read, write: if isSignedIn();
+        }
+      }
+
+      match /alerts/{alertId} {
+        allow read: if isSignedIn();
+        allow create: if isAdmin(teamId);
+      }
+
+      match /drills/{drillId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin(teamId);
+      }
+
+      match /files/{fileId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin(teamId);
+      }
+
+      match /feedPosts/{postId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin(teamId);
+        
+        match /comments/{commentId} {
+          allow read: if isSignedIn();
+          allow create: if isSignedIn();
+          allow delete: if isAdmin(teamId) || resource.data.authorId == request.auth.uid;
+        }
+      }
+
+      match /groupChats/{chatId} {
+        allow read: if isSignedIn() && request.auth.uid in resource.data.memberIds;
+        allow create: if isSignedIn();
+        allow update: if isSignedIn() && request.auth.uid in resource.data.memberIds;
+        
+        match /messages/{messageId} {
+          allow read: if isSignedIn();
+          allow create: if isSignedIn();
+          allow update: if isSignedIn();
+        }
+      }
+
+      match /games/{gameId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin(teamId);
       }
     }
 
@@ -86,10 +147,33 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if isSignedIn() && (resource.data.get('creatorId', '') == request.auth.uid || isSuperAdmin());
+      
+      match /registration/{config} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+      }
+
+      match /registrationEntries/{entryId} {
+        allow read: if isSignedIn() && (
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid ||
+          resource.data.assigned_team_owner_id == request.auth.uid
+        );
+        allow create: if true; // Public signups
+        allow update: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+        allow delete: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+      }
     }
 
     match /plans/{planId} {
       allow get, list: if true;
+    }
+
+    match /features/{featureId} {
+      allow get, list: if true;
+    }
+
+    match /leads/{leadId} {
+      allow create: if true;
     }
   }
 }
