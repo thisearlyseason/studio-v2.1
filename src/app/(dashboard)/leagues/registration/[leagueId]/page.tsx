@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -38,18 +37,20 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogTrigger,
-  DialogFooter
+  DialogFooter,
+  DialogDescription
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 export default function LeagueRegistrationAdminPage() {
   const { leagueId } = useParams();
   const router = useRouter();
-  const { saveLeagueRegistrationConfig, assignEntryToTeam, activeTeam, isClubManager, hasFeature } = useTeam();
+  const { saveLeagueRegistrationConfig, assignEntryToTeam, activeLeague, isClubManager, hasFeature } = useTeam();
   const db = useFirestore();
 
   const configRef = useMemoFirebase(() => db ? doc(db, 'leagues', leagueId as string, 'registration', 'config') : null, [db, leagueId]);
