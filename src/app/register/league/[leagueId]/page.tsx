@@ -23,7 +23,8 @@ import {
   Info,
   Clock,
   ArrowRight,
-  XCircle
+  XCircle,
+  Plus
 } from 'lucide-react';
 import { 
   Select, 
@@ -55,7 +56,7 @@ export default function PublicLeagueRegistrationPage() {
 
     setIsSubmitting(true);
     try {
-      await submitRegistrationEntry(leagueId as string, answers, config.form_version);
+      await submitRegistrationEntry(leagueId as string, answers, config.form_version || 0);
       setIsSuccess(true);
     } catch (error) {
       toast({ title: "Submission Failed", description: "Please verify connectivity and try again.", variant: "destructive" });
@@ -120,6 +121,9 @@ export default function PublicLeagueRegistrationPage() {
     );
   }
 
+  // Tactical Fallback: Ensure form_schema exists before mapping
+  const formSchema = config.form_schema || [];
+
   return (
     <div className="min-h-screen bg-muted/30 flex flex-col items-center py-12 px-6">
       <BrandLogo variant="light-background" className="h-10 w-40 mb-12" />
@@ -159,13 +163,13 @@ export default function PublicLeagueRegistrationPage() {
                 </div>
                 <div>
                   <CardTitle className="text-2xl font-black uppercase tracking-tight leading-none">Enrollment Data</CardTitle>
-                  <CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Version {config.form_version}.0</CardDescription>
+                  <CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Version {config.form_version || 1}.0</CardDescription>
                 </div>
               </div>
             </CardHeader>
             
             <CardContent className="p-8 lg:p-10 space-y-8">
-              {config.form_schema.map(field => (
+              {formSchema.length > 0 ? formSchema.map(field => (
                 <div key={field.id} className="space-y-3">
                   {field.type === 'header' ? (
                     <div className="pt-4 border-b pb-2">
@@ -278,7 +282,11 @@ export default function PublicLeagueRegistrationPage() {
                     </>
                   )}
                 </div>
-              ))}
+              )) : (
+                <div className="text-center py-12 opacity-30">
+                  <p className="text-sm font-black uppercase">Standard Enrollment Enabled</p>
+                </div>
+              )}
             </CardContent>
 
             <CardFooter className="p-8 lg:p-10 pt-0">
