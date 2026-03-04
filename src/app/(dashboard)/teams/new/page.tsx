@@ -1,8 +1,8 @@
 
 "use client";
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,19 +16,30 @@ import {
   SelectValue 
 } from '@/components/ui/select';
 import { useTeam } from '@/components/providers/team-provider';
-import { ChevronLeft, Sparkles, CreditCard, ShieldCheck, Check, Zap, Trophy, Lock, AlertTriangle, Infinity } from 'lucide-react';
+import { ChevronLeft, Sparkles, CreditCard, ShieldCheck, Check, Zap, Trophy, Lock, AlertTriangle, Infinity, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
-export default function NewTeamPage() {
+function NewTeamForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { createNewTeam, isSuperAdmin, canAddProTeam, proQuotaStatus } = useTeam();
+  
   const [teamName, setTeamName] = useState('');
   const [description, setDescription] = useState('');
   const [organizerPosition, setOrganizerPosition] = useState('Coach');
   const [selectedPlan, setSelectedPlan] = useState<'starter_squad' | 'squad_pro'>('starter_squad');
   const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    const planParam = searchParams.get('plan');
+    if (planParam === 'pro') {
+      setSelectedPlan('squad_pro');
+    } else if (planParam === 'starter') {
+      setSelectedPlan('starter_squad');
+    }
+  }, [searchParams]);
 
   const handleCreate = async () => {
     if (!teamName.trim()) return;
@@ -147,7 +158,7 @@ export default function NewTeamPage() {
                 Full-scale coordination, analytics & playbooks.
               </p>
               <div className="flex items-baseline gap-1 relative z-10">
-                <p className="font-black text-xl text-primary">$9.99</p>
+                <p className="font-black text-xl text-primary">$12.99</p>
                 <span className="text-[8px] font-black opacity-40 uppercase">/ team / mo</span>
               </div>
             </div>
@@ -218,5 +229,13 @@ export default function NewTeamPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function NewTeamPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>}>
+      <NewTeamForm />
+    </Suspense>
   );
 }

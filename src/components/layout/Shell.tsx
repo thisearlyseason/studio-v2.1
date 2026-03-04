@@ -29,7 +29,8 @@ import {
   ChevronRight,
   Shield,
   BookOpen,
-  Video
+  Video,
+  Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -173,8 +174,16 @@ function TeamSwitcherContent({
       <DropdownMenuItem onClick={() => router.push('/team')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-2">
         <Info className="h-4 w-4 text-muted-foreground" /> Squad Profile
       </DropdownMenuItem>
-      <DropdownMenuItem onClick={() => router.push('/pricing')} className="p-3 text-primary cursor-pointer rounded-xl font-bold text-xs gap-2">
-        <PlusCircle className="h-4 w-4" /> Create New Squad
+      
+      <DropdownMenuSeparator className="my-1" />
+      <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40 px-3 py-1">Management</DropdownMenuLabel>
+      
+      <DropdownMenuItem onClick={() => router.push('/teams/new?plan=starter')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-2 hover:bg-muted">
+        <PlusCircle className="h-4 w-4 text-muted-foreground" /> Create Free Starter Squad
+      </DropdownMenuItem>
+      
+      <DropdownMenuItem onClick={() => router.push('/teams/new?plan=pro')} className="p-3 text-primary cursor-pointer rounded-xl font-bold text-xs gap-2 hover:bg-primary/5">
+        <Zap className="h-4 w-4 fill-current" /> Start New Pro Squad
       </DropdownMenuItem>
     </>
   );
