@@ -54,7 +54,9 @@ import {
   Signature as SignIcon,
   FileText,
   ExternalLink,
-  Globe
+  Globe,
+  Settings,
+  LayoutGrid
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -130,12 +132,22 @@ function calculateTournamentStandings(teams: string[], games: TournamentGame[]) 
 }
 
 function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAttendance, purchasePro, children }: EventDetailDialogProps) {
-  const { members = [], teams = [], user, updateEvent, signTeamTournamentWaiver, submitEventWaiver, activeTeam } = useTeam();
+  const { members = [], teams = [], user, updateEvent, signTeamTournamentWaiver, submitEventWaiver, activeTeam, isPro } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
   const [isWaiverDialogOpen, setIsWaiverDialogOpen] = useState(false);
   const [isTeamAgreementOpen, setIsTeamAgreementOpen] = useState(false);
+
+  // Management State
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [newTeamCoach, setNewTeamCoach] = useState('');
+  const [newTeamEmail, setNewTeamEmail] = useState('');
+  const [genStartTime, setGenStartTime] = useState('09:00');
+  const [genMatchLength, setGenMatchLength] = useState('60');
+  const [genType, setGenType] = useState('round_robin');
+  const [genPoolCount, setGenPoolCount] = useState('2');
 
   const regQuery = useMemoFirebase(() => {
     if (!db || !event?.id || !event?.teamId) return null;
@@ -191,6 +203,86 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
     return new Date(cleanDate);
   };
 
+  const handleGenerateSchedule = async () => {
+    if (!event.tournamentTeams || event.tournamentTeams.length < 2) return;
+    setIsGenerating(true);
+    await new Promise(r => setTimeout(r, 800));
+
+    try {
+      const games: TournamentGame[] = [];
+      const teams = [...event.tournamentTeams];
+      
+      if (genType === 'round_robin') {
+        if (teams.length % 2 !== 0) teams.push("BYE");
+        const numTeams = teams.length;
+        const rounds = numTeams - 1;
+        const half = numTeams / 2;
+        let currentDay = new Date(event.date || new Date());
+        let currentTime = genStartTime;
+
+        for (let round = 0; round < rounds; round++) {
+          for (let i = 0; i < half; i++) {
+            const t1 = teams[i]; const t2 = teams[numTeams - 1 - i];
+            if (t1 !== "BYE" && t2 !== "BYE") {
+              const displayTime = format(parse(currentTime, 'HH:mm', new Date()), 'h:mm a');
+              games.push({ id: `gen_${Date.now()}_${round}_${i}`, team1: t1, team2: t2, score1: 0, score2: 0, date: currentDay.toISOString().split('T')[0], time: displayTime, isCompleted: false, round: round + 1 });
+              const [h, m] = currentTime.split(':').map(Number);
+              const next = addMinutes(new Date(2000, 0, 1, h, m), parseInt(genMatchLength) + 15);
+              currentTime = format(next, 'HH:mm');
+              if (parseInt(currentTime.split(':')[0]) > 20) { currentDay = addDays(currentDay, 1); currentTime = genStartTime; }
+            }
+          }
+          teams.splice(1, 0, teams.pop()!);
+        }
+      } else if (genType === 'pool_play') {
+        const numPools = parseInt(genPoolCount);
+        let currentDay = new Date(event.date || new Date());
+        
+        for (let p = 0; p < numPools; p++) {
+          const poolTeams = teams.filter((_, idx) => idx % numPools === p);
+          const poolChar = String.fromCharCode(65 + p);
+          let poolTime = genStartTime;
+          
+          for (let i = 0; i < poolTeams.length; i++) {
+            for (let j = i + 1; j < poolTeams.length; j++) {
+              const displayTime = format(parse(poolTime, 'HH:mm', new Date()), 'h:mm a');
+              games.push({ id: `gen_p${poolChar}_${Date.now()}_${i}_${j}`, team1: poolTeams[i], team2: poolTeams[j], score1: 0, score2: 0, date: currentDay.toISOString().split('T')[0], time: displayTime, isCompleted: false, pool: poolChar });
+              const [h, m] = poolTime.split(':').map(Number);
+              const next = addMinutes(new Date(2000, 0, 1, h, m), parseInt(genMatchLength) + 10);
+              poolTime = format(next, 'HH:mm');
+            }
+          }
+        }
+      }
+
+      await updateEvent(event.id, { tournamentGames: games });
+      toast({ title: "Elite Schedule Forged", description: `${games.length} matches created.` });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleAddGuestSquad = async () => {
+    const tName = newTeamName.trim();
+    if (!tName || event.tournamentTeams?.includes(tName)) return;
+    
+    const updatedTeams = [...(event.tournamentTeams || []), tName];
+    const updatedMetadata = { 
+      ...(event.tournamentTeamsMetadata || {}), 
+      [tName]: { coach: newTeamCoach.trim(), email: newTeamEmail.trim() } 
+    };
+    
+    await updateEvent(event.id, { 
+      tournamentTeams: updatedTeams, 
+      tournamentTeamsMetadata: updatedMetadata 
+    });
+    
+    setNewTeamName('');
+    setNewTeamCoach('');
+    setNewTeamEmail('');
+    toast({ title: "Squad Enrolled", description: `${tName} added to hub.` });
+  };
+
   const syncTournamentSchedule = () => {
     if (!event.tournamentGames || !myParticipatingTeamName) return;
     const myGames = event.tournamentGames.filter(g => g.team1 === myParticipatingTeamName || g.team2 === myParticipatingTeamName);
@@ -213,10 +305,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   return (
     <Dialog onOpenChange={(open) => { if(!open) setEditingGame(null); }}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-7xl p-0 overflow-y-auto sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl custom-scrollbar">
-        <DialogTitle className="sr-only">{event.title} Detail Hub</DialogTitle>
+      <DialogContent className="sm:max-w-7xl p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl overflow-y-auto custom-scrollbar">
+        <DialogTitle className="sr-only">{event.title} Hub</DialogTitle>
         <div className="flex flex-col lg:flex-row min-h-full">
-          {/* Left Column - Info */}
+          {/* Left Column - Info (Non-scrollable relative to the right) */}
           <div className="w-full lg:w-1/3 flex flex-col text-white bg-black lg:border-r border-white/10 shrink-0">
             <div className="p-6 lg:p-8 flex justify-between items-start">
               <Badge className={cn(
@@ -234,7 +326,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
               <div className="space-y-6">
                 <div className="space-y-2">
                   <h2 className="text-2xl lg:text-4xl font-black tracking-tighter leading-tight uppercase">{event.title}</h2>
-                  <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">Official Sanctioned Hub</p>
+                  <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">Official Coordination Hub</p>
                 </div>
                 <div className="space-y-4">
                   <div className="bg-white/10 p-4 rounded-2xl border border-white/10 space-y-3">
@@ -323,15 +415,18 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
             )}
           </div>
 
-          {/* Right Column - Tabs */}
+          {/* Right Column - Scrollable Content */}
           <div className="flex-1 flex flex-col bg-background min-h-0">
-            <Tabs defaultValue={event.isTournament ? "bracket" : "roster"} className="flex-1 flex flex-col">
-              <div className="px-6 lg:px-10 py-6 border-b bg-muted/30 overflow-x-auto no-scrollbar">
+            <Tabs defaultValue={event.isTournament ? "bracket" : "roster"} className="flex-1">
+              <div className="px-6 lg:px-10 py-6 border-b bg-muted/30 sticky top-0 z-20 backdrop-blur-md">
                 <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit">
                   {event.isTournament && (
                     <TabsTrigger value="bracket" className="rounded-xl font-black text-[10px] lg:text-xs uppercase px-4 lg:px-8 flex-1 lg:flex-none data-[state=active]:bg-black data-[state=active]:text-white">Schedule</TabsTrigger>
                   )}
                   <TabsTrigger value="roster" className="rounded-xl font-black text-[10px] lg:text-xs uppercase px-4 lg:px-8 flex-1 lg:flex-none data-[state=active]:bg-black data-[state=active]:text-white">Roster</TabsTrigger>
+                  {isAdmin && event.isTournament && (
+                    <TabsTrigger value="manage" className="rounded-xl font-black text-[10px] lg:text-xs uppercase px-4 lg:px-8 flex-1 lg:flex-none data-[state=active]:bg-primary data-[state=active]:text-white">Manage Hub</TabsTrigger>
+                  )}
                   <TabsTrigger value="compliance" className="rounded-xl font-black text-[10px] lg:text-xs uppercase px-4 lg:px-8 flex-1 lg:flex-none data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>
                 </TabsList>
               </div>
@@ -384,6 +479,114 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                         <div className="bg-green-500 h-2 w-2 rounded-full" />
                       </div>
                     ))}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="manage" className="mt-0 space-y-12 animate-in fade-in slide-in-from-bottom-4">
+                  <div className="space-y-8">
+                    <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-8">
+                      <div className="flex items-center gap-4">
+                        <div className="bg-white p-3 rounded-2xl shadow-sm text-primary"><Zap className="h-6 w-6" /></div>
+                        <div>
+                          <h3 className="text-xl font-black uppercase tracking-tight">Tactical Schedule Generator</h3>
+                          <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Automated Bracket Creation</p>
+                        </div>
+                      </div>
+                      
+                      {isPro ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <div className="space-y-1.5">
+                              <Label className="text-[10px] font-black uppercase ml-1">Format</Label>
+                              <Select value={genType} onValueChange={setGenType}>
+                                <SelectTrigger className="h-12 rounded-xl border-2 bg-white"><SelectValue /></SelectTrigger>
+                                <SelectContent className="rounded-xl">
+                                  <SelectItem value="round_robin">Round Robin</SelectItem>
+                                  <SelectItem value="pool_play">Pool Play</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-[10px] font-black uppercase ml-1">Day Start Time</Label>
+                              <Input type="time" value={genStartTime} onChange={e => setGenStartTime(e.target.value)} className="h-12 rounded-xl border-2 bg-white font-bold" />
+                            </div>
+                          </div>
+                          <div className="space-y-4">
+                            <div className="space-y-1.5">
+                              <Label className="text-[10px] font-black uppercase ml-1">Match Length (Min)</Label>
+                              <Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-12 rounded-xl border-2 bg-white font-bold" />
+                            </div>
+                            {genType === 'pool_play' && (
+                              <div className="space-y-1.5">
+                                <Label className="text-[10px] font-black uppercase ml-1">Number of Pools</Label>
+                                <Input type="number" value={genPoolCount} onChange={e => setGenPoolCount(e.target.value)} className="h-12 rounded-xl border-2 bg-white font-bold" />
+                              </div>
+                            )}
+                          </div>
+                          <Button className="md:col-span-2 h-14 rounded-2xl text-base font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleGenerateSchedule} disabled={isGenerating || !event.tournamentTeams || event.tournamentTeams.length < 2}>
+                            {isGenerating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Sparkles className="h-5 w-5 mr-2" />}
+                            Forage Bracket Data
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="text-center py-10 space-y-4">
+                          <Lock className="h-10 w-10 text-muted-foreground opacity-20 mx-auto" />
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Elite Module Required</p>
+                          <Button size="sm" onClick={purchasePro}>Upgrade to Elite</Button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      <div className="space-y-6">
+                        <div className="flex items-center justify-between px-2">
+                          <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Participating Squads</h4>
+                          <Badge variant="outline" className="text-[8px] font-black">{event.tournamentTeams?.length || 0} ENROLLED</Badge>
+                        </div>
+                        <div className="bg-muted/30 p-6 rounded-[2rem] border-2 border-dashed space-y-4">
+                          <div className="space-y-2">
+                            <Label className="text-[9px] font-black uppercase tracking-widest ml-1">New Guest Squad</Label>
+                            <Input placeholder="Squad Name..." value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-11 rounded-xl bg-white border-2" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <Input placeholder="Coach Name" value={newTeamCoach} onChange={e => setNewTeamCoach(e.target.value)} className="h-10 rounded-xl bg-white border-2 text-xs" />
+                            <Input placeholder="Coach Email" value={newTeamEmail} onChange={e => setNewTeamEmail(e.target.value)} className="h-10 rounded-xl bg-white border-2 text-xs" />
+                          </div>
+                          <Button onClick={handleAddGuestSquad} className="w-full h-11 rounded-xl font-black uppercase text-xs">Enroll Squad</Button>
+                        </div>
+                        <div className="space-y-2">
+                          {event.tournamentTeams?.map((t, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-4 bg-white rounded-2xl border shadow-sm group">
+                              <span className="font-black text-sm uppercase tracking-tight">{t}</span>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100" onClick={() => updateEvent(event.id, { tournamentTeams: event.tournamentTeams?.filter((_, i) => i !== idx) })}><Trash2 className="h-4 w-4" /></Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-6">
+                        <div className="flex items-center justify-between px-2">
+                          <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Manual Match Entry</h4>
+                          <Button variant="outline" size="sm" onClick={() => updateEvent(event.id, { tournamentGames: [...(event.tournamentGames || []), { id: `game_${Date.now()}`, team1: event.tournamentTeams?.[0] || 'Team A', team2: event.tournamentTeams?.[1] || 'Team B', score1: 0, score2: 0, date: event.date, time: '10:00 AM', isCompleted: false }] })} className="h-8 text-[8px] font-black uppercase border-2">+ New Match</Button>
+                        </div>
+                        <div className="space-y-3">
+                          {event.tournamentGames?.map((game) => (
+                            <div key={game.id} className="p-4 bg-white rounded-2xl border shadow-sm space-y-3 relative">
+                              <div className="flex items-center gap-2">
+                                <input type="date" value={game.date} onChange={e => updateEvent(event.id, { tournamentGames: event.tournamentGames?.map(g => g.id === game.id ? {...g, date: e.target.value} : g) })} className="flex-1 h-8 rounded-lg bg-muted/20 px-2 border text-[10px] font-bold" />
+                                <input type="time" value={game.time} onChange={e => updateEvent(event.id, { tournamentGames: event.tournamentGames?.map(g => g.id === game.id ? {...g, time: e.target.value} : g) })} className="w-24 h-8 rounded-lg bg-muted/20 px-2 border text-[10px] font-bold" />
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-[10px] font-black uppercase truncate flex-1">{game.team1}</span>
+                                <span className="opacity-20 text-[8px] font-black">VS</span>
+                                <span className="text-[10px] font-black uppercase truncate flex-1 text-right">{game.team2}</span>
+                              </div>
+                              <Button variant="ghost" size="icon" className="absolute -top-2 -right-2 h-6 w-6 bg-white rounded-full border shadow-sm text-destructive" onClick={() => updateEvent(event.id, { tournamentGames: event.tournamentGames?.filter(g => g.id !== game.id) })}><X className="h-3 w-3" /></Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </TabsContent>
 
@@ -654,6 +857,7 @@ export default function EventsPage() {
   const [genStartTime, setGenStartTime] = useState('09:00');
   const [genMatchLength, setGenMatchLength] = useState('60');
   const [genType, setGenType] = useState('round_robin');
+  const [genPoolCount, setGenPoolCount] = useState('2');
 
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
 
@@ -708,12 +912,11 @@ export default function EventsPage() {
           teams.splice(1, 0, teams.pop()!);
         }
       } else if (genType === 'pool_play') {
-        const poolSize = 4;
-        const numPools = Math.ceil(teams.length / poolSize);
+        const numPools = parseInt(genPoolCount);
         let currentDay = new Date(newDate || new Date());
         
         for (let p = 0; p < numPools; p++) {
-          const poolTeams = teams.slice(p * poolSize, (p + 1) * poolSize);
+          const poolTeams = teams.filter((_, idx) => idx % numPools === p);
           const poolChar = String.fromCharCode(65 + p);
           let poolTime = genStartTime;
           
@@ -777,7 +980,7 @@ export default function EventsPage() {
 
       {/* CREATE EVENT DIALOG */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="sm:max-w-5xl p-0 overflow-y-auto sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl custom-scrollbar">
+        <DialogContent className="sm:max-w-5xl p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl overflow-y-auto custom-scrollbar">
           <DialogTitle className="sr-only">{editingEvent ? "Update" : "Launch"} Event Hub</DialogTitle>
           <div className="flex flex-col lg:flex-row min-h-full">
             {/* Left Section - Basic Info */}
@@ -946,9 +1149,17 @@ export default function EventsPage() {
                                 <Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-11 rounded-xl border-2 font-bold" />
                               </div>
                             </div>
-                            <div className="space-y-1.5">
-                              <Label className="text-[10px] font-black uppercase">Day Start Time</Label>
-                              <Input type="time" value={genStartTime} onChange={e => setGenStartTime(e.target.value)} className="h-11 rounded-xl border-2 font-bold" />
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-1.5">
+                                <Label className="text-[10px] font-black uppercase">Day Start Time</Label>
+                                <Input type="time" value={genStartTime} onChange={e => setGenStartTime(e.target.value)} className="h-11 rounded-xl border-2 font-bold" />
+                              </div>
+                              {genType === 'pool_play' && (
+                                <div className="space-y-1.5">
+                                  <Label className="text-[10px] font-black uppercase">Number of Pools</Label>
+                                  <Input type="number" value={genPoolCount} onChange={e => setGenPoolCount(e.target.value)} className="h-11 rounded-xl border-2 font-bold" />
+                                </div>
+                              )}
                             </div>
                             <Button className="w-full h-14 rounded-xl font-black uppercase shadow-xl" onClick={handleGenerateSchedule} disabled={isGenerating || tournamentTeams.length < 2}>
                               {isGenerating ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Forging...</> : "Generate Tactical Schedule"}
