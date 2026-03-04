@@ -25,17 +25,16 @@ service cloud.firestore {
     function isTeamMember(teamId) {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) ||
+        exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)) ||
         get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid
       );
     }
 
     function isAdmin(teamId) {
-      let isVerMember = isTeamMember(teamId);
       return isSignedIn() && (
-        isVerMember && (
-          get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
-          (exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) && get(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)).data.get('role', 'Member') == 'Admin')
-        )
+        get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) && get(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)).data.get('role', 'Member') == 'Admin') ||
+        (exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)) && get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.get('role', 'Member') == 'Admin')
       );
     }
 
@@ -59,9 +58,9 @@ service cloud.firestore {
       }
 
       match /events/{eventId} {
-        allow read: if isTeamMember(teamId) || isAdmin(teamId);
+        allow read: if isTeamMember(teamId) || isAdmin(teamId) || (resource != null && resource.data.get('isTournament', false) == true);
         allow create, delete: if isAdmin(teamId);
-        allow update: if isTeamMember(teamId) || isAdmin(teamId); 
+        allow update: if isTeamMember(teamId) || isAdmin(teamId) || (resource != null && resource.data.get('isTournament', false) == true); 
         
         match /registrations/{regId} {
           allow create: if true; 
@@ -81,7 +80,7 @@ service cloud.firestore {
 
       match /feedPosts/{postId} {
         allow read: if isTeamMember(teamId) || isAdmin(teamId);
-        allow create: if isStaff(teamId);
+        allow create: if isAdmin(teamId);
         allow delete: if isAdmin(teamId) || (resource != null && resource.data.get('authorId', '') == request.auth.uid);
         allow update: if isTeamMember(teamId) || isAdmin(teamId); 
         
@@ -127,9 +126,5 @@ service cloud.firestore {
       allow read: if isOwner(subId);
       allow write: if false;
     }
-  }
-
-  function isStaff(teamId) {
-    return isAdmin(teamId);
   }
 }
