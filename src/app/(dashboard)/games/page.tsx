@@ -47,9 +47,10 @@ export default function GamesPage() {
   const { activeTeam, addGame, updateGame, isSuperAdmin, purchasePro, hasFeature } = useTeam();
   const db = useFirestore();
   
+  // Section 1: Read Optimization - Tight limits for historical data
   const gamesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'games'), orderBy('date', 'desc'), limit(100));
+    return query(collection(db, 'teams', activeTeam.id, 'games'), orderBy('date', 'desc'), limit(30));
   }, [activeTeam?.id, db]);
 
   const { data: rawGames } = useCollection(gamesQuery);
@@ -57,7 +58,7 @@ export default function GamesPage() {
 
   const leaguesQuery = useMemoFirebase(() => {
     if (!activeTeam?.leagueIds?.length || !db) return null;
-    return query(collection(db, 'leagues'), where('__name__', 'in', activeTeam.leagueIds));
+    return query(collection(db, 'leagues'), where('__name__', 'in', activeTeam.leagueIds), limit(5));
   }, [activeTeam?.leagueIds, db]);
   
   const { data: teamLeagues } = useCollection<League>(leaguesQuery);

@@ -1,3 +1,4 @@
+
 'use client';
     
 import {
@@ -12,31 +13,45 @@ import {
 import { errorEmitter } from '@/firebase/error-emitter';
 import {FirestorePermissionError} from '@/firebase/errors';
 
+// Section 5: Rate Limiting / Write Cooldowns
+const writeCooldowns = new Map<string, number>();
+const COOLDOWN_MS = 1000; // 1 second throttle per document
+
+function checkCooldown(path: string): boolean {
+  const now = Date.now();
+  const last = writeCooldowns.get(path) || 0;
+  if (now - last < COOLDOWN_MS) {
+    console.warn(`Write throttled for ${path}`);
+    return false;
+  }
+  writeCooldowns.set(path, now);
+  return true;
+}
+
 /**
  * Initiates a setDoc operation for a document reference.
- * Does NOT await the write operation internally.
+ * Throttled to prevent accidental billing spikes from UI loops.
  */
 export function setDocumentNonBlocking(docRef: DocumentReference, data: any, options: SetOptions) {
+  if (!checkCooldown(docRef.path)) return;
   setDoc(docRef, data, options).catch(error => {
     errorEmitter.emit(
       'permission-error',
       new FirestorePermissionError({
         path: docRef.path,
-        operation: 'write', // or 'create'/'update' based on options
+        operation: 'write',
         requestResourceData: data,
       })
     )
   })
-  // Execution continues immediately
 }
 
 
 /**
  * Initiates an addDoc operation for a collection reference.
- * Does NOT await the write operation internally.
- * Returns the Promise for the new doc ref, but typically not awaited by caller.
  */
 export function addDocumentNonBlocking(colRef: CollectionReference, data: any) {
+  // Collection additions aren't throttled by path since they generate new IDs
   const promise = addDoc(colRef, data)
     .catch(error => {
       errorEmitter.emit(
@@ -54,9 +69,10 @@ export function addDocumentNonBlocking(colRef: CollectionReference, data: any) {
 
 /**
  * Initiates an updateDoc operation for a document reference.
- * Does NOT await the write operation internally.
+ * Throttled to prevent rapid-fire updates.
  */
 export function updateDocumentNonBlocking(docRef: DocumentReference, data: any) {
+  if (!checkCooldown(docRef.path)) return;
   updateDoc(docRef, data)
     .catch(error => {
       errorEmitter.emit(
@@ -73,7 +89,6 @@ export function updateDocumentNonBlocking(docRef: DocumentReference, data: any) 
 
 /**
  * Initiates a deleteDoc operation for a document reference.
- * Does NOT await the write operation internally.
  */
 export function deleteDocumentNonBlocking(docRef: DocumentReference) {
   deleteDoc(docRef)

@@ -382,15 +382,34 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   
   const seedingRef = useRef(false);
 
+  // Section 2: Aggressive Caching for Plans/Features
+  const [cachedPlans, setCachedPlans] = useState<Plan[]>([]);
+  useEffect(() => {
+    const cached = localStorage.getItem('squad_plans_cache');
+    if (cached) {
+      try {
+        const { data, expiry } = JSON.parse(cached);
+        if (expiry > Date.now()) setCachedPlans(data);
+      } catch (e) {}
+    }
+  }, []);
+
   const plansQuery = useMemoFirebase(() => db ? collection(db, 'plans') : null, [db]);
   const { data: plansData, isLoading: isPlansLoading } = useCollection(plansQuery);
-  const plans = useMemo(() => (plansData || []) as Plan[], [plansData]);
+  const plans = useMemo(() => {
+    if (plansData?.length) {
+      localStorage.setItem('squad_plans_cache', JSON.stringify({ data: plansData, expiry: Date.now() + 3600000 }));
+      return plansData as Plan[];
+    }
+    return cachedPlans;
+  }, [plansData, cachedPlans]);
 
   const isSuperAdmin = useMemo(() => {
     const email = firebaseUser?.email?.toLowerCase();
     return email ? SUPER_ADMIN_EMAILS.includes(email) : false;
   }, [firebaseUser?.email]);
 
+  // Section 1: Read Optimization - Explicit Limits
   const teamsQuery = useMemoFirebase(() => {
     if (!firebaseUser || !db) return null;
     const base = isSuperAdmin ? collection(db, 'teams') : collection(db, 'users', firebaseUser.uid, 'teamMemberships');
@@ -484,6 +503,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       setAlerts([]);
       return;
     }
+    // Optimization: Low-latency query with tight limit
     const q = query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10));
     const unsub = onSnapshot(q, (snap) => {
       setAlerts(snap.docs.map(d => ({ id: d.id, ...d.data() } as TeamAlert)));
@@ -500,6 +520,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       return;
     }
     setIsMembersLoading(true);
+    // Optimization: Limited roster sync
     const q = query(collection(db, 'teams', activeTeam.id, 'members'), orderBy('name', 'asc'), limit(100));
     const unsub = onSnapshot(q, (snap) => {
       setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Member)));
@@ -618,18 +639,49 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Section 4: Storage Optimization - Client-side compression
+  const compressImage = (dataUrl: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = dataUrl;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 800;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) { if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } } 
+        else { if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; } }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); // 70% quality compression
+      };
+    });
+  };
+
   const contextValue = useMemo(() => ({
     user: userProfile, 
-    updateUser: (updates: Partial<UserProfile>) => { if (firebaseUser) updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid), updates); },
+    updateUser: async (updates: Partial<UserProfile>) => { 
+      if (firebaseUser) {
+        if (updates.avatar) updates.avatar = await compressImage(updates.avatar);
+        updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid), updates); 
+      }
+    },
     activeTeam, 
     setActiveTeam: (t: Team) => setActiveTeamId(t.id),
-    updateTeamHero: async (url: string) => { if (activeTeam?.id && firebaseUser) { updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id), { heroImageUrl: url }); updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), { heroImageUrl: url }); } },
+    updateTeamHero: async (url: string) => { 
+      if (activeTeam?.id && firebaseUser) { 
+        const compressed = await compressImage(url);
+        updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id), { heroImageUrl: compressed }); 
+        updateDocumentNonBlocking(doc(db, 'users', firebaseUser.uid, 'teamMemberships', activeTeam.id), { heroImageUrl: compressed }); 
+      } 
+    },
     updateTeamDetails: async (updates: Partial<Team>) => { if (activeTeam?.id && firebaseUser) { 
       const f: any = {}; 
       if (updates.name) f.teamName = updates.name; 
       if (updates.sport) f.sport = updates.sport; 
       if (updates.description) f.description = updates.description; 
-      if (updates.teamLogoUrl) f.teamLogoUrl = updates.teamLogoUrl; 
+      if (updates.teamLogoUrl) f.teamLogoUrl = await compressImage(updates.teamLogoUrl); 
       if (updates.parentCommentsEnabled !== undefined) f.parentCommentsEnabled = updates.parentCommentsEnabled;
       if (updates.parentChatEnabled !== undefined) f.parentChatEnabled = updates.parentChatEnabled;
       
@@ -717,7 +769,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     updateGame: (id: string, g: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'games', id), g),
     addDrill: (d: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'drills'), { ...d, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString() }),
     deleteDrill: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'drills', id)),
-    addFile: (n: string, t: string, sb: number, u: string, cat?: string, desc?: string, ct?: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: t, size: (sb / 1024 / 1024).toFixed(1) + ' MB', sizeBytes: sb, url: u, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString(), category: cat || 'Other', description: desc || '', complianceType: ct || 'none', tags: [], comments: [], annotations: [], viewedBy: {} }),
+    addFile: async (n: string, t: string, sb: number, u: string, cat?: string, desc?: string, ct?: string) => {
+      if (!activeTeam?.id) return;
+      let finalUrl = u;
+      if (t === 'jpg' || t === 'png' || t === 'jpeg') finalUrl = await compressImage(u);
+      addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: t, size: (sb / 1024 / 1024).toFixed(1) + ' MB', sizeBytes: sb, url: finalUrl, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString(), category: cat || 'Other', description: desc || '', complianceType: ct || 'none', tags: [], comments: [], annotations: [], viewedBy: {} });
+    },
     addExternalLink: (n: string, u: string, cat?: string, desc?: string, ct?: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'files'), { name: n, type: 'link', size: 'URL', sizeBytes: 0, url: u, teamId: activeTeam.id, uploadedBy: userProfile?.name, uploaderId: firebaseUser?.uid, date: new Date().toISOString(), category: cat || 'Other', description: desc || '', complianceType: ct || 'none', tags: [], comments: [], annotations: [], viewedBy: {} }),
     deleteFile: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'files', id)),
     markMediaAsViewed: (fid: string) => {
@@ -744,7 +801,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!activeTeam?.id || !firebaseUser) return ''; 
       try { const docRef = await addDoc(collection(db, 'teams', activeTeam.id, 'groupChats'), { teamId: activeTeam.id, name, memberIds: [...memberIds, firebaseUser.uid], createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), lastMessage: '', unread: 0 }); return docRef.id; } catch (e) { return ''; }
     },
-    addMessage: (cid: string, auth: string, content: string, type: string, img?: string, poll?: any, isOpponentCoach?: boolean, opponentTeamName?: string) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages'), { author: auth, authorId: firebaseUser?.uid, content, type, imageUrl: img || null, poll: poll || null, createdAt: new Date().toISOString(), isOpponentCoach: isOpponentCoach || false, opponentTeamName: opponentTeamName || null }),
+    addMessage: async (cid: string, auth: string, content: string, type: string, img?: string, poll?: any, isOpponentCoach?: boolean, opponentTeamName?: string) => {
+      if (!activeTeam?.id) return;
+      let finalImg = img;
+      if (img) finalImg = await compressImage(img);
+      addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages'), { author: auth, authorId: firebaseUser?.uid, content, type, imageUrl: finalImg || null, poll: poll || null, createdAt: new Date().toISOString(), isOpponentCoach: isOpponentCoach || false, opponentTeamName: opponentTeamName || null });
+    },
     votePoll: async (cid: string, mid: string, oidx: number) => { 
       if (!activeTeam?.id || !firebaseUser) return; 
       try {
@@ -908,7 +970,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await updateDoc(ref, { payment_received: status });
       toast({ title: status ? "Payment Logged" : "Payment Pending", description: "Financial ledger updated." });
     }
-  }), [userProfile, activeTeam, teams, isTeamsLoading, members, isMembersLoading, currentMember, isStaff, isPlayer, isParent, isUserLoading, isSuperAdmin, isPaywallOpen, isRCInitialized, db, firebaseUser, activePlanFeatures, plans, isPlansLoading, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro, proQuotaStatus, canAddProTeam, alerts, router, performCreateNewTeam]);
+  }), [userProfile, activeTeam, teams, isTeamsLoading, members, isMembersLoading, currentMember, isStaff, isPlayer, isParent, isUserLoading, isSuperAdmin, isPaywallOpen, isRCInitialized, db, firebaseUser, activePlanFeatures, plans, isPlansLoading, simulationPlanId, isSeedingDemo, isClubManager, secondsUntilReset, isPro, proQuotaStatus, canAddProTeam, alerts, router, performCreateNewTeam, cachedPlans]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;
 }
