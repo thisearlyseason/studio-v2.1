@@ -282,7 +282,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   
   batch.set(doc(db, 'users', userId), {
     id: userId, fullName: isPlayerDemo ? 'Guest Teammate' : (isParentDemo ? 'Guest Guardian' : 'Guest Coordinator'), 
-    email: isPlayerDemo ? 'teammate@thesquad.io' : (isParentDemo ? 'parent@thesquad.io' : 'guest@thesquad.io'),
+    email: isPlayerDemo ? 'teammate@thesquad.pro' : (isParentDemo ? 'parent@thesquad.pro' : 'guest@thesquad.pro'),
     notificationsEnabled: true, createdAt: nowStr, 
     isDemo: true, avatarUrl: `https://picsum.photos/seed/${userId}/150/150`,
     activePlanId: (isPlayerDemo || isParentDemo) ? 'starter_squad' : actualPlanId, 

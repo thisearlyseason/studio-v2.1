@@ -146,7 +146,7 @@ export default function PublicTournamentWaiverPage() {
             </div>
           </div>
 
-          <div className="bg-primary/5 p-6 rounded-3xl border border-primary/10 space-y-4">
+          <div className="bg-primary/5 p-6 rounded-3xl border-2 border-primary/10 space-y-4">
             <div className="flex items-center gap-2">
               <Info className="h-4 w-4 text-primary" />
               <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Host Organization</h4>
@@ -245,7 +245,9 @@ export default function PublicTournamentWaiverPage() {
         </Card>
       </div>
 
-      <p className="text-[9px] font-black uppercase text-muted-foreground tracking-[0.3em] mt-12 opacity-40">The Squad Compliance Ledger v1.0</p>
+      <footer className="mt-12 text-center">
+        <p className="text-[9px] font-black uppercase text-muted-foreground tracking-[0.3em] opacity-40">The Squad Compliance Ledger v1.0 • thesquad.pro</p>
+      </footer>
     </div>
   );
 }

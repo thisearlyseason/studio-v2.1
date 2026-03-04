@@ -85,7 +85,7 @@ export default function SafetyCenterPage() {
               </div>
               <h3 className="text-xl font-bold">Reporting Issues</h3>
               <p className="text-muted-foreground leading-relaxed">
-                If you encounter inappropriate behavior or a security concern, please notify your team admin immediately or contact our safety team at <strong>safety@thesquad.io</strong>.
+                If you encounter inappropriate behavior or a security concern, please notify your team admin immediately or contact our safety team at <strong>safety@thesquad.pro</strong>.
               </p>
             </CardContent>
           </Card>

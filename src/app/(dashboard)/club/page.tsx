@@ -261,7 +261,7 @@ export default function ClubManagementPage() {
           <div className="flex items-center gap-6 pt-4">
             <div className="flex flex-col">
               <span className="text-[10px] font-black uppercase tracking-widest opacity-40">Support Channel</span>
-              <span className="font-bold flex items-center gap-2"><Mail className="h-4 w-4 text-primary" /> club-support@thesquad.io</span>
+              <span className="font-bold flex items-center gap-2"><Mail className="h-4 w-4 text-primary" /> club-support@thesquad.pro</span>
             </div>
           </div>
         </div>

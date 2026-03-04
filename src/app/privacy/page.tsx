@@ -78,7 +78,7 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-4">
             <h2 className="text-xl font-bold text-foreground uppercase tracking-wider">5. Your Rights</h2>
             <p>
-              You can update your profile information at any time in the settings menu. If you wish to delete your account or team data, please contact us at <strong>team@thesquad.io</strong>.
+              You can update your profile information at any time in the settings menu. If you wish to delete your account or team data, please contact us at <strong>team@thesquad.pro</strong>.
             </p>
           </section>
         </div>

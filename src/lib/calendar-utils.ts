@@ -62,7 +62,7 @@ export function downloadICS(events: CalendarEvent[], fileName: string = 'squad_s
     
     icsLines.push(
       'BEGIN:VEVENT',
-      `UID:${Date.now()}-${Math.random().toString(36).substring(7)}@thesquad.io`,
+      `UID:${Date.now()}-${Math.random().toString(36).substring(7)}@thesquad.pro`,
       `DTSTAMP:${formatDate(new Date())}Z`, // DTSTAMP is always UTC
       `DTSTART:${startStr}`, // Floating time (Local)
       `DTEND:${endStr}`,     // Floating time (Local)

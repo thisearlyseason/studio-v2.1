@@ -66,7 +66,7 @@ export default function TermsOfServicePage() {
           <section className="space-y-4">
             <h2 className="text-xl font-bold text-foreground uppercase tracking-wider">4. Subscriptions & Payments</h2>
             <p>
-              Pro Squad subscriptions are billed at <strong>$9.99 USD per month per team</strong>. Multi-team discounts are available at <strong>$8.50 USD/month</strong> or <strong>$85 USD/year</strong>. Payments are non-refundable for partial months of service. We reserve the right to change our pricing with 30 days' notice.
+              Pro Squad subscriptions are billed at <strong>$12.99 USD per month per team</strong>. Multi-team discounts are available through Club Tiers starting at <strong>$23.99 USD/month</strong>. Payments are non-refundable for partial months of service. We reserve the right to change our pricing with 30 days' notice.
             </p>
           </section>
 
