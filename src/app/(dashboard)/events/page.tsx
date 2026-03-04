@@ -78,6 +78,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -140,6 +150,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
   const [isWaiverDialogOpen, setIsWaiverDialogOpen] = useState(false);
   const [isTeamAgreementOpen, setIsTeamAgreementOpen] = useState(false);
+  const [isGenConfirmOpen, setIsGenConfirmOpen] = useState(false);
   const [coOrganizerEmail, setCoOrganizerEmail] = useState('');
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -268,6 +279,14 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
     const calendarEvents = myGames.map(g => ({ title: `${g.team1} vs ${g.team2}`, start: parseFlexibleTime(g.date, g.time), location: g.location || event.location, description: `Match for ${event.title}` }));
     downloadICS(calendarEvents, `${event.title.replace(/\s+/g, '_')}_Schedule.ics`);
     toast({ title: "Schedule Exported" });
+  };
+
+  const onGenerateClick = () => {
+    if (event.tournamentGames && event.tournamentGames.length > 0) {
+      setIsGenConfirmOpen(true);
+    } else {
+      handleGenerateSchedule();
+    }
   };
 
   const publicWaiverLink = `${window.location.origin}/tournaments/${event.teamId}/waiver/${event.id}`;
@@ -441,7 +460,29 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                                 <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Match Length (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-12 rounded-xl border-2 bg-white font-bold" /></div>
                                 {genType === 'pool_play' && (<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Number of Pools</Label><Input type="number" value={genPoolCount} onChange={e => setGenPoolCount(e.target.value)} className="h-12 rounded-xl border-2 bg-white font-bold" /></div>)}
                               </div>
-                              <Button className="md:col-span-2 h-14 rounded-2xl text-base font-black shadow-xl shadow-primary/20" onClick={handleGenerateSchedule} disabled={isGenerating || !event.tournamentTeams || event.tournamentTeams.length < 2}>{isGenerating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Sparkles className="h-5 w-5 mr-2" />} Forage Bracket Data</Button>
+                              <Button 
+                                className="md:col-span-2 h-14 rounded-2xl text-base font-black shadow-xl shadow-primary/20" 
+                                onClick={onGenerateClick} 
+                                disabled={isGenerating || !event.tournamentTeams || event.tournamentTeams.length < 2}
+                              >
+                                {isGenerating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Sparkles className="h-5 w-5 mr-2" />} 
+                                Forage Bracket Data
+                              </Button>
+
+                              <AlertDialog open={isGenConfirmOpen} onOpenChange={setIsGenConfirmOpen}>
+                                <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle className="text-2xl font-black uppercase">Overwrite Schedule?</AlertDialogTitle>
+                                    <AlertDialogDescription className="font-bold text-base pt-2 text-foreground/80 leading-relaxed">
+                                      Generating a new tactical schedule will permanently delete all {event.tournamentGames?.length || ''} existing matches in this hub. This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter className="mt-6">
+                                    <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => { handleGenerateSchedule(); setIsGenConfirmOpen(false); }} className="rounded-xl font-black bg-primary text-white shadow-xl shadow-primary/20">Purge & Re-generate</AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
                             </div>
                           ) : (<div className="text-center py-10 space-y-4"><Lock className="h-10 w-10 text-muted-foreground opacity-20 mx-auto" /><p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Elite Module Required</p><Button size="sm" onClick={purchasePro}>Upgrade to Elite</Button></div>)}
                         </div>
