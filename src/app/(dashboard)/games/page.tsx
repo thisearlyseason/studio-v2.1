@@ -47,7 +47,6 @@ export default function GamesPage() {
   const { activeTeam, addGame, updateGame, isSuperAdmin, purchasePro, hasFeature } = useTeam();
   const db = useFirestore();
   
-  // Section 1: Read Optimization - Tight limits for historical data
   const gamesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
     return query(collection(db, 'teams', activeTeam.id, 'games'), orderBy('date', 'desc'), limit(30));
@@ -190,7 +189,7 @@ export default function GamesPage() {
                   <ScrollArea className="flex-1 h-full">
                     <div className="flex flex-col lg:flex-row min-h-full">
                       {/* Form Pane */}
-                      <div className="lg:w-1/2 p-6 lg:p-10 bg-muted/30 lg:border-r-2 space-y-8 shrink-0">
+                      <div className="w-full lg:w-1/2 p-6 lg:p-10 bg-muted/30 lg:border-r-2 space-y-8 shrink-0">
                         <DialogHeader className="flex flex-row items-center justify-between">
                           <h2 className="text-2xl lg:text-3xl font-black uppercase tracking-tight leading-none">{editingGame ? "Update Match" : "Post Match"}</h2>
                           <Button variant="ghost" size="icon" className="sm:hidden" onClick={() => setIsRecordOpen(false)}><X className="h-5 w-5" /></Button>
@@ -227,7 +226,7 @@ export default function GamesPage() {
                       </div>
 
                       {/* Highlights & Actions Pane */}
-                      <div className="lg:w-1/2 p-6 lg:p-10 flex flex-col justify-between bg-background">
+                      <div className="w-full lg:w-1/2 p-6 lg:p-10 flex flex-col justify-between bg-background min-h-0">
                         <div className="space-y-6">
                           <div className="space-y-1.5">
                             <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Match Highlights</Label>
@@ -235,10 +234,10 @@ export default function GamesPage() {
                               <Textarea placeholder="Describe key plays and tactical moments..." value={notes} onChange={e => setNotes(e.target.value)} className="min-h-[200px] lg:min-h-[300px] rounded-2xl lg:rounded-[2rem] p-6 font-bold bg-muted/10 border-2 resize-none text-base" />
                             ) : (
                               <div className="min-h-[200px] lg:min-h-[300px] rounded-2xl lg:rounded-[2rem] p-8 bg-primary/5 border-2 border-dashed flex flex-col items-center justify-center text-center space-y-4">
-                                <Lock className="h-8 w-8 text-primary/40" />
+                                <div className="bg-white p-3 rounded-xl shadow-sm"><Lock className="h-8 w-8 text-primary/40" /></div>
                                 <div className="space-y-1">
                                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Match Highlights Locked</p>
-                                  <p className="text-[8px] font-bold text-muted-foreground uppercase max-w-[180px] mx-auto">Upgrade to Elite to archive season highlights and tactical notes.</p>
+                                  <p className="text-[8px] font-bold text-muted-foreground uppercase max-w-[180px] mx-auto leading-relaxed">Upgrade to Elite to archive season highlights and tactical notes.</p>
                                 </div>
                                 <Button size="sm" variant="ghost" className="h-8 rounded-lg text-[8px] font-black uppercase text-primary border border-primary/20" onClick={purchasePro}>Upgrade to Elite</Button>
                               </div>
@@ -249,7 +248,7 @@ export default function GamesPage() {
                     </div>
                   </ScrollArea>
                   {/* Sticky Footer */}
-                  <div className="p-6 lg:p-8 bg-background border-t shrink-0 sticky bottom-0 z-30">
+                  <div className="p-6 lg:p-8 bg-background border-t shrink-0 sticky bottom-0 z-30 backdrop-blur-md">
                     <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleRecordGame}>
                       {editingGame ? "Commit Updates" : "Broadcast Result"}
                     </Button>
@@ -284,8 +283,11 @@ export default function GamesPage() {
           <div className="space-y-4 lg:space-y-6"><div className="flex items-center justify-between px-2"><h2 className="text-[10px] lg:text-xs font-black uppercase tracking-[0.2em] lg:tracking-[0.3em] text-muted-foreground">Match Ledger</h2><Badge variant="outline" className="text-[8px] lg:text-[9px] font-black border-primary/20 text-primary">{games.length} RESULTS</Badge></div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4">{games.map((game) => (<Card key={game.id} className="rounded-2xl lg:rounded-[2rem] border-none shadow-sm hover:shadow-md ring-1 ring-black/5 overflow-hidden group hover:shadow-lg transition-all cursor-pointer bg-white" onClick={() => handleEditGame(game)}><div className={cn("h-1 w-full", game.result === 'Win' ? "bg-green-500" : game.result === 'Loss' ? "bg-red-600" : "bg-muted-foreground/30")} /><CardContent className="p-4 lg:p-6 space-y-3 lg:space-y-4"><div className="flex items-center justify-between"><div className="flex gap-2"><Badge className={cn("text-[8px] lg:text-[9px] font-black uppercase tracking-widest border-none px-2 lg:px-3 h-4 lg:h-5 shadow-sm", game.result === 'Win' ? "bg-green-500 text-white" : game.result === 'Loss' ? "bg-red-600 text-white" : "bg-muted text-muted-foreground")}>{game.result}</Badge>{game.leagueId && <Badge className="bg-primary/10 text-primary border-none text-[8px] px-2 h-5 font-black uppercase flex items-center gap-1"><Shield className="h-2 w-2" /> League</Badge>}</div><span className="text-[8px] lg:text-[10px] font-black text-muted-foreground uppercase tracking-widest">{format(game.date, 'MMM d, yyyy')}</span></div><div className="flex items-center justify-between gap-2 lg:gap-4"><div className="space-y-0.5 lg:space-y-1 min-w-0"><p className="text-[7px] lg:text-[9px] font-black uppercase text-muted-foreground tracking-[0.1em]">Opponent</p><h3 className="font-black text-sm lg:text-lg tracking-tight truncate leading-tight group-hover:text-primary transition-colors">{game.opponent}</h3></div><div className="text-right shrink-0"><div className="flex items-baseline gap-1 justify-end"><span className={cn("text-xl lg:text-3xl font-black", game.result === 'Win' ? "text-green-600" : game.result === 'Loss' ? "text-red-600" : "text-foreground")}>{game.myScore}</span><span className="text-muted-foreground font-black px-0.5 lg:px-1 text-xs">-</span><span className="text-base lg:text-xl font-black opacity-40">{game.opponentScore}</span></div></div></div>{isPro && game.notes && <p className="text-[9px] lg:text-[11px] font-medium text-muted-foreground line-clamp-1 italic border-t pt-2 lg:pt-3">"{game.notes}"</p>}</CardContent></Card>))}</div></div>
         </div>
       ) : (
-        <div className="text-center py-20 lg:py-24 bg-muted/10 rounded-2xl lg:rounded-[3rem] border-2 border-dashed space-y-4"><Trophy className="h-10 w-10 lg:h-12 lg:w-12 text-muted-foreground opacity-20 mx-auto" /><div><p className="font-black text-lg lg:text-xl uppercase tracking-tight">No results logged</p><p className="text-[10px] lg:sm font-bold text-muted-foreground uppercase tracking-widest opacity-60">Record your first match to start.</p></div>{isAdmin && <Button variant="outline" className="rounded-full px-8 lg:px-10 font-black uppercase text-[10px] tracking-widest border-2 h-10 lg:h-12" onClick={() => setIsRecordOpen(true)}>Record Match</Button>}</div>
+        <div className="text-center py-20 lg:py-24 bg-muted/10 rounded-2xl lg:rounded-[3rem] border-2 border-dashed space-y-4"><div className="bg-white p-4 rounded-3xl shadow-sm"><Trophy className="h-10 w-10 lg:h-12 lg:w-12 text-muted-foreground opacity-20 mx-auto" /></div><div><p className="font-black text-lg lg:text-xl uppercase tracking-tight">No results logged</p><p className="text-[10px] lg:sm font-bold text-muted-foreground uppercase tracking-widest opacity-60">Record your first match to start.</p></div>{isAdmin && <Button variant="outline" className="rounded-full px-8 lg:px-10 font-black uppercase text-[10px] tracking-widest border-2 h-10 lg:h-12" onClick={() => setIsRecordOpen(true)}>Record Match</Button>}</div>
       )}
+      <div className="text-center pt-8 opacity-30">
+        <p className="text-[8px] font-black uppercase tracking-widest leading-relaxed">Prices listed are current promotional rates and are subject to change without notice.</p>
+      </div>
     </div>
   );
 }

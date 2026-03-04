@@ -217,8 +217,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
         <DialogTitle className="sr-only">{event.title} Detail Hub</DialogTitle>
         <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
           {/* Left Column - Info */}
-          <div className="lg:w-1/3 p-6 lg:p-8 lg:border-r flex flex-col shrink-0 text-white bg-black transition-colors duration-500">
-            <div className="flex justify-between items-start mb-6 shrink-0">
+          <div className="w-full lg:w-1/3 flex flex-col shrink-0 text-white bg-black lg:border-r border-white/10 h-1/3 lg:h-full">
+            <div className="p-6 lg:p-8 flex justify-between items-start shrink-0">
               <Badge className={cn(
                 "uppercase font-black tracking-widest text-[9px] px-3 h-6", 
                 event.isTournamentPaid ? "bg-primary text-white" : "bg-white text-black"
@@ -230,14 +230,14 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
               </DialogClose>
             </div>
             
-            <ScrollArea className="flex-1 -mx-2 px-2 h-full">
+            <ScrollArea className="flex-1 h-full px-6 lg:px-8">
               <div className="space-y-8 pb-10">
                 <div className="space-y-6">
                   <div className="space-y-2">
-                    <h2 className="text-3xl lg:text-4xl font-black tracking-tighter leading-none uppercase">{event.title}</h2>
+                    <h2 className="text-2xl lg:text-4xl font-black tracking-tighter leading-tight uppercase">{event.title}</h2>
                     <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">Official Sanctioned Hub</p>
                   </div>
-                  <div className="space-y-4 pt-4">
+                  <div className="space-y-4">
                     <div className="bg-white/10 p-4 rounded-2xl border border-white/10 space-y-3">
                       <div className="flex items-center gap-3 font-bold text-sm"><CalendarDays className={cn("h-4 w-4", event.isTournamentPaid ? "text-primary" : "text-white/40")} /><span>{formatDateRange(event.date, event.endDate)}</span></div>
                       <div className="flex items-center gap-3 font-bold text-sm"><Clock className={cn("h-4 w-4", event.isTournamentPaid ? "text-primary" : "text-white/40")} /><span>{event.startTime}</span></div>
@@ -281,7 +281,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                 </div>
                 
                 {event.isTournament && (
-                  <div className="space-y-4 pt-4">
+                  <div className="space-y-4">
                     <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em] px-1">Leaderboard</h4>
                     {isEliteUnlocked ? (
                       tournamentStandings.length > 0 ? (
@@ -314,7 +314,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
             </ScrollArea>
             
             {isAdmin && (
-              <div className="pt-6 border-t border-white/10 flex gap-3 mt-auto shrink-0">
+              <div className="p-6 border-t border-white/10 flex gap-3 mt-auto shrink-0">
                 <Button variant="secondary" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px] bg-white/10 text-white hover:bg-white/20" onClick={() => onEdit(event)}>
                   <Edit3 className="h-4 w-4 mr-2" /> Edit Hub
                 </Button>
@@ -328,8 +328,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
           {/* Right Column - Tabs */}
           <div className="flex-1 flex flex-col bg-background min-h-0 overflow-hidden">
             <Tabs defaultValue={event.isTournament ? "bracket" : "roster"} className="flex-1 flex flex-col min-h-0">
-              <div className="px-6 lg:px-10 py-6 border-b bg-muted/30 shrink-0">
-                <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit overflow-x-auto no-scrollbar">
+              <div className="px-6 lg:px-10 py-6 border-b bg-muted/30 shrink-0 overflow-x-auto no-scrollbar">
+                <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit">
                   {event.isTournament && (
                     <TabsTrigger value="bracket" className="rounded-xl font-black text-[10px] lg:text-xs uppercase px-4 lg:px-8 flex-1 lg:flex-none data-[state=active]:bg-black data-[state=active]:text-white">Schedule</TabsTrigger>
                   )}
@@ -338,7 +338,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                 </TabsList>
               </div>
               
-              <div className="flex-1 min-h-0 overflow-hidden">
+              <div className="flex-1 min-h-0">
                 <ScrollArea className="h-full">
                   <div className="p-6 lg:p-10 pb-32">
                     <TabsContent value="bracket" className="mt-0 space-y-10">
@@ -525,7 +525,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                 <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap">{event.specialWaiverText}</p>
               </ScrollArea>
               <div className="bg-primary/5 p-4 rounded-2xl border flex items-start gap-3 mb-6">
-                <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div className="bg-white p-1 rounded text-primary shrink-0 mt-0.5"><Info className="h-4 w-4" /></div>
                 <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">By clicking below, you officially sign this waiver for {event.title} as {user?.name}.</p>
               </div>
               <DialogFooter>
@@ -788,11 +788,11 @@ export default function EventsPage() {
           <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
             {/* Left Section - Basic Info */}
             <div className={cn(
-              "lg:w-5/12 p-6 lg:p-8 lg:border-r space-y-6 flex flex-col shrink-0",
+              "w-full lg:w-5/12 flex flex-col shrink-0 lg:border-r h-1/3 lg:h-full",
               isEliteTournament ? "bg-primary/5" : "bg-muted/30"
             )}>
-              <ScrollArea className="flex-1 -mx-2 px-2 h-full">
-                <div className="space-y-6 pb-6">
+              <ScrollArea className="flex-1 h-full px-6 lg:px-8">
+                <div className="space-y-6 py-6 lg:py-8">
                   <DialogHeader>
                     <DialogTitle className="text-2xl lg:text-3xl font-black tracking-tight">
                       {editingEvent ? "Update" : "Launch"} {isTournamentMode ? (isEliteTournament ? "Elite Hub" : "Tournament") : "Match"}
@@ -843,7 +843,7 @@ export default function EventsPage() {
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 {isTournamentMode ? (
                   <Tabs defaultValue="teams" className="flex-1 flex flex-col min-h-0">
-                    <div className="px-6 lg:px-8 pt-6 lg:pt-8 border-b bg-muted/10 shrink-0">
+                    <div className="px-6 lg:px-8 pt-6 lg:pt-8 border-b bg-muted/10 shrink-0 overflow-x-auto no-scrollbar">
                       <TabsList className="bg-muted/50 h-11 p-1 mb-4 w-full">
                         <TabsTrigger value="teams" className="font-black text-[10px] uppercase px-6 flex-1">Squads</TabsTrigger>
                         <TabsTrigger value="games" className="font-black text-[10px] uppercase px-6 flex-1">Brackets</TabsTrigger>
@@ -851,7 +851,7 @@ export default function EventsPage() {
                       </TabsList>
                     </div>
                     
-                    <div className="flex-1 min-h-0 overflow-hidden">
+                    <div className="flex-1 min-h-0">
                       <ScrollArea className="h-full px-6 lg:px-8">
                         <div className="space-y-6 py-6 pb-20">
                           {/* TEAMS MANAGEMENT */}
