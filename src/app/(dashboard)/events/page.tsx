@@ -78,7 +78,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useTeam, TeamEvent, CustomFormField, FormFieldType, TournamentGame, League } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, collectionGroup, where, limit } from 'firebase/firestore';
+import { collection, query, orderBy, collectionGroup, where, limit, doc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -143,8 +143,13 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
 
   const isEliteUnlocked = !!event.isTournamentPaid;
   
-  const myTeamNames = teams.filter(t => t.role === 'Admin').map(t => t.name);
-  const myParticipatingTeamName = event.tournamentTeams?.find(tn => myTeamNames.includes(tn)) || activeTeam?.name;
+  // ROBUST MATCHING LOGIC: Find exactly which team in the tournament list belongs to the current user
+  const myParticipatingTeamName = useMemo(() => {
+    if (!event.tournamentTeams) return null;
+    const myAdminTeamNamesLower = teams.filter(t => t.role === 'Admin').map(t => t.name.toLowerCase());
+    return event.tournamentTeams.find(tn => myAdminTeamNamesLower.includes(tn.toLowerCase()));
+  }, [teams, event.tournamentTeams]);
+
   const isWaiverSignedForMyTeam = myParticipatingTeamName ? !!event.teamAgreements?.[myParticipatingTeamName]?.agreed : false;
   const hasUserSignedIndividualWaiver = !!event.specialWaiverResponses?.[user?.id || '']?.agreed;
 
@@ -174,16 +179,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const currentStatus = event.userRsvps?.[user?.id || ''];
   const isUserStaff = members.find(m => m.userId === user?.id && ['Coach', 'Team Lead', 'Assistant Coach', 'Squad Leader', 'Manager', 'Platform Admin'].includes(m.position));
 
-  const syncSingleMatch = (game: TournamentGame) => {
-    const calEvent: CalendarEvent = {
-      title: `${game.team1} vs ${game.team2}`,
-      start: parse(`${game.date} ${game.time}`, 'yyyy-MM-dd h:mm a', new Date()),
-      location: event.location,
-      description: `Match for ${event.title}`
-    };
-    return calEvent;
-  };
-
   const syncTournamentSchedule = () => {
     if (!event.tournamentGames || !myParticipatingTeamName) return;
     const myGames = event.tournamentGames.filter(g => g.team1 === myParticipatingTeamName || g.team2 === myParticipatingTeamName);
@@ -191,7 +186,12 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
       toast({ title: "No Matches Found", description: "Your team has no matches scheduled yet.", variant: "destructive" });
       return;
     }
-    const events = myGames.map(g => syncSingleMatch(g));
+    const events = myGames.map(g => ({
+      title: `${g.team1} vs ${g.team2}`,
+      start: parse(`${g.date} ${g.time}`, 'yyyy-MM-dd h:mm a', new Date()),
+      location: event.location,
+      description: `Match for ${event.title}`
+    }));
     downloadICS(events, `${event.title.replace(/\s+/g, '_')}_Schedule.ics`);
     toast({ title: "Schedule Exported" });
   };
@@ -254,7 +254,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
 
                 {myParticipatingTeamName && !isWaiverSignedForMyTeam && (
                   <Button onClick={() => setIsTeamAgreementOpen(true)} className="w-full rounded-xl h-14 font-black text-sm uppercase gap-3 bg-primary text-white shadow-xl shadow-primary/20">
-                    <Signature className="h-5 w-5" /> Sign Team Waiver
+                    <Signature className="h-5 w-5" /> Sign for {myParticipatingTeamName}
                   </Button>
                 )}
               </div>
@@ -433,7 +433,13 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                                       <Badge variant="outline" className="h-8 px-5 font-black text-[10px] uppercase tracking-widest opacity-40 rounded-full border-dashed">Pending</Badge>
                                     )}
                                     {isAdmin && (
-                                      <Checkbox checked={res?.agreed || false} onCheckedChange={() => { updateEvent(event.id, { [`teamAgreements.${teamName}`]: { agreed: !res?.agreed, captainName: user?.name || 'Verified by Host', timestamp: new Date().toISOString() } }); }} className="h-6 w-6 rounded-lg" />
+                                      <Checkbox 
+                                        checked={res?.agreed || false} 
+                                        onCheckedChange={(v) => { 
+                                          updateEvent(event.id, { [`teamAgreements.${teamName}`]: { agreed: !!v, captainName: user?.name || 'Verified by Host', timestamp: new Date().toISOString() } }); 
+                                        }} 
+                                        className="h-6 w-6 rounded-lg" 
+                                      />
                                     )}
                                   </div>
                                 </div>
@@ -722,17 +728,31 @@ export default function EventsPage() {
                   {isTournamentMode ? (<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label><input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>) : (<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time</Label><input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>)}
                 </div>
                 <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label><Input value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
+                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">General Description</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[80px] border-2 text-xs font-bold" /></div>
                 
-                <div className="space-y-6 pt-4 border-t">
-                  <div className="space-y-4">
+                <div className="space-y-6 pt-6 border-t mt-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <ShieldCheck className="h-4 w-4 text-primary" />
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-primary">Compliance Strategy</h3>
+                  </div>
+                  
+                  <div className="space-y-4 bg-white p-4 rounded-2xl border">
                     <div className="flex items-center justify-between"><Label className="text-[10px] font-black uppercase">Individual participant Waiver?</Label><Switch checked={requiresWaiver} onCheckedChange={setRequiresWaiver} /></div>
-                    {requiresWaiver && <Textarea placeholder="Define terms for players/parents..." value={waiverText} onChange={e => setWaiverText(e.target.value)} className="rounded-xl min-h-[80px] border-2 text-xs font-bold" />}
+                    {requiresWaiver && (
+                      <div className="space-y-2">
+                        <Label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Participant Legal Text (Individual)</Label>
+                        <Textarea placeholder="Terms for players/parents to sign personally..." value={waiverText} onChange={e => setWaiverText(e.target.value)} className="rounded-xl min-h-[100px] border-2 text-xs font-bold bg-muted/10" />
+                      </div>
+                    )}
                   </div>
                   
                   {isTournamentMode && (
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Participation Agreement</Label>
-                      <Textarea placeholder="Define terms for guest team leads to sign..." value={teamWaiverText} onChange={e => setTeamWaiverText(e.target.value)} className="rounded-xl min-h-[100px] border-2 text-xs font-bold" />
+                    <div className="space-y-4 bg-white p-4 rounded-2xl border">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase">Squad Participation Agreement</Label>
+                        <p className="text-[8px] font-bold text-muted-foreground uppercase leading-tight italic">This text is signed once by the guest coach for their entire squad.</p>
+                        <Textarea placeholder="Define tournament rules and squad liability terms..." value={teamWaiverText} onChange={e => setTeamWaiverText(e.target.value)} className="rounded-xl min-h-[120px] border-2 text-xs font-bold bg-muted/10" />
+                      </div>
                     </div>
                   )}
                 </div>
