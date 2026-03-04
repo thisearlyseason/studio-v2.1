@@ -25,7 +25,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { updateDocumentNonBlocking, setDocumentNonBlocking, addDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { Purchases } from '@revenuecat/purchases-js';
-import { seedSubscriptionData, launchDemoEnvironments, resetDemoEnvironment, seedGuestDemoTeam } from '@/lib/db-seeder';
+import { seedSubscriptionData, seedGuestDemoTeam, resetDemoEnvironment } from '@/lib/db-seeder';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -95,7 +95,6 @@ export type LeagueInvite = {
   createdAt: string;
 };
 
-// --- League Registration Module Types ---
 export type RegistrationFormFieldType = 'short_text' | 'long_text' | 'dropdown' | 'checkbox' | 'yes_no' | 'image' | 'header';
 
 export type RegistrationFormField = {
@@ -104,7 +103,7 @@ export type RegistrationFormField = {
   label: string;
   description?: string;
   required?: boolean;
-  options?: string[]; // For dropdown/checkbox
+  options?: string[];
 };
 
 export type LeagueRegistrationConfig = {
@@ -129,7 +128,6 @@ export type RegistrationEntry = {
   assigned_team_id: string | null;
   created_at: string;
 };
-// --- End League Registration Module Types ---
 
 export type MemberPosition = 'Coach' | 'Team Lead' | 'Assistant Coach' | 'Squad Leader' | 'Player' | 'Parent' | string;
 
@@ -351,8 +349,6 @@ interface TeamContextType {
   inviteTeamToLeague: (leagueId: string, leagueName: string, email: string) => Promise<void>;
   acceptLeagueInvite: (inviteId: string, leagueId: string) => Promise<void>;
   manuallyAddTeamToLeague: (leagueId: string, teamName: string, email: string, logoUrl?: string) => Promise<void>;
-  
-  // League Registration Actions
   saveLeagueRegistrationConfig: (leagueId: string, config: Partial<LeagueRegistrationConfig>) => Promise<void>;
   submitRegistrationEntry: (leagueId: string, answers: Record<string, any>, version: number) => Promise<void>;
   assignEntryToTeam: (leagueId: string, entryId: string, teamId: string | null) => Promise<void>;
@@ -362,7 +358,6 @@ interface TeamContextType {
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
 
 const SUPER_ADMIN_EMAILS = ['thisearlyseason@gmail.com', 'test@gmail.com'];
-const DEMO_RESET_INTERVAL_MS = 5 * 60 * 1000;
 
 export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isUserLoading } = useUser();
@@ -383,8 +378,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [isMembersLoading, setIsMembersLoading] = useState(false);
   
   const seedingRef = useRef(false);
-  const resetLockRef = useRef(false);
-  const rcInitRef = useRef(false);
 
   const plansQuery = useMemoFirebase(() => db ? collection(db, 'plans') : null, [db]);
   const { data: plansData, isLoading: isPlansLoading } = useCollection(plansQuery);
@@ -433,6 +426,56 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!teams.length) return null;
     return teams.find(t => t.id === activeTeamId) || teams[0];
   }, [teams, activeTeamId]);
+
+  // Handle Seeding Demo
+  useEffect(() => {
+    const seedDemoId = searchParams.get('seed_demo');
+    if (seedDemoId && firebaseUser && !seedingRef.current) {
+      seedingRef.current = true;
+      setIsSeedingDemo(true);
+      
+      seedGuestDemoTeam(db, firebaseUser.uid, seedDemoId)
+        .then((tid) => {
+          setActiveTeamId(tid);
+          setIsSeedingDemo(false);
+          // Remove the query param to prevent re-seeding on reload
+          const url = new URL(window.location.href);
+          url.searchParams.delete('seed_demo');
+          window.history.replaceState({}, '', url.toString());
+        })
+        .catch((err) => {
+          console.error("Demo seeding failed:", err);
+          setIsSeedingDemo(false);
+          seedingRef.current = false;
+        });
+    }
+  }, [firebaseUser, searchParams, db]);
+
+  // Listen to User Profile for plan limits
+  useEffect(() => {
+    if (!firebaseUser?.uid || !db) {
+      setUserProfile(null);
+      return;
+    }
+    const unsub = onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setUserProfile({
+          id: firebaseUser.uid,
+          name: data.fullName || data.name || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          avatar: data.avatarUrl || data.avatar || '',
+          isDemo: data.isDemo || false,
+          activePlanId: data.activePlanId,
+          planSource: data.planSource,
+          proTeamLimit: data.proTeamLimit,
+          tournamentCredits: data.tournamentCredits || 0
+        });
+      }
+    });
+    return () => unsub();
+  }, [firebaseUser?.uid, db]);
 
   useEffect(() => {
     if (!activeTeam?.id || !db) {
@@ -504,29 +547,24 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const pid = simulationPlanId || activeTeam?.planId;
     if (!pid) return {};
     
-    if (pid === 'squad_organization') {
-      return {
-        schedule_games_events: true, tournaments: true, basic_roster: true,
-        full_roster_details: true, attendance_tracking: true, live_feed_read: true,
-        live_feed_post: true, group_chat: true, score_tracking: true,
-        media_uploads: true, high_priority_alerts: true, leagues: true,
-        league_registration: true
-      };
-    }
+    // Pro Tier defaults for demos and while plans are loading
+    const proDefaults = {
+      schedule_games_events: true, tournaments: true, basic_roster: true,
+      full_roster_details: true, attendance_tracking: true, live_feed_read: true,
+      live_feed_post: true, group_chat: true, score_tracking: true,
+      stats_basic: true, media_uploads: true, history_unlimited: true,
+      high_priority_alerts: true, leagues: true, league_registration: true
+    };
+
+    if (pid === 'squad_organization') return proDefaults;
+    if (pid === 'squad_pro' || pid === 'tournament_pro') return proDefaults;
+    if (pid === 'starter_squad') return {
+      schedule_games_events: true, basic_roster: true, live_feed_read: true,
+      score_tracking: true, group_chat: true
+    };
 
     const plan = plans.find(p => p.id === pid);
-    const features = { ...(plan?.features || {}) };
-    
-    if (pid === 'starter_squad') {
-      features.group_chat = true;
-      features.live_feed_read = false;
-      features.live_feed_post = false;
-    } else {
-      features.leagues = true;
-      features.league_registration = true;
-    }
-    
-    return features;
+    return { ...(plan?.features || {}) };
   }, [activeTeam, plans, simulationPlanId]);
 
   const isPro = useMemo(() => {
@@ -833,63 +871,31 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       });
       toast({ title: "Squad Enrolled", description: `${teamName} added to ledger.` });
     },
-
-    // LEAGUE REGISTRATION LOGIC
     saveLeagueRegistrationConfig: async (leagueId: string, updates: Partial<LeagueRegistrationConfig>) => {
       const ref = doc(db, 'leagues', leagueId, 'registration', 'config');
-      await setDoc(ref, {
-        ...updates,
-        league_id: leagueId,
-        created_by: firebaseUser?.uid,
-        updated_at: new Date().toISOString()
-      }, { merge: true });
+      await setDoc(ref, { ...updates, league_id: leagueId, created_by: firebaseUser?.uid, updated_at: new Date().toISOString() }, { merge: true });
       toast({ title: "Config Saved", description: "Registration protocols updated." });
     },
     submitRegistrationEntry: async (leagueId: string, answers: Record<string, any>, version: number) => {
       const col = collection(db, 'leagues', leagueId, 'registrationEntries');
-      await addDoc(col, {
-        league_id: leagueId,
-        form_version: version,
-        answers,
-        status: 'pending',
-        assigned_team_id: null,
-        created_at: new Date().toISOString()
-      });
+      await addDoc(col, { league_id: leagueId, form_version: version, answers, status: 'pending', assigned_team_id: null, created_at: new Date().toISOString() });
       toast({ title: "Registration Dispatched", description: "Your squad application has been sent." });
     },
     assignEntryToTeam: async (leagueId: string, entryId: string, teamId: string | null) => {
       const ref = doc(db, 'leagues', leagueId, 'registrationEntries', entryId);
-      await updateDoc(ref, {
-        assigned_team_id: teamId,
-        status: teamId ? 'assigned' : 'pending'
-      });
+      await updateDoc(ref, { assigned_team_id: teamId, status: teamId ? 'assigned' : 'pending' });
       toast({ title: teamId ? "Tactical Assignment" : "Assignment Cleared", description: "Entry status synchronized." });
     },
     respondToAssignment: async (leagueId: string, entryId: string, status: 'accepted' | 'declined') => {
       const ref = doc(db, 'leagues', leagueId, 'registrationEntries', entryId);
       await updateDoc(ref, { status });
-      
       if (status === 'accepted' && activeTeam) {
-        // Carry-over logic: Add to roster
         const entrySnap = await getDocs(query(collection(db, 'leagues', leagueId, 'registrationEntries'), where('__name__', '==', entryId)));
         if (!entrySnap.empty) {
           const entryData = entrySnap.docs[0].data();
-          // Extract name from answers (standard field)
           const name = entryData.answers['name'] || entryData.answers['fullName'] || 'New Player';
           const mid = `member_reg_${Date.now()}`;
-          await setDoc(doc(db, 'teams', activeTeam.id, 'members', mid), {
-            id: mid,
-            userId: `unlinked_${Date.now()}`,
-            teamId: activeTeam.id,
-            name,
-            role: 'Member',
-            position: 'Player',
-            jersey: 'TBD',
-            avatar: '',
-            joinedAt: new Date().toISOString(),
-            feesPaid: false,
-            amountOwed: 0
-          });
+          await setDoc(doc(db, 'teams', activeTeam.id, 'members', mid), { id: mid, userId: `unlinked_${Date.now()}`, teamId: activeTeam.id, name, role: 'Member', position: 'Player', jersey: 'TBD', avatar: '', joinedAt: new Date().toISOString(), feesPaid: false, amountOwed: 0 });
           toast({ title: "Roster Enrolled", description: `${name} has joined the squad.` });
         }
       } else if (status === 'declined') {
