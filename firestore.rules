@@ -32,8 +32,9 @@ service cloud.firestore {
       return isSignedIn() && (
         isSuperAdmin() ||
         exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) ||
-        (teamId.size() > 20 && teamId.lower().contains('demo_guest') && 
-         teamId.lower().contains(request.auth.uid[request.auth.uid.size() - 4 : ].lower())) ||
+        // Slicing logic for demo guests (stateless fallback)
+        (teamId.size() >= 15 && teamId[0:11].lower() == 'demo_guest_' && 
+         teamId[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : ].lower()) ||
         (exists(/databases/$(database)/documents/teams/$(teamId)) && (
           get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
           get(/databases/$(database)/documents/teams/$(teamId)).data.get('members', {})[request.auth.uid] != null
@@ -47,8 +48,9 @@ service cloud.firestore {
         isSuperAdmin() ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)).data.get('role', 'Member') == 'Admin') ||
-        (teamId.size() > 20 && teamId.lower().contains('demo_guest') && 
-         teamId.lower().contains(request.auth.uid[request.auth.uid.size() - 4 : ].lower())) ||
+        // Slicing logic for demo guests (stateless fallback)
+        (teamId.size() >= 15 && teamId[0:11].lower() == 'demo_guest_' && 
+         teamId[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : ].lower()) ||
         (exists(/databases/$(database)/documents/teams/$(teamId)) && (
           get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
           get(/databases/$(database)/documents/teams/$(teamId)).data.get('members', {})[request.auth.uid] == 'Admin'
@@ -183,5 +185,3 @@ service cloud.firestore {
     }
   }
 }
-
-    
