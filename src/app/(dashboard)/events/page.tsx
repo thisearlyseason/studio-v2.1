@@ -78,17 +78,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useTeam, TeamEvent, CustomFormField, FormFieldType, TournamentGame, League } from '@/components/providers/team-provider';
-import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, collectionGroup, where, limit, doc } from 'firebase/firestore';
+import { useTeam, TeamEvent, TournamentGame, League } from '@/components/providers/team-provider';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, orderBy, doc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { format, isSameDay, isPast, isFuture, addMinutes, addDays, parse } from 'date-fns';
+import { format, isSameDay, isPast, addMinutes, addDays, parse } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
-import { generateGoogleCalendarLink, downloadICS, CalendarEvent } from '@/lib/calendar-utils';
+import { generateGoogleCalendarLink, downloadICS } from '@/lib/calendar-utils';
 import { Switch } from '@/components/ui/switch';
 
 interface EventDetailDialogProps {
@@ -130,7 +130,7 @@ function calculateTournamentStandings(teams: string[], games: TournamentGame[]) 
 }
 
 function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAttendance, purchasePro, children }: EventDetailDialogProps) {
-  const { members = [], teams = [], user, updateEvent, signTeamTournamentWaiver, submitEventWaiver, isPro, activeTeam } = useTeam();
+  const { members = [], teams = [], user, updateEvent, signTeamTournamentWaiver, submitEventWaiver, activeTeam } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
@@ -215,96 +215,99 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="sm:max-w-7xl p-0 overflow-hidden sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] flex flex-col border-none shadow-2xl">
         <DialogTitle className="sr-only">{event.title} Detail Hub</DialogTitle>
-        <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
-          <div className="lg:w-1/3 bg-black text-white p-6 lg:p-8 lg:border-r space-y-8 flex flex-col shrink-0 lg:overflow-y-auto custom-scrollbar">
-            <div className="space-y-6">
-              <div className="flex justify-between items-start">
-                <Badge className={cn("uppercase font-black tracking-widest text-[9px] px-3 h-6", event.isTournament ? "bg-primary text-white" : "bg-white/20 text-white")}>
-                  {event.isTournament ? (event.isTournamentPaid ? "Elite Tournament" : "Basic Tournament") : "Team Match"}
-                </Badge>
-                <DialogClose asChild>
-                  <X className="h-5 w-5 text-white/40 cursor-pointer hover:text-white" />
-                </DialogClose>
-              </div>
-              <div className="space-y-2">
-                <h2 className="text-3xl lg:text-4xl font-black tracking-tighter leading-none uppercase">{event.title}</h2>
-                <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">Strategic Deployment</p>
-              </div>
-              <div className="space-y-4 pt-4">
-                <div className="bg-white/5 p-4 rounded-2xl border border-white/10 space-y-3">
-                  <div className="flex items-center gap-3 font-bold text-sm"><CalendarDays className="h-4 w-4 text-primary" /><span>{formatDateRange(event.date, event.endDate)}</span></div>
-                  <div className="flex items-center gap-3 font-bold text-sm"><Clock className="h-4 w-4 text-primary" /><span>{event.startTime}</span></div>
-                  <div className="flex items-center gap-3 font-bold text-sm"><MapPin className="h-4 w-4 text-primary" /><span className="truncate">{event.location}</span></div>
-                </div>
+        <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
+          {/* Left Column - Info */}
+          <div className="lg:w-1/3 bg-black text-white p-6 lg:p-8 lg:border-r flex flex-col shrink-0">
+            <ScrollArea className="flex-1 -mx-2 px-2">
+              <div className="space-y-8 pb-10">
+                <div className="space-y-6">
+                  <div className="flex justify-between items-start">
+                    <Badge className={cn("uppercase font-black tracking-widest text-[9px] px-3 h-6", event.isTournament ? "bg-primary text-white" : "bg-white/20 text-white")}>
+                      {event.isTournament ? (event.isTournamentPaid ? "Elite Tournament" : "Basic Tournament") : "Team Match"}
+                    </Badge>
+                    <DialogClose asChild>
+                      <X className="h-5 w-5 text-white/40 cursor-pointer hover:text-white" />
+                    </DialogClose>
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-3xl lg:text-4xl font-black tracking-tighter leading-none uppercase">{event.title}</h2>
+                    <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">Strategic Deployment</p>
+                  </div>
+                  <div className="space-y-4 pt-4">
+                    <div className="bg-white/5 p-4 rounded-2xl border border-white/10 space-y-3">
+                      <div className="flex items-center gap-3 font-bold text-sm"><CalendarDays className="h-4 w-4 text-primary" /><span>{formatDateRange(event.date, event.endDate)}</span></div>
+                      <div className="flex items-center gap-3 font-bold text-sm"><Clock className="h-4 w-4 text-primary" /><span>{event.startTime}</span></div>
+                      <div className="flex items-center gap-3 font-bold text-sm"><MapPin className="h-4 w-4 text-primary" /><span className="truncate">{event.location}</span></div>
+                    </div>
 
-                <div className="grid grid-cols-1 gap-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" className="w-full rounded-xl h-12 font-black text-xs uppercase gap-3 border-white bg-white/10 text-white hover:bg-white/20">
-                        <CalendarPlus className="h-4 w-4" /> {event.isTournament ? 'Sync Full Schedule' : 'Add to Calendar'}
+                    <div className="grid grid-cols-1 gap-2">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" className="w-full rounded-xl h-12 font-black text-xs uppercase gap-3 border-white bg-white/10 text-white hover:bg-white/20">
+                            <CalendarPlus className="h-4 w-4" /> {event.isTournament ? 'Sync Full Schedule' : 'Add to Calendar'}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-56 rounded-xl">
+                          <DropdownMenuLabel className="text-[10px] font-black uppercase">Calendar Sync</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          {event.isTournament ? (
+                            <DropdownMenuItem className="font-bold py-3 cursor-pointer" onClick={syncTournamentSchedule}>Download iCal / Outlook</DropdownMenuItem>
+                          ) : (
+                            <>
+                              <DropdownMenuItem className="font-bold py-3 cursor-pointer" onClick={() => window.open(generateGoogleCalendarLink({ title: event.title, start: new Date(event.date), location: event.location, description: event.description }), '_blank')}>Google Calendar</DropdownMenuItem>
+                              <DropdownMenuItem className="font-bold py-3 cursor-pointer" onClick={() => downloadICS([{ title: event.title, start: new Date(event.date), location: event.location, description: event.description }], `${event.title}.ics`)}>iCal / Outlook</DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    
+                    {event.requiresSpecialWaiver && !hasUserSignedIndividualWaiver && (
+                      <Button onClick={() => setIsWaiverDialogOpen(true)} className="w-full rounded-xl h-14 font-black text-sm uppercase gap-3 bg-red-600 text-white shadow-xl shadow-red-600/20">
+                        <SignIcon className="h-5 w-5" /> Sign Required Waiver
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-56 rounded-xl">
-                      <DropdownMenuLabel className="text-[10px] font-black uppercase">Calendar Sync</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {event.isTournament ? (
-                        <DropdownMenuItem className="font-bold py-3 cursor-pointer" onClick={syncTournamentSchedule}>Download iCal / Outlook</DropdownMenuItem>
-                      ) : (
-                        <>
-                          <DropdownMenuItem className="font-bold py-3 cursor-pointer" onClick={() => window.open(generateGoogleCalendarLink({ title: event.title, start: new Date(event.date), location: event.location, description: event.description }), '_blank')}>Google Calendar</DropdownMenuItem>
-                          <DropdownMenuItem className="font-bold py-3 cursor-pointer" onClick={() => downloadICS([{ title: event.title, start: new Date(event.date), location: event.location, description: event.description }], `${event.title}.ics`)}>iCal / Outlook</DropdownMenuItem>
-                        </>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                    )}
+
+                    {myParticipatingTeamName && !isWaiverSignedForMyTeam && (
+                      <Button onClick={() => setIsTeamAgreementOpen(true)} className="w-full rounded-xl h-14 font-black text-sm uppercase gap-3 bg-primary text-white shadow-xl shadow-primary/20">
+                        <Signature className="h-5 w-5" /> Sign for {myParticipatingTeamName}
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 
-                {event.requiresSpecialWaiver && !hasUserSignedIndividualWaiver && (
-                  <Button onClick={() => setIsWaiverDialogOpen(true)} className="w-full rounded-xl h-14 font-black text-sm uppercase gap-3 bg-red-600 text-white shadow-xl shadow-red-600/20">
-                    <SignIcon className="h-5 w-5" /> Sign Required Waiver
-                  </Button>
-                )}
-
-                {myParticipatingTeamName && !isWaiverSignedForMyTeam && (
-                  <Button onClick={() => setIsTeamAgreementOpen(true)} className="w-full rounded-xl h-14 font-black text-sm uppercase gap-3 bg-primary text-white shadow-xl shadow-primary/20">
-                    <Signature className="h-5 w-5" /> Sign for {myParticipatingTeamName}
-                  </Button>
-                )}
-              </div>
-            </div>
-            
-            {event.isTournament && (
-              <div className="space-y-4 pt-4 min-h-0 flex-1 flex flex-col">
-                <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em] px-1 shrink-0">Leaderboard</h4>
-                <div className="flex-1">
-                  {isEliteUnlocked ? (
-                    tournamentStandings.length > 0 ? (
-                      <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
-                        {tournamentStandings.map((team, i) => (
-                          <div key={team.name} className="flex justify-between items-center px-5 py-4 border-b border-white/5 last:border-0">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <span className="text-[10px] font-black text-primary w-4">{i + 1}</span>
-                              <span className="text-xs font-black uppercase truncate pr-2">{team.name}</span>
+                {event.isTournament && (
+                  <div className="space-y-4 pt-4">
+                    <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em] px-1">Leaderboard</h4>
+                    {isEliteUnlocked ? (
+                      tournamentStandings.length > 0 ? (
+                        <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
+                          {tournamentStandings.map((team, i) => (
+                            <div key={team.name} className="flex justify-between items-center px-5 py-4 border-b border-white/5 last:border-0">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className="text-[10px] font-black text-primary w-4">{i + 1}</span>
+                                <span className="text-xs font-black uppercase truncate pr-2">{team.name}</span>
+                              </div>
+                              <Badge className="bg-primary text-white border-none font-black text-[9px] px-2 h-5 shrink-0">{team.points} PTS</Badge>
                             </div>
-                            <Badge className="bg-primary text-white border-none font-black text-[9px] px-2 h-5 shrink-0">{team.points} PTS</Badge>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-8 text-center bg-white/5 rounded-3xl border border-dashed border-white/10">
+                          <p className="text-[10px] font-black uppercase text-white/40">No match data synced</p>
+                        </div>
+                      )
                     ) : (
-                      <div className="p-8 text-center bg-white/5 rounded-3xl border border-dashed border-white/10">
-                        <p className="text-[10px] font-black uppercase text-white/40">No match data synced</p>
+                      <div className="p-8 text-center bg-primary/10 rounded-3xl border border-dashed border-primary/40 space-y-4">
+                        <Lock className="h-8 w-8 text-primary mx-auto opacity-40" />
+                        <p className="text-[10px] font-black uppercase tracking-widest text-primary">Elite Standings Locked</p>
+                        {isAdmin && <Button variant="secondary" size="sm" className="h-8 rounded-lg text-[8px] font-black uppercase w-full bg-primary text-white" onClick={() => router.push('/pricing')}>Get Elite Module</Button>}
                       </div>
-                    )
-                  ) : (
-                    <div className="p-8 text-center bg-primary/10 rounded-3xl border border-dashed border-primary/40 space-y-4">
-                      <Lock className="h-8 w-8 text-primary mx-auto opacity-40" />
-                      <p className="text-[10px] font-black uppercase tracking-widest text-primary">Elite Standings Locked</p>
-                      {isAdmin && <Button variant="secondary" size="sm" className="h-8 rounded-lg text-[8px] font-black uppercase w-full bg-primary text-white" onClick={() => router.push('/pricing')}>Get Elite Module</Button>}
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
+            </ScrollArea>
             
             {isAdmin && (
               <div className="pt-6 border-t border-white/10 flex gap-3 mt-auto shrink-0">
@@ -318,7 +321,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
             )}
           </div>
 
-          <div className="flex-1 flex flex-col bg-background min-h-0 lg:overflow-hidden">
+          {/* Right Column - Tabs */}
+          <div className="flex-1 flex flex-col bg-background min-h-0">
             <Tabs defaultValue={event.isTournament ? "bracket" : "roster"} className="flex-1 flex flex-col min-h-0">
               <div className="px-6 lg:px-10 py-6 border-b bg-muted/30 shrink-0">
                 <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit overflow-x-auto no-scrollbar">
@@ -330,7 +334,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                 </TabsList>
               </div>
               
-              <div className="flex-1 min-h-0 overflow-hidden">
+              <div className="flex-1 min-h-0">
                 <ScrollArea className="h-full">
                   <div className="p-6 lg:p-10 pb-32">
                     <TabsContent value="bracket" className="mt-0 space-y-10">
@@ -366,28 +370,21 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                     </TabsContent>
                     
                     <TabsContent value="roster" className="mt-0">
-                      {!isPro ? (
-                        <div className="flex flex-col items-center justify-center py-20 space-y-4 opacity-40">
-                          <Users className="h-12 w-12" />
-                          <p className="text-xs font-black uppercase tracking-widest">Upgrade to Pro to unlock attendance tracking</p>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {goingList.map(person => (
-                            <div key={person.id} className="flex items-center gap-4 p-4 bg-white rounded-2xl border shadow-sm">
-                              <Avatar className="h-12 w-12 rounded-xl border-2 border-background shadow-sm">
-                                <AvatarImage src={person.avatar} />
-                                <AvatarFallback className="font-black bg-muted text-xs">{person.name[0]}</AvatarFallback>
-                              </Avatar>
-                              <div className="min-w-0 flex-1">
-                                <p className="font-black text-sm uppercase truncate leading-none mb-1">{person.name}</p>
-                                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{person.role}</p>
-                              </div>
-                              <div className="bg-green-500 h-2 w-2 rounded-full" />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {goingList.map(person => (
+                          <div key={person.id} className="flex items-center gap-4 p-4 bg-white rounded-2xl border shadow-sm">
+                            <Avatar className="h-12 w-12 rounded-xl border-2 border-background shadow-sm">
+                              <AvatarImage src={person.avatar} />
+                              <AvatarFallback className="font-black bg-muted text-xs">{person.name[0]}</AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-black text-sm uppercase truncate leading-none mb-1">{person.name}</p>
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{person.role}</p>
                             </div>
-                          ))}
-                        </div>
-                      )}
+                            <div className="bg-green-500 h-2 w-2 rounded-full" />
+                          </div>
+                        ))}
+                      </div>
                     </TabsContent>
 
                     <TabsContent value="compliance" className="mt-0 space-y-12">
@@ -608,7 +605,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
 }
 
 export default function EventsPage() {
-  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, isSuperAdmin, hasFeature, purchasePro, user, isStaff, isPro } = useTeam();
+  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, isSuperAdmin, purchasePro, user, isStaff, isPro } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
@@ -771,64 +768,75 @@ export default function EventsPage() {
         )}
       </div>
 
+      {/* CREATE EVENT DIALOG */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="sm:max-w-5xl overflow-hidden p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] flex flex-col border-none shadow-2xl">
           <DialogTitle className="sr-only">{editingEvent ? "Update" : "Launch"} Event Hub</DialogTitle>
           <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
-            <div className="lg:w-5/12 p-6 lg:p-8 lg:border-r bg-primary/5 space-y-6 overflow-y-auto custom-scrollbar">
-              <DialogHeader>
-                <DialogTitle className="text-2xl lg:text-3xl font-black tracking-tight">{editingEvent ? "Update" : "Launch"} {isTournamentMode ? "Tournament" : "Match"}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Event Title</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-black border-2" /></div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label><input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>
-                  {isTournamentMode ? (<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label><input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>) : (<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time</Label><input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>)}
-                </div>
-                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label><Input value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
-                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">General Description</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[80px] border-2 text-xs font-bold" /></div>
-                
-                <div className="space-y-6 pt-6 border-t mt-4">
-                  <div className="flex items-center gap-2 mb-4">
-                    <ShieldCheck className="h-4 w-4 text-primary" />
-                    <h3 className="text-[10px] font-black uppercase tracking-widest text-primary">Compliance Strategy</h3>
-                  </div>
-                  
-                  <div className="space-y-4 bg-white p-4 rounded-2xl border">
-                    <div className="flex items-center justify-between"><Label className="text-[10px] font-black uppercase">Individual participant Waiver?</Label><Switch checked={requiresWaiver} onCheckedChange={setRequiresWaiver} /></div>
-                    {requiresWaiver && (
-                      <div className="space-y-2">
-                        <Label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Participant Legal Text (Individual)</Label>
-                        <Textarea placeholder="Terms for players/parents to sign personally..." value={waiverText} onChange={e => setWaiverText(e.target.value)} className="rounded-xl min-h-[100px] border-2 text-xs font-bold bg-muted/10" />
-                      </div>
-                    )}
-                  </div>
-                  
-                  {isTournamentMode && (
-                    <div className="space-y-4 bg-white p-4 rounded-2xl border">
-                      <div className="space-y-2">
-                        <Label className="text-[10px] font-black uppercase">Squad Participation Agreement</Label>
-                        <p className="text-[8px] font-bold text-muted-foreground uppercase leading-tight italic">This text is signed once by the guest coach for their entire squad.</p>
-                        <Textarea placeholder="Define tournament rules and squad liability terms..." value={teamWaiverText} onChange={e => setTeamWaiverText(e.target.value)} className="rounded-xl min-h-[120px] border-2 text-xs font-bold bg-muted/10" />
-                      </div>
+            {/* Left Section - Basic Info */}
+            <div className="lg:w-5/12 p-6 lg:p-8 lg:border-r bg-primary/5 space-y-6 flex flex-col">
+              <ScrollArea className="flex-1 -mx-2 px-2">
+                <div className="space-y-6 pb-6">
+                  <DialogHeader>
+                    <DialogTitle className="text-2xl lg:text-3xl font-black tracking-tight">{editingEvent ? "Update" : "Launch"} {isTournamentMode ? "Tournament" : "Match"}</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Event Title</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-black border-2" /></div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label><input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>
+                      {isTournamentMode ? (<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label><input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>) : (<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time</Label><input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>)}
                     </div>
-                  )}
+                    <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label><Input value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
+                    <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">General Description</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[80px] border-2 text-xs font-bold" /></div>
+                    
+                    <div className="space-y-6 pt-6 border-t mt-4">
+                      <div className="flex items-center gap-2 mb-4">
+                        <ShieldCheck className="h-4 w-4 text-primary" />
+                        <h3 className="text-[10px] font-black uppercase tracking-widest text-primary">Compliance Strategy</h3>
+                      </div>
+                      
+                      <div className="space-y-4 bg-white p-4 rounded-2xl border">
+                        <div className="flex items-center justify-between"><Label className="text-[10px] font-black uppercase">Individual participant Waiver?</Label><Switch checked={requiresWaiver} onCheckedChange={setRequiresWaiver} /></div>
+                        {requiresWaiver && (
+                          <div className="space-y-2">
+                            <Label className="text-[8px] font-black uppercase text-muted-foreground ml-1">Participant Legal Text (Individual)</Label>
+                            <Textarea placeholder="Terms for players/parents to sign personally..." value={waiverText} onChange={e => setWaiverText(e.target.value)} className="rounded-xl min-h-[100px] border-2 text-xs font-bold bg-muted/10" />
+                          </div>
+                        )}
+                      </div>
+                      
+                      {isTournamentMode && (
+                        <div className="space-y-4 bg-white p-4 rounded-2xl border">
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black uppercase">Squad Participation Agreement</Label>
+                            <p className="text-[8px] font-bold text-muted-foreground uppercase leading-tight italic">This text is signed once by the guest coach for their entire squad.</p>
+                            <Textarea placeholder="Define tournament rules and squad liability terms..." value={teamWaiverText} onChange={e => setTeamWaiverText(e.target.value)} className="rounded-xl min-h-[120px] border-2 text-xs font-bold bg-muted/10" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </ScrollArea>
             </div>
 
-            <div className="flex-1 p-0 space-y-0 bg-background flex flex-col min-h-0 overflow-hidden">
-              <div className="flex-1 p-6 lg:p-8 flex flex-col min-h-0 overflow-hidden">
+            {/* Right Section - Tournament Management */}
+            <div className="flex-1 flex flex-col bg-background min-h-0 overflow-hidden">
+              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 {isTournamentMode ? (
                   <Tabs defaultValue="teams" className="flex-1 flex flex-col min-h-0">
-                    <TabsList className="bg-muted/50 h-11 p-1 mb-6 shrink-0">
-                      <TabsTrigger value="teams" className="font-black text-[10px] uppercase px-6 flex-1">Squads</TabsTrigger>
-                      <TabsTrigger value="games" className="font-black text-[10px] uppercase px-6 flex-1">Brackets</TabsTrigger>
-                      <TabsTrigger value="generator" className="font-black text-[10px] uppercase px-6 flex-1">Generator</TabsTrigger>
-                    </TabsList>
-                    <div className="flex-1 overflow-hidden">
-                      <ScrollArea className="h-full">
-                        <div className="space-y-6 pb-6">
+                    <div className="px-6 lg:px-8 pt-6 lg:pt-8 border-b bg-muted/10">
+                      <TabsList className="bg-muted/50 h-11 p-1 mb-4 w-full">
+                        <TabsTrigger value="teams" className="font-black text-[10px] uppercase px-6 flex-1">Squads</TabsTrigger>
+                        <TabsTrigger value="games" className="font-black text-[10px] uppercase px-6 flex-1">Brackets</TabsTrigger>
+                        <TabsTrigger value="generator" className="font-black text-[10px] uppercase px-6 flex-1">Generator</TabsTrigger>
+                      </TabsList>
+                    </div>
+                    
+                    <div className="flex-1 min-h-0">
+                      <ScrollArea className="h-full px-6 lg:px-8">
+                        <div className="space-y-6 py-6 pb-20">
+                          {/* TEAMS MANAGEMENT */}
                           <TabsContent value="teams" className="space-y-6 mt-0">
                             <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed space-y-4">
                               <div className="space-y-2">
@@ -870,26 +878,74 @@ export default function EventsPage() {
                               })}
                             </div>
                           </TabsContent>
+
+                          {/* MATCH SCHEDULING */}
                           <TabsContent value="games" className="space-y-6 mt-0">
                             <div className="flex items-center justify-between">
-                              <Button variant="outline" size="sm" onClick={() => setTournamentGames([...tournamentGames, { id: `game_${Date.now()}`, team1: tournamentTeams[0] || 'Team A', team2: tournamentTeams[1] || 'Team B', score1: 0, score2: 0, date: newDate, time: '10:00 AM', isCompleted: false }])} className="font-black text-[10px] uppercase">+ New Match</Button>
+                              <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Match Schedule</h3>
+                              <Button variant="outline" size="sm" onClick={() => setTournamentGames([...tournamentGames, { id: `game_${Date.now()}`, team1: tournamentTeams[0] || 'Team A', team2: tournamentTeams[1] || 'Team B', score1: 0, score2: 0, date: newDate, time: '10:00 AM', isCompleted: false }])} className="font-black text-[10px] uppercase border-2">+ New Match</Button>
                             </div>
-                            {tournamentGames.map((game) => (
-                              <div key={game.id} className="p-4 bg-muted/20 rounded-2xl border-2 space-y-4 relative">
-                                <div className="flex gap-2"><input type="date" value={game.date} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, date: e.target.value} : g))} className="flex-1 h-9 rounded-xl font-bold bg-background px-3 border text-xs" /><input type="time" value={game.time} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, time: e.target.value} : g))} className="w-24 h-9 rounded-xl font-bold bg-background px-3 border text-xs" /></div>
-                                <div className="flex items-center gap-4"><Select value={game.team1} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team1: v} : g))}><SelectTrigger className="h-10 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{tournamentTeams.map((t, idx) => <SelectItem key={idx} value={t}>{t}</SelectItem>)}</SelectContent></Select><span className="font-black text-[10px]">VS</span><Select value={game.team2} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team2: v} : g))}><SelectTrigger className="h-10 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{tournamentTeams.map((t, idx) => <SelectItem key={idx} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
-                                <Button variant="ghost" size="icon" className="absolute top-2 right-2 text-destructive" onClick={() => setTournamentGames(tournamentGames.filter(g => g.id !== game.id))}><Trash2 className="h-3 w-3" /></Button>
-                              </div>
-                            ))}
+                            
+                            <div className="grid grid-cols-1 gap-4">
+                              {tournamentGames.length > 0 ? tournamentGames.map((game) => (
+                                <div key={game.id} className="p-5 bg-white rounded-2xl border-2 border-muted/50 space-y-4 relative shadow-sm">
+                                  <div className="flex gap-2">
+                                    <input type="date" value={game.date} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, date: e.target.value} : g))} className="flex-1 h-10 rounded-xl font-bold bg-muted/20 px-3 border text-xs" />
+                                    <input type="time" value={game.time} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, time: e.target.value} : g))} className="w-28 h-10 rounded-xl font-bold bg-muted/20 px-3 border text-xs" />
+                                  </div>
+                                  <div className="flex items-center gap-4">
+                                    <Select value={game.team1} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team1: v} : g))}>
+                                      <SelectTrigger className="h-11 rounded-xl font-black text-xs uppercase"><SelectValue placeholder="Team 1" /></SelectTrigger>
+                                      <SelectContent className="rounded-xl">
+                                        {tournamentTeams.length > 0 ? tournamentTeams.map((t, idx) => <SelectItem key={idx} value={t}>{t}</SelectItem>) : <SelectItem value="Team A">No teams added</SelectItem>}
+                                      </SelectContent>
+                                    </Select>
+                                    <span className="font-black text-[10px] opacity-20">VS</span>
+                                    <Select value={game.team2} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team2: v} : g))}>
+                                      <SelectTrigger className="h-11 rounded-xl font-black text-xs uppercase"><SelectValue placeholder="Team 2" /></SelectTrigger>
+                                      <SelectContent className="rounded-xl">
+                                        {tournamentTeams.length > 0 ? tournamentTeams.map((t, idx) => <SelectItem key={idx} value={t}>{t}</SelectItem>) : <SelectItem value="Team B">No teams added</SelectItem>}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <Button variant="ghost" size="icon" className="absolute -top-2 -right-2 bg-white shadow-md rounded-full text-destructive border" onClick={() => setTournamentGames(tournamentGames.filter(g => g.id !== game.id))}><X className="h-3.5 w-3.5" /></Button>
+                                </div>
+                              )) : (
+                                <div className="text-center py-12 border-2 border-dashed rounded-2xl opacity-30">
+                                  <p className="text-xs font-black uppercase">No matches scheduled yet</p>
+                                </div>
+                              )}
+                            </div>
                           </TabsContent>
+
+                          {/* GENERATOR */}
                           <TabsContent value="generator" className="space-y-6 mt-0">
                             {isPro ? (
-                              <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed space-y-6">
+                              <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 space-y-6">
                                 <div className="grid grid-cols-2 gap-4">
-                                  <div className="space-y-1"><Label className="text-[10px] font-black uppercase">Type</Label><Select value={genType} onValueChange={setGenType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="round_robin">Round Robin</SelectItem><SelectItem value="pool_play">Pool Play</SelectItem></SelectContent></Select></div>
-                                  <div className="space-y-1"><Label className="text-[10px] font-black uppercase">Duration (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} /></div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-[10px] font-black uppercase">Format</Label>
+                                    <Select value={genType} onValueChange={setGenType}>
+                                      <SelectTrigger className="h-11 rounded-xl border-2"><SelectValue /></SelectTrigger>
+                                      <SelectContent className="rounded-xl">
+                                        <SelectItem value="round_robin">Round Robin</SelectItem>
+                                        <SelectItem value="pool_play">Pool Play</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-[10px] font-black uppercase">Match Duration (Min)</Label>
+                                    <Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-11 rounded-xl border-2 font-bold" />
+                                  </div>
                                 </div>
-                                <Button className="w-full h-14 rounded-xl font-black uppercase" onClick={handleGenerateSchedule} disabled={isGenerating}>{isGenerating ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Forging...</> : "Generate Tactical Schedule"}</Button>
+                                <div className="space-y-1.5">
+                                  <Label className="text-[10px] font-black uppercase">Day Start Time</Label>
+                                  <Input type="time" value={genStartTime} onChange={e => setGenStartTime(e.target.value)} className="h-11 rounded-xl border-2 font-bold" />
+                                </div>
+                                <Button className="w-full h-14 rounded-xl font-black uppercase shadow-xl" onClick={handleGenerateSchedule} disabled={isGenerating || tournamentTeams.length < 2}>
+                                  {isGenerating ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Forging...</> : "Generate Tactical Schedule"}
+                                </Button>
+                                {tournamentTeams.length < 2 && <p className="text-[9px] font-bold text-center text-red-600 uppercase">Minimum 2 teams required to generate</p>}
                               </div>
                             ) : (
                               <div className="py-16 text-center space-y-6 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20">
@@ -910,14 +966,17 @@ export default function EventsPage() {
                     </div>
                   </Tabs>
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-[2rem] text-center opacity-60">
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-[2rem] text-center opacity-60 m-6">
                     <Zap className="h-10 w-10 text-primary mx-auto mb-2" />
                     <p className="font-bold uppercase tracking-widest text-xs">Standard Match Protocol</p>
+                    <p className="text-[10px] mt-2 font-medium max-w-xs">Use Tournaments for multi-team coordination, scheduling, and live standings.</p>
                   </div>
                 )}
               </div>
+              
+              {/* STICKY FOOTER ACTION */}
               <div className="p-6 lg:p-8 bg-muted/10 border-t shrink-0">
-                <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleCreateEvent}>
+                <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCreateEvent}>
                   {editingEvent ? "Update" : "Publish"} Event Hub
                 </Button>
               </div>
@@ -930,7 +989,10 @@ export default function EventsPage() {
         <section className="space-y-4">
           <div className="flex items-center justify-between px-2">
             <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2>
-            <div className="flex bg-muted/50 p-1 rounded-xl border"><Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button><Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button></div>
+            <div className="flex bg-muted/50 p-1 rounded-xl border">
+              <Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button>
+              <Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button>
+            </div>
           </div>
           <div className="grid gap-4">
             {filteredEvents.map((event) => (
@@ -955,6 +1017,12 @@ export default function EventsPage() {
                 </Card>
               </EventDetailDialog>
             ))}
+            {filteredEvents.length === 0 && (
+              <div className="text-center py-20 bg-muted/10 border-2 border-dashed rounded-[2rem] opacity-40">
+                <CalendarDays className="h-10 w-10 mx-auto mb-4" />
+                <p className="text-xs font-black uppercase tracking-widest">No scheduled activities</p>
+              </div>
+            )}
           </div>
         </section>
       </div>
