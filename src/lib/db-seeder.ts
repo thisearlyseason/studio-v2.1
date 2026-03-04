@@ -232,6 +232,14 @@ export async function seedDemoData(db: Firestore, teamId: string, demoTier: stri
     });
   }
 
+  // Unified Alerts
+  const aid = `demo_alert_${teamId}_1`;
+  batch.set(doc(db, 'teams', teamId, 'alerts', aid), {
+    id: aid, teamId, title: 'Regional Championship Update',
+    message: 'Review the updated tournament bracket. Pool play starts at 09:00 AM.',
+    createdBy: 'system', createdAt: now.toISOString(), isDemo: true
+  });
+
   // Unified Chat
   const cid = `demo_chat_${teamId}`;
   batch.set(doc(db, 'teams', teamId, 'groupChats', cid), {

@@ -401,6 +401,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const unsub = onSnapshot(q, (snap) => {
       setAlerts(snap.docs.map(d => ({ id: d.id, ...d.data() } as TeamAlert)));
     }, (error) => {
+      // Correctly emit permission error for alerts listener failure
       errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `teams/${activeTeam.id}/alerts`, operation: 'list' }));
     });
     return () => unsub();
