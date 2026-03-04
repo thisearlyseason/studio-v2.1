@@ -18,10 +18,11 @@ service cloud.firestore {
     }
 
     // Optimized Membership Check: Prioritizes local membership registry for instant verification
+    // Falls back to team metadata with safe property lookups
     function isTeamMember(teamId) {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) ||
-        get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
+        get(/databases/$(database)/documents/teams/$(teamId)).data.get('ownerUserId', '') == request.auth.uid ||
         request.auth.uid in get(/databases/$(database)/documents/teams/$(teamId)).data.get('members', {})
       );
     }
@@ -33,7 +34,7 @@ service cloud.firestore {
       
       return isSignedIn() && (
         isPlatformAdmin ||
-        get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
+        get(/databases/$(database)/documents/teams/$(teamId)).data.get('ownerUserId', '') == request.auth.uid ||
         get(/databases/$(database)/documents/teams/$(teamId)).data.get('members', {}).get(request.auth.uid) == 'Admin'
       );
     }
@@ -113,7 +114,8 @@ service cloud.firestore {
       }
 
       match /alerts/{alertId} {
-        allow read, list: if isTeamMember(teamId) || isAdmin(teamId);
+        // Broaden read access for verified members to ensure coordination alerts are never blocked
+        allow read, list: if isSignedIn() && (isTeamMember(teamId) || isAdmin(teamId));
         allow write: if isAdmin(teamId);
       }
     }
