@@ -608,7 +608,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
 }
 
 export default function EventsPage() {
-  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, isSuperAdmin, hasFeature, purchasePro, user, isStaff } = useTeam();
+  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, isSuperAdmin, hasFeature, purchasePro, user, isStaff, isPro } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
@@ -774,8 +774,8 @@ export default function EventsPage() {
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="sm:max-w-5xl overflow-hidden p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] flex flex-col border-none shadow-2xl">
           <DialogTitle className="sr-only">{editingEvent ? "Update" : "Launch"} Event Hub</DialogTitle>
-          <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
-            <div className="lg:w-5/12 p-6 lg:p-8 lg:border-r bg-primary/5 space-y-6 lg:overflow-y-auto custom-scrollbar">
+          <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
+            <div className="lg:w-5/12 p-6 lg:p-8 lg:border-r bg-primary/5 space-y-6 overflow-y-auto custom-scrollbar">
               <DialogHeader>
                 <DialogTitle className="text-2xl lg:text-3xl font-black tracking-tight">{editingEvent ? "Update" : "Launch"} {isTournamentMode ? "Tournament" : "Match"}</DialogTitle>
               </DialogHeader>
@@ -817,79 +817,110 @@ export default function EventsPage() {
               </div>
             </div>
 
-            <div className="flex-1 p-6 lg:p-8 space-y-6 bg-background flex flex-col min-h-0 lg:overflow-hidden">
-              {isTournamentMode ? (
-                <Tabs defaultValue="teams" className="flex-1 flex flex-col min-h-0">
-                  <TabsList className="bg-muted/50 h-11 p-1 mb-6 shrink-0"><TabsTrigger value="teams" className="font-black text-[10px] uppercase px-6 flex-1">Squads</TabsTrigger><TabsTrigger value="games" className="font-black text-[10px] uppercase px-6 flex-1">Brackets</TabsTrigger><TabsTrigger value="generator" className="font-black text-[10px] uppercase px-6 flex-1">Generator</TabsTrigger></TabsList>
-                  <div className="flex-1 overflow-hidden">
-                    <ScrollArea className="h-full">
-                      <div className="space-y-6">
-                        <TabsContent value="teams" className="space-y-6 mt-0">
-                          <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed space-y-4">
-                            <div className="space-y-2">
-                              <Label className="text-[10px] font-black uppercase tracking-widest">New Guest Squad</Label>
-                              <Input placeholder="Squad Name..." value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-11 rounded-xl bg-white" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-1.5">
-                                <Label className="text-[8px] font-black uppercase opacity-60">Coach Name</Label>
-                                <Input placeholder="John Doe" value={newTeamCoach} onChange={e => setNewTeamCoach(e.target.value)} className="h-10 rounded-xl bg-white" />
+            <div className="flex-1 p-0 space-y-0 bg-background flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 p-6 lg:p-8 flex flex-col min-h-0 overflow-hidden">
+                {isTournamentMode ? (
+                  <Tabs defaultValue="teams" className="flex-1 flex flex-col min-h-0">
+                    <TabsList className="bg-muted/50 h-11 p-1 mb-6 shrink-0">
+                      <TabsTrigger value="teams" className="font-black text-[10px] uppercase px-6 flex-1">Squads</TabsTrigger>
+                      <TabsTrigger value="games" className="font-black text-[10px] uppercase px-6 flex-1">Brackets</TabsTrigger>
+                      <TabsTrigger value="generator" className="font-black text-[10px] uppercase px-6 flex-1">Generator</TabsTrigger>
+                    </TabsList>
+                    <div className="flex-1 overflow-hidden">
+                      <ScrollArea className="h-full">
+                        <div className="space-y-6 pb-6">
+                          <TabsContent value="teams" className="space-y-6 mt-0">
+                            <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed space-y-4">
+                              <div className="space-y-2">
+                                <Label className="text-[10px] font-black uppercase tracking-widest">New Guest Squad</Label>
+                                <Input placeholder="Squad Name..." value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-11 rounded-xl bg-white" />
                               </div>
-                              <div className="space-y-1.5">
-                                <Label className="text-[8px] font-black uppercase opacity-60">Coach Email</Label>
-                                <Input type="email" placeholder="john@team.com" value={newTeamEmail} onChange={e => setNewTeamEmail(e.target.value)} className="h-10 rounded-xl bg-white" />
-                              </div>
-                            </div>
-                            <Button onClick={handleAddTournamentTeam} className="w-full h-11 rounded-xl font-black uppercase text-xs">Add to Roster</Button>
-                          </div>
-                          
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {tournamentTeams.map((t, i) => {
-                              const meta = tournamentTeamsMetadata[t];
-                              return (
-                                <div key={i} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border group hover:border-primary transition-all">
-                                  <div className="min-w-0">
-                                    <span className="font-black text-xs uppercase truncate block">{t}</span>
-                                    {meta?.coach && <span className="text-[8px] font-bold text-muted-foreground uppercase block">{meta.coach}</span>}
-                                  </div>
-                                  <Button variant="ghost" size="icon" className="text-destructive opacity-0 group-hover:opacity-100" onClick={() => {
-                                    setTournamentTeams(tournamentTeams.filter((_, idx) => idx !== i));
-                                    const newMeta = { ...tournamentTeamsMetadata };
-                                    delete newMeta[t];
-                                    setTournamentTeamsMetadata(newMeta);
-                                  }}>
-                                    <X className="h-3.5 w-3.5" />
-                                  </Button>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                  <Label className="text-[8px] font-black uppercase opacity-60">Coach Name</Label>
+                                  <Input placeholder="John Doe" value={newTeamCoach} onChange={e => setNewTeamCoach(e.target.value)} className="h-10 rounded-xl bg-white" />
                                 </div>
-                              );
-                            })}
-                          </div>
-                        </TabsContent>
-                        <TabsContent value="games" className="space-y-6 mt-0">
-                          <div className="flex items-center justify-between"><Button variant="outline" size="sm" onClick={() => setTournamentGames([...tournamentGames, { id: `game_${Date.now()}`, team1: tournamentTeams[0] || 'Team A', team2: tournamentTeams[1] || 'Team B', score1: 0, score2: 0, date: newDate, time: '10:00 AM', isCompleted: false }])} className="font-black text-[10px] uppercase">+ New Match</Button></div>
-                          {tournamentGames.map((game) => (
-                            <div key={game.id} className="p-4 bg-muted/20 rounded-2xl border-2 space-y-4 relative">
-                              <div className="flex gap-2"><input type="date" value={game.date} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, date: e.target.value} : g))} className="flex-1 h-9 rounded-xl font-bold bg-background px-3 border text-xs" /><input type="time" value={game.time} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, time: e.target.value} : g))} className="w-24 h-9 rounded-xl font-bold bg-background px-3 border text-xs" /></div>
-                              <div className="flex items-center gap-4"><Select value={game.team1} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team1: v} : g))}><SelectTrigger className="h-10 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{tournamentTeams.map((t, idx) => <SelectItem key={idx} value={t}>{t}</SelectItem>)}</SelectContent></Select><span className="font-black text-[10px]">VS</span><Select value={game.team2} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team2: v} : g))}><SelectTrigger className="h-10 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{tournamentTeams.map((t, idx) => <SelectItem key={idx} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
-                              <Button variant="ghost" size="icon" className="absolute top-2 right-2 text-destructive" onClick={() => setTournamentGames(tournamentGames.filter(g => g.id !== game.id))}><Trash2 className="h-3 w-3" /></Button>
+                                <div className="space-y-1.5">
+                                  <Label className="text-[8px] font-black uppercase opacity-60">Coach Email</Label>
+                                  <Input type="email" placeholder="john@team.com" value={newTeamEmail} onChange={e => setNewTeamEmail(e.target.value)} className="h-10 rounded-xl bg-white" />
+                                </div>
+                              </div>
+                              <Button onClick={handleAddTournamentTeam} className="w-full h-11 rounded-xl font-black uppercase text-xs">Add to Roster</Button>
                             </div>
-                          ))}
-                        </TabsContent>
-                        <TabsContent value="generator" className="space-y-6 mt-0">
-                          <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed space-y-6">
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="space-y-1"><Label className="text-[10px] font-black uppercase">Type</Label><Select value={genType} onValueChange={setGenType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="round_robin">Round Robin</SelectItem><SelectItem value="pool_play">Pool Play</SelectItem></SelectContent></Select></div>
-                              <div className="space-y-1"><Label className="text-[10px] font-black uppercase">Duration (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} /></div>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {tournamentTeams.map((t, i) => {
+                                const meta = tournamentTeamsMetadata[t];
+                                return (
+                                  <div key={i} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border group hover:border-primary transition-all">
+                                    <div className="min-w-0">
+                                      <span className="font-black text-xs uppercase truncate block">{t}</span>
+                                      {meta?.coach && <span className="text-[8px] font-bold text-muted-foreground uppercase block">{meta.coach}</span>}
+                                    </div>
+                                    <Button variant="ghost" size="icon" className="text-destructive opacity-0 group-hover:opacity-100" onClick={() => {
+                                      setTournamentTeams(tournamentTeams.filter((_, idx) => idx !== i));
+                                      const newMeta = { ...tournamentTeamsMetadata };
+                                      delete newMeta[t];
+                                      setTournamentTeamsMetadata(newMeta);
+                                    }}>
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                );
+                              })}
                             </div>
-                            <Button className="w-full h-14 rounded-xl font-black uppercase" onClick={handleGenerateSchedule} disabled={isGenerating}>{isGenerating ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Forging...</> : "Generate Tactical Schedule"}</Button>
-                          </div>
-                        </TabsContent>
-                      </div>
-                    </ScrollArea>
+                          </TabsContent>
+                          <TabsContent value="games" className="space-y-6 mt-0">
+                            <div className="flex items-center justify-between">
+                              <Button variant="outline" size="sm" onClick={() => setTournamentGames([...tournamentGames, { id: `game_${Date.now()}`, team1: tournamentTeams[0] || 'Team A', team2: tournamentTeams[1] || 'Team B', score1: 0, score2: 0, date: newDate, time: '10:00 AM', isCompleted: false }])} className="font-black text-[10px] uppercase">+ New Match</Button>
+                            </div>
+                            {tournamentGames.map((game) => (
+                              <div key={game.id} className="p-4 bg-muted/20 rounded-2xl border-2 space-y-4 relative">
+                                <div className="flex gap-2"><input type="date" value={game.date} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, date: e.target.value} : g))} className="flex-1 h-9 rounded-xl font-bold bg-background px-3 border text-xs" /><input type="time" value={game.time} onChange={e => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, time: e.target.value} : g))} className="w-24 h-9 rounded-xl font-bold bg-background px-3 border text-xs" /></div>
+                                <div className="flex items-center gap-4"><Select value={game.team1} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team1: v} : g))}><SelectTrigger className="h-10 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{tournamentTeams.map((t, idx) => <SelectItem key={idx} value={t}>{t}</SelectItem>)}</SelectContent></Select><span className="font-black text-[10px]">VS</span><Select value={game.team2} onValueChange={(v) => setTournamentGames(tournamentGames.map(g => g.id === game.id ? {...g, team2: v} : g))}><SelectTrigger className="h-10 rounded-xl font-bold"><SelectValue /></SelectTrigger><SelectContent>{tournamentTeams.map((t, idx) => <SelectItem key={idx} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
+                                <Button variant="ghost" size="icon" className="absolute top-2 right-2 text-destructive" onClick={() => setTournamentGames(tournamentGames.filter(g => g.id !== game.id))}><Trash2 className="h-3 w-3" /></Button>
+                              </div>
+                            ))}
+                          </TabsContent>
+                          <TabsContent value="generator" className="space-y-6 mt-0">
+                            {isPro ? (
+                              <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed space-y-6">
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="space-y-1"><Label className="text-[10px] font-black uppercase">Type</Label><Select value={genType} onValueChange={setGenType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="round_robin">Round Robin</SelectItem><SelectItem value="pool_play">Pool Play</SelectItem></SelectContent></Select></div>
+                                  <div className="space-y-1"><Label className="text-[10px] font-black uppercase">Duration (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} /></div>
+                                </div>
+                                <Button className="w-full h-14 rounded-xl font-black uppercase" onClick={handleGenerateSchedule} disabled={isGenerating}>{isGenerating ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Forging...</> : "Generate Tactical Schedule"}</Button>
+                              </div>
+                            ) : (
+                              <div className="py-16 text-center space-y-6 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20">
+                                <div className="bg-white w-16 h-16 rounded-2xl flex items-center justify-center mx-auto shadow-xl relative">
+                                  <Zap className="h-8 w-8 text-primary" />
+                                  <Lock className="absolute -top-2 -right-2 h-5 w-5 bg-black text-white p-1 rounded-full border-2 border-background" />
+                                </div>
+                                <div className="space-y-2">
+                                  <h3 className="text-xl font-black uppercase tracking-tight">Generator Locked</h3>
+                                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest max-w-[200px] mx-auto">Automated bracket creation is an Elite Pro module.</p>
+                                </div>
+                                <Button onClick={purchasePro} className="h-10 px-8 rounded-xl font-black uppercase text-[10px] tracking-widest">Upgrade to Elite</Button>
+                              </div>
+                            )}
+                          </TabsContent>
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </Tabs>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-[2rem] text-center opacity-60">
+                    <Zap className="h-10 w-10 text-primary mx-auto mb-2" />
+                    <p className="font-bold uppercase tracking-widest text-xs">Standard Match Protocol</p>
                   </div>
-                </Tabs>
-              ) : (<div className="flex-1 flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-[2rem] text-center opacity-60"><Zap className="h-10 w-10 text-primary mx-auto mb-2" /><p className="font-bold uppercase tracking-widest text-xs">Standard Match Protocol</p></div>)}
-              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 shrink-0" onClick={handleCreateEvent}>{editingEvent ? "Update" : "Publish"} Event Hub</Button>
+                )}
+              </div>
+              <div className="p-6 lg:p-8 bg-muted/10 border-t shrink-0">
+                <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleCreateEvent}>
+                  {editingEvent ? "Update" : "Publish"} Event Hub
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
