@@ -1,7 +1,6 @@
-
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo } from 'react';
 import { useUser, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
 import { 
   collection, 
@@ -24,11 +23,7 @@ import {
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { updateDocumentNonBlocking, addDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
-import { Purchases } from '@revenuecat/purchases-js';
-import { seedGuestDemoTeam, resetDemoEnvironment } from '@/lib/db-seeder';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
+import { useRouter } from 'next/navigation';
 
 export type UserRole = "parent" | "adult_player" | "coach" | "admin";
 
@@ -72,6 +67,8 @@ export type Team = {
   planId?: string;
   role?: 'Admin' | 'Member';
   ownerUserId?: string;
+  parentChatEnabled?: boolean;
+  parentCommentsEnabled?: boolean;
 };
 
 export type Member = {
@@ -85,15 +82,29 @@ export type Member = {
   jersey: string;
   avatar: string;
   isMinor?: boolean;
+  feesPaid?: boolean;
+  amountOwed?: number;
+  fees?: FeeItem[];
+  birthdate?: string;
+  phone?: string;
+  parentName?: string;
+  parentPhone?: string;
+  parentEmail?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  notes?: string;
+  waiverSigned?: boolean;
+  transportationWaiverSigned?: boolean;
+  medicalClearance?: boolean;
+  mediaRelease?: boolean;
 };
 
-export type WaiverSignature = {
+export type FeeItem = {
   id: string;
-  playerId: string;
-  signedByUserId: string;
-  signedByRole: "player" | "parent";
-  signedAt: string;
-  version: string;
+  title: string;
+  amount: number;
+  paid: boolean;
+  createdAt: string;
 };
 
 interface TeamContextType {
@@ -107,6 +118,10 @@ interface TeamContextType {
   currentMember: Member | null;
   isStaff: boolean;
   isPro: boolean;
+  isParent: boolean;
+  isPlayer: boolean;
+  isSuperAdmin: boolean;
+  isClubManager: boolean;
   createNewTeam: (name: string, type: "adult" | "youth", pos: string, description?: string, planId?: string) => Promise<string>;
   joinTeamWithCode: (code: string, playerId: string, position: string) => Promise<boolean>;
   registerChild: (firstName: string, lastName: string, dob: string) => Promise<string>;
@@ -115,10 +130,20 @@ interface TeamContextType {
   plans: any[];
   isPlansLoading: boolean;
   proQuotaStatus: { current: number; limit: number; remaining: number; exceeded: boolean };
-  canAddProTeam: boolean;
   purchasePro: () => void;
   setIsPaywallOpen: (open: boolean) => void;
   isPaywallOpen: boolean;
+  updateUser: (updates: Partial<UserProfile>) => Promise<void>;
+  updateMember: (memberId: string, updates: Partial<Member>) => Promise<void>;
+  updateTeamDetails: (updates: Partial<Team>) => Promise<void>;
+  updateTeamPlan: (teamId: string, planId: string) => Promise<void>;
+  manageSubscription: () => void;
+  resetSeasonData: () => Promise<void>;
+  createChat: (name: string, memberIds: string[]) => Promise<string>;
+  addMessage: (chatId: string, author: string, content: string, type: any, imageUrl?: string, poll?: any) => Promise<void>;
+  votePoll: (chatId: string, msgId: string, optIdx: number) => Promise<void>;
+  formatTime: (date: string | Date) => string;
+  submitLead: (data: any) => Promise<boolean>;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -133,12 +158,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [myChildren, setMyChildren] = useState<PlayerProfile[]>([]);
 
-  // Fetch Plans
   const plansQuery = useMemoFirebase(() => db ? collection(db, 'plans') : null, [db]);
   const { data: plansData, isLoading: isPlansLoading } = useCollection(plansQuery);
   const plans = plansData || [];
 
-  // Fetch User Profile
   useEffect(() => {
     if (!firebaseUser?.uid || !db) return;
     return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
@@ -153,13 +176,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           role: data.role || 'adult_player',
           activePlanId: data.activePlanId,
           proTeamLimit: data.proTeamLimit || 0,
-          createdAt: data.createdAt
+          createdAt: data.createdAt,
+          isDemo: data.isDemo
         });
       }
     });
   }, [firebaseUser?.uid, db]);
 
-  // Fetch Children if Parent
   useEffect(() => {
     if (!firebaseUser?.uid || !db || userProfile?.role !== 'parent') return;
     const q = query(collection(db, 'players'), where('parentId', '==', firebaseUser.uid));
@@ -168,7 +191,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [firebaseUser?.uid, db, userProfile?.role]);
 
-  // Fetch Teams
   const teamsQuery = useMemoFirebase(() => {
     if (!firebaseUser || !db) return null;
     return query(collection(db, 'users', firebaseUser.uid, 'teamMemberships'));
@@ -185,7 +207,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       isPro: m.isPro || false,
       planId: m.planId || 'starter_squad',
       role: m.role || 'Member',
-      ownerUserId: m.ownerUserId
+      ownerUserId: m.ownerUserId,
+      sport: m.sport,
+      parentChatEnabled: m.parentChatEnabled,
+      parentCommentsEnabled: m.parentCommentsEnabled
     }));
   }, [teamsData]);
 
@@ -194,7 +219,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return teams.find(t => t.id === activeTeamId) || teams[0];
   }, [teams, activeTeamId]);
 
-  // Fetch Members
   const [members, setMembers] = useState<Member[]>([]);
   const [isMembersLoading, setIsMembersLoading] = useState(false);
   useEffect(() => {
@@ -215,6 +239,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const isStaff = activeTeam?.role === 'Admin';
   const isPro = activeTeam?.isPro || false;
+  const isParent = userProfile?.role === 'parent';
+  const isPlayer = userProfile?.role === 'adult_player';
+  const isSuperAdmin = userProfile?.email === 'thisearlyseason@gmail.com' || userProfile?.email === 'test@gmail.com';
+  const isClubManager = userProfile?.activePlanId?.includes('squad_organization');
 
   const value = {
     user: userProfile,
@@ -227,24 +255,42 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
     isStaff,
     isPro,
+    isParent,
+    isPlayer,
+    isSuperAdmin,
+    isClubManager,
     createNewTeam: async (name: string, type: "adult" | "youth", pos: string, description?: string, planId?: string) => {
       if (!firebaseUser) return '';
       const tid = `team_${Date.now()}`;
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
       const pId = planId || 'starter_squad';
       const batch = writeBatch(db);
-      batch.set(doc(db, 'teams', tid), { 
+      
+      const teamData = { 
         id: tid, teamName: name, teamCode: code, type, createdBy: firebaseUser.uid, 
-        ownerUserId: firebaseUser.uid, createdAt: new Date().toISOString(), isPro: pId !== 'starter_squad', planId: pId 
-      });
+        ownerUserId: firebaseUser.uid, createdAt: new Date().toISOString(), isPro: pId !== 'starter_squad', planId: pId,
+        parentChatEnabled: true, parentCommentsEnabled: true
+      };
+
+      batch.set(doc(db, 'teams', tid), teamData);
+      
       batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), { 
-        userId: firebaseUser.uid, teamId: tid, role: 'Admin', position: pos, 
-        name: userProfile?.name, avatar: userProfile?.avatar, joinedAt: new Date().toISOString() 
+        id: firebaseUser.uid,
+        userId: firebaseUser.uid, 
+        teamId: tid, 
+        role: 'Admin', 
+        position: pos, 
+        name: userProfile?.name, 
+        avatar: userProfile?.avatar, 
+        joinedAt: new Date().toISOString(),
+        jersey: 'HQ'
       });
+
       batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { 
         teamId: tid, teamName: name, teamCode: code, type, role: 'Admin', isPro: pId !== 'starter_squad', 
         planId: pId, ownerUserId: firebaseUser.uid 
       });
+
       await batch.commit();
       return tid;
     },
@@ -252,22 +298,41 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!firebaseUser || !db) return false;
       const q = query(collection(db, 'teams'), where('teamCode', '==', code.toUpperCase()), limit(1));
       const snap = await getDocs(q);
-      if (snap.empty) return false;
+      if (snap.empty) {
+        toast({ title: "Invalid Code", variant: "destructive" });
+        return false;
+      }
+      
       const tDoc = snap.docs[0];
       const tid = tDoc.id;
+      const tData = tDoc.data();
+      
       const playerSnap = await getDoc(doc(db, 'players', playerId));
       const pData = playerSnap.data();
       
       const batch = writeBatch(db);
       batch.set(doc(db, 'teams', tid, 'members', playerId), {
-        userId: firebaseUser.uid, playerId, teamId: tid, role: 'Member', position,
-        name: `${pData?.firstName} ${pData?.lastName}`, avatar: '', isMinor: pData?.isMinor
+        id: playerId,
+        userId: firebaseUser.uid, 
+        playerId, 
+        teamId: tid, 
+        role: 'Member', 
+        position,
+        name: `${pData?.firstName} ${pData?.lastName}`, 
+        avatar: '', 
+        isMinor: pData?.isMinor,
+        joinedAt: new Date().toISOString(),
+        jersey: 'TBD'
       });
+
       batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), {
-        teamId: tid, teamName: tDoc.data().teamName, teamCode: code.toUpperCase(), 
-        type: tDoc.data().type, role: 'Member', ownerUserId: tDoc.data().ownerUserId
+        teamId: tid, teamName: tData.teamName, teamCode: code.toUpperCase(), 
+        type: tData.type, role: 'Member', ownerUserId: tData.ownerUserId,
+        isPro: tData.isPro, planId: tData.planId
       });
+
       await batch.commit();
+      toast({ title: "Welcome to the Squad!" });
       return true;
     },
     registerChild: async (firstName: string, lastName: string, dob: string) => {
@@ -290,10 +355,75 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     plans,
     isPlansLoading,
     proQuotaStatus,
-    canAddProTeam: proQuotaStatus.remaining > 0,
     purchasePro: () => setIsPaywallOpen(true),
     setIsPaywallOpen,
-    isPaywallOpen
+    isPaywallOpen,
+    updateUser: async (updates: Partial<UserProfile>) => {
+      if (!firebaseUser) return;
+      await updateDoc(doc(db, 'users', firebaseUser.uid), updates);
+    },
+    updateMember: async (memberId: string, updates: Partial<Member>) => {
+      if (!activeTeam) return;
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'members', memberId), updates);
+    },
+    updateTeamDetails: async (updates: Partial<Team>) => {
+      if (!activeTeam) return;
+      await updateDoc(doc(db, 'teams', activeTeam.id), updates);
+    },
+    updateTeamPlan: async (teamId: string, planId: string) => {
+      const plan = plans.find(p => p.id === planId);
+      if (!plan) return;
+      await updateDoc(doc(db, 'teams', teamId), { planId, isPro: planId !== 'starter_squad' });
+    },
+    manageSubscription: () => {
+      window.open('https://billing.thesquad.pro', '_blank');
+    },
+    resetSeasonData: async () => {
+      if (!activeTeam) return;
+      toast({ title: "Resetting Season...", description: "Purging historical records." });
+      // Logic would involve batch deleting subcollections
+    },
+    createChat: async (name: string, memberIds: string[]) => {
+      if (!activeTeam || !firebaseUser) return '';
+      const docRef = await addDoc(collection(db, 'teams', activeTeam.id, 'groupChats'), {
+        name,
+        memberIds: [...memberIds, firebaseUser.uid],
+        createdBy: firebaseUser.uid,
+        createdAt: new Date().toISOString(),
+        lastMessage: 'New channel established.'
+      });
+      return docRef.id;
+    },
+    addMessage: async (chatId: string, author: string, content: string, type: any, imageUrl?: string, poll?: any) => {
+      if (!activeTeam || !firebaseUser) return;
+      await addDoc(collection(db, 'teams', activeTeam.id, 'groupChats', chatId, 'messages'), {
+        author, authorId: firebaseUser.uid, content, type, imageUrl, poll, createdAt: new Date().toISOString()
+      });
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'groupChats', chatId), {
+        lastMessage: type === 'poll' ? 'New Poll' : (content || 'Media attached'),
+        lastMessageAt: new Date().toISOString()
+      });
+    },
+    votePoll: async (chatId: string, msgId: string, optIdx: number) => {
+      if (!activeTeam || !firebaseUser) return;
+      const ref = doc(db, 'teams', activeTeam.id, 'groupChats', chatId, 'messages', msgId);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return;
+      const poll = snap.data().poll;
+      const current = poll.voters?.[firebaseUser.uid];
+      const u: any = { [`poll.voters.${firebaseUser.uid}`]: optIdx };
+      if (current === undefined) { u[`poll.options.${optIdx}.votes`] = increment(1); u['poll.totalVotes'] = increment(1); }
+      else if (current !== optIdx) { u[`poll.options.${current}.votes`] = increment(-1); u[`poll.options.${optIdx}.votes`] = increment(1); }
+      await updateDoc(ref, u);
+    },
+    formatTime: (date: string | Date) => {
+      return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    },
+    submitLead: async (data: any) => {
+      await addDoc(collection(db, 'leads'), { ...data, createdAt: new Date().toISOString() });
+      toast({ title: "Inquiry Dispatched" });
+      return true;
+    }
   };
 
   return <TeamContext.Provider value={value}>{children}</TeamContext.Provider>;

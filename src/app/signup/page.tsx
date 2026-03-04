@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, Suspense } from 'react';
@@ -49,6 +48,7 @@ export default function SignupPage() {
       });
 
       if (regTarget === 'self') {
+        // Create matching player record for adult players
         await setDoc(doc(db, 'players', `p_${user.uid}`), {
           firstName: name.split(' ')[0],
           lastName: name.split(' ').slice(1).join(' '),

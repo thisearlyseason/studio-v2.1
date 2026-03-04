@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, memo } from 'react';
@@ -30,7 +29,8 @@ import {
   Shield,
   BookOpen,
   Video,
-  Zap
+  Zap,
+  Baby
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -114,14 +114,12 @@ function TeamSwitcherContent({
   teams, 
   activeTeam, 
   setActiveTeam, 
-  router, 
-  resetDemo 
+  router
 }: { 
   teams: Team[], 
   activeTeam: Team | null, 
   setActiveTeam: (t: Team) => void,
-  router: any,
-  resetDemo: () => Promise<void>
+  router: any
 }) {
   return (
     <>
@@ -140,32 +138,10 @@ function TeamSwitcherContent({
             </Avatar>
             <span className="font-bold text-sm truncate">{team.name}</span>
           </div>
-          {team.isDemo && <Badge className="bg-primary text-[8px] h-3 px-1">DEMO</Badge>}
-          {team.isPro && !team.isDemo && <Badge className="bg-amber-500 text-[8px] h-3 px-1">PRO</Badge>}
+          {team.isPro && <Badge className="bg-amber-500 text-[8px] h-3 px-1">PRO</Badge>}
         </DropdownMenuItem>
       ))}
       <DropdownMenuSeparator className="my-1" />
-      {activeTeam?.isDemo && (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="p-3 text-red-600 cursor-pointer rounded-xl font-bold text-xs gap-2">
-              <RotateCcw className="h-4 w-4" /> Reset Demo Data
-            </DropdownMenuItem>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
-            <AlertDialogHeader>
-              <AlertDialogTitle className="text-2xl font-black">Restore Original State?</AlertDialogTitle>
-              <AlertDialogDescription className="font-medium text-base pt-2">
-                This will permanently delete all modifications made to this demo environment and re-seed the baseline squad data.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="mt-6">
-              <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={resetDemo} className="rounded-xl font-black bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/20">Purge & Re-seed</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
       <DropdownMenuItem onClick={() => router.push('/team')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-2">
         <Info className="h-4 w-4 text-muted-foreground" /> Squad Profile
       </DropdownMenuItem>
@@ -173,32 +149,10 @@ function TeamSwitcherContent({
       <DropdownMenuSeparator className="my-1" />
       <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40 px-3 py-1">Management</DropdownMenuLabel>
       
-      <DropdownMenuItem onClick={() => router.push('/teams/new?plan=starter')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-2 hover:bg-muted">
-        <PlusCircle className="h-4 w-4 text-muted-foreground" /> Create Free Starter Squad
-      </DropdownMenuItem>
-      
-      <DropdownMenuItem onClick={() => router.push('/teams/new?plan=pro')} className="p-3 text-primary cursor-pointer rounded-xl font-bold text-xs gap-2 hover:bg-primary/5">
-        <Zap className="h-4 w-4 fill-current" /> Start New Pro Squad
+      <DropdownMenuItem onClick={() => router.push('/teams/new')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-2 hover:bg-muted">
+        <PlusCircle className="h-4 w-4 text-muted-foreground" /> Launch New Squad
       </DropdownMenuItem>
     </>
-  );
-}
-
-function DemoResetBanner({ seconds }: { seconds: number | null }) {
-  if (seconds === null) return null;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  
-  return (
-    <div className="bg-black text-white px-4 py-2 flex items-center justify-center gap-4 text-[10px] font-black uppercase tracking-[0.2em] relative z-[60] overflow-hidden shrink-0">
-      <div className="absolute inset-0 bg-primary/20 animate-pulse pointer-events-none" />
-      <div className="flex items-center gap-2 relative z-10">
-        <Timer className="h-3 w-3 text-primary animate-spin [animation-duration:5000ms]" />
-        <span className="text-center">Demo Reset in {minutes}:{remainingSeconds.toString().padStart(2, '0')}</span>
-      </div>
-      <div className="hidden lg:block h-3 w-[1px] bg-white/20 relative z-10" />
-      <span className="hidden lg:inline relative z-10 text-white/60">Modifications will be purged soon.</span>
-    </div>
   );
 }
 
@@ -207,7 +161,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { 
     activeTeam, setActiveTeam, teams, user, isPro, alerts, isSuperAdmin, 
-    resetDemo, isClubManager, secondsUntilReset, isStaff, isParent, hasFeature, isPlayer
+    isClubManager, isStaff, isParent, hasFeature, isPlayer
   } = useTeam();
   const [hasUnreadAlerts, setHasUnreadAlerts] = useState(false);
 
@@ -227,14 +181,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   // Unified tab filtering based on role and governance
   const filteredTabs = tabs.filter(tab => {
-    // Hide Feed if user role doesn't have read access
     if (tab.name === 'Feed') {
-      if (!hasFeature('live_feed_read')) return false;
       if (isParent && !activeTeam?.parentCommentsEnabled) return false;
       if ((isParent || isPlayer) && !isPro) return false;
     }
     
-    // Parent-to-Parent Chat toggle
     if (tab.name === 'Chats' && isParent && activeTeam && !activeTeam.parentChatEnabled) return false;
     
     return true;
@@ -243,7 +194,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
       <div className="flex flex-col min-h-screen w-full bg-background selection:bg-primary/20">
-        <DemoResetBanner seconds={secondsUntilReset} />
         <div className="flex flex-1 overflow-hidden">
           <Sidebar collapsible="none" className="hidden md:flex border-r bg-muted/20 w-72 shrink-0 sticky top-0 h-screen">
             <SidebarHeader className="p-6">
@@ -254,6 +204,24 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   <p className="text-[10px] font-extrabold text-primary uppercase tracking-[0.25em] whitespace-nowrap">Coordination Hub</p>
                 </div>
               </div>
+
+              {isParent && (
+                <div className="mb-6 px-2">
+                  <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground mb-2">Guardian Control</p>
+                  <Button 
+                    asChild 
+                    className={cn(
+                      "w-full h-12 rounded-2xl justify-start gap-3 font-black text-xs uppercase tracking-widest transition-all",
+                      pathname === '/family' ? "bg-black text-white shadow-xl" : "bg-primary/5 text-primary hover:bg-primary/10"
+                    )}
+                  >
+                    <Link href="/family">
+                      <Baby className="h-5 w-5" />
+                      Family Hub
+                    </Link>
+                  </Button>
+                </div>
+              )}
 
               {isClubManager && (
                 <div className="mb-6 px-2">
@@ -302,8 +270,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       teams={teams} 
                       activeTeam={activeTeam} 
                       setActiveTeam={setActiveTeam} 
-                      router={router} 
-                      resetDemo={resetDemo} 
+                      router={router}
                     />
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -414,8 +381,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         teams={teams} 
                         activeTeam={activeTeam} 
                         setActiveTeam={setActiveTeam} 
-                        router={router} 
-                        resetDemo={resetDemo} 
+                        router={router}
                       />
                     </DropdownMenuContent>
                   </DropdownMenu>
