@@ -186,74 +186,76 @@ export default function GamesPage() {
               <DialogTrigger asChild><Button className="flex-1 sm:flex-none rounded-full shadow-lg h-10 lg:h-11 px-6 font-black uppercase text-[10px] lg:text-xs tracking-widest"><Plus className="h-3.5 w-3.5 mr-2" />Record Match</Button></DialogTrigger>
               <DialogContent className="sm:max-w-3xl overflow-hidden p-0 sm:rounded-[2.5rem] border-none shadow-2xl h-[100dvh] sm:h-auto sm:max-h-[95vh] flex flex-col">
                 <DialogTitle className="sr-only">Record Match Result</DialogTitle>
-                <ScrollArea className="flex-1 h-full">
-                  <div className="flex flex-col lg:flex-row min-h-full">
-                    {/* Form Pane */}
-                    <div className="lg:w-1/2 p-6 lg:p-10 bg-muted/30 lg:border-r-2 space-y-8">
-                      <DialogHeader className="flex flex-row items-center justify-between">
-                        <h2 className="text-2xl lg:text-3xl font-black uppercase tracking-tight leading-none">{editingGame ? "Update Match" : "Post Match"}</h2>
-                        <Button variant="ghost" size="icon" className="sm:hidden" onClick={() => setIsRecordOpen(false)}><X className="h-5 w-5" /></Button>
-                      </DialogHeader>
-                      <div className="space-y-5">
-                        {leagueOpponents.length > 0 && (
-                          <div className="space-y-1.5">
-                            <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1 text-primary">League Match? (Optional)</Label>
-                            <Select value={selectedOpponentTeamId === 'manual' ? 'manual' : `${selectedLeagueId}_${selectedOpponentTeamId}`} onValueChange={(val) => { if (val === 'manual') { setSelectedOpponentTeamId('manual'); setSelectedLeagueId('none'); setOpponent(''); } else { const opt = leagueOpponents.find(o => `${o.leagueId}_${o.teamId}` === val); if (opt) { setSelectedOpponentTeamId(opt.teamId); setSelectedLeagueId(opt.leagueId); setOpponent(opt.teamName); } } }}>
-                              <SelectTrigger className="rounded-xl h-12 border-2 border-primary/20 bg-primary/5 font-black text-xs"><SelectValue placeholder="Select League Opponent" /></SelectTrigger>
-                              <SelectContent className="rounded-xl"><SelectItem value="manual" className="font-bold">One-Off Match (Manual Name)</SelectItem>{leagueOpponents.map(o => (<SelectItem key={`${o.leagueId}_${o.teamId}`} value={`${o.leagueId}_${o.teamId}`} className="font-bold">{o.teamName} ({o.leagueName})</SelectItem>))}</SelectContent>
-                            </Select>
-                          </div>
-                        )}
-                        <div className="space-y-1.5">
-                          <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Opponent Name</Label>
-                          <Input placeholder="e.g. Tigers" value={opponent} onChange={e => setOpponent(e.target.value)} disabled={selectedOpponentTeamId !== 'manual'} className="rounded-xl h-12 border-2 font-black text-base" />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Date</Label>
-                          <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="rounded-xl h-12 border-2 font-black text-base" />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-1.5">
-                            <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Us</Label>
-                            <Input type="number" placeholder="0" value={myScore} onChange={e => setMyScore(e.target.value)} className="rounded-xl h-12 font-black text-xl text-center border-2" />
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Them</Label>
-                            <Input type="number" placeholder="0" value={opponentScore} onChange={e => setOpponentScore(e.target.value)} className="rounded-xl h-12 font-black text-xl text-center border-2" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Highlights & Actions Pane */}
-                    <div className="lg:w-1/2 p-6 lg:p-10 flex flex-col justify-between bg-background">
-                      <div className="space-y-6">
-                        <div className="space-y-1.5">
-                          <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Match Highlights</Label>
-                          {isPro ? (
-                            <Textarea placeholder="Describe key plays and tactical moments..." value={notes} onChange={e => setNotes(e.target.value)} className="min-h-[200px] lg:min-h-[300px] rounded-2xl lg:rounded-[2rem] p-6 font-bold bg-muted/10 border-2 resize-none text-base" />
-                          ) : (
-                            <div className="min-h-[200px] lg:min-h-[300px] rounded-2xl lg:rounded-[2rem] p-8 bg-primary/5 border-2 border-dashed flex flex-col items-center justify-center text-center space-y-4">
-                              <Lock className="h-8 w-8 text-primary/40" />
-                              <div className="space-y-1">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Match Highlights Locked</p>
-                                <p className="text-[8px] font-bold text-muted-foreground uppercase max-w-[180px] mx-auto">Upgrade to Elite to archive season highlights and tactical notes.</p>
-                              </div>
-                              <Button size="sm" variant="ghost" className="h-8 rounded-lg text-[8px] font-black uppercase text-primary border border-primary/20" onClick={purchasePro}>Upgrade to Elite</Button>
+                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                  <ScrollArea className="flex-1 h-full">
+                    <div className="flex flex-col lg:flex-row min-h-full">
+                      {/* Form Pane */}
+                      <div className="lg:w-1/2 p-6 lg:p-10 bg-muted/30 lg:border-r-2 space-y-8">
+                        <DialogHeader className="flex flex-row items-center justify-between">
+                          <h2 className="text-2xl lg:text-3xl font-black uppercase tracking-tight leading-none">{editingGame ? "Update Match" : "Post Match"}</h2>
+                          <Button variant="ghost" size="icon" className="sm:hidden" onClick={() => setIsRecordOpen(false)}><X className="h-5 w-5" /></Button>
+                        </DialogHeader>
+                        <div className="space-y-5">
+                          {leagueOpponents.length > 0 && (
+                            <div className="space-y-1.5">
+                              <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1 text-primary">League Match? (Optional)</Label>
+                              <Select value={selectedOpponentTeamId === 'manual' ? 'manual' : `${selectedLeagueId}_${selectedOpponentTeamId}`} onValueChange={(val) => { if (val === 'manual') { setSelectedOpponentTeamId('manual'); setSelectedLeagueId('none'); setOpponent(''); } else { const opt = leagueOpponents.find(o => `${o.leagueId}_${o.teamId}` === val); if (opt) { setSelectedOpponentTeamId(opt.teamId); setSelectedLeagueId(opt.leagueId); setOpponent(opt.teamName); } } }}>
+                                <SelectTrigger className="rounded-xl h-12 border-2 border-primary/20 bg-primary/5 font-black text-xs"><SelectValue placeholder="Select League Opponent" /></SelectTrigger>
+                                <SelectContent className="rounded-xl"><SelectItem value="manual" className="font-bold">One-Off Match (Manual Name)</SelectItem>{leagueOpponents.map(o => (<SelectItem key={`${o.leagueId}_${o.teamId}`} value={`${o.leagueId}_${o.teamId}`} className="font-bold">{o.teamName} ({o.leagueName})</SelectItem>))}</SelectContent>
+                              </Select>
                             </div>
                           )}
+                          <div className="space-y-1.5">
+                            <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Opponent Name</Label>
+                            <Input placeholder="e.g. Tigers" value={opponent} onChange={e => setOpponent(e.target.value)} disabled={selectedOpponentTeamId !== 'manual'} className="rounded-xl h-12 border-2 font-black text-base" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Date</Label>
+                            <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="rounded-xl h-12 border-2 font-black text-base" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Us</Label>
+                              <Input type="number" placeholder="0" value={myScore} onChange={e => setMyScore(e.target.value)} className="rounded-xl h-12 font-black text-xl text-center border-2" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Them</Label>
+                              <Input type="number" placeholder="0" value={opponentScore} onChange={e => setOpponentScore(e.target.value)} className="rounded-xl h-12 font-black text-xl text-center border-2" />
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      
-                      <div className="pt-8 mt-auto flex flex-col gap-3">
-                        <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleRecordGame}>
-                          {editingGame ? "Commit Updates" : "Broadcast Result"}
-                        </Button>
-                        <Button variant="ghost" className="sm:hidden text-[10px] font-black uppercase tracking-widest" onClick={() => setIsRecordOpen(false)}>Discard</Button>
+
+                      {/* Highlights & Actions Pane */}
+                      <div className="lg:w-1/2 p-6 lg:p-10 flex flex-col justify-between bg-background">
+                        <div className="space-y-6">
+                          <div className="space-y-1.5">
+                            <Label className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest ml-1">Match Highlights</Label>
+                            {isPro ? (
+                              <Textarea placeholder="Describe key plays and tactical moments..." value={notes} onChange={e => setNotes(e.target.value)} className="min-h-[200px] lg:min-h-[300px] rounded-2xl lg:rounded-[2rem] p-6 font-bold bg-muted/10 border-2 resize-none text-base" />
+                            ) : (
+                              <div className="min-h-[200px] lg:min-h-[300px] rounded-2xl lg:rounded-[2rem] p-8 bg-primary/5 border-2 border-dashed flex flex-col items-center justify-center text-center space-y-4">
+                                <Lock className="h-8 w-8 text-primary/40" />
+                                <div className="space-y-1">
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Match Highlights Locked</p>
+                                  <p className="text-[8px] font-bold text-muted-foreground uppercase max-w-[180px] mx-auto">Upgrade to Elite to archive season highlights and tactical notes.</p>
+                                </div>
+                                <Button size="sm" variant="ghost" className="h-8 rounded-lg text-[8px] font-black uppercase text-primary border border-primary/20" onClick={purchasePro}>Upgrade to Elite</Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="pt-8 mt-auto flex flex-col gap-3">
+                          <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleRecordGame}>
+                            {editingGame ? "Commit Updates" : "Broadcast Result"}
+                          </Button>
+                          <Button variant="ghost" className="sm:hidden text-[10px] font-black uppercase tracking-widest" onClick={() => setIsRecordOpen(false)}>Discard</Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </ScrollArea>
+                  </ScrollArea>
+                </div>
               </DialogContent>
             </Dialog>
           )}

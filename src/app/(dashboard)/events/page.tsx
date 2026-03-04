@@ -217,17 +217,14 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
         <DialogTitle className="sr-only">{event.title} Detail Hub</DialogTitle>
         <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
           {/* Left Column - Info */}
-          <div className={cn(
-            "lg:w-1/3 p-6 lg:p-8 lg:border-r flex flex-col shrink-0 text-white transition-colors duration-500",
-            event.isTournamentPaid ? "bg-primary" : "bg-black"
-          )}>
-            <ScrollArea className="flex-1 -mx-2 px-2">
+          <div className="lg:w-1/3 p-6 lg:p-8 lg:border-r flex flex-col shrink-0 text-white bg-black transition-colors duration-500">
+            <ScrollArea className="flex-1 -mx-2 px-2 h-full">
               <div className="space-y-8 pb-10">
                 <div className="space-y-6">
                   <div className="flex justify-between items-start">
                     <Badge className={cn(
                       "uppercase font-black tracking-widest text-[9px] px-3 h-6", 
-                      event.isTournamentPaid ? "bg-black text-white" : "bg-primary text-white"
+                      event.isTournamentPaid ? "bg-primary text-white" : "bg-white text-black"
                     )}>
                       {event.isTournament ? (event.isTournamentPaid ? "Elite Hub" : "Tournament Hub") : "Team Match"}
                     </Badge>
@@ -241,9 +238,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                   </div>
                   <div className="space-y-4 pt-4">
                     <div className="bg-white/10 p-4 rounded-2xl border border-white/10 space-y-3">
-                      <div className="flex items-center gap-3 font-bold text-sm"><CalendarDays className={cn("h-4 w-4", event.isTournamentPaid ? "text-black" : "text-primary")} /><span>{formatDateRange(event.date, event.endDate)}</span></div>
-                      <div className="flex items-center gap-3 font-bold text-sm"><Clock className={cn("h-4 w-4", event.isTournamentPaid ? "text-black" : "text-primary")} /><span>{event.startTime}</span></div>
-                      <div className="flex items-center gap-3 font-bold text-sm"><MapPin className={cn("h-4 w-4", event.isTournamentPaid ? "text-black" : "text-primary")} /><span className="truncate">{event.location}</span></div>
+                      <div className="flex items-center gap-3 font-bold text-sm"><CalendarDays className={cn("h-4 w-4", event.isTournamentPaid ? "text-primary" : "text-white/40")} /><span>{formatDateRange(event.date, event.endDate)}</span></div>
+                      <div className="flex items-center gap-3 font-bold text-sm"><Clock className={cn("h-4 w-4", event.isTournamentPaid ? "text-primary" : "text-white/40")} /><span>{event.startTime}</span></div>
+                      <div className="flex items-center gap-3 font-bold text-sm"><MapPin className={cn("h-4 w-4", event.isTournamentPaid ? "text-primary" : "text-white/40")} /><span className="truncate">{event.location}</span></div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-2">
@@ -275,7 +272,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                     )}
 
                     {myParticipatingTeamName && !isWaiverSignedForMyTeam && (
-                      <Button onClick={() => setIsTeamAgreementOpen(true)} className={cn("w-full rounded-xl h-14 font-black text-sm uppercase gap-3 text-white shadow-xl", event.isTournamentPaid ? "bg-black shadow-black/20" : "bg-primary shadow-primary/20")}>
+                      <Button onClick={() => setIsTeamAgreementOpen(true)} className={cn("w-full rounded-xl h-14 font-black text-sm uppercase gap-3 text-white shadow-xl", event.isTournamentPaid ? "bg-primary shadow-primary/20" : "bg-white text-black shadow-black/20")}>
                         <Signature className="h-5 w-5" /> Sign for {myParticipatingTeamName}
                       </Button>
                     )}
@@ -294,7 +291,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                                 <span className="text-[10px] font-black text-white/60 w-4">{i + 1}</span>
                                 <span className="text-xs font-black uppercase truncate pr-2">{team.name}</span>
                               </div>
-                              <Badge className={cn("border-none font-black text-[9px] px-2 h-5 shrink-0", event.isTournamentPaid ? "bg-black text-white" : "bg-primary text-white")}>{team.points} PTS</Badge>
+                              <Badge className={cn("border-none font-black text-[9px] px-2 h-5 shrink-0", event.isTournamentPaid ? "bg-primary text-white" : "bg-white text-black")}>{team.points} PTS</Badge>
                             </div>
                           ))}
                         </div>
@@ -328,7 +325,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
           </div>
 
           {/* Right Column - Tabs */}
-          <div className="flex-1 flex flex-col bg-background min-h-0">
+          <div className="flex-1 flex flex-col bg-background min-h-0 overflow-hidden">
             <Tabs defaultValue={event.isTournament ? "bracket" : "roster"} className="flex-1 flex flex-col min-h-0">
               <div className="px-6 lg:px-10 py-6 border-b bg-muted/30 shrink-0">
                 <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit overflow-x-auto no-scrollbar">
@@ -784,7 +781,7 @@ export default function EventsPage() {
               "lg:w-5/12 p-6 lg:p-8 lg:border-r space-y-6 flex flex-col",
               isEliteTournament ? "bg-primary/5" : "bg-muted/30"
             )}>
-              <ScrollArea className="flex-1 -mx-2 px-2">
+              <ScrollArea className="flex-1 -mx-2 px-2 h-full">
                 <div className="space-y-6 pb-6">
                   <DialogHeader>
                     <DialogTitle className="text-2xl lg:text-3xl font-black tracking-tight">
@@ -836,7 +833,7 @@ export default function EventsPage() {
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 {isTournamentMode ? (
                   <Tabs defaultValue="teams" className="flex-1 flex flex-col min-h-0">
-                    <div className="px-6 lg:px-8 pt-6 lg:pt-8 border-b bg-muted/10">
+                    <div className="px-6 lg:px-8 pt-6 lg:pt-8 border-b bg-muted/10 shrink-0">
                       <TabsList className="bg-muted/50 h-11 p-1 mb-4 w-full">
                         <TabsTrigger value="teams" className="font-black text-[10px] uppercase px-6 flex-1">Squads</TabsTrigger>
                         <TabsTrigger value="games" className="font-black text-[10px] uppercase px-6 flex-1">Brackets</TabsTrigger>
@@ -1023,7 +1020,7 @@ export default function EventsPage() {
                         <div>
                           <div className="flex gap-2 mb-1.5">
                             {event.isTournament && (
-                              <Badge className={cn("text-[7px] uppercase border-none", event.isTournamentPaid ? "bg-black text-white" : "bg-primary text-white")}>
+                              <Badge className={cn("text-[7px] uppercase border-none", event.isTournamentPaid ? "bg-black text-white border-2 border-primary/20" : "bg-black text-white")}>
                                 {event.isTournamentPaid ? 'Elite Hub' : 'Tournament'}
                               </Badge>
                             )}
