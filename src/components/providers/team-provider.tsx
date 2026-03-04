@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo } from 'react';
@@ -303,15 +304,12 @@ const TeamContext = createContext<TeamContextType | undefined>(undefined);
 export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isUserLoading } = useUser();
   const db = useFirestore();
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const pathname = usePathname();
   
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [myChildren, setMyChildren] = useState<PlayerProfile[]>([]);
-  const [alerts, setAlerts] = useState<TeamAlert[]>([]);
   const [isRCInitialized, setIsRCInitialized] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
@@ -400,24 +398,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return teams.find(t => t.id === activeTeamId) || teams[0];
   }, [teams, activeTeamId]);
 
-  const [members, setMembers] = useState<Member[]>([]);
-  const [isMembersLoading, setIsMembersLoading] = useState(false);
-  useEffect(() => {
-    if (!activeTeam?.id || !db) return;
-    setIsMembersLoading(true);
-    return onSnapshot(query(collection(db, 'teams', activeTeam.id, 'members')), (snap) => {
-      setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Member)));
-      setIsMembersLoading(false);
-    });
+  const membersQuery = useMemoFirebase(() => {
+    if (!activeTeam?.id || !db) return null;
+    return query(collection(db, 'teams', activeTeam.id, 'members'));
   }, [activeTeam?.id, db]);
+  const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
+  const members = useMemo(() => membersData || [], [membersData]);
 
-  useEffect(() => {
-    if (!activeTeam?.id || !db) return;
-    const q = query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10));
-    return onSnapshot(q, (snap) => {
-      setAlerts(snap.docs.map(d => ({ id: d.id, ...d.data() } as TeamAlert)));
-    });
+  const alertsQuery = useMemoFirebase(() => {
+    if (!activeTeam?.id || !db) return null;
+    return query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10));
   }, [activeTeam?.id, db]);
+  const { data: alertsData } = useCollection<TeamAlert>(alertsQuery);
+  const alerts = useMemo(() => alertsData || [], [alertsData]);
 
   useEffect(() => {
     setIsRCInitialized(true);
@@ -656,7 +649,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       return true;
     },
     submitMatchScore: async (tid: string, eid: string, gid: string, isT1: boolean, s1: number, s2: number) => {
-      // Dual verification placeholder logic
       const evRef = doc(db, 'teams', tid, 'events', eid);
       const snap = await getDoc(evRef);
       const games = snap.data()?.tournamentGames || [];

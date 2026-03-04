@@ -70,16 +70,25 @@ export default function SettingsPage() {
   const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   
-  const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', password: '', position: '' });
+  const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', position: '' });
 
   useEffect(() => {
     setMounted(true);
-    if (user) {
-      setEditForm(prev => ({ ...prev, name: user.name, email: user.email, phone: user.phone }));
-    }
-  }, [user]);
+  }, []);
 
-  if (!mounted || !activeTeam || !user) {
+  useEffect(() => {
+    if (user) {
+      const currentMember = activeTeam ? members.find(m => m.userId === user.id) : null;
+      setEditForm({ 
+        name: user.name || '', 
+        email: user.email || '', 
+        phone: user.phone || '',
+        position: currentMember?.position || ''
+      });
+    }
+  }, [user, activeTeam, members]);
+
+  if (!mounted || !user) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center animate-pulse">
         <div className="h-12 w-12 bg-primary/10 rounded-full mb-4" />
@@ -88,7 +97,7 @@ export default function SettingsPage() {
     );
   }
 
-  const currentMember = members.find(m => m.userId === user.id && m.teamId === activeTeam.id);
+  const currentMember = activeTeam ? members.find(m => m.userId === user.id) : null;
   const isAdmin = activeTeam?.role === 'Admin';
 
   const compressImage = (file: File): Promise<string> => {
@@ -127,16 +136,22 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSaveProfile = () => {
-    updateUser({ name: editForm.name, email: editForm.email, phone: editForm.phone });
-    if (currentMember) { updateMember(currentMember.id, { position: editForm.position }); }
+  const handleSaveProfile = async () => {
+    await updateUser({ name: editForm.name, email: editForm.email, phone: editForm.phone });
+    if (currentMember) { 
+      await updateMember(currentMember.id, { position: editForm.position }); 
+    }
     setIsEditOpen(false);
     toast({ title: "Profile Updated" });
   };
 
   const handleLogout = async () => {
-    try { await signOut(auth); router.push('/login'); } 
-    catch (error) { toast({ title: "Logout Failed", variant: "destructive" }); }
+    try { 
+      await signOut(auth); 
+      router.push('/login'); 
+    } catch (error) { 
+      toast({ title: "Logout Failed", variant: "destructive" }); 
+    }
   };
 
   return (
@@ -149,7 +164,10 @@ export default function SettingsPage() {
           <div className="flex flex-col items-center space-y-3">
             <div className="relative">
               <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
-              <Avatar className="h-24 w-24 border-4 border-background shadow-lg"><AvatarImage src={user.avatar} /><AvatarFallback className="font-bold">{user.name?.[0] || '?'}</AvatarFallback></Avatar>
+              <Avatar className="h-24 w-24 border-4 border-background shadow-lg">
+                <AvatarImage src={user.avatar} />
+                <AvatarFallback className="font-bold">{user.name?.[0] || '?'}</AvatarFallback>
+              </Avatar>
               <Button size="icon" variant="secondary" disabled={isUpdatingAvatar} className="absolute bottom-0 right-0 h-8 w-8 rounded-full shadow-md bg-white hover:bg-muted" onClick={() => avatarInputRef.current?.click()}>
                 {isUpdatingAvatar ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <Camera className="h-4 w-4 text-primary" />}
               </Button>
@@ -158,18 +176,40 @@ export default function SettingsPage() {
               <h2 className="text-xl font-bold">{user.name}</h2>
               <div className="flex flex-col items-center gap-1 mt-1">
                 <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">
-                  Access: {activeTeam?.role} • {currentMember?.position || 'Teammate'}
+                  Account Role: {user.role?.replace(/_/g, ' ')}
                 </p>
+                {activeTeam && (
+                  <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest">
+                    Squad Member: {currentMember?.position || 'Teammate'}
+                  </p>
+                )}
                 <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest">{user.email}</p>
               </div>
             </div>
             <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-              <DialogTrigger asChild><Button variant="outline" size="sm" className="rounded-full px-6 border-primary/20 text-primary hover:bg-primary/5">Edit Profile</Button></DialogTrigger>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" className="rounded-full px-6 border-primary/20 text-primary hover:bg-primary/5">Edit Profile</Button>
+              </DialogTrigger>
               <DialogContent className="sm:max-w-md rounded-3xl">
                 <DialogHeader><DialogTitle>Edit Profile</DialogTitle></DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2"><Label>Full Name</Label><Input className="rounded-xl h-11" value={editForm.name} onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))} /></div>
-                  <div className="space-y-2"><Label>Position / Role</Label><Select value={editForm.position} onValueChange={(v) => setEditForm(prev => ({ ...prev, position: v }))}><SelectTrigger className="rounded-xl h-11"><SelectValue placeholder="Select position..." /></SelectTrigger><SelectContent><SelectItem value="Coach">Coach</SelectItem><SelectItem value="Team Lead">Team Lead</SelectItem><SelectItem value="Assistant Coach">Assistant Coach</SelectItem><SelectItem value="Squad Leader">Squad Leader</SelectItem><SelectItem value="Player">Player</SelectItem><SelectItem value="Parent">Parent</SelectItem></SelectContent></Select></div>
+                  {activeTeam && (
+                    <div className="space-y-2">
+                      <Label>Team Position</Label>
+                      <Select value={editForm.position} onValueChange={(v) => setEditForm(prev => ({ ...prev, position: v }))}>
+                        <SelectTrigger className="rounded-xl h-11"><SelectValue placeholder="Select position..." /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Coach">Coach</SelectItem>
+                          <SelectItem value="Team Lead">Team Lead</SelectItem>
+                          <SelectItem value="Assistant Coach">Assistant Coach</SelectItem>
+                          <SelectItem value="Squad Leader">Squad Leader</SelectItem>
+                          <SelectItem value="Player">Player</SelectItem>
+                          <SelectItem value="Parent">Parent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <div className="space-y-2"><Label>Email</Label><Input type="email" className="rounded-xl h-11" value={editForm.email} onChange={e => setEditForm(prev => ({ ...prev, email: e.target.value }))} /></div>
                   <div className="space-y-2"><Label>Phone Number</Label><Input className="rounded-xl h-11" value={editForm.phone} onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))} /></div>
                 </div>
@@ -182,7 +222,19 @@ export default function SettingsPage() {
 
       {isClubManager && (
         <Card className="border-none shadow-xl rounded-[2rem] overflow-hidden bg-black text-white animate-in zoom-in-95 duration-500">
-          <CardContent className="p-6"><div className="flex items-center justify-between gap-4"><div className="flex items-center gap-4"><div className="bg-primary/20 p-3 rounded-2xl text-primary ring-1 ring-primary/30"><Building className="h-6 w-6" /></div><div><Badge className="bg-primary text-white mb-1 h-4 text-[8px] uppercase tracking-[0.2em] font-black">Elite Hub</Badge><h3 className="text-lg font-black tracking-tight leading-none">Club Management</h3><p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-1">Scale your organization</p></div></div><Button onClick={() => router.push('/club')} className="rounded-full bg-white text-black hover:bg-white/90 h-10 px-6 font-black uppercase text-[10px] tracking-widest shadow-lg">Open Hub <ArrowRight className="ml-2 h-3.5 w-3.5" /></Button></div></CardContent>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/20 p-3 rounded-2xl text-primary ring-1 ring-primary/30"><Building className="h-6 w-6" /></div>
+                <div>
+                  <Badge className="bg-primary text-white mb-1 h-4 text-[8px] uppercase tracking-[0.2em] font-black">Elite Hub</Badge>
+                  <h3 className="text-lg font-black tracking-tight leading-none">Club Management</h3>
+                  <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-1">Scale your organization</p>
+                </div>
+              </div>
+              <Button onClick={() => router.push('/club')} className="rounded-full bg-white text-black hover:bg-white/90 h-10 px-6 font-black uppercase text-[10px] tracking-widest shadow-lg">Open Hub <ArrowRight className="ml-2 h-3.5 w-3.5" /></Button>
+            </div>
+          </CardContent>
         </Card>
       )}
 
@@ -190,7 +242,13 @@ export default function SettingsPage() {
         <Card className="border-none shadow-sm rounded-3xl overflow-hidden ring-1 ring-black/5">
           <CardContent className="p-0">
             <div className="divide-y divide-muted/50">
-              <div className="p-4 flex items-center justify-between"><div className="flex items-center gap-3"><div className="bg-primary/10 p-2.5 rounded-2xl text-primary"><Bell className="h-5 w-5" /></div><div><p className="text-sm font-bold">Push Notifications</p><p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Alerts for posts, events & chats</p></div></div><Switch checked={notifications} onCheckedChange={setNotifications} /></div>
+              <div className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 p-2.5 rounded-2xl text-primary"><Bell className="h-5 w-5" /></div>
+                  <div><p className="text-sm font-bold">Push Notifications</p><p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Alerts for posts, events & chats</p></div>
+                </div>
+                <Switch checked={notifications} onCheckedChange={setNotifications} />
+              </div>
               
               {isStaff && (
                 <Link href="/how-to" className="w-full p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group">
