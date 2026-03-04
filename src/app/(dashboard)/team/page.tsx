@@ -73,13 +73,23 @@ export default function TeamProfilePage() {
 
   // Fetch pending assignments for this team - Restricted to administrative staff only
   const assignmentsQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || !db || !isStaff || !hasFeature('league_registration')) return null;
-    return query(
-      collectionGroup(db, 'registrationEntries'), 
+    if (!activeTeam?.id || !db || !isStaff || !hasFeature('league_registration') || !user?.id) return null;
+    
+    // CRITICAL: Group queries require specific security rule matching.
+    // For demo squads, we use a stateless ID check. For standard squads, we filter by owner UID.
+    const isDemoTeam = activeTeam.id.startsWith('demo_guest_');
+    
+    const constraints = [
       where('assigned_team_id', '==', activeTeam.id), 
       where('status', '==', 'assigned')
-    );
-  }, [activeTeam?.id, db, isStaff]);
+    ];
+    
+    if (!isDemoTeam) {
+      constraints.push(where('assigned_team_owner_id', '==', user.id));
+    }
+    
+    return query(collectionGroup(db, 'registrationEntries'), ...constraints);
+  }, [activeTeam?.id, db, isStaff, user?.id]);
 
   const { data: rawAssignments } = useCollection<RegistrationEntry>(assignmentsQuery);
   const assignments = useMemo(() => rawAssignments || [], [rawAssignments]);

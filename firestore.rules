@@ -14,17 +14,17 @@ service cloud.firestore {
 
     // Support for collectionGroup query on registrationEntries
     // CRITICAL: Group queries cannot use get() or exists() in rules. 
-    // We rely on assigned_team_owner_id injected at write-time for security.
+    // We rely on data injected at write-time for stateless verification.
     match /{path=**}/registrationEntries/{entryId} {
       allow read: if isSignedIn() && (
         isSuperAdmin() || 
         (resource != null && (
           resource.data.get('assigned_team_owner_id', '') == request.auth.uid ||
           resource.data.get('created_by', '') == request.auth.uid ||
-          // Demo guest check (Stateless)
-          (resource.data.assigned_team_id.size() >= 15 && 
-           resource.data.assigned_team_id[0:11] == 'demo_guest_' && 
-           resource.data.assigned_team_id[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : request.auth.uid.size()].lower())
+          // Demo guest check (Stateless Verification)
+          (resource.data.get('assigned_team_id', '').size() >= 15 && 
+           resource.data.get('assigned_team_id', '')[0:11] == 'demo_guest_' && 
+           resource.data.get('assigned_team_id', '')[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : request.auth.uid.size()].lower())
         ))
       );
       
