@@ -292,13 +292,20 @@ export default function LeaguesPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  {canRegister && activeLeague.creatorId === user?.id && (
-                    <Button asChild variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest border-white/20 bg-white/10 text-white hover:bg-white/20">
-                      <Link href={`/leagues/registration/${activeLeague.id}`}>
-                        <ClipboardList className="h-4 w-4 mr-2" />
+                  {activeLeague.creatorId === user?.id && (
+                    canRegister ? (
+                      <Button asChild variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest border-white/20 bg-white/10 text-white hover:bg-white/20">
+                        <Link href={`/leagues/registration/${activeLeague.id}`}>
+                          <ClipboardList className="h-4 w-4 mr-2" />
+                          Registration Hub
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button variant="outline" onClick={purchasePro} className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest border-white/20 bg-white/10 text-white hover:bg-white/20 opacity-60">
+                        <Lock className="h-4 w-4 mr-2" />
                         Registration Hub
-                      </Link>
-                    </Button>
+                      </Button>
+                    )
                   )}
                   {activeLeague.creatorId === user?.id && (
                     <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>

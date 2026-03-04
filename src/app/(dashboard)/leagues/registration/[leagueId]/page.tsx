@@ -33,7 +33,9 @@ import {
   Table as TableIcon,
   DollarSign,
   CreditCard,
-  Circle
+  Circle,
+  Lock,
+  Sparkles
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -55,8 +57,10 @@ import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 export default function LeagueRegistrationAdminPage() {
   const { leagueId } = useParams();
   const router = useRouter();
-  const { saveLeagueRegistrationConfig, assignEntryToTeam, activeLeague, isClubManager, hasFeature, toggleRegistrationPaymentStatus } = useTeam();
+  const { saveLeagueRegistrationConfig, assignEntryToTeam, activeLeague, isClubManager, hasFeature, toggleRegistrationPaymentStatus, purchasePro } = useTeam();
   const db = useFirestore();
+
+  const canRegister = hasFeature('league_registration');
 
   const configRef = useMemoFirebase(() => db ? doc(db, 'leagues', leagueId as string, 'registration', 'config') : null, [db, leagueId]);
   const { data: config, isLoading: isConfigLoading } = useDoc<LeagueRegistrationConfig>(configRef);
@@ -125,7 +129,29 @@ export default function LeagueRegistrationAdminPage() {
     document.body.removeChild(link);
   };
 
-  if (!hasFeature('league_registration')) return null;
+  if (!canRegister) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4">
+        <div className="relative">
+          <div className="bg-primary/10 p-8 rounded-[3rem] shadow-2xl">
+            <ClipboardList className="h-20 w-20 text-primary" />
+          </div>
+          <div className="absolute -top-3 -right-3 bg-black text-white p-2.5 rounded-full shadow-lg border-4 border-background">
+            <Lock className="h-5 w-5" />
+          </div>
+        </div>
+        <div className="text-center max-w-md space-y-4">
+          <h1 className="text-4xl font-black tracking-tight uppercase">Registration Hub Locked</h1>
+          <p className="text-muted-foreground font-bold leading-relaxed text-lg uppercase tracking-wide">
+            Automated player enrollment and assignment logic is reserved for Elite Pro and Club squads.
+          </p>
+        </div>
+        <Button className="h-14 px-10 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={purchasePro}>
+          Unlock Recruitment Hub
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 pb-20">

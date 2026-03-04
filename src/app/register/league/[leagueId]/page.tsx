@@ -106,17 +106,25 @@ export default function PublicLeagueRegistrationPage() {
           <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] mt-2 mb-8">Roster review in progress</p>
           
           <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 space-y-4 text-left">
-            <div className="flex items-center gap-3">
-              <CreditCard className="h-5 w-5 text-primary" />
-              <p className="text-[10px] font-black uppercase tracking-widest text-primary">Settlement Protocol</p>
+            <div className="flex justify-between items-start">
+              <div className="flex items-center gap-3">
+                <CreditCard className="h-5 w-5 text-primary" />
+                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Settlement Protocol</p>
+              </div>
+              {config.registration_cost && (
+                <Badge className="bg-primary text-white font-black text-xs h-6">{config.registration_cost}</Badge>
+              )}
             </div>
-            <p className="text-xs font-medium text-foreground/80 leading-relaxed italic">
-              {config.payment_instructions || 'Offline payment instructions will be provided by the league coach upon roster acceptance.'}
-            </p>
+            <div className="space-y-3">
+              <p className="text-xs font-black text-primary uppercase tracking-widest">Action Required: Payment due ASAP</p>
+              <p className="text-xs font-medium text-foreground/80 leading-relaxed italic">
+                {config.payment_instructions || 'Please coordinate with the league organizer regarding the registration fee.'}
+              </p>
+            </div>
           </div>
           
           <p className="text-xs font-medium text-muted-foreground mt-8">
-            The league organizers have received your registration. You will be notified once squad assignments are finalized.
+            Your application has been received. Please ensure payment is settled promptly to finalize your squad enrollment.
           </p>
         </Card>
       </div>
