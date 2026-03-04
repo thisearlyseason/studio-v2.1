@@ -31,13 +31,16 @@ service cloud.firestore {
     function isTeamMember(teamId) {
       return isSignedIn() && (
         isSuperAdmin() ||
+        // 1. Cheap stateless check for demo guests (Priority for rapid coordination)
+        (teamId.size() >= 15 && 
+         teamId[0:11] == 'demo_guest_' && 
+         teamId[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : request.auth.uid.size()].lower()) ||
+        // 2. Check local membership registry
         exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) ||
-        // Slicing logic for demo guests (stateless fallback)
-        (teamId.size() >= 15 && teamId[0:11].lower() == 'demo_guest_' && 
-         teamId[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : ].lower()) ||
+        // 3. Server-side fallback to team document
         (exists(/databases/$(database)/documents/teams/$(teamId)) && (
           get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
-          get(/databases/$(database)/documents/teams/$(teamId)).data.get('members', {})[request.auth.uid] != null
+          get(/databases/$(database)/documents/teams/$(teamId)).data.get('members', {}).get(request.auth.uid, null) != null
         ))
       );
     }
@@ -46,14 +49,17 @@ service cloud.firestore {
     function isAdmin(teamId) {
       return isSignedIn() && (
         isSuperAdmin() ||
+        // 1. Demo guest bypass
+        (teamId.size() >= 15 && 
+         teamId[0:11] == 'demo_guest_' && 
+         teamId[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : request.auth.uid.size()].lower()) ||
+        // 2. Local membership check for role
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)/teamMemberships/$(teamId)).data.get('role', 'Member') == 'Admin') ||
-        // Slicing logic for demo guests (stateless fallback)
-        (teamId.size() >= 15 && teamId[0:11].lower() == 'demo_guest_' && 
-         teamId[11:15].lower() == request.auth.uid[request.auth.uid.size() - 4 : ].lower()) ||
+        // 3. Server-side check
         (exists(/databases/$(database)/documents/teams/$(teamId)) && (
           get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
-          get(/databases/$(database)/documents/teams/$(teamId)).data.get('members', {})[request.auth.uid] == 'Admin'
+          get(/databases/$(database)/documents/teams/$(teamId)).data.get('members', {}).get(request.auth.uid, null) == 'Admin'
         ))
       );
     }
