@@ -53,7 +53,8 @@ import {
   Scale,
   Signature as SignIcon,
   FileText,
-  ExternalLink
+  ExternalLink,
+  Globe
 } from 'lucide-react';
 import { 
   Dialog, 
