@@ -179,10 +179,13 @@ export type TournamentGame = {
   round?: number;
 };
 
+export type EventType = 'game' | 'practice' | 'meeting' | 'tournament' | 'other';
+
 export type TeamEvent = {
   id: string;
   teamId: string;
   title: string;
+  eventType: EventType;
   date: any;
   endDate?: any;
   startTime: string;
@@ -190,6 +193,7 @@ export type TeamEvent = {
   location: string;
   description: string;
   userRsvps?: Record<string, string>;
+  gameRsvps?: Record<string, Record<string, string>>; // Outer key: gameId, Inner key: userId
   isTournament?: boolean;
   isTournamentPaid?: boolean;
   tournamentSchedule?: any[];
@@ -324,7 +328,7 @@ interface TeamContextType {
   createChat: (name: string, memberIds: string[]) => Promise<string>;
   addMessage: (chatId: string, author: string, content: string, type: string, imageUrl?: string, poll?: any, isOpponentCoach?: boolean, opponentTeamName?: string) => void;
   votePoll: (chatId: string, messageId: string, optionIdx: number) => Promise<void>;
-  updateRSVP: (eventId: string, status: string) => void;
+  updateRSVP: (eventId: string, status: string, gameId?: string) => void;
   addRegistration: (teamId: string, eventId: string, data: any) => Promise<boolean>;
   promoteToRoster: (teamId: string, eventId: string, reg: any) => Promise<void>;
   updateMember: (memberId: string, updates: Partial<Member>) => void;
@@ -722,7 +726,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         await batch.commit(); setActiveTeamId(tid); return true; 
       } catch (e) { return false; }
     },
-    addEvent: (e: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'events'), { ...e, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString(), userRsvps: {}, specialWaiverResponses: {}, teamAgreements: {}, lastUpdated: new Date().toISOString(), coOrganizers: [] }),
+    addEvent: (e: any) => activeTeam?.id && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'events'), { ...e, teamId: activeTeam.id, createdBy: firebaseUser?.uid, createdAt: new Date().toISOString(), userRsvps: {}, gameRsvps: {}, specialWaiverResponses: {}, teamAgreements: {}, lastUpdated: new Date().toISOString(), coOrganizers: [] }),
     updateEvent: (id: string, e: any) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', id), { ...e, lastUpdated: new Date().toISOString() }),
     deleteEvent: (id: string) => activeTeam?.id && deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', id)),
     submitEventWaiver: async (eid: string, agreed: boolean) => { if (!activeTeam?.id || !firebaseUser) return; updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', eid), { [`specialWaiverResponses.${firebaseUser.uid}`]: { agreed, timestamp: new Date().toISOString() } }); },
@@ -742,7 +746,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     createChat: async (name: string, memberIds: string[]) => { if (!activeTeam?.id || !firebaseUser) return ''; try { const docRef = await addDoc(collection(db, 'teams', activeTeam.id, 'groupChats'), { teamId: activeTeam.id, name, memberIds: [...memberIds, firebaseUser.uid], createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), lastMessage: '', unread: 0 }); return docRef.id; } catch { return ''; } },
     addMessage: async (cid: string, auth: string, content: string, type: string, img?: string, poll?: any, isOpponentCoach?: boolean, opponentTeamName?: string) => { if (!activeTeam?.id) return; let finalImg = img; if (img) finalImg = await compressImage(img); addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages'), { author: auth, authorId: firebaseUser?.uid, content, type, imageUrl: finalImg || null, poll: poll || null, createdAt: new Date().toISOString(), isOpponentCoach: isOpponentCoach || false, opponentTeamName: opponentTeamName || null }); },
     votePoll: async (cid: string, mid: string, oidx: number) => { if (!activeTeam?.id || !firebaseUser) return; try { const ref = doc(db, 'teams', activeTeam.id, 'groupChats', cid, 'messages', mid); const snap = await getDoc(ref); if (!snap.exists()) return; const poll = snap.data().poll; const current = poll.voters?.[firebaseUser.uid]; const u: any = { [`poll.voters.${firebaseUser.uid}`]: oidx }; if (current === undefined) { u[`poll.options.${oidx}.votes`] = increment(1); u['poll.totalVotes'] = increment(1); } else if (current !== oidx) { u[`poll.options.${current}.votes`] = increment(-1); u[`poll.options.${oidx}.votes`] = increment(1); } updateDocumentNonBlocking(ref, u); } catch { return; } },
-    updateRSVP: (eid: string, s: string) => activeTeam?.id && firebaseUser && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', eid), { [`userRsvps.${firebaseUser.uid}`]: s }),
+    updateRSVP: (eid: string, s: string, gameId?: string) => { 
+      if (!activeTeam?.id || !firebaseUser) return;
+      const path = gameId ? `gameRsvps.${gameId}.${firebaseUser.uid}` : `userRsvps.${firebaseUser.uid}`;
+      updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'events', eid), { [path]: s });
+    },
     addRegistration: async (tid: string, eid: string, d: any) => { try { await addDoc(collection(db, 'teams', tid, 'events', eid, 'registrations'), { ...d, status: 'pending', createdAt: new Date().toISOString() }); return true; } catch { return false; } },
     promoteToRoster: async (tid: string, eid: string, reg: any) => { try { const mid = `member_${Date.now()}`; await setDoc(doc(db, 'teams', tid, 'members', mid), { userId: `unlinked_${Date.now()}`, teamId: tid, name: reg.name, role: 'Member', position: 'Player', avatar: '', joinedAt: new Date().toISOString() }); await deleteDoc(doc(db, 'teams', tid, 'events', eid, 'registrations', reg.id)); toast({ title: "Promoted to Roster" }); } catch { return; } },
     updateMember: (mid: string, updates: Partial<Member>) => activeTeam?.id && updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'members', mid), updates),
