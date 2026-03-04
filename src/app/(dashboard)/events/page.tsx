@@ -144,7 +144,7 @@ function calculateTournamentStandings(teams: string[], games: TournamentGame[]) 
 }
 
 function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAttendance, purchasePro, children }: EventDetailDialogProps) {
-  const { members = [], teams = [], user, updateEvent, signTeamTournamentWaiver, submitEventWaiver, activeTeam, isPro, addCoOrganizerByEmail, removeCoOrganizer, isStaff } = useTeam();
+  const { members = [], teams = [], user, updateEvent, signTeamTournamentWaiver, submitEventWaiver, activeTeam, isPro, addCoOrganizerByEmail, removeCoOrganizer, isStaff, isPlayer, isParent } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
@@ -181,12 +181,27 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const hasUserSignedIndividualWaiver = !!event.specialWaiverResponses?.[user?.id || '']?.agreed;
 
   const attendanceData = useMemo(() => {
-    const internal = Object.entries(event.userRsvps || {}).map(([uid, status]) => {
+    const rsvpMap = event.userRsvps || {};
+    const rsvpIds = Object.keys(rsvpMap);
+
+    const internal = Object.entries(rsvpMap).map(([uid, status]) => {
       const member = members.find(m => m.userId === uid);
       return { id: uid, name: member?.name || 'Unknown Member', avatar: member?.avatar, role: member?.position || 'Member', status };
     });
+
+    // Coaches/Staff who haven't RSVP'd - automatic "going"
+    const staffIdsToAutoInclude = members
+      .filter(m => ['Coach', 'Assistant Coach', 'Team Lead', 'Squad Leader', 'Platform Admin'].includes(m.position))
+      .filter(m => !rsvpIds.includes(m.userId))
+      .map(m => m.userId);
+    
+    const autoStaff = staffIdsToAutoInclude.map(uid => {
+      const member = members.find(m => m.userId === uid);
+      return { id: uid, name: member?.name || 'Staff', avatar: member?.avatar, role: member?.position || 'Staff', status: 'going' };
+    });
+
     const external = registrations.map(reg => ({ id: reg.id, name: reg.name, avatar: undefined, role: 'Public Registrant', status: 'going' }));
-    return [...internal, ...external];
+    return [...internal, ...autoStaff, ...external];
   }, [event.userRsvps, members, registrations]);
 
   const goingList = attendanceData.filter(a => a.status === 'going');
@@ -359,7 +374,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                 <div className="px-6 lg:px-10 py-6 border-b bg-muted/30 sticky top-0 z-20 backdrop-blur-md">
                   <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit">
                     {event.isTournament && (<TabsTrigger value="bracket" className="rounded-xl font-black text-[10px] lg:text-xs uppercase px-4 lg:px-8 flex-1 lg:flex-none data-[state=active]:bg-black data-[state=active]:text-white">Schedule</TabsTrigger>)}
-                    {isStaff && <TabsTrigger value="roster" className="rounded-xl font-black text-[10px] lg:text-xs uppercase px-4 lg:px-8 flex-1 lg:flex-none data-[state=active]:bg-black data-[state=active]:text-white">Roster</TabsTrigger>}
+                    <TabsTrigger value="roster" className="rounded-xl font-black text-[10px] lg:text-xs uppercase px-4 lg:px-8 flex-1 lg:flex-none data-[state=active]:bg-black data-[state=active]:text-white">Roster</TabsTrigger>
                     {isAdmin && (<TabsTrigger value="manage" className="rounded-xl font-black text-[10px] lg:text-xs uppercase px-4 lg:px-8 flex-1 lg:flex-none data-[state=active]:bg-primary data-[state=active]:text-white">Manage Hub</TabsTrigger>)}
                     {isStaff && <TabsTrigger value="compliance" className="rounded-xl font-black text-[10px] lg:text-xs uppercase px-4 lg:px-8 flex-1 lg:flex-none data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>}
                   </TabsList>
@@ -388,35 +403,37 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                       </div>
                     ))}
                   </TabsContent>
-                  {isStaff && (
-                    <>
-                      <TabsContent value="roster" className="mt-0 space-y-10">
+                  
+                  <TabsContent value="roster" className="mt-0 space-y-10">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {goingList.map(person => (
+                        <div key={person.id} className="flex items-center gap-4 p-4 bg-white rounded-2xl border shadow-sm">
+                          <Avatar className="h-12 w-12 rounded-xl border-2 border-background shadow-sm"><AvatarImage src={person.avatar} /><AvatarFallback className="font-black bg-muted text-xs">{person.name[0]}</AvatarFallback></Avatar>
+                          <div className="min-w-0 flex-1"><p className="font-black text-sm uppercase truncate leading-none mb-1">{person.name}</p><p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{person.role}</p></div>
+                          <div className="bg-green-500 h-2 w-2 rounded-full" />
+                        </div>
+                      ))}
+                    </div>
+                    {event.coOrganizers?.length ? (
+                      <div className="space-y-4">
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary px-1">Tactical Co-Organizers</h4>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {goingList.map(person => (
-                            <div key={person.id} className="flex items-center gap-4 p-4 bg-white rounded-2xl border shadow-sm">
-                              <Avatar className="h-12 w-12 rounded-xl border-2 border-background shadow-sm"><AvatarImage src={person.avatar} /><AvatarFallback className="font-black bg-muted text-xs">{person.name[0]}</AvatarFallback></Avatar>
-                              <div className="min-w-0 flex-1"><p className="font-black text-sm uppercase truncate leading-none mb-1">{person.name}</p><p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{person.role}</p></div>
-                              <div className="bg-green-500 h-2 w-2 rounded-full" />
+                          {event.coOrganizers.map(co => (
+                            <div key={co.id} className="flex items-center gap-4 p-4 bg-primary/5 rounded-2xl border border-primary/10 shadow-sm">
+                              <Avatar className="h-10 w-10 rounded-xl border-2 border-background"><AvatarImage src={co.avatar} /><AvatarFallback className="font-black text-xs">{co.name[0]}</AvatarFallback></Avatar>
+                              <div className="min-w-0 flex-1">
+                                <p className="font-black text-sm uppercase truncate leading-none mb-1">{co.name}</p>
+                                <Badge className="bg-primary text-white text-[7px] font-black uppercase px-1.5 h-4 border-none">Organizer</Badge>
+                              </div>
                             </div>
                           ))}
                         </div>
-                        {event.coOrganizers?.length ? (
-                          <div className="space-y-4">
-                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary px-1">Tactical Co-Organizers</h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                              {event.coOrganizers.map(co => (
-                                <div key={co.id} className="flex items-center gap-4 p-4 bg-primary/5 rounded-2xl border border-primary/10 shadow-sm">
-                                  <Avatar className="h-10 w-10 rounded-xl border-2 border-background"><AvatarImage src={co.avatar} /><AvatarFallback className="font-black text-xs">{co.name[0]}</AvatarFallback></Avatar>
-                                  <div className="min-w-0 flex-1">
-                                    <p className="font-black text-sm uppercase truncate leading-none mb-1">{co.name}</p>
-                                    <Badge className="bg-primary text-white text-[7px] font-black uppercase px-1.5 h-4 border-none">Organizer</Badge>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </TabsContent>
+                      </div>
+                    ) : null}
+                  </TabsContent>
+
+                  {isStaff && (
+                    <>
                       <TabsContent value="manage" className="mt-0 space-y-12 animate-in fade-in slide-in-from-bottom-4">
                         <div className="space-y-10">
                           <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-8">
@@ -583,7 +600,22 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
             </div>
           </div>
         </div>
-        {!isUserStaff && (<div className="p-6 border-t bg-muted/20 shrink-0 z-20 backdrop-blur-md"><div className="flex flex-col sm:flex-row items-center justify-between gap-6 max-w-4xl mx-auto"><div className="text-center sm:text-left space-y-1"><p className="text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em]">Match Response</p><p className="text-xs font-medium text-foreground/60 italic">Your status updates the roster.</p></div><div className="flex gap-2 w-full sm:w-auto"><Button variant="outline" className={cn("flex-1 sm:w-28 h-12 rounded-xl font-black text-[10px] uppercase", currentStatus === 'notGoing' ? "bg-red-600 text-white" : "bg-white border-2")} onClick={() => updateRSVP(event.id, 'notGoing')}>Decline</Button><Button variant="outline" className={cn("flex-1 sm:w-28 h-12 rounded-xl font-black text-[10px] uppercase", currentStatus === 'maybe' ? "bg-amber-500 text-white" : "bg-white border-2")} onClick={() => updateRSVP(event.id, 'maybe')}>Maybe</Button><Button variant="outline" className={cn("flex-1 sm:w-40 h-12 rounded-xl font-black text-xs uppercase", currentStatus === 'going' ? "bg-primary text-white" : "bg-white border-2")} onClick={() => updateRSVP(event.id, 'going')}><CheckCircle2 className="h-4 w-4 mr-2" /> I'm Going</Button></div></div></div>)}
+        
+        {(isUserStaff || isPlayer) && !isParent && (
+          <div className="p-6 border-t bg-muted/20 shrink-0 z-20 backdrop-blur-md">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-6 max-w-4xl mx-auto">
+              <div className="text-center sm:text-left space-y-1">
+                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em]">Match Response</p>
+                <p className="text-xs font-medium text-foreground/60 italic">Your status updates the roster.</p>
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Button variant="outline" className={cn("flex-1 sm:w-28 h-12 rounded-xl font-black text-[10px] uppercase", currentStatus === 'notGoing' ? "bg-red-600 text-white" : "bg-white border-2")} onClick={() => updateRSVP(event.id, 'notGoing')}>Decline</Button>
+                <Button variant="outline" className={cn("flex-1 sm:w-28 h-12 rounded-xl font-black text-[10px] uppercase", currentStatus === 'maybe' ? "bg-amber-500 text-white" : "bg-white border-2")} onClick={() => updateRSVP(event.id, 'maybe')}>Maybe</Button>
+                <Button variant="outline" className={cn("flex-1 sm:w-40 h-12 rounded-xl font-black text-xs uppercase", currentStatus === 'going' ? "bg-primary text-white" : "bg-white border-2")} onClick={() => updateRSVP(event.id, 'going')}><CheckCircle2 className="h-4 w-4 mr-2" /> I'm Going</Button>
+              </div>
+            </div>
+          </div>
+        )}
         
         <Dialog open={isWaiverDialogOpen} onOpenChange={setIsWaiverDialogOpen}><DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl overflow-hidden p-0"><div className="h-2 bg-red-600 w-full" /><div className="p-8"><DialogHeader className="mb-6"><DialogTitle className="text-2xl font-black uppercase tracking-tight">Required Participant Waiver</DialogTitle><DialogDescription className="font-bold text-red-600 uppercase text-[10px] tracking-widest">Action Required for Participation</DialogDescription></DialogHeader><div className="max-h-[300px] border-2 rounded-2xl p-6 bg-muted/30 mb-6 overflow-y-auto"><p className="text-sm font-bold leading-relaxed whitespace-pre-wrap">{event.specialWaiverText}</p></div><div className="bg-primary/5 p-4 rounded-2xl border flex items-start gap-3 mb-6"><div className="bg-white p-1 rounded text-primary shrink-0 mt-0.5"><Info className="h-4 w-4" /></div><p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">By clicking below, you officially sign this waiver for {event.title} as {user?.name}.</p></div><DialogFooter><Button className="w-full h-14 rounded-2xl text-lg font-black bg-red-600 text-white shadow-xl" onClick={() => { submitEventWaiver(event.id, true); setIsWaiverDialogOpen(false); toast({ title: "Waiver Signed" }); }}>Verify & Sign Legally</Button></DialogFooter></div></DialogContent></Dialog>
         <Dialog open={isTeamAgreementOpen} onOpenChange={setIsTeamAgreementOpen}><DialogContent className="sm:max-w-xl rounded-3xl border-none shadow-2xl overflow-hidden p-0"><div className="h-2 bg-primary w-full" /><div className="p-8"><DialogHeader className="mb-6"><DialogTitle className="text-2xl font-black uppercase tracking-tight">Squad Participation Agreement</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Formal Enrollment Certification</DialogDescription></DialogHeader><div className="p-1 bg-muted rounded-2xl border-2 mb-6"><div className="max-h-[350px] p-6 bg-white rounded-xl overflow-y-auto">{event.teamWaiverText ? (<p className="text-sm font-bold leading-relaxed whitespace-pre-wrap text-foreground/80">{event.teamWaiverText}</p>) : (<div className="text-center py-10 opacity-40 space-y-2"><FileText className="h-8 w-8 mx-auto" /><p className="text-xs font-black uppercase">Standard Participation Terms Apply</p></div>)}</div></div><div className="bg-primary/5 p-5 rounded-2xl border border-primary/10 space-y-3 mb-6"><div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" /><p className="text-[10px] font-black uppercase tracking-widest text-primary">Authority Verification</p></div><p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">As a representative of <strong>{myParticipatingTeamName}</strong>, clicking below verifies that your squad understands and accepts all tournament coordination protocols.</p></div><DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black bg-primary text-white shadow-xl" onClick={() => { if(myParticipatingTeamName) { signTeamTournamentWaiver(event.teamId, event.id, myParticipatingTeamName); setIsTeamAgreementOpen(false); } }}>Verify & Sign for Squad</Button></DialogFooter></div></DialogContent></Dialog>
