@@ -207,7 +207,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { 
     activeTeam, setActiveTeam, teams, user, isPro, alerts, isSuperAdmin, 
-    simulationPlanId, setSimulationPlanId, resetDemo, isClubManager, secondsUntilReset 
+    resetDemo, isClubManager, secondsUntilReset, isStaff, isParent, hasFeature
   } = useTeam();
   const [hasUnreadAlerts, setHasUnreadAlerts] = useState(false);
 
@@ -224,6 +224,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       setHasUnreadAlerts(alerts.length > 0);
     }
   }, [alerts]);
+
+  // Unified tab filtering based on role and governance
+  const filteredTabs = tabs.filter(tab => {
+    if (tab.name === 'Feed' && isParent && !hasFeature('live_feed_read')) return false;
+    if (tab.name === 'Chats' && isParent && activeTeam && !activeTeam.parentChatEnabled) return false;
+    if (tab.name === 'Leagues' && !isStaff) return false;
+    return true;
+  });
 
   return (
     <SidebarProvider>
@@ -298,7 +306,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <SidebarContent className="px-4 py-2">
               <SidebarMenu className="space-y-1.5">
                 <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground mb-2 px-2">Squad Operations</p>
-                {tabs.map((tab) => (
+                {filteredTabs.map((tab) => (
                   <SidebarItem 
                     key={tab.name} 
                     tab={tab} 
@@ -307,44 +315,47 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   />
                 ))}
                 
-                <SidebarSeparator className="my-4 opacity-10" />
-                
-                <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground mb-2 px-2">Resources</p>
-                <SidebarMenuItem>
-                  <SidebarMenuButton 
-                    asChild 
-                    isActive={pathname === '/how-to'}
-                    className={cn(
-                      "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                      pathname === '/how-to' 
-                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
-                        : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
-                    )}
-                  >
-                    <Link href="/how-to" className="flex items-center gap-4">
-                      <BookOpen className="h-5 w-5" />
-                      <span>Tactical Manual</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                {isStaff && (
+                  <>
+                    <SidebarSeparator className="my-4 opacity-10" />
+                    <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground mb-2 px-2">Resources</p>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton 
+                        asChild 
+                        isActive={pathname === '/how-to'}
+                        className={cn(
+                          "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
+                          pathname === '/how-to' 
+                            ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
+                            : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
+                        )}
+                      >
+                        <Link href="/how-to" className="flex items-center gap-4">
+                          <BookOpen className="h-5 w-5" />
+                          <span>Tactical Manual</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
 
-                <SidebarMenuItem>
-                  <SidebarMenuButton 
-                    asChild 
-                    isActive={pathname === '/pricing'}
-                    className={cn(
-                      "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                      pathname === '/pricing' 
-                        ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20 hover:bg-amber-600" 
-                        : "text-muted-foreground hover:bg-amber-500/5 hover:text-amber-600"
-                    )}
-                  >
-                    <Link href="/pricing" className="flex items-center gap-4">
-                      <CreditCard className="h-5 w-5" />
-                      <span>Pricing & Plans</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton 
+                        asChild 
+                        isActive={pathname === '/pricing'}
+                        className={cn(
+                          "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
+                          pathname === '/pricing' 
+                            ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20 hover:bg-amber-600" 
+                            : "text-muted-foreground hover:bg-amber-500/5 hover:text-amber-600"
+                        )}
+                      >
+                        <Link href="/pricing" className="flex items-center gap-4">
+                          <CreditCard className="h-5 w-5" />
+                          <span>Pricing & Plans</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </>
+                )}
               </SidebarMenu>
             </SidebarContent>
 
@@ -429,7 +440,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
             <nav className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md bg-white/90 backdrop-blur-xl rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-white/40 p-1.5 ring-1 ring-black/5">
               <div className="flex items-center justify-around h-16">
-                {tabs.slice(0, 5).map((tab) => {
+                {filteredTabs.slice(0, 5).map((tab) => {
                   const Icon = tab.icon;
                   const isActive = pathname.startsWith(tab.href);
                   const isLocked = tab.pro && !isPro;
@@ -456,8 +467,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       <span className="text-[8px] font-black tracking-[0.05em] uppercase">More</span>
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56 rounded-2xl shadow-2xl p-2 mb-4">
-                    {tabs.slice(5).map((tab) => (
+                  <DropdownMenuContent align="end" className="w-56 rounded-xl shadow-2xl p-2 mb-4">
+                    {filteredTabs.slice(5).map((tab) => (
                       <DropdownMenuItem key={tab.name} asChild className="rounded-xl p-3">
                         <Link href={tab.href} className="flex items-center gap-3 font-bold text-xs uppercase tracking-widest">
                           <tab.icon className="h-4 w-4" />

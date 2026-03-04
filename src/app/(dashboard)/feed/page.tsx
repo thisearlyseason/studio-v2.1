@@ -129,15 +129,20 @@ export default function FeedPage() {
           <div className="bg-primary/10 p-10 rounded-[3rem] shadow-2xl">
             <LayoutDashboard className="h-24 w-24 text-primary" />
           </div>
-          <div className="absolute -top-4 -right-4 bg-black text-white p-3 rounded-full shadow-lg border-4 border-background">
-            <Lock className="h-6 w-6" />
-          </div>
+          {isStaff && (
+            <div className="absolute -top-4 -right-4 bg-black text-white p-3 rounded-full shadow-lg border-4 border-background">
+              <Lock className="h-6 w-6" />
+            </div>
+          )}
         </div>
         
         <div className="text-center max-w-md space-y-4">
           <h1 className="text-4xl font-black tracking-tight uppercase">Squad Feed Locked</h1>
           <p className="text-muted-foreground font-bold leading-relaxed text-lg uppercase tracking-wide">
-            The Live Broadcast hub is reserved for Pro Elite squads. Upgrade to coordinate updates, polls, and media in real-time.
+            {isStaff 
+              ? "The Live Broadcast hub is reserved for Pro Elite squads. Upgrade to coordinate updates, polls, and media in real-time."
+              : "Live broadcasts are only available for Pro teams. Contact your team organizer for access."
+            }
           </p>
         </div>
 
@@ -256,7 +261,7 @@ export default function FeedPage() {
           </div>
         </section>
 
-        {canPost ? (
+        {canPost && (
           <Card className="rounded-3xl lg:rounded-[3rem] border-none shadow-lg lg:shadow-xl ring-1 ring-black/5 overflow-hidden">
             <CardContent className="p-6 lg:p-8 lg:pb-10">
               <div className="flex flex-col sm:flex-row gap-4 lg:gap-6 items-start">
@@ -275,7 +280,9 @@ export default function FeedPage() {
               </div>
             </CardContent>
           </Card>
-        ) : (
+        )}
+
+        {!canPost && isStaff && (
           <Card className="rounded-3xl lg:rounded-[3rem] border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-primary/5 border-2 border-dashed border-primary/20">
             <CardContent className="p-8 lg:p-10 flex flex-col items-center text-center space-y-4">
               <div className="bg-white w-14 h-14 lg:w-16 lg:h-16 rounded-2xl lg:rounded-[1.5rem] flex items-center justify-center shadow-lg relative">

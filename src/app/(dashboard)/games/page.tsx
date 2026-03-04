@@ -44,7 +44,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export default function GamesPage() {
-  const { activeTeam, addGame, updateGame, isSuperAdmin, purchasePro, hasFeature } = useTeam();
+  const { activeTeam, addGame, updateGame, isSuperAdmin, purchasePro, hasFeature, isStaff } = useTeam();
   const db = useFirestore();
   
   const gamesQuery = useMemoFirebase(() => {
@@ -113,7 +113,7 @@ export default function GamesPage() {
   }, [games]);
 
   const downloadCSV = () => {
-    if (games.length === 0) return;
+    if (!isStaff || games.length === 0) return;
     const headers = ["Date", "Opponent", "Our Score", "Their Score", "Result", "Location", "Notes"];
     const rows = games.map(g => [
       format(g.date, 'yyyy-MM-dd'),
@@ -164,6 +164,7 @@ export default function GamesPage() {
   const resetForm = () => { setOpponent(''); setDate(''); setMyScore(''); setOpponentScore(''); setLocation(''); setNotes(''); setEditingGame(null); setSelectedLeagueId('none'); setSelectedOpponentTeamId('manual'); };
 
   const handleEditGame = (game: any) => {
+    if (!isAdmin) return; // Prevent editing for players/parents
     setEditingGame(game); setOpponent(game.opponent); setDate(format(game.date, 'yyyy-MM-dd'));
     setMyScore(game.myScore.toString()); setOpponentScore(game.opponentScore.toString());
     setLocation(game.location || ''); setNotes(game.notes || ''); 
@@ -179,7 +180,7 @@ export default function GamesPage() {
           <p className="text-[10px] lg:text-sm font-bold text-muted-foreground uppercase tracking-widest">Journey to Dominance</p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-          {games.length > 0 && <Button variant="outline" size="sm" className="rounded-full h-10 lg:h-11 border-2 font-black uppercase text-[10px] tracking-widest flex-1 sm:flex-none" onClick={downloadCSV}><Download className="h-3.5 w-3.5 mr-2" /> Export</Button>}
+          {isStaff && games.length > 0 && <Button variant="outline" size="sm" className="rounded-full h-10 lg:h-11 border-2 font-black uppercase text-[10px] tracking-widest flex-1 sm:flex-none" onClick={downloadCSV}><Download className="h-3.5 w-3.5 mr-2" /> Export</Button>}
           {isAdmin && (
             <Dialog open={isRecordOpen} onOpenChange={(o) => { if(!o) resetForm(); setIsRecordOpen(o); }}>
               <DialogTrigger asChild><Button className="flex-1 sm:flex-none rounded-full shadow-lg h-10 lg:h-11 px-6 font-black uppercase text-[10px] lg:text-xs tracking-widest"><Plus className="h-3.5 w-3.5 mr-2" />Record Match</Button></DialogTrigger>
@@ -235,7 +236,7 @@ export default function GamesPage() {
                                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Match Highlights Locked</p>
                                 <p className="text-[8px] font-bold text-muted-foreground uppercase max-w-[180px] mx-auto leading-relaxed">Upgrade to Elite to archive season highlights and tactical notes.</p>
                               </div>
-                              <Button size="sm" variant="ghost" className="h-8 rounded-lg text-[8px] font-black uppercase text-primary border border-primary/20" onClick={purchasePro}>Upgrade to Elite</Button>
+                              {isStaff && <Button size="sm" variant="ghost" className="h-8 rounded-lg text-[8px] font-black uppercase text-primary border border-primary/20" onClick={purchasePro}>Upgrade to Elite</Button>}
                             </div>
                           )}
                         </div>
@@ -263,7 +264,14 @@ export default function GamesPage() {
           <div className="grid grid-cols-3 gap-3 lg:gap-4"><Card className="bg-white border-none shadow-sm lg:shadow-md rounded-2xl lg:rounded-[2rem] overflow-hidden group ring-1 ring-black/5"><CardContent className="p-4 lg:p-6 text-center space-y-1"><div className="text-[8px] lg:text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground opacity-60">Wins</div><div className="text-2xl lg:text-4xl font-black text-primary group-hover:scale-110 transition-transform">{stats.wins}</div></CardContent></Card><Card className="bg-white border-none shadow-sm lg:shadow-md rounded-2xl lg:rounded-[2rem] overflow-hidden group ring-1 ring-black/5"><CardContent className="p-4 lg:p-6 text-center space-y-1"><div className="text-[8px] lg:text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground opacity-60">Losses</div><div className="text-2xl lg:text-4xl font-black text-black group-hover:scale-110 transition-transform">{stats.losses}</div></CardContent></Card><Card className="bg-white border-none shadow-sm lg:shadow-md rounded-2xl lg:rounded-[2rem] overflow-hidden group ring-1 ring-black/5"><CardContent className="p-4 lg:p-6 text-center space-y-1"><div className="text-[8px] lg:text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground opacity-40">Ties</div><div className="text-2xl lg:text-4xl font-black text-muted-foreground group-hover:scale-110 transition-transform">{stats.ties}</div></CardContent></Card></div>
         </>
       ) : (
-        <div className="bg-muted/30 p-8 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center text-center space-y-4"><div className="bg-white p-4 rounded-2xl shadow-sm relative"><ChartIcon className="h-8 w-8 text-primary/40" /><Lock className="absolute -top-1 -right-1 h-4 w-4 bg-black text-white p-0.5 rounded-full border-2 border-background" /></div><div className="space-y-1"><h3 className="text-sm font-black uppercase tracking-tight">Performance Analytics Locked</h3><p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest max-w-xs">Upgrade to Pro to visualize season trajectory and win/loss metrics.</p></div><Button size="sm" className="rounded-full h-9 px-6 font-black uppercase text-[10px] tracking-widest" onClick={purchasePro}>Unlock Pro Analytics</Button></div>
+        <div className="bg-muted/30 p-8 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center text-center space-y-4">
+          <div className="bg-white p-4 rounded-2xl shadow-sm relative"><ChartIcon className="h-8 w-8 text-primary/40" />{isStaff && <Lock className="absolute -top-1 -right-1 h-4 w-4 bg-black text-white p-0.5 rounded-full border-2 border-background" />}</div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-black uppercase tracking-tight">Performance Analytics Locked</h3>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest max-w-xs">Upgrade to Pro to visualize season trajectory and win/loss metrics.</p>
+          </div>
+          {isStaff && <Button size="sm" className="rounded-full h-9 px-6 font-black uppercase text-[10px] tracking-widest" onClick={purchasePro}>Unlock Pro Analytics</Button>}
+        </div>
       )}
 
       {games.length > 0 ? (
