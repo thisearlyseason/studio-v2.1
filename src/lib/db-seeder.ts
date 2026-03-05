@@ -1,3 +1,4 @@
+
 'use client';
 
 import { 
@@ -309,7 +310,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
   batch.set(doc(db, 'teams', teamId), {
     id: teamId, teamName, teamCode: code, createdBy: ownerId, ownerUserId: ownerId,
-    createdAt: nowStr, members: { [userId]: role },
+    createdAt: nowStr,
     isPro, planId: actualPlanId, sport: 'Multi-Sport', isDemo: true,
     description: planId === 'squad_organization' ? 'Enterprise organization management demo.' : 'Professional coordination suite demo.'
   });

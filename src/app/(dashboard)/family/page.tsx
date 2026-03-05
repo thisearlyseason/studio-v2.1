@@ -48,7 +48,6 @@ function WaiverComplianceHub({ child, isOpen, onOpenChange }: { child: PlayerPro
   const { teams, signWaiver } = useTeam();
   const db = useFirestore();
   
-  // Find teams this child is in
   const joinedTeams = useMemo(() => {
     return teams.filter(t => child.joinedTeamIds?.includes(t.id));
   }, [teams, child.joinedTeamIds]);
@@ -290,7 +289,7 @@ export default function FamilyDashboardPage() {
                 placeholder="athlete@example.com" 
                 value={upgradeEmail} 
                 onChange={e => setUpgradeEmail(e.target.value)}
-                className="h-12 rounded-xl border-2 font-bold" 
+                className="h-12 rounded-xl font-bold" 
               />
             </div>
           </div>
