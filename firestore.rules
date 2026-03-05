@@ -14,11 +14,12 @@ service cloud.firestore {
     
     function isSuperAdmin() {
       return isSignedIn() && 
-             request.auth.token.get('email', '') in ['thisearlyseason@gmail.com', 'test@gmail.com'];
+             (request.auth.token.get('email', '') == 'thisearlyseason@gmail.com' || 
+              request.auth.token.get('email', '') == 'test@gmail.com');
     }
 
     function isDemoTeam(teamId) {
-      return teamId != null && teamId.matches('^demo_.*');
+      return teamId != null && teamId.size() >= 5 && teamId[0:5] == 'demo_';
     }
 
     function isTeamMember(teamId) {
