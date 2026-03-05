@@ -28,14 +28,14 @@ service cloud.firestore {
     }
 
     // Collection Group Queries - Recruitment Ledger
+    // Optimized for stateless query verification
     match /{path=**}/registrationEntries/{entryId} {
       allow read: if isSignedIn() && (
         resource.data.assigned_team_owner_id == request.auth.uid || 
         isSuperAdmin() ||
-        // Allow demo users to audit their guest rosters
-        (resource.data.get('assigned_team_id', '').startsWith('demo_guest_'))
+        // Allow demo users to audit their guest rosters based on stateless ID pattern
+        (resource.data.assigned_team_id.startsWith('demo_guest_'))
       );
-      // League creators and co-organizers handled via league paths below
     }
 
     // New Legally Safe Collections for Minors
@@ -161,6 +161,19 @@ service cloud.firestore {
         allow create: if true; // Public signups
         allow update: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
         allow delete: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+      }
+
+      match /invites/{inviteId} {
+        allow read: if isSignedIn() && (
+          resource.data.invitedEmail.lower() == request.auth.token.get('email', '').lower() ||
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid ||
+          isSuperAdmin()
+        );
+        allow create: if isSignedIn();
+        allow update: if isSignedIn() && (
+          resource.data.invitedEmail.lower() == request.auth.token.get('email', '').lower() ||
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid
+        );
       }
     }
 
