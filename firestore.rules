@@ -13,13 +13,15 @@ service cloud.firestore {
     }
     
     function isSuperAdmin() {
+      // Use get() with a fallback to safely handle anonymous tokens where email might be null
       return isSignedIn() && 
              (request.auth.token.get('email', '') == 'thisearlyseason@gmail.com' || 
               request.auth.token.get('email', '') == 'test@gmail.com');
     }
 
+    // Resilient prefix check using string slicing for maximum compatibility
     function isDemoTeam(teamId) {
-      return teamId != null && teamId.startsWith('demo_');
+      return teamId != null && teamId.size() >= 5 && teamId[0:5] == 'demo_';
     }
 
     function isTeamMember(teamId) {
@@ -145,8 +147,9 @@ service cloud.firestore {
       }
 
       match /groupChats/{chatId} {
+        // Optimization: Separate demo listing to guarantee query-time evaluation
+        allow list: if isSignedIn() && isDemoTeam(teamId);
         allow list: if isSignedIn() && (
-          isDemoTeam(teamId) || 
           isSuperAdmin() || 
           request.auth.uid in resource.data.get('memberIds', []) ||
           exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid))
