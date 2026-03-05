@@ -12,9 +12,10 @@ service cloud.firestore {
     }
     
     function isSuperAdmin() {
+      // Safe check for email to handle anonymous/demo users where email is null
       return isSignedIn() && 
-        (request.auth.token.get('email', '').lower() == 'thisearlyseason@gmail.com' || 
-         request.auth.token.get('email', '').lower() == 'test@gmail.com');
+        (request.auth.token.get('email', '') == 'thisearlyseason@gmail.com' || 
+         request.auth.token.get('email', '') == 'test@gmail.com');
     }
 
     function isDemoTeam(teamId) {
@@ -22,6 +23,7 @@ service cloud.firestore {
     }
 
     function isAdmin(teamId) {
+      // Prioritize demo check to avoid get() failures during batch initialization
       return isSignedIn() && (
         isSuperAdmin() ||
         isDemoTeam(teamId) ||

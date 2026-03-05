@@ -1,7 +1,7 @@
 'use client';
 import { getAuth, type User } from 'firebase/auth';
 
-type SecurityRuleContext = {
+export type SecurityRuleContext = {
   path: string;
   operation: 'get' | 'list' | 'create' | 'update' | 'delete' | 'write';
   requestResourceData?: any;
@@ -29,8 +29,10 @@ interface SecurityRuleRequest {
   auth: FirebaseAuthObject | null;
   method: string;
   path: string;
-  resource?: {
-    data: any;
+  request?: {
+    resource: {
+      data: any;
+    };
   };
 }
 
@@ -92,7 +94,11 @@ function buildRequestObject(context: SecurityRuleContext): SecurityRuleRequest {
     auth: authObject,
     method: context.operation,
     path: `/databases/(default)/documents/${context.path}`,
-    resource: context.requestResourceData ? { data: context.requestResourceData } : undefined,
+    request: context.requestResourceData ? {
+      resource: {
+        data: context.requestResourceData
+      }
+    } : undefined,
   };
 }
 
