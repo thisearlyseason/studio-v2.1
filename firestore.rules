@@ -13,16 +13,15 @@ service cloud.firestore {
     }
     
     function isSuperAdmin() {
-      // Safely handle anonymous or custom tokens where email metadata might be null
       return isSignedIn() && (
         request.auth.token.get('email', '') == 'thisearlyseason@gmail.com' || 
         request.auth.token.get('email', '') == 'test@gmail.com'
       );
     }
 
-    // Robust prefix check using slicing for query stability
+    // Robust demo check
     function isDemoTeam(tid) {
-      return tid != null && tid.size() >= 5 && tid[0:5] == 'demo_';
+      return tid != null && tid.matches('^demo_.*');
     }
 
     function isTeamMember(teamId) {
@@ -45,7 +44,7 @@ service cloud.firestore {
       );
     }
 
-    // Collection Group Queries - Recruitment Ledger
+    // Collection Group Queries
     match /{path=**}/registrationEntries/{entryId} {
       allow read: if isSignedIn() && (
         resource.data.get('assigned_team_owner_id', '') == request.auth.uid || 
@@ -148,10 +147,13 @@ service cloud.firestore {
       }
 
       match /groupChats/{chatId} {
-        // Query-safe listing for demo environments
-        allow list: if isSignedIn() && isDemoTeam(teamId);
-        // Query-safe listing for standard environments
-        allow list: if isSignedIn() && (isSuperAdmin() || request.auth.uid in resource.data.memberIds);
+        // Query-safe listing logic
+        // Any signed-in user can list chats if the query is filtered by memberIds or if it's a demo team
+        allow list: if isSignedIn() && (
+          isDemoTeam(teamId) || 
+          isSuperAdmin() || 
+          request.auth.uid in resource.data.memberIds
+        );
         
         allow get: if isSignedIn() && (
           isDemoTeam(teamId) || 
