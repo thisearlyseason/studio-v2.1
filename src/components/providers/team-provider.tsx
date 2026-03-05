@@ -473,7 +473,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
       const pId = planId || 'starter_squad';
       const batch = writeBatch(db);
-      const teamData = { id: tid, teamName: name, teamCode: code, type, createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, createdAt: new Date().toISOString(), isPro: pId !== 'starter_squad', planId: pId, parentChatEnabled: true, parentCommentsEnabled: true, description: description || '', teamLogoUrl: '', heroImageUrl: '', sport: 'Multi-Sport' };
+      const teamData = { 
+        id: tid, 
+        teamName: name, 
+        teamCode: code, 
+        type, 
+        createdBy: firebaseUser.uid, 
+        ownerUserId: firebaseUser.uid, 
+        createdAt: new Date().toISOString(), 
+        isPro: pId !== 'starter_squad', 
+        planId: pId, 
+        parentChatEnabled: true, 
+        parentCommentsEnabled: true, 
+        description: description || '', 
+        teamLogoUrl: '', 
+        heroImageUrl: '', 
+        sport: 'Multi-Sport' 
+      };
       batch.set(doc(db, 'teams', tid), teamData);
       batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), { id: firebaseUser.uid, userId: firebaseUser.uid, teamId: tid, role: 'Admin', position: pos, name: userProfile?.name || 'Coach', avatar: userProfile?.avatar || '', joinedAt: new Date().toISOString(), jersey: 'HQ' });
       batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { teamId: tid, teamName: name, teamCode: code, type, role: 'Admin', isPro: pId !== 'starter_squad', planId: pId, ownerUserId: firebaseUser.uid, teamLogoUrl: '', sport: 'Multi-Sport' });
@@ -692,10 +708,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     },
     assignEntryToTeam: async (lid: string, eid: string, tid: string | null) => {
       if (!db) return;
-      let ownerId = null;
+      let ownerId = '';
       if (tid) {
         const tSnap = await getDoc(doc(db, 'teams', tid));
-        ownerId = tSnap.data()?.ownerUserId || null;
+        ownerId = tSnap.data()?.ownerUserId || '';
       }
       await updateDoc(doc(db, 'leagues', lid, 'registrationEntries', eid), { assigned_team_id: tid, assigned_team_owner_id: ownerId, status: tid ? 'assigned' : 'pending' });
     },

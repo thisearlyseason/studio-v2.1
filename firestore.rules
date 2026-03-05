@@ -40,12 +40,12 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         resource.data.get('assigned_team_owner_id', '') == request.auth.uid || 
         isSuperAdmin() ||
-        resource.data.get('assigned_team_id', '').size() >= 5 && resource.data.get('assigned_team_id', '')[0:5] == 'demo_'
+        (resource.data.get('assigned_team_id', '').size() >= 5 && resource.data.get('assigned_team_id', '')[0:5] == 'demo_')
       );
       allow update: if isSignedIn() && (
         resource.data.get('assigned_team_owner_id', '') == request.auth.uid ||
         isSuperAdmin() ||
-        resource.data.get('assigned_team_id', '').size() >= 5 && resource.data.get('assigned_team_id', '')[0:5] == 'demo_'
+        (resource.data.get('assigned_team_id', '').size() >= 5 && resource.data.get('assigned_team_id', '')[0:5] == 'demo_')
       );
       allow delete: if isSuperAdmin();
     }
