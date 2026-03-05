@@ -3,14 +3,14 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
+import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import { useTeam, TeamEvent } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { useTeam, TeamEvent } from '@/components/providers/team-provider';
 import { 
   ShieldCheck, 
   CheckCircle2, 
@@ -22,7 +22,8 @@ import {
   MapPin,
   ChevronDown,
   FileText,
-  Calendar
+  Calendar,
+  Info
 } from 'lucide-react';
 import { 
   Select, 

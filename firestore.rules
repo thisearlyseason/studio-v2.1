@@ -20,7 +20,7 @@ service cloud.firestore {
     }
 
     function isDemoTeam(teamId) {
-      return teamId != null && teamId.startsWith('demo_');
+      return teamId != null && teamId.size() >= 5 && teamId[0:5] == 'demo_';
     }
 
     function isAdmin(teamId) {

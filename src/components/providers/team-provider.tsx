@@ -658,11 +658,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         name: n || 'New League', 
         creatorId: firebaseUser.uid, 
         createdAt: new Date().toISOString(), 
-        sport: activeTeam.sport || 'Multi-Sport', 
+        sport: activeTeam?.sport || 'Multi-Sport', 
         teams: { 
           [activeTeam.id]: { 
-            teamName: activeTeam.name || 'Unnamed Squad', 
-            teamLogoUrl: activeTeam.teamLogoUrl || '', 
+            teamName: activeTeam?.name || 'Unnamed Squad', 
+            teamLogoUrl: activeTeam?.teamLogoUrl || '', 
             wins: 0, 
             losses: 0, 
             ties: 0, 
@@ -692,8 +692,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!activeTeam) return;
       await updateDoc(doc(db, 'leagues', lid), { 
         [`teams.${activeTeam.id}`]: { 
-          teamName: activeTeam.name || 'Unnamed Squad', 
-          teamLogoUrl: activeTeam.teamLogoUrl || '', 
+          teamName: activeTeam?.name || 'Unnamed Squad', 
+          teamLogoUrl: activeTeam?.teamLogoUrl || '', 
           wins: 0, 
           losses: 0, 
           ties: 0, 
