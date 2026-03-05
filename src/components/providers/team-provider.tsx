@@ -351,32 +351,34 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const seedParam = searchParams.get('seed_demo');
-    const seedKey = `${firebaseUser?.uid}_${seedParam}`;
-    
-    if (seedParam && firebaseUser?.uid && !isSeedingDemo && hasStartedSeeding.current !== seedKey) {
-      const runSeed = async () => {
-        hasStartedSeeding.current = seedKey;
-        setIsSeedingDemo(true);
-        try {
-          const tid = await seedGuestDemoTeam(db, firebaseUser.uid, seedParam);
-          setActiveTeamId(tid);
-          
-          // Next.js stable URL clearing
-          const url = new URL(window.location.href);
-          url.searchParams.delete('seed_demo');
-          window.history.replaceState({}, '', url.toString());
-          
-        } catch (e) {
-          console.error("Seed failed", e);
-          hasStartedSeeding.current = null;
-        } finally {
-          // Keep state for a brief moment to allow Firestore listeners to populate
-          setTimeout(() => setIsSeedingDemo(false), 800);
-        }
-      };
-      runSeed();
-    }
-  }, [searchParams, firebaseUser?.uid, db, isSeedingDemo]);
+    if (!seedParam || !firebaseUser?.uid || isSeedingDemo) return;
+
+    const seedKey = `${firebaseUser.uid}_${seedParam}`;
+    if (hasStartedSeeding.current === seedKey) return;
+
+    const runSeed = async () => {
+      hasStartedSeeding.current = seedKey;
+      setIsSeedingDemo(true);
+      
+      // CRITICAL: Clear URL immediately to prevent re-entrancy loops on failed writes
+      const url = new URL(window.location.href);
+      url.searchParams.delete('seed_demo');
+      window.history.replaceState({}, '', url.toString());
+
+      try {
+        const tid = await seedGuestDemoTeam(db, firebaseUser.uid, seedParam);
+        setActiveTeamId(tid);
+      } catch (e) {
+        console.error("Seed failed", e);
+        // Do not reset hasStartedSeeding.current to null here, 
+        // as we want to prevent immediate retries in the same session.
+      } finally {
+        // Delay resetting state to allow Firestore cache to catch up
+        setTimeout(() => setIsSeedingDemo(false), 1000);
+      }
+    };
+    runSeed();
+  }, [searchParams, firebaseUser?.uid, db]);
 
   const teamsQuery = useMemoFirebase(() => {
     if (!firebaseUser || !db) return null;
@@ -665,10 +667,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const updated = games.map((g: any) => g.id === gid ? { ...g, score1: s1, score2: s2, isCompleted: true } : g);
       await updateDoc(evRef, { tournamentGames: updated });
     },
-    respondToAssignment: async (lid: string, eid: string, s: 'accepted' | 'declined') => {
+    respondToAssignment: async (leagueId: string, entryId: string, status: 'accepted' | 'declined') => {
       if (!activeTeam) return;
-      await updateDoc(doc(db, 'leagues', lid, 'registrationEntries', eid), { status: s });
-      if (s === 'accepted') toast({ title: "Player Recruited" });
+      await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { status });
+      if (status === 'accepted') toast({ title: "Player Recruited" });
     }
   };
 
