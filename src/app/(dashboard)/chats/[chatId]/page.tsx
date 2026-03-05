@@ -261,7 +261,7 @@ export default function ChatRoomPage() {
           )}
           <div className="flex items-end gap-3">
             <div className="flex gap-2 pb-1">
-              <input type="file" setFileRef={fileInputRef} className="hidden" accept="image/*" onChange={e => { if (e.target.files?.[0]) { const r = new FileReader(); r.onload = ev => setChatImage(ev.target?.result as string); r.readAsDataURL(e.target.files[0]); } }} />
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={e => { if (e.target.files?.[0]) { const r = new FileReader(); r.onload = ev => setChatImage(ev.target?.result as string); r.readAsDataURL(e.target.files[0]); } }} />
               <Button variant="outline" size="icon" className="rounded-2xl shrink-0 h-12 w-12 border-muted hover:bg-primary/5 hover:border-primary/20 text-muted-foreground hover:text-primary transition-all shadow-sm" onClick={() => fileInputRef.current?.click()}>
                 <ImageIcon className="h-5 w-5" />
               </Button>

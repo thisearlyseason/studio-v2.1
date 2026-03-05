@@ -18,9 +18,9 @@ service cloud.firestore {
       );
     }
 
-    // Robust demo check using regex for path wildcards
+    // Robust demo check using string slicing for query-safe listing
     function isDemoTeam(tid) {
-      return tid != null && tid.matches('^demo_.*');
+      return tid != null && tid[0:5] == 'demo_';
     }
 
     function isTeamMember(teamId) {
@@ -146,10 +146,17 @@ service cloud.firestore {
       }
 
       match /groupChats/{chatId} {
-        // Optimized for query listing: split rules to be statically verifiable
-        allow read: if isSignedIn() && (isDemoTeam(teamId) || isSuperAdmin());
-        allow read: if isSignedIn() && (request.auth.uid in resource.data.memberIds);
-        allow read: if isSignedIn() && exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
+        // Atomic split rules for static query-time listing authorization
+        allow list: if isSignedIn() && (isDemoTeam(teamId) || isSuperAdmin());
+        allow list: if isSignedIn() && (request.auth.uid in resource.data.memberIds);
+        
+        // Standard document read access
+        allow get: if isSignedIn() && (
+          isDemoTeam(teamId) || 
+          isSuperAdmin() || 
+          (request.auth.uid in resource.data.memberIds) ||
+          exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid))
+        );
         
         allow create: if isTeamMember(teamId);
         allow update: if isTeamMember(teamId) && (
