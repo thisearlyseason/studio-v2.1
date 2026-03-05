@@ -65,9 +65,17 @@ export default function DashboardLayout({
     }
   }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, mounted]);
 
-  // Use mounted check to prevent hydration mismatch
-  // Client and Server must agree on the first render (which is !mounted)
-  if (!mounted || isUserLoading || !user || isSeedingDemo) {
+  // Unified Hydration Guard
+  if (!mounted) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Functional Guard
+  if (isUserLoading || !user || isSeedingDemo) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-6 animate-in fade-in duration-500">

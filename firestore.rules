@@ -14,12 +14,13 @@ service cloud.firestore {
     
     function isSuperAdmin() {
       return isSignedIn() && 
-             request.auth.token.get('email', '') in ['thisearlyseason@gmail.com', 'test@gmail.com'];
+             request.auth.token.get('email', '') != null &&
+             request.auth.token.email in ['thisearlyseason@gmail.com', 'test@gmail.com'];
     }
 
     function isDemoTeam(teamId) {
       // Robust prefix check for demo environments
-      return teamId != null && teamId.size() >= 5 && teamId[0:5] == 'demo_';
+      return teamId != null && teamId.startsWith('demo_');
     }
 
     function isAdmin(teamId) {
