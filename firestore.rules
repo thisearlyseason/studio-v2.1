@@ -18,8 +18,8 @@ service cloud.firestore {
     }
 
     function isDemoTeam(teamId) {
-      // Robust prefix check using slicing for maximum resilience across rule versions
-      return teamId != null && teamId.size() >= 5 && teamId[0:5] == 'demo_';
+      // Robust prefix check using startsWith for version 2 compatibility
+      return teamId != null && teamId.startsWith('demo_');
     }
 
     function isAdmin(teamId) {
@@ -138,10 +138,9 @@ service cloud.firestore {
       }
 
       match /groupChats/{chatId} {
-        // Broaden list permission for demo teams to prevent query-time permission crashes
+        // Explicit list and get permissions for demo sessions
         allow list: if isSignedIn() && (isDemoTeam(teamId) || isSuperAdmin() || exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)));
         
-        // Detailed get check
         allow get: if isSignedIn() && (
           isDemoTeam(teamId) || 
           isSuperAdmin() || 
