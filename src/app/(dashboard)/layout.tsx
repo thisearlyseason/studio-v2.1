@@ -27,21 +27,27 @@ export default function DashboardLayout({
   }, [user, isUserLoading, router]);
 
   useEffect(() => {
-    // Force demo users to land on the feed first, regardless of access
-    if (user?.isDemo && pathname === '/') {
+    // Standard checks only proceed if seeder is inactive
+    if (isSeedingDemo) return;
+
+    // Force demo users to land on the feed first
+    if (userProfile?.isDemo && pathname === '/') {
       router.push('/feed');
       return;
     }
 
-    // Standard redirect to setup if no teams exist, BUT skip if seeding a demo
-    // CRITICAL: We MUST exclude settings and pricing to allow logout and account management
+    // Exclude settings and pricing to allow management
     const isSetupPage = pathname === '/teams/new' || 
                         pathname === '/teams/join' || 
                         pathname === '/family' || 
                         pathname === '/settings' || 
                         pathname === '/pricing';
     
-    if (user && userProfile && !isTeamsLoading && !isSeedingDemo && teams.length === 0 && !isSetupPage) {
+    // REDIRECT LOGIC: Only trigger setup redirect if definitely NO teams and NOT seeding
+    if (user && userProfile && !isTeamsLoading && teams.length === 0 && !isSetupPage) {
+      // Final guard for demo users who just finished seeding
+      if (userProfile.isDemo) return;
+
       if (userProfile.role === 'coach') {
         router.push('/teams/new');
       } else {

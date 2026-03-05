@@ -1,7 +1,6 @@
-
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useRef } from 'react';
 import { useUser, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
 import { 
   collection, 
@@ -305,6 +304,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isUserLoading } = useUser();
   const db = useFirestore();
   const searchParams = useSearchParams();
+  const router = useRouter();
   
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -312,6 +312,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [myChildren, setMyChildren] = useState<PlayerProfile[]>([]);
   const [isRCInitialized, setIsRCInitialized] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
+  
+  const hasStartedSeeding = useRef<string | null>(null);
 
   const plansQuery = useMemoFirebase(() => db ? collection(db, 'plans') : null, [db]);
   const { data: plansData, isLoading: isPlansLoading } = useCollection(plansQuery);
@@ -349,19 +351,27 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const seedParam = searchParams.get('seed_demo');
-    if (seedParam && firebaseUser?.uid && !isSeedingDemo) {
+    const seedKey = `${firebaseUser?.uid}_${seedParam}`;
+    
+    if (seedParam && firebaseUser?.uid && !isSeedingDemo && hasStartedSeeding.current !== seedKey) {
       const runSeed = async () => {
+        hasStartedSeeding.current = seedKey;
         setIsSeedingDemo(true);
         try {
           const tid = await seedGuestDemoTeam(db, firebaseUser.uid, seedParam);
           setActiveTeamId(tid);
+          
+          // Next.js stable URL clearing
           const url = new URL(window.location.href);
           url.searchParams.delete('seed_demo');
           window.history.replaceState({}, '', url.toString());
+          
         } catch (e) {
           console.error("Seed failed", e);
+          hasStartedSeeding.current = null;
         } finally {
-          setIsSeedingDemo(false);
+          // Keep state for a brief moment to allow Firestore listeners to populate
+          setTimeout(() => setIsSeedingDemo(false), 800);
         }
       };
       runSeed();
