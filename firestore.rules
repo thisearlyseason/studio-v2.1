@@ -12,16 +12,17 @@ service cloud.firestore {
     }
     
     function isSuperAdmin() {
-      // Safe check for email to handle anonymous/demo users where email is null
-      // Use the 'in' operator because the token object does not support .get()
+      // Extremely safe check for email to handle anonymous/demo users where email is null
+      // Using direct property access which is safer than .get() on tokens in some rule environments
       return isSignedIn() && (
-        ('email' in request.auth.token && request.auth.token.email == 'thisearlyseason@gmail.com') || 
-        ('email' in request.auth.token && request.auth.token.email == 'test@gmail.com')
+        (request.auth.token.email == 'thisearlyseason@gmail.com') || 
+        (request.auth.token.email == 'test@gmail.com')
       );
     }
 
     function isDemoTeam(teamId) {
-      return teamId.startsWith('demo_');
+      // Document IDs for guest demos start with 'demo_'
+      return teamId != null && teamId.startsWith('demo_');
     }
 
     function isAdmin(teamId) {
@@ -96,8 +97,8 @@ service cloud.firestore {
 
     match /teams/{teamId} {
       allow read: if isSignedIn();
+      // Explicitly allow all writes for demo squads to handle anonymous guest initialization
       allow create: if isSignedIn();
-      // Explicitly allow writes for demo squads to handle anonymous guest initialization
       allow update, delete: if isDemoTeam(teamId) || isAdmin(teamId);
 
       match /members/{memberId} {

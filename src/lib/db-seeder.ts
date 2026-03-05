@@ -259,7 +259,7 @@ export async function seedDemoData(db: Firestore, teamId: string, demoTier: stri
     const contextualError = new FirestorePermissionError({
       path: `teams/${teamId}/seeding`,
       operation: 'write',
-      requestResourceData: { message: 'Demo sub-data batch commit failure' }
+      requestResourceData: { message: error.message || 'Demo sub-data batch commit failure' }
     });
     errorEmitter.emit('permission-error', contextualError);
     throw error;
@@ -341,7 +341,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     const contextualError = new FirestorePermissionError({
       path: `teams/${teamId}`,
       operation: 'write',
-      requestResourceData: { message: 'Demo squad initialization failure' }
+      requestResourceData: { message: error.message || 'Demo squad initialization failure' }
     });
     errorEmitter.emit('permission-error', contextualError);
     throw error;
