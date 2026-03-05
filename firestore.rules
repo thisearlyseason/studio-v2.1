@@ -33,7 +33,11 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         resource.data.get('assigned_team_owner_id', '') == request.auth.uid || 
         isSuperAdmin() ||
-        resource.data.get('assigned_team_id', '').lower().startsWith('demo_guest_')
+        resource.data.get('assigned_team_id', '').lower().startsWith('demo_')
+      );
+      allow update: if isSignedIn() && (
+        resource.data.get('assigned_team_owner_id', '') == request.auth.uid ||
+        isSuperAdmin()
       );
     }
 

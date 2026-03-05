@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -23,11 +22,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { collection, query, orderBy, where } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 
 export default function ChatsPage() {
-  const { activeTeam, members, createChat, isStaff, isParent, isSuperAdmin } = useTeam();
+  const { activeTeam, members, createChat, isStaff, isParent, isSuperAdmin, user } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
@@ -37,33 +36,33 @@ export default function ChatsPage() {
   const [mounted, setMounted] = useState(false);
 
   // Localized chat fetching for performance
+  // CRITICAL: Query MUST include membership filter to satisfy security rules
   const chatsQuery = useMemoFirebase(() => {
-    if (!activeTeam || !db) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'groupChats'), orderBy('createdAt', 'desc'));
-  }, [activeTeam?.id, db]);
+    if (!activeTeam || !db || !user?.id) return null;
+    return query(
+      collection(db, 'teams', activeTeam.id, 'groupChats'), 
+      where('memberIds', 'array-contains', user.id),
+      orderBy('createdAt', 'desc')
+    );
+  }, [activeTeam?.id, db, user?.id]);
 
   const { data: chatsData, isLoading: isChatsLoading } = useCollection(chatsQuery);
   const teamChats = useMemo(() => chatsData || [], [chatsData]);
 
   // Governance: Filter member list based on position
-  // Parents can always chat with Coaches/Staff.
-  // Parents can only chat with other Parents if activeTeam.parentChatEnabled is true.
   const filteredMembers = useMemo(() => {
     if (!activeTeam) return [];
     if (isStaff || isSuperAdmin) return members;
     
     if (isParent) {
       return members.filter(m => {
-        // Staff are always available
         if (['Coach', 'Assistant Coach', 'Team Lead', 'Squad Leader', 'Platform Admin'].includes(m.position)) return true;
-        // Other parents depend on toggle
         if (m.position === 'Parent') return activeTeam.parentChatEnabled;
-        // Players are generally not startable by parents in this logic unless they are staff
         return false;
       });
     }
 
-    return members; // Players can see everyone for now
+    return members;
   }, [members, isStaff, isParent, activeTeam?.parentChatEnabled, isSuperAdmin, activeTeam]);
 
   useEffect(() => {

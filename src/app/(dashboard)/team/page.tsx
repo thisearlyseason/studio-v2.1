@@ -74,16 +74,14 @@ export default function TeamProfilePage() {
   const assignmentsQuery = useMemoFirebase(() => {
     if (!activeTeam?.id || !db || !isStaff || !hasFeature('league_registration') || !user?.id) return null;
     
-    // Group queries require constraints that match security rule signatures
-    const isDemoTeam = activeTeam.id.startsWith('demo_guest_');
-    
     const constraints = [
       where('assigned_team_id', '==', activeTeam.id), 
       where('status', '==', 'assigned')
     ];
     
-    // For production squads, include explicit owner check to satisfy statically verifiable rules
-    if (!isDemoTeam) {
+    // For production squads, include explicit owner check to satisfy security rules
+    // Note: Use 'demo_' prefix to cover all demo tier variants
+    if (!activeTeam.id.startsWith('demo_')) {
       constraints.push(where('assigned_team_owner_id', '==', user.id));
     }
     
