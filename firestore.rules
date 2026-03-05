@@ -18,7 +18,8 @@ service cloud.firestore {
     }
 
     function isDemoTeam(teamId) {
-      return teamId != null && teamId.startsWith('demo_');
+      // Robust prefix check for demo/guest environments
+      return teamId != null && teamId.size() >= 5 && teamId[0:5] == 'demo_';
     }
 
     function isAdmin(teamId) {
@@ -95,7 +96,9 @@ service cloud.firestore {
 
       match /members/{memberId} {
         allow read: if isSignedIn();
-        allow write: if isDemoTeam(teamId) || isAdmin(teamId) || isOwner(memberId);
+        allow write: if isDemoTeam(teamId) || isAdmin(teamId) || isOwner(memberId) || 
+                     (exists(/databases/$(database)/documents/players/$(memberId)) && 
+                      get(/databases/$(database)/documents/players/$(memberId)).data.parentId == request.auth.uid);
       }
 
       match /events/{eventId} {

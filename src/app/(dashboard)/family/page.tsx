@@ -46,7 +46,6 @@ import { cn } from '@/lib/utils';
 
 function WaiverComplianceHub({ child, isOpen, onOpenChange }: { child: PlayerProfile, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
   const { teams, signWaiver } = useTeam();
-  const db = useFirestore();
   
   const joinedTeams = useMemo(() => {
     return teams.filter(t => child.joinedTeamIds?.includes(t.id));
