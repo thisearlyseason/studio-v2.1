@@ -148,8 +148,10 @@ service cloud.firestore {
       }
 
       match /groupChats/{chatId} {
-        // Query-safe listing optimized for path-based demo environments
-        allow list: if isSignedIn() && (isDemoTeam(teamId) || isSuperAdmin() || request.auth.uid in resource.data.memberIds);
+        // Query-safe listing for demo environments
+        allow list: if isSignedIn() && isDemoTeam(teamId);
+        // Query-safe listing for standard environments
+        allow list: if isSignedIn() && (isSuperAdmin() || request.auth.uid in resource.data.memberIds);
         
         allow get: if isSignedIn() && (
           isDemoTeam(teamId) || 
