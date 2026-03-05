@@ -41,7 +41,18 @@ export default function ChatsPage() {
   // Localized chat fetching for performance
   const chatsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db || !user?.id) return null;
-    // CRITICAL: Query includes membership filter to satisfy query-safe security rules
+    
+    /**
+     * TACTICAL OPTIMIZATION: For demo guest users, we allow listing all team chats
+     * to ensure immediate coordination availability without roster field delays.
+     */
+    if (activeTeam.id.startsWith('demo_')) {
+      return query(
+        collection(db, 'teams', activeTeam.id, 'groupChats'),
+        orderBy('createdAt', 'desc')
+      );
+    }
+
     return query(
       collection(db, 'teams', activeTeam.id, 'groupChats'), 
       where('memberIds', 'array-contains', user.id),
