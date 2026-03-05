@@ -58,26 +58,20 @@ export default function DashboardLayout({
     }
   }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, mounted]);
 
-  // Strict hydration guard - ensure server and client render identical skeleton initially
-  if (!mounted) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-background">
-        <div className="flex flex-col items-center gap-6">
-          <div className="bg-primary/10 p-6 rounded-[2.5rem] shadow-xl relative">
-            <div className="h-16 w-16 flex items-center justify-center">
-              <Loader2 className="h-10 w-10 animate-spin text-primary" />
-            </div>
-          </div>
-          <div className="text-center space-y-2">
-            <p className="text-lg font-black uppercase tracking-widest text-primary">Initialising Environment...</p>
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest opacity-60">Synchronising Elite Infrastructure</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Hydration-safe loading logic: Ensure server and initial client render match perfectly
+  const showLoadingState = !mounted || isUserLoading || !user || isSeedingDemo;
 
-  if (isUserLoading || !user || isSeedingDemo) {
+  if (showLoadingState) {
+    // We use generic 'Authenticating' labels until the component is mounted on the client
+    // This matches what the server will render (since mounted=false on server)
+    const loadingTitle = (!mounted || isUserLoading || !user) 
+      ? "Authenticating..." 
+      : (isSeedingDemo ? "Seeding Demo Environment..." : "Initialising Environment...");
+    
+    const loadingSubtitle = (!mounted || isUserLoading || !user)
+      ? "Verifying Elite Credentials"
+      : (isSeedingDemo ? "Building Guest Squad Data" : "Synchronising Elite Infrastructure");
+
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-6 animate-in fade-in duration-500">
@@ -88,10 +82,10 @@ export default function DashboardLayout({
           </div>
           <div className="text-center space-y-2">
             <p className="text-lg font-black uppercase tracking-widest text-primary">
-              {isSeedingDemo ? "Seeding Demo Environment..." : "Authenticating..."}
+              {loadingTitle}
             </p>
             <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest opacity-60">
-              {isSeedingDemo ? "Building Guest Squad Data" : "Verifying Elite Credentials"}
+              {loadingSubtitle}
             </p>
           </div>
         </div>
