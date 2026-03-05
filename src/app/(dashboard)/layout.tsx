@@ -59,16 +59,17 @@ export default function DashboardLayout({
   }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, mounted]);
 
   // Hydration-safe loading logic: Ensure server and initial client render match perfectly
+  // We use a strictly static message during the hydration phase (!mounted)
   const showLoadingState = !mounted || isUserLoading || !user || isSeedingDemo;
 
   if (showLoadingState) {
-    // We use generic 'Authenticating' labels until the component is mounted on the client
-    // This matches what the server will render (since mounted=false on server)
-    const loadingTitle = (!mounted || isUserLoading || !user) 
+    // CRITICAL: On the server and during client hydration, mounted is false.
+    // Both MUST render "Authenticating..." to avoid hydration mismatches.
+    const loadingTitle = !mounted 
       ? "Authenticating..." 
       : (isSeedingDemo ? "Seeding Demo Environment..." : "Initialising Environment...");
     
-    const loadingSubtitle = (!mounted || isUserLoading || !user)
+    const loadingSubtitle = !mounted
       ? "Verifying Elite Credentials"
       : (isSeedingDemo ? "Building Guest Squad Data" : "Synchronising Elite Infrastructure");
 

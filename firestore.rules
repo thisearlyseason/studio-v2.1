@@ -14,15 +14,16 @@ service cloud.firestore {
     
     function isSuperAdmin() {
       // Use direct property access which safely handles null in CEL
+      // Refined to handle anonymous tokens without email metadata safely
       return isSignedIn() && (
-        request.auth.token.email == 'thisearlyseason@gmail.com' || 
-        request.auth.token.email == 'test@gmail.com'
+        request.auth.token.get('email', '') == 'thisearlyseason@gmail.com' || 
+        request.auth.token.get('email', '') == 'test@gmail.com'
       );
     }
 
-    // Robust prefix check using regex for maximum compatibility during query evaluation
+    // Robust prefix check using slicing for maximum compatibility during query evaluation
     function isDemoTeam(tid) {
-      return tid != null && tid.matches('^demo_.*');
+      return tid != null && tid.size() >= 5 && tid[0:5] == 'demo_';
     }
 
     function isTeamMember(teamId) {
@@ -149,10 +150,11 @@ service cloud.firestore {
 
       match /groupChats/{chatId} {
         // Query-safe listing for coordination channels
+        // prioritized demo check for resilient anonymous listing
         allow list: if isSignedIn() && (
           isDemoTeam(teamId) || 
           isSuperAdmin() || 
-          request.auth.uid in resource.data.get('memberIds', [])
+          request.auth.uid in resource.data.memberIds
         );
         
         allow get: if isSignedIn() && (
