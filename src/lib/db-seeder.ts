@@ -11,7 +11,8 @@ import {
   deleteDoc,
   setDoc,
   updateDoc,
-  addDoc
+  addDoc,
+  getDoc
 } from 'firebase/firestore';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -279,6 +280,9 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const role = (isPlayerDemo || isParentDemo) ? 'Member' : 'Admin';
   const position = isPlayerDemo ? 'Player' : (isParentDemo ? 'Parent' : (planId === 'squad_organization' ? 'Club Manager' : 'Coach'));
   
+  // Set explicit user role for state logic
+  const userRole = isPlayerDemo ? 'adult_player' : (isParentDemo ? 'parent' : 'coach');
+
   // CRITICAL QUOTA LOGIC: For non-admin demos, the owner should be a virtual admin
   // so the guest user's 1-seat personal quota remains empty.
   const ownerId = (isPlayerDemo || isParentDemo) ? 'system_demo_admin' : userId;
@@ -294,10 +298,14 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const nowStr = new Date().toISOString();
   
   batch.set(doc(db, 'users', userId), {
-    id: userId, fullName: isPlayerDemo ? 'Guest Teammate' : (isParentDemo ? 'Guest Guardian' : 'Guest Coordinator'), 
+    id: userId, 
+    fullName: isPlayerDemo ? 'Guest Teammate' : (isParentDemo ? 'Guest Guardian' : 'Guest Coordinator'), 
     email: isPlayerDemo ? 'teammate@thesquad.pro' : (isParentDemo ? 'parent@thesquad.pro' : 'guest@thesquad.pro'),
-    notificationsEnabled: true, createdAt: nowStr, 
-    isDemo: true, avatarUrl: `https://picsum.photos/seed/${userId}/150/150`,
+    role: userRole,
+    notificationsEnabled: true, 
+    createdAt: nowStr, 
+    isDemo: true, 
+    avatarUrl: `https://picsum.photos/seed/${userId}/150/150`,
     activePlanId: (isPlayerDemo || isParentDemo) ? 'starter_squad' : actualPlanId, 
     proTeamLimit: planId === 'squad_organization' ? 15 : 1,
     planSource: 'free', 

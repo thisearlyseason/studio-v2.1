@@ -62,6 +62,7 @@ import {
   SidebarSeparator
 } from "@/components/ui/sidebar";
 import BrandLogo from '@/components/BrandLogo';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -481,6 +482,28 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56 rounded-xl shadow-2xl p-2 mb-4">
+                    {isParent && (
+                      <>
+                        <DropdownMenuItem asChild className="rounded-xl p-3">
+                          <Link href="/family" className="flex items-center gap-3 font-bold text-xs uppercase tracking-widest">
+                            <Baby className="h-4 w-4" />
+                            Family Hub
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
+                    {isClubManager && (
+                      <>
+                        <DropdownMenuItem asChild className="rounded-xl p-3">
+                          <Link href="/club" className="flex items-center gap-3 font-bold text-xs uppercase tracking-widest">
+                            <Building className="h-4 w-4" />
+                            Club Hub
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
                     {filteredTabs.slice(5).map((tab) => (
                       <DropdownMenuItem key={tab.name} asChild className="rounded-xl p-3">
                         <Link href={tab.href} className="flex items-center gap-3 font-bold text-xs uppercase tracking-widest">
