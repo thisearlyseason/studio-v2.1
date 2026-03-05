@@ -257,9 +257,9 @@ export async function seedDemoData(db: Firestore, teamId: string, demoTier: stri
     await batch.commit();
   } catch (error: any) {
     const contextualError = new FirestorePermissionError({
-      path: `teams/${teamId}`,
+      path: `teams/${teamId}/seeding`,
       operation: 'write',
-      requestResourceData: { message: 'Demo batch commit failure' }
+      requestResourceData: { message: 'Demo sub-data batch commit failure' }
     });
     errorEmitter.emit('permission-error', contextualError);
     throw error;

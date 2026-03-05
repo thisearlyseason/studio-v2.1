@@ -13,10 +13,11 @@ service cloud.firestore {
     
     function isSuperAdmin() {
       // Safe check for email to handle anonymous/demo users where email is null
-      // Use get() with a default to prevent null pointer evaluation crashes
-      return isSignedIn() && 
-        (request.auth.token.get('email', '') == 'thisearlyseason@gmail.com' || 
-         request.auth.token.get('email', '') == 'test@gmail.com');
+      // Use the 'in' operator because the token object does not support .get()
+      return isSignedIn() && (
+        ('email' in request.auth.token && request.auth.token.email == 'thisearlyseason@gmail.com') || 
+        ('email' in request.auth.token && request.auth.token.email == 'test@gmail.com')
+      );
     }
 
     function isDemoTeam(teamId) {
@@ -27,8 +28,8 @@ service cloud.firestore {
       // Prioritize demo check to avoid get() failures during batch initialization
       // Rules evaluate lazily; if isDemoTeam is true, expensive lookups are skipped.
       return isSignedIn() && (
-        isSuperAdmin() ||
         isDemoTeam(teamId) ||
+        isSuperAdmin() ||
         (exists(/databases/$(database)/documents/teams/$(teamId)) && (
           get(/databases/$(database)/documents/teams/$(teamId)).data.get('ownerUserId', '') == request.auth.uid ||
           (exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)) && 
