@@ -105,7 +105,7 @@ service cloud.firestore {
       }
 
       match /groupChats/{chatId} {
-        // Optimized list rule to support both guest demo access and member queries
+        // Combined list rule to support both guest demo access and member queries reliably
         allow list: if isSignedIn() && (isDemoTeam(teamId) || isSuperAdmin() || (request.auth.uid in resource.data.memberIds));
         allow get: if isTeamMember(teamId);
         allow create: if isTeamMember(teamId);
