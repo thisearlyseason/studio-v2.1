@@ -19,7 +19,8 @@ service cloud.firestore {
     }
 
     function isDemoTeam(tid) {
-      return tid != null && tid[0:5] == 'demo_';
+      // Robust prefix matching for guest sessions
+      return tid != null && tid.size() >= 5 && tid[0:5] == 'demo_';
     }
 
     function isTeamMember(teamId) {
@@ -59,7 +60,9 @@ service cloud.firestore {
     }
 
     match /leagues/{leagueId} {
-      allow get, list: if isSignedIn();
+      // Allow listing leagues for standings and enrollment
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
       allow create: if isSignedIn();
       allow update: if isSignedIn() && (resource.data.creatorId == request.auth.uid || isSuperAdmin());
       
@@ -69,7 +72,7 @@ service cloud.firestore {
       }
       
       match /registrationEntries/{entryId} {
-        allow read: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin() || resource.data.assigned_team_owner_id == request.auth.uid);
+        allow read: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin() || resource.data.get('assigned_team_owner_id', '') == request.auth.uid);
         allow create: if true;
         allow update, delete: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin());
       }
@@ -90,13 +93,14 @@ service cloud.firestore {
       match /volunteers/{oppId} {
         allow read: if isTeamMember(teamId);
         allow create, delete: if isTeamAdmin(teamId);
-        allow update: if isTeamAdmin(teamId) || (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)));
+        // Allow parents/staff to update for signups and verification
+        allow update: if isTeamAdmin(teamId) || (isSignedIn() && exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)));
       }
 
       match /fundraising/{fundId} {
         allow read: if isTeamMember(teamId);
         allow create, delete: if isTeamAdmin(teamId);
-        allow update: if isTeamAdmin(teamId) || (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)));
+        allow update: if isTeamAdmin(teamId) || (isSignedIn() && exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)));
       }
 
       match /members/{memberId} {
@@ -123,7 +127,8 @@ service cloud.firestore {
         allow write: if isTeamAdmin(teamId);
         
         match /registrations/{regId} {
-          allow read: if isTeamMember(teamId);
+          allow list: if isTeamMember(teamId);
+          allow get: if isTeamMember(teamId);
           allow create: if true;
         }
       }

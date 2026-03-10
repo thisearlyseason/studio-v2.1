@@ -19,21 +19,21 @@ export default function DashboardLayout({
   const { teams, isTeamsLoading, isSeedingDemo, user: userProfile } = useTeam();
   const router = useRouter();
   const pathname = usePathname();
-  const [isClient, setIsClient] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setIsClient(true);
+    setMounted(true);
   }, []);
 
   useEffect(() => {
-    if (!isClient) return;
+    if (!mounted) return;
     if (!isUserLoading && !user) {
       router.push('/login');
     }
-  }, [user, isUserLoading, router, isClient]);
+  }, [user, isUserLoading, router, mounted]);
 
   useEffect(() => {
-    if (!isClient || isSeedingDemo || isTeamsLoading || !user) return;
+    if (!mounted || isSeedingDemo || isTeamsLoading || !user) return;
 
     // Force demo users to land on the feed first
     if (userProfile?.isDemo && pathname === '/') {
@@ -55,13 +55,13 @@ export default function DashboardLayout({
         router.push('/teams/join');
       }
     }
-  }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, isClient]);
+  }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, mounted]);
 
   /**
    * HYDRATION GUARD: Ensuring the initial render handshake between server and client.
    * Standardized loading text to "Authenticating..." to prevent reconciliation mismatches.
    */
-  if (!isClient || isUserLoading || !user || isSeedingDemo) {
+  if (!mounted || isUserLoading || !user || isSeedingDemo) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-6 animate-in fade-in duration-500">
