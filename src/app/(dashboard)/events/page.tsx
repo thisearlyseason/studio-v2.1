@@ -877,7 +877,6 @@ export default function EventsPage() {
   const handleCreateEvent = async () => { 
     if (!newTitle || !newDate) return; 
     
-    // Robust date construction to avoid RangeError in strictly parsed ISO formats
     const parseSafeDate = (dStr: string, tStr: string) => {
       if (!dStr) return new Date(NaN);
       const [year, month, day] = dStr.split('-').map(Number);

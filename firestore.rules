@@ -46,10 +46,9 @@ service cloud.firestore {
       );
     }
 
-    // COLLECTION GROUP RULES
-    // Required for aggregated queries like the Master Calendar and Recruitment Hub
+    // COLLECTION GROUP RULES (Top-level for query optimization)
     match /{path=**}/events/{eventId} {
-      allow read: if isTeamMember(resource.data.teamId);
+      allow read: if isSignedIn() && (isSuperAdmin() || isTeamMember(resource.data.teamId));
     }
     
     match /{path=**}/registrationEntries/{entryId} {
@@ -96,12 +95,12 @@ service cloud.firestore {
     }
 
     match /facilities/{facilityId} {
-      allow read: if isSignedIn();
+      allow list, get: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if resource.data.clubId == request.auth.uid || isSuperAdmin();
 
       match /fields/{fieldId} {
-        allow read: if isSignedIn();
+        allow list, get: if isSignedIn();
         allow write: if get(/databases/$(database)/documents/facilities/$(facilityId)).data.clubId == request.auth.uid || isSuperAdmin();
       }
     }

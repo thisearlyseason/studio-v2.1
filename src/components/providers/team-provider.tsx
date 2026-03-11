@@ -367,14 +367,12 @@ interface TeamContextType {
   submitMatchScore: (teamId: string, eventId: string, gameId: string, isTeam1: boolean, s1: number, s2: number) => Promise<void>;
   respondToAssignment: (leagueId: string, entryId: string, status: 'accepted' | 'declined') => Promise<void>;
   
-  // Facility Management Methods
   addFacility: (facility: Partial<Facility>) => Promise<void>;
   deleteFacility: (id: string) => Promise<void>;
   addField: (facilityId: string, name: string) => Promise<void>;
   deleteField: (facilityId: string, fieldId: string) => Promise<void>;
   checkFieldAvailability: (facilityId: string, fieldId: string, date: string, startTime: string, endTime: string, currentEventId?: string) => Promise<boolean>;
 
-  // Volunteer & Fundraising Methods
   addVolunteerOpportunity: (opp: Partial<VolunteerOpportunity>) => Promise<void>;
   deleteVolunteerOpportunity: (id: string) => Promise<void>;
   signUpForVolunteer: (oppId: string) => Promise<void>;
@@ -384,7 +382,6 @@ interface TeamContextType {
   signUpForFundraising: (fundId: string) => Promise<void>;
   updateFundraisingAmount: (fundId: string, amount: number) => Promise<void>;
 
-  // Elite Pro Extensions: Equipment, Scouting, Evaluations
   addEquipmentItem: (item: Partial<EquipmentItem>) => Promise<void>;
   updateEquipmentItem: (id: string, updates: Partial<EquipmentItem>) => Promise<void>;
   deleteEquipmentItem: (id: string) => Promise<void>;
@@ -414,11 +411,13 @@ const clean = (obj: any): any => {
 };
 
 const parseTimeToMinutes = (timeStr: string) => {
+  if (!timeStr || timeStr === 'TBD') return 0;
   const [time, period] = timeStr.split(' ');
+  if (!time) return 0;
   let [hours, minutes] = time.split(':').map(Number);
   if (period === 'PM' && hours !== 12) hours += 12;
   if (period === 'AM' && hours === 12) hours = 0;
-  return hours * 60 + minutes;
+  return hours * 60 + (minutes || 0);
 };
 
 export function TeamProvider({ children }: { children: ReactNode }) {
@@ -918,7 +917,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (status === 'accepted') toast({ title: "Player Recruited" });
     },
 
-    // Facility Management
     addFacility: async (facility: Partial<Facility>) => {
       if (!firebaseUser) return;
       await addDoc(collection(db, 'facilities'), clean({
@@ -937,19 +935,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await deleteDoc(doc(db, 'facilities', facilityId, 'fields', fieldId));
     },
     checkFieldAvailability: async (facilityId: string, fieldId: string, date: string, startTime: string, endTime: string, currentEventId?: string) => {
-      // Query all events across all teams using collectionGroup to find conflicts
       const q = query(collectionGroup(db, 'events'), 
         where('facilityId', '==', facilityId),
         where('fieldId', '==', fieldId)
       );
       const snap = await getDocs(q);
       const newStart = parseTimeToMinutes(startTime);
-      const newEnd = endTime !== 'TBD' ? parseTimeToMinutes(endTime) : newStart + 90;
+      const newEnd = endTime && endTime !== 'TBD' ? parseTimeToMinutes(endTime) : newStart + 90;
 
       for (const d of snap.docs) {
         if (d.id === currentEventId) continue;
         const data = d.data();
-        // Extract date correctly (might be ISO or just string)
         const dDate = data.date.includes('T') ? data.date.split('T')[0] : data.date;
         const targetDate = date.includes('T') ? date.split('T')[0] : date;
         
@@ -957,14 +953,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           const eStart = parseTimeToMinutes(data.startTime);
           const eEnd = data.endTime && data.endTime !== 'TBD' ? parseTimeToMinutes(data.endTime) : eStart + 90;
           
-          // Overlap check
           if (newStart < eEnd && newEnd > eStart) return false;
         }
       }
       return true;
     },
 
-    // Volunteer Methods
     addVolunteerOpportunity: async (opp: Partial<VolunteerOpportunity>) => {
       if (!activeTeam) return;
       await addDoc(collection(db, 'teams', activeTeam.id, 'volunteers'), clean({ ...opp, signups: {} }));
@@ -992,7 +986,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       });
     },
 
-    // Fundraising Methods
     addFundraisingOpportunity: async (fund: Partial<FundraisingOpportunity>) => {
       if (!activeTeam) return;
       await addDoc(collection(db, 'teams', activeTeam.id, 'fundraising'), clean({ ...fund, participants: {}, currentAmount: 0 }));
@@ -1017,7 +1010,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       });
     },
 
-    // Elite Pro Extensions
     addEquipmentItem: async (item: Partial<EquipmentItem>) => {
       if (!activeTeam) return;
       await addDoc(collection(db, 'teams', activeTeam.id, 'equipment'), clean({ 
@@ -1052,9 +1044,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       
       const qty = assignment.quantity;
       await updateDoc(ref, {
-        availableQuantity: increment(qty)
+        availableQuantity: increment(qty),
+        [`assignments.${userId}`]: deleteField()
       });
-      await updateDoc(ref, { [`assignments.${userId}`]: deleteField() });
     },
     addScoutingReport: async (report: Partial<ScoutingReport>) => {
       if (!activeTeam) return;
