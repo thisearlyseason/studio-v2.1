@@ -191,7 +191,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const { data: rawRegistrations } = useCollection<any>(regQuery);
   const registrations = rawRegistrations || [];
 
-  const isEliteUnlocked = hasFeature('tournament_elite');
+  const isEliteUnlocked = isPro || hasFeature('tournament_elite');
   
   const myParticipatingTeamName = useMemo(() => {
     if (!event.tournamentTeams || !activeTeam) return null;
@@ -365,7 +365,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                           ))}
                         </div>
                       ) : (<div className="p-8 text-center bg-white/5 rounded-3xl border border-dashed border-white/10"><p className="text-[10px] font-black uppercase text-white/40">No match data synced</p></div>)
-                    ) : (isStaff ? (<div className="p-8 text-center bg-primary/10 rounded-3xl border border-dashed border-primary/40 space-y-4"><Lock className="h-8 w-8 text-primary mx-auto opacity-40" /><p className="text-[10px] font-black uppercase tracking-widest text-primary">Elite Standings Locked</p><Button variant="secondary" size="sm" className="h-8 rounded-lg text-[8px] font-black uppercase w-full bg-primary text-white" onClick={purchasePro}>Get Elite Module</Button></div>) : null)}
+                    ) : (isStaff ? (<div className="p-8 text-center bg-primary/10 rounded-3xl border border-dashed border-primary/40 space-y-4"><Lock className="h-8 w-8 text-primary mx-auto opacity-40" /><p className="text-[10px] font-black uppercase tracking-widest text-primary">Elite Standings Locked</p><Button variant="secondary" size="sm" className="h-8 rounded-lg text-[8px] font-black uppercase w-full bg-primary text-white" onClick={purchasePro}>Upgrade to Elite</Button></div>) : null)}
                   </div>
                 )}
               </div>
@@ -705,7 +705,7 @@ export default function EventsPage() {
   const [tournamentTeamsMetadata, setTournamentTeamsMetadata] = useState<Record<string, { coach: string; email: string }>>({});
   const [tournamentGames, setTournamentGames] = useState<TournamentGame[]>([]);
 
-  const isEliteUnlocked = hasFeature('tournament_elite');
+  const isEliteUnlocked = isPro || hasFeature('tournament_elite');
 
   const eventsQuery = useMemoFirebase(() => { 
     if (!activeTeam?.id || !db) return null; 

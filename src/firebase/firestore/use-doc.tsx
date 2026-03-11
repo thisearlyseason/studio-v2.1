@@ -26,7 +26,7 @@ export interface UseDocResult<T> {
 
 /**
  * React hook to subscribe to a single Firestore document in real-time.
- * Handles nullable references.
+ * Handles nullable references and prevents unauthorized root-level access.
  */
 export function useDoc<T = any>(
   memoizedDocRef: DocumentReference<DocumentData> | null | undefined,
@@ -48,7 +48,7 @@ export function useDoc<T = any>(
 
     // 2. Skip root-level, empty, or uninitialized paths
     const path = (memoizedDocRef.path || '').trim();
-    if (!path || path === '/' || path === '.' || path.includes('//')) {
+    if (!path || path === '/' || path === '.' || path.includes('//') || path.endsWith('/')) {
       setData(null);
       setIsLoading(false);
       setError(null);

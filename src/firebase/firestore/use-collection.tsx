@@ -40,7 +40,7 @@ export interface InternalQuery extends Query<DocumentData> {
 
 /**
  * React hook to subscribe to a Firestore collection or query in real-time.
- * Handles nullable references/queries.
+ * Handles nullable references/queries and prevents unauthorized root-level listing.
  */
 export function useCollection<T = any>(
     memoizedTargetRefOrQuery: ((CollectionReference<DocumentData> | Query<DocumentData>) & {__memo?: boolean})  | null | undefined,
@@ -79,7 +79,7 @@ export function useCollection<T = any>(
 
     // 3. Skip root-level, empty, or uninitialized paths that trigger security denials
     const trimmedPath = (path || '').trim();
-    if (!isCollectionGroup && (!trimmedPath || trimmedPath === '/' || trimmedPath === '.' || trimmedPath === '(default)' || trimmedPath.includes('//'))) {
+    if (!isCollectionGroup && (!trimmedPath || trimmedPath === '/' || trimmedPath === '.' || trimmedPath === '(default)' || trimmedPath.includes('//') || trimmedPath.endsWith('/'))) {
       setData(null);
       setIsLoading(false);
       setError(null);
