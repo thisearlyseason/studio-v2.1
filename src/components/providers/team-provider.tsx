@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useRef } from 'react';
@@ -158,6 +159,28 @@ export type FundraisingOpportunity = {
   currentAmount: number;
   deadline: string;
   participants: Record<string, { userId: string, userName: string }>;
+};
+
+export type EquipmentItem = {
+  id: string;
+  name: string;
+  category: string;
+  totalQuantity: number;
+  availableQuantity: number;
+  description?: string;
+  status: 'Active' | 'Maintenance' | 'Retired';
+  assignments: Record<string, { userId: string, userName: string, quantity: number, assignedAt: string }>;
+};
+
+export type ScoutingReport = {
+  id: string;
+  opponentName: string;
+  date: string;
+  strengths: string;
+  weaknesses: string;
+  keysToVictory: string;
+  videoUrl?: string;
+  createdAt: string;
 };
 
 export type RegistrationEntry = {
@@ -334,6 +357,17 @@ interface TeamContextType {
   deleteFundraisingOpportunity: (id: string) => Promise<void>;
   signUpForFundraising: (fundId: string) => Promise<void>;
   updateFundraisingAmount: (fundId: string, amount: number) => Promise<void>;
+
+  // Elite Pro Extensions: Equipment, Scouting, Evaluations
+  addEquipmentItem: (item: Partial<EquipmentItem>) => Promise<void>;
+  updateEquipmentItem: (id: string, updates: Partial<EquipmentItem>) => Promise<void>;
+  deleteEquipmentItem: (id: string) => Promise<void>;
+  assignEquipment: (itemId: string, userId: string, userName: string, qty: number) => Promise<void>;
+  returnEquipment: (itemId: string, userId: string) => Promise<void>;
+  addScoutingReport: (report: Partial<ScoutingReport>) => Promise<void>;
+  deleteScoutingReport: (id: string) => Promise<void>;
+  updateStaffEvaluation: (memberId: string, content: string) => Promise<void>;
+  getStaffEvaluation: (memberId: string) => Promise<string>;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -879,6 +913,73 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await updateDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), {
         currentAmount: increment(amount)
       });
+    },
+
+    // Elite Pro Extensions
+    addEquipmentItem: async (item: Partial<EquipmentItem>) => {
+      if (!activeTeam) return;
+      await addDoc(collection(db, 'teams', activeTeam.id, 'equipment'), clean({ 
+        ...item, 
+        availableQuantity: item.totalQuantity || 0,
+        assignments: {},
+        status: 'Active'
+      }));
+    },
+    updateEquipmentItem: async (id: string, updates: Partial<EquipmentItem>) => {
+      if (!activeTeam) return;
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'equipment', id), clean(updates));
+    },
+    deleteEquipmentItem: async (id: string) => {
+      if (!activeTeam) return;
+      await deleteDoc(doc(db, 'teams', activeTeam.id, 'equipment', id));
+    },
+    assignEquipment: async (itemId: string, userId: string, userName: string, qty: number) => {
+      if (!activeTeam) return;
+      const ref = doc(db, 'teams', activeTeam.id, 'equipment', itemId);
+      await updateDoc(ref, {
+        [`assignments.${userId}`]: { userId, userName, quantity: qty, assignedAt: new Date().toISOString() },
+        availableQuantity: increment(-qty)
+      });
+    },
+    returnEquipment: async (itemId: string, userId: string) => {
+      if (!activeTeam) return;
+      const ref = doc(db, 'teams', activeTeam.id, 'equipment', itemId);
+      const snap = await getDoc(ref);
+      const assignment = snap.data()?.assignments?.[userId];
+      if (!assignment) return;
+      
+      const qty = assignment.quantity;
+      await updateDoc(ref, {
+        [`assignments.${userId}`]: deleteDoc as any, // This is handled via standard update if we wanted to delete the key
+        availableQuantity: increment(qty)
+      });
+      // Correct way to delete nested field in firestore update
+      const { deleteField } = await import('firebase/firestore');
+      await updateDoc(ref, { [`assignments.${userId}`]: deleteField() });
+    },
+    addScoutingReport: async (report: Partial<ScoutingReport>) => {
+      if (!activeTeam) return;
+      await addDoc(collection(db, 'teams', activeTeam.id, 'scouting'), clean({
+        ...report,
+        createdAt: new Date().toISOString()
+      }));
+    },
+    deleteScoutingReport: async (id: string) => {
+      if (!activeTeam) return;
+      await deleteDoc(doc(db, 'teams', activeTeam.id, 'scouting', id));
+    },
+    updateStaffEvaluation: async (memberId: string, content: string) => {
+      if (!activeTeam || !userProfile) return;
+      await setDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'evaluations', 'notes'), clean({
+        content,
+        lastUpdated: new Date().toISOString(),
+        updatedBy: userProfile.name
+      }), { merge: true });
+    },
+    getStaffEvaluation: async (memberId: string) => {
+      if (!activeTeam) return '';
+      const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'evaluations', 'notes'));
+      return snap.exists() ? snap.data().content : '';
     }
   };
 

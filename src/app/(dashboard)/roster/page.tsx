@@ -40,7 +40,9 @@ import {
   Camera as CameraIcon,
   Cake,
   Users,
-  ChevronDown
+  ChevronDown,
+  ShieldAlert,
+  ClipboardList
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { useTeam, Member, FeeItem } from '@/components/providers/team-provider';
@@ -72,7 +74,7 @@ import { useFirestore } from '@/firebase';
 import { doc } from 'firebase/firestore';
 
 export default function RosterPage() {
-  const { activeTeam, updateMember, user, isPro, isSuperAdmin, purchasePro, hasFeature, members, isMembersLoading, isStaff } = useTeam();
+  const { activeTeam, updateMember, user, isPro, isSuperAdmin, purchasePro, hasFeature, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation } = useTeam();
   const db = useFirestore();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
@@ -83,6 +85,9 @@ export default function RosterPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Member>>({});
   const [newFee, setNewFee] = useState({ title: '', amount: '' });
+  
+  const [staffNote, setStaffNote] = useState('');
+  const [isSavingNote, setIsSavingNote] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -108,8 +113,13 @@ export default function RosterPage() {
         medicalClearance: !!selectedMember.medicalClearance,
         mediaRelease: !!selectedMember.mediaRelease,
       });
+
+      // Load private staff evaluation if staff
+      if (isStaff) {
+        getStaffEvaluation(selectedMember.id).then(setStaffNote);
+      }
     }
-  }, [selectedMember]);
+  }, [selectedMember, isStaff, getStaffEvaluation]);
 
   if (!mounted || !activeTeam || isMembersLoading) {
     return (
@@ -128,10 +138,17 @@ export default function RosterPage() {
   );
 
   const handleMemberClick = (member: Member) => {
-    // Only staff can open the profile detail dialog
     if (!isStaff) return;
     setSelectedMember(member);
     setIsEditing(false);
+  };
+
+  const handleSaveNote = async () => {
+    if (!selectedMember) return;
+    setIsSavingNote(true);
+    await updateStaffEvaluation(selectedMember.id, staffNote);
+    setIsSavingNote(false);
+    toast({ title: "Evaluation Synchronized", description: "Private note secured in the vault." });
   };
 
   const handleAddFee = () => {
@@ -601,6 +618,38 @@ export default function RosterPage() {
                             </div>
                           </div>
                         </div>
+
+                        {isStaff && (
+                          <div className="space-y-6 pt-4 border-t">
+                            <div className="flex items-center justify-between px-1">
+                              <div className="flex items-center gap-3">
+                                <ShieldAlert className="h-5 w-5 text-primary" />
+                                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Private Staff Evaluations</h4>
+                              </div>
+                              <Badge className="bg-primary text-white border-none font-black text-[8px] uppercase px-2 h-5">Vault Secured</Badge>
+                            </div>
+                            <div className="bg-muted/30 p-6 rounded-[2.5rem] border-2 border-dashed space-y-4">
+                              <Textarea 
+                                placeholder="Coaching notes, behavioral observations, developmental goals..."
+                                value={staffNote}
+                                onChange={e => setStaffNote(e.target.value)}
+                                className="min-h-[150px] bg-white rounded-2xl border-none font-medium italic shadow-inner"
+                              />
+                              <div className="flex items-center justify-between">
+                                <p className="text-[8px] font-bold text-muted-foreground uppercase max-w-[200px]">These notes are encrypted and visible ONLY to authorized coaching staff.</p>
+                                <Button 
+                                  size="sm" 
+                                  className="rounded-xl h-10 px-6 font-black uppercase text-[9px] shadow-lg shadow-primary/20"
+                                  onClick={handleSaveNote}
+                                  disabled={isSavingNote}
+                                >
+                                  {isSavingNote ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <Save className="h-3.5 w-3.5 mr-2" />}
+                                  Sync to Vault
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
 
                         {canEditDetails && (
                           <div className="space-y-8">

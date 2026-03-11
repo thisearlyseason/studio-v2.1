@@ -170,6 +170,55 @@
           }
         }
       }
+    },
+    "EquipmentItem": {
+      "title": "EquipmentItem",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "totalQuantity": { "type": "number" },
+        "availableQuantity": { "type": "number" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["Active", "Maintenance", "Retired"] },
+        "assignments": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "userId": { "type": "string" },
+              "userName": { "type": "string" },
+              "quantity": { "type": "number" },
+              "assignedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    "ScoutingReport": {
+      "title": "ScoutingReport",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "opponentName": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "strengths": { "type": "string" },
+        "weaknesses": { "type": "string" },
+        "keysToVictory": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "StaffEvaluation": {
+      "title": "StaffEvaluation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "content": { "type": "string" },
+        "lastUpdated": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      }
     }
   },
   "auth": {
@@ -202,6 +251,24 @@
         "$ref": "#/backend/entities/FundraisingOpportunity"
       },
       "description": "Squad fundraising campaigns."
+    },
+    "/teams/{teamId}/equipment/{itemId}": {
+      "schema": {
+        "$ref": "#/backend/entities/EquipmentItem"
+      },
+      "description": "Team inventory and equipment tracking."
+    },
+    "/teams/{teamId}/scouting/{reportId}": {
+      "schema": {
+        "$ref": "#/backend/entities/ScoutingReport"
+      },
+      "description": "Opponent analysis and tactical scouting."
+    },
+    "/teams/{teamId}/members/{memberId}/evaluations/notes": {
+      "schema": {
+        "$ref": "#/backend/entities/StaffEvaluation"
+      },
+      "description": "Private staff notes and evaluations for team members."
     }
   }
 }

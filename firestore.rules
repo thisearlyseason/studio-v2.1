@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -19,7 +20,6 @@ service cloud.firestore {
     }
 
     function isDemoTeam(tid) {
-      // Robust prefix matching for guest sessions
       return tid != null && tid.size() >= 5 && tid[0:5] == 'demo_';
     }
 
@@ -60,9 +60,7 @@ service cloud.firestore {
     }
 
     match /leagues/{leagueId} {
-      // Allow listing leagues for standings and enrollment
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
+      allow list, get: if isSignedIn();
       allow create: if isSignedIn();
       allow update: if isSignedIn() && (resource.data.creatorId == request.auth.uid || isSuperAdmin());
       
@@ -78,8 +76,7 @@ service cloud.firestore {
       }
       
       match /invites/{inviteId} {
-        allow list: if isSignedIn();
-        allow get: if isSignedIn();
+        allow list, get: if isSignedIn();
         allow create: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin());
         allow update: if isSignedIn();
       }
@@ -102,22 +99,31 @@ service cloud.firestore {
         allow update: if isTeamAdmin(teamId) || (isSignedIn() && exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)));
       }
 
+      match /equipment/{itemId} {
+        allow read: if isTeamMember(teamId);
+        allow write: if isTeamAdmin(teamId);
+      }
+
+      match /scouting/{reportId} {
+        allow read: if isTeamMember(teamId);
+        allow write: if isTeamAdmin(teamId);
+      }
+
       match /members/{memberId} {
         allow read: if isSignedIn();
         allow write: if isTeamAdmin(teamId) || isOwner(memberId);
+
+        match /evaluations/notes {
+          allow read, write: if isTeamAdmin(teamId);
+        }
       }
 
       match /groupChats/{chatId} {
-        // Unified list rule to support both guest demo access and member queries reliably
-        allow list: if isSignedIn() && (isDemoTeam(teamId) || isSuperAdmin() || (request.auth.uid in resource.data.memberIds));
-        allow get: if isTeamMember(teamId);
-        allow create: if isTeamMember(teamId);
-        allow update: if isTeamMember(teamId);
+        allow list: if isSignedIn() && (isDemoTeam(teamId) || isSuperAdmin() || (exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid))));
+        allow get, create, update: if isTeamMember(teamId);
         
         match /messages/{messageId} {
-          allow read: if isTeamMember(teamId);
-          allow create: if isTeamMember(teamId);
-          allow update: if isTeamMember(teamId);
+          allow read, create, update: if isTeamMember(teamId);
         }
       }
       
@@ -126,8 +132,7 @@ service cloud.firestore {
         allow write: if isTeamAdmin(teamId);
         
         match /registrations/{regId} {
-          allow list: if isTeamMember(teamId);
-          allow get: if isTeamMember(teamId);
+          allow list, get: if isTeamMember(teamId);
           allow create: if true;
         }
       }

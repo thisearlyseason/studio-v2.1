@@ -35,7 +35,8 @@ import {
   UserPlus,
   Star,
   HandHelping,
-  PiggyBank
+  PiggyBank,
+  Package
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -86,6 +87,7 @@ const tabs = [
   { name: 'Playbook', icon: Dumbbell, href: '/drills', pro: false, mobileName: 'Playbook' },
   { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: false, gate: 'staff_or_parent' },
   { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: false, gate: 'staff_or_parent' },
+  { name: 'Equipment', href: '/equipment', icon: Package, pro: true, gate: 'staff' },
   { name: 'Chats', href: '/chats', icon: MessageCircle, pro: false },
   { name: 'Roster', href: '/roster', icon: Users2, pro: false },
   { name: 'Library', href: '/files', icon: FolderClosed, pro: false, mobileName: 'Docs' },
@@ -225,6 +227,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const filteredTabs = tabs.filter(tab => {
     if (tab.gate === 'staff_or_parent') {
       if (!isStaff && !isParent) return false;
+    }
+    if (tab.gate === 'staff') {
+      if (!isStaff) return false;
     }
 
     if (tab.name === 'Feed') {
