@@ -47,11 +47,13 @@ service cloud.firestore {
     }
 
     // COLLECTION GROUP RULES (Must be top-level)
+    // Required for Master Calendar aggregation
     match /{path=**}/events/{eventId} {
       allow list: if isSignedIn();
-      allow get: if isSignedIn() && (isSuperAdmin() || isTeamMember(resource.data.teamId));
+      allow get: if isSignedIn() && (isSuperAdmin() || isTeamMember(resource.data.get('teamId', '')));
     }
     
+    // Required for Recruitment/Assignment Ledger
     match /{path=**}/registrationEntries/{entryId} {
       allow list: if isSignedIn();
       allow get: if isSignedIn();

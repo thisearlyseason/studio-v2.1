@@ -878,17 +878,15 @@ export default function EventsPage() {
     if (!dStr) return new Date(NaN);
     const [year, month, day] = dStr.split('-').map(Number);
     const [hours, minutes] = (tStr || '12:00').split(':').map(Number);
-    const d = new Date(year, month - 1, day, hours, minutes);
-    return d;
+    return new Date(year, month - 1, day, hours, minutes);
   };
 
   const handleCreateEvent = async () => { 
     if (!newTitle || !newDate) return; 
     
     const dateObj = parseSafeDate(newDate, newTime);
-    
     if (isNaN(dateObj.getTime())) {
-      toast({ title: "Invalid Date", description: "Please verify the event date and time.", variant: "destructive" });
+      toast({ title: "Invalid Date", description: "Please verify the event date.", variant: "destructive" });
       return;
     }
 
