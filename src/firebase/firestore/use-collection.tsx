@@ -101,7 +101,11 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (err: FirestoreError) => {
-        // Only propagate if we have a valid path or it's a collection group error
+        // Suppress errors for root paths that should never have fired
+        if (!trimmedPath || trimmedPath === '/' || trimmedPath === '') {
+          return;
+        }
+
         const contextualError = new FirestorePermissionError({
           operation: 'list',
           path: trimmedPath || '/',
