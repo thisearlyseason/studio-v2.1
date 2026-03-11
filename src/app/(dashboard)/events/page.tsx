@@ -73,9 +73,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useTeam, TeamEvent, TournamentGame, EventType } from '@/components/providers/team-provider';
+import { useTeam, TeamEvent, TournamentGame, EventType, Facility, Field } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, doc } from 'firebase/firestore';
+import { collection, query, orderBy, doc, where } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -151,6 +151,11 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const [genMatchLength, setGenMatchLength] = useState('60');
   const [genType, setGenType] = useState('round_robin');
   const [genPoolCount, setGenPoolCount] = useState('2');
+
+  const facilityRef = useMemoFirebase(() => event.facilityId ? doc(db!, 'facilities', event.facilityId) : null, [db, event.facilityId]);
+  const { data: facility } = useDoc<Facility>(facilityRef);
+  const fieldRef = useMemoFirebase(() => (event.facilityId && event.fieldId) ? doc(db!, 'facilities', event.facilityId, 'fields', event.fieldId) : null, [db, event.facilityId, event.fieldId]);
+  const { data: field } = useDoc<Field>(fieldRef);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -323,8 +328,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                   <div className="space-y-4">
                     <div className="bg-white/10 p-4 rounded-2xl border border-white/10 space-y-3">
                       <div className="flex items-center gap-3 font-bold text-sm"><CalendarDays className={cn("h-4 w-4", event.isTournamentPaid ? "text-primary" : "text-white/40")} /><span>{formatDateRange(event.date, event.endDate)}</span></div>
-                      <div className="flex items-center gap-3 font-bold text-sm"><Clock className={cn("h-4 w-4", event.isTournamentPaid ? "text-primary" : "text-white/40")} /><span>{event.startTime}</span></div>
-                      <div className="flex items-center gap-3 font-bold text-sm"><MapPin className={cn("h-4 w-4", event.isTournamentPaid ? "text-primary" : "text-white/40")} /><span className="truncate">{event.location}</span></div>
+                      <div className="flex items-center gap-3 font-bold text-sm"><Clock className={cn("h-4 w-4", event.isTournamentPaid ? "text-primary" : "text-white/40")} /><span>{event.startTime} {event.endTime && ` - ${event.endTime}`}</span></div>
+                      <div className="flex items-center gap-3 font-bold text-sm"><MapPin className={cn("h-4 w-4", event.isTournamentPaid ? "text-primary" : "text-white/40")} /><span className="truncate">{facility?.name ? `${facility.name} (${field?.name || 'Main'})` : event.location}</span></div>
                     </div>
                     <div className="grid grid-cols-1 gap-2">
                       <DropdownMenu>
@@ -333,8 +338,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                           <DropdownMenuLabel className="text-[10px] font-black uppercase">Calendar Sync</DropdownMenuLabel>
                           <DropdownMenuSeparator />
                           {event.isTournament ? (<DropdownMenuItem className="font-bold py-3 cursor-pointer" onClick={syncTournamentSchedule}>Download Full iCal</DropdownMenuItem>) : (
-                            <><DropdownMenuItem className="font-bold py-3 cursor-pointer" onClick={() => window.open(generateGoogleCalendarLink({ title: event.title, start: new Date(event.date), location: event.location, description: event.description }), '_blank')}>Google Calendar</DropdownMenuItem>
-                            <DropdownMenuItem className="font-bold py-3 cursor-pointer" onClick={() => downloadICS([{ title: event.title, start: new Date(event.date), location: event.location, description: event.description }], `${event.title}.ics`)}>iCal / Outlook</DropdownMenuItem></>
+                            <><DropdownMenuItem className="font-bold py-3 cursor-pointer" onClick={() => window.open(generateGoogleCalendarLink({ title: event.title, start: new Date(event.date), location: facility?.address || event.location, description: event.description }), '_blank')}>Google Calendar</DropdownMenuItem>
+                            <DropdownMenuItem className="font-bold py-3 cursor-pointer" onClick={() => downloadICS([{ title: event.title, start: new Date(event.date), location: facility?.address || event.location, description: event.description }], `${event.title}.ics`)}>iCal / Outlook</DropdownMenuItem></>
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -776,7 +781,10 @@ export default function EventsPage() {
   const [newDate, setNewDate] = useState('');
   const [newEndDate, setNewEndDate] = useState('');
   const [newTime, setNewTime] = useState('');
+  const [newEndTime, setNewEndTime] = useState('');
   const [newLocation, setNewLocation] = useState('');
+  const [newFacilityId, setNewFacilityId] = useState<string>('manual');
+  const [newFieldId, setNewFieldId] = useState<string>('manual');
   const [newDescription, setNewDescription] = useState('');
   const [eventType, setEventType] = useState<EventType>('game');
   const [requiresWaiver, setRequiresWaiver] = useState(false);
@@ -789,6 +797,12 @@ export default function EventsPage() {
   const eventsQuery = useMemoFirebase(() => { if (!activeTeam?.id || !db) return null; return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc')); }, [activeTeam?.id, db]);
   const { data: rawEvents } = useCollection<TeamEvent>(eventsQuery);
   const allEvents = rawEvents || [];
+
+  const facilitiesQuery = useMemoFirebase(() => db ? query(collection(db, 'facilities'), where('clubId', '==', user?.id || 'none')) : null, [db, user?.id]);
+  const { data: facilities } = useCollection<Facility>(facilitiesQuery);
+
+  const fieldsQuery = useMemoFirebase(() => (db && newFacilityId !== 'manual') ? query(collection(db, 'facilities', newFacilityId, 'fields'), orderBy('name', 'asc')) : null, [db, newFacilityId]);
+  const { data: fields } = useCollection<Field>(fieldsQuery);
   
   const filteredEvents = useMemo(() => {
     const now = new Date();
@@ -816,7 +830,10 @@ export default function EventsPage() {
     setNewDate(format(d, 'yyyy-MM-dd')); 
     if (event.endDate) setNewEndDate(format(new Date(event.endDate), 'yyyy-MM-dd')); 
     setNewTime(event.startTime); 
+    setNewEndTime(event.endTime || '');
     setNewLocation(event.location); 
+    setNewFacilityId(event.facilityId || 'manual');
+    setNewFieldId(event.fieldId || 'manual');
     setNewDescription(event.description); 
     setRequiresWaiver(!!event.requiresSpecialWaiver); 
     setWaiverText(event.specialWaiverText || ''); 
@@ -827,9 +844,9 @@ export default function EventsPage() {
     setIsCreateOpen(true); 
   };
 
-  const resetForm = () => { setEditingEvent(null); setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setRequiresWaiver(false); setWaiverText(''); setTeamWaiverText(''); setTournamentTeams([]); setTournamentTeamsMetadata({}); setTournamentGames([]); };
+  const resetForm = () => { setEditingEvent(null); setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewEndTime(''); setNewLocation(''); setNewFacilityId('manual'); setNewFieldId('manual'); setNewDescription(''); setEventType('game'); setRequiresWaiver(false); setWaiverText(''); setTeamWaiverText(''); setTournamentTeams([]); setTournamentTeamsMetadata({}); setTournamentGames([]); };
   
-  const handleCreateEvent = () => { 
+  const handleCreateEvent = async () => { 
     if (!newTitle || !newDate) return; 
     
     const dateObj = new Date(`${newDate}T${newTime || '12:00'}`);
@@ -838,7 +855,10 @@ export default function EventsPage() {
       eventType: isTournamentMode ? 'tournament' : eventType,
       date: dateObj.toISOString(), 
       startTime: newTime || 'TBD', 
+      endTime: newEndTime || null,
       location: newLocation, 
+      facilityId: newFacilityId === 'manual' ? null : newFacilityId,
+      fieldId: newFieldId === 'manual' ? null : newFieldId,
       description: newDescription, 
       isTournament: isTournamentMode, 
       isTournamentPaid: isEliteTournament, 
@@ -855,9 +875,14 @@ export default function EventsPage() {
       payload.endDate = new Date(`${newEndDate}T12:00:00`).toISOString();
     }
     
-    if (editingEvent) updateEvent(editingEvent.id, payload); else addEvent(payload); 
-    setIsCreateOpen(false); 
-    resetForm(); 
+    let success = false;
+    if (editingEvent) success = await updateEvent(editingEvent.id, payload); 
+    else success = await addEvent(payload); 
+
+    if (success) {
+      setIsCreateOpen(false); 
+      resetForm(); 
+    }
   };
 
   return (
@@ -893,9 +918,41 @@ export default function EventsPage() {
                     <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Event Title</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-black border-2" /></div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label><input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>
-                      {isTournamentMode ? (<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label><input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>) : (<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time</Label><input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>)}
+                      {isTournamentMode ? (<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label><input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="w-full h-12 rounded-xl font-black border-2 bg-background px-3" /></div>) : (
+                        <div className="space-y-1.5">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time</Label>
+                          <div className="flex items-center gap-2">
+                            <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="flex-1 h-12 rounded-xl font-black border-2 bg-background px-3" />
+                            <span className="text-muted-foreground">-</span>
+                            <input type="time" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} className="flex-1 h-12 rounded-xl font-black border-2 bg-background px-3" />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Base Location</Label><Input value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
+
+                    <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed space-y-4">
+                      <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /><Label className="text-[10px] font-black uppercase tracking-widest">Venue Selection</Label></div>
+                      <div className="grid grid-cols-1 gap-3">
+                        <Select value={newFacilityId} onValueChange={(val) => { setNewFacilityId(val); setNewFieldId('manual'); if(val !== 'manual') setNewLocation(facilities?.find(f => f.id === val)?.address || ''); }}>
+                          <SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Select Facility" /></SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            <SelectItem value="manual" className="font-bold">Manual Location (Other)</SelectItem>
+                            {facilities?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        {newFacilityId !== 'manual' && (
+                          <Select value={newFieldId} onValueChange={setNewFieldId}>
+                            <SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Select Field/Court" /></SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                              <SelectItem value="manual" className="font-bold">Main Field/General</SelectItem>
+                              {fields?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase tracking-widest ml-1">Location Label</Label><Input value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-11 rounded-xl font-bold border-2 bg-white" /></div>
+                      </div>
+                    </div>
+
                     <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">General Description</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[80px] border-2 text-xs font-bold" /></div>
                   </div>
                 </div>
@@ -971,7 +1028,7 @@ export default function EventsPage() {
                                 <Badge className={cn("text-[7px] uppercase border-none", (event.isTournament || event.eventType === 'tournament') ? "bg-black text-white" : "bg-primary text-white")}>
                                   {event.isTournament ? (event.isTournamentPaid ? 'Elite Hub' : 'Tournament') : (event.eventType || 'Game')}
                                 </Badge>
-                                <Badge variant="outline" className="text-[7px] uppercase">{event.startTime}</Badge>
+                                <Badge variant="outline" className="text-[7px] uppercase">{event.startTime} {event.endTime && `- ${event.endTime}`}</Badge>
                               </div>
                               <h3 className="text-lg lg:text-xl font-black tracking-tight leading-none truncate">{event.title}</h3>
                               <p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1 mt-1"><MapPin className="h-3 w-3" /> {event.location}</p>

@@ -36,7 +36,8 @@ import {
   Star,
   HandHelping,
   PiggyBank,
-  Package
+  Package,
+  MapPin
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -83,6 +84,7 @@ const tabs = [
   { name: 'Feed', href: '/feed', icon: LayoutDashboard, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Leagues', href: '/leagues', icon: Shield, pro: false },
+  { name: 'Facilities', href: '/facilities', icon: MapPin, pro: true, gate: 'staff' },
   { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: false },
   { name: 'Playbook', icon: Dumbbell, href: '/drills', pro: false, mobileName: 'Playbook' },
   { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: false, gate: 'staff_or_parent' },

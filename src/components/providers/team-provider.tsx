@@ -238,6 +238,7 @@ export type TeamEvent = {
   date: string;
   endDate?: string;
   startTime: string;
+  endTime?: string;
   location: string;
   description: string;
   eventType: EventType;
@@ -255,6 +256,8 @@ export type TeamEvent = {
   teamAgreements?: Record<string, { agreed: boolean; captainName: string; timestamp: string }>;
   coOrganizers?: Array<{ id: string; name: string; avatar: string }>;
   lastUpdated?: string;
+  facilityId?: string;
+  fieldId?: string;
 };
 
 export type League = {
@@ -271,6 +274,21 @@ export type LeagueInvite = {
   leagueName: string;
   invitedEmail: string;
   status: 'pending' | 'accepted' | 'declined';
+};
+
+export type Facility = {
+  id: string;
+  clubId: string;
+  name: string;
+  address: string;
+  notes?: string;
+  createdAt: string;
+};
+
+export type Field = {
+  id: string;
+  facilityId: string;
+  name: string;
 };
 
 interface TeamContextType {
@@ -318,8 +336,8 @@ interface TeamContextType {
   createAlert: (title: string, message: string) => Promise<void>;
   updateTeamHero: (imageUrl: string) => Promise<void>;
   resolveQuota: (selectedTeamIds: string[]) => Promise<void>;
-  addEvent: (payload: any) => Promise<void>;
-  updateEvent: (eventId: string, updates: any) => Promise<void>;
+  addEvent: (payload: any) => Promise<boolean>;
+  updateEvent: (eventId: string, updates: any) => Promise<boolean>;
   deleteEvent: (eventId: string) => Promise<void>;
   updateRSVP: (eventId: string, status: string, gameId?: string) => Promise<void>;
   addRegistration: (teamId: string, eventId: string, data: any) => Promise<boolean>;
@@ -348,6 +366,13 @@ interface TeamContextType {
   submitMatchScore: (teamId: string, eventId: string, gameId: string, isTeam1: boolean, s1: number, s2: number) => Promise<void>;
   respondToAssignment: (leagueId: string, entryId: string, status: 'accepted' | 'declined') => Promise<void>;
   
+  // Facility Management Methods
+  addFacility: (facility: Partial<Facility>) => Promise<void>;
+  deleteFacility: (id: string) => Promise<void>;
+  addField: (facilityId: string, name: string) => Promise<void>;
+  deleteField: (facilityId: string, fieldId: string) => Promise<void>;
+  checkFieldAvailability: (facilityId: string, fieldId: string, date: string, startTime: string, endTime: string, currentEventId?: string) => Promise<boolean>;
+
   // Volunteer & Fundraising Methods
   addVolunteerOpportunity: (opp: Partial<VolunteerOpportunity>) => Promise<void>;
   deleteVolunteerOpportunity: (id: string) => Promise<void>;
@@ -385,6 +410,14 @@ const clean = (obj: any): any => {
     return newObj;
   }
   return obj ?? null;
+};
+
+const parseTimeToMinutes = (timeStr: string) => {
+  const [time, period] = timeStr.split(' ');
+  let [hours, minutes] = time.split(':').map(Number);
+  if (period === 'PM' && hours !== 12) hours += 12;
+  if (period === 'AM' && hours === 12) hours = 0;
+  return hours * 60 + minutes;
 };
 
 export function TeamProvider({ children }: { children: ReactNode }) {
@@ -719,8 +752,30 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       });
       await batch.commit();
     },
-    addEvent: async (p: any) => { if (!activeTeam) return; await addDoc(collection(db, 'teams', activeTeam.id, 'events'), clean(p)); },
-    updateEvent: async (id: string, u: any) => { if (!activeTeam) return; await updateDoc(doc(db, 'teams', activeTeam.id, 'events', id), clean(u)); },
+    addEvent: async (p: any) => { 
+      if (!activeTeam) return false; 
+      if (p.facilityId && p.fieldId) {
+        const available = await value.checkFieldAvailability(p.facilityId, p.fieldId, p.date, p.startTime, p.endTime || 'TBD');
+        if (!available) {
+          toast({ title: "Conflict Detected", description: "This field is already booked for the selected time.", variant: "destructive" });
+          return false;
+        }
+      }
+      await addDoc(collection(db, 'teams', activeTeam.id, 'events'), clean(p));
+      return true;
+    },
+    updateEvent: async (id: string, u: any) => { 
+      if (!activeTeam) return false; 
+      if (u.facilityId && u.fieldId) {
+        const available = await value.checkFieldAvailability(u.facilityId, u.fieldId, u.date, u.startTime, u.endTime || 'TBD', id);
+        if (!available) {
+          toast({ title: "Conflict Detected", description: "This field is already booked for the selected time.", variant: "destructive" });
+          return false;
+        }
+      }
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'events', id), clean(u)); 
+      return true;
+    },
     deleteEvent: async (id: string) => { if (!activeTeam) return; await deleteDoc(doc(db, 'teams', activeTeam.id, 'events', id)); },
     updateRSVP: async (id: string, s: string, gid?: string) => {
       if (!activeTeam || !firebaseUser) return;
@@ -862,6 +917,52 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (status === 'accepted') toast({ title: "Player Recruited" });
     },
 
+    // Facility Management
+    addFacility: async (facility: Partial<Facility>) => {
+      if (!firebaseUser) return;
+      await addDoc(collection(db, 'facilities'), clean({
+        ...facility,
+        clubId: firebaseUser.uid,
+        createdAt: new Date().toISOString()
+      }));
+    },
+    deleteFacility: async (id: string) => {
+      await deleteDoc(doc(db, 'facilities', id));
+    },
+    addField: async (facilityId: string, name: string) => {
+      await addDoc(collection(db, 'facilities', facilityId, 'fields'), clean({ facilityId, name }));
+    },
+    deleteField: async (facilityId: string, fieldId: string) => {
+      await deleteDoc(doc(db, 'facilities', facilityId, 'fields', fieldId));
+    },
+    checkFieldAvailability: async (facilityId: string, fieldId: string, date: string, startTime: string, endTime: string, currentEventId?: string) => {
+      // Query all events across all teams using collectionGroup to find conflicts
+      const q = query(collectionGroup(db, 'events'), 
+        where('facilityId', '==', facilityId),
+        where('fieldId', '==', fieldId)
+      );
+      const snap = await getDocs(q);
+      const newStart = parseTimeToMinutes(startTime);
+      const newEnd = endTime !== 'TBD' ? parseTimeToMinutes(endTime) : newStart + 90;
+
+      for (const d of snap.docs) {
+        if (d.id === currentEventId) continue;
+        const data = d.data();
+        // Extract date correctly (might be ISO or just string)
+        const dDate = data.date.includes('T') ? data.date.split('T')[0] : data.date;
+        const targetDate = date.includes('T') ? date.split('T')[0] : date;
+        
+        if (dDate === targetDate) {
+          const eStart = parseTimeToMinutes(data.startTime);
+          const eEnd = data.endTime && data.endTime !== 'TBD' ? parseTimeToMinutes(data.endTime) : eStart + 90;
+          
+          // Overlap check
+          if (newStart < eEnd && newEnd > eStart) return false;
+        }
+      }
+      return true;
+    },
+
     // Volunteer Methods
     addVolunteerOpportunity: async (opp: Partial<VolunteerOpportunity>) => {
       if (!activeTeam) return;
@@ -950,10 +1051,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       
       const qty = assignment.quantity;
       await updateDoc(ref, {
-        [`assignments.${userId}`]: deleteDoc as any, // This is handled via standard update if we wanted to delete the key
+        [`assignments.${userId}`]: deleteDoc as any, 
         availableQuantity: increment(qty)
       });
-      // Correct way to delete nested field in firestore update
       const { deleteField } = await import('firebase/firestore');
       await updateDoc(ref, { [`assignments.${userId}`]: deleteField() });
     },

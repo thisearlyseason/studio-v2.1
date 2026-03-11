@@ -126,6 +126,27 @@
         "ownerUserId"
       ]
     },
+    "Facility": {
+      "title": "Facility",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clubId": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Field": {
+      "title": "Field",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "facilityId": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
     "VolunteerOpportunity": {
       "title": "VolunteerOpportunity",
       "type": "object",
@@ -239,6 +260,14 @@
         "$ref": "#/backend/entities/Team"
       },
       "description": "Collaborative team hubs."
+    },
+    "/facilities/{facilityId}": {
+      "schema": { "$ref": "#/backend/entities/Facility" },
+      "description": "Global facility catalog."
+    },
+    "/facilities/{facilityId}/fields/{fieldId}": {
+      "schema": { "$ref": "#/backend/entities/Field" },
+      "description": "Assignable fields or courts within a facility."
     },
     "/teams/{teamId}/volunteers/{oppId}": {
       "schema": {

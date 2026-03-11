@@ -82,6 +82,17 @@ service cloud.firestore {
       }
     }
 
+    match /facilities/{facilityId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if resource.data.clubId == request.auth.uid || isSuperAdmin();
+
+      match /fields/{fieldId} {
+        allow read: if isSignedIn();
+        allow write: if get(/databases/$(database)/documents/facilities/$(facilityId)).data.clubId == request.auth.uid || isSuperAdmin();
+      }
+    }
+
     match /teams/{teamId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
