@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -97,7 +98,7 @@ export default function MasterCalendarPage() {
                            event.location.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesTeam && matchesType && matchesSearch;
     });
-  }, [allEvents, selectedTeamIds, selectedEventTypes, searchTerm]);
+  }, [allEvents, selectedTeamIds, setTermSearch = searchTerm]);
 
   // Calendar Logic
   const monthStart = startOfMonth(currentDate);

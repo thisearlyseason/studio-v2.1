@@ -20,9 +20,7 @@ import {
   Dumbbell,
   Search,
   CreditCard,
-  ShieldAlert,
-  RotateCcw,
-  Eye,
+  ExternalLink,
   Building,
   History,
   Timer,
@@ -43,7 +41,8 @@ import {
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useTeam, Team } from '@/components/providers/team-provider';
+import { Badge } from '@/components/ui/badge';
+import { useTeam, Team, TeamAlert } from '@/components/providers/team-provider';
 import { CreateAlertButton, AlertsHistoryDialog } from '@/components/layout/AlertOverlay';
 import {
   DropdownMenu,
@@ -55,7 +54,6 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem
 } from "@/components/ui/dropdown-menu";
-import { Badge } from '@/components/ui/badge';
 import { 
   Sidebar, 
   SidebarContent, 
@@ -214,10 +212,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     );
   }, [activeTeam?.id, db]);
 
-  const { data: alerts = [] } = useCollection(alertsQuery);
+  const { data: rawAlerts } = useCollection<TeamAlert>(alertsQuery);
+  const alerts = rawAlerts || []; // Ensure alerts is always an array
   const [hasUnreadAlerts, setHasUnreadAlerts] = useState(false);
 
   useEffect(() => {
+    if (!alerts) return;
     const stored = localStorage.getItem('squad_seen_alerts_ids');
     if (!stored) {
       setHasUnreadAlerts(alerts.length > 0);
