@@ -231,7 +231,7 @@ export default function FeedPage() {
     const current = poll.voters?.[user?.id || ''];
     const u: any = { [`poll.voters.${user?.id}`]: optionIdx };
     if (current === undefined) { u[`poll.options.${optionIdx}.votes`] = increment(1); u['poll.totalVotes'] = increment(1); }
-    else if (current !== optionIdx) { u[`poll.options.${current}.votes`] = increment(-1); u[`poll.options.${optionIdx}.votes`] = increment(1); }
+    else if (current !== optIdx) { u[`poll.options.${current}.votes`] = increment(-1); u[`poll.options.${optionIdx}.votes`] = increment(1); }
     await updateDoc(ref, u);
   };
 

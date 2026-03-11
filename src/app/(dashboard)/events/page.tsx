@@ -58,10 +58,14 @@ import { format, isSameDay, isPast, addMinutes, addDays, parse } from 'date-fns'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
 
-/**
- * Normalizes time input strings to HH:mm format for reliable ISO construction.
- * Supports both 12-hour (AM/PM) and 24-hour inputs.
- */
+const EVENT_TYPE_COLORS: Record<EventType, string> = {
+  game: 'bg-primary border-primary text-white',
+  practice: 'bg-emerald-600 border-emerald-600 text-white',
+  meeting: 'bg-amber-500 border-amber-500 text-white',
+  tournament: 'bg-black border-black text-white',
+  other: 'bg-slate-600 border-slate-600 text-white',
+};
+
 const normalizeTime = (t: string) => {
   if (!t || t === 'TBD') return '12:00';
   if (t.toUpperCase().includes('M')) {
@@ -78,12 +82,6 @@ const normalizeTime = (t: string) => {
   return t.includes(':') ? t : '12:00';
 };
 
-/**
- * Tactical Standings Engine:
- * Win: +1 point
- * Loss: -1 point
- * Tie: 0 points
- */
 function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
     acc[team] = { name: team, wins: 0, losses: 0, ties: 0, points: 0 };
@@ -319,14 +317,14 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                   </TabsContent>
                   <TabsContent value="portals" className="mt-0 space-y-8">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <Card className="rounded-[2rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
+                      <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
                         <CardHeader className="bg-primary/5 p-6 border-b"><div className="flex items-center gap-3"><Eye className="h-5 w-5 text-primary" /><CardTitle className="text-sm font-black uppercase">Spectator Hub</CardTitle></div></CardHeader>
                         <CardContent className="p-6 space-y-4">
                           <p className="text-xs font-medium text-muted-foreground italic">Public link for parents and fans to follow live scores and standings.</p>
                           <div className="flex gap-2"><Input readOnly value={`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`} className="h-10 text-[10px] font-mono bg-muted/30 border-none" /><Button size="icon" variant="secondary" className="h-10 w-10 shrink-0 rounded-xl" onClick={() => copyToClipboard(`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`)}><Copy className="h-4 w-4" /></Button></div>
                         </CardContent>
                       </Card>
-                      <Card className="rounded-[2rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
+                      <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
                         <CardHeader className="bg-black text-white p-6 border-b"><div className="flex items-center gap-3"><Terminal className="h-5 w-5 text-primary" /><CardTitle className="text-sm font-black uppercase">Scorekeeper Portal</CardTitle></div></CardHeader>
                         <CardContent className="p-6 space-y-4">
                           <p className="text-xs font-medium text-muted-foreground italic">Share this with field marshals to log scores without a login.</p>

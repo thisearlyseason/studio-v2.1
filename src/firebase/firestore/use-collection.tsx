@@ -33,7 +33,7 @@ export interface InternalQuery extends Query<DocumentData> {
 
 /**
  * React hook to subscribe to a Firestore collection or query in real-time.
- * Hardened with defensive path guards to prevent unauthorized root listing.
+ * Hardened with strictly defensive path guards to prevent unauthorized root listing.
  */
 export function useCollection<T = any>(
     memoizedTargetRefOrQuery: ((CollectionReference<DocumentData> | Query<DocumentData>) & {__memo?: boolean})  | null | undefined,
@@ -46,7 +46,7 @@ export function useCollection<T = any>(
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
-    // 1. Return early if target is null (safe fallback)
+    // 1. Strict Early Return: Skip if target is null or undefined (initial auth loading state)
     if (!memoizedTargetRefOrQuery) {
       setData(null);
       setIsLoading(false);
@@ -70,7 +70,7 @@ export function useCollection<T = any>(
       }
     } catch (e) {}
 
-    // 3. Strict Guard: Prevent uninitialized or root-level listing requests
+    // 3. Strict Guard: Prevent uninitialized or database root-level listing requests (// or /)
     const trimmedPath = (path || '').trim();
     if (!isCollectionGroup && (!trimmedPath || trimmedPath === '/' || trimmedPath === '' || trimmedPath === '//')) {
       setData(null);

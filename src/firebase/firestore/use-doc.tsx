@@ -1,3 +1,4 @@
+
 'use client';
     
 import { useState, useEffect } from 'react';
@@ -26,7 +27,7 @@ export interface UseDocResult<T> {
 
 /**
  * React hook to subscribe to a single Firestore document in real-time.
- * Handles nullable references and prevents unauthorized root-level access.
+ * Hardened with strictly defensive path guards to prevent unauthorized root-level access.
  */
 export function useDoc<T = any>(
   memoizedDocRef: DocumentReference<DocumentData> | null | undefined,
@@ -38,7 +39,7 @@ export function useDoc<T = any>(
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
-    // 1. Early return if reference is not provided
+    // 1. Strict Early Return: Skip if reference is not provided (initial auth loading state)
     if (!memoizedDocRef) {
       setData(null);
       setIsLoading(false);
@@ -46,7 +47,7 @@ export function useDoc<T = any>(
       return;
     }
 
-    // 2. Skip root-level, empty, or uninitialized paths
+    // 2. Strict Guard: Skip root-level, empty, or database root paths (// or /)
     const path = (memoizedDocRef.path || '').trim();
     if (!path || path === '/' || path === '.' || path.includes('//') || path.endsWith('/')) {
       setData(null);
@@ -70,8 +71,8 @@ export function useDoc<T = any>(
         setIsLoading(false);
       },
       (err: FirestoreError) => {
-        // Suppress root errors
-        if (!path || path === '/') {
+        // 3. Final Guard: Suppress root errors
+        if (!path || path === '/' || path === '//') {
           setIsLoading(false);
           return;
         }
