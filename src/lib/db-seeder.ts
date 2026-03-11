@@ -47,8 +47,10 @@ export async function seedSubscriptionData(db: Firestore) {
       const batch = writeBatch(db);
       
       const defaultFeatures = [
-        { id: 'schedule_games_events', description: 'Plan and coordinate team matches and events.', defaultEnabled: true },
-        { id: 'tournaments', description: 'Manage multi-day tournament series and brackets.', defaultEnabled: false },
+        { id: 'schedule_basic', description: 'Plan and coordinate team matches.', defaultEnabled: true },
+        { id: 'schedule_elite', description: 'Plan meetings, events, and advanced facility coordination.', defaultEnabled: false },
+        { id: 'tournament_basic', description: 'Manage basic tournament series.', defaultEnabled: true },
+        { id: 'tournament_elite', description: 'Advanced brackets, live scores, and public portal hub.', defaultEnabled: false },
         { id: 'basic_roster', description: 'Manage a basic list of team members.', defaultEnabled: true },
         { id: 'full_roster_details', description: 'Track medical info, emergency contacts, and coaching notes.', defaultEnabled: false },
         { id: 'attendance_tracking', description: 'Track RSVPs and real-time attendance for events.', defaultEnabled: false },
@@ -78,14 +80,16 @@ export async function seedSubscriptionData(db: Firestore) {
       const batch = writeBatch(db);
 
       const proFeaturesMap = {
-        schedule_games_events: true, tournaments: true, basic_roster: true, full_roster_details: true,
-        attendance_tracking: true, live_feed_read: true, live_feed_post: true, group_chat: true,
+        schedule_basic: true, schedule_elite: true, tournament_basic: true, tournament_elite: true,
+        basic_roster: true, full_roster_details: true, attendance_tracking: true, 
+        live_feed_read: true, live_feed_post: true, group_chat: true,
         score_tracking: true, stats_basic: true, media_uploads: true, history_unlimited: true,
         high_priority_alerts: true, leagues: true, league_registration: true
       };
 
       const starterFeatures = {
-        schedule_games_events: true, basic_roster: true, live_feed_read: true, score_tracking: true, group_chat: true
+        schedule_basic: true, tournament_basic: true, basic_roster: true, 
+        live_feed_read: true, score_tracking: true, group_chat: true
       };
 
       const plans = [
@@ -152,7 +156,7 @@ export async function seedDemoData(db: Firestore, teamId: string, demoTier: stri
   
   // Tier flags
   const isStarter = demoTier === 'starter_squad';
-  const isEliteTournamentDemo = demoTier === 'tournament_pro';
+  const isEliteTournamentDemo = demoTier === 'tournament_pro' || demoTier === 'squad_pro' || demoTier === 'squad_organization';
   const isPro = !isStarter;
 
   // Unified Roster
@@ -318,8 +322,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     avatarUrl: `https://picsum.photos/seed/${userId}/150/150`,
     activePlanId: (isPlayerDemo || isParentDemo) ? 'starter_squad' : actualPlanId, 
     proTeamLimit: planId === 'squad_organization' ? 15 : 1,
-    planSource: 'free', 
-    tournamentCredits: planId === 'tournament_pro' ? 1 : 0 
+    planSource: 'free'
   }), { merge: true });
 
   batch.set(doc(db, 'teams', teamId), clean({

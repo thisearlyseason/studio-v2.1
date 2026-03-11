@@ -1,7 +1,8 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useRef } from 'react';
-import { useUser, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
+import { useUser, useFirebase, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
 import { 
   collection, 
   query, 
@@ -40,7 +41,6 @@ export type UserProfile = {
   isDemo?: boolean;
   activePlanId?: string | null;
   proTeamLimit?: number | null;
-  tournamentCredits?: number;
 };
 
 export type PlayerProfile = {
@@ -420,7 +420,7 @@ const parseTimeToMinutes = (timeStr: string) => {
 };
 
 export function TeamProvider({ children }: { children: ReactNode }) {
-  const { user: firebaseUser, isUserLoading, isAuthResolved } = useUser();
+  const { user: firebaseUser, isAuthResolved } = useFirebase();
   const db = useFirestore();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -434,7 +434,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   
   const hasStartedSeeding = useRef<string | null>(null);
 
-  // DEFENSIVE: Global catalog queries strictly wait for auth resolution
   const plansQuery = useMemoFirebase(() => (db && isAuthResolved && firebaseUser) ? collection(db, 'plans') : null, [db, isAuthResolved, firebaseUser]);
   const { data: plansData, isLoading: isPlansLoading } = useCollection(plansQuery);
   const plans = plansData || [];
@@ -454,8 +453,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           activePlanId: data.activePlanId,
           proTeamLimit: data.proTeamLimit || 0,
           createdAt: data.createdAt,
-          isDemo: data.isDemo,
-          tournamentCredits: data.tournamentCredits || 0
+          isDemo: data.isDemo
         });
       }
     });
@@ -911,11 +909,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const games = snap.data().tournamentGames || [];
       const updated = games.map((g: any) => g.id === gameId ? { ...g, score1: s1 || 0, score2: s2 || 0, isCompleted: true } : g);
       await updateDoc(evRef, { tournamentGames: updated });
-    },
-    signPublicTournamentWaiver: async (teamId: string, eventId: string, selectedTeam: string, coachName: string) => {
-      const ref = doc(db, 'teams', teamId, 'events', eventId);
-      await updateDoc(ref, { [`teamAgreements.${selectedTeam}`]: { agreed: true, captainName: coachName, timestamp: new Date().toISOString() } });
-      return true;
     },
     respondToAssignment: async (leagueId: string, entryId: string, status: 'accepted' | 'declined') => {
       if (!activeTeam) return;

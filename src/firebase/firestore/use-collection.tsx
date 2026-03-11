@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -40,16 +41,6 @@ export interface InternalQuery extends Query<DocumentData> {
 /**
  * React hook to subscribe to a Firestore collection or query in real-time.
  * Handles nullable references/queries.
- * 
- *
- * IMPORTANT! YOU MUST MEMOIZE the inputted memoizedTargetRefOrQuery or BAD THINGS WILL HAPPEN
- * use useMemo to memoize it per React guidence.  Also make sure that it's dependencies are stable
- * references
- *  
- * @template T Optional type for document data. Defaults to any.
- * @param {CollectionReference<DocumentData> | Query<DocumentData> | null | undefined} targetRefOrQuery -
- * The Firestore CollectionReference or Query. Waits if null/undefined.
- * @returns {UseCollectionResult<T>} Object with data, isLoading, error.
  */
 export function useCollection<T = any>(
     memoizedTargetRefOrQuery: ((CollectionReference<DocumentData> | Query<DocumentData>) & {__memo?: boolean})  | null | undefined,
@@ -76,13 +67,10 @@ export function useCollection<T = any>(
       if (memoizedTargetRefOrQuery.type === 'collection') {
         path = (memoizedTargetRefOrQuery as CollectionReference).path;
       } else {
-        // Internal access to query path for safety check
         const internalQuery = memoizedTargetRefOrQuery as unknown as InternalQuery;
         path = internalQuery._query?.path?.canonicalString() || '';
       }
-    } catch (e) {
-      // If path cannot be determined, treat as uninitialized
-    }
+    } catch (e) {}
 
     // 3. Skip root-level, empty, or uninitialized paths that trigger security denials
     const trimmedPath = (path || '').trim();
@@ -108,7 +96,6 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (error: FirestoreError) => {
-        // Double check if path is actually root during error handling
         const contextualError = new FirestorePermissionError({
           operation: 'list',
           path: trimmedPath || '/',
@@ -117,8 +104,6 @@ export function useCollection<T = any>(
         setError(contextualError)
         setData(null)
         setIsLoading(false)
-
-        // trigger global error propagation
         errorEmitter.emit('permission-error', contextualError);
       }
     );
@@ -126,8 +111,5 @@ export function useCollection<T = any>(
     return () => unsubscribe();
   }, [memoizedTargetRefOrQuery]);
 
-  if(memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
-    throw new Error(memoizedTargetRefOrQuery + ' was not properly memoized using useMemoFirebase');
-  }
   return { data, isLoading, error };
 }

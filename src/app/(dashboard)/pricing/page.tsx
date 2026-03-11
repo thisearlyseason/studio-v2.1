@@ -48,7 +48,7 @@ import { Progress } from '@/components/ui/progress';
 import { useRouter } from 'next/navigation';
 
 export default function PricingPage() {
-  const { activeTeam, purchasePro, submitLead, user, plans, isPlansLoading, proQuotaStatus, isStaff } = useTeam();
+  const { purchasePro, submitLead, user, plans, isPlansLoading, proQuotaStatus } = useTeam();
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
@@ -62,7 +62,6 @@ export default function PricingPage() {
     message: ''
   });
 
-  const starterPlan = useMemo(() => plans.find(p => p.id === 'starter_squad'), [plans]);
   const proPlan = useMemo(() => plans.find(p => p.id === 'squad_pro'), [plans]);
   
   const CLUB_TIERS = [
@@ -171,10 +170,10 @@ export default function PricingPage() {
             <div className="pt-6 border-t border-muted space-y-4">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Included</p>
               <ul className="space-y-3">
-                <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><Check className="h-4 w-4 text-primary" /> Game Scheduling</li>
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><Check className="h-4 w-4 text-primary" /> Basic Scheduling</li>
                 <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><Check className="h-4 w-4 text-primary" /> Live Score Tracking</li>
                 <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><Check className="h-4 w-4 text-primary" /> Basic Roster</li>
-                <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><Check className="h-4 w-4 text-primary" /> Tactical Chats</li>
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><Check className="h-4 w-4 text-primary" /> Basic Tournament</li>
               </ul>
             </div>
           </CardContent>
@@ -203,14 +202,14 @@ export default function PricingPage() {
                 <span className="text-xs font-black uppercase opacity-60 text-white/60">{getCycleLabel(proPlan)}</span>
               </div>
             </div>
-            <CardDescription className="text-xs font-bold text-white/60">Full-scale coordination, analytics & playbooks for pro squads.</CardDescription>
+            <CardDescription className="text-xs font-bold text-white/60">Full-scale coordination, analytics & Elite Hub for pro squads.</CardDescription>
           </CardHeader>
           <CardContent className="p-10 pt-0 flex-1 space-y-8 relative z-10">
             <div className="pt-6 border-t border-white/10 space-y-4">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Professional Engine</p>
               <ul className="space-y-3">
-                <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><CircleCheck className="h-4 w-4 text-primary" /> RSVP Tracking</li>
-                <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><CircleCheck className="h-4 w-4 text-primary" /> Tactical Group Chats</li>
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><CircleCheck className="h-4 w-4 text-primary" /> Elite Tournament Hub</li>
+                <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><CircleCheck className="h-4 w-4 text-primary" /> Meetings & Events</li>
                 <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><CircleCheck className="h-4 w-4 text-primary" /> Training Vault</li>
                 <li className="flex items-center gap-3 text-[11px] font-bold uppercase"><CircleCheck className="h-4 w-4 text-primary" /> Performance Stats</li>
               </ul>
@@ -326,88 +325,6 @@ export default function PricingPage() {
           </p>
         </div>
       </div>
-
-      <section className="space-y-10">
-        <div className="text-center space-y-2">
-          <Badge className="bg-amber-100 text-amber-700 font-black uppercase tracking-widest text-[9px] h-6 px-3">Elite Add-ons</Badge>
-          <h2 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">Functional Modules</h2>
-        </div>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
-          <Card className="rounded-[3rem] border-none shadow-2xl bg-black text-white overflow-hidden relative group">
-            <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
-              <LayoutGrid className="h-32 w-32" />
-            </div>
-            <CardHeader className="p-10 pb-4">
-              <Badge className="bg-red-600 text-white border-none font-black text-[10px] uppercase tracking-widest px-3 h-6 w-fit mb-4">Inventory</Badge>
-              <CardTitle className="text-3xl font-black uppercase tracking-tight">Tournament Credits</CardTitle>
-              <CardDescription className="text-white/60 text-sm font-medium mt-2">Professional bracket & scoring deployments.</CardDescription>
-            </CardHeader>
-            <CardContent className="p-10 pt-0 space-y-8">
-              <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 relative overflow-hidden">
-                <div className="flex justify-between items-start relative z-10">
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-white/40">Remaining</p>
-                    <p className="text-7xl font-black text-white leading-none">{user?.tournamentCredits || 0}</p>
-                  </div>
-                  <div className="text-right space-y-2">
-                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-white/40">Status</p>
-                    <Badge variant="outline" className={cn(
-                      "text-[10px] font-black px-4 h-7 border-2",
-                      (user?.tournamentCredits || 0) > 0 
-                        ? "bg-green-500/20 text-green-400 border-green-500/30" 
-                        : "bg-white/10 text-white/60 border-white/20"
-                    )}>
-                      {(user?.tournamentCredits || 0) > 0 ? 'READY TO DEPLOY' : 'DEPLETED'}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-              <Button className="w-full h-16 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-sm tracking-widest shadow-2xl" onClick={purchasePro}>
-                Buy Tournament Tokens ($50)
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-[3rem] border-none shadow-2xl bg-white overflow-hidden flex flex-col group">
-            <div className="p-10 flex items-center justify-between gap-6 border-b-2">
-              <div className="flex items-center gap-6">
-                <div className="bg-red-50 p-5 rounded-2xl text-red-600">
-                  <TableIcon className="h-10 w-10" />
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight leading-none">Tournament Hub</h3>
-                  <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">Public scores & brackets</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-4xl font-black text-red-600 tracking-tighter">$50</p>
-                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Per Event</p>
-              </div>
-            </div>
-            <div className="p-10 space-y-10 flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-6">
-                <div className="flex items-center gap-3 text-xs font-black uppercase tracking-tight">
-                  <Check className="h-5 w-5 text-red-600 stroke-[4px]" /> 
-                  <span>Public Schedule View</span>
-                </div>
-                <div className="flex items-center gap-3 text-xs font-black uppercase tracking-tight">
-                  <Check className="h-5 w-5 text-red-600 stroke-[4px]" /> 
-                  <span>Dynamic Brackets</span>
-                </div>
-                <div className="flex items-center gap-3 text-xs font-black uppercase tracking-tight">
-                  <Check className="h-5 w-5 text-red-600 stroke-[4px]" /> 
-                  <span>Live Score Updates</span>
-                </div>
-                <div className="flex items-center gap-3 text-xs font-black uppercase tracking-tight">
-                  <Check className="h-5 w-5 text-red-600 stroke-[4px]" /> 
-                  <span>Waiver Management</span>
-                </div>
-              </div>
-            </div>
-          </Card>
-        </div>
-      </section>
 
       <div className="bg-black text-white rounded-[3rem] p-12 flex flex-col md:flex-row items-center justify-between gap-10 shadow-2xl relative overflow-hidden mt-20">
         <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none -rotate-12"><Building className="h-64 w-64" /></div>
