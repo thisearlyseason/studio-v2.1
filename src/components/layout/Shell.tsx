@@ -64,7 +64,7 @@ import {
   SidebarMenuItem, 
   SidebarProvider,
   SidebarSeparator
-} from "@/components/ui/sidebar";
+} from "@/ui/sidebar";
 import BrandLogo from '@/components/BrandLogo';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useMemoFirebase, useCollection, useFirestore } from '@/firebase';
@@ -204,7 +204,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   } = useTeam();
 
   const alertsQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || !db) return null;
+    if (!activeTeam?.id || activeTeam.id === '' || !db) return null;
     return query(
       collection(db, 'teams', activeTeam.id, 'alerts'), 
       orderBy('createdAt', 'desc'), 
@@ -213,11 +213,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }, [activeTeam?.id, db]);
 
   const { data: rawAlerts } = useCollection<TeamAlert>(alertsQuery);
-  const alerts = rawAlerts || []; // Ensure alerts is always an array
+  const alerts = rawAlerts || [];
   const [hasUnreadAlerts, setHasUnreadAlerts] = useState(false);
 
   useEffect(() => {
-    if (!alerts) return;
+    if (!alerts || alerts.length === 0) {
+      setHasUnreadAlerts(false);
+      return;
+    }
     const stored = localStorage.getItem('squad_seen_alerts_ids');
     if (!stored) {
       setHasUnreadAlerts(alerts.length > 0);

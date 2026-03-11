@@ -20,7 +20,6 @@ service cloud.firestore {
     }
 
     function isDemoTeam(tid) {
-      // Use standard string size and slice check for consistent CEL evaluation
       return tid != null && tid.size() >= 5 && tid[0:5] == 'demo_';
     }
 
@@ -46,11 +45,11 @@ service cloud.firestore {
 
     // --- COLLECTION GROUP RULES (Must be top-level for aggregation queries) ---
     match /{path=**}/events/{eventId} {
-      allow list, get: if isSignedIn();
+      allow read: if isSignedIn();
     }
     
     match /{path=**}/registrationEntries/{entryId} {
-      allow list, get: if isSignedIn();
+      allow read: if isSignedIn();
       allow create: if true; 
       allow update: if isSignedIn();
     }
@@ -188,7 +187,7 @@ service cloud.firestore {
       }
 
       match /alerts/{alertId} {
-        allow read: if isTeamMember(teamId);
+        allow read: if isSignedIn() && (isDemoTeam(teamId) || isSuperAdmin() || exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)));
         allow write: if isTeamAdmin(teamId);
       }
 

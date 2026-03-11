@@ -74,7 +74,6 @@ export default function MasterCalendarPage() {
   // Aggregate fetch for all squad events using collectionGroup
   const eventsQuery = useMemoFirebase(() => {
     // SECURITY GUARD: Ensure we don't query before user AND team data is synchronized
-    // This prevents unauthorized root-level (/documents/) queries
     if (!db || !authUser?.uid || !teamIdsString) return null;
     
     const teamIds = teamIdsString.split(',').filter(id => !!id);
@@ -98,7 +97,7 @@ export default function MasterCalendarPage() {
                            event.location.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesTeam && matchesType && matchesSearch;
     });
-  }, [allEvents, selectedTeamIds, setTermSearch = searchTerm]);
+  }, [allEvents, selectedTeamIds, selectedEventTypes, searchTerm]);
 
   // Calendar Logic
   const monthStart = startOfMonth(currentDate);
