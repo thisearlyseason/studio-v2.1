@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@/components/Badge';
 import { 
   MapPin, 
   Clock, 
@@ -80,7 +80,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { format, isSameDay, isPast, addMinutes, addDays, parse } from 'date-fns';
+import { format, isSameDay, isPast, addMinutes, addDays, parse, parseISO } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
 import { generateGoogleCalendarLink, downloadICS } from '@/lib/calendar-utils';
@@ -124,7 +124,7 @@ function calculateTournamentStandings(teams: string[], games: TournamentGame[]) 
     if (!game.isCompleted) return;
     const t1 = game.team1; const t2 = game.team2;
     if (!standings[t1]) standings[t1] = { name: t1, wins: 0, losses: 0, ties: 0, points: 0 };
-    if (!standings[t2]) standings[t2] = { name: t2, wins: 0, losses: 0, ties: 0, teamLogoUrl: '', wins: 0, losses: 0, ties: 0, points: 0 };
+    if (!standings[t2]) standings[t2] = { name: t2, wins: 0, losses: 0, ties: 0, points: 0 };
     if (game.score1 > game.score2) { standings[t1].wins += 1; standings[t1].points += 1; standings[t2].losses += 1; standings[t2].points -= 1; }
     else if (game.score2 > game.score1) { standings[t2].wins += 1; standings[t2].points += 1; standings[t1].losses += 1; standings[t1].points -= 1; }
     else { standings[t1].ties += 1; standings[t2].ties += 1; }
@@ -152,9 +152,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const [genType, setGenType] = useState('round_robin');
   const [genPoolCount, setGenPoolCount] = useState('2');
 
-  const facilityRef = useMemoFirebase(() => event.facilityId ? doc(db!, 'facilities', event.facilityId) : null, [db, event.facilityId]);
+  const facilityRef = useMemoFirebase(() => (db && event.facilityId) ? doc(db, 'facilities', event.facilityId) : null, [db, event.facilityId]);
   const { data: facility } = useDoc<Facility>(facilityRef);
-  const fieldRef = useMemoFirebase(() => (event.facilityId && event.fieldId) ? doc(db!, 'facilities', event.facilityId, 'fields', event.fieldId) : null, [db, event.facilityId, event.fieldId]);
+  const fieldRef = useMemoFirebase(() => (db && event.facilityId && event.fieldId) ? doc(db, 'facilities', event.facilityId, 'fields', event.fieldId) : null, [db, event.facilityId, event.fieldId]);
   const { data: field } = useDoc<Field>(fieldRef);
 
   useEffect(() => {
@@ -303,11 +303,15 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
     }
   };
 
-  const handleCopyLink = (text: string) => {
+  const handleCopyLink = async (text: string) => {
     if (!text) return;
     try {
-      navigator.clipboard.writeText(text);
-      toast({ title: "Link Copied" });
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        toast({ title: "Link Copied" });
+      } else {
+        throw new Error("Clipboard API unavailable");
+      }
     } catch (err) {
       console.warn("Clipboard access denied", err);
       toast({ 
@@ -820,7 +824,7 @@ export default function EventsPage() {
   const { data: rawEvents } = useCollection<TeamEvent>(eventsQuery);
   const allEvents = rawEvents || [];
 
-  const facilitiesQuery = useMemoFirebase(() => db ? query(collection(db, 'facilities'), where('clubId', '==', user?.id || 'none')) : null, [db, user?.id]);
+  const facilitiesQuery = useMemoFirebase(() => (db && user?.id) ? query(collection(db, 'facilities'), where('clubId', '==', user.id)) : null, [db, user?.id]);
   const { data: facilities } = useCollection<Facility>(facilitiesQuery);
 
   const fieldsQuery = useMemoFirebase(() => (db && newFacilityId !== 'manual') ? query(collection(db, 'facilities', newFacilityId, 'fields'), orderBy('name', 'asc')) : null, [db, newFacilityId]);
@@ -871,7 +875,20 @@ export default function EventsPage() {
   const handleCreateEvent = async () => { 
     if (!newTitle || !newDate) return; 
     
-    const dateObj = new Date(`${newDate}T${newTime || '12:00'}`);
+    // Robust date construction to avoid RangeError in strictly parsed ISO formats
+    const parseSafeDate = (dStr: string, tStr: string) => {
+      const [year, month, day] = dStr.split('-').map(Number);
+      const [hours, minutes] = (tStr || '12:00').split(':').map(Number);
+      return new Date(year, month - 1, day, hours, minutes);
+    };
+
+    const dateObj = parseSafeDate(newDate, newTime);
+    
+    if (isNaN(dateObj.getTime())) {
+      toast({ title: "Invalid Date", description: "Please verify the event date and time.", variant: "destructive" });
+      return;
+    }
+
     const payload: any = { 
       title: newTitle, 
       eventType: isTournamentMode ? 'tournament' : eventType,
@@ -894,7 +911,10 @@ export default function EventsPage() {
     }; 
     
     if (isTournamentMode && newEndDate) {
-      payload.endDate = new Date(`${newEndDate}T12:00:00`).toISOString();
+      const endDateObj = parseSafeDate(newEndDate, '23:59');
+      if (!isNaN(endDateObj.getTime())) {
+        payload.endDate = endDateObj.toISOString();
+      }
     }
     
     let success = false;
