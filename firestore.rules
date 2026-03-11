@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -19,8 +20,8 @@ service cloud.firestore {
     }
 
     function isDemoTeam(tid) {
-      // Use slice comparison for maximum CEL compatibility across all operations
-      return tid != null && tid[0:5] == 'demo_';
+      // Use standard string size and slice check for consistent CEL evaluation
+      return tid != null && tid.size() >= 5 && tid[0:5] == 'demo_';
     }
 
     function isTeamMember(teamId) {
