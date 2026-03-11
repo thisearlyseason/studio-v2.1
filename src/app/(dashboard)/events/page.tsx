@@ -33,7 +33,10 @@ import {
   Shield,
   ClipboardList,
   ArrowRight,
-  Target
+  Target,
+  Check,
+  XCircle,
+  HelpCircle
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -50,7 +53,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useTeam, TeamEvent, TournamentGame, EventType, Facility, Field } from '@/components/providers/team-provider';
+import { useTeam, TeamEvent, TournamentGame, EventType, Facility, Field, Member } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useDoc, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy, doc, where } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
@@ -58,6 +61,8 @@ import { toast } from '@/hooks/use-toast';
 import { format, isSameDay, isPast, addMinutes, addDays, parse } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary border-primary text-white',
@@ -134,7 +139,7 @@ interface EventDetailDialogProps {
 }
 
 function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, children }: EventDetailDialogProps) {
-  const { user, updateEvent, signTeamTournamentWaiver, isPro, activeTeam, hasFeature } = useTeam();
+  const { user, updateEvent, signTeamTournamentWaiver, isPro, activeTeam, hasFeature, members } = useTeam();
   const db = useFirestore();
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -240,6 +245,25 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
     } catch (err) { toast({ title: "Copy Failed", variant: "destructive" }); }
   };
 
+  const myRsvp = event.userRsvps?.[user?.id || ''];
+
+  const attendanceGroups = useMemo(() => {
+    const going: Member[] = [];
+    const maybe: Member[] = [];
+    const declined: Member[] = [];
+    const pending: Member[] = [];
+
+    members.forEach(m => {
+      const rsvp = event.userRsvps?.[m.userId];
+      if (rsvp === 'going') going.push(m);
+      else if (rsvp === 'maybe') maybe.push(m);
+      else if (rsvp === 'declined') declined.push(m);
+      else pending.push(m);
+    });
+
+    return { going, maybe, declined, pending };
+  }, [members, event.userRsvps]);
+
   return (
     <Dialog onOpenChange={(open) => { if(!open) setEditingGame(null); }}>
       <DialogTrigger asChild>{children}</DialogTrigger>
@@ -261,9 +285,41 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     <div className="flex items-center gap-3"><MapPin className="h-4 w-4 text-primary" /><span className="truncate">{facility?.name || event.location}</span></div>
                   </div>
                 </div>
+
+                {!event.isTournament && (
+                  <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-500">
+                    <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Deployment RSVP</h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      <Button 
+                        variant={myRsvp === 'going' ? 'default' : 'outline'} 
+                        className={cn("h-12 rounded-xl font-black text-xs uppercase transition-all", myRsvp === 'going' ? "bg-primary border-none shadow-lg shadow-primary/20" : "bg-white/5 border-white/10 text-white")}
+                        onClick={() => updateRSVP(event.id, 'going')}
+                      >
+                        <CheckCircle2 className="h-4 w-4 mr-2" /> I'm Going
+                      </Button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button 
+                          variant={myRsvp === 'maybe' ? 'default' : 'outline'} 
+                          className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'maybe' ? "bg-amber-500 border-none" : "bg-white/5 border-white/10 text-white")}
+                          onClick={() => updateRSVP(event.id, 'maybe')}
+                        >
+                          Maybe
+                        </Button>
+                        <Button 
+                          variant={myRsvp === 'declined' ? 'default' : 'outline'} 
+                          className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'declined' ? "bg-red-600 border-none" : "bg-white/5 border-white/10 text-white")}
+                          onClick={() => updateRSVP(event.id, 'declined')}
+                        >
+                          Decline
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {event.isTournament && (
                   <div className="space-y-4">
-                    <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Leaderboard (+1 Win, -1 Loss)</h4>
+                    <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Leaderboard</h4>
                     {isEliteUnlocked ? (
                       <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
                         {tournamentStandings.map((team) => (
@@ -284,10 +340,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                 <div className="px-6 py-6 border-b bg-muted/30 sticky top-0 z-20 backdrop-blur-md">
                   <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit overflow-x-auto scrollbar-none">
                     {event.isTournament && <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Schedule</TabsTrigger>}
-                    <TabsTrigger value="roster" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Roster</TabsTrigger>
+                    <TabsTrigger value="roster" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Attendance</TabsTrigger>
                     {event.isTournament && <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>}
                     {event.isTournament && isAdmin && <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>}
-                    {isAdmin && <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Manage</TabsTrigger>}
+                    {isAdmin && event.isTournament && <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Manage</TabsTrigger>}
                   </TabsList>
                 </div>
                 <div className="p-10">
@@ -335,8 +391,53 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                       </div>
                     )}
                   </TabsContent>
-                  <TabsContent value="roster" className="mt-0">
-                    <div className="py-20 text-center opacity-30"><Users className="h-12 w-12 mx-auto mb-2" /><p className="text-xs font-black uppercase">Consolidated Roster Intelligence Loading...</p></div>
+                  <TabsContent value="roster" className="mt-0 space-y-10">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 px-1 text-primary"><CheckCircle2 className="h-4 w-4" /><span className="text-[10px] font-black uppercase tracking-widest">Going ({attendanceGroups.going.length})</span></div>
+                        <div className="space-y-2">
+                          {attendanceGroups.going.map(m => (
+                            <div key={m.id} className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-100 rounded-2xl">
+                              <Avatar className="h-8 w-8 rounded-lg border shadow-sm"><AvatarImage src={m.avatar} /><AvatarFallback className="font-black text-[10px]">{m.name[0]}</AvatarFallback></Avatar>
+                              <span className="text-xs font-black uppercase truncate">{m.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 px-1 text-amber-600"><HelpCircle className="h-4 w-4" /><span className="text-[10px] font-black uppercase tracking-widest">Maybe ({attendanceGroups.maybe.length})</span></div>
+                        <div className="space-y-2">
+                          {attendanceGroups.maybe.map(m => (
+                            <div key={m.id} className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-100 rounded-2xl">
+                              <Avatar className="h-8 w-8 rounded-lg border shadow-sm"><AvatarImage src={m.avatar} /><AvatarFallback className="font-black text-[10px]">{m.name[0]}</AvatarFallback></Avatar>
+                              <span className="text-xs font-black uppercase truncate">{m.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 px-1 text-red-600"><XCircle className="h-4 w-4" /><span className="text-[10px] font-black uppercase tracking-widest">Declined ({attendanceGroups.declined.length})</span></div>
+                        <div className="space-y-2">
+                          {attendanceGroups.declined.map(m => (
+                            <div key={m.id} className="flex items-center gap-3 p-3 bg-red-50 border border-red-100 rounded-2xl">
+                              <Avatar className="h-8 w-8 rounded-lg border shadow-sm"><AvatarImage src={m.avatar} /><AvatarFallback className="font-black text-[10px]">{m.name[0]}</AvatarFallback></Avatar>
+                              <span className="text-xs font-black uppercase truncate">{m.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 px-1 text-muted-foreground"><Clock className="h-4 w-4" /><span className="text-[10px] font-black uppercase tracking-widest">Pending ({attendanceGroups.pending.length})</span></div>
+                        <div className="space-y-2">
+                          {attendanceGroups.pending.map(m => (
+                            <div key={m.id} className="flex items-center gap-3 p-3 bg-muted/30 border rounded-2xl opacity-60 grayscale-[0.5]">
+                              <Avatar className="h-8 w-8 rounded-lg border shadow-sm"><AvatarImage src={m.avatar} /><AvatarFallback className="font-black text-[10px]">{m.name[0]}</AvatarFallback></Avatar>
+                              <span className="text-xs font-black uppercase truncate">{m.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </TabsContent>
                   <TabsContent value="portals" className="mt-0 space-y-8">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -528,13 +629,13 @@ export default function EventsPage() {
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time Block</Label>
-                      <div className="flex gap-2">
-                        <div className="flex-1 space-y-1">
+                      <div className="flex flex-col gap-3">
+                        <div className="space-y-1">
                           <p className="text-[8px] font-bold uppercase opacity-40 ml-1">Start</p>
                           <Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" />
                         </div>
-                        <div className="flex-1 space-y-1">
-                          <p className="text-[8px] font-bold uppercase opacity-40 ml-1">End</p>
+                        <div className="space-y-1">
+                          <p className="text-[8px] font-bold uppercase opacity-40 ml-1">End (Optional)</p>
                           <Input type="time" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" />
                         </div>
                       </div>
