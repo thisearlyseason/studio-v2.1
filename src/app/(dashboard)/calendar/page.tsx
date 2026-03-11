@@ -93,8 +93,8 @@ export default function MasterCalendarPage() {
     return allEvents.filter(event => {
       const matchesTeam = selectedTeamIds.includes(event.teamId);
       const matchesType = selectedEventTypes.includes(event.eventType || 'other');
-      const matchesSearch = event.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                           event.location.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = (event.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                           (event.location || '').toLowerCase().includes(searchTerm.toLowerCase());
       return matchesTeam && matchesType && matchesSearch;
     });
   }, [allEvents, selectedTeamIds, selectedEventTypes, searchTerm]);

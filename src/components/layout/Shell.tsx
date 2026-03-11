@@ -64,7 +64,7 @@ import {
   SidebarMenuItem, 
   SidebarProvider,
   SidebarSeparator
-} from "@/ui/sidebar";
+} from "@/components/ui/sidebar";
 import BrandLogo from '@/components/BrandLogo';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useMemoFirebase, useCollection, useFirestore } from '@/firebase';
@@ -217,6 +217,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [hasUnreadAlerts, setHasUnreadAlerts] = useState(false);
 
   useEffect(() => {
+    // SECURITY GUARD: Ensure alerts exist before processing unread counts
     if (!alerts || alerts.length === 0) {
       setHasUnreadAlerts(false);
       return;
@@ -230,7 +231,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       const seenIds = JSON.parse(stored);
       setHasUnreadAlerts(alerts.some(a => !seenIds.includes(a.id)));
     } catch (e) {
-      setHasUnreadAlerts(alerts.length > 0);
+      // Fallback if localStorage parsing fails
+      setHasUnreadAlerts(alerts && alerts.length > 0);
     }
   }, [alerts]);
 
