@@ -1,7 +1,7 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -33,7 +33,8 @@ import {
   ShieldAlert,
   PenTool,
   Package,
-  ArrowRight
+  ArrowRight,
+  Terminal
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -388,7 +389,10 @@ export default function FeedPage() {
               <ShieldAlert className="h-24 w-24" />
             </div>
             <CardHeader className="relative z-10 border-b border-white/10 pb-4">
-              <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Admin Quick Actions</CardTitle>
+              <div className="flex items-center gap-3">
+                <Terminal className="h-4 w-4 text-primary" />
+                <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Admin Quick Actions</CardTitle>
+              </div>
             </CardHeader>
             <CardContent className="p-6 relative z-10 space-y-3">
               <Button asChild variant="ghost" className="w-full justify-between h-12 rounded-xl text-white hover:bg-white/10 hover:text-white px-4 border border-white/5">

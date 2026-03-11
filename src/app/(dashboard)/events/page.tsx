@@ -1,7 +1,7 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -40,7 +40,8 @@ import {
   LayoutGrid,
   Circle,
   Calendar as CalendarIcon,
-  XCircle
+  XCircle,
+  Terminal
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -52,14 +53,6 @@ import {
   DialogFooter,
   DialogClose
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -87,7 +80,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useRouter } from 'next/navigation';
 import { generateGoogleCalendarLink, downloadICS } from '@/lib/calendar-utils';
 import { Switch } from '@/components/ui/switch';
-import Link from 'next/link';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary text-white border-primary',
@@ -529,7 +521,10 @@ export default function EventsPage() {
                     {newFacilityId !== 'manual' && (
                       <Select value={newFieldId} onValueChange={setNewFieldId}>
                         <SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Field/Court" /></SelectTrigger>
-                        <SelectContent className="rounded-xl"><SelectItem value="manual">General</SelectItem>{fields?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="manual">General</SelectItem>
+                          {fields?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+                        </SelectContent>
                       </Select>
                     )}
                     <Input placeholder="Location Label" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-11 rounded-xl font-bold border-2 bg-white" />
