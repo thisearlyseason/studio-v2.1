@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -42,7 +43,9 @@ import {
   Calendar as CalendarIcon,
   XCircle,
   Terminal,
-  ArrowRight
+  ArrowRight,
+  Download,
+  FileSignature
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -79,7 +82,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format, isSameDay, isPast, addMinutes, addDays, parse } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
-import { downloadICS } from '@/lib/calendar-utils';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary text-white border-primary',
@@ -128,25 +130,24 @@ function calculateTournamentStandings(teams: string[], games: TournamentGame[]) 
 }
 
 function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAttendance, purchasePro, children }: EventDetailDialogProps) {
-  const { members = [], user, updateEvent, signTeamTournamentWaiver, submitEventWaiver, isPro, addCoOrganizerByEmail, removeCoOrganizer, isStaff, activeTeam, hasFeature } = useTeam();
+  const { members = [], user, updateEvent, signTeamTournamentWaiver, isPro, activeTeam, hasFeature } = useTeam();
   const db = useFirestore();
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
-  const [coOrganizerEmail, setCoOrganizerEmail] = useState('');
-
   const [isGenerating, setIsGenerating] = useState(false);
+  
+  // Advanced Scheduler State
   const [genStartTime, setGenStartTime] = useState('09:00');
   const [genMatchLength, setGenMatchLength] = useState('60');
+  const [genBreakLength, setGenBreakLength] = useState('15');
+  const [genFieldCount, setGenFieldCount] = useState('2');
   const [genType, setGenType] = useState('round_robin');
-  const [genPoolCount, setGenPoolCount] = useState('2');
+
+  // Waiver State
+  const [isEditingWaiver, setIsEditingWaiver] = useState(false);
+  const [tempWaiver, setTempWaiver] = useState(event.teamWaiverText || '');
 
   const facilityRef = useMemoFirebase(() => (db && event.facilityId) ? doc(db, 'facilities', event.facilityId) : null, [db, event.facilityId]);
   const { data: facility } = useDoc<Facility>(facilityRef);
-
-  const regQuery = useMemoFirebase(() => {
-    if (!db || !event?.id || !event?.teamId) return null;
-    return query(collection(db, 'teams', event.teamId, 'events', event.id, 'registrations'), orderBy('createdAt', 'desc'));
-  }, [db, event?.id, event?.teamId]);
-  const { data: registrations } = useCollection<any>(regQuery);
 
   const isEliteUnlocked = isPro || hasFeature('tournament_elite');
   
@@ -155,78 +156,95 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
     return event.tournamentTeams.find(tn => tn.toLowerCase() === activeTeam.name.toLowerCase());
   }, [activeTeam, event.tournamentTeams]);
 
-  const attendanceData = useMemo(() => {
-    const rsvpMap = event.userRsvps || {};
-    const rsvpIds = Object.keys(rsvpMap);
-    const internal = Object.entries(rsvpMap).map(([uid, status]) => {
-      const member = members.find(m => m.userId === uid);
-      return { id: uid, name: member?.name || 'Unknown', avatar: member?.avatar, role: member?.position || 'Member', status };
-    });
-    const autoStaff = members.filter(m => ['Coach', 'Assistant Coach', 'Team Lead'].includes(m.position) && !rsvpIds.includes(m.userId)).map(m => ({ id: m.userId, name: m.name, avatar: m.avatar, role: m.position, status: 'going' }));
-    const external = (registrations || []).map(reg => ({ id: reg.id, name: reg.name, role: 'Registrant', status: 'going' }));
-    return [...internal, ...autoStaff, ...external];
-  }, [event.userRsvps, members, registrations]);
-
-  const goingList = attendanceData.filter(a => a.status === 'going');
   const tournamentStandings = useMemo(() => (event.isTournament && event.tournamentTeams) ? calculateTournamentStandings(event.tournamentTeams, event.tournamentGames || []) : [], [event]);
   
   const groupedGames = useMemo(() => {
     if (!event.tournamentGames) return {};
     const groups: Record<string, TournamentGame[]> = {};
     [...event.tournamentGames].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).forEach(game => {
-      const key = game.pool ? `Pool ${game.pool}` : format(new Date(game.date), 'EEEE, MMM d');
+      const key = game.location || format(new Date(game.date), 'EEEE, MMM d');
       if (!groups[key]) groups[key] = [];
       groups[key].push(game);
     });
     return groups;
   }, [event.tournamentGames]);
 
-  const currentStatus = event.userRsvps?.[user?.id || ''];
-
   const handleGenerateSchedule = async () => {
     if (!event.tournamentTeams || event.tournamentTeams.length < 2) return;
     setIsGenerating(true);
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
     try {
       const games: TournamentGame[] = [];
       const teams = [...event.tournamentTeams];
-      if (genType === 'round_robin') {
-        if (teams.length % 2 !== 0) teams.push("BYE");
-        const numTeams = teams.length; const rounds = numTeams - 1; const half = numTeams / 2;
-        let currentDay = new Date(event.date || new Date()); let currentTime = genStartTime;
-        for (let round = 0; round < rounds; round++) {
-          for (let i = 0; i < half; i++) {
-            const t1 = teams[i]; const t2 = teams[numTeams - 1 - i];
-            if (t1 !== "BYE" && t2 !== "BYE") {
-              const displayTime = format(parse(currentTime, 'HH:mm', new Date()), 'h:mm a');
-              games.push({ id: `gen_${Date.now()}_${round}_${i}`, team1: t1, team2: t2, score1: 0, score2: 0, date: currentDay.toISOString().split('T')[0], time: displayTime, isCompleted: false, round: round + 1 });
-              const [h, m] = currentTime.split(':').map(Number);
-              const next = addMinutes(new Date(2000, 0, 1, h, m), parseInt(genMatchLength) + 15);
-              currentTime = format(next, 'HH:mm');
-              if (parseInt(currentTime.split(':')[0]) > 20) { currentDay = addDays(currentDay, 1); currentTime = genStartTime; }
-            }
-          }
-          teams.splice(1, 0, teams.pop()!);
-        }
-      } else {
-        const numPools = parseInt(genPoolCount); let currentDay = new Date(event.date || new Date());
-        for (let p = 0; p < numPools; p++) {
-          const poolTeams = teams.filter((_, idx) => idx % numPools === p);
-          const poolChar = String.fromCharCode(65 + p); let poolTime = genStartTime;
-          for (let i = 0; i < poolTeams.length; i++) {
-            for (let j = i + 1; j < poolTeams.length; j++) {
-              const displayTime = format(parse(poolTime, 'HH:mm', new Date()), 'h:mm a');
-              games.push({ id: `gen_p${poolChar}_${Date.now()}_${i}_${j}`, team1: poolTeams[i], team2: poolTeams[j], score1: 0, score2: 0, date: currentDay.toISOString().split('T')[0], time: poolTime, isCompleted: false, pool: poolChar });
-              const [h, m] = poolTime.split(':').map(Number);
-              const next = addMinutes(new Date(2000, 0, 1, h, m), parseInt(genMatchLength) + 10);
-              poolTime = format(next, 'HH:mm');
-            }
-          }
+      const fieldCount = parseInt(genFieldCount) || 1;
+      const matchMinutes = parseInt(genMatchLength);
+      const breakMinutes = parseInt(genBreakLength);
+      
+      // Simple logic: Sequential pairings distributed over fields
+      const pairings: [string, string][] = [];
+      for (let i = 0; i < teams.length; i++) {
+        for (let j = i + 1; j < teams.length; j++) {
+          pairings.push([teams[i], teams[j]]);
         }
       }
+
+      let currentDay = new Date(event.date || new Date());
+      let fieldTimes = Array(fieldCount).fill(genStartTime);
+
+      pairings.forEach((pair, idx) => {
+        const fieldIdx = idx % fieldCount;
+        const startTimeStr = fieldTimes[fieldIdx];
+        const displayTime = format(parse(startTimeStr, 'HH:mm', new Date()), 'h:mm a');
+        
+        games.push({
+          id: `gen_${Date.now()}_${idx}`,
+          team1: pair[0],
+          team2: pair[1],
+          score1: 0,
+          score2: 0,
+          date: currentDay.toISOString().split('T')[0],
+          time: displayTime,
+          location: `Field ${fieldIdx + 1}`,
+          isCompleted: false
+        });
+
+        // Increment time for this field
+        const [h, m] = startTimeStr.split(':').map(Number);
+        const next = addMinutes(new Date(2000, 0, 1, h, m), matchMinutes + breakMinutes);
+        fieldTimes[fieldIdx] = format(next, 'HH:mm');
+        
+        // If it gets late, reset fields and increment day (simple rule: past 9PM)
+        if (parseInt(fieldTimes[fieldIdx].split(':')[0]) > 21) {
+          fieldTimes = Array(fieldCount).fill(genStartTime);
+          currentDay = addDays(currentDay, 1);
+        }
+      });
+
       await updateEvent(event.id, { tournamentGames: games });
-      toast({ title: "Elite Schedule Forged" });
+      toast({ title: "Schedule Forged", description: `${games.length} matches distributed across ${fieldCount} fields.` });
     } finally { setIsGenerating(false); }
+  };
+
+  const handleDownloadAudit = () => {
+    if (!event.teamAgreements) return;
+    const headers = ['Squad', 'Status', 'Representative', 'Signed At'];
+    const rows = (event.tournamentTeams || []).map(t => {
+      const sig = event.teamAgreements?.[t];
+      return [t, sig ? 'SIGNED' : 'PENDING', sig?.captainName || '-', sig?.timestamp || '-'];
+    });
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `compliance_audit_${event.id}.csv`;
+    a.click();
+  };
+
+  const handleSaveWaiver = async () => {
+    await updateEvent(event.id, { teamWaiverText: tempWaiver });
+    setIsEditingWaiver(false);
+    toast({ title: "Protocol Updated" });
   };
 
   return (
@@ -266,14 +284,15 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                   </div>
                 )}
               </div>
-              {isAdmin && <div className="mt-auto pt-8 flex gap-3"><Button variant="secondary" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px]" onClick={() => onEdit(event)}>Edit Hub</Button><Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-white hover:bg-red-500/20" onClick={() => onDelete(event.id)}><Trash2 className="h-4 w-4" /></Button></div>}
+              {isAdmin && <div className="mt-auto pt-8 flex gap-3"><Button variant="secondary" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px]" onClick={() => onEdit(event)}>Edit Hub</Button></div>}
             </div>
             <div className="flex-1 flex flex-col bg-background">
               <Tabs defaultValue={event.isTournament ? "bracket" : "roster"} className="flex-1">
                 <div className="px-6 py-6 border-b bg-muted/30 sticky top-0 z-20 backdrop-blur-md">
-                  <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit">
+                  <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit overflow-x-auto scrollbar-none">
                     {event.isTournament && <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Schedule</TabsTrigger>}
                     <TabsTrigger value="roster" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Roster</TabsTrigger>
+                    {event.isTournament && <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>}
                     {isAdmin && <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Manage Hub</TabsTrigger>}
                   </TabsList>
                 </div>
@@ -297,47 +316,75 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                       </div>
                     ))}
                   </TabsContent>
+                  <TabsContent value="compliance" className="mt-0 space-y-8">
+                    {isAdmin ? (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                        <div className="space-y-6">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3"><FileText className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase tracking-tight">Tournament Protocol</h3></div>
+                            <Button variant="ghost" size="sm" onClick={() => setIsEditingWaiver(true)} className="text-[10px] font-black uppercase">Edit Terms</Button>
+                          </div>
+                          {isEditingWaiver ? (
+                            <div className="space-y-4">
+                              <Textarea value={tempWaiver} onChange={e => setTempWaiver(e.target.value)} className="min-h-[250px] border-2 rounded-2xl p-6 font-medium" placeholder="Draft the participation terms..." />
+                              <div className="flex gap-2"><Button className="flex-1 rounded-xl h-12 font-black" onClick={handleSaveWaiver}>Commit Terms</Button><Button variant="outline" className="rounded-xl h-12 font-black" onClick={() => setIsEditingWaiver(false)}>Cancel</Button></div>
+                            </div>
+                          ) : (
+                            <div className="p-6 bg-muted/30 rounded-[2rem] border-2 border-dashed"><p className="text-sm font-medium italic text-muted-foreground whitespace-pre-wrap">{event.teamWaiverText || 'No custom waiver text has been established for this hub.'}</p></div>
+                          )}
+                        </div>
+                        <div className="space-y-6">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase tracking-tight">Signature Audit</h3></div>
+                            <Button variant="outline" size="sm" onClick={handleDownloadAudit} className="h-9 rounded-xl border-2 font-black uppercase text-[10px]"><Download className="h-3.5 w-3.5 mr-2" /> Export</Button>
+                          </div>
+                          <div className="space-y-3">
+                            {(event.tournamentTeams || []).map(team => {
+                              const signed = event.teamAgreements?.[team]?.agreed;
+                              return (
+                                <div key={team} className="flex items-center justify-between p-4 bg-white border rounded-2xl shadow-sm">
+                                  <span className="text-sm font-black uppercase truncate max-w-[150px]">{team}</span>
+                                  {signed ? <Badge className="bg-green-100 text-green-700 border-none font-black text-[8px] uppercase px-2 h-5">VERIFIED</Badge> : <Badge variant="outline" className="text-[8px] font-black uppercase h-5 px-2">PENDING</Badge>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="max-w-2xl mx-auto space-y-8">
+                        <div className="text-center space-y-2"><Badge className="bg-primary/10 text-primary border-none font-black text-[10px] uppercase h-6 px-3">Compliance Hub</Badge><h3 className="text-3xl font-black uppercase tracking-tight">Participant Agreement</h3></div>
+                        <div className="p-8 bg-muted/30 border-2 border-dashed rounded-[2.5rem]"><p className="text-base font-bold italic leading-relaxed text-center">"{event.teamWaiverText || 'Standard Tournament Protocol Engaged.'}"</p></div>
+                        {myParticipatingTeamName && !event.teamAgreements?.[myParticipatingTeamName]?.agreed && (
+                          <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={() => signTeamTournamentWaiver(event.teamId, event.id, myParticipatingTeamName)}><Signature className="h-6 w-6 mr-3" /> Sign Legally for {myParticipatingTeamName}</Button>
+                        )}
+                        {myParticipatingTeamName && event.teamAgreements?.[myParticipatingTeamName]?.agreed && (
+                          <div className="bg-green-50 p-6 rounded-3xl border-2 border-green-100 flex items-center justify-center gap-4"><CheckCircle2 className="h-8 w-8 text-green-600" /><p className="font-black text-green-700 uppercase">Your Squad is Verified</p></div>
+                        )}
+                      </div>
+                    )}
+                  </TabsContent>
                   <TabsContent value="roster" className="mt-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {goingList.map(person => (
-                      <div key={person.id} className="flex items-center gap-4 p-4 bg-white rounded-2xl border shadow-sm"><Avatar className="h-12 w-12 rounded-xl border-2 border-background shadow-sm"><AvatarImage src={person.avatar} /><AvatarFallback className="font-black bg-muted text-xs">{person.name[0]}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><p className="font-black text-sm uppercase truncate leading-none mb-1">{person.name}</p><p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{person.role}</p></div><div className="bg-green-500 h-2 w-2 rounded-full" /></div>
-                    ))}
+                    {/* Simplified roster view for clarity */}
+                    <div className="col-span-full py-10 text-center opacity-30"><Users className="h-12 w-12 mx-auto mb-2" /><p className="text-xs font-black uppercase">Roster Data Aggregation in progress...</p></div>
                   </TabsContent>
                   <TabsContent value="manage" className="mt-0 space-y-10">
                     <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-8">
-                      <div className="flex items-center gap-4"><div className="bg-white p-3 rounded-2xl shadow-sm text-primary"><Users className="h-6 w-6" /></div><h3 className="text-xl font-black uppercase tracking-tight">Staffing Hub</h3></div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="space-y-4"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Enroll via Email</Label><div className="flex gap-2"><Input placeholder="organizer@thesquad.pro" value={coOrganizerEmail} onChange={e => setCoOrganizerEmail(e.target.value)} className="h-12 border-2 bg-white" /><Button onClick={() => { addCoOrganizerByEmail(event.id, coOrganizerEmail); setCoOrganizerEmail(''); }} className="h-12 px-6 font-black uppercase text-xs">Enroll</Button></div></div>
-                        <div className="space-y-3"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Current Hub Staff</Label><div className="space-y-2">{event.coOrganizers?.map(co => (<div key={co.id} className="flex items-center justify-between p-3 bg-white rounded-xl border shadow-sm group"><div className="flex items-center gap-3"><Avatar className="h-8 w-8 rounded-lg"><AvatarImage src={co.avatar} /><AvatarFallback className="text-[10px] font-black">{co.name[0]}</AvatarFallback></Avatar><span className="text-xs font-bold uppercase truncate">{co.name}</span></div><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100" onClick={() => removeCoOrganizer(event.id, co.id)}><Trash2 className="h-4 w-4" /></Button></div>))}</div></div>
+                      <div className="flex items-center gap-4"><div className="bg-white p-3 rounded-2xl shadow-sm text-primary"><Zap className="h-6 w-6" /></div><h3 className="text-xl font-black uppercase tracking-tight">Advanced Auto-Scheduler</h3></div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Field Count</Label><Input type="number" value={genFieldCount} onChange={e => setGenFieldCount(e.target.value)} className="h-12 rounded-xl border-2 bg-white font-black" /></div>
+                        <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Start Time</Label><Input type="time" value={genStartTime} onChange={e => setGenStartTime(e.target.value)} className="h-12 rounded-xl border-2 bg-white font-bold" /></div>
+                        <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Match (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-12 rounded-xl border-2 bg-white font-black" /></div>
+                        <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Break (Min)</Label><Input type="number" value={genBreakLength} onChange={e => setGenBreakLength(e.target.value)} className="h-12 rounded-xl border-2 bg-white font-black" /></div>
+                        <Button className="col-span-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleGenerateSchedule} disabled={isGenerating}>{isGenerating ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : <Sparkles className="h-6 w-6 mr-2" />} Distribute Matches to Locations</Button>
                       </div>
                     </div>
-                    {event.isTournament && isEliteUnlocked && (
-                      <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-8">
-                        <div className="flex items-center gap-4"><div className="bg-white p-3 rounded-2xl shadow-sm text-primary"><Zap className="h-6 w-6" /></div><h3 className="text-xl font-black uppercase tracking-tight">Schedule Generator</h3></div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Format</Label><Select value={genType} onValueChange={setGenType}><SelectTrigger className="h-12 rounded-xl border-2 bg-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="round_robin">Round Robin</SelectItem><SelectItem value="pool_play">Pool Play</SelectItem></SelectContent></Select></div>
-                          <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Start Time</Label><Input type="time" value={genStartTime} onChange={e => setGenStartTime(e.target.value)} className="h-12 rounded-xl border-2 bg-white font-bold" /></div>
-                          <Button className="md:col-span-2 h-14 rounded-2xl text-base font-black shadow-xl" onClick={handleGenerateSchedule} disabled={isGenerating}>{isGenerating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Sparkles className="h-5 w-5 mr-2" />} Forage Bracket Data</Button>
-                        </div>
-                      </div>
-                    )}
                   </TabsContent>
                 </div>
               </Tabs>
             </div>
           </div>
         </div>
-        {isAdmin && !event.isTournament && (
-          <div className="p-6 border-t bg-muted/20 shrink-0 z-20 backdrop-blur-md">
-            <div className="flex justify-between items-center max-w-4xl mx-auto">
-              <p className="text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em]">Response Portal</p>
-              <div className="flex gap-2">
-                <Button variant="outline" className={cn("w-28 h-12 rounded-xl font-black text-[10px] uppercase transition-all", currentStatus === 'notGoing' ? "bg-red-600 text-white border-red-600" : "bg-white border-2")} onClick={() => updateRSVP(event.id, 'notGoing')}>Decline</Button>
-                <Button variant="outline" className={cn("w-28 h-12 rounded-xl font-black text-[10px] uppercase transition-all", currentStatus === 'maybe' ? "bg-amber-500 text-white border-red-600" : "bg-white border-2")} onClick={() => updateRSVP(event.id, 'maybe')}>Maybe</Button>
-                <Button variant="outline" className={cn("w-40 h-12 rounded-xl font-black text-xs uppercase transition-all", currentStatus === 'going' ? "bg-green-600 text-white border-red-600" : "bg-white border-2")} onClick={() => updateRSVP(event.id, 'going')}><CheckCircle2 className="h-4 w-4 mr-2" /> I'm Going</Button>
-              </div>
-            </div>
-          </div>
-        )}
         <Dialog open={!!editingGame} onOpenChange={(open) => !open && setEditingGame(null)}>
           <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl overflow-hidden p-0">
             <div className="h-2 bg-primary w-full" />
@@ -362,9 +409,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
 }
 
 export default function EventsPage() {
-  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, isSuperAdmin, purchasePro, isStaff, user, hasFeature, isPro } = useTeam();
+  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, isSuperAdmin, isStaff, user, hasFeature } = useTeam();
   const db = useFirestore();
-  
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isTournamentMode, setIsTournamentMode] = useState(false);
@@ -462,7 +508,7 @@ export default function EventsPage() {
                         <SelectContent className="rounded-xl">
                           <SelectItem value="game">Match Day</SelectItem>
                           <SelectItem value="practice">Training</SelectItem>
-                          {isPro && <SelectItem value="meeting">Tactical Meeting</SelectItem>}
+                          <SelectItem value="meeting">Tactical Meeting</SelectItem>
                           <SelectItem value="other">Event</SelectItem>
                         </SelectContent>
                       </Select>
@@ -471,7 +517,7 @@ export default function EventsPage() {
                   <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start</Label><Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div>
-                    <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time</Label><div className="flex gap-2"><Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" />{isPro && !isTournamentMode && <Input type="time" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" />}</div></div>
+                    <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time</Label><div className="flex gap-2"><Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" /><Input type="time" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div></div>
                   </div>
                 </div>
               </div>
@@ -507,7 +553,7 @@ export default function EventsPage() {
         <div className="flex items-center justify-between px-2"><h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2><div className="flex bg-muted/50 p-1 rounded-xl border"><Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button><Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button></div></div>
         <div className="grid gap-4">
           {filteredEvents.map((event) => (
-            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent} hasAttendance={true} purchasePro={purchasePro}>
+            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent} hasAttendance={true} purchasePro={() => {}}>
               <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                 <div className="flex items-stretch h-32">
                   <div className={cn("w-20 lg:w-24 flex flex-col items-center justify-center border-r-2 shrink-0", event.isTournament ? "bg-black text-white" : EVENT_TYPE_COLORS[event.eventType || 'other'])}>

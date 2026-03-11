@@ -436,9 +436,11 @@ const clean = (obj: any): any => {
 
 const parseTimeToMinutes = (timeStr: string) => {
   if (!timeStr || timeStr === 'TBD') return 0;
-  const [time, period] = timeStr.split(' ');
-  if (!time) return 0;
-  let [hours, minutes] = time.split(':').map(Number);
+  const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!match) return 0;
+  let hours = parseInt(match[1]);
+  const minutes = parseInt(match[2]);
+  const period = match[3].toUpperCase();
   if (period === 'PM' && hours !== 12) hours += 12;
   if (period === 'AM' && hours === 12) hours = 0;
   return hours * 60 + (minutes || 0);
@@ -756,8 +758,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!snap.exists()) return;
       const poll = snap.data().poll; const current = poll.voters?.[firebaseUser.uid];
       const u: any = { [`poll.voters.${firebaseUser.uid}`]: optIdx };
-      if (current === undefined) { u[`poll.options.${optionIdx}.votes`] = increment(1); u['poll.totalVotes'] = increment(1); }
-      else if (current !== optIdx) { u[`poll.options.${current}.votes`] = increment(-1); u[`poll.options.${optionIdx}.votes`] = increment(1); }
+      if (current === undefined) { u[`poll.options.${optIdx}.votes`] = increment(1); u['poll.totalVotes'] = increment(1); }
+      else if (current !== optIdx) { u[`poll.options.${current}.votes`] = increment(-1); u[`poll.options.${optIdx}.votes`] = increment(1); }
       await updateDoc(ref, u);
     },
     formatTime: (date: string | Date) => { return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); },
