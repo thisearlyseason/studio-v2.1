@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -212,7 +212,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   const copyToClipboard = (text: string) => {
     try {
       navigator.clipboard.writeText(text);
-      toast({ title: "Link Copied", description: "URL is ready to share." });
+      toast({ title: "Link Synchronized", description: "URL is ready to share." });
     } catch (err) {
       toast({ title: "Copy Failed", variant: "destructive" });
     }
