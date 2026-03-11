@@ -420,7 +420,7 @@ const parseTimeToMinutes = (timeStr: string) => {
 };
 
 export function TeamProvider({ children }: { children: ReactNode }) {
-  const { user: firebaseUser, isUserLoading } = useUser();
+  const { user: firebaseUser, isUserLoading, isAuthResolved } = useUser();
   const db = useFirestore();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -434,13 +434,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   
   const hasStartedSeeding = useRef<string | null>(null);
 
-  // DEFENSIVE: All subscriptions wait for auth resolution to prevent root-level listing errors
-  const plansQuery = useMemoFirebase(() => (db && firebaseUser) ? collection(db, 'plans') : null, [db, firebaseUser]);
+  // DEFENSIVE: Global catalog queries strictly wait for auth resolution
+  const plansQuery = useMemoFirebase(() => (db && isAuthResolved && firebaseUser) ? collection(db, 'plans') : null, [db, isAuthResolved, firebaseUser]);
   const { data: plansData, isLoading: isPlansLoading } = useCollection(plansQuery);
   const plans = plansData || [];
 
   useEffect(() => {
-    if (!firebaseUser?.uid || !db) return;
+    if (!firebaseUser?.uid || !db || !isAuthResolved) return;
     return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
@@ -459,19 +459,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         });
       }
     });
-  }, [firebaseUser?.uid, db]);
+  }, [firebaseUser?.uid, db, isAuthResolved]);
 
   useEffect(() => {
-    if (!firebaseUser?.uid || !db || userProfile?.role !== 'parent') return;
+    if (!firebaseUser?.uid || !db || !isAuthResolved || userProfile?.role !== 'parent') return;
     const q = query(collection(db, 'players'), where('parentId', '==', firebaseUser.uid));
     return onSnapshot(q, (snap) => {
       setMyChildren(snap.docs.map(d => ({ id: d.id, ...d.data() } as PlayerProfile)));
     });
-  }, [firebaseUser?.uid, db, userProfile?.role]);
+  }, [firebaseUser?.uid, db, userProfile?.role, isAuthResolved]);
 
   useEffect(() => {
     const seedParam = searchParams.get('seed_demo');
-    if (!seedParam || !firebaseUser?.uid || isSeedingDemo) return;
+    if (!seedParam || !firebaseUser?.uid || isSeedingDemo || !isAuthResolved) return;
 
     const seedKey = `${firebaseUser.uid}_${seedParam}`;
     if (hasStartedSeeding.current === seedKey || sessionStorage.getItem(`squad_seeded_${seedKey}`)) return;
@@ -495,12 +495,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       }
     };
     runSeed();
-  }, [searchParams, firebaseUser?.uid, db, isSeedingDemo]);
+  }, [searchParams, firebaseUser?.uid, db, isSeedingDemo, isAuthResolved]);
 
   const teamsQuery = useMemoFirebase(() => {
-    if (!firebaseUser?.uid || !db) return null;
+    if (!firebaseUser?.uid || !db || !isAuthResolved) return null;
     return query(collection(db, 'users', firebaseUser.uid, 'teamMemberships'));
-  }, [firebaseUser?.uid, db]);
+  }, [firebaseUser?.uid, db, isAuthResolved]);
 
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
@@ -530,16 +530,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [teams, activeTeamId]);
 
   const membersQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || activeTeam.id === '' || !db) return null;
+    if (!activeTeam?.id || activeTeam.id === '' || !db || !isAuthResolved) return null;
     return query(collection(db, 'teams', activeTeam.id, 'members'));
-  }, [activeTeam?.id, db]);
+  }, [activeTeam?.id, db, isAuthResolved]);
   const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
   const members = useMemo(() => membersData || [], [membersData]);
 
   const alertsQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || activeTeam.id === '' || !db) return null;
+    if (!activeTeam?.id || activeTeam.id === '' || !db || !isAuthResolved) return null;
     return query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10));
-  }, [activeTeam?.id, db]);
+  }, [activeTeam?.id, db, isAuthResolved]);
   const { data: alertsData } = useCollection<TeamAlert>(alertsQuery);
   const alerts = useMemo(() => alertsData || [], [alertsData]);
 

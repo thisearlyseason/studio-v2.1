@@ -44,10 +44,10 @@ service cloud.firestore {
 
     /**
      * @description Enforces strict ownership over the user's root profile.
-     * Accessible by authenticated users (including demo accounts with custom UID).
+     * Explicitly allows demo/custom auth users who have a UID but potentially no email.
      */
     match /users/{userId}/{document=**} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
     /**

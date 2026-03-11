@@ -84,8 +84,9 @@ export function useCollection<T = any>(
       // If path cannot be determined, treat as uninitialized
     }
 
-    // 3. Skip root-level or empty paths that trigger security denials
-    if (!path || path === '/' || path === '.' || path === '(default)') {
+    // 3. Skip root-level, empty, or uninitialized paths that trigger security denials
+    const trimmedPath = (path || '').trim();
+    if (!trimmedPath || trimmedPath === '/' || trimmedPath === '.' || trimmedPath === '(default)' || trimmedPath.includes('//')) {
       setData(null);
       setIsLoading(false);
       setError(null);
@@ -107,9 +108,10 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (error: FirestoreError) => {
+        // Double check if path is actually root during error handling
         const contextualError = new FirestorePermissionError({
           operation: 'list',
-          path,
+          path: trimmedPath || '/',
         })
 
         setError(contextualError)

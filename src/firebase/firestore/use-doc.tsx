@@ -48,8 +48,17 @@ export function useDoc<T = any>(
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
-    // Early return for null or root-level refs
-    if (!memoizedDocRef || !memoizedDocRef.path || memoizedDocRef.path === '/' || memoizedDocRef.path === '.') {
+    // 1. Early return if reference is not provided
+    if (!memoizedDocRef) {
+      setData(null);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
+
+    // 2. Skip root-level, empty, or uninitialized paths
+    const path = (memoizedDocRef.path || '').trim();
+    if (!path || path === '/' || path === '.' || path.includes('//')) {
       setData(null);
       setIsLoading(false);
       setError(null);
@@ -73,7 +82,7 @@ export function useDoc<T = any>(
       (error: FirestoreError) => {
         const contextualError = new FirestorePermissionError({
           operation: 'get',
-          path: memoizedDocRef.path,
+          path: path || '/',
         })
 
         setError(contextualError)
