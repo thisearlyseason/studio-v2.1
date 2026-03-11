@@ -19,7 +19,8 @@ import {
   increment,
   arrayUnion,
   getDoc,
-  deleteField
+  deleteField,
+  collectionGroup
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -602,7 +603,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         description: description || '', 
         teamLogoUrl: '', 
         heroImageUrl: '', 
-        sport: 'Multi-Sport' 
+        sport: 'Multi-Sport',
+        members: { [firebaseUser.uid]: 'admin' }
       });
       batch.set(doc(db, 'teams', tid), teamData);
       batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ id: firebaseUser.uid, userId: firebaseUser.uid, teamId: tid, role: 'Admin', position: pos, name: userProfile?.name || 'Coach', avatar: userProfile?.avatar || '', joinedAt: new Date().toISOString(), jersey: 'HQ' }));
@@ -662,6 +664,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         teamLogoUrl: tData.teamLogoUrl || '', 
         sport: tData.sport || 'Multi-Sport' 
       }));
+      
+      batch.update(doc(db, 'teams', tid), { [`members.${firebaseUser.uid}`]: 'member' });
       
       await batch.commit();
       toast({ title: "Welcome to the Squad!" });

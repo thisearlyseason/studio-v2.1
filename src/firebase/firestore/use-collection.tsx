@@ -33,6 +33,7 @@ export interface InternalQuery extends Query<DocumentData> {
     path: {
       canonicalString(): string;
       toString(): string;
+      isEmpty(): boolean;
     }
   }
 }
@@ -62,7 +63,11 @@ export function useCollection<T = any>(
 
     // 2. Extract path to verify it's not root (preventing "documents//" errors)
     let path = '';
+    let isCollectionGroup = false;
     try {
+      // @ts-ignore - internal property
+      isCollectionGroup = memoizedTargetRefOrQuery._query?.path?.isEmpty?.() || false;
+      
       // @ts-ignore - type exists on internal query
       if (memoizedTargetRefOrQuery.type === 'collection') {
         path = (memoizedTargetRefOrQuery as CollectionReference).path;
@@ -74,16 +79,11 @@ export function useCollection<T = any>(
 
     // 3. Skip root-level, empty, or uninitialized paths that trigger security denials
     const trimmedPath = (path || '').trim();
-    if (!trimmedPath || trimmedPath === '/' || trimmedPath === '.' || trimmedPath === '(default)' || trimmedPath.includes('//')) {
-      // Only return early for standard collections. collectionGroup paths are often empty in memory.
-      // @ts-ignore - internal property
-      const isCollectionGroup = memoizedTargetRefOrQuery._query?.path?.isEmpty?.() || false;
-      if (!isCollectionGroup) {
-        setData(null);
-        setIsLoading(false);
-        setError(null);
-        return;
-      }
+    if (!isCollectionGroup && (!trimmedPath || trimmedPath === '/' || trimmedPath === '.' || trimmedPath === '(default)' || trimmedPath.includes('//'))) {
+      setData(null);
+      setIsLoading(false);
+      setError(null);
+      return;
     }
 
     setIsLoading(true);

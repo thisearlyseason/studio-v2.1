@@ -18,6 +18,13 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'thisearlyseason@gmail.com' || 
+        request.auth.token.email == 'test@gmail.com'
+      );
+    }
+
     // --- COLLECTION RULES ---
 
     /**
@@ -38,6 +45,18 @@ service cloud.firestore {
 
     match /leads/{leadId} {
       allow create: if true;
+    }
+
+    match /facilities/{facilityId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (
+        resource.data.clubId == request.auth.uid || 
+        isSuperAdmin()
+      );
+      
+      match /fields/{fieldId} {
+        allow read, write: if isSignedIn();
+      }
     }
 
     match /teams/{teamId} {
