@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/Badge';
+import { Badge } from '@/components/ui/badge';
 import { 
   MapPin, 
   Clock, 
@@ -741,7 +741,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
           </DialogContent>
         </Dialog>
 
-        <Dialog open={!!editingGame} onOpenChange={(o) => !o && setEditingGame(null)}>
+        <Dialog open={!!editingGame} onOpenChange={(open) => !open && setEditingGame(null)}>
           <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl overflow-hidden p-0">
             <div className="h-2 bg-primary w-full" />
             <div className="p-8 space-y-6">
@@ -877,6 +877,7 @@ export default function EventsPage() {
     
     // Robust date construction to avoid RangeError in strictly parsed ISO formats
     const parseSafeDate = (dStr: string, tStr: string) => {
+      if (!dStr) return new Date(NaN);
       const [year, month, day] = dStr.split('-').map(Number);
       const [hours, minutes] = (tStr || '12:00').split(':').map(Number);
       return new Date(year, month - 1, day, hours, minutes);
@@ -924,6 +925,25 @@ export default function EventsPage() {
     if (success) {
       setIsCreateOpen(false); 
       resetForm(); 
+    }
+  };
+
+  const handleCopyLink = async (text: string) => {
+    if (!text) return;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        toast({ title: "Link Copied" });
+      } else {
+        throw new Error("Clipboard API unavailable");
+      }
+    } catch (err) {
+      console.warn("Clipboard access denied", err);
+      toast({ 
+        title: "Copy Failed", 
+        description: "Your browser restricted clipboard access.", 
+        variant: "destructive" 
+      });
     }
   };
 

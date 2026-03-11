@@ -70,7 +70,7 @@ service cloud.firestore {
       }
       
       match /registrationEntries/{entryId} {
-        allow read: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin() || resource.data.get('assigned_team_owner_id', '') == request.auth.uid);
+        allow list, get: if isSignedIn();
         allow create: if true;
         allow update, delete: if isSignedIn() && (get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid || isSuperAdmin());
       }
@@ -130,8 +130,7 @@ service cloud.firestore {
       }
 
       match /groupChats/{chatId} {
-        allow list: if isTeamMember(teamId);
-        allow get, create, update: if isTeamMember(teamId);
+        allow list, get, create, update: if isTeamMember(teamId);
         
         match /messages/{messageId} {
           allow read, create, update: if isTeamMember(teamId);
