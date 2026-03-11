@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -41,7 +42,7 @@ import { useTeam } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, limit, doc, increment, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, doc, increment, arrayUnion, arrayRemove, getDoc, updateDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { 
   Dialog, 

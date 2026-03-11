@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -62,13 +63,8 @@ const EVENT_TYPE_COLORS: Record<EventType, string> = {
   other: 'bg-slate-600 text-white border-slate-600',
 };
 
-/**
- * Normalizes various time string formats into standard HH:mm for ISO construction.
- */
 const normalizeTime = (t: string) => {
   if (!t || t === 'TBD') return '12:00';
-  
-  // Handle AM/PM format (e.g. "02:40 PM")
   if (t.toUpperCase().includes('M')) {
     const parts = t.trim().split(/\s+/);
     const timePart = parts[0];
@@ -80,8 +76,6 @@ const normalizeTime = (t: string) => {
     if (period === 'AM' && h === 12) h = 0;
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
   }
-  
-  // Handle standard HH:mm format
   return t.includes(':') ? t : '12:00';
 };
 
@@ -93,8 +87,7 @@ function calculateTournamentStandings(teams: string[], games: TournamentGame[]) 
   games.forEach(game => {
     if (!game.isCompleted) return;
     const t1 = game.team1; const t2 = game.team2;
-    if (!standings[t1]) standings[t1] = { name: t1, wins: 0, losses: 0, ties: 0, points: 0 };
-    if (!standings[t2]) standings[t2] = { name: t2, wins: 0, losses: 0, ties: 0, points: 0 };
+    if (!standings[t1] || !standings[t2]) return;
     if (game.score1 > game.score2) { standings[t1].wins += 1; standings[t1].points += 1; standings[t2].losses += 1; standings[t2].points -= 1; }
     else if (game.score2 > game.score1) { standings[t2].wins += 1; standings[t2].points += 1; standings[t1].losses += 1; standings[t1].points -= 1; }
     else { standings[t1].ties += 1; standings[t2].ties += 1; }
@@ -142,14 +135,12 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   const { data: facility } = useDoc<Facility>(facilityRef);
 
   const isEliteUnlocked = isPro || hasFeature('tournament_elite');
-  
   const myParticipatingTeamName = useMemo(() => {
     if (!event.tournamentTeams || !activeTeam) return null;
     return event.tournamentTeams.find(tn => tn.toLowerCase() === activeTeam.name.toLowerCase());
   }, [activeTeam, event.tournamentTeams]);
 
   const tournamentStandings = useMemo(() => (event.isTournament && event.tournamentTeams) ? calculateTournamentStandings(event.tournamentTeams, event.tournamentGames || []) : [], [event]);
-  
   const groupedGames = useMemo(() => {
     if (!event.tournamentGames) return {};
     const groups: Record<string, TournamentGame[]> = {};
@@ -171,42 +162,22 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
       const fieldCount = parseInt(genFieldCount) || 1;
       const matchMinutes = parseInt(genMatchLength);
       const breakMinutes = parseInt(genBreakLength);
-      
       const pairings: [string, string][] = [];
       for (let i = 0; i < teams.length; i++) {
         for (let j = i + 1; j < teams.length; j++) pairings.push([teams[i], teams[j]]);
       }
-
       let currentDay = new Date(event.date);
       let fieldTimes = Array(fieldCount).fill(genStartTime);
-
       pairings.forEach((pair, idx) => {
         const fieldIdx = idx % fieldCount;
         const startTimeStr = fieldTimes[fieldIdx];
         const displayTime = format(parse(startTimeStr, 'HH:mm', new Date()), 'h:mm a');
-        
-        games.push({
-          id: `gen_${Date.now()}_${idx}`,
-          team1: pair[0],
-          team2: pair[1],
-          score1: 0,
-          score2: 0,
-          date: currentDay.toISOString().split('T')[0],
-          time: displayTime,
-          location: `Field ${fieldIdx + 1}`,
-          isCompleted: false
-        });
-
+        games.push({ id: `gen_${Date.now()}_${idx}`, team1: pair[0], team2: pair[1], score1: 0, score2: 0, date: currentDay.toISOString().split('T')[0], time: displayTime, location: `Field ${fieldIdx + 1}`, isCompleted: false });
         const [h, m] = startTimeStr.split(':').map(Number);
         const next = addMinutes(new Date(2000, 0, 1, h, m), matchMinutes + breakMinutes);
         fieldTimes[fieldIdx] = format(next, 'HH:mm');
-        
-        if (parseInt(fieldTimes[fieldIdx].split(':')[0]) > 21) {
-          fieldTimes = Array(fieldCount).fill(genStartTime);
-          currentDay = addDays(currentDay, 1);
-        }
+        if (parseInt(fieldTimes[fieldIdx].split(':')[0]) > 21) { fieldTimes = Array(fieldCount).fill(genStartTime); currentDay = addDays(currentDay, 1); }
       });
-
       await updateEvent(event.id, { tournamentGames: games });
       toast({ title: "Itinerary Generated" });
     } finally { setIsGenerating(false); }
@@ -222,13 +193,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
-        toast({ title: "Link Synchronized", description: "URL is ready to share." });
-      } else {
-        throw new Error("Clipboard API unavailable");
-      }
-    } catch (err) {
-      toast({ title: "Copy Failed", description: "Browser restricted clipboard access.", variant: "destructive" });
-    }
+        toast({ title: "Link Synchronized" });
+      } else { throw new Error("Blocked"); }
+    } catch (err) { toast({ title: "Copy Failed", variant: "destructive" }); }
   };
 
   return (
@@ -289,7 +256,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           {games.map((game) => (
                             <button key={game.id} onClick={() => isAdmin && setEditingGame(game)} className="w-full p-5 bg-white rounded-3xl border shadow-sm transition-all text-left relative overflow-hidden group ring-1 ring-black/5 active:scale-95">
-                              {game.isDisputed && <Badge className="absolute top-2 right-2 bg-red-600 text-white font-black text-[7px] uppercase px-1.5 h-4">DISPUTED</Badge>}
                               <div className="flex justify-between items-center mb-4"><Badge variant="outline" className="text-[8px] font-black uppercase">{game.time}</Badge>{game.isCompleted && <Badge className="text-[8px] font-black uppercase h-5 px-2 bg-black text-white border-none">Final</Badge>}</div>
                               <div className="grid grid-cols-7 items-center gap-4 text-center">
                                 <div className="col-span-3"><p className="font-black text-xs uppercase truncate">{game.team1}</p><p className="text-3xl font-black">{game.score1}</p></div>
@@ -306,32 +272,16 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     {isAdmin ? (
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                         <div className="space-y-6">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3"><FileText className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase tracking-tight">Tournament Protocol</h3></div>
-                            <Button variant="ghost" size="sm" onClick={() => setIsEditingWaiver(true)} className="text-[10px] font-black uppercase">Edit Terms</Button>
-                          </div>
+                          <div className="flex items-center justify-between"><div className="flex items-center gap-3"><FileText className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase tracking-tight">Tournament Protocol</h3></div><Button variant="ghost" size="sm" onClick={() => setIsEditingWaiver(true)} className="text-[10px] font-black uppercase">Edit Terms</Button></div>
                           {isEditingWaiver ? (
-                            <div className="space-y-4">
-                              <Textarea value={tempWaiver} onChange={e => setTempWaiver(e.target.value)} className="min-h-[250px] border-2 rounded-2xl p-6 font-medium" />
-                              <div className="flex gap-2"><Button className="flex-1 rounded-xl h-12 font-black" onClick={handleSaveWaiver}>Commit Terms</Button><Button variant="outline" className="rounded-xl h-12 font-black" onClick={() => setIsEditingWaiver(false)}>Cancel</Button></div>
-                            </div>
+                            <div className="space-y-4"><Textarea value={tempWaiver} onChange={e => setTempWaiver(e.target.value)} className="min-h-[250px] border-2 rounded-2xl p-6 font-medium" /><div className="flex gap-2"><Button className="flex-1 rounded-xl h-12 font-black" onClick={handleSaveWaiver}>Commit Terms</Button><Button variant="outline" className="rounded-xl h-12 font-black" onClick={() => setIsEditingWaiver(false)}>Cancel</Button></div></div>
                           ) : (
                             <div className="p-6 bg-muted/30 rounded-[2rem] border-2 border-dashed"><p className="text-sm font-medium italic text-muted-foreground whitespace-pre-wrap">{event.teamWaiverText || 'Standard participation protocol.'}</p></div>
                           )}
                         </div>
                         <div className="space-y-6">
                           <div className="flex items-center justify-between"><h3 className="text-xl font-black uppercase tracking-tight">Audit Trail</h3><Button variant="outline" size="sm" className="h-9 rounded-xl border-2 font-black uppercase text-[10px]">Export Ledger</Button></div>
-                          <div className="space-y-3">
-                            {(event.tournamentTeams || []).map(team => {
-                              const signed = event.teamAgreements?.[team]?.agreed;
-                              return (
-                                <div key={team} className="flex items-center justify-between p-4 bg-white border rounded-2xl shadow-sm">
-                                  <span className="text-sm font-black uppercase">{team}</span>
-                                  {signed ? <Badge className="bg-green-100 text-green-700 h-5 px-2">VERIFIED</Badge> : <Badge variant="outline" className="h-5 px-2">PENDING</Badge>}
-                                </div>
-                              );
-                            })}
-                          </div>
+                          <div className="space-y-3">{(event.tournamentTeams || []).map(team => { const signed = event.teamAgreements?.[team]?.agreed; return ( <div key={team} className="flex items-center justify-between p-4 bg-white border rounded-2xl shadow-sm"><span className="text-sm font-black uppercase">{team}</span>{signed ? <Badge className="bg-green-100 text-green-700 h-5 px-2">VERIFIED</Badge> : <Badge variant="outline" className="h-5 px-2">PENDING</Badge>}</div> ); })}</div>
                         </div>
                       </div>
                     ) : (
@@ -349,38 +299,17 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                   <TabsContent value="portals" className="mt-0 space-y-8">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <Card className="rounded-[2rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
-                        <CardHeader className="bg-primary/5 p-6 border-b">
-                          <div className="flex items-center gap-3">
-                            <Eye className="h-5 w-5 text-primary" />
-                            <CardTitle className="text-sm font-black uppercase">Spectator Hub</CardTitle>
-                          </div>
-                        </CardHeader>
+                        <CardHeader className="bg-primary/5 p-6 border-b"><div className="flex items-center gap-3"><Eye className="h-5 w-5 text-primary" /><CardTitle className="text-sm font-black uppercase">Spectator Hub</CardTitle></div></CardHeader>
                         <CardContent className="p-6 space-y-4">
                           <p className="text-xs font-medium text-muted-foreground italic">Public link for parents and fans to follow live scores and standings.</p>
-                          <div className="flex gap-2">
-                            <Input readOnly value={`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`} className="h-10 text-[10px] font-mono bg-muted/30 border-none" />
-                            <Button size="icon" variant="secondary" className="h-10 w-10 shrink-0 rounded-xl" onClick={() => copyToClipboard(`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`)}>
-                              <Copy className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          <div className="flex gap-2"><Input readOnly value={`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`} className="h-10 text-[10px] font-mono bg-muted/30 border-none" /><Button size="icon" variant="secondary" className="h-10 w-10 shrink-0 rounded-xl" onClick={() => copyToClipboard(`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`)}><Copy className="h-4 w-4" /></Button></div>
                         </CardContent>
                       </Card>
-
                       <Card className="rounded-[2rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
-                        <CardHeader className="bg-black text-white p-6 border-b">
-                          <div className="flex items-center gap-3">
-                            <Terminal className="h-5 w-5 text-primary" />
-                            <CardTitle className="text-sm font-black uppercase">Scorekeeper Portal</CardTitle>
-                          </div>
-                        </CardHeader>
+                        <CardHeader className="bg-black text-white p-6 border-b"><div className="flex items-center gap-3"><Terminal className="h-5 w-5 text-primary" /><CardTitle className="text-sm font-black uppercase">Scorekeeper Portal</CardTitle></div></CardHeader>
                         <CardContent className="p-6 space-y-4">
                           <p className="text-xs font-medium text-muted-foreground italic">Share this with field marshals to log scores without a login.</p>
-                          <div className="flex gap-2">
-                            <Input readOnly value={`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}`} className="h-10 text-[10px] font-mono bg-muted/30 border-none" />
-                            <Button size="icon" variant="secondary" className="h-10 w-10 shrink-0 rounded-xl" onClick={() => copyToClipboard(`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}`)}>
-                              <Copy className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          <div className="flex gap-2"><Input readOnly value={`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}`} className="h-10 text-[10px] font-mono bg-muted/30 border-none" /><Button size="icon" variant="secondary" className="h-10 w-10 shrink-0 rounded-xl" onClick={() => copyToClipboard(`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}`)}><Copy className="h-4 w-4" /></Button></div>
                         </CardContent>
                       </Card>
                     </div>
@@ -444,181 +373,43 @@ export default function EventsPage() {
   const [newDescription, setNewDescription] = useState('');
   const [eventType, setEventType] = useState<EventType>('game');
 
-  const eventsQuery = useMemoFirebase(() => { 
-    if (!activeTeam?.id || !db) return null; 
-    return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc')); 
-  }, [activeTeam?.id, db]);
-  
+  const eventsQuery = useMemoFirebase(() => { if (!activeTeam?.id || !db) return null; return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc')); }, [activeTeam?.id, db]);
   const { data: allEvents } = useCollection<TeamEvent>(eventsQuery);
-
   const facilitiesQuery = useMemoFirebase(() => (db && user?.id) ? query(collection(db, 'facilities'), where('clubId', '==', user.id)) : null, [db, user?.id]);
   const { data: facilities } = useCollection<Facility>(facilitiesQuery);
-
   const fieldsQuery = useMemoFirebase(() => (db && newFacilityId !== 'manual') ? query(collection(db, 'facilities', newFacilityId, 'fields'), orderBy('name', 'asc')) : null, [db, newFacilityId]);
   const { data: fields } = useCollection<Field>(fieldsQuery);
-  
-  const filteredEvents = useMemo(() => {
-    const now = new Date();
-    const list = allEvents || [];
-    if (filterMode === 'live') return list.filter(e => !isPast(new Date(e.date)) || isSameDay(new Date(e.date), now));
-    return list.filter(e => isPast(new Date(e.date)) && !isSameDay(new Date(e.date), now)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [allEvents, filterMode]);
-
+  const filteredEvents = useMemo(() => { const now = new Date(); const list = allEvents || []; if (filterMode === 'live') return list.filter(e => !isPast(new Date(e.date)) || isSameDay(new Date(e.date), now)); return list.filter(e => isPast(new Date(e.date)) && !isSameDay(new Date(e.date), now)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); }, [allEvents, filterMode]);
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
 
   const handleEdit = (event: TeamEvent) => { 
-    setEditingEvent(event); setIsTournamentMode(!!event.isTournament); setNewTitle(event.title); 
-    setEventType(event.eventType || 'game'); setNewDate(format(new Date(event.date), 'yyyy-MM-dd')); 
-    setNewTime(event.startTime); setNewEndTime(event.endTime || ''); setNewLocation(event.location); 
-    setNewFacilityId(event.facilityId || 'manual'); setNewFieldId(event.fieldId || 'manual'); 
-    setNewDescription(event.description); setIsCreateOpen(true); 
+    setEditingEvent(event); setIsTournamentMode(!!event.isTournament); setNewTitle(event.title); setEventType(event.eventType || 'game'); setNewDate(format(new Date(event.date), 'yyyy-MM-dd')); setNewTime(event.startTime); setNewEndTime(event.endTime || ''); setNewLocation(event.location); setNewFacilityId(event.facilityId || 'manual'); setNewFieldId(event.fieldId || 'manual'); setNewDescription(event.description); setIsCreateOpen(true); 
   };
 
   const handleCreateEvent = async () => { 
-    if (!newTitle || !newDate || !newTime) {
-      toast({ title: "Incomplete Data", description: "Required fields: Title, Date, and Start Time.", variant: "destructive" });
-      return; 
-    }
-    
+    if (!newTitle || !newDate || !newTime) { toast({ title: "Incomplete Data", variant: "destructive" }); return; }
     const timeISO = normalizeTime(newTime);
-    
     try {
-      // Use numeric parts for safer cross-browser Date construction
       const [year, month, day] = newDate.split('-').map(Number);
       const [hour, minute] = timeISO.split(':').map(Number);
       const eventDate = new Date(year, month - 1, day, hour, minute);
-      
-      const payload: any = { 
-        title: newTitle, 
-        eventType: isTournamentMode ? 'tournament' : eventType,
-        date: eventDate.toISOString(), 
-        startTime: newTime, 
-        endTime: newEndTime || 'TBD', 
-        location: newLocation, 
-        facilityId: newFacilityId === 'manual' ? null : newFacilityId,
-        fieldId: newFieldId === 'manual' ? null : newFieldId,
-        description: newDescription, 
-        isTournament: isTournamentMode, 
-        lastUpdated: new Date().toISOString() 
-      }; 
-      
-      const success = editingEvent 
-        ? await updateEvent(editingEvent.id, payload) 
-        : await addEvent(payload); 
-      
-      if (success) {
-        setIsCreateOpen(false); 
-        setEditingEvent(null);
-      }
-    } catch (e) {
-      toast({ title: "Itinerary Error", description: "Verify date/time formats.", variant: "destructive" });
-    }
+      const payload: any = { title: newTitle, eventType: isTournamentMode ? 'tournament' : eventType, date: eventDate.toISOString(), startTime: newTime, endTime: newEndTime || 'TBD', location: newLocation, facilityId: newFacilityId === 'manual' ? null : newFacilityId, fieldId: newFieldId === 'manual' ? null : newFieldId, description: newDescription, isTournament: isTournamentMode, lastUpdated: new Date().toISOString() }; 
+      const success = editingEvent ? await updateEvent(editingEvent.id, payload) : await addEvent(payload); 
+      if (success) { setIsCreateOpen(false); setEditingEvent(null); }
+    } catch (e) { toast({ title: "Itinerary Error", variant: "destructive" }); }
   };
 
   return (
     <div className="space-y-10 pb-20">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Squad Itinerary</Badge>
-          <h1 className="text-4xl font-black uppercase tracking-tight">Schedule Hub</h1>
-        </div>
-        {isStaff && (
-          <div className="flex gap-2">
-            <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs" onClick={() => { setIsTournamentMode(false); setIsCreateOpen(true); }}>+ New Activity</Button>
-            <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs bg-black text-white" onClick={() => { setIsTournamentMode(true); setIsCreateOpen(true); }}>+ Tournament</Button>
-          </div>
-        )}
+        <div className="space-y-1"><Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Squad Itinerary</Badge><h1 className="text-4xl font-black uppercase tracking-tight">Schedule Hub</h1></div>
+        {isStaff && ( <div className="flex gap-2"><Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs" onClick={() => { setIsTournamentMode(false); setIsCreateOpen(true); }}>+ New Activity</Button><Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs bg-black text-white" onClick={() => { setIsTournamentMode(true); setIsCreateOpen(true); }}>+ Tournament</Button></div> )}
       </div>
-      
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="sm:max-w-5xl p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl overflow-hidden flex flex-col">
-          <div className="flex-1 overflow-y-auto">
-            <div className="flex flex-col lg:flex-row min-h-full">
-              <div className="w-full lg:w-5/12 bg-muted/30 p-10 space-y-8 lg:border-r shrink-0">
-                <DialogHeader><DialogTitle className="text-3xl font-black uppercase">{editingEvent ? "Update" : "Launch"} Hub</DialogTitle></DialogHeader>
-                <div className="space-y-4">
-                  {!isTournamentMode && (
-                    <div className="space-y-1.5">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label>
-                      <Select value={eventType} onValueChange={(v: EventType) => setEventType(v)}>
-                        <SelectTrigger className="h-12 rounded-xl font-black border-2 bg-white"><SelectValue /></SelectTrigger>
-                        <SelectContent className="rounded-xl">
-                          <SelectItem value="game">Match Day</SelectItem>
-                          <SelectItem value="practice">Training</SelectItem>
-                          <SelectItem value="meeting">Tactical Meeting</SelectItem>
-                          <SelectItem value="other">Event</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                  <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title *</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date *</Label><Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div>
-                    <div className="space-y-1.5">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time Block</Label>
-                      <div className="flex gap-2">
-                        <Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" />
-                        <Input type="time" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex-1 p-10 space-y-8 bg-background">
-                <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed space-y-4">
-                  <Label className="text-[10px] font-black uppercase tracking-widest">Venue Selection</Label>
-                  <div className="grid gap-3">
-                    <Select value={newFacilityId} onValueChange={(val) => { setNewFacilityId(val); if(val !== 'manual') setNewLocation(facilities?.find(f => f.id === val)?.address || ''); }}>
-                      <SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Select Facility" /></SelectTrigger>
-                      <SelectContent className="rounded-xl"><SelectItem value="manual">Manual Entry</SelectItem>{facilities?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent>
-                    </Select>
-                    {newFacilityId !== 'manual' && (
-                      <Select value={newFieldId} onValueChange={setNewFieldId}>
-                        <SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Field/Court" /></SelectTrigger>
-                        <SelectContent className="rounded-xl">
-                          <SelectItem value="manual">General</SelectItem>
-                          {fields?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    )}
-                    <Input placeholder="Location Label" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-11 rounded-xl font-bold border-2 bg-white" />
-                  </div>
-                </div>
-                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Brief</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium" /></div>
-              </div>
-            </div>
-          </div>
-          <div className="p-8 bg-background border-t shrink-0 flex justify-center"><Button className="w-full max-w-4xl h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreateEvent}>Commit Event</Button></div>
-        </DialogContent>
+          <div className="flex-1 overflow-y-auto"><div className="flex flex-col lg:flex-row min-h-full"><div className="w-full lg:w-5/12 bg-muted/30 p-10 space-y-8 lg:border-r shrink-0"><DialogHeader><DialogTitle className="text-3xl font-black uppercase">{editingEvent ? "Update" : "Launch"} Hub</DialogTitle></DialogHeader><div className="space-y-4">{!isTournamentMode && ( <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label><Select value={eventType} onValueChange={(v: EventType) => setEventType(v)}><SelectTrigger className="h-12 rounded-xl font-black border-2 bg-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="game">Match Day</SelectItem><SelectItem value="practice">Training</SelectItem><SelectItem value="meeting">Tactical Meeting</SelectItem><SelectItem value="other">Event</SelectItem></SelectContent></Select></div> )}<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title *</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date *</Label><Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time Block</Label><div className="flex gap-2"><Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" /><Input type="time" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div></div></div></div></div><div className="flex-1 p-10 space-y-8 bg-background"><div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed space-y-4"><Label className="text-[10px] font-black uppercase tracking-widest">Venue Selection</Label><div className="grid gap-3"><Select value={newFacilityId} onValueChange={(val) => { setNewFacilityId(val); if(val !== 'manual') setNewLocation(facilities?.find(f => f.id === val)?.address || ''); }}><SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Select Facility" /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="manual">Manual Entry</SelectItem>{facilities?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent></Select>{newFacilityId !== 'manual' && ( <Select value={newFieldId} onValueChange={setNewFieldId}><SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Field/Court" /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="manual">General</SelectItem>{fields?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent></Select> )}<Input placeholder="Location Label" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-11 rounded-xl font-bold border-2 bg-white" /></div></div><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Brief</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium" /></div></div></div></div><div className="p-8 bg-background border-t shrink-0 flex justify-center"><Button className="w-full max-w-4xl h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreateEvent}>Commit Event</Button></div></DialogContent>
       </Dialog>
-
-      <section className="space-y-4">
-        <div className="flex items-center justify-between px-2"><h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2><div className="flex bg-muted/50 p-1 rounded-xl border"><Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button><Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button></div></div>
-        <div className="grid gap-4">
-          {filteredEvents.map((event) => (
-            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent}>
-              <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
-                <div className="flex items-stretch h-32">
-                  <div className={cn("w-20 lg:w-24 flex flex-col items-center justify-center border-r-2 shrink-0", event.isTournament ? "bg-black text-white" : EVENT_TYPE_COLORS[event.eventType || 'other'])}>
-                    <span className="text-[8px] font-black uppercase opacity-60">{format(new Date(event.date), 'MMM')}</span>
-                    <span className="text-3xl lg:text-4xl font-black">{format(new Date(event.date), 'dd')}</span>
-                  </div>
-                  <div className="flex-1 p-6 flex flex-col justify-center min-w-0">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex gap-2 mb-1.5"><Badge className="text-[7px] uppercase">{event.isTournament ? 'Tournament' : (event.eventType || 'Activity')}</Badge><Badge variant="outline" className="text-[7px] uppercase">{event.startTime}</Badge></div>
-                        <h3 className="text-xl font-black tracking-tight leading-none truncate">{event.title}</h3>
-                        <p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1 mt-1"><MapPin className="h-3 w-3" /> {event.location}</p>
-                      </div>
-                      <ChevronRight className="h-5 w-5 text-primary opacity-20 group-hover:opacity-100 transition-all mt-2" />
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </EventDetailDialog>
-          ))}
-        </div>
-      </section>
+      <section className="space-y-4"><div className="flex items-center justify-between px-2"><h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2><div className="flex bg-muted/50 p-1 rounded-xl border"><Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button><Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button></div></div><div className="grid gap-4">{filteredEvents.map((event) => ( <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent}><Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white"><div className="flex items-stretch h-32"><div className={cn("w-20 lg:w-24 flex flex-col items-center justify-center border-r-2 shrink-0", event.isTournament ? "bg-black text-white" : EVENT_TYPE_COLORS[event.eventType || 'other'])}><span className="text-[8px] font-black uppercase opacity-60">{format(new Date(event.date), 'MMM')}</span><span className="text-3xl lg:text-4xl font-black">{format(new Date(event.date), 'dd')}</span></div><div className="flex-1 p-6 flex flex-col justify-center min-w-0"><div className="flex items-start justify-between"><div><div className="flex gap-2 mb-1.5"><Badge className="text-[7px] uppercase">{event.isTournament ? 'Tournament' : (event.eventType || 'Activity')}</Badge><Badge variant="outline" className="text-[7px] uppercase">{event.startTime}</Badge></div><h3 className="text-xl font-black tracking-tight leading-none truncate">{event.title}</h3><p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1 mt-1"><MapPin className="h-3 w-3" /> {event.location}</p></div><ChevronRight className="h-5 w-5 text-primary opacity-20 group-hover:opacity-100 transition-all mt-2" /></div></div></div></Card></EventDetailDialog> ))}</div></section>
     </div>
   );
 }

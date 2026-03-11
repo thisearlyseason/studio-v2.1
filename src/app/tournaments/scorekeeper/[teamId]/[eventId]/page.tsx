@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Terminal, Clock, MapPin, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
-import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 export default function PublicScorekeeperHub() {
   const { teamId, eventId } = useParams();
