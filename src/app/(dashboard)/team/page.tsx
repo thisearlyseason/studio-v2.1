@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -30,7 +29,7 @@ import {
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogDescription,
+  DialogDescription, 
   DialogFooter
 } from '@/components/ui/dialog';
 import {
@@ -57,7 +56,7 @@ export default function TeamProfilePage() {
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch pending assignments for this team - Restricted to administrative staff only
+  // STABILITY GUARD: Ensure the collectionGroup query is strictly memoized and conditional on a valid UID
   const assignmentsQuery = useMemoFirebase(() => {
     // CRITICAL: Prevent constructor from executing without valid auth UID
     // This avoids root listing requests /databases/(default)/documents/
@@ -388,7 +387,24 @@ export default function TeamProfilePage() {
                 <p className="text-[10px] font-black uppercase tracking-widest text-white/50">Joining Code</p>
                 <p className="text-4xl font-black tracking-[0.2em]">{activeTeam.code}</p>
               </div>
-              <Button variant="secondary" className="w-full h-12 rounded-xl font-black bg-white text-primary" onClick={() => { navigator.clipboard.writeText(activeTeam.code); toast({ title: "Copied!" }); }}>Copy Join Link</Button>
+              <Button 
+                variant="secondary" 
+                className="w-full h-12 rounded-xl font-black bg-white text-primary" 
+                onClick={async () => { 
+                  try {
+                    if (navigator.clipboard && window.isSecureContext) {
+                      await navigator.clipboard.writeText(activeTeam.code);
+                      toast({ title: "Copied!" });
+                    } else {
+                      throw new Error("Clipboard API Blocked");
+                    }
+                  } catch (e) {
+                    toast({ title: "Copy Failed", description: `Your squad code is: ${activeTeam.code}`, variant: "destructive" });
+                  }
+                }}
+              >
+                Copy Join Link
+              </Button>
             </CardContent>
           </Card>
         </aside>

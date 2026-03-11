@@ -41,21 +41,11 @@ export interface InternalQuery extends Query<DocumentData> {
  * 
  * This hook is defensive: it will not attempt to subscribe if the target 
  * reference or query is null or undefined.
- * 
- * IMPORTANT: The target query/ref MUST be memoized using useMemoFirebase 
- * or useMemo to prevent unnecessary subscription cycles.
- *  
- * @template T Optional type for document data.
- * @param {Query | CollectionReference | null | undefined} targetRefOrQuery - The Firestore target.
- * @returns {UseCollectionResult<T>} Object with data, isLoading, and error status.
  */
 export function useCollection<T = any>(
     targetRefOrQuery: ((CollectionReference<DocumentData> | Query<DocumentData>) & {__memo?: boolean}) | null | undefined,
 ): UseCollectionResult<T> {
-  type ResultItemType = WithId<T>;
-  type StateDataType = ResultItemType[] | null;
-
-  const [data, setData] = useState<StateDataType>(null);
+  const [data, setData] = useState<WithId<T>[] | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
@@ -86,14 +76,18 @@ export function useCollection<T = any>(
       },
       (err: FirestoreError) => {
         // Extraction logic for path-specific error reporting
-        const path: string =
-          targetRefOrQuery.type === 'collection'
+        let path: string = '/';
+        try {
+          path = targetRefOrQuery.type === 'collection'
             ? (targetRefOrQuery as CollectionReference).path
-            : (targetRefOrQuery as unknown as InternalQuery)._query.path.canonicalString();
+            : (targetRefOrQuery as unknown as InternalQuery)._query.path.canonicalString() || '/';
+        } catch (e) {
+          // Fallback if path extraction fails
+        }
 
         const contextualError = new FirestorePermissionError({
           operation: 'list',
-          path,
+          path: path || '/',
         });
 
         console.error("Firestore subscription error:", err);

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -68,13 +67,15 @@ export default function MasterCalendarPage() {
     }
   }, [teams, selectedTeamIds.length]);
 
+  // STABILITY GUARD: Use a stringified list of IDs to prevent the query from re-running on every array mutation
+  const teamIdsString = useMemo(() => teams.map(t => t.id).sort().join(','), [teams]);
+
   // Aggregate fetch for all squad events using collectionGroup
   const eventsQuery = useMemoFirebase(() => {
     // SECURITY GUARD: Ensure we don't query before user AND team data is synchronized
-    // Constructing a query without a valid UID or specific collection ID can trigger root listing errors
-    if (!db || !authUser?.uid || !teams || teams.length === 0) return null;
+    if (!db || !authUser?.uid || !teamIdsString) return null;
     
-    const teamIds = teams.map(t => t.id).filter(id => !!id);
+    const teamIds = teamIdsString.split(',').filter(id => !!id);
     if (teamIds.length === 0) return null;
     
     // collectionGroup queries require specific wildcard match in firestore.rules
@@ -83,10 +84,10 @@ export default function MasterCalendarPage() {
       where('teamId', 'in', teamIds.slice(0, 30)),
       orderBy('date', 'asc')
     );
-  }, [db, teams, authUser?.uid]);
+  }, [db, teamIdsString, authUser?.uid]);
 
   const { data: rawEvents, isLoading } = useCollection<TeamEvent>(eventsQuery);
-  const allEvents = useMemo(() => rawEvents || [], [rawEvents]);
+  const allEvents = rawEvents || [];
 
   const filteredEvents = useMemo(() => {
     return allEvents.filter(event => {

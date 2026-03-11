@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useRef } from 'react';
@@ -503,6 +502,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser?.uid, db]);
 
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
+  
+  // STABILITY GUARD: Ensure the teams array is strictly memoized to prevent query recalculation assertion failures
   const teams = useMemo(() => {
     if (!teamsData) return [];
     return teamsData.map(m => ({
