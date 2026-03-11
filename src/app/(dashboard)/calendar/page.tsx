@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   format, 
   startOfMonth, 
@@ -59,6 +60,7 @@ const EVENT_TYPE_COLORS: Record<EventType, string> = {
 export default function MasterCalendarPage() {
   const { teams, user, isStaff, isPro, purchasePro } = useTeam();
   const db = useFirestore();
+  const router = useRouter();
   
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -71,16 +73,13 @@ export default function MasterCalendarPage() {
     if (teams.length > 0 && selectedTeamIds.length === 0) {
       setSelectedTeamIds(teams.map(t => t.id));
     }
-  }, [teams]);
+  }, [teams, selectedTeamIds.length]);
 
   // Aggregate fetch for all squad events using collectionGroup
-  // Note: We filter by teamId in memory or query if list is short
   const eventsQuery = useMemoFirebase(() => {
     if (!db || teams.length === 0) return null;
     const teamIds = teams.map(t => t.id);
     
-    // Firestore 'in' limit is 30. If more than 30 teams, we'd need to chunk or use different logic.
-    // Standard squads/clubs usually fit under 30.
     return query(
       collectionGroup(db, 'events'),
       where('teamId', 'in', teamIds.slice(0, 30)),
@@ -137,9 +136,9 @@ export default function MasterCalendarPage() {
     <div className="space-y-8 pb-32">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Master Strategy</Badge>
-          <h1 className="text-4xl font-black uppercase tracking-tight">Command Calendar</h1>
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Multi-Team Itinerary Hub</p>
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Multi-Squad Intelligence</Badge>
+          <h1 className="text-4xl font-black uppercase tracking-tight">Master Calendar</h1>
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Unified Operational Visibility</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -356,10 +355,10 @@ export default function MasterCalendarPage() {
         <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-4">
           <div className="flex items-center gap-3">
             <Zap className="h-5 w-5 text-primary" />
-            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Tactical Overview</h4>
+            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Strategic Overview</h4>
           </div>
           <p className="text-xs font-medium leading-relaxed italic text-muted-foreground">
-            The Command Calendar synchronizes operational intelligence across all your squads. Use this hub to avoid scheduling conflicts and ensure elite resource allocation across your organization.
+            The Master Calendar synchronizes operational intelligence across all your squads. Use this hub to avoid scheduling conflicts and ensure elite resource allocation across your organization.
           </p>
         </div>
 

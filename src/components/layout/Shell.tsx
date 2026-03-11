@@ -83,7 +83,7 @@ import {
 
 const tabs = [
   { name: 'Feed', href: '/feed', icon: LayoutDashboard, pro: true },
-  { name: 'Command Calendar', href: '/calendar', icon: Calendar, pro: false },
+  { name: 'Calendar', href: '/calendar', icon: Calendar, pro: false },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Leagues', href: '/leagues', icon: Shield, pro: false },
   { name: 'Facilities', href: '/facilities', icon: MapPin, pro: true, gate: 'staff' },
@@ -411,7 +411,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="hidden md:flex items-center gap-4 min-w-0">
                 <div className="flex flex-col min-w-0">
                   <h2 className="text-xl lg:text-2xl font-black tracking-tighter uppercase truncate">
-                    {pathname === '/pricing' ? 'Pricing' : pathname === '/how-to' ? 'Tactical Manual' : (pathname === '/calendar' ? 'Command Calendar' : (pathname === '/leagues' ? 'League Hub' : (tabs.find(t => pathname.startsWith(t.href))?.name || 'Dashboard')))}
+                    {pathname === '/pricing' ? 'Pricing' : pathname === '/how-to' ? 'Tactical Manual' : (pathname === '/calendar' ? 'Calendar' : (pathname === '/leagues' ? 'League Hub' : (tabs.find(t => pathname.startsWith(t.href))?.name || 'Dashboard')))}
                   </h2>
                   <p className="text-[9px] lg:text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em] lg:tracking-[0.3em] ml-0.5 truncate">The Squad Hub • {activeTeam?.name}</p>
                 </div>

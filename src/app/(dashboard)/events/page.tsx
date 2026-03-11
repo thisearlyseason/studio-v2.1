@@ -38,7 +38,8 @@ import {
   Globe,
   Settings,
   LayoutGrid,
-  Circle
+  Circle,
+  Calendar
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -85,6 +86,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useRouter } from 'next/navigation';
 import { generateGoogleCalendarLink, downloadICS } from '@/lib/calendar-utils';
 import { Switch } from '@/components/ui/switch';
+import Link from 'next/link';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary text-white border-primary',
@@ -364,7 +366,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                       </DropdownMenu>
                     </div>
                     {event.requiresSpecialWaiver && !hasUserSignedIndividualWaiver && (<Button onClick={() => setIsWaiverDialogOpen(true)} className="w-full rounded-xl h-14 font-black text-sm uppercase gap-3 bg-red-600 text-white shadow-xl">Sign Required Waiver</Button>)}
-                    {myParticipatingTeamName && !isWaiverSignedForMyTeam && (<Button onClick={() => setIsTeamAgreementOpen(true)} className={cn("w-full rounded-xl h-14 font-black text-sm uppercase gap-3 text-white shadow-xl", event.isTournamentPaid ? "bg-primary" : "bg-white text-black")}>Sign for {myParticipatingTeamName}</Button>)}
+                    {myParticipatingTeamName && !isWaiverSignedForMyTeam && (<Button onClick={() => setIsTeamAgreementOpen(true)} className={cn("w-full rounded-xl h-14 font-black text-sm uppercase translation-all", event.isTournamentPaid ? "bg-primary text-white" : "bg-white text-black shadow-xl")}>Sign for {myParticipatingTeamName}</Button>)}
                   </div>
                 </div>
                 {event.isTournament && (
@@ -950,8 +952,24 @@ export default function EventsPage() {
   return (
     <div className="space-y-10 pb-20">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="space-y-1"><Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Tactical Hub</Badge><h1 className="text-4xl font-black uppercase tracking-tight">Schedule</h1></div>
-        {isStaff && (<div className="flex flex-wrap gap-2"><Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg" onClick={() => { resetForm(); setIsTournamentMode(false); setIsEliteTournament(false); setIsCreateOpen(true); }}>+ Match</Button><Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg bg-black text-white" onClick={() => { resetForm(); setIsTournamentMode(true); setIsEliteTournament(false); setIsCreateOpen(true); }}><Trophy className="h-4 w-4 mr-2 text-primary" /> Tournament</Button><Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg bg-primary text-white border-none" onClick={() => { resetForm(); setIsTournamentMode(true); setIsEliteTournament(true); setIsCreateOpen(true); }}><Sparkles className="h-4 w-4 mr-2" /> Elite Hub</Button></div>)}
+        <div className="space-y-1">
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Tactical Hub</Badge>
+          <h1 className="text-4xl font-black uppercase tracking-tight">Schedule</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline" className="rounded-full h-11 px-6 font-black uppercase text-[10px] tracking-widest border-2">
+            <Link href="/calendar">
+              <Calendar className="h-4 w-4 mr-2" /> Master View
+            </Link>
+          </Button>
+          {isStaff && (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg" onClick={() => { resetForm(); setIsTournamentMode(false); setIsEliteTournament(false); setIsCreateOpen(true); }}>+ Match</Button>
+              <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg bg-black text-white" onClick={() => { resetForm(); setIsTournamentMode(true); setIsEliteTournament(false); setIsCreateOpen(true); }}><Trophy className="h-4 w-4 mr-2 text-primary" /> Tournament</Button>
+              <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg bg-primary text-white border-none" onClick={() => { resetForm(); setIsTournamentMode(true); setIsEliteTournament(true); setIsCreateOpen(true); }}><Sparkles className="h-4 w-4 mr-2" /> Elite Hub</Button>
+            </div>
+          )}
+        </div>
       </div>
       
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
