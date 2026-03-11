@@ -81,7 +81,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { format, isSameDay, isPast, addMinutes, addDays, parse, parseISO } from 'date-fns';
+import { format, isSameDay, isPast, addMinutes, addDays, parse } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
 import { generateGoogleCalendarLink, downloadICS } from '@/lib/calendar-utils';
@@ -874,16 +874,16 @@ export default function EventsPage() {
 
   const resetForm = () => { setEditingEvent(null); setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewEndTime(''); setNewLocation(''); setNewFacilityId('manual'); setNewFieldId('manual'); setNewDescription(''); setEventType('game'); setRequiresWaiver(false); setWaiverText(''); setTeamWaiverText(''); setTournamentTeams([]); setTournamentTeamsMetadata({}); setTournamentGames([]); };
   
+  const parseSafeDate = (dStr: string, tStr: string) => {
+    if (!dStr) return new Date(NaN);
+    const [year, month, day] = dStr.split('-').map(Number);
+    const [hours, minutes] = (tStr || '12:00').split(':').map(Number);
+    return new Date(year, month - 1, day, hours, minutes);
+  };
+
   const handleCreateEvent = async () => { 
     if (!newTitle || !newDate) return; 
     
-    const parseSafeDate = (dStr: string, tStr: string) => {
-      if (!dStr) return new Date(NaN);
-      const [year, month, day] = dStr.split('-').map(Number);
-      const [hours, minutes] = (tStr || '12:00').split(':').map(Number);
-      return new Date(year, month - 1, day, hours, minutes);
-    };
-
     const dateObj = parseSafeDate(newDate, newTime);
     
     if (isNaN(dateObj.getTime())) {

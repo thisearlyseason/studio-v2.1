@@ -47,12 +47,16 @@ service cloud.firestore {
     }
 
     // COLLECTION GROUP RULES (Top-level for query optimization)
+    // Critical: Must allow list for collectionGroup queries to be statically authorized
     match /{path=**}/events/{eventId} {
-      allow read: if isSignedIn() && (isSuperAdmin() || isTeamMember(resource.data.teamId));
+      allow list: if isSignedIn();
+      allow get: if isSignedIn() && (isSuperAdmin() || isTeamMember(resource.data.teamId));
     }
     
     match /{path=**}/registrationEntries/{entryId} {
-      allow read: if isSignedIn();
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if true;
     }
 
     match /users/{userId} {
