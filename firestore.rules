@@ -19,7 +19,8 @@ service cloud.firestore {
     }
 
     function isDemoTeam(tid) {
-      return tid != null && tid.startsWith('demo_');
+      // Use slice comparison for maximum CEL compatibility across all operations
+      return tid != null && tid[0:5] == 'demo_';
     }
 
     function isTeamMember(teamId) {
@@ -43,14 +44,13 @@ service cloud.firestore {
     }
 
     // --- COLLECTION GROUP RULES (Must be top-level for aggregation queries) ---
-    // These allow the Master Calendar and Recruitment Ledger to function across all squads
     match /{path=**}/events/{eventId} {
       allow list, get: if isSignedIn();
     }
     
     match /{path=**}/registrationEntries/{entryId} {
       allow list, get: if isSignedIn();
-      allow create: if true; // Public recruitment portal
+      allow create: if true; 
       allow update: if isSignedIn();
     }
 

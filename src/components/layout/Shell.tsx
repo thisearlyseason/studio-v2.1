@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, memo } from 'react';
@@ -42,7 +41,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/avatar';
 import { useTeam, Team } from '@/components/providers/team-provider';
 import { CreateAlertButton, AlertsHistoryDialog } from '@/components/layout/AlertOverlay';
 import {
@@ -55,7 +54,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem
 } from "@/components/ui/dropdown-menu";
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@/badge';
 import { 
   Sidebar, 
   SidebarContent, 
@@ -69,6 +68,8 @@ import {
 } from "@/components/ui/sidebar";
 import BrandLogo from '@/components/BrandLogo';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useMemoFirebase, useCollection, useFirestore } from '@/firebase';
+import { collection, query, orderBy, limit } from 'firebase/firestore';
 
 const tabs = [
   { name: 'Feed', href: '/feed', icon: LayoutDashboard, pro: true },
@@ -197,10 +198,22 @@ function TeamSwitcherContent({
 export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const db = useFirestore();
   const { 
-    activeTeam, setActiveTeam, teams, user, isPro, alerts, isSuperAdmin, 
+    activeTeam, setActiveTeam, teams, user, isPro, isSuperAdmin, 
     isClubManager, isStaff, isParent, hasFeature, isPlayer
   } = useTeam();
+
+  const alertsQuery = useMemoFirebase(() => {
+    if (!activeTeam?.id || !db) return null;
+    return query(
+      collection(db, 'teams', activeTeam.id, 'alerts'), 
+      orderBy('createdAt', 'desc'), 
+      limit(10)
+    );
+  }, [activeTeam?.id, db]);
+
+  const { data: alerts = [] } = useCollection(alertsQuery);
   const [hasUnreadAlerts, setHasUnreadAlerts] = useState(false);
 
   useEffect(() => {

@@ -51,7 +51,7 @@ export function useCollection<T = any>(
 
   useEffect(() => {
     // GUARD: Never trigger Firestore if the reference is invalid or null.
-    // This prevents attempts to list at the Firestore root level.
+    // This prevents attempts to list at the Firestore root level (/documents/).
     if (!targetRefOrQuery) {
       setData(null);
       setIsLoading(false);
