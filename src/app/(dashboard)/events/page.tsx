@@ -163,6 +163,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   const [baseUrl, setBaseUrl] = useState('');
 
   const [manualMatch, setManualMatch] = useState({ team1: '', team2: '', date: format(new Date(event.date), 'yyyy-MM-dd'), time: '12:00', location: '' });
+  const [enrollmentText, setEnrollmentText] = useState(event.tournamentTeams?.join(', ') || '');
 
   useEffect(() => {
     if (typeof window !== 'undefined') setBaseUrl(window.location.origin);
@@ -289,6 +290,12 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
     } catch (err) {
       toast({ title: "Deployment Failure", description: "Check tournament parameters and try again.", variant: "destructive" });
     } finally { setIsGenerating(false); }
+  };
+
+  const handleUpdateEnrollment = async () => {
+    const list = enrollmentText.split(',').map(t => t.trim()).filter(t => !!t);
+    await updateEvent(event.id, { tournamentTeams: list });
+    toast({ title: "Roster Synchronized" });
   };
 
   const handleAddManualMatch = async () => {
@@ -555,6 +562,20 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     </TabsContent>
                     
                     <TabsContent value="manage" className="mt-0 space-y-10">
+                      <div className="bg-muted/20 p-8 rounded-[2.5rem] border-2 border-dashed space-y-6">
+                        <div className="flex items-center gap-4"><div className="bg-white p-3 rounded-2xl shadow-sm text-primary"><Users className="h-6 w-6" /></div><h3 className="text-xl font-black uppercase tracking-tight">Enroll Participating Squads</h3></div>
+                        <div className="space-y-4">
+                          <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">The itinerary engine requires a full roster of teams to generate pairings.</p>
+                          <Textarea 
+                            placeholder="e.g. Westside Warriors, Eastside Elite, Northside Knights..." 
+                            value={enrollmentText} 
+                            onChange={e => setEnrollmentText(e.target.value)}
+                            className="rounded-2xl min-h-[100px] border-2 font-bold bg-white"
+                          />
+                          <Button onClick={handleUpdateEnrollment} className="w-full h-12 rounded-xl font-black uppercase tracking-widest text-xs">Update Tournament Roster</Button>
+                        </div>
+                      </div>
+
                       <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-8">
                         <div className="flex items-center gap-4"><div className="bg-white p-3 rounded-2xl shadow-sm text-primary"><Zap className="h-6 w-6" /></div><h3 className="text-xl font-black uppercase tracking-tight">Auto-Scheduler</h3></div>
                         

@@ -51,6 +51,7 @@ export default function PublicTournamentWaiverPage() {
   const [isSigned, setIsSigned] = useState(false);
 
   useEffect(() => {
+    // Only set once on mount
     setSignDate(format(new Date(), 'yyyy-MM-dd'));
   }, []);
 
@@ -180,7 +181,7 @@ export default function PublicTournamentWaiverPage() {
                 <CardTitle className="text-2xl font-black uppercase tracking-tight leading-none">Execute Agreement</CardTitle>
               </div>
               <div className="p-1 bg-muted rounded-2xl border-2">
-                <ScrollArea className="h-48 p-5 bg-white rounded-xl">
+                <ScrollArea className="h-48 p-5 bg-white rounded-xl" type="scroll">
                   {event.teamWaiverText ? (
                     <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap text-foreground/80">{event.teamWaiverText}</p>
                   ) : (

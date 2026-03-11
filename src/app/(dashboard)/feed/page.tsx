@@ -29,7 +29,8 @@ import {
   Terminal,
   Shield,
   Activity,
-  ImageIcon
+  ImageIcon,
+  Plus
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -495,7 +496,9 @@ export default function FeedPage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Polling Options</Label>
-                    <Button variant="ghost" size="sm" onClick={() => setPollOptions([...pollOptions, {text: '', image: undefined}])} disabled={pollOptions.length >= 6} className="h-7 text-[9px] lg:text-[10px] font-black uppercase tracking-widest text-primary"><Plus className="h-3 w-3 mr-1" /> Add</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setPollOptions([...pollOptions, {text: '', image: undefined}])} disabled={pollOptions.length >= 6} className="h-7 text-[9px] lg:text-[10px] font-black uppercase tracking-widest text-primary">
+                      <Plus className="h-3 w-3 mr-1" /> Add
+                    </Button>
                   </div>
                   <div className="space-y-2 lg:space-y-3">
                     {pollOptions.map((opt, i) => (
