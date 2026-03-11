@@ -39,7 +39,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
@@ -114,7 +114,8 @@ function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: 
 }
 
 export default function LeaguesPage() {
-  const { activeTeam, user, createLeague, inviteTeamToLeague, manuallyAddTeamToLeague, acceptLeagueInvite, hasFeature, purchasePro, createChat, isStaff } = useTeam();
+  const { user: authUser, isAuthResolved } = useUser();
+  const { activeTeam, createLeague, inviteTeamToLeague, manuallyAddTeamToLeague, acceptLeagueInvite, hasFeature, purchasePro, createChat, isStaff } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
@@ -132,25 +133,22 @@ export default function LeaguesPage() {
   const canRegister = hasFeature('league_registration');
 
   const leaguesQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || !db) return null;
+    if (!isAuthResolved || !activeTeam?.id || !db) return null;
     return query(collection(db, 'leagues'), where(`teams.${activeTeam.id}`, '!=', null));
-  }, [activeTeam?.id, db]);
+  }, [isAuthResolved, activeTeam?.id, db]);
 
   const { data: rawLeagues, isLoading: isLeaguesLoading } = useCollection<League>(leaguesQuery);
   const leagues = useMemo(() => rawLeagues || [], [rawLeagues]);
 
   const invitesQuery = useMemoFirebase(() => {
-    // CRITICAL: Queries on root collections with per-user filters MUST match security rules.
-    // Anonymous users (demos) don't have emails in their Auth Token, so the rule will reject
-    // a query filtered by 'guest@thesquad.pro' if the rule uses request.auth.token.email.
-    if (!user?.email || !db || user?.isDemo) return null;
+    if (!isAuthResolved || !authUser?.email || !db || activeTeam?.id?.startsWith('demo_')) return null;
     
     return query(
       collection(db, 'leagues', 'global', 'invites'), 
-      where('invitedEmail', '==', user.email.toLowerCase()), 
+      where('invitedEmail', '==', authUser.email.toLowerCase()), 
       where('status', '==', 'pending')
     );
-  }, [user?.email, db, user?.isDemo]);
+  }, [isAuthResolved, authUser?.email, db, activeTeam?.id]);
 
   const { data: rawInvites } = useCollection<LeagueInvite>(invitesQuery);
   const invites = useMemo(() => rawInvites || [], [rawInvites]);
@@ -274,7 +272,7 @@ export default function LeaguesPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  {isStaff && activeLeague.creatorId === user?.id && (
+                  {isStaff && activeLeague.creatorId === authUser?.uid && (
                     canRegister ? (
                       <Button asChild variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest border-white/20 bg-white/10 text-white hover:bg-white/20">
                         <Link href={`/leagues/registration/${activeLeague.id}`}>
@@ -289,7 +287,7 @@ export default function LeaguesPage() {
                       </Button>
                     )
                   )}
-                  {isStaff && activeLeague.creatorId === user?.id && (
+                  {isStaff && activeLeague.creatorId === authUser?.uid && (
                     <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
                       <DialogTrigger asChild>
                         <Button variant="secondary" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg">

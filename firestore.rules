@@ -59,6 +59,18 @@ service cloud.firestore {
       }
     }
 
+    match /leagues/{leagueId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (
+        resource.data.creatorId == request.auth.uid || 
+        isSuperAdmin()
+      );
+      
+      match /{document=**} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
     match /teams/{teamId} {
       allow get, list: if isSignedIn() && (
         resource == null || 

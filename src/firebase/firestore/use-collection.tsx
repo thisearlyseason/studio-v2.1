@@ -65,7 +65,7 @@ export function useCollection<T = any>(
     let path = '';
     let isCollectionGroup = false;
     try {
-      // @ts-ignore - internal property
+      // @ts-ignore - internal property access for defensive path checking
       isCollectionGroup = memoizedTargetRefOrQuery._query?.path?.isEmpty?.() || false;
       
       // @ts-ignore - type exists on internal query

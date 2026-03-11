@@ -75,7 +75,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useTeam, TeamEvent, TournamentGame, EventType, Facility, Field } from '@/components/providers/team-provider';
-import { useFirestore, useCollection, useDoc, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useDoc, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy, doc, where } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';

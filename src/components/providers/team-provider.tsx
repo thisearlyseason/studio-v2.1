@@ -494,9 +494,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [searchParams, firebaseUser?.uid, db, isSeedingDemo, isAuthResolved]);
 
   const teamsQuery = useMemoFirebase(() => {
-    if (!firebaseUser?.uid || !db || !isAuthResolved) return null;
+    if (!isAuthResolved || !firebaseUser?.uid || !db) return null;
     return query(collection(db, 'users', firebaseUser.uid, 'teamMemberships'));
-  }, [firebaseUser?.uid, db, isAuthResolved]);
+  }, [isAuthResolved, firebaseUser?.uid, db]);
 
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
@@ -526,16 +526,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [teams, activeTeamId]);
 
   const membersQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || activeTeam.id === '' || !db || !isAuthResolved) return null;
+    if (!isAuthResolved || !activeTeam?.id || !db) return null;
     return query(collection(db, 'teams', activeTeam.id, 'members'));
-  }, [activeTeam?.id, db, isAuthResolved]);
+  }, [isAuthResolved, activeTeam?.id, db]);
   const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
   const members = useMemo(() => membersData || [], [membersData]);
 
   const alertsQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || activeTeam.id === '' || !db || !isAuthResolved) return null;
+    if (!isAuthResolved || !activeTeam?.id || !db) return null;
     return query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10));
-  }, [activeTeam?.id, db, isAuthResolved]);
+  }, [isAuthResolved, activeTeam?.id, db]);
   const { data: alertsData } = useCollection<TeamAlert>(alertsQuery);
   const alerts = useMemo(() => alertsData || [], [alertsData]);
 
@@ -565,6 +565,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const value = {
     user: userProfile,
+    isAuthResolved,
     activeTeam,
     setActiveTeam: (t: Team) => setActiveTeamId(t.id),
     teams,
