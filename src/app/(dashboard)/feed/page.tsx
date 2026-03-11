@@ -407,12 +407,10 @@ export default function FeedPage() {
               </Button>
               <Button asChild variant="ghost" className="w-full justify-between h-12 rounded-xl text-white hover:bg-white/10 hover:text-white px-4 border border-white/5">
                 <Link href="/leagues" className="flex items-center w-full">
-                  <div className="flex items-center gap-3">
-                    <Shield className="h-4 w-4 text-primary" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Leagues Hub</span>
-                  </div>
-                  <ChevronRight className="h-3 w-3 opacity-40" />
-                </Link>
+                  <Shield className="h-4 w-4 text-primary" />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Leagues Hub</span>
+                </div>
+                <ChevronRight className="h-3 w-3 opacity-40" />
               </Button>
               <Button asChild variant="ghost" className="w-full justify-between h-12 rounded-xl text-white hover:bg-white/10 hover:text-white px-4 border border-white/5">
                 <Link href="/facilities" className="flex items-center w-full">

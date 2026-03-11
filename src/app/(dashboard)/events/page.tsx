@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -225,7 +224,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const handleCopyLink = async (path: string) => {
     try {
       const url = `${window.location.origin}${path}`;
-      if (navigator.clipboard && window.isSecureContext) {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(url);
         toast({ title: "Portal Link Copied" });
       } else {
@@ -460,7 +459,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
 }
 
 export default function EventsPage() {
-  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, isSuperAdmin, isStaff, user, hasFeature } = useTeam();
+  const { activeTeam, addEvent, updateEvent, deleteEvent, updateRSVP, formatTime, isSuperAdmin, isStaff, user, hasFeature, isPro } = useTeam();
   const db = useFirestore();
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -516,17 +515,58 @@ export default function EventsPage() {
   
   const handleCreateEvent = async () => { 
     if (!newTitle || !newDate) return; 
-    const payload: any = { 
-      title: newTitle, eventType: isTournamentMode ? 'tournament' : eventType,
-      date: new Date(newDate + 'T' + (newTime || '12:00')).toISOString(), 
-      startTime: newTime || 'TBD', endTime: newEndTime || null, location: newLocation, 
-      facilityId: newFacilityId === 'manual' ? null : newFacilityId,
-      fieldId: newFieldId === 'manual' ? null : newFieldId,
-      description: newDescription, isTournament: isTournamentMode, lastUpdated: new Date().toISOString() 
-    }; 
-    if (isTournamentMode && newEndDate) payload.endDate = new Date(newEndDate + 'T23:59').toISOString();
-    if (editingEvent) await updateEvent(editingEvent.id, payload); else await addEvent(payload); 
-    setIsCreateOpen(false); resetForm(); 
+
+    // Robust normalization for date and time strings
+    const normalizeTime = (t: string) => {
+      if (!t || t === 'TBD' || t.trim() === '') return '12:00';
+      // If time includes AM/PM, convert to 24h for standard ISO constructor
+      if (t.includes('M')) {
+        const timePart = t.split(' ')[0];
+        const period = t.split(' ')[1]?.toUpperCase();
+        let [h, m] = timePart.split(':').map(Number);
+        if (period === 'PM' && h !== 12) h += 12;
+        if (period === 'AM' && h === 12) h = 0;
+        return `${h.toString().padStart(2, '0')}:${(m || 0).toString().padStart(2, '0')}`;
+      }
+      // If just HH:mm, ensure it's padded correctly
+      if (t.includes(':')) {
+        const [h, m] = t.split(':').map(Number);
+        return `${h.toString().padStart(2, '0')}:${(m || 0).toString().padStart(2, '0')}`;
+      }
+      return '12:00';
+    };
+
+    const startTimeISO = normalizeTime(newTime);
+    const endTimeISO = newEndTime ? normalizeTime(newEndTime) : null;
+
+    try {
+      const payload: any = { 
+        title: newTitle, eventType: isTournamentMode ? 'tournament' : eventType,
+        date: new Date(newDate + 'T' + startTimeISO).toISOString(), 
+        startTime: newTime || 'TBD', 
+        endTime: newEndTime || null, 
+        location: newLocation, 
+        facilityId: newFacilityId === 'manual' ? null : newFacilityId,
+        fieldId: newFieldId === 'manual' ? null : newFieldId,
+        description: newDescription, 
+        isTournament: isTournamentMode, 
+        lastUpdated: new Date().toISOString() 
+      }; 
+      
+      if (isTournamentMode && newEndDate) {
+        payload.endDate = new Date(newEndDate + 'T23:59:59').toISOString();
+      }
+
+      if (editingEvent) {
+        await updateEvent(editingEvent.id, payload);
+      } else {
+        await addEvent(payload); 
+      }
+      setIsCreateOpen(false); 
+      resetForm(); 
+    } catch (e) {
+      toast({ title: "Schedule Error", description: "Verify date and time formats.", variant: "destructive" });
+    }
   };
 
   return (
