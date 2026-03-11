@@ -878,7 +878,8 @@ export default function EventsPage() {
     if (!dStr) return new Date(NaN);
     const [year, month, day] = dStr.split('-').map(Number);
     const [hours, minutes] = (tStr || '12:00').split(':').map(Number);
-    return new Date(year, month - 1, day, hours, minutes);
+    const d = new Date(year, month - 1, day, hours, minutes);
+    return d;
   };
 
   const handleCreateEvent = async () => { 

@@ -47,7 +47,10 @@ export default function DashboardLayout({
                         pathname === '/teams/join' || 
                         pathname === '/family' || 
                         pathname === '/settings' || 
-                        pathname === '/pricing';
+                        pathname === '/pricing' ||
+                        pathname === '/how-to' ||
+                        pathname.startsWith('/tournaments/') ||
+                        pathname.startsWith('/register/league/');
     
     if (teams.length === 0 && !isSetupPage) {
       if (userProfile?.role === 'coach') {
@@ -60,7 +63,7 @@ export default function DashboardLayout({
 
   /**
    * HYDRATION GUARD: Ensuring the initial render handshake between server and client.
-   * Standardized loading text to "Authenticating..." to prevent reconciliation mismatches.
+   * Return a consistent loading state until mounted to prevent reconciliation mismatches.
    */
   if (!mounted || isUserLoading || !user || isSeedingDemo) {
     return (

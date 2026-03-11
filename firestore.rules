@@ -21,8 +21,8 @@ service cloud.firestore {
 
     function isDemoTeam(tid) {
       return tid != null && (
-        (tid.size() >= 5 && tid[0:5] == 'demo_') ||
-        (tid.size() >= 11 && tid[0:11] == 'demo_guest_')
+        tid.startsWith('demo_') ||
+        tid.startsWith('demo_guest_')
       );
     }
 
@@ -46,8 +46,7 @@ service cloud.firestore {
       );
     }
 
-    // COLLECTION GROUP RULES (Top-level for query optimization)
-    // Critical: Must allow list for collectionGroup queries to be statically authorized
+    // COLLECTION GROUP RULES (Must be top-level)
     match /{path=**}/events/{eventId} {
       allow list: if isSignedIn();
       allow get: if isSignedIn() && (isSuperAdmin() || isTeamMember(resource.data.teamId));
@@ -78,7 +77,7 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       allow list, get: if isSignedIn();
       allow create: if isSignedIn();
-      allow update: if isSignedIn() && (resource.data.creatorId == request.auth.uid || isSuperAdmin());
+      allow update, delete: if isSignedIn() && (resource.data.creatorId == request.auth.uid || isSuperAdmin());
       
       match /registration/config {
         allow read: if true;
