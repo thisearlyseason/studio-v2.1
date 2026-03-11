@@ -27,7 +27,8 @@ import {
   Package,
   Terminal,
   Shield,
-  Activity
+  Activity,
+  ImageIcon
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -93,19 +94,19 @@ export default function FeedPage() {
   const router = useRouter();
   
   const postsQ = useMemoFirebase(() => {
-    if (!db || !activeTeam?.id) return null;
+    if (!db || !activeTeam?.id || !user?.id) return null;
     return query(collection(db, 'teams', activeTeam.id, 'feedPosts'), orderBy('createdAt', 'desc'), limit(20));
-  }, [db, activeTeam?.id]);
+  }, [db, activeTeam?.id, user?.id]);
 
   const eventsQ = useMemoFirebase(() => {
-    if (!db || !activeTeam?.id) return null;
+    if (!db || !activeTeam?.id || !user?.id) return null;
     return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc'), limit(3));
-  }, [db, activeTeam?.id]);
+  }, [db, activeTeam?.id, user?.id]);
 
   const gamesQ = useMemoFirebase(() => {
-    if (!db || !activeTeam?.id) return null;
+    if (!db || !activeTeam?.id || !user?.id) return null;
     return query(collection(db, 'teams', activeTeam.id, 'games'), orderBy('date', 'desc'), limit(10));
-  }, [db, activeTeam?.id]);
+  }, [db, activeTeam?.id, user?.id]);
 
   const { data: posts } = useCollection(postsQ);
   const { data: events } = useCollection(eventsQ);
@@ -385,7 +386,7 @@ export default function FeedPage() {
               </div>
             </CardHeader>
             <CardContent className="p-6 relative z-10 space-y-3">
-              <Button asChild variant="ghost" className="w-full h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
+              <Button asChild variant="ghost" className="w-full h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all justify-start">
                 <Link href="/coaches-corner" className="flex items-center justify-between w-full">
                   <div className="flex items-center gap-3">
                     <PenTool className="h-4 w-4 text-primary" />
@@ -394,7 +395,7 @@ export default function FeedPage() {
                   <ChevronRight className="h-3 w-3 opacity-40" />
                 </Link>
               </Button>
-              <Button asChild variant="ghost" className="w-full h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
+              <Button asChild variant="ghost" className="w-full h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all justify-start">
                 <Link href="/leagues" className="flex items-center justify-between w-full">
                   <div className="flex items-center gap-3">
                     <Shield className="h-4 w-4 text-primary" />
@@ -403,7 +404,7 @@ export default function FeedPage() {
                   <ChevronRight className="h-3 w-3 opacity-40" />
                 </Link>
               </Button>
-              <Button asChild variant="ghost" className="w-full h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
+              <Button asChild variant="ghost" className="w-full h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all justify-start">
                 <Link href="/facilities" className="flex items-center justify-between w-full">
                   <div className="flex items-center gap-3">
                     <MapPin className="h-4 w-4 text-primary" />
@@ -412,7 +413,7 @@ export default function FeedPage() {
                   <ChevronRight className="h-3 w-3 opacity-40" />
                 </Link>
               </Button>
-              <Button asChild variant="ghost" className="w-full h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
+              <Button asChild variant="ghost" className="w-full h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all justify-start">
                 <Link href="/equipment" className="flex items-center justify-between w-full">
                   <div className="flex items-center gap-3">
                     <Package className="h-4 w-4 text-primary" />

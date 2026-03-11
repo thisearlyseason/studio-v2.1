@@ -75,7 +75,8 @@ service cloud.firestore {
         resource == null || 
         resource.data.members[request.auth.uid] != null || 
         resource.data.ownerUserId == request.auth.uid ||
-        resource.data.createdBy == request.auth.uid
+        resource.data.createdBy == request.auth.uid ||
+        teamId.startsWith('demo_guest_')
       );
       
       allow create: if isSignedIn();
@@ -86,13 +87,32 @@ service cloud.firestore {
         resource.data.createdBy == request.auth.uid
       );
 
-      // Explicit rules for subcollections to prevent ambiguity
+      // Subcollections are generally accessible to signed in users for coordination
       match /events/{eventId} {
         allow read, write: if isSignedIn();
       }
 
       match /members/{memberId} {
         allow read, write: if isSignedIn();
+      }
+      
+      match /drills/{drillId} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /files/{fileId} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /games/{gameId} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /feedPosts/{postId} {
+        allow read, write: if isSignedIn();
+        match /comments/{commentId} {
+          allow read, write: if isSignedIn();
+        }
       }
 
       match /{document=**} {

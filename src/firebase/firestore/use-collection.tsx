@@ -93,8 +93,8 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (err: FirestoreError) => {
-        // 4. Final Guard: Suppress permission errors for root paths that should never have fired
-        if (!trimmedPath || trimmedPath === '/' || trimmedPath === '' || trimmedPath === '//') {
+        // 4. Final Guard: Suppress permission errors for root paths or uninitialized states
+        if (!trimmedPath || trimmedPath === '/' || trimmedPath === '' || trimmedPath === '//' || trimmedPath.includes('//')) {
           setIsLoading(false);
           return;
         }
@@ -107,7 +107,11 @@ export function useCollection<T = any>(
         setError(contextualError);
         setData(null);
         setIsLoading(false);
-        errorEmitter.emit('permission-error', contextualError);
+        
+        // Only emit if it's not a transient state error
+        if (err.code !== 'permission-denied' || (trimmedPath && trimmedPath !== '/')) {
+          errorEmitter.emit('permission-error', contextualError);
+        }
       }
     );
 

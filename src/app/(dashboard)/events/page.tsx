@@ -61,7 +61,7 @@ import { toast } from '@/hooks/use-toast';
 import { format, isSameDay, isPast, addMinutes, addDays, parse } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
@@ -538,9 +538,9 @@ export default function EventsPage() {
   const [eventType, setEventType] = useState<EventType>('game');
 
   const eventsQuery = useMemoFirebase(() => { 
-    if (!activeTeam?.id || !db) return null; 
+    if (!activeTeam?.id || !db || !user?.id) return null; 
     return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc')); 
-  }, [activeTeam?.id, db]);
+  }, [activeTeam?.id, db, user?.id]);
 
   const { data: allEvents } = useCollection<TeamEvent>(eventsQuery);
 
@@ -588,8 +588,8 @@ export default function EventsPage() {
         startTime: newTime, 
         endTime: newEndTime || 'TBD', 
         location: newLocation, 
-        facilityId: selectedFacilityIds[0] || null, // For single event, we use first
-        facilityIds: isTournamentMode ? selectedFacilityIds : null, // Multi-facility for tourney
+        facilityId: selectedFacilityIds[0] || null,
+        facilityIds: isTournamentMode ? selectedFacilityIds : null,
         fieldId: newFieldId === 'manual' ? null : newFieldId, 
         description: newDescription, 
         isTournament: isTournamentMode, 
@@ -708,13 +708,7 @@ export default function EventsPage() {
         </DialogContent>
       </Dialog>
       <section className="space-y-4">
-        <div className="flex items-center justify-between px-2">
-          <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2>
-          <div className="flex bg-muted/50 p-1 rounded-xl border">
-            <Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button>
-            <Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button>
-          </div>
-        </div>
+        <div className="flex items-center justify-between px-2"><h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2><div className="flex bg-muted/50 p-1 rounded-xl border"><Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button><Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button></div></div>
         <div className="grid gap-4">
           {filteredEvents.map((event) => ( 
             <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent}>

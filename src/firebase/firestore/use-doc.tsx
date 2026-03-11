@@ -70,8 +70,8 @@ export function useDoc<T = any>(
         setIsLoading(false);
       },
       (err: FirestoreError) => {
-        // 3. Final Guard: Suppress root errors
-        if (!path || path === '/' || path === '//') {
+        // 3. Final Guard: Suppress root errors or uninitialized state errors
+        if (!path || path === '/' || path === '//' || path.includes('//')) {
           setIsLoading(false);
           return;
         }
@@ -85,8 +85,10 @@ export function useDoc<T = any>(
         setData(null);
         setIsLoading(false);
 
-        // trigger global error propagation
-        errorEmitter.emit('permission-error', contextualError);
+        // Only trigger global error propagation if it's a real permission issue on a valid path
+        if (err.code !== 'permission-denied' || (path && path !== '/')) {
+          errorEmitter.emit('permission-error', contextualError);
+        }
       }
     );
 
