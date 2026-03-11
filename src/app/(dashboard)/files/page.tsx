@@ -28,11 +28,15 @@ import {
   Search,
   Filter,
   CheckCircle2,
-  Info
+  Info,
+  FileSignature,
+  PenTool,
+  ArrowRight,
+  Clock
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { useTeam, TeamFile } from '@/components/providers/team-provider';
+import { useTeam, TeamFile, TeamDocument, DocumentSignature } from '@/components/providers/team-provider';
 import { 
   Dialog, 
   DialogContent, 
@@ -58,18 +62,85 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { collection, query, orderBy, where, doc, getDocs } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
+function DocumentSigningDialog({ doc: d, onSign }: { doc: TeamDocument, onSign: (id: string, sig: string) => Promise<void> }) {
+  const [signature, setSignature] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+
+  const handleSign = async () => {
+    if (!signature.trim() || !agreed) return;
+    setIsProcessing(true);
+    await onSign(d.id, signature);
+    setIsProcessing(false);
+  };
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all">
+          Execute Document <ChevronRight className="ml-2 h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="rounded-[2.5rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl">
+        <div className="h-2 bg-primary w-full" />
+        <div className="p-8 space-y-8">
+          <DialogHeader>
+            <DialogTitle className="text-3xl font-black uppercase tracking-tight">{d.title}</DialogTitle>
+            <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Verified Execution Protocol</DialogDescription>
+          </DialogHeader>
+
+          <div className="p-1 bg-muted rounded-2xl border-2">
+            <ScrollArea className="h-64 p-6 bg-white rounded-xl">
+              <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap text-foreground/80">{d.content}</p>
+            </ScrollArea>
+          </div>
+
+          <div className="space-y-6">
+            <div className="flex items-center space-x-3 p-4 bg-primary/5 rounded-2xl border border-primary/10 group cursor-pointer" onClick={() => setAgreed(!agreed)}>
+              <div className={cn(
+                "h-6 w-6 rounded-lg border-2 flex items-center justify-center transition-all",
+                agreed ? "bg-primary border-primary text-white" : "border-muted-foreground/30 bg-white"
+              )}>
+                {agreed && <Check className="h-4 w-4 stroke-[4px]" />}
+              </div>
+              <Label className="text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight">
+                I verify that I have read and understand all terms within this {d.type}.
+              </Label>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Digital Signature (Legal Name)</Label>
+              <Input 
+                placeholder="Type your name to sign..." 
+                value={signature} 
+                onChange={e => setSignature(e.target.value)} 
+                className="h-14 rounded-2xl border-2 text-xl font-mono italic text-primary text-center" 
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleSign} disabled={!agreed || !signature.trim() || isProcessing}>
+              Confirm & Verify Signatures
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function FilesPage() {
-  const { activeTeam, addFile, deleteFile, user, isPro, purchasePro, isSuperAdmin, isStaff } = useTeam();
+  const { activeTeam, addFile, deleteFile, user, isPro, purchasePro, isSuperAdmin, isStaff, currentMember, signTeamDocument } = useTeam();
   const db = useFirestore();
   
   const [mounted, setMounted] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<TeamFile | null>(null);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [uploadCategory, setUploadCategory] = useState<string>('Compliance');
@@ -77,6 +148,7 @@ export default function FilesPage() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Queries
   const filesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
     return query(collection(db, 'teams', activeTeam.id, 'files'), orderBy('date', 'desc'));
@@ -85,15 +157,51 @@ export default function FilesPage() {
   const { data: rawFiles } = useCollection<TeamFile>(filesQuery);
   const teamFiles = useMemo(() => {
     const all = rawFiles || [];
-    // Only show non-gameplay files here (Compliance and Other)
     return all.filter(f => !['Game Tape', 'Practice Session', 'Highlights'].includes(f.category));
   }, [rawFiles]);
+
+  const docsQuery = useMemoFirebase(() => {
+    if (!activeTeam || !db) return null;
+    return query(collection(db, 'teams', activeTeam.id, 'documents'), orderBy('createdAt', 'desc'));
+  }, [activeTeam?.id, db]);
+
+  const { data: documents } = useCollection<TeamDocument>(docsQuery);
+
+  const [signedDocIds, setSignedDocIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    setMounted(true);
+    if (activeTeam && currentMember && db) {
+      // Check which documents current user has signed
+      const checkSigs = async () => {
+        const ids: string[] = [];
+        const docsSnap = await getDocs(collection(db, 'teams', activeTeam.id, 'documents'));
+        for (const d of docsSnap.docs) {
+          const sigSnap = await getDocs(query(collection(db, 'teams', activeTeam.id, 'documents', d.id, 'signatures'), where('memberId', '==', currentMember.id)));
+          if (!sigSnap.empty) ids.push(d.id);
+        }
+        setSignedDocIds(ids);
+      };
+      checkSigs();
+    }
+  }, [activeTeam, currentMember, db, documents]);
+
+  const pendingDocs = useMemo(() => {
+    if (!documents) return [];
+    return documents.filter(d => {
+      const isAssigned = d.assignedTo.includes('all') || d.assignedTo.includes(currentMember?.id || '');
+      return isAssigned && !signedDocIds.includes(d.id);
+    });
+  }, [documents, signedDocIds, currentMember]);
+
+  const signedDocs = useMemo(() => {
+    if (!documents) return [];
+    return documents.filter(d => signedDocIds.includes(d.id));
+  }, [documents, signedDocIds]);
 
   const filteredFiles = useMemo(() => {
     return teamFiles.filter(f => f.name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [teamFiles, searchTerm]);
-
-  useEffect(() => { setMounted(true); }, []);
 
   if (!mounted || !activeTeam) return null;
 
@@ -113,11 +221,11 @@ export default function FilesPage() {
   };
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-12 pb-32">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 mb-2">Squad Repository</Badge>
-          <h1 className="text-4xl font-black uppercase tracking-tight">Compliance & Docs</h1>
+          <h1 className="text-4xl font-black uppercase tracking-tight">Library & Docs</h1>
           <p className="text-sm font-bold text-muted-foreground">Official squad repository for waivers and administration.</p>
         </div>
         {isAdmin && (
@@ -126,14 +234,14 @@ export default function FilesPage() {
             <Dialog>
               <DialogTrigger asChild>
                 <Button className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg shadow-primary/20">
-                  <Upload className="h-4 w-4 mr-2" /> Upload Document
+                  <Upload className="h-4 w-4 mr-2" /> Upload Resource
                 </Button>
               </DialogTrigger>
               <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
                 <div className="h-2 bg-primary w-full" />
                 <div className="p-8 space-y-6">
                   <DialogHeader>
-                    <DialogTitle className="text-2xl font-black uppercase tracking-tight">Archive Document</DialogTitle>
+                    <DialogTitle className="text-2xl font-black uppercase tracking-tight">Archive Resource</DialogTitle>
                     <DialogDescription className="font-bold text-primary uppercase text-[10px]">Enroll administrative resources</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
@@ -156,13 +264,81 @@ export default function FilesPage() {
         )}
       </div>
 
-      <div className="space-y-6">
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search official docs..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-11 h-14 rounded-2xl bg-muted/50 border-none shadow-inner font-black" />
+      {pendingDocs.length > 0 && (
+        <section className="space-y-6">
+          <div className="flex items-center gap-3 px-2">
+            <div className="bg-red-100 p-2 rounded-xl text-red-600 animate-pulse">
+              <FileSignature className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-tight">Action Required</h2>
+              <p className="text-[10px] font-bold text-red-600 uppercase tracking-widest">Pending Signatures</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {pendingDocs.map(d => (
+              <Card key={d.id} className="rounded-[2.5rem] border-none shadow-xl ring-2 ring-red-100 bg-white overflow-hidden flex flex-col group">
+                <CardHeader className="p-8 pb-4">
+                  <div className="flex justify-between items-start">
+                    <Badge className="bg-red-600 text-white border-none font-black text-[8px] uppercase px-2 h-5">URGENT</Badge>
+                    <span className="text-[10px] font-black text-muted-foreground uppercase">{d.type}</span>
+                  </div>
+                  <CardTitle className="text-2xl font-black uppercase tracking-tight pt-2">{d.title}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-8 pt-0 flex-1">
+                  <p className="text-xs font-medium text-muted-foreground line-clamp-3 leading-relaxed mb-6 italic">
+                    "{d.content}"
+                  </p>
+                  <DocumentSigningDialog doc={d} onSign={signTeamDocument} />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="space-y-8">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="bg-primary/10 p-2.5 rounded-xl text-primary">
+              <FolderClosed className="h-5 w-5" />
+            </div>
+            <h2 className="text-xl font-black uppercase tracking-tight">Archive & Vault</h2>
+          </div>
+          <div className="relative flex-1 w-full sm:max-w-md">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input 
+              placeholder="Search archived resources..." 
+              value={searchTerm} 
+              onChange={e => setSearchTerm(e.target.value)} 
+              className="pl-11 h-12 rounded-2xl bg-muted/50 border-none shadow-inner font-black" 
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {/* Signed Documents */}
+          {signedDocs.map(doc => (
+            <Card key={doc.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-green-50/30 overflow-hidden">
+              <CardHeader className="p-6 pb-2">
+                <div className="flex justify-between items-start">
+                  <div className="bg-green-100 p-3 rounded-2xl text-green-600"><CheckCircle2 className="h-6 w-6" /></div>
+                  <Badge className="bg-green-600 text-white border-none text-[8px] font-black uppercase">SIGNED</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6 pt-2 space-y-3">
+                <h3 className="font-black text-sm uppercase tracking-tight truncate">{doc.title}</h3>
+                <p className="text-[9px] font-bold text-muted-foreground uppercase leading-tight">Certified Legal Record</p>
+              </CardContent>
+              <CardFooter className="p-6 pt-0">
+                <Button variant="outline" className="w-full h-10 rounded-xl font-black text-[10px] uppercase border-2 bg-white" onClick={() => window.open('#', '_blank')}>
+                  View Certificate
+                </Button>
+              </CardFooter>
+            </Card>
+          ))}
+
+          {/* Regular Files */}
           {filteredFiles.map(file => (
             <Card key={file.id} className="group border-none shadow-sm hover:shadow-xl transition-all duration-500 rounded-[2rem] overflow-hidden ring-1 ring-black/5 bg-white">
               <CardHeader className="p-6 pb-2">
@@ -174,30 +350,31 @@ export default function FilesPage() {
               <CardContent className="p-6 pt-2 space-y-3">
                 <div className="space-y-1">
                   <h3 className="font-black text-sm uppercase tracking-tight truncate">{file.name}</h3>
-                  <p className="text-[9px] font-bold text-muted-foreground uppercase">{file.size} • {format(new Date(file.date), 'MMM d, yyyy')}</p>
+                  <p className="text-[9px] font-bold text-muted-foreground uppercase">{file.size || 'N/A'} • {format(new Date(file.date), 'MMM d, yyyy')}</p>
                 </div>
                 {file.description && <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 leading-relaxed italic">"{file.description}"</p>}
               </CardContent>
               <CardFooter className="p-6 pt-0 flex gap-2">
-                <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20" onClick={() => window.open(file.url, '_blank')}>View Hub</Button>
+                <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20" onClick={() => window.open(file.url, '_blank')}>Download Hub</Button>
                 {isAdmin && <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => setFileToDelete(file.id)}><Trash2 className="h-4 w-4" /></Button>}
               </CardFooter>
             </Card>
           ))}
-          {filteredFiles.length === 0 && (
+
+          {filteredFiles.length === 0 && signedDocs.length === 0 && pendingDocs.length === 0 && (
             <div className="col-span-full py-24 text-center bg-muted/10 rounded-[3rem] border-2 border-dashed space-y-4 opacity-40">
               <FolderClosed className="h-12 w-12 mx-auto" />
               <p className="text-sm font-black uppercase tracking-widest">No Documents Found</p>
             </div>
           )}
         </div>
-      </div>
+      </section>
 
       <AlertDialog open={!!fileToDelete} onOpenChange={o => !o && setFileToDelete(null)}>
-        <AlertDialogContent className="rounded-[2.5rem]">
+        <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-2xl font-black uppercase">Purge Document?</AlertDialogTitle>
-            <AlertDialogDescription className="font-bold text-base pt-2">This action is permanent and will remove this document from the squad repository for all members.</AlertDialogDescription>
+            <AlertDialogDescription className="font-bold text-base pt-2 text-foreground/80">This action is permanent and will remove this resource from the squad repository for all members.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-6">
             <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel</AlertDialogCancel>

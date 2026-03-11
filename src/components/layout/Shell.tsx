@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, memo } from 'react';
@@ -29,7 +30,8 @@ import {
   PiggyBank,
   Package,
   MapPin,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  PenTool
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -64,6 +66,7 @@ const tabs = [
   { name: 'Calendar', href: '/calendar', icon: CalendarIcon, pro: false },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Leagues', href: '/leagues', icon: Shield, pro: false },
+  { name: 'Coaches Corner', href: '/coaches-corner', icon: PenTool, pro: true, gate: 'staff' },
   { name: 'Facilities', href: '/facilities', icon: MapPin, pro: true, gate: 'staff' },
   { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: false },
   { name: 'Playbook', icon: Dumbbell, href: '/drills', pro: false, mobileName: 'Playbook' },

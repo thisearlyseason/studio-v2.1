@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useRef } from 'react';
@@ -104,6 +105,28 @@ export type Member = {
   medicalClearance?: boolean;
   mediaRelease?: boolean;
   joinedAt?: string;
+};
+
+export type TeamDocument = {
+  id: string;
+  teamId: string;
+  title: string;
+  content: string;
+  type: 'waiver' | 'policy' | 'info';
+  assignedTo: string[]; // memberIds or ['all']
+  createdAt: string;
+  createdBy: string;
+  signatureCount?: number;
+};
+
+export type DocumentSignature = {
+  id: string;
+  documentId: string;
+  memberId: string;
+  userId: string;
+  userName: string;
+  signedAt: string;
+  signatureText: string;
 };
 
 export type FeeItem = {
@@ -388,6 +411,10 @@ interface TeamContextType {
   deleteScoutingReport: (id: string) => Promise<void>;
   updateStaffEvaluation: (memberId: string, content: string) => Promise<void>;
   getStaffEvaluation: (memberId: string) => Promise<string>;
+
+  createTeamDocument: (doc: Partial<TeamDocument>) => Promise<void>;
+  deleteTeamDocument: (id: string) => Promise<void>;
+  signTeamDocument: (docId: string, signature: string) => Promise<void>;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -729,8 +756,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!snap.exists()) return;
       const poll = snap.data().poll; const current = poll.voters?.[firebaseUser.uid];
       const u: any = { [`poll.voters.${firebaseUser.uid}`]: optIdx };
-      if (current === undefined) { u[`poll.options.${optIdx}.votes`] = increment(1); u['poll.totalVotes'] = increment(1); }
-      else if (current !== optIdx) { u[`poll.options.${current}.votes`] = increment(-1); u[`poll.options.${optIdx}.votes`] = increment(1); }
+      if (current === undefined) { u[`poll.options.${optionIdx}.votes`] = increment(1); u['poll.totalVotes'] = increment(1); }
+      else if (current !== optIdx) { u[`poll.options.${current}.votes`] = increment(-1); u[`poll.options.${optionIdx}.votes`] = increment(1); }
       await updateDoc(ref, u);
     },
     formatTime: (date: string | Date) => { return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); },
@@ -1072,6 +1099,44 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!activeTeam) return '';
       const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'evaluations', 'notes'));
       return snap.exists() ? snap.data().content : '';
+    },
+
+    createTeamDocument: async (d: Partial<TeamDocument>) => {
+      if (!activeTeam || !userProfile) return;
+      await addDoc(collection(db, 'teams', activeTeam.id, 'documents'), clean({
+        ...d,
+        teamId: activeTeam.id,
+        createdBy: userProfile.id,
+        createdAt: new Date().toISOString()
+      }));
+    },
+    deleteTeamDocument: async (id: string) => {
+      if (!activeTeam) return;
+      await deleteDoc(doc(db, 'teams', activeTeam.id, 'documents', id));
+    },
+    signTeamDocument: async (docId: string, signature: string) => {
+      if (!activeTeam || !userProfile) return;
+      const member = members.find(m => m.userId === userProfile.id);
+      if (!member) return;
+
+      const batch = writeBatch(db);
+      const sigRef = doc(db, 'teams', activeTeam.id, 'documents', docId, 'signatures', member.id);
+      
+      batch.set(sigRef, clean({
+        documentId: docId,
+        memberId: member.id,
+        userId: userProfile.id,
+        userName: userProfile.name,
+        signedAt: new Date().toISOString(),
+        signatureText: signature
+      }));
+
+      batch.update(doc(db, 'teams', activeTeam.id, 'documents', docId), {
+        signatureCount: increment(1)
+      });
+
+      await batch.commit();
+      toast({ title: "Compliance Verified", description: "Document signed and archived." });
     }
   };
 
