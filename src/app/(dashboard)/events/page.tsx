@@ -58,14 +58,10 @@ import { format, isSameDay, isPast, addMinutes, addDays, parse } from 'date-fns'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
 
-const EVENT_TYPE_COLORS: Record<EventType, string> = {
-  game: 'bg-primary text-white border-primary',
-  practice: 'bg-emerald-600 text-white border-emerald-600',
-  meeting: 'bg-amber-500 text-white border-amber-500',
-  tournament: 'bg-black text-white border-black',
-  other: 'bg-slate-600 text-white border-slate-600',
-};
-
+/**
+ * Normalizes time input strings to HH:mm format for reliable ISO construction.
+ * Supports both 12-hour (AM/PM) and 24-hour inputs.
+ */
 const normalizeTime = (t: string) => {
   if (!t || t === 'TBD') return '12:00';
   if (t.toUpperCase().includes('M')) {
@@ -82,18 +78,39 @@ const normalizeTime = (t: string) => {
   return t.includes(':') ? t : '12:00';
 };
 
+/**
+ * Tactical Standings Engine:
+ * Win: +1 point
+ * Loss: -1 point
+ * Tie: 0 points
+ */
 function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
     acc[team] = { name: team, wins: 0, losses: 0, ties: 0, points: 0 };
     return acc;
   }, {} as Record<string, any>);
+  
   games.forEach(game => {
     if (!game.isCompleted) return;
     const t1 = game.team1; const t2 = game.team2;
     if (!standings[t1] || !standings[t2]) return;
-    if (game.score1 > game.score2) { standings[t1].wins += 1; standings[t1].points += 1; standings[t2].losses += 1; standings[t2].points -= 1; }
-    else if (game.score2 > game.score1) { standings[t2].wins += 1; standings[t2].points += 1; standings[t1].losses += 1; standings[t1].points -= 1; }
-    else { standings[t1].ties += 1; standings[t2].ties += 1; }
+    
+    if (game.score1 > game.score2) { 
+      standings[t1].wins += 1; 
+      standings[t1].points += 1; 
+      standings[t2].losses += 1; 
+      standings[t2].points -= 1; 
+    }
+    else if (game.score2 > game.score1) { 
+      standings[t2].wins += 1; 
+      standings[t2].points += 1; 
+      standings[t1].losses += 1; 
+      standings[t1].points -= 1; 
+    }
+    else { 
+      standings[t1].ties += 1; 
+      standings[t2].ties += 1; 
+    }
   });
   return Object.values(standings).sort((a, b) => b.points - a.points || b.wins - a.wins);
 }
@@ -144,6 +161,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   }, [activeTeam, event.tournamentTeams]);
 
   const tournamentStandings = useMemo(() => (event.isTournament && event.tournamentTeams) ? calculateTournamentStandings(event.tournamentTeams, event.tournamentGames || []) : [], [event]);
+  
   const groupedGames = useMemo(() => {
     if (!event.tournamentGames) return {};
     const groups: Record<string, TournamentGame[]> = {};
@@ -224,13 +242,13 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                 </div>
                 {event.isTournament && (
                   <div className="space-y-4">
-                    <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Leaderboard</h4>
+                    <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Leaderboard (+1 Win, -1 Loss)</h4>
                     {isEliteUnlocked ? (
                       <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
                         {tournamentStandings.map((team) => (
                           <div key={team.name} className="flex justify-between items-center px-5 py-4 border-b border-white/5 last:border-0">
                             <span className="text-xs font-black uppercase truncate pr-2">{team.name}</span>
-                            <Badge className="bg-primary text-white border-none font-black text-[9px] px-2 h-5">{team.points} PTS</Badge>
+                            <Badge className={cn("text-white border-none font-black text-[9px] px-2 h-5", team.points >= 0 ? "bg-primary" : "bg-destructive")}>{team.points} PTS</Badge>
                           </div>
                         ))}
                       </div>
@@ -376,17 +394,41 @@ export default function EventsPage() {
   const [newDescription, setNewDescription] = useState('');
   const [eventType, setEventType] = useState<EventType>('game');
 
-  const eventsQuery = useMemoFirebase(() => { if (!activeTeam?.id || !db) return null; return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc')); }, [activeTeam?.id, db]);
+  const eventsQuery = useMemoFirebase(() => { 
+    if (!activeTeam?.id || !db) return null; 
+    return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc')); 
+  }, [activeTeam?.id, db]);
+
   const { data: allEvents } = useCollection<TeamEvent>(eventsQuery);
+
   const facilitiesQuery = useMemoFirebase(() => (db && user?.id) ? query(collection(db, 'facilities'), where('clubId', '==', user.id)) : null, [db, user?.id]);
   const { data: facilities } = useCollection<Facility>(facilitiesQuery);
+
   const fieldsQuery = useMemoFirebase(() => (db && newFacilityId !== 'manual') ? query(collection(db, 'facilities', newFacilityId, 'fields'), orderBy('name', 'asc')) : null, [db, newFacilityId]);
   const { data: fields } = useCollection<Field>(fieldsQuery);
-  const filteredEvents = useMemo(() => { const now = new Date(); const list = allEvents || []; if (filterMode === 'live') return list.filter(e => !isPast(new Date(e.date)) || isSameDay(new Date(e.date), now)); return list.filter(e => isPast(new Date(e.date)) && !isSameDay(new Date(e.date), now)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); }, [allEvents, filterMode]);
+
+  const filteredEvents = useMemo(() => { 
+    const now = new Date(); 
+    const list = allEvents || []; 
+    if (filterMode === 'live') return list.filter(e => !isPast(new Date(e.date)) || isSameDay(new Date(e.date), now)); 
+    return list.filter(e => isPast(new Date(e.date)) && !isSameDay(new Date(e.date), now)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); 
+  }, [allEvents, filterMode]);
+
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
 
   const handleEdit = (event: TeamEvent) => { 
-    setEditingEvent(event); setIsTournamentMode(!!event.isTournament); setNewTitle(event.title); setEventType(event.eventType || 'game'); setNewDate(format(new Date(event.date), 'yyyy-MM-dd')); setNewTime(event.startTime); setNewEndTime(event.endTime || ''); setNewLocation(event.location); setNewFacilityId(event.facilityId || 'manual'); setNewFieldId(event.fieldId || 'manual'); setNewDescription(event.description); setIsCreateOpen(true); 
+    setEditingEvent(event); 
+    setIsTournamentMode(!!event.isTournament); 
+    setNewTitle(event.title); 
+    setEventType(event.eventType || 'game'); 
+    setNewDate(format(new Date(event.date), 'yyyy-MM-dd')); 
+    setNewTime(event.startTime); 
+    setNewEndTime(event.endTime || ''); 
+    setNewLocation(event.location); 
+    setNewFacilityId(event.facilityId || 'manual'); 
+    setNewFieldId(event.fieldId || 'manual'); 
+    setNewDescription(event.description); 
+    setIsCreateOpen(true); 
   };
 
   const handleCreateEvent = async () => { 
@@ -396,7 +438,20 @@ export default function EventsPage() {
       const [year, month, day] = newDate.split('-').map(Number);
       const [hour, minute] = timeISO.split(':').map(Number);
       const eventDate = new Date(year, month - 1, day, hour, minute);
-      const payload: any = { title: newTitle, eventType: isTournamentMode ? 'tournament' : eventType, date: eventDate.toISOString(), startTime: newTime, endTime: newEndTime || 'TBD', location: newLocation, facilityId: newFacilityId === 'manual' ? null : newFacilityId, fieldId: newFieldId === 'manual' ? null : newFieldId, description: newDescription, isTournament: isTournamentMode, lastUpdated: new Date().toISOString() }; 
+      
+      const payload: any = { 
+        title: newTitle, 
+        eventType: isTournamentMode ? 'tournament' : eventType, 
+        date: eventDate.toISOString(), 
+        startTime: newTime, 
+        endTime: newEndTime || 'TBD', 
+        location: newLocation, 
+        facilityId: newFacilityId === 'manual' ? null : newFacilityId, 
+        fieldId: newFieldId === 'manual' ? null : newFieldId, 
+        description: newDescription, 
+        isTournament: isTournamentMode, 
+        lastUpdated: new Date().toISOString() 
+      }; 
       const success = editingEvent ? await updateEvent(editingEvent.id, payload) : await addEvent(payload); 
       if (success) { setIsCreateOpen(false); setEditingEvent(null); }
     } catch (e) { toast({ title: "Itinerary Error", variant: "destructive" }); }
@@ -410,7 +465,7 @@ export default function EventsPage() {
       </div>
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="sm:max-w-5xl p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl overflow-hidden flex flex-col">
-          <div className="flex-1 overflow-y-auto"><div className="flex flex-col lg:flex-row min-h-full"><div className="w-full lg:w-5/12 bg-muted/30 p-10 space-y-8 lg:border-r shrink-0"><DialogHeader><DialogTitle className="text-3xl font-black uppercase">{editingEvent ? "Update" : "Launch"} Hub</DialogTitle></DialogHeader><div className="space-y-4">{!isTournamentMode && ( <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label><Select value={eventType} onValueChange={(v: EventType) => setEventType(v)}><SelectTrigger className="h-12 rounded-xl font-black border-2 bg-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="game">Match Day</SelectItem><SelectItem value="practice">Training</SelectItem><SelectItem value="meeting">Tactical Meeting</SelectItem><SelectItem value="other">Event</SelectItem></SelectContent></Select></div> )}<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title *</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date *</Label><Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time Block</Label><div className="flex gap-2"><Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" /><Input type="time" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div></div></div></div></div><div className="flex-1 p-10 space-y-8 bg-background"><div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed space-y-4"><Label className="text-[10px] font-black uppercase tracking-widest">Venue Selection</Label><div className="grid gap-3"><Select value={newFacilityId} onValueChange={(val) => { setNewFacilityId(val); if(val !== 'manual') setNewLocation(facilities?.find(f => f.id === val)?.address || ''); }}><SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Select Facility" /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="manual">Manual Entry</SelectItem>{facilities?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent></Select>{newFacilityId !== 'manual' && ( <Select value={newFieldId} onValueChange={setNewFieldId}><SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Field/Court" /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="manual">General</SelectItem>{fields?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent></Select> )}<Input placeholder="Location Label" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-11 rounded-xl font-bold border-2 bg-white" /></div></div><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Brief</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium" /></div></div></div></div><div className="p-8 bg-background border-t shrink-0 flex justify-center"><Button className="w-full max-w-4xl h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreateEvent}>Commit Event</Button></div></DialogContent>
+          <div className="flex-1 overflow-y-auto"><div className="flex flex-col lg:flex-row min-h-full"><div className="w-full lg:w-5/12 bg-muted/30 p-10 space-y-8 lg:border-r shrink-0"><DialogHeader><DialogTitle className="text-3xl font-black uppercase">{editingEvent ? "Update" : "Launch"} Event</DialogTitle></DialogHeader><div className="space-y-4">{!isTournamentMode && ( <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label><Select value={eventType} onValueChange={(v: EventType) => setEventType(v)}><SelectTrigger className="h-12 rounded-xl font-black border-2 bg-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="game">Match Day</SelectItem><SelectItem value="practice">Training</SelectItem><SelectItem value="meeting">Tactical Meeting</SelectItem><SelectItem value="other">Event</SelectItem></SelectContent></Select></div> )}<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title *</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date *</Label><Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time Block</Label><div className="flex gap-2"><Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" /><Input type="time" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div></div></div></div></div><div className="flex-1 p-10 space-y-8 bg-background"><div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed space-y-4"><Label className="text-[10px] font-black uppercase tracking-widest">Venue Selection</Label><div className="grid gap-3"><Select value={newFacilityId} onValueChange={(val) => { setNewFacilityId(val); if(val !== 'manual') setNewLocation(facilities?.find(f => f.id === val)?.address || ''); }}><SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Select Facility" /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="manual">Manual Entry</SelectItem>{facilities?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent></Select>{newFacilityId !== 'manual' && ( <Select value={newFieldId} onValueChange={setNewFieldId}><SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Field/Court" /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="manual">General</SelectItem>{fields?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent></Select> )}<Input placeholder="Location Label" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-11 rounded-xl font-bold border-2 bg-white" /></div></div><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Brief</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium" /></div></div></div></div><div className="p-8 bg-background border-t shrink-0 flex justify-center"><Button className="w-full max-w-4xl h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreateEvent}>Commit Event</Button></div></DialogContent>
       </Dialog>
       <section className="space-y-4"><div className="flex items-center justify-between px-2"><h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2><div className="flex bg-muted/50 p-1 rounded-xl border"><Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button><Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button></div></div><div className="grid gap-4">{filteredEvents.map((event) => ( <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent}><Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white"><div className="flex items-stretch h-32"><div className={cn("w-20 lg:w-24 flex flex-col items-center justify-center border-r-2 shrink-0", event.isTournament ? "bg-black text-white" : EVENT_TYPE_COLORS[event.eventType || 'other'])}><span className="text-[8px] font-black uppercase opacity-60">{format(new Date(event.date), 'MMM')}</span><span className="text-3xl lg:text-4xl font-black">{format(new Date(event.date), 'dd')}</span></div><div className="flex-1 p-6 flex flex-col justify-center min-w-0"><div className="flex items-start justify-between"><div><div className="flex gap-2 mb-1.5"><Badge className="text-[7px] uppercase">{event.isTournament ? 'Tournament' : (event.eventType || 'Activity')}</Badge><Badge variant="outline" className="text-[7px] uppercase">{event.startTime}</Badge></div><h3 className="text-xl font-black tracking-tight leading-none truncate">{event.title}</h3><p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1 mt-1"><MapPin className="h-3 w-3" /> {event.location}</p></div><ChevronRight className="h-5 w-5 text-primary opacity-20 group-hover:opacity-100 transition-all mt-2" /></div></div></div></Card></EventDetailDialog> ))}</div></section>
     </div>
