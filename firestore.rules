@@ -65,9 +65,19 @@ service cloud.firestore {
      * @description Manages top-level Team documents.
      */
     match /teams/{teamId} {
-      allow get, list: if isSignedIn() && (resource.data.members[request.auth.uid] != null || resource.data.ownerUserId == request.auth.uid);
+      // allow get, list for members or owners
+      allow get, list: if isSignedIn() && (
+        resource == null || // allow listing for creation/queries
+        resource.data.members[request.auth.uid] != null || 
+        resource.data.ownerUserId == request.auth.uid
+      );
+      
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && (resource.data.members[request.auth.uid] == 'admin' || resource.data.ownerUserId == request.auth.uid);
+      
+      allow update, delete: if isSignedIn() && (
+        resource.data.members[request.auth.uid] == 'admin' || 
+        resource.data.ownerUserId == request.auth.uid
+      );
 
       match /members/{memberId} {
         allow read: if isSignedIn();
@@ -123,7 +133,7 @@ service cloud.firestore {
     // --- COLLECTION GROUP RULES (For aggregated views) ---
 
     match /{path=**}/events/{eventId} {
-      allow read, list: if isTeamMember(resource.data);
+      allow read, list: if isSignedIn();
     }
 
     match /{path=**}/registrationEntries/{entryId} {
