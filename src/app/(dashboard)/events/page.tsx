@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -29,7 +29,10 @@ import {
   Copy,
   Share2,
   ExternalLink,
-  Eye
+  Eye,
+  Shield,
+  ClipboardList,
+  ArrowRight
 } from 'lucide-react';
 import { 
   Dialog, 
