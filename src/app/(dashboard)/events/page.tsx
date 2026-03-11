@@ -32,7 +32,8 @@ import {
   Eye,
   Shield,
   ClipboardList,
-  ArrowRight
+  ArrowRight,
+  Target
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -145,6 +146,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   const [tempWaiver, setTempWaiver] = useState(event.teamWaiverText || '');
   const [baseUrl, setBaseUrl] = useState('');
 
+  // Manual Match State
+  const [manualMatch, setManualMatch] = useState({ team1: '', team2: '', date: format(new Date(event.date), 'yyyy-MM-dd'), time: '12:00', location: '' });
+
   useEffect(() => {
     if (typeof window !== 'undefined') setBaseUrl(window.location.origin);
   }, []);
@@ -200,6 +204,25 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
       await updateEvent(event.id, { tournamentGames: games });
       toast({ title: "Itinerary Generated" });
     } finally { setIsGenerating(false); }
+  };
+
+  const handleAddManualMatch = async () => {
+    if (!manualMatch.team1 || !manualMatch.team2 || !manualMatch.date || !manualMatch.time) return;
+    const newGame: TournamentGame = {
+      id: `manual_${Date.now()}`,
+      team1: manualMatch.team1,
+      team2: manualMatch.team2,
+      score1: 0,
+      score2: 0,
+      date: manualMatch.date,
+      time: format(parse(manualMatch.time, 'HH:mm', new Date()), 'h:mm a'),
+      location: manualMatch.location || 'Main Field',
+      isCompleted: false
+    };
+    const updatedGames = [...(event.tournamentGames || []), newGame];
+    await updateEvent(event.id, { tournamentGames: updatedGames });
+    setManualMatch({ team1: '', team2: '', date: format(new Date(event.date), 'yyyy-MM-dd'), time: '12:00', location: '' });
+    toast({ title: "Match Added" });
   };
 
   const handleSaveWaiver = async () => {
@@ -317,14 +340,14 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                   </TabsContent>
                   <TabsContent value="portals" className="mt-0 space-y-8">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
+                      <Card className="rounded-[2rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
                         <CardHeader className="bg-primary/5 p-6 border-b"><div className="flex items-center gap-3"><Eye className="h-5 w-5 text-primary" /><CardTitle className="text-sm font-black uppercase">Spectator Hub</CardTitle></div></CardHeader>
                         <CardContent className="p-6 space-y-4">
                           <p className="text-xs font-medium text-muted-foreground italic">Public link for parents and fans to follow live scores and standings.</p>
                           <div className="flex gap-2"><Input readOnly value={`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`} className="h-10 text-[10px] font-mono bg-muted/30 border-none" /><Button size="icon" variant="secondary" className="h-10 w-10 shrink-0 rounded-xl" onClick={() => copyToClipboard(`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`)}><Copy className="h-4 w-4" /></Button></div>
                         </CardContent>
                       </Card>
-                      <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
+                      <Card className="rounded-[2rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
                         <CardHeader className="bg-black text-white p-6 border-b"><div className="flex items-center gap-3"><Terminal className="h-5 w-5 text-primary" /><CardTitle className="text-sm font-black uppercase">Scorekeeper Portal</CardTitle></div></CardHeader>
                         <CardContent className="p-6 space-y-4">
                           <p className="text-xs font-medium text-muted-foreground italic">Share this with field marshals to log scores without a login.</p>
@@ -342,6 +365,18 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                         <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Match (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-12 rounded-xl border-2 bg-white" /></div>
                         <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Break (Min)</Label><Input type="number" value={genBreakLength} onChange={e => setGenBreakLength(e.target.value)} className="h-12 rounded-xl border-2 bg-white" /></div>
                         <Button className="col-span-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleGenerateSchedule} disabled={isGenerating}>{isGenerating ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Deploy Itinerary"}</Button>
+                      </div>
+                    </div>
+
+                    <div className="bg-black/5 p-8 rounded-[2.5rem] border-2 border-dashed border-black/10 space-y-8">
+                      <div className="flex items-center gap-4"><div className="bg-white p-3 rounded-2xl shadow-sm text-black"><Target className="h-6 w-6" /></div><h3 className="text-xl font-black uppercase tracking-tight">Manual Match Entry</h3></div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Squad A</Label><Input value={manualMatch.team1} onChange={e => setManualMatch({...manualMatch, team1: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
+                        <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Squad B</Label><Input value={manualMatch.team2} onChange={e => setManualMatch({...manualMatch, team2: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
+                        <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Date</Label><Input type="date" value={manualMatch.date} onChange={e => setManualMatch({...manualMatch, date: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
+                        <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Time</Label><Input type="time" value={manualMatch.time} onChange={e => setManualMatch({...manualMatch, time: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
+                        <div className="space-y-1.5 lg:col-span-2"><Label className="text-[9px] font-black uppercase ml-1">Location Label</Label><Input value={manualMatch.location} onChange={e => setManualMatch({...manualMatch, location: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
+                        <Button className="col-span-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleAddManualMatch} disabled={!manualMatch.team1 || !manualMatch.team2}>Establish Matchup</Button>
                       </div>
                     </div>
                   </TabsContent>
@@ -364,7 +399,12 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                   <div className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl border"><p className="text-[10px] font-black uppercase">Mark Final</p><Checkbox checked={editingGame.isCompleted} onCheckedChange={v => setEditingGame({...editingGame, isCompleted: !!v})} className="h-6 w-6 rounded-lg border-2" /></div>
                 </div>
               )}
-              <DialogFooter><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={async () => { const updatedGames = (event.tournamentGames || []).map(g => g.id === editingGame?.id ? editingGame : g); await updateEvent(event.id, { tournamentGames: updatedGames }); setEditingGame(null); }}>Commit Results</Button></DialogFooter>
+              <DialogFooter>
+                <div className="flex flex-col w-full gap-3">
+                  <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={async () => { const updatedGames = (event.tournamentGames || []).map(g => g.id === editingGame?.id ? editingGame : g); await updateEvent(event.id, { tournamentGames: updatedGames }); setEditingGame(null); }}>Commit Results</Button>
+                  <Button variant="ghost" className="w-full text-destructive text-[10px] font-black uppercase" onClick={async () => { const updatedGames = (event.tournamentGames || []).filter(g => g.id !== editingGame?.id); await updateEvent(event.id, { tournamentGames: updatedGames }); setEditingGame(null); }}>Delete Matchup</Button>
+                </div>
+              </DialogFooter>
             </div>
           </DialogContent>
         </Dialog>
@@ -463,7 +503,71 @@ export default function EventsPage() {
       </div>
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="sm:max-w-5xl p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl overflow-hidden flex flex-col">
-          <div className="flex-1 overflow-y-auto"><div className="flex flex-col lg:flex-row min-h-full"><div className="w-full lg:w-5/12 bg-muted/30 p-10 space-y-8 lg:border-r shrink-0"><DialogHeader><DialogTitle className="text-3xl font-black uppercase">{editingEvent ? "Update" : "Launch"} Event</DialogTitle></DialogHeader><div className="space-y-4">{!isTournamentMode && ( <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label><Select value={eventType} onValueChange={(v: EventType) => setEventType(v)}><SelectTrigger className="h-12 rounded-xl font-black border-2 bg-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="game">Match Day</SelectItem><SelectItem value="practice">Training</SelectItem><SelectItem value="meeting">Tactical Meeting</SelectItem><SelectItem value="other">Event</SelectItem></SelectContent></Select></div> )}<div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title *</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date *</Label><Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time Block</Label><div className="flex gap-2"><Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" /><Input type="time" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div></div></div></div></div><div className="flex-1 p-10 space-y-8 bg-background"><div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed space-y-4"><Label className="text-[10px] font-black uppercase tracking-widest">Venue Selection</Label><div className="grid gap-3"><Select value={newFacilityId} onValueChange={(val) => { setNewFacilityId(val); if(val !== 'manual') setNewLocation(facilities?.find(f => f.id === val)?.address || ''); }}><SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Select Facility" /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="manual">Manual Entry</SelectItem>{facilities?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent></Select>{newFacilityId !== 'manual' && ( <Select value={newFieldId} onValueChange={setNewFieldId}><SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Field/Court" /></SelectTrigger><SelectContent className="rounded-xl"><SelectItem value="manual">General</SelectItem>{fields?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent></Select> )}<Input placeholder="Location Label" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-11 rounded-xl font-bold border-2 bg-white" /></div></div><div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Brief</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium" /></div></div></div></div><div className="p-8 bg-background border-t shrink-0 flex justify-center"><Button className="w-full max-w-4xl h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreateEvent}>Commit Event</Button></div></DialogContent>
+          <div className="flex-1 overflow-y-auto">
+            <div className="flex flex-col lg:flex-row min-h-full">
+              <div className="w-full lg:w-5/12 bg-muted/30 p-10 space-y-8 lg:border-r shrink-0">
+                <DialogHeader><DialogTitle className="text-3xl font-black uppercase">{editingEvent ? "Update" : "Launch"} Event</DialogTitle></DialogHeader>
+                <div className="space-y-6">
+                  {!isTournamentMode && ( 
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label>
+                      <Select value={eventType} onValueChange={(v: EventType) => setEventType(v)}>
+                        <SelectTrigger className="h-12 rounded-xl font-black border-2 bg-white"><SelectValue /></SelectTrigger>
+                        <SelectContent className="rounded-xl"><SelectItem value="game">Match Day</SelectItem><SelectItem value="practice">Training</SelectItem><SelectItem value="meeting">Tactical Meeting</SelectItem><SelectItem value="other">Event</SelectItem></SelectContent>
+                      </Select>
+                    </div> 
+                  )}
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title *</Label>
+                    <Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date *</Label>
+                      <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl border-2 font-black" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Time Block</Label>
+                      <div className="flex gap-2">
+                        <div className="flex-1 space-y-1">
+                          <p className="text-[8px] font-bold uppercase opacity-40 ml-1">Start</p>
+                          <Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" />
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          <p className="text-[8px] font-bold uppercase opacity-40 ml-1">End</p>
+                          <Input type="time" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} className="h-12 rounded-xl border-2 font-black" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 p-10 space-y-8 bg-background">
+                <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed space-y-4">
+                  <Label className="text-[10px] font-black uppercase tracking-widest">Venue Selection</Label>
+                  <div className="grid gap-3">
+                    <Select value={newFacilityId} onValueChange={(val) => { setNewFacilityId(val); if(val !== 'manual') setNewLocation(facilities?.find(f => f.id === val)?.address || ''); }}>
+                      <SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Select Facility" /></SelectTrigger>
+                      <SelectContent className="rounded-xl"><SelectItem value="manual">Manual Entry</SelectItem>{facilities?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                    {newFacilityId !== 'manual' && ( 
+                      <Select value={newFieldId} onValueChange={setNewFieldId}>
+                        <SelectTrigger className="h-11 rounded-xl border-2 font-bold bg-white"><SelectValue placeholder="Field/Court" /></SelectTrigger>
+                        <SelectContent className="rounded-xl"><SelectItem value="manual">General</SelectItem>{fields?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent>
+                      </Select> 
+                    )}
+                    <Input placeholder="Location Label" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-11 rounded-xl font-bold border-2 bg-white" />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-black uppercase ml-1">Brief</Label>
+                  <Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="p-8 bg-background border-t shrink-0 flex justify-center"><Button className="w-full max-w-4xl h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreateEvent}>Commit Event</Button></div>
+        </DialogContent>
       </Dialog>
       <section className="space-y-4"><div className="flex items-center justify-between px-2"><h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2><div className="flex bg-muted/50 p-1 rounded-xl border"><Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button><Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button></div></div><div className="grid gap-4">{filteredEvents.map((event) => ( <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent}><Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white"><div className="flex items-stretch h-32"><div className={cn("w-20 lg:w-24 flex flex-col items-center justify-center border-r-2 shrink-0", event.isTournament ? "bg-black text-white" : EVENT_TYPE_COLORS[event.eventType || 'other'])}><span className="text-[8px] font-black uppercase opacity-60">{format(new Date(event.date), 'MMM')}</span><span className="text-3xl lg:text-4xl font-black">{format(new Date(event.date), 'dd')}</span></div><div className="flex-1 p-6 flex flex-col justify-center min-w-0"><div className="flex items-start justify-between"><div><div className="flex gap-2 mb-1.5"><Badge className="text-[7px] uppercase">{event.isTournament ? 'Tournament' : (event.eventType || 'Activity')}</Badge><Badge variant="outline" className="text-[7px] uppercase">{event.startTime}</Badge></div><h3 className="text-xl font-black tracking-tight leading-none truncate">{event.title}</h3><p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1 mt-1"><MapPin className="h-3 w-3" /> {event.location}</p></div><ChevronRight className="h-5 w-5 text-primary opacity-20 group-hover:opacity-100 transition-all mt-2" /></div></div></div></Card></EventDetailDialog> ))}</div></section>
     </div>

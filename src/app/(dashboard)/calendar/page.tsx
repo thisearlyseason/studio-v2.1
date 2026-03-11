@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -52,7 +53,7 @@ const EVENT_TYPE_COLORS: Record<EventType, string> = {
 
 export default function MasterCalendarPage() {
   const { user: authUser } = useUser();
-  const { teams, purchasePro } = useTeam();
+  const { teams, purchasePro, activeTeam } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
@@ -63,37 +64,54 @@ export default function MasterCalendarPage() {
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Sync team selection with available teams on mount
   useEffect(() => {
     if (teams.length > 0 && selectedTeamIds.length === 0) {
       setSelectedTeamIds(teams.map(t => t.id));
     }
   }, [teams, selectedTeamIds.length]);
 
-  // STABILITY GUARD: Use a stringified list of IDs to prevent the query from re-running on every array mutation
   const teamIdsString = useMemo(() => teams.map(t => t.id).sort().join(','), [teams]);
 
-  // Aggregate fetch for all squad events using collectionGroup
   const eventsQuery = useMemoFirebase(() => {
-    // Defensive Guard: Ensure auth and teams are present before querying.
     if (!db || !authUser?.uid || !teamIdsString || teamIdsString === '') return null;
-    
     const teamIds = teamIdsString.split(',').filter(id => !!id);
     if (teamIds.length === 0) return null;
-    
-    return query(
-      collectionGroup(db, 'events'),
-      where('teamId', 'in', teamIds.slice(0, 30))
-    );
+    return query(collectionGroup(db, 'events'), where('teamId', 'in', teamIds.slice(0, 30)));
   }, [db, teamIdsString, authUser?.uid]);
 
   const { data: rawEvents, isLoading } = useCollection<TeamEvent>(eventsQuery);
-  const allEvents = rawEvents || [];
+  
+  // UNIFIED ITINERARY ENGINE: Unrolls tournament games for the active team into calendar entries
+  const allEvents = useMemo(() => {
+    if (!rawEvents) return [];
+    const expanded: any[] = [];
+    rawEvents.forEach(event => {
+      expanded.push(event);
+      // If it's a tournament and we have games, check if our squad is playing
+      if (event.isTournament && event.tournamentGames) {
+        event.tournamentGames.forEach(game => {
+          const isPlaying = game.team1.toLowerCase() === activeTeam?.name.toLowerCase() || 
+                            game.team2.toLowerCase() === activeTeam?.name.toLowerCase();
+          if (isPlaying) {
+            expanded.push({
+              ...event,
+              id: `${event.id}_game_${game.id}`,
+              title: `${game.team1} vs ${game.team2} (${event.title})`,
+              date: game.date,
+              startTime: game.time,
+              location: game.location || event.location,
+              isTournamentMatchup: true,
+              eventType: 'game'
+            });
+          }
+        });
+      }
+    });
+    return expanded;
+  }, [rawEvents, activeTeam?.name]);
 
   const filteredEvents = useMemo(() => {
-    // Perform robust chronological sorting on the client side
     const sorted = [...allEvents].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
     return sorted.filter(event => {
       const matchesTeam = selectedTeamIds.includes(event.teamId);
       const matchesType = selectedEventTypes.includes(event.eventType || 'other');
@@ -103,7 +121,6 @@ export default function MasterCalendarPage() {
     });
   }, [allEvents, selectedTeamIds, selectedEventTypes, searchTerm]);
 
-  // Calendar Logic
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
   const calendarStart = startOfWeek(monthStart);
@@ -121,15 +138,11 @@ export default function MasterCalendarPage() {
   }, [filteredEvents]);
 
   const toggleEventType = (type: EventType) => {
-    setSelectedEventTypes(prev => 
-      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
-    );
+    setSelectedEventTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
   };
 
   const toggleTeam = (tid: string) => {
-    setSelectedTeamIds(prev => 
-      prev.includes(tid) ? prev.filter(id => id !== tid) : [...prev, tid]
-    );
+    setSelectedTeamIds(prev => prev.includes(tid) ? prev.filter(id => id !== tid) : [...prev, tid]);
   };
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
@@ -149,29 +162,17 @@ export default function MasterCalendarPage() {
 
         <div className="flex flex-wrap items-center gap-3">
           <div className="bg-muted/50 p-1 rounded-xl border-2 flex items-center shadow-inner">
-            <Button 
-              variant={viewMode === 'grid' ? 'default' : 'ghost'} 
-              size="sm" 
-              onClick={() => setViewMode('grid')}
-              className="h-9 px-4 rounded-lg font-black text-[10px] uppercase"
-            >
+            <Button variant={viewMode === 'grid' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('grid')} className="h-9 px-4 rounded-lg font-black text-[10px] uppercase">
               <LayoutGrid className="h-3.5 w-3.5 mr-2" /> Grid
             </Button>
-            <Button 
-              variant={viewMode === 'list' ? 'default' : 'ghost'} 
-              size="sm" 
-              onClick={() => setViewMode('list')}
-              className="h-9 px-4 rounded-lg font-black text-[10px] uppercase"
-            >
+            <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-4 rounded-lg font-black text-[10px] uppercase">
               <List className="h-3.5 w-3.5 mr-2" /> Agenda
             </Button>
           </div>
 
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2">
-                <Filter className="h-4 w-4" /> Filters
-              </Button>
+              <Button variant="outline" className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2"><Filter className="h-4 w-4" /> Filters</Button>
             </PopoverTrigger>
             <PopoverContent className="w-80 rounded-2xl shadow-2xl p-6 space-y-6" align="end">
               <div className="space-y-4">
@@ -182,10 +183,7 @@ export default function MasterCalendarPage() {
                       <div key={team.id} className="flex items-center space-x-3 p-2 hover:bg-muted/50 rounded-lg transition-colors cursor-pointer" onClick={() => toggleTeam(team.id)}>
                         <Checkbox checked={selectedTeamIds.includes(team.id)} id={`team-${team.id}`} onCheckedChange={() => toggleTeam(team.id)} />
                         <div className="flex items-center gap-2 min-w-0">
-                          <Avatar className="h-6 w-6 rounded-md shrink-0 border">
-                            <AvatarImage src={team.teamLogoUrl} />
-                            <AvatarFallback className="font-black text-[8px] bg-muted">{team.name[0]}</AvatarFallback>
-                          </Avatar>
+                          <Avatar className="h-6 w-6 rounded-md shrink-0 border"><AvatarImage src={team.teamLogoUrl} /><AvatarFallback className="font-black text-[8px] bg-muted">{team.name[0]}</AvatarFallback></Avatar>
                           <Label htmlFor={`team-${team.id}`} className="text-xs font-bold truncate cursor-pointer uppercase">{team.name}</Label>
                         </div>
                       </div>
@@ -193,17 +191,12 @@ export default function MasterCalendarPage() {
                   </div>
                 </ScrollArea>
               </div>
-
               <div className="space-y-4 pt-4 border-t">
                 <p className="text-[10px] font-black uppercase tracking-widest text-primary">Activity Profile</p>
                 <div className="grid grid-cols-2 gap-2">
                   {(['game', 'practice', 'tournament', 'meeting', 'other'] as EventType[]).map(type => (
                     <div key={type} className="flex items-center space-x-2">
-                      <Checkbox 
-                        checked={selectedEventTypes.includes(type)} 
-                        id={`type-${type}`} 
-                        onCheckedChange={() => toggleEventType(type)} 
-                      />
+                      <Checkbox checked={selectedEventTypes.includes(type)} id={`type-${type}`} onCheckedChange={() => toggleEventType(type)} />
                       <Label htmlFor={`type-${type}`} className="text-[10px] font-bold uppercase cursor-pointer">{type}</Label>
                     </div>
                   ))}
@@ -217,19 +210,13 @@ export default function MasterCalendarPage() {
       <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white">
         <div className="bg-black text-white p-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="bg-primary p-2 rounded-xl text-white shadow-lg shadow-primary/20">
-              <CalendarIcon className="h-5 w-5" />
-            </div>
+            <div className="bg-primary p-2 rounded-xl text-white shadow-lg shadow-primary/20"><CalendarIcon className="h-5 w-5" /></div>
             <h2 className="text-2xl font-black uppercase tracking-tight">{format(currentDate, 'MMMM yyyy')}</h2>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={prevMonth} className="text-white hover:bg-white/10 rounded-full h-10 w-10">
-              <ChevronLeft className="h-6 w-6" />
-            </Button>
+            <Button variant="ghost" size="icon" onClick={prevMonth} className="text-white hover:bg-white/10 rounded-full h-10 w-10"><ChevronLeft className="h-6 w-6" /></Button>
             <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())} className="text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest h-10 px-4 rounded-full">Today</Button>
-            <Button variant="ghost" size="icon" onClick={nextMonth} className="text-white hover:bg-white/10 rounded-full h-10 w-10">
-              <ChevronRight className="h-6 w-6" />
-            </Button>
+            <Button variant="ghost" size="icon" onClick={nextMonth} className="text-white hover:bg-white/10 rounded-full h-10 w-10"><ChevronRight className="h-6 w-6" /></Button>
           </div>
         </div>
 
@@ -237,9 +224,7 @@ export default function MasterCalendarPage() {
           {viewMode === 'grid' && (
             <div className="grid grid-cols-7 border-b bg-muted/10">
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                <div key={day} className="py-4 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground border-r last:border-r-0">
-                  {day}
-                </div>
+                <div key={day} className="py-4 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground border-r last:border-r-0">{day}</div>
               ))}
             </div>
           )}
@@ -254,37 +239,14 @@ export default function MasterCalendarPage() {
                 const isSelected = selectedDay && isSameDay(day, selectedDay);
 
                 return (
-                  <div 
-                    key={i} 
-                    className={cn(
-                      "p-2 border-r border-b min-h-[120px] transition-all cursor-pointer relative",
-                      !isCurrentMonth ? "bg-muted/5 opacity-30" : "bg-white",
-                      isTodayDate && "bg-primary/[0.02]",
-                      isSelected && "bg-primary/[0.05] ring-2 ring-inset ring-primary/20"
-                    )}
-                    onClick={() => setSelectedDay(day)}
-                  >
+                  <div key={i} className={cn("p-2 border-r border-b min-h-[120px] transition-all cursor-pointer relative", !isCurrentMonth ? "bg-muted/5 opacity-30" : "bg-white", isTodayDate && "bg-primary/[0.02]", isSelected && "bg-primary/[0.05] ring-2 ring-inset ring-primary/20")} onClick={() => setSelectedDay(day)}>
                     <div className="flex justify-between items-center mb-2">
-                      <span className={cn(
-                        "h-7 w-7 flex items-center justify-center rounded-full text-xs font-black transition-all",
-                        isTodayDate ? "bg-primary text-white shadow-lg" : (isSelected ? "bg-black text-white" : "text-muted-foreground")
-                      )}>
-                        {format(day, 'd')}
-                      </span>
+                      <span className={cn("h-7 w-7 flex items-center justify-center rounded-full text-xs font-black transition-all", isTodayDate ? "bg-primary text-white shadow-lg" : (isSelected ? "bg-black text-white" : "text-muted-foreground"))}>{format(day, 'd')}</span>
                     </div>
                     <div className="space-y-1 overflow-y-auto max-h-[100px] custom-scrollbar">
-                      {dayEvents.map(event => {
-                        const typeColor = EVENT_TYPE_COLORS[event.eventType || 'other'];
-                        return (
-                          <div 
-                            key={event.id}
-                            className={cn(
-                              "w-full h-1.5 rounded-full mb-0.5",
-                              typeColor
-                            )}
-                          />
-                        );
-                      })}
+                      {dayEvents.map(event => (
+                        <div key={event.id} className={cn("w-full h-1.5 rounded-full mb-0.5", event.isTournamentMatchup ? "bg-amber-500" : EVENT_TYPE_COLORS[event.eventType || 'other'])} />
+                      ))}
                     </div>
                   </div>
                 );
@@ -293,162 +255,44 @@ export default function MasterCalendarPage() {
           ) : (
             <ScrollArea className="h-[600px]">
               <div className="p-6 space-y-10">
-                {Object.entries(eventsByDay)
-                  .sort(([a], [b]) => a.localeCompare(b))
-                  .map(([dayKey, dayEvents]) => (
-                    <div key={dayKey} className="space-y-4">
-                      <div className="flex items-center gap-4">
-                        <div className="text-center w-12 shrink-0">
-                          <p className="text-[10px] font-black uppercase text-primary leading-none">{format(new Date(dayKey), 'MMM')}</p>
-                          <p className="text-3xl font-black tracking-tighter">{format(new Date(dayKey), 'dd')}</p>
-                        </div>
-                        <div className="h-px bg-muted flex-1" />
+                {Object.entries(eventsByDay).sort(([a], [b]) => a.localeCompare(b)).map(([dayKey, dayEvents]) => (
+                  <div key={dayKey} className="space-y-4">
+                    <div className="flex items-center gap-4">
+                      <div className="text-center w-12 shrink-0">
+                        <p className="text-[10px] font-black uppercase text-primary leading-none">{format(new Date(dayKey), 'MMM')}</p>
+                        <p className="text-3xl font-black tracking-tighter">{format(new Date(dayKey), 'dd')}</p>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-4 md:ml-16">
-                        {dayEvents.map(event => {
-                          const team = teams.find(t => t.id === event.teamId);
-                          const typeColor = EVENT_TYPE_COLORS[event.eventType || 'other'];
-                          
-                          return (
-                            <Card 
-                              key={event.id} 
-                              className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all cursor-pointer overflow-hidden group"
-                              onClick={() => router.push(`/events`)}
-                            >
-                              <div className={cn("h-1.5 w-full", typeColor)} />
-                              <CardContent className="p-4 flex items-center gap-4">
-                                <div className="h-12 w-12 rounded-xl bg-muted/30 flex items-center justify-center shrink-0 border">
-                                  <Avatar className="h-8 w-8 rounded-lg">
-                                    <AvatarImage src={team?.teamLogoUrl} />
-                                    <AvatarFallback className="font-black text-[10px] bg-white">{team?.name?.[0]}</AvatarFallback>
-                                  </Avatar>
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <Badge variant="outline" className="text-[7px] font-black uppercase px-1.5 h-4 border-none bg-muted/50">{event.eventType}</Badge>
-                                    <span className="text-[10px] font-bold text-muted-foreground uppercase">{event.startTime}</span>
-                                  </div>
-                                  <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
-                                  <p className="text-[9px] font-medium text-muted-foreground truncate uppercase flex items-center gap-1 mt-1">
-                                    <MapPin className="h-2 w-2" /> {event.location}
-                                  </p>
-                                </div>
-                                <ChevronRightIcon className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all shrink-0" />
-                              </CardContent>
-                            </Card>
-                          );
-                        })}
-                      </div>
+                      <div className="h-px bg-muted flex-1" />
                     </div>
-                  ))}
-                {Object.keys(eventsByDay).length === 0 && !isLoading && (
-                  <div className="text-center py-20 opacity-30 space-y-4">
-                    <CalendarIcon className="h-16 w-16 mx-auto mb-2" />
-                    <p className="text-sm font-black uppercase tracking-widest">No activities detected for selected filters.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-4 md:ml-16">
+                      {dayEvents.map(event => {
+                        const team = teams.find(t => t.id === event.teamId);
+                        return (
+                          <Card key={event.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all cursor-pointer overflow-hidden group" onClick={() => router.push(`/events`)}>
+                            <div className={cn("h-1.5 w-full", event.isTournamentMatchup ? "bg-amber-500" : EVENT_TYPE_COLORS[event.eventType || 'other'])} />
+                            <CardContent className="p-4 flex items-center gap-4">
+                              <div className="h-12 w-12 rounded-xl bg-muted/30 flex items-center justify-center shrink-0 border"><Avatar className="h-8 w-8 rounded-lg"><AvatarImage src={team?.teamLogoUrl} /><AvatarFallback className="font-black text-[10px] bg-white">{team?.name?.[0]}</AvatarFallback></Avatar></div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge variant="outline" className="text-[7px] font-black uppercase px-1.5 h-4 border-none bg-muted/50">{event.eventType}</Badge>
+                                  <span className="text-[10px] font-bold text-muted-foreground uppercase">{event.startTime}</span>
+                                </div>
+                                <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
+                                <p className="text-[9px] font-medium text-muted-foreground truncate uppercase flex items-center gap-1 mt-1"><MapPin className="h-2 w-2" /> {event.location}</p>
+                              </div>
+                              <ChevronRightIcon className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all shrink-0" />
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
             </ScrollArea>
           )}
         </CardContent>
       </Card>
-
-      {viewMode === 'grid' && selectedDay && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="flex items-center gap-4 px-2">
-            <div className="h-10 w-10 rounded-xl bg-black flex items-center justify-center text-white shadow-lg">
-              <CalendarIcon className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="text-2xl font-black uppercase tracking-tight">{format(selectedDay, 'EEEE, MMMM do')}</h3>
-              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground">Tactical Briefing</p>
-            </div>
-            <div className="h-px bg-muted flex-1 mx-4" />
-            <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-black text-[10px] px-4 h-8">
-              {dayEvents.length} ACTIVITIES
-            </Badge>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {dayEvents.length > 0 ? dayEvents.map(event => {
-              const team = teams.find(t => t.id === event.teamId);
-              const typeColor = EVENT_TYPE_COLORS[event.eventType || 'other'];
-              
-              return (
-                <Card 
-                  key={event.id} 
-                  className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 hover:shadow-2xl transition-all cursor-pointer overflow-hidden group bg-white"
-                  onClick={() => router.push(`/events`)}
-                >
-                  <div className={cn("h-2 w-full", typeColor)} />
-                  <CardContent className="p-6 space-y-4">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9 rounded-xl border shadow-sm">
-                          <AvatarImage src={team?.teamLogoUrl} />
-                          <AvatarFallback className="font-black text-[10px] bg-muted">{team?.name?.[0]}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest">{team?.name}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <Badge variant="outline" className="text-[7px] font-black uppercase border-primary/20 text-primary px-1.5 h-4">
-                              {event.eventType}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-primary bg-primary/5 px-2 py-1 rounded-lg">
-                        <Clock className="h-3 w-3" />
-                        <span className="text-[10px] font-black">{event.startTime}</span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <h4 className="text-lg font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{event.title}</h4>
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1.5 pt-1">
-                        <MapPin className="h-3 w-3 opacity-40" /> {event.location}
-                      </p>
-                    </div>
-
-                    <div className="pt-4 border-t flex items-center justify-between">
-                      <span className="text-[8px] font-black uppercase text-muted-foreground tracking-[0.2em]">Open Schedule Hub</span>
-                      <ArrowRight className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            }) : (
-              <div className="col-span-full py-20 text-center bg-muted/10 rounded-[3rem] border-2 border-dashed opacity-40">
-                <Zap className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-sm font-black uppercase tracking-widest">No squad activities scheduled for this date.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-4">
-          <div className="flex items-center gap-3">
-            <Zap className="h-5 w-5 text-primary" />
-            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Strategic Overview</h4>
-          </div>
-          <p className="text-xs font-medium leading-relaxed italic text-muted-foreground">
-            The Master Calendar synchronizes operational intelligence across all your squads. Use this hub to avoid scheduling conflicts and ensure elite resource allocation across your organization.
-          </p>
-        </div>
-
-        <div className="bg-black p-8 rounded-[2.5rem] text-white flex items-center justify-between gap-6 group overflow-hidden relative">
-          <div className="absolute top-0 right-0 p-6 opacity-10 pointer-events-none -rotate-12 group-hover:scale-110 transition-transform duration-700">
-            <Trophy className="h-32 w-32" />
-          </div>
-          <div className="relative z-10 space-y-2">
-            <h4 className="text-xl font-black uppercase tracking-tight">Need more scale?</h4>
-            <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest leading-relaxed">Upgrade to Club Suite to manage unlimited squads and facilities.</p>
-          </div>
-          <Button variant="secondary" className="relative z-10 rounded-full h-12 px-8 font-black uppercase text-[10px] tracking-widest bg-white text-black hover:bg-primary hover:text-white transition-all shadow-2xl" onClick={purchasePro}>Unlock Elite</Button>
-        </div>
-      </div>
     </div>
   );
 }
