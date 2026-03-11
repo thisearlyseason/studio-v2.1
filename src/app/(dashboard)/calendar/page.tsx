@@ -33,7 +33,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTeam, TeamEvent, EventType } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collectionGroup, query, where, orderBy } from 'firebase/firestore';
+import { collectionGroup, query, where } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -72,6 +72,7 @@ export default function MasterCalendarPage() {
   const teamIdsString = useMemo(() => teams.map(t => t.id).sort().join(','), [teams]);
 
   // Aggregate fetch for all squad events using collectionGroup
+  // FIX: Removed server-side orderBy to avoid complex composite index requirements for collection groups.
   const eventsQuery = useMemoFirebase(() => {
     // SECURITY GUARD: Ensure we don't query before user AND team data is synchronized
     if (!db || !authUser?.uid || !teamIdsString) return null;
@@ -81,8 +82,7 @@ export default function MasterCalendarPage() {
     
     return query(
       collectionGroup(db, 'events'),
-      where('teamId', 'in', teamIds.slice(0, 30)),
-      orderBy('date', 'asc')
+      where('teamId', 'in', teamIds.slice(0, 30))
     );
   }, [db, teamIdsString, authUser?.uid]);
 
@@ -90,7 +90,10 @@ export default function MasterCalendarPage() {
   const allEvents = rawEvents || [];
 
   const filteredEvents = useMemo(() => {
-    return allEvents.filter(event => {
+    // FIX: Client-side sorting by date to maintain performance while bypassing composite index requirements.
+    const sorted = [...allEvents].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    return sorted.filter(event => {
       const matchesTeam = selectedTeamIds.includes(event.teamId);
       const matchesType = selectedEventTypes.includes(event.eventType || 'other');
       const matchesSearch = (event.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || 

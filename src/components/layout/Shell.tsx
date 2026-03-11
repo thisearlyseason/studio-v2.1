@@ -223,13 +223,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     }
     const stored = localStorage.getItem('squad_seen_alerts_ids');
     if (!stored) {
-      setHasUnreadAlerts(alerts.length > 0);
+      setHasUnreadAlerts((alerts?.length || 0) > 0);
       return;
     }
     try {
       const seenIds = JSON.parse(stored);
       setHasUnreadAlerts(alerts.some(a => !seenIds.includes(a.id)));
     } catch (e) {
+      // FIX: Use optional chaining to prevent crash if alerts is null
       setHasUnreadAlerts((alerts?.length || 0) > 0);
     }
   }, [alerts]);
