@@ -912,6 +912,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const updated = games.map((g: any) => g.id === gameId ? { ...g, score1: s1 || 0, score2: s2 || 0, isCompleted: true } : g);
       await updateDoc(evRef, { tournamentGames: updated });
     },
+    signPublicTournamentWaiver: async (teamId: string, eventId: string, selectedTeam: string, coachName: string) => {
+      const ref = doc(db, 'teams', teamId, 'events', eventId);
+      await updateDoc(ref, { [`teamAgreements.${selectedTeam}`]: { agreed: true, captainName: coachName, timestamp: new Date().toISOString() } });
+      return true;
+    },
     respondToAssignment: async (leagueId: string, entryId: string, status: 'accepted' | 'declined') => {
       if (!activeTeam) return;
       await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { status });

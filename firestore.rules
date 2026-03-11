@@ -2,11 +2,6 @@ rules_version = '2';
 
 /**
  * SquadForge Security Rules
- * 
- * Core Philosophy:
- * This ruleset implements a hybrid security model combining strict User Ownership and 
- * Denormalized Shared Access. The goal is to provide high security with maximum performance 
- * by avoiding costly cross-document lookups (get() calls) during authorization.
  */
 
 service cloud.firestore {
@@ -43,16 +38,13 @@ service cloud.firestore {
     // --- COLLECTION RULES ---
 
     /**
-     * @description Enforces strict ownership over the user's root profile.
-     * Explicitly allows demo/custom auth users who have a UID but potentially no email.
+     * @description High-priority ownership rule for user profiles.
+     * Essential for demo users who have a UID but no email verification.
      */
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
 
-    /**
-     * @description Global metadata for application initialization.
-     */
     match /plans/{planId} {
       allow read: if isSignedIn();
     }
@@ -61,13 +53,17 @@ service cloud.firestore {
       allow read: if isSignedIn();
     }
 
-    /**
-     * @description Manages top-level Team documents.
-     */
+    match /players/{playerId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /leads/{leadId} {
+      allow create: if true;
+    }
+
     match /teams/{teamId} {
-      // allow get, list for members or owners
       allow get, list: if isSignedIn() && (
-        resource == null || // allow listing for creation/queries
+        resource == null || 
         resource.data.members[request.auth.uid] != null || 
         resource.data.ownerUserId == request.auth.uid
       );
@@ -82,62 +78,119 @@ service cloud.firestore {
       match /members/{memberId} {
         allow read: if isSignedIn();
         allow write: if isSignedIn();
+        
+        match /evaluations/{evalId} {
+          allow read, write: if isTeamAdmin(get(/databases/$(database)/documents/teams/$(teamId)).data);
+        }
       }
 
       match /feedPosts/{postId} {
-        allow read, list: if isTeamMember(resource.data);
-        allow create: if isTeamMember(request.resource.data) && request.resource.data.authorId == request.auth.uid;
-        allow update, delete: if isExistingOwner(resource.data.authorId) || isTeamAdmin(resource.data);
+        allow read, list: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if isSignedIn();
 
         match /comments/{commentId} {
           allow read, list: if isSignedIn();
           allow create: if isSignedIn();
-          allow update, delete: if isExistingOwner(resource.data.authorId);
+          allow update, delete: if isSignedIn();
         }
       }
 
       match /events/{eventId} {
-        allow read, list: if isTeamMember(resource.data);
-        allow create: if isTeamAdmin(request.resource.data);
-        allow update, delete: if isTeamAdmin(resource.data);
+        allow read, list: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if isSignedIn();
 
         match /registrations/{regId} {
-          allow read, write: if isSignedIn();
+          allow read, write: if true;
         }
       }
 
       match /groupChats/{chatId} {
-        allow read, list: if isTeamMember(resource.data) && request.auth.uid in resource.data.memberIds;
-        allow create: if isTeamAdmin(request.resource.data);
-        allow update, delete: if isTeamAdmin(resource.data);
+        allow read, list: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if isSignedIn();
 
         match /messages/{messageId} {
           allow read, list: if isSignedIn();
           allow create: if isSignedIn();
-          allow update, delete: if isExistingOwner(resource.data.authorId);
+          allow update, delete: if isSignedIn();
         }
       }
 
       match /files/{fileId} {
-        allow read, list: if isTeamMember(resource.data);
-        allow create: if isTeamMember(request.resource.data);
-        allow update, delete: if isExistingOwner(resource.data.uploadedBy);
+        allow read, list: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if isSignedIn();
       }
 
       match /alerts/{alertId} {
         allow read, list: if isSignedIn();
         allow create: if isSignedIn();
       }
+
+      match /drills/{drillId} {
+        allow read, list: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+
+      match /games/{gameId} {
+        allow read, list: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+
+      match /scouting/{reportId} {
+        allow read, list: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+
+      match /volunteers/{oppId} {
+        allow read, list: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+
+      match /fundraising/{fundId} {
+        allow read, list: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+
+      match /equipment/{itemId} {
+        allow read, list: if isSignedIn();
+        allow write: if isSignedIn();
+      }
     }
 
-    // --- COLLECTION GROUP RULES (For aggregated views) ---
+    match /leagues/{leagueId} {
+      allow read, list: if isSignedIn();
+      allow write: if isSignedIn();
+      
+      match /registration/{document=**} {
+        allow read, write: if true;
+      }
+      
+      match /registrationEntries/{entryId} {
+        allow read, write: if true;
+      }
+    }
+
+    match /facilities/{facId} {
+      allow read, list: if isSignedIn();
+      allow write: if isSignedIn();
+      
+      match /fields/{fieldId} {
+        allow read, list: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+    }
+
+    // --- COLLECTION GROUP RULES ---
 
     match /{path=**}/events/{eventId} {
       allow read, list: if isSignedIn();
     }
 
     match /{path=**}/registrationEntries/{entryId} {
-      allow read, list: if isSignedIn();
+      allow read, list: if true;
     }
   }
 }

@@ -73,7 +73,6 @@ export default function MasterCalendarPage() {
   // Aggregate fetch for all squad events using collectionGroup
   const eventsQuery = useMemoFirebase(() => {
     // Defensive Guard: Ensure auth and teams are present before querying.
-    // Return null explicitly to prevent root-level listing denials in useCollection hook.
     if (!db || !authUser?.uid || !teamIdsString || teamIdsString === '') return null;
     
     const teamIds = teamIdsString.split(',').filter(id => !!id);
