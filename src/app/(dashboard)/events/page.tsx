@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -172,7 +171,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const { data: rawRegistrations } = useCollection<any>(regQuery);
   const registrations = rawRegistrations || [];
 
-  const isEliteUnlocked = !!event.isTournamentPaid || hasFeature('elite_tournaments');
+  const isEliteUnlocked = !!event.isTournamentPaid || hasFeature('tournament_elite');
   
   const myParticipatingTeamName = useMemo(() => {
     if (!event.tournamentTeams || !activeTeam) return null;
@@ -308,11 +307,11 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const handleCopyLink = async (text: string) => {
     if (!text) return;
     try {
-      if (navigator.clipboard && window.isSecureContext) {
+      if (navigator && navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
         toast({ title: "Link Synchronized", description: "URL copied to clipboard." });
       } else {
-        throw new Error("Clipboard context invalid");
+        throw new Error("Clipboard API Blocked");
       }
     } catch (err) {
       console.warn("Clipboard access denied", err);
@@ -821,7 +820,7 @@ export default function EventsPage() {
   const [tournamentTeamsMetadata, setTournamentTeamsMetadata] = useState<Record<string, { coach: string; email: string }>>({});
   const [tournamentGames, setTournamentGames] = useState<TournamentGame[]>([]);
 
-  const isEliteUnlocked = hasFeature('elite_tournaments');
+  const isEliteUnlocked = hasFeature('tournament_elite');
 
   const eventsQuery = useMemoFirebase(() => { if (!activeTeam?.id || !db) return null; return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc')); }, [activeTeam?.id, db]);
   const { data: rawEvents } = useCollection<TeamEvent>(eventsQuery);
@@ -1009,6 +1008,7 @@ export default function EventsPage() {
                               <SelectItem value="manual" className="font-bold">Main Field/General</SelectItem>
                               {fields?.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
                             </SelectContent>
+                          </Select>
                         )}
                         <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase tracking-widest ml-1">Location Label</Label><Input value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-11 rounded-xl font-bold border-2 bg-white" /></div>
                       </div>

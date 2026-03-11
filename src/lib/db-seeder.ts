@@ -273,8 +273,8 @@ export async function seedDemoData(db: Firestore, teamId: string, demoTier: stri
 
   try {
     await batch.commit();
-  } catch (error: any) {
-    throw error;
+  } catch (err: any) {
+    throw err;
   }
 }
 
