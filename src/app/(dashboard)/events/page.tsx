@@ -35,7 +35,8 @@ import {
   Target,
   Check,
   XCircle,
-  HelpCircle
+  HelpCircle,
+  AlertCircle
 } from 'lucide-react';
 import { 
   Dialog, 

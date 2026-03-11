@@ -71,7 +71,7 @@ export function useCollection<T = any>(
 
     // 3. Strict Guard: Prevent uninitialized or database root-level listing requests (// or /)
     const trimmedPath = (path || '').trim();
-    if (!isCollectionGroup && (!trimmedPath || trimmedPath === '/' || trimmedPath === '' || trimmedPath === '//')) {
+    if (!isCollectionGroup && (!trimmedPath || trimmedPath === '/' || trimmedPath === '' || trimmedPath === '//' || trimmedPath.includes('//'))) {
       setData(null);
       setIsLoading(false);
       setError(null);
