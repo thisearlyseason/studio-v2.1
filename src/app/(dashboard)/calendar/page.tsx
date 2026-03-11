@@ -34,7 +34,8 @@ import {
   CheckCircle2,
   Lock,
   Search,
-  Users
+  Users,
+  ChevronRight as ChevronRightIcon
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -331,7 +332,7 @@ export default function MasterCalendarPage() {
                                     <MapPin className="h-2 w-2" /> {event.location}
                                   </p>
                                 </div>
-                                <ChevronRight className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all shrink-0" />
+                                <ChevronRightIcon className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all shrink-0" />
                               </CardContent>
                             </Card>
                           );

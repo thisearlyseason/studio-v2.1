@@ -959,7 +959,7 @@ export default function EventsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Button asChild variant="outline" className="rounded-full h-11 px-6 font-black uppercase text-[10px] tracking-widest border-2">
             <Link href="/calendar">
-              <Calendar className="h-4 w-4 mr-2" /> Master View
+              <CalendarIcon className="h-4 w-4 mr-2" /> Master View
             </Link>
           </Button>
           {isStaff && (

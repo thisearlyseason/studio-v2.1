@@ -38,7 +38,7 @@ import {
   PiggyBank,
   Package,
   MapPin,
-  Calendar
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -69,21 +69,10 @@ import {
 } from "@/components/ui/sidebar";
 import BrandLogo from '@/components/BrandLogo';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 
 const tabs = [
   { name: 'Feed', href: '/feed', icon: LayoutDashboard, pro: true },
-  { name: 'Calendar', href: '/calendar', icon: Calendar, pro: false },
+  { name: 'Calendar', href: '/calendar', icon: CalendarIcon, pro: false },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Leagues', href: '/leagues', icon: Shield, pro: false },
   { name: 'Facilities', href: '/facilities', icon: MapPin, pro: true, gate: 'staff' },
@@ -340,7 +329,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   <SidebarItem 
                     key={tab.name} 
                     tab={tab} 
-                    isActive={pathname.startsWith(tab.href)} 
+                    isActive={pathname === tab.href} 
                     isLocked={tab.pro && !isPro && isStaff} 
                   />
                 ))}
@@ -411,7 +400,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="hidden md:flex items-center gap-4 min-w-0">
                 <div className="flex flex-col min-w-0">
                   <h2 className="text-xl lg:text-2xl font-black tracking-tighter uppercase truncate">
-                    {pathname === '/pricing' ? 'Pricing' : pathname === '/how-to' ? 'Tactical Manual' : (pathname === '/calendar' ? 'Calendar' : (pathname === '/leagues' ? 'League Hub' : (tabs.find(t => pathname.startsWith(t.href))?.name || 'Dashboard')))}
+                    {pathname === '/pricing' ? 'Pricing' : pathname === '/how-to' ? 'Tactical Manual' : (pathname === '/calendar' ? 'Calendar' : (pathname === '/leagues' ? 'League Hub' : (tabs.find(t => pathname === t.href)?.name || 'Dashboard')))}
                   </h2>
                   <p className="text-[9px] lg:text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em] lg:tracking-[0.3em] ml-0.5 truncate">The Squad Hub • {activeTeam?.name}</p>
                 </div>
@@ -473,7 +462,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="flex items-center justify-around h-16">
                 {filteredTabs.slice(0, 5).map((tab) => {
                   const Icon = tab.icon;
-                  const isActive = pathname.startsWith(tab.href);
+                  const isActive = pathname === tab.href;
                   const isLocked = tab.pro && !isPro && isStaff;
                   return (
                     <Link 
