@@ -41,7 +41,8 @@ import {
   Circle,
   Calendar as CalendarIcon,
   XCircle,
-  Terminal
+  Terminal,
+  ArrowRight
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -78,8 +79,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format, isSameDay, isPast, addMinutes, addDays, parse } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
-import { generateGoogleCalendarLink, downloadICS } from '@/lib/calendar-utils';
-import { Switch } from '@/components/ui/switch';
+import { downloadICS } from '@/lib/calendar-utils';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary text-white border-primary',
@@ -131,11 +131,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   const { members = [], user, updateEvent, signTeamTournamentWaiver, submitEventWaiver, isPro, addCoOrganizerByEmail, removeCoOrganizer, isStaff, activeTeam, hasFeature } = useTeam();
   const db = useFirestore();
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
-  const [isWaiverDialogOpen, setIsWaiverDialogOpen] = useState(false);
-  const [isTeamAgreementOpen, setIsTeamAgreementOpen] = useState(false);
-  const [isGenConfirmOpen, setIsGenConfirmOpen] = useState(false);
   const [coOrganizerEmail, setCoOrganizerEmail] = useState('');
-  const [origin, setOrigin] = useState('');
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [genStartTime, setGenStartTime] = useState('09:00');
@@ -145,26 +141,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
 
   const facilityRef = useMemoFirebase(() => (db && event.facilityId) ? doc(db, 'facilities', event.facilityId) : null, [db, event.facilityId]);
   const { data: facility } = useDoc<Facility>(facilityRef);
-  const fieldRef = useMemoFirebase(() => (db && event.facilityId && event.fieldId) ? doc(db, 'facilities', event.facilityId, 'fields', event.fieldId) : null, [db, event.facilityId, event.fieldId]);
-  const { data: field } = useDoc<Field>(fieldRef);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setOrigin(window.location.origin);
-    }
-  }, []);
-
-  const handleCopyLink = async (text: string) => {
-    if (!text) return;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-        toast({ title: "Link Synchronized" });
-      } else { throw new Error(); }
-    } catch (err) {
-      toast({ title: "Copy Restricted", description: "Browser blocked clipboard access.", variant: "destructive" });
-    }
-  };
 
   const regQuery = useMemoFirebase(() => {
     if (!db || !event?.id || !event?.teamId) return null;
@@ -178,9 +154,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
     if (!event.tournamentTeams || !activeTeam) return null;
     return event.tournamentTeams.find(tn => tn.toLowerCase() === activeTeam.name.toLowerCase());
   }, [activeTeam, event.tournamentTeams]);
-
-  const isWaiverSignedForMyTeam = myParticipatingTeamName ? !!event.teamAgreements?.[myParticipatingTeamName]?.agreed : false;
-  const hasUserSignedIndividualWaiver = !!event.specialWaiverResponses?.[user?.id || '']?.agreed;
 
   const attendanceData = useMemo(() => {
     const rsvpMap = event.userRsvps || {};
@@ -209,7 +182,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
   }, [event.tournamentGames]);
 
   const currentStatus = event.userRsvps?.[user?.id || ''];
-  const isUserStaff = members.find(m => m.userId === user?.id && ['Coach', 'Team Lead', 'Assistant Coach'].includes(m.position)) || event.coOrganizers?.some(c => c.id === user?.id);
 
   const handleGenerateSchedule = async () => {
     if (!event.tournamentTeams || event.tournamentTeams.length < 2) return;
@@ -255,13 +227,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
       await updateEvent(event.id, { tournamentGames: games });
       toast({ title: "Elite Schedule Forged" });
     } finally { setIsGenerating(false); }
-  };
-
-  const syncTournamentSchedule = () => {
-    if (!event.tournamentGames || !myParticipatingTeamName) return;
-    const myGames = event.tournamentGames.filter(g => g.team1 === myParticipatingTeamName || g.team2 === myParticipatingTeamName);
-    const calendarEvents = myGames.map(g => ({ title: `${g.team1} vs ${g.team2}`, start: new Date(`${g.date} ${g.time}`), location: g.location || event.location }));
-    downloadICS(calendarEvents, `${event.title}_Schedule.ics`);
   };
 
   return (
