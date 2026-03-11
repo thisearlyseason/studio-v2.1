@@ -180,7 +180,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
       const matchMinutes = parseInt(genMatchLength);
       const breakMinutes = parseInt(genBreakLength);
       
-      // Simple logic: Sequential pairings distributed over fields
       const pairings: [string, string][] = [];
       for (let i = 0; i < teams.length; i++) {
         for (let j = i + 1; j < teams.length; j++) {
@@ -208,12 +207,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
           isCompleted: false
         });
 
-        // Increment time for this field
         const [h, m] = startTimeStr.split(':').map(Number);
         const next = addMinutes(new Date(2000, 0, 1, h, m), matchMinutes + breakMinutes);
         fieldTimes[fieldIdx] = format(next, 'HH:mm');
         
-        // If it gets late, reset fields and increment day (simple rule: past 9PM)
         if (parseInt(fieldTimes[fieldIdx].split(':')[0]) > 21) {
           fieldTimes = Array(fieldCount).fill(genStartTime);
           currentDay = addDays(currentDay, 1);
@@ -223,6 +220,20 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
       await updateEvent(event.id, { tournamentGames: games });
       toast({ title: "Schedule Forged", description: `${games.length} matches distributed across ${fieldCount} fields.` });
     } finally { setIsGenerating(false); }
+  };
+
+  const handleCopyLink = async (path: string) => {
+    try {
+      const url = `${window.location.origin}${path}`;
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(url);
+        toast({ title: "Portal Link Copied" });
+      } else {
+        throw new Error("Clipboard blocked");
+      }
+    } catch (e) {
+      toast({ title: "Copy Failed", description: "Browser restricted clipboard access.", variant: "destructive" });
+    }
   };
 
   const handleDownloadAudit = () => {
@@ -293,6 +304,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                     {event.isTournament && <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Schedule</TabsTrigger>}
                     <TabsTrigger value="roster" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Roster</TabsTrigger>
                     {event.isTournament && <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>}
+                    {event.isTournament && isAdmin && <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Public Portals</TabsTrigger>}
                     {isAdmin && <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Manage Hub</TabsTrigger>}
                   </TabsList>
                 </div>
@@ -304,6 +316,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           {games.map((game) => (
                             <button key={game.id} onClick={() => isAdmin && setEditingGame(game)} className="w-full p-5 bg-white rounded-3xl border shadow-sm transition-all text-left relative overflow-hidden group ring-1 ring-black/5 active:scale-95">
+                              {game.isDisputed && <Badge className="absolute top-2 right-2 bg-red-600 text-white font-black text-[7px] uppercase px-1.5 h-4">DISPUTED</Badge>}
                               <div className="flex justify-between items-center mb-4"><Badge variant="outline" className="text-[8px] font-black uppercase">{game.time}</Badge>{game.isCompleted && <Badge className="text-[8px] font-black uppercase h-5 px-2 bg-black text-white border-none">Final</Badge>}</div>
                               <div className="grid grid-cols-7 items-center gap-4 text-center">
                                 <div className="col-span-3"><p className="font-black text-xs uppercase truncate">{game.team1}</p><p className="text-3xl font-black">{game.score1}</p></div>
@@ -315,6 +328,45 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                         </div>
                       </div>
                     ))}
+                  </TabsContent>
+                  <TabsContent value="portals" className="mt-0 space-y-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
+                        <CardHeader className="bg-muted/30 border-b p-8">
+                          <div className="flex items-center gap-4">
+                            <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Globe className="h-6 w-6" /></div>
+                            <div>
+                              <CardTitle className="text-2xl font-black uppercase tracking-tight">Spectator Hub</CardTitle>
+                              <CardDescription className="font-bold text-[10px] uppercase tracking-widest">Public Standings & Schedule</CardDescription>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-8 space-y-6">
+                          <p className="text-sm font-medium leading-relaxed text-muted-foreground italic">Share this link with parents, scouts, and fans to track the tournament live.</p>
+                          <Button className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20" onClick={() => handleCopyLink(`/tournaments/spectator/${event.teamId}/${event.id}`)}>
+                            <Copy className="h-4 w-4 mr-2" /> Copy Spectator Hub URL
+                          </Button>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
+                        <CardHeader className="bg-black text-white border-b p-8">
+                          <div className="flex items-center gap-4">
+                            <div className="bg-primary p-3 rounded-2xl text-white shadow-lg"><Terminal className="h-6 w-6" /></div>
+                            <div>
+                              <CardTitle className="text-2xl font-black uppercase tracking-tight">Scorekeeper Portal</CardTitle>
+                              <CardDescription className="font-bold text-white/60 text-[10px] uppercase tracking-widest">External Result Entry</CardDescription>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-8 space-y-6">
+                          <p className="text-sm font-medium leading-relaxed text-muted-foreground italic">Share this link with field marshals or captains to log results without a login.</p>
+                          <Button className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl" onClick={() => handleCopyLink(`/tournaments/scorekeeper/${event.teamId}/${event.id}`)}>
+                            <Copy className="h-4 w-4 mr-2" /> Copy Scorekeeper URL
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    </div>
                   </TabsContent>
                   <TabsContent value="compliance" className="mt-0 space-y-8">
                     {isAdmin ? (
@@ -365,7 +417,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, hasAt
                     )}
                   </TabsContent>
                   <TabsContent value="roster" className="mt-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {/* Simplified roster view for clarity */}
                     <div className="col-span-full py-10 text-center opacity-30"><Users className="h-12 w-12 mx-auto mb-2" /><p className="text-xs font-black uppercase">Roster Data Aggregation in progress...</p></div>
                   </TabsContent>
                   <TabsContent value="manage" className="mt-0 space-y-10">

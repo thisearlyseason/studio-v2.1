@@ -246,6 +246,8 @@ export type TournamentGame = {
   date: string;
   time: string;
   isCompleted: boolean;
+  isDisputed?: boolean;
+  disputeNotes?: string;
   winnerId?: string;
   location?: string;
   round?: number;
@@ -385,6 +387,7 @@ interface TeamContextType {
   submitRegistrationEntry: (leagueId: string, answers: any, version: number) => Promise<void>;
   signPublicTournamentWaiver: (teamId: string, eventId: string, selectedTeam: string, coachName: string) => Promise<boolean>;
   submitMatchScore: (teamId: string, eventId: string, gameId: string, isTeam1: boolean, s1: number, s2: number) => Promise<void>;
+  disputeMatchScore: (teamId: string, eventId: string, gameId: string, notes: string) => Promise<void>;
   respondToAssignment: (leagueId: string, entryId: string, status: 'accepted' | 'declined') => Promise<void>;
   
   addFacility: (facility: Partial<Facility>) => Promise<void>;
@@ -940,6 +943,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const games = snap.data().tournamentGames || [];
       const updated = games.map((g: any) => g.id === gameId ? { ...g, score1: s1 || 0, score2: s2 || 0, isCompleted: true } : g);
       await updateDoc(evRef, { tournamentGames: updated });
+    },
+    disputeMatchScore: async (tid: string, eid: string, gameId: string, notes: string) => {
+      const evRef = doc(db, 'teams', tid, 'events', eid);
+      const snap = await getDoc(evRef);
+      if (!snap.exists()) return;
+      const games = snap.data().tournamentGames || [];
+      const updated = games.map((g: any) => g.id === gameId ? { ...g, isDisputed: true, disputeNotes: notes || 'General Disagreement' } : g);
+      await updateDoc(evRef, { tournamentGames: updated });
+      
+      // Also broadcast an alert to the organizer
+      const data = snap.data();
+      await addDoc(collection(db, 'teams', tid, 'alerts'), clean({
+        title: 'MATCH DISPUTE',
+        message: `A score dispute has been filed for ${data.title}. Match: ${gameId}. Notes: ${notes}`,
+        createdAt: new Date().toISOString(),
+        createdBy: 'system_dispute'
+      }));
     },
     respondToAssignment: async (leagueId: string, entryId: string, status: 'accepted' | 'declined') => {
       if (!activeTeam) return;
