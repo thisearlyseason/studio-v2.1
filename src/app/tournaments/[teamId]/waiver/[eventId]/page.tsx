@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
@@ -23,7 +23,8 @@ import {
   ChevronDown,
   FileText,
   Calendar,
-  Info
+  Info,
+  X
 } from 'lucide-react';
 import { 
   Select, 
@@ -44,10 +45,14 @@ export default function PublicTournamentWaiverPage() {
 
   const [selectedTeam, setSelectedTeam] = useState<string>('');
   const [coachName, setCoachName] = useState('');
-  const [signDate, setSignDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [signDate, setSignDate] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSigned, setIsSigned] = useState(false);
+
+  useEffect(() => {
+    setSignDate(format(new Date(), 'yyyy-MM-dd'));
+  }, []);
 
   const eventRef = useMemoFirebase(() => {
     if (!db || !teamId || !eventId) return null;
@@ -58,7 +63,8 @@ export default function PublicTournamentWaiverPage() {
 
   const unsignedTeams = useMemo(() => {
     if (!event?.tournamentTeams) return [];
-    return event.tournamentTeams.filter(t => !event.teamAgreements?.[t]?.agreed);
+    const agreements = event.teamAgreements || {};
+    return event.tournamentTeams.filter(t => !agreements[t]?.agreed);
   }, [event]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -66,13 +72,18 @@ export default function PublicTournamentWaiverPage() {
     if (!selectedTeam || !coachName || !agreed || isSubmitting) return;
 
     setIsSubmitting(true);
-    const success = await signPublicTournamentWaiver(teamId as string, eventId as string, selectedTeam, coachName);
-    if (success) {
-      setIsSigned(true);
-    } else {
-      alert("Verification failed. Please ensure the host squad is active.");
+    try {
+      const success = await signPublicTournamentWaiver(teamId as string, eventId as string, selectedTeam, coachName);
+      if (success) {
+        setIsSigned(true);
+      } else {
+        alert("Verification failed. Please ensure the host squad is active.");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   };
 
   if (isLoading) {
@@ -135,7 +146,7 @@ export default function PublicTournamentWaiverPage() {
               <Clock className="h-5 w-5 text-primary" />
               <div className="min-w-0">
                 <p className="text-[8px] font-black uppercase opacity-40">Start Date</p>
-                <p className="text-sm font-black uppercase">{format(new Date(event.date), 'EEEE, MMM d')}</p>
+                <p className="text-sm font-black uppercase">{event.date ? format(new Date(event.date), 'EEEE, MMM d') : 'TBD'}</p>
               </div>
             </div>
             <div className="flex items-center gap-4 bg-white/50 backdrop-blur-sm p-4 rounded-2xl border border-white shadow-sm">
