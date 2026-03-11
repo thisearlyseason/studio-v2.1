@@ -50,8 +50,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem
 } from "@/components/ui/dropdown-menu";
 import { 
   Sidebar, 
@@ -229,7 +227,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       const seenIds = JSON.parse(stored);
       setHasUnreadAlerts(alerts.some(a => !seenIds.includes(a.id)));
     } catch (e) {
-      setHasUnreadAlerts(alerts.length > 0);
+      setHasUnreadAlerts(alerts?.length > 0);
     }
   }, [alerts]);
 

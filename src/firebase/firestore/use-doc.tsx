@@ -26,10 +26,9 @@ export interface UseDocResult<T> {
 
 /**
  * React hook to subscribe to a single Firestore document in real-time.
- * Handles nullable references defensively.
  */
 export function useDoc<T = any>(
-  memoizedDocRef: DocumentReference<DocumentData> | null | undefined,
+  memoizedDocRef: (DocumentReference<DocumentData> & {__memo?: boolean}) | null | undefined,
 ): UseDocResult<T> {
   const [data, setData] = useState<WithId<T> | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -75,6 +74,10 @@ export function useDoc<T = any>(
 
     return () => unsubscribe();
   }, [memoizedDocRef]);
+
+  if (memoizedDocRef && !memoizedDocRef.__memo) {
+    throw new Error('useDoc: Firestore references must be memoized using useMemoFirebase.');
+  }
 
   return { data, isLoading, error };
 }

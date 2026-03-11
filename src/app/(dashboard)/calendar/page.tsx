@@ -72,14 +72,11 @@ export default function MasterCalendarPage() {
 
   // Aggregate fetch for all squad events using collectionGroup
   const eventsQuery = useMemoFirebase(() => {
-    // SECURITY GUARD: Ensure we don't query before user AND team data is synchronized
-    // CRITICAL: Prevent root-level queries (/documents/) by returning null if params are missing.
     if (!db || !authUser?.uid || !teamIdsString) return null;
     
     const teamIds = teamIdsString.split(',').filter(id => !!id);
     if (teamIds.length === 0) return null;
     
-    // COLLECTION_GROUP index for 'events' on field 'teamId' is required.
     return query(
       collectionGroup(db, 'events'),
       where('teamId', 'in', teamIds.slice(0, 30))
@@ -90,7 +87,6 @@ export default function MasterCalendarPage() {
   const allEvents = rawEvents || [];
 
   const filteredEvents = useMemo(() => {
-    // FIX: Client-side sorting by date to maintain performance while bypassing complex composite index requirements.
     const sorted = [...allEvents].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     return sorted.filter(event => {

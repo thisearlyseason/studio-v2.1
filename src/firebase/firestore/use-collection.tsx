@@ -38,9 +38,6 @@ export interface InternalQuery extends Query<DocumentData> {
 
 /**
  * React hook to subscribe to a Firestore collection or query in real-time.
- * 
- * This hook is defensive: it will not attempt to subscribe if the target 
- * reference or query is null or undefined.
  */
 export function useCollection<T = any>(
     targetRefOrQuery: ((CollectionReference<DocumentData> | Query<DocumentData>) & {__memo?: boolean}) | null | undefined,
@@ -90,7 +87,6 @@ export function useCollection<T = any>(
           path: path || '/',
         });
 
-        console.error("Firestore subscription error:", err);
         setError(contextualError);
         setData(null);
         setIsLoading(false);
