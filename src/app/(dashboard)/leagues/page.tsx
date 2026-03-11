@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -33,7 +34,7 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogTrigger,
-  DialogDescription,
+  DialogDescription, 
   DialogFooter
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -64,7 +65,7 @@ function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: 
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 space-y-6">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-black tracking-tight uppercase">{teamName} Roster</DialogTitle>
+            <DialogTitle className="text-2xl font-black uppercase tracking-tight">{teamName} Roster</DialogTitle>
             <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">
               Verified Squad Members
             </DialogDescription>

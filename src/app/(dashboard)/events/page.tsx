@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -256,20 +257,17 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
         const resourceTimes: Record<string, string> = {};
         resources.forEach(rid => resourceTimes[rid] = config.start);
 
-        // Track team availability for this day to avoid double-bookings for teams
         const teamAvailability: Record<string, string> = {};
         teams.forEach(t => teamAvailability[t] = config.start);
 
         while (pairingIdx < pairings.length && dayGameCount < maxPerDay) {
           const pair = pairings[pairingIdx];
           
-          // Check if teams in pair have reached their total limit
           if (teamGameCounts[pair[0]] >= maxPerTeamTotal || teamGameCounts[pair[1]] >= maxPerTeamTotal) {
             pairingIdx++;
             continue;
           }
 
-          // Find resource with earliest available time that works for BOTH teams
           let bestResourceId = null;
           let earliestMatchTime = "23:59";
 
@@ -284,7 +282,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
             }
           }
 
-          if (!bestResourceId) break; // No more resources available today for this pair
+          if (!bestResourceId) break;
 
           const displayTime = format(parse(earliestMatchTime, 'HH:mm', new Date()), 'h:mm a');
           let locationLabel = bestResourceId.includes(':') ? bestResourceId.split(':')[1] : bestResourceId;
@@ -301,7 +299,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
             isCompleted: false 
           });
 
-          // Update state
           const [h, m] = earliestMatchTime.split(':').map(Number);
           const nextAvailable = format(addMinutes(new Date(2000, 0, 1, h, m), matchMinutes + breakMinutes), 'HH:mm');
           

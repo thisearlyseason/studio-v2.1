@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -240,7 +241,7 @@ export default function FeedPage() {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 pb-12">
+    <div className="flex flex-col h-full lg:flex-row gap-6 lg:gap-8 pb-12">
       <div className="flex-1 min-w-0 space-y-6 lg:space-y-8">
         <section className="relative h-48 sm:h-64 lg:h-80 rounded-3xl lg:rounded-[2.5rem] overflow-hidden shadow-xl lg:shadow-2xl group ring-1 ring-black/5">
           <img src={activeTeam.heroImageUrl || "https://picsum.photos/seed/squadhero/1200/400"} alt="Team Hero" className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" />
@@ -527,14 +528,12 @@ export default function FeedPage() {
         }
       }} />
 
-      {lightboxImage && (
-        <Dialog open={!!lightboxImage} onOpenChange={() => setLightboxImage(null)}>
-          <DialogContent className="max-w-[95vw] sm:max-w-3xl p-0 overflow-hidden bg-black/95 border-none rounded-2xl lg:rounded-2xl">
-            <DialogTitle className="sr-only">Image Preview</DialogTitle>
-            <img src={lightboxImage} className="w-full h-auto max-h-[85vh] object-contain" alt="Enlarged view" />
-          </DialogContent>
-        </Dialog>
-      )}
+      <Dialog open={!!lightboxImage} onOpenChange={() => setLightboxImage(null)}>
+        <DialogContent className="max-w-[95vw] sm:max-w-3xl p-0 overflow-hidden bg-black/95 border-none rounded-2xl lg:rounded-2xl">
+          <DialogTitle className="sr-only">Image Preview</DialogTitle>
+          <img src={lightboxImage} className="w-full h-auto max-h-[85vh] object-contain" alt="Enlarged view" />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
