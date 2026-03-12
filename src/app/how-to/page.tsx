@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState } from 'react';
@@ -173,7 +174,7 @@ export default function HowToGuidePage() {
     icon: Megaphone,
     steps: [
       { step: "Broadcast Alerts", detail: <>Use the <strong>Megaphone</strong> icon to send urgent, full-screen team-wide alerts for venue changes or safety.</> },
-      { step: "Advanced Trajectory", detail: <>In <strong>Scorekeeping</strong>, visualize PPG, Win Trends, and opponent scouting patterns via interactive charts.</> }
+      { step: "Advanced Trajectory", detail: <>In Scorekeeping, visualize PPG, Win Trends, and opponent scouting patterns via interactive charts.</> }
     ]
   };
 

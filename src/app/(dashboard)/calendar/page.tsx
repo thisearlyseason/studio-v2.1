@@ -103,6 +103,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden">
+        <DialogTitle className="sr-only">Event Details: {event.title}</DialogTitle>
         <div className="flex flex-col lg:flex-row h-full">
           <div className="w-full lg:w-1/2 flex flex-col text-white bg-black p-8 relative">
             <div className="flex justify-between items-start mb-8 relative z-10">

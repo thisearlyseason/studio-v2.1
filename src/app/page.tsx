@@ -218,11 +218,12 @@ export default function LandingPage() {
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-4xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
+                <DialogTitle className="sr-only">Experience Tactical Demo Hub</DialogTitle>
                 <div className="h-2 bg-primary w-full" />
                 <div className="p-8 lg:p-12 space-y-8">
                   <div className="text-center space-y-2">
-                    <DialogTitle className="text-4xl font-black uppercase tracking-tight">Tactical Perspectives</DialogTitle>
-                    <DialogDescription className="text-base font-bold text-primary uppercase tracking-widest">Select your role to begin</DialogDescription>
+                    <h2 className="text-4xl font-black uppercase tracking-tight">Tactical Perspectives</h2>
+                    <p className="text-base font-bold text-primary uppercase tracking-widest">Select your role to begin</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

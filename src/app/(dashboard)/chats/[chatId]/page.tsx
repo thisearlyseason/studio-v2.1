@@ -387,6 +387,7 @@ export default function ChatRoomPage() {
 
       <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
         <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-8">
+          <DialogTitle className="sr-only">Rename Tactical Group</DialogTitle>
           <DialogHeader>
             <DialogTitle className="text-2xl font-black uppercase tracking-tight">Identity Management</DialogTitle>
             <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update channel name</DialogDescription>
@@ -407,6 +408,7 @@ export default function ChatRoomPage() {
 
       <Dialog open={isMembersDialogOpen} onOpenChange={setIsMembersDialogOpen}>
         <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
+          <DialogTitle className="sr-only">Squad Enrollment Management</DialogTitle>
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 space-y-6">
             <DialogHeader>
@@ -471,6 +473,7 @@ export default function ChatRoomPage() {
 
       <Dialog open={isPollDialogOpen} onOpenChange={setIsPollDialogOpen}>
         <DialogContent className="sm:max-w-md rounded-[3rem] border-none shadow-2xl overflow-hidden p-0">
+          <DialogTitle className="sr-only">Launch Squad Poll</DialogTitle>
           <div className="h-2 bg-primary w-full" />
           <div className="p-8">
             <DialogHeader className="mb-6">
