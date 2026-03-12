@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -67,6 +66,13 @@ export default function LoginPage() {
       setIsDemoLoading(false);
     }
   };
+
+  const DEMO_LIST = [
+    { id: 'starter_squad', name: 'Starter Demo', icon: Users, desc: 'Grassroots essentials' },
+    { id: 'squad_organization', name: 'Elite Team Demo', icon: Zap, desc: 'Advanced coordination & analytics' },
+    { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Individual teammate view' },
+    { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Guardian safety view' }
+  ];
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-6 relative overflow-hidden">
@@ -153,14 +159,7 @@ export default function LoginPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-4">
-            {[
-              { id: 'starter_squad', name: 'Starter Demo', icon: Users, desc: 'Grassroots essentials' },
-              { id: 'squad_pro', name: 'Elite Squad Demo', icon: Zap, desc: 'Advanced analytics & strategy' },
-              { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Individual teammate view' },
-              { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Guardian safety view' },
-              { id: 'tournament_pro', name: 'Tournament Demo', icon: TableIcon, desc: 'Brackets & Live Scores' },
-              { id: 'squad_organization', name: 'Club Demo', icon: Trophy, desc: 'Multi-team organization' }
-            ].map((demo) => (
+            {DEMO_LIST.map((demo) => (
               <Button 
                 key={demo.id} 
                 variant="outline" 

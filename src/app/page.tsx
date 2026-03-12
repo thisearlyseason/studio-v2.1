@@ -54,11 +54,9 @@ import {
 
 const DEMO_OPTIONS = [
   { id: 'starter_squad', name: 'Starter Demo', icon: Users, desc: 'Grassroots essentials' },
-  { id: 'squad_pro', name: 'Elite Squad Demo', icon: Zap, desc: 'Advanced analytics & strategy' },
+  { id: 'squad_organization', name: 'Elite Team Demo', icon: Zap, desc: 'Advanced coordination & analytics' },
   { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Individual teammate view' },
-  { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Guardian safety view' },
-  { id: 'tournament_pro', name: 'Tournament Demo', icon: TableIcon, desc: 'Brackets & Live Scores' },
-  { id: 'squad_organization', name: 'Club Demo', icon: Trophy, desc: 'Multi-team organization' }
+  { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Guardian safety view' }
 ];
 
 export default function LandingPage() {

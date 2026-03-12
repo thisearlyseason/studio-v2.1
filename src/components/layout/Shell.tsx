@@ -99,14 +99,14 @@ const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boo
         className={cn(
           "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
           isActive 
-            ? "bg-primary !text-white shadow-lg hover:bg-primary hover:!text-white" 
+            ? "bg-primary/10 text-primary shadow-none hover:bg-primary/10 hover:text-primary" 
             : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
         )}
       >
         <Link href={tab.href} className="flex items-center justify-between w-full">
           <div className="flex items-center gap-4">
-            <Icon className={cn("h-5 w-5", isActive ? "stroke-[3px]" : "stroke-[2]")} />
-            <span className={cn(isActive && "!text-white")}>{tab.name}</span>
+            <Icon className={cn("h-5 w-5", isActive ? "stroke-[3px] text-primary" : "stroke-[2]")} />
+            <span className={cn(isActive && "text-primary")}>{tab.name}</span>
           </div>
           {isLocked && <Lock className="h-3 w-3 opacity-40" />}
         </Link>
@@ -145,10 +145,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     isActive={pathname === '/dashboard'} 
                     className={cn(
                       "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                      pathname === '/dashboard' ? "!bg-primary !text-white shadow-lg hover:bg-primary" : "bg-primary/5 text-primary hover:bg-primary/10"
+                      pathname === '/dashboard' ? "bg-primary/10 text-primary" : "bg-primary/5 text-primary hover:bg-primary/10"
                     )}
                   >
-                    <Link href="/dashboard" className={cn(pathname === '/dashboard' && "!text-white")}>
+                    <Link href="/dashboard" className={cn(pathname === '/dashboard' && "text-primary")}>
                       <Layout className="h-5 w-5 mr-3" />Dashboard
                     </Link>
                   </SidebarMenuButton>
@@ -161,10 +161,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       isActive={pathname === '/family'} 
                       className={cn(
                         "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                        pathname === '/family' ? "!bg-primary !text-white shadow-lg hover:bg-primary" : "bg-primary/5 text-primary hover:bg-primary/10"
+                        pathname === '/family' ? "bg-primary/10 text-primary" : "bg-primary/5 text-primary hover:bg-primary/10"
                       )}
                     >
-                      <Link href="/family" className={cn(pathname === '/family' && "!text-white")}>
+                      <Link href="/family" className={cn(pathname === '/family' && "text-primary")}>
                         <Baby className="h-5 w-5 mr-3" />Family Hub
                       </Link>
                     </SidebarMenuButton>
@@ -178,10 +178,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       isActive={pathname === '/club'} 
                       className={cn(
                         "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                        pathname === '/club' ? "!bg-black !text-white shadow-lg hover:bg-black" : "bg-primary/5 text-primary hover:bg-primary/10"
+                        pathname === '/club' ? "bg-primary/10 text-primary" : "bg-primary/5 text-primary hover:bg-primary/10"
                       )}
                     >
-                      <Link href="/club" className={cn(pathname === '/club' && "!text-white")}>
+                      <Link href="/club" className={cn(pathname === '/club' && "text-primary")}>
                         <Building className="h-5 w-5 mr-3" />Club Hub
                       </Link>
                     </SidebarMenuButton>
