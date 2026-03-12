@@ -14,6 +14,7 @@ import { seedGuestDemoTeam, seedSubscriptionData } from '@/lib/db-seeder';
 import { useFirestore } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000; // 15 Minutes
 const DEMO_START_KEY = 'squad_demo_start_time';
