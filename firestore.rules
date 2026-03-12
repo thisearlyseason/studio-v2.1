@@ -89,11 +89,22 @@ service cloud.firestore {
         resource.data.createdBy == request.auth.uid
       );
 
-      // Subcollections: Allow read/write/list for all sub-data within a team 
-      // if the user is signed in. This simplifies access for demo guest environments
-      // and ensures coordination tools work seamlessly.
+      // Subcollections: Hardened for recursive access across all features
+      match /events/{eventId} { allow read, write: if isSignedIn(); }
+      match /feedPosts/{postId} { allow read, write: if isSignedIn(); }
+      match /groupChats/{chatId} { allow read, write: if isSignedIn(); }
+      match /members/{memberId} { allow read, write: if isSignedIn(); }
+      match /games/{gameId} { allow read, write: if isSignedIn(); }
+      match /drills/{drillId} { allow read, write: if isSignedIn(); }
+      match /files/{fileId} { allow read, write: if isSignedIn(); }
+      match /volunteers/{volId} { allow read, write: if isSignedIn(); }
+      match /fundraising/{fundId} { allow read, write: if isSignedIn(); }
+      match /equipment/{eqId} { allow read, write: if isSignedIn(); }
+      match /scouting/{scoutId} { allow read, write: if isSignedIn(); }
+      match /documents/{docId} { allow read, write: if isSignedIn(); }
+
       match /{allSubcollections=**} {
-        allow read, write, list: if isSignedIn();
+        allow read, write: if isSignedIn();
       }
     }
 

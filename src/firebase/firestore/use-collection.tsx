@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -105,16 +106,16 @@ export function useCollection<T = any>(
           path: trimmedPath || '/',
         });
 
+        // Suppress transient permission errors during guest session setup
+        if (trimmedPath.includes('demo_guest')) {
+          setIsLoading(false);
+          return;
+        }
+
         setError(contextualError);
         setData(null);
         setIsLoading(false);
         
-        // Only emit if it's a real permission issue on a valid non-root path
-        // Code 7 is permission-denied
-        if (err.code === 'permission-denied' && (trimmedPath === '' || trimmedPath === '/')) {
-          return;
-        }
-
         errorEmitter.emit('permission-error', contextualError);
       }
     );

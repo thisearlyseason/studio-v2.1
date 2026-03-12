@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -61,7 +62,7 @@ import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebas
 import { collection, query, orderBy, doc, where, collectionGroup, getDocs } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
-import { format, isSameDay, isPast, addMinutes, addDays, parse, eachDayOfInterval } from 'date-fns';
+import { format, isSameDay, isPast, addMinutes, parse, eachDayOfInterval } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -146,8 +147,7 @@ interface EventDetailDialogProps {
 }
 
 function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, children }: EventDetailDialogProps) {
-  const { user, updateEvent, signTeamTournamentWaiver, isPro, activeTeam, hasFeature, members } = useTeam();
-  const db = useFirestore();
+  const { user, updateEvent, signTeamTournamentWaiver, isPro, activeTeam, members } = useTeam();
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   
@@ -156,10 +156,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   const [genBreakLength, setGenBreakLength] = useState('15');
   const [maxGamesPerDay, setMaxGamesPerDay] = useState('10');
   const [maxGamesPerTeam, setMaxGamesPerTeam] = useState('5');
+  const [maxTotalGames, setMaxTotalGames] = useState('20');
   const [dayConfigs, setDayConfigs] = useState<Record<string, { start: string, end: string }>>({});
   
   const [baseUrl, setBaseUrl] = useState('');
-
   const [manualMatch, setManualMatch] = useState({ team1: '', team2: '', date: format(new Date(event.date), 'yyyy-MM-dd'), time: '12:00', location: '' });
   const [enrollmentText, setEnrollmentText] = useState(event.tournamentTeams?.join(', ') || '');
 
@@ -231,8 +231,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
       const teams = [...event.tournamentTeams];
       const matchMinutes = parseInt(genMatchLength);
       const breakMinutes = parseInt(genBreakLength);
-      const maxPerDay = parseInt(maxGamesPerDay);
-      const maxPerTeamTotal = parseInt(maxGamesPerTeam);
+      const maxPerDayLimit = parseInt(maxGamesPerDay);
+      const maxPerTeamLimit = parseInt(maxGamesPerTeam);
+      const totalMatchLimit = parseInt(maxTotalGames);
       
       const teamGameCounts: Record<string, number> = {};
       teams.forEach(t => teamGameCounts[t] = 0);
@@ -246,6 +247,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
       let pairingIdx = 0;
 
       for (const dayKey of days) {
+        if (games.length >= totalMatchLimit) break;
         const config = dayConfigs[dayKey];
         let dayGameCount = 0;
         
@@ -255,10 +257,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
         const teamAvailability: Record<string, string> = {};
         teams.forEach(t => teamAvailability[t] = config.start);
 
-        while (pairingIdx < pairings.length && dayGameCount < maxPerDay) {
+        while (pairingIdx < pairings.length && dayGameCount < maxPerDayLimit && games.length < totalMatchLimit) {
           const pair = pairings[pairingIdx];
           
-          if (teamGameCounts[pair[0]] >= maxPerTeamTotal || teamGameCounts[pair[1]] >= maxPerTeamTotal) {
+          if (teamGameCounts[pair[0]] >= maxPerTeamLimit || teamGameCounts[pair[1]] >= maxPerTeamLimit) {
             pairingIdx++;
             continue;
           }
@@ -393,7 +395,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                 </div>
 
                 {!event.isTournament && (
-                  <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-500">
+                  <div className="space-y-4">
                     <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Deployment RSVP</h4>
                     <div className="grid grid-cols-1 gap-2">
                       <Button 
@@ -641,11 +643,12 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                         <div className="flex items-center gap-4"><div className="bg-white p-3 rounded-2xl shadow-sm text-primary"><Zap className="h-6 w-6" /></div><h3 className="text-xl font-black uppercase tracking-tight">Auto-Scheduler</h3></div>
                         
                         <div className="space-y-6">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
                             <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Match (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-12 rounded-xl border-2 bg-white" /></div>
                             <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Break (Min)</Label><Input type="number" value={genBreakLength} onChange={e => setGenBreakLength(e.target.value)} className="h-12 rounded-xl border-2 bg-white" /></div>
                             <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Max/Day</Label><Input type="number" value={maxGamesPerDay} onChange={e => setMaxGamesPerDay(e.target.value)} className="h-12 rounded-xl border-2 bg-white" /></div>
                             <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Max/Team</Label><Input type="number" value={maxGamesPerTeam} onChange={e => setMaxGamesPerTeam(e.target.value)} className="h-12 rounded-xl border-2 bg-white" /></div>
+                            <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Total Cap</Label><Input type="number" value={maxTotalGames} onChange={e => setMaxTotalGames(e.target.value)} className="h-12 rounded-xl border-2 bg-white" /></div>
                           </div>
 
                           <div className="space-y-4">
