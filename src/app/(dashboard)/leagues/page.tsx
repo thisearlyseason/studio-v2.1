@@ -88,7 +88,7 @@ function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: 
                   <div key={member.id} className="flex items-center gap-4 p-3 bg-muted/30 rounded-2xl border border-transparent hover:border-primary/10 transition-all">
                     <Avatar className="h-10 w-10 rounded-xl border shadow-sm shrink-0">
                       <AvatarImage src={member.avatar} />
-                      <AvatarFallback className="font-black text-xs">{member.name[0]}</AvatarFallback>
+                      <AvatarFallback className="font-black text-xs">{member.name?.[0] || '?'}</AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
                       <p className="font-black text-sm truncate">{member.name}</p>
@@ -379,7 +379,7 @@ export default function LeaguesPage() {
                         {sortedStandings.map((team, idx) => (
                           <tr 
                             key={team.id} 
-                            onClick={() => { setScoutTeamId(team.id); setScoutTeamName(team.teamName); }}
+                            onClick={() => { setScoutTeamId(team.id); setScoutTeamName(team.teamName || 'Team'); }}
                             className={cn("hover:bg-primary/5 transition-colors group cursor-pointer", team.id === activeTeam?.id && "bg-primary/5")}
                           >
                             <td className="px-8 py-6">
@@ -388,7 +388,7 @@ export default function LeaguesPage() {
                                 <div className="flex items-center gap-3">
                                   <Avatar className="h-10 w-10 rounded-xl border shadow-inner shrink-0">
                                     <AvatarImage src={team.teamLogoUrl} className="object-cover" />
-                                    <AvatarFallback className="font-black text-xs">{team.teamName[0]}</AvatarFallback>
+                                    <AvatarFallback className="font-black text-xs">{team.teamName?.[0] || 'T'}</AvatarFallback>
                                   </Avatar>
                                   <div className="flex flex-col min-w-0">
                                     <div className="flex items-center gap-2">
@@ -419,12 +419,12 @@ export default function LeaguesPage() {
               </div>
               <div className="space-y-3">
                 {sortedStandings.filter(t => t.id !== activeTeam?.id).map((team) => (
-                  <Card key={team.id} className="rounded-2xl border-none shadow-md ring-1 ring-black/5 hover:ring-primary/20 transition-all cursor-pointer bg-white group" onClick={() => handleMessageOpponent(team.teamName)}>
+                  <Card key={team.id} className="rounded-2xl border-none shadow-md ring-1 ring-black/5 hover:ring-primary/20 transition-all cursor-pointer bg-white group" onClick={() => handleMessageOpponent(team.teamName || 'Coach')}>
                     <CardContent className="p-4 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-10 w-10 rounded-xl border shadow-inner">
                           <AvatarImage src={team.teamLogoUrl} />
-                          <AvatarFallback className="font-black text-xs">{team.teamName[0]}</AvatarFallback>
+                          <AvatarFallback className="font-black text-xs">{team.teamName?.[0] || 'T'}</AvatarFallback>
                         </Avatar>
                         <div className="min-w-0">
                           <p className="text-xs font-black uppercase tracking-tight leading-none mb-1 truncate max-w-[120px]">{team.teamName}</p>

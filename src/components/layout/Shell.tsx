@@ -163,7 +163,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <DropdownMenuContent align="start" className="w-72 p-2 rounded-2xl">
                   {teams.map(team => (
                     <DropdownMenuItem key={team.id} onClick={() => setActiveTeam(team)} className={cn("flex items-center gap-3 p-3 rounded-xl cursor-pointer", activeTeam?.id === team.id ? "bg-primary/5" : "")}>
-                      <Avatar className="h-8 w-8 rounded-lg shrink-0"><AvatarImage src={team.teamLogoUrl} /><AvatarFallback>{team.name[0]}</AvatarFallback></Avatar>
+                      <Avatar className="h-8 w-8 rounded-lg shrink-0">
+                        <AvatarImage src={team.teamLogoUrl} />
+                        <AvatarFallback>{team.name?.[0] || 'T'}</AvatarFallback>
+                      </Avatar>
                       <span className="font-bold text-sm truncate">{team.name}</span>
                     </DropdownMenuItem>
                   ))}

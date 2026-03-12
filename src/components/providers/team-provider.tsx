@@ -83,6 +83,7 @@ export type Team = {
   leagueIds?: string[];
   createdBy?: string;
   createdAt?: string;
+  teamName?: string; // Fallback for some legacy records
 };
 
 export type Member = {
@@ -305,57 +306,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
-  const teams = useMemo(() => (teamsData || []).map(m => ({ ...m, id: m.teamId || m.id })), [teamsData]);
-
-  // Robust Household Data Sync (Avoiding Collection Group Index Error)
-  useEffect(() => {
-    if (!db || !isAuthResolved || !firebaseUser || !teams.length) return;
-
-    // Listen to events for all joined teams
-    const eventUnsubs = teams.map(team => {
-      return onSnapshot(collection(db, 'teams', team.id, 'events'), (snap) => {
-        const teamEvts = snap.docs.map(d => ({ id: d.id, ...d.data() } as TeamEvent));
-        setHouseholdEvents(prev => {
-          const otherTeams = prev.filter(e => e.teamId !== team.id);
-          return [...otherTeams, ...teamEvts].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        });
-      }, (err) => console.warn("Event sub failed", err));
-    });
-
-    // Listen to member records for balance
-    const memberUnsubs = teams.map(team => {
-      return onSnapshot(collection(db, 'teams', team.id, 'members'), (snap) => {
-        // Find members that belong to this household's players
-        const playerIds = myChildren.map(c => c.id);
-        const householdMembers = snap.docs.filter(d => playerIds.includes(d.data().playerId) || d.data().userId === firebaseUser.uid);
-        
-        setHouseholdBalance(prev => {
-          // This is trickier to aggregate correctly without state management for each team
-          // For MVP, we'll do a one-time calculation here combined with others if needed
-          return prev; // Placeholder - actual implementation below
-        });
-      });
-    });
-
-    // Simplified Balance Aggregator
-    const updateBalance = async () => {
-      let total = 0;
-      const playerIds = myChildren.map(c => c.id);
-      for (const team of teams) {
-        for (const pid of playerIds) {
-          const memberDoc = await getDoc(doc(db, 'teams', team.id, 'members', pid));
-          if (memberDoc.exists()) total += (memberDoc.data().amountOwed || 0);
-        }
-      }
-      setHouseholdBalance(total);
-    };
-    updateBalance();
-
-    return () => {
-      eventUnsubs.forEach(u => u());
-      memberUnsubs.forEach(u => u());
-    };
-  }, [teams, myChildren, db, isAuthResolved, firebaseUser]);
+  
+  // Normalize team data to ensure 'name' is always available
+  const teams = useMemo(() => (teamsData || []).map(m => ({ 
+    ...m, 
+    id: m.teamId || m.id,
+    name: m.name || m.teamName || 'Squad'
+  })), [teamsData]);
 
   const hasFeature = useCallback((featureId: string) => {
     if (isSuperAdmin) return true;
@@ -376,6 +333,38 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const current = teams.filter(t => t.ownerUserId === firebaseUser?.uid && t.isPro).length;
     return { current, limit: limitCount, remaining: Math.max(0, limitCount - current), exceeded: current > limitCount };
   }, [teams, userProfile, firebaseUser?.uid]);
+
+  // Household Data Aggregator
+  useEffect(() => {
+    if (!db || !isAuthResolved || !firebaseUser || !teams.length) return;
+
+    const eventUnsubs = teams.map(team => {
+      return onSnapshot(collection(db, 'teams', team.id, 'events'), (snap) => {
+        const teamEvts = snap.docs.map(d => ({ id: d.id, ...d.data() } as TeamEvent));
+        setHouseholdEvents(prev => {
+          const otherTeams = prev.filter(e => e.teamId !== team.id);
+          return [...otherTeams, ...teamEvts].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        });
+      }, (err) => console.warn("Event sub failed", err));
+    });
+
+    const updateBalance = async () => {
+      let total = 0;
+      const playerIds = myChildren.map(c => c.id);
+      for (const team of teams) {
+        for (const pid of playerIds) {
+          const memberDoc = await getDoc(doc(db, 'teams', team.id, 'members', pid));
+          if (memberDoc.exists()) total += (memberDoc.data().amountOwed || 0);
+        }
+      }
+      setHouseholdBalance(total);
+    };
+    updateBalance();
+
+    return () => {
+      eventUnsubs.forEach(u => u());
+    };
+  }, [teams, myChildren, db, isAuthResolved, firebaseUser]);
 
   const value = {
     user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading,

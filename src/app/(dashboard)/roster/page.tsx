@@ -271,7 +271,7 @@ export default function RosterPage() {
               <div className="flex items-center gap-3 lg:gap-4">
                 <Avatar className="h-12 w-12 lg:h-14 lg:w-14 rounded-xl lg:rounded-2xl border-2 border-background shadow-md">
                   <AvatarImage src={member.avatar} />
-                  <AvatarFallback className="rounded-xl lg:rounded-2xl font-black bg-muted text-[10px] lg:text-xs">{member.name[0]}</AvatarFallback>
+                  <AvatarFallback className="rounded-xl lg:rounded-2xl font-black bg-muted text-[10px] lg:text-xs">{member.name?.[0] || '?'}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 lg:gap-2 mb-0.5">
@@ -301,7 +301,7 @@ export default function RosterPage() {
                 <div className="flex flex-col sm:flex-row items-center gap-4 lg:gap-6 w-full">
                   <Avatar className="h-20 w-20 lg:h-28 lg:w-28 rounded-2xl lg:rounded-[2rem] border-4 border-background shadow-xl">
                     <AvatarImage src={selectedMember.avatar} />
-                    <AvatarFallback className="text-xl lg:text-2xl font-black bg-muted">{selectedMember.name[0]}</AvatarFallback>
+                    <AvatarFallback className="text-xl lg:text-2xl font-black bg-muted">{selectedMember.name?.[0] || '?'}</AvatarFallback>
                   </Avatar>
                   <div className="space-y-1 lg:space-y-2 flex-1">
                     <h2 className="text-2xl lg:text-4xl font-black tracking-tighter leading-tight uppercase">{selectedMember.name}</h2>
