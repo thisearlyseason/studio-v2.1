@@ -324,22 +324,22 @@ export default function LandingPage() {
                 <div className="space-y-3">
                   <BrainCircuit className="h-8 w-8 text-primary" />
                   <h5 className="text-lg font-black uppercase">AI Scouting Analyst</h5>
-                  <p className="text-xs text-white/60 leading-relaxed font-medium">Generate structured opponent intelligence from raw match notes using our integrated GenAI flow.</p>
+                  <p className="text-xs text-white/60 leading-relaxed font-medium">Generate <strong>Structured Opponent Intelligence</strong> from raw match notes using our integrated GenAI flows.</p>
                 </div>
                 <div className="space-y-3">
                   <Building className="h-8 w-8 text-primary" />
                   <h5 className="text-lg font-black uppercase">Institutional Hub</h5>
-                  <p className="text-xs text-white/60 leading-relaxed font-medium">Centralized command for clubs managing 20+ squads with aggregated fiscal auditing.</p>
+                  <p className="text-xs text-white/60 leading-relaxed font-medium"><strong>Fiscal Pulse & Multi-Team Billing</strong> for clubs managing 20+ squads with aggregated financial auditing.</p>
                 </div>
                 <div className="space-y-3">
                   <Package className="h-8 w-8 text-primary" />
-                  <h5 className="text-lg font-black uppercase">Fleet & Asset Vault</h5>
-                  <p className="text-xs text-white/60 leading-relaxed font-medium">Professional inventory management for uniforms, balls, and medical kits with conflict resolution.</p>
+                  <h5 className="text-lg font-black uppercase">Inventory Vault</h5>
+                  <p className="text-xs text-white/60 leading-relaxed font-medium">Professional <strong>Inventory Vault & Asset Tracking</strong> for uniforms, medical kits, and training gear with return monitoring.</p>
                 </div>
                 <div className="space-y-3">
                   <ShieldAlert className="h-8 w-8 text-primary" />
-                  <h5 className="text-lg font-black uppercase">Staff Evaluations</h5>
-                  <p className="text-xs text-white/60 leading-relaxed font-medium">Private, staff-only tactical reviews and recruiting portfolios for every verified athlete.</p>
+                  <h5 className="text-lg font-black uppercase">Personnel Evaluations</h5>
+                  <p className="text-xs text-white/60 leading-relaxed font-medium"><strong>Staff Personnel Evaluations</strong> ledger for private tactical reviews and certified recruiting portfolios.</p>
                 </div>
               </div>
             </div>
@@ -388,29 +388,29 @@ export default function LandingPage() {
         <div className="container mx-auto px-6 relative z-10">
           <div className="max-w-3xl space-y-6 mb-16 mx-auto text-center">
             <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-black px-4 h-7 uppercase tracking-widest text-[10px]">
-              Tactical Perspectives
+              Specialized Interfaces
             </Badge>
-            <h3 className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase">Specialized <br /> Operational <span className="text-primary italic">Interfaces.</span></h3>
+            <h3 className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase">Tailored <br /> <span className="text-primary italic">Account Roles.</span></h3>
             <p className="text-muted-foreground font-medium text-lg leading-relaxed">
-              Every member of the organization receives a tailored dashboard optimized for their specific objectives.
+              Every member of the organization receives a custom dashboard optimized for their specific operational objectives.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
             <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:translate-y-[-8px] transition-all duration-500">
               <Trophy className="h-12 w-12 text-primary" />
-              <h5 className="text-2xl font-black uppercase tracking-tight">Coaches Hub</h5>
-              <p className="text-sm font-medium text-muted-foreground leading-relaxed">Full command of the roster, scheduling, and tactical playbooks. Launch broadcasts and track performance metrics via AI scouting.</p>
+              <h5 className="text-2xl font-black uppercase tracking-tight">Coaches & Managers</h5>
+              <p className="text-sm font-medium text-muted-foreground leading-relaxed">Full command of the roster, scheduling, and tactical playbooks. Launch broadcasts, auto-generate brackets, and track personnel performance.</p>
             </Card>
             <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:translate-y-[-8px] transition-all duration-500">
               <Baby className="h-12 w-12 text-primary" />
               <h5 className="text-2xl font-black uppercase tracking-tight">Guardian Hub</h5>
-              <p className="text-sm font-medium text-muted-foreground leading-relaxed">Manage multiple children from one unified hub. Track consolidated household balances, verify RSVPs, and claim shifts.</p>
+              <p className="text-sm font-medium text-muted-foreground leading-relaxed">Manage multiple children from one unified <strong>Household Hub</strong>. Track consolidated dues, verify RSVPs, and claim volunteer shifts.</p>
             </Card>
             <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:translate-y-[-8px] transition-all duration-500">
               <User className="h-12 w-12 text-primary" />
-              <h5 className="text-2xl font-black uppercase tracking-tight">Athlete View</h5>
-              <p className="text-sm font-medium text-muted-foreground leading-relaxed">A personal performance dashboard. Sign waivers, watch study film, and manage your professional recruiting portfolio resume.</p>
+              <h5 className="text-2xl font-black uppercase tracking-tight">Athlete Performance</h5>
+              <p className="text-sm font-medium text-muted-foreground leading-relaxed">A personal dashboard. Sign waivers, watch study film, track match results, and manage your <strong>Professional Recruiting Portfolio</strong>.</p>
             </Card>
           </div>
         </div>
