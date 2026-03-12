@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useMemo } from 'react';
@@ -271,7 +270,7 @@ export default function UniversalAccountDashboard() {
               <Badge variant="outline" className="border-primary/20 text-primary font-black text-[8px] px-2 h-5">{pendingWaiversCount} PENDING</Badge>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
-              <p className="text-[10px] font-medium text-muted-foreground leading-relaxed">
+              <p className="text-sm font-medium text-muted-foreground leading-relaxed">
                 Ensure all teammates have signed their liability and media release waivers before match day.
               </p>
               <Button onClick={() => router.push('/files')} variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px] tracking-widest border-2">

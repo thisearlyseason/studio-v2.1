@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -77,12 +76,6 @@ export default function LandingPage() {
     .map(img => img.imageUrl);
 
   useEffect(() => {
-    if (!isUserLoading && user) {
-      router.push('/dashboard');
-    }
-  }, [user, isUserLoading, router]);
-
-  useEffect(() => {
     const timer = setInterval(() => {
       setCurrentImageIndex((prev) => (prev + 1) % sportsImages.length);
     }, 5000);
@@ -114,7 +107,11 @@ export default function LandingPage() {
     }
   };
 
-  if (user) return null;
+  if (isUserLoading) return (
+    <div className="min-h-screen flex items-center justify-center bg-black">
+      <Loader2 className="h-10 w-10 animate-spin text-primary" />
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background selection:bg-primary/20">
@@ -184,11 +181,19 @@ export default function LandingPage() {
             Unite your squad, manage schedules, and dominate the season with the all-in-one platform for competitive teams.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-            <Link href="/signup">
-              <Button size="lg" className="h-16 px-10 rounded-full text-lg font-black shadow-2xl shadow-primary/40 active:scale-95 transition-all w-full sm:w-auto">
-                Start Your Squad <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-            </Link>
+            {user ? (
+              <Link href="/dashboard">
+                <Button size="lg" className="h-16 px-10 rounded-full text-lg font-black shadow-2xl shadow-primary/40 active:scale-95 transition-all w-full sm:w-auto">
+                  Go to Dashboard <ArrowRight className="ml-2 h-5 w-5" />
+                </Button>
+              </Link>
+            ) : (
+              <Link href="/signup">
+                <Button size="lg" className="h-16 px-10 rounded-full text-lg font-black shadow-2xl shadow-primary/40 active:scale-95 transition-all w-full sm:w-auto">
+                  Start Your Squad <ArrowRight className="ml-2 h-5 w-5" />
+                </Button>
+              </Link>
+            )}
             <Dialog open={isDemoDialogOpen} onOpenChange={setIsDemoDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="lg" variant="outline" className="h-16 px-10 rounded-full text-lg font-black bg-white/10 border-white/20 text-white backdrop-blur-md hover:bg-white/20 active:scale-95 transition-all w-full sm:w-auto">
