@@ -27,7 +27,9 @@ import {
   CheckCircle2,
   ShieldAlert,
   Infinity,
-  AlertCircle
+  AlertCircle,
+  DollarSign,
+  CreditCard
 } from 'lucide-react';
 import { useTeam } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
@@ -43,12 +45,14 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { useRouter } from 'next/navigation';
+import { toast } from '@/hooks/use-toast';
 
 export default function PricingPage() {
-  const { purchasePro, submitLead, user, plans, isPlansLoading, proQuotaStatus } = useTeam();
+  const { purchasePro, user, plans, isPlansLoading, proQuotaStatus } = useTeam();
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
@@ -90,9 +94,6 @@ export default function PricingPage() {
       </div>
     );
   }
-
-  const isSubscriber = proQuotaStatus.limit > 0;
-  const quotaPercentage = proQuotaStatus.limit > 0 ? (proQuotaStatus.current / proQuotaStatus.limit) * 100 : 0;
 
   return (
     <div className="space-y-12 pb-20 max-w-7xl mx-auto px-4 md:px-6">

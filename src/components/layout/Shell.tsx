@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, memo } from 'react';
@@ -145,11 +146,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     isActive={pathname === '/dashboard'} 
                     className={cn(
                       "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                      pathname === '/dashboard' ? "bg-primary/10 text-primary" : "bg-primary/5 text-primary hover:bg-primary/10"
+                      pathname === '/dashboard' ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
                     )}
                   >
                     <Link href="/dashboard" className={cn(pathname === '/dashboard' && "text-primary")}>
-                      <Layout className="h-5 w-5 mr-3" />Dashboard
+                      <Layout className={cn("h-5 w-5 mr-3", pathname === '/dashboard' ? "text-primary" : "text-muted-foreground")} />Dashboard
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -161,11 +162,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       isActive={pathname === '/family'} 
                       className={cn(
                         "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                        pathname === '/family' ? "bg-primary/10 text-primary" : "bg-primary/5 text-primary hover:bg-primary/10"
+                        pathname === '/family' ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
                       )}
                     >
                       <Link href="/family" className={cn(pathname === '/family' && "text-primary")}>
-                        <Baby className="h-5 w-5 mr-3" />Family Hub
+                        <Baby className={cn("h-5 w-5 mr-3", pathname === '/family' ? "text-primary" : "text-muted-foreground")} />Family Hub
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -178,11 +179,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       isActive={pathname === '/club'} 
                       className={cn(
                         "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                        pathname === '/club' ? "bg-primary/10 text-primary" : "bg-primary/5 text-primary hover:bg-primary/10"
+                        pathname === '/club' ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
                       )}
                     >
                       <Link href="/club" className={cn(pathname === '/club' && "text-primary")}>
-                        <Building className="h-5 w-5 mr-3" />Club Hub
+                        <Building className={cn("h-5 w-5 mr-3", pathname === '/club' ? "text-primary" : "text-muted-foreground")} />Club Hub
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
