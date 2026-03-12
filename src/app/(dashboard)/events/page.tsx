@@ -63,7 +63,7 @@ import { collection, query, orderBy, doc, where, collectionGroup, getDocs } from
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { format, isSameDay, isPast, addMinutes, parse, eachDayOfInterval, isValid } from 'date-fns';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -144,9 +144,11 @@ interface EventDetailDialogProps {
   onEdit: (event: TeamEvent) => void;
   onDelete: (eventId: string) => void;
   children: React.ReactNode;
+  facilities: Facility[];
+  allFields: Field[];
 }
 
-function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, children }: EventDetailDialogProps) {
+function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, children, facilities, allFields }: EventDetailDialogProps) {
   const { user, updateEvent, signTeamTournamentWaiver, isPro, activeTeam, members } = useTeam();
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -176,7 +178,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
           const config: Record<string, { start: string, end: string }> = {};
           days.forEach(day => {
             const key = format(day, 'yyyy-MM-dd');
-            // Preserve existing time settings if already in state, otherwise default
             config[key] = dayConfigs[key] || { start: '09:00', end: '21:00' };
           });
           setDayConfigs(config);
@@ -219,15 +220,26 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
     return groups;
   }, [event.tournamentGames, activeItineraryDay]);
 
+  const poolResources = useMemo(() => {
+    const list: { id: string, label: string }[] = [];
+    event.fieldIds?.forEach(id => {
+      const [facId, fieldName] = id.split(':');
+      const fac = facilities.find(f => f.id === facId);
+      list.push({ id, label: fac ? `${fac.name} - ${fieldName}` : fieldName });
+    });
+    event.manualLocations?.forEach(loc => {
+      list.push({ id: `manual:${loc}`, label: loc });
+    });
+    return list;
+  }, [event.fieldIds, event.manualLocations, facilities]);
+
   const handleGenerateSchedule = async () => {
     if (!event.tournamentTeams || event.tournamentTeams.length < 2) {
       toast({ title: "Incomplete Roster", description: "At least 2 squads must be enrolled to generate matchups.", variant: "destructive" });
       return;
     }
 
-    const fieldPool = event.fieldIds || []; 
-    const manualPool = event.manualLocations || [];
-    const resources = [...fieldPool, ...manualPool.map(m => `manual:${m}`)];
+    const resources = poolResources.map(r => r.id);
     if (resources.length === 0) resources.push(`manual:${event.location || 'Main Venue'}`);
 
     setIsGenerating(true);
@@ -288,7 +300,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
           if (!bestResourceId) break;
 
           const displayTime = format(parse(earliestMatchTime, 'HH:mm', new Date()), 'h:mm a');
-          let locationLabel = bestResourceId.includes(':') ? bestResourceId.split(':')[1] : bestResourceId;
+          const resObj = poolResources.find(r => r.id === bestResourceId);
+          let locationLabel = resObj ? resObj.label : (bestResourceId.includes(':') ? bestResourceId.split(':')[1] : bestResourceId);
 
           games.push({ 
             id: `gen_${Date.now()}_${pairingIdx}`, 
@@ -576,7 +589,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     <TabsContent value="compliance" className="mt-0 space-y-8">
                       <Card className="rounded-[2.5rem] border-none shadow-xl bg-muted/10 p-8 space-y-6">
                         <div className="flex items-center gap-4">
-                          <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Signature className="h-6 w-6" /></div>
+                          <div className="bg-primary/10 p-3 rounded-2xl text-primary shadow-inner"><Signature className="h-6 w-6" /></div>
                           <h3 className="text-xl font-black uppercase tracking-tight">Digital Vault</h3>
                         </div>
                         <div className="space-y-4">
@@ -683,7 +696,33 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                           <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Squad B</Label><Input value={manualMatch.team2} onChange={e => setManualMatch({...manualMatch, team2: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
                           <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Date</Label><Input type="date" value={manualMatch.date} onChange={e => setManualMatch({...manualMatch, date: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
                           <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Time</Label><Input type="time" value={manualMatch.time} onChange={e => setManualMatch({...manualMatch, time: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
-                          <div className="space-y-1.5 lg:col-span-2"><Label className="text-[9px] font-black uppercase ml-1">Location Label</Label><Input value={manualMatch.location} onChange={(e) => setManualMatch({ ...manualMatch, location: e.target.value })} className="h-12 rounded-xl border-2 bg-white" /></div>
+                          <div className="space-y-1.5 lg:col-span-2">
+                            <Label className="text-[9px] font-black uppercase ml-1">Location Picker</Label>
+                            <Select 
+                              value={poolResources.find(r => r.label === manualMatch.location)?.id || 'manual'} 
+                              onValueChange={(val) => {
+                                if (val === 'manual') return;
+                                const res = poolResources.find(r => r.id === val);
+                                if (res) setManualMatch({ ...manualMatch, location: res.label });
+                              }}
+                            >
+                              <SelectTrigger className="h-12 rounded-xl border-2 bg-white font-bold">
+                                <SelectValue placeholder="Select from pool..." />
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl">
+                                <SelectItem value="manual" className="font-bold italic">Manual Override Mode</SelectItem>
+                                {poolResources.map(r => <SelectItem key={r.id} value={r.id} className="font-bold">{r.label}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            {(!manualMatch.location || !poolResources.find(r => r.label === manualMatch.location)) && (
+                              <Input 
+                                placeholder="Type manual location label..." 
+                                value={manualMatch.location} 
+                                onChange={(e) => setManualMatch({ ...manualMatch, location: e.target.value })} 
+                                className="h-10 mt-2 rounded-xl border-2 bg-white text-xs" 
+                              />
+                            )}
+                          </div>
                           <Button className="col-span-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleAddManualMatch} disabled={!manualMatch.team1 || !manualMatch.team2}>Establish Matchup</Button>
                         </div>
                       </div>
@@ -826,23 +865,6 @@ export default function EventsPage() {
     setNewTournamentTeams(''); setNewWaiverText('');
   };
 
-  const toggleFacility = (fid: string) => {
-    setSelectedFacilityIds(prev => {
-      const isSelected = prev.includes(fid);
-      if (isSelected) {
-        const facilityFields = allFields?.filter(f => f.facilityId === fid).map(f => `${fid}:${f.name}`) || [];
-        setSelectedFieldIds(curr => curr.filter(id => !facilityFields.includes(id)));
-        return prev.filter(id => id !== fid);
-      }
-      return [...prev, fid];
-    });
-  };
-
-  const toggleField = (facId: string, fieldName: string) => {
-    const fieldId = `${facId}:${fieldName}`;
-    setSelectedFieldIds(prev => prev.includes(fieldId) ? prev.filter(id => id !== fieldId) : [...prev, fieldId]);
-  };
-
   const addManualLocation = () => {
     if (!manualLocInput.trim()) return;
     setManualLocations(prev => [...prev, manualLocInput.trim()]);
@@ -852,6 +874,19 @@ export default function EventsPage() {
   const removeManualLocation = (idx: number) => {
     setManualLocations(prev => prev.filter((_, i) => i !== idx));
   };
+
+  const poolResources = useMemo(() => {
+    const list: { id: string, label: string }[] = [];
+    selectedFieldIds.forEach(id => {
+      const [facId, fieldName] = id.split(':');
+      const fac = facilities?.find(f => f.id === facId);
+      list.push({ id, label: fac ? `${fac.name} - ${fieldName}` : fieldName });
+    });
+    manualLocations.forEach(loc => {
+      list.push({ id: `manual:${loc}`, label: loc });
+    });
+    return list;
+  }, [selectedFieldIds, manualLocations, facilities]);
 
   return (
     <div className="space-y-10 pb-20">
@@ -920,69 +955,75 @@ export default function EventsPage() {
                   
                   <div className="space-y-6">
                     <div className="space-y-3">
-                      <p className="text-[9px] font-black uppercase text-muted-foreground ml-1">Selected Venue</p>
-                      <Select value={selectedFacilityIds[0] || ""} onValueChange={v => toggleFacility(v)}>
-                        <SelectTrigger className="h-12 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Choose facility..." /></SelectTrigger>
+                      <p className="text-[9px] font-black uppercase text-muted-foreground ml-1">Add Automatic Resource</p>
+                      <Select onValueChange={v => {
+                        if (!selectedFieldIds.includes(v)) setSelectedFieldIds(prev => [...prev, v]);
+                        const fid = v.split(':')[0];
+                        if (!selectedFacilityIds.includes(fid)) setSelectedFacilityIds(prev => [...prev, fid]);
+                      }}>
+                        <SelectTrigger className="h-12 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Pick from your Facilities..." /></SelectTrigger>
                         <SelectContent className="rounded-xl">
-                          {facilities?.map(f => <SelectItem key={f.id} value={f.id} className="font-bold">{f.name}</SelectItem>)}
+                          {facilities?.map(f => (
+                            <SelectGroup key={f.id}>
+                              <SelectLabel className="text-[10px] uppercase font-black px-2 py-1 bg-muted/50">{f.name}</SelectLabel>
+                              {allFields?.filter(field => field.facilityId === f.id).map(field => (
+                                <SelectItem key={`${f.id}:${field.name}`} value={`${f.id}:${field.name}`} className="font-bold">
+                                  {field.name}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
 
-                    {selectedFacilityIds.length > 0 && (
-                      <div className="space-y-3 animate-in slide-in-from-top-2">
-                        <p className="text-[9px] font-black uppercase text-primary ml-1">Assign Fields/Courts</p>
-                        <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                          {isFieldsLoading ? (
-                            <div className="flex items-center justify-center py-4 gap-2">
-                              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                              <span className="text-[10px] font-black uppercase opacity-40">Synchronizing Resources...</span>
-                            </div>
-                          ) : selectedFacilityIds.map(fid => {
-                            const fac = facilities?.find(f => f.id === fid);
-                            const facFields = allFields?.filter(f => f.facilityId === fid) || [];
-                            return (
-                              <div key={fid} className="space-y-2">
-                                <p className="text-[8px] font-black uppercase text-muted-foreground px-2">{fac?.name}</p>
-                                <div className="grid grid-cols-2 gap-2">
-                                  {facFields.map(field => (
-                                    <div key={field.id} className={cn("flex items-center space-x-2 p-2 rounded-lg border text-[10px] font-bold uppercase cursor-pointer transition-all", selectedFieldIds.includes(`${fid}:${field.name}`) ? "bg-primary text-white border-primary" : "bg-white border-transparent hover:border-muted")} onClick={() => toggleField(fid, field.name)}>
-                                      <Checkbox checked={selectedFieldIds.includes(`${fid}:${field.name}`)} onCheckedChange={() => toggleField(fid, field.name)} />
-                                      <span className="truncate">{field.name}</span>
-                                    </div>
-                                  ))}
-                                  {facFields.length === 0 && (
-                                    <div className="col-span-full p-4 text-center border-2 border-dashed rounded-xl opacity-40">
-                                      <p className="text-[8px] font-black uppercase">No fields registered for this venue.</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
                     <div className="space-y-3 border-t pt-4">
-                      <p className="text-[9px] font-black uppercase text-muted-foreground ml-1">Manual Resource Labels</p>
+                      <p className="text-[9px] font-black uppercase text-muted-foreground ml-1">Add Manual Resource</p>
                       <div className="flex gap-2">
                         <Input placeholder="e.g. Field 4 or Main Gym" value={manualLocInput} onChange={e => setManualLocInput(e.target.value)} className="h-10 rounded-xl border-2 text-xs font-bold" />
                         <Button type="button" onClick={addManualLocation} className="h-10 px-4 rounded-xl font-black text-[10px] uppercase">Add</Button>
                       </div>
+                    </div>
+
+                    <div className="space-y-3 border-t pt-4">
+                      <p className="text-[9px] font-black uppercase text-primary ml-1">Active Pool Ledger</p>
                       <div className="flex flex-wrap gap-2">
-                        {manualLocations.map((loc, i) => (
-                          <Badge key={i} className="bg-black text-white h-7 px-3 flex items-center gap-2 rounded-lg">
-                            {loc}
-                            <button onClick={() => removeManualLocation(i)}><X className="h-3 w-3" /></button>
+                        {poolResources.map((res, i) => (
+                          <Badge key={res.id} className="bg-primary text-white h-8 px-3 flex items-center gap-2 rounded-lg">
+                            {res.label}
+                            <button onClick={() => {
+                              if (res.id.startsWith('manual:')) {
+                                removeManualLocation(manualLocations.indexOf(res.label));
+                              } else {
+                                setSelectedFieldIds(prev => prev.filter(id => id !== res.id));
+                              }
+                            }}><X className="h-3.5 w-3.5" /></button>
                           </Badge>
                         ))}
+                        {poolResources.length === 0 && (
+                          <div className="col-span-full py-4 text-center border-2 border-dashed rounded-xl opacity-40 w-full">
+                            <p className="text-[8px] font-black uppercase">No locations assigned to pool.</p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     <div className="space-y-2 border-t pt-4">
                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Primary Display Location</Label>
-                      <Input placeholder="e.g. Finals Field or Main Venue" value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-11 rounded-xl border-2 bg-white font-bold" />
+                      <Select value={poolResources.find(r => r.label === newLocation)?.id || 'manual'} onValueChange={v => {
+                        if (v === 'manual') return;
+                        const res = poolResources.find(r => r.id === v);
+                        if (res) setNewLocation(res.label);
+                      }}>
+                        <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Pick from pool..." /></SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="manual" className="font-bold italic">Manual / Override</SelectItem>
+                          {poolResources.map(r => <SelectItem key={r.id} value={r.id} className="font-bold">{r.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      {(newLocation === '' || !poolResources.find(r => r.label === newLocation)) && (
+                        <Input placeholder="Type display location..." value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-10 mt-2 rounded-xl border-2 bg-white font-bold" />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1028,7 +1069,7 @@ export default function EventsPage() {
         <div className="flex items-center justify-between px-2"><h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2><div className="flex bg-muted/50 p-1 rounded-xl border shadow-inner"><Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button><Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button></div></div>
         <div className="grid gap-4">
           {filteredEvents.map((event) => ( 
-            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent}>
+            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent} facilities={facilities || []} allFields={allFields || []}>
               <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                 <div className="flex items-stretch h-32">
                   <div className={cn("w-20 lg:w-24 flex flex-col items-center justify-center border-r-2 shrink-0", event.isTournament ? "bg-black text-white" : EVENT_TYPE_COLORS[event.eventType || 'other'])}>
