@@ -1,7 +1,8 @@
+
 "use client";
 
-import React, { useState, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -18,21 +19,540 @@ import {
   Filter,
   ArrowRight,
   ShieldAlert,
-  Loader2
+  Loader2,
+  CalendarDays,
+  X,
+  Signature,
+  Download,
+  Terminal,
+  Copy,
+  Share2,
+  Eye,
+  Shield,
+  ClipboardList,
+  Target,
+  CheckCircle2,
+  FileText,
+  HelpCircle,
+  XCircle,
+  Search,
+  Table as TableIcon
 } from 'lucide-react';
-import { useTeam, TeamEvent } from '@/components/providers/team-provider';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, where } from 'firebase/firestore';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger,
+  DialogDescription, 
+  DialogFooter,
+  DialogClose
+} from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useTeam, TeamEvent, TournamentGame, Member } from '@/components/providers/team-provider';
+import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
+import { collection, query, orderBy, where, doc, parse } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
-import { format, isPast, isSameDay } from 'date-fns';
+import { format, isPast, isSameDay, addMinutes, eachDayOfInterval, parse as parseDate } from 'date-fns';
 import { useRouter } from 'next/navigation';
+import { toast } from '@/hooks/use-toast';
+
+/**
+ * Tactical Point Logic:
+ * Win: +1
+ * Loss: -1
+ * Tie: 0
+ */
+function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
+  const standings = teams.reduce((acc, team) => {
+    acc[team] = { name: team, wins: 0, losses: 0, ties: 0, points: 0 };
+    return acc;
+  }, {} as Record<string, any>);
+  
+  games.forEach(game => {
+    if (!game.isCompleted) return;
+    const t1 = game.team1; const t2 = game.team2;
+    if (!standings[t1] || !standings[t2]) return;
+    
+    if (game.score1 > game.score2) { 
+      standings[t1].wins += 1; 
+      standings[t1].points += 1; 
+      standings[t2].losses += 1; 
+      standings[t2].points -= 1; 
+    }
+    else if (game.score2 > game.score1) { 
+      standings[t2].wins += 1; 
+      standings[t2].points += 1; 
+      standings[t1].losses += 1; 
+      standings[t1].points -= 1; 
+    }
+    else { 
+      standings[t1].ties += 1; 
+      standings[t2].ties += 1; 
+    }
+  });
+  return Object.values(standings).sort((a, b) => b.points - a.points || b.wins - a.wins);
+}
+
+function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () => void }) {
+  const { user, updateEvent, signTeamTournamentWaiver, isPro, activeTeam, members, formatTime } = useTeam();
+  const db = useFirestore();
+  
+  const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  
+  // Scheduler Configuration
+  const [genMatchLength, setGenMatchLength] = useState('60');
+  const [genBreakLength, setGenBreakLength] = useState('15');
+  const [maxGamesPerDay, setMaxGamesPerDay] = useState('10');
+  const [maxGamesPerTeam, setMaxGamesPerTeam] = useState('5');
+  const [maxTotalGames, setMaxTotalGames] = useState('20');
+  const [dayConfigs, setDayConfigs] = useState<Record<string, { start: string, end: string }>>({});
+  const [enrollmentText, setEnrollmentText] = useState(event.tournamentTeams?.join(', ') || '');
+  const [baseUrl, setBaseUrl] = useState('');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') setBaseUrl(window.location.origin);
+    
+    if (event.isTournament) {
+      const start = new Date(event.date);
+      const end = event.endDate ? new Date(event.endDate) : start;
+      try {
+        const days = eachDayOfInterval({ start, end });
+        const config: Record<string, { start: string, end: string }> = {};
+        days.forEach(day => {
+          const key = format(day, 'yyyy-MM-dd');
+          config[key] = { start: '09:00', end: '21:00' };
+        });
+        setDayConfigs(config);
+      } catch (e) {}
+    }
+  }, [event]);
+
+  const standings = useMemo(() => calculateTournamentStandings(event.tournamentTeams || [], event.tournamentGames || []), [event]);
+  
+  const itineraryDays = useMemo(() => {
+    if (!event.tournamentGames) return [];
+    const daysSet = new Set<string>();
+    event.tournamentGames.forEach(g => daysSet.add(g.date));
+    return Array.from(daysSet).sort();
+  }, [event.tournamentGames]);
+
+  const [activeItineraryDay, setActiveItineraryDay] = useState<string>('');
+
+  useEffect(() => {
+    if (itineraryDays.length > 0 && !activeItineraryDay) {
+      setActiveItineraryDay(itineraryDays[0]);
+    }
+  }, [itineraryDays, activeItineraryDay]);
+
+  const dayGamesByField = useMemo(() => {
+    if (!event.tournamentGames || !activeItineraryDay) return {};
+    const filtered = event.tournamentGames.filter(g => g.date === activeItineraryDay);
+    const groups: Record<string, TournamentGame[]> = {};
+    filtered.forEach(game => {
+      const key = game.location || 'Main Hub';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(game);
+    });
+    return groups;
+  }, [event.tournamentGames, activeItineraryDay]);
+
+  const handleGenerateSchedule = async () => {
+    if (!event.tournamentTeams || event.tournamentTeams.length < 2) {
+      toast({ title: "Incomplete Roster", description: "At least 2 squads must be enrolled.", variant: "destructive" });
+      return;
+    }
+
+    const resources = [...(event.fieldIds || []), ...(event.manualLocations || []).map(m => `manual:${m}`)];
+    if (resources.length === 0) resources.push(`manual:${event.location || 'Main Venue'}`);
+
+    setIsGenerating(true);
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      const games: TournamentGame[] = [];
+      const teams = [...event.tournamentTeams];
+      const matchMinutes = parseInt(genMatchLength);
+      const breakMinutes = parseInt(genBreakLength);
+      const maxPerDayLimit = parseInt(maxGamesPerDay);
+      const maxPerTeamLimit = parseInt(maxGamesPerTeam);
+      const totalMatchLimit = parseInt(maxTotalGames);
+      
+      const teamGameCounts: Record<string, number> = {};
+      teams.forEach(t => teamGameCounts[t] = 0);
+
+      const pairings: [string, string][] = [];
+      for (let i = 0; i < teams.length; i++) {
+        for (let j = i + 1; j < teams.length; j++) pairings.push([teams[i], teams[j]]);
+      }
+
+      const days = Object.keys(dayConfigs).sort();
+      let pairingIdx = 0;
+
+      for (const dayKey of days) {
+        if (games.length >= totalMatchLimit) break;
+        const config = dayConfigs[dayKey];
+        let dayGameCount = 0;
+        
+        const resourceTimes: Record<string, string> = {};
+        resources.forEach(rid => resourceTimes[rid] = config.start);
+
+        const teamAvailability: Record<string, string> = {};
+        teams.forEach(t => teamAvailability[t] = config.start);
+
+        while (pairingIdx < pairings.length && dayGameCount < maxPerDayLimit && games.length < totalMatchLimit) {
+          const pair = pairings[pairingIdx];
+          if (teamGameCounts[pair[0]] >= maxPerTeamLimit || teamGameCounts[pair[1]] >= maxPerTeamLimit) {
+            pairingIdx++; continue;
+          }
+
+          let bestResourceId = null;
+          let earliestMatchTime = "23:59";
+
+          for (const rid of resources) {
+            const fieldReadyAt = resourceTimes[rid];
+            const teamsReadyAt = teamAvailability[pair[0]] > teamAvailability[pair[1]] ? teamAvailability[pair[0]] : teamAvailability[pair[1]];
+            const actualStart = fieldReadyAt > teamsReadyAt ? fieldReadyAt : teamsReadyAt;
+
+            if (actualStart < earliestMatchTime && actualStart < config.end) {
+              earliestMatchTime = actualStart;
+              bestResourceId = rid;
+            }
+          }
+
+          if (!bestResourceId) break;
+
+          const displayTime = format(parseDate(earliestMatchTime, 'HH:mm', new Date()), 'h:mm a');
+          let locationLabel = bestResourceId.includes(':') ? bestResourceId.split(':')[1] : bestResourceId;
+
+          games.push({ 
+            id: `gen_${Date.now()}_${pairingIdx}`, 
+            team1: pair[0], team2: pair[1], score1: 0, score2: 0, 
+            date: dayKey, time: displayTime, location: locationLabel, isCompleted: false 
+          });
+
+          const [h, m] = earliestMatchTime.split(':').map(Number);
+          const nextAvailable = format(addMinutes(new Date(2000, 0, 1, h, m), matchMinutes + breakMinutes), 'HH:mm');
+          resourceTimes[bestResourceId] = nextAvailable;
+          teamAvailability[pair[0]] = nextAvailable;
+          teamAvailability[pair[1]] = nextAvailable;
+          teamGameCounts[pair[0]]++; teamGameCounts[pair[1]]++;
+          pairingIdx++; dayGameCount++;
+        }
+      }
+
+      await updateEvent(event.id, { tournamentGames: games });
+      toast({ title: "Itinerary Synchronized", description: `${games.length} matchups established.` });
+    } catch (err) {
+      toast({ title: "Deployment Failure", variant: "destructive" });
+    } finally { setIsGenerating(false); }
+  };
+
+  const isOrganizer = activeTeam?.role === 'Admin' || (event.createdBy === user?.id);
+
+  return (
+    <div className="space-y-10 animate-in fade-in slide-in-from-right-4 duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full h-12 w-12 border-2 hover:bg-muted"><ChevronLeft className="h-6 w-6" /></Button>
+          <div>
+            <Badge className="bg-primary text-white border-none font-black uppercase text-[10px] h-6 px-3 shadow-lg shadow-primary/20">Operational Hub</Badge>
+            <h1 className="text-4xl font-black uppercase tracking-tight leading-none mt-1">{event.title}</h1>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><CalendarIcon className="h-4 w-4 mr-2" /> {format(new Date(event.date), 'MMM d, yyyy')}</Badge>
+          <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><MapPin className="h-4 w-4 mr-2" /> {event.location}</Badge>
+        </div>
+      </div>
+
+      <Tabs defaultValue="bracket" className="w-full">
+        <TabsList className="bg-muted/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit overflow-x-auto custom-scrollbar mb-8">
+          <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Itinerary</TabsTrigger>
+          <TabsTrigger value="standings" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Leaderboard</TabsTrigger>
+          {isOrganizer && (
+            <>
+              <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>
+              <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
+              <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Deploy</TabsTrigger>
+            </>
+          )}
+        </TabsList>
+
+        <TabsContent value="bracket" className="mt-0 space-y-10">
+          {itineraryDays.length > 0 ? (
+            <div className="space-y-12">
+              <div className="flex bg-muted/50 p-1.5 rounded-2xl border w-fit mx-auto shadow-inner">
+                {itineraryDays.map(day => (
+                  <Button 
+                    key={day} 
+                    variant={activeItineraryDay === day ? 'default' : 'ghost'} 
+                    onClick={() => setActiveItineraryDay(day)}
+                    className="h-10 px-8 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
+                  >
+                    {format(new Date(day), 'EEEE, MMM d')}
+                  </Button>
+                ))}
+              </div>
+
+              <div className="space-y-16">
+                {Object.entries(dayGamesByField).map(([fieldName, games]) => (
+                  <div key={fieldName} className="space-y-8">
+                    <div className="flex items-center gap-4">
+                      <Badge className="bg-primary text-white font-black uppercase text-[10px] px-6 h-8 rounded-full shadow-lg shadow-primary/20">{fieldName}</Badge>
+                      <div className="h-px bg-muted flex-1" />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                      {games.map((game) => (
+                        <button 
+                          key={game.id} 
+                          onClick={() => isOrganizer && setEditingGame(game)} 
+                          className="w-full p-8 bg-white rounded-[3rem] border-2 shadow-sm transition-all text-left relative group ring-1 ring-black/5 hover:border-primary/30 active:scale-[0.98]"
+                        >
+                          <div className="absolute top-6 left-8"><Badge variant="outline" className="text-[10px] font-black uppercase h-7 px-3 border-2">{game.time}</Badge></div>
+                          {game.isCompleted && <div className="absolute top-6 right-8"><Badge className="text-[8px] font-black uppercase h-5 px-2 bg-black text-white border-none">FINAL</Badge></div>}
+                          <div className="grid grid-cols-7 items-center gap-4 text-center mt-10">
+                            <div className="col-span-3 space-y-2">
+                              <p className="font-black text-xs uppercase truncate leading-tight">{game.team1}</p>
+                              <p className={cn("text-5xl font-black tracking-tighter", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")}>{game.score1}</p>
+                            </div>
+                            <div className="col-span-1 opacity-20 font-black text-xs">VS</div>
+                            <div className="col-span-3 space-y-2">
+                              <p className="font-black text-xs uppercase truncate leading-tight">{game.team2}</p>
+                              <p className={cn("text-5xl font-black tracking-tighter", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")}>{game.score2}</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-32 bg-muted/10 rounded-[3rem] border-2 border-dashed opacity-40">
+              <Zap className="h-16 w-16 mx-auto mb-4 text-primary animate-pulse" />
+              <p className="font-black uppercase tracking-widest text-lg">Itinerary not yet established.</p>
+              <p className="text-sm font-bold mt-2">Use the 'Deploy' tab to generate matchups.</p>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="standings" className="mt-0">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+            <div className="lg:col-span-8 space-y-6">
+              <div className="flex items-center gap-3 px-2">
+                <Trophy className="h-6 w-6 text-primary" />
+                <h3 className="text-xl font-black uppercase tracking-tight">Points Ledger</h3>
+              </div>
+              <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b">
+                      <tr>
+                        <th className="px-10 py-6">Squad</th>
+                        <th className="px-6 py-6 text-center">W</th>
+                        <th className="px-6 py-6 text-center">L</th>
+                        <th className="px-6 py-6 text-center">T</th>
+                        <th className="px-10 py-6 text-right text-primary font-black">POINTS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-muted/50">
+                      {standings.map((team, idx) => (
+                        <tr key={team.name} className="hover:bg-primary/5 transition-colors group">
+                          <td className="px-10 py-8">
+                            <div className="flex items-center gap-4">
+                              <span className="text-xs font-black text-muted-foreground/40 w-4">{idx + 1}</span>
+                              <span className="font-black text-base uppercase tracking-tight truncate">{team.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-8 text-center font-bold text-lg">{team.wins}</td>
+                          <td className="px-6 py-8 text-center font-bold text-lg text-muted-foreground">{team.losses}</td>
+                          <td className="px-6 py-8 text-center font-bold text-lg text-muted-foreground">{team.ties}</td>
+                          <td className="px-10 py-8 text-right font-black text-2xl text-primary">
+                            {team.points > 0 ? `+${team.points}` : team.points}
+                          </td>
+                        </tr>
+                      ))}
+                      {standings.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-24 text-center opacity-30 italic font-bold">Awaiting results...</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+            <aside className="lg:col-span-4 space-y-8 pt-12">
+              <div className="bg-primary text-white p-10 rounded-[3rem] shadow-xl shadow-primary/20 space-y-6 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform">
+                  <ShieldCheck className="h-32 w-32" />
+                </div>
+                <div className="space-y-2 relative z-10">
+                  <h4 className="text-2xl font-black uppercase tracking-tight">Elite Scoring</h4>
+                  <p className="text-sm font-bold text-white/60 leading-relaxed uppercase tracking-widest">
+                    Win: +1 Point <br />
+                    Loss: -1 Point <br />
+                    Tie: 0 Points
+                  </p>
+                </div>
+                <p className="text-[10px] font-medium leading-relaxed italic text-white/40 pt-4 border-t border-white/10">
+                  Official standings are updated instantly as scorekeepers post verified results via the mobile portal.
+                </p>
+              </div>
+            </aside>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="compliance" className="mt-0">
+          <Card className="rounded-[3rem] border-none shadow-2xl bg-muted/10 p-10 space-y-8">
+            <div className="flex items-center gap-4">
+              <div className="bg-primary/10 p-4 rounded-2xl text-primary shadow-inner"><Signature className="h-8 w-8" /></div>
+              <div>
+                <h3 className="text-3xl font-black uppercase tracking-tight">Digital Compliance Vault</h3>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Official Squad Agreement Audit</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4">
+              {event.tournamentTeams?.map(team => (
+                <div key={team} className="flex items-center justify-between p-6 bg-white rounded-[2rem] border shadow-sm ring-1 ring-black/5">
+                  <div className="flex items-center gap-6">
+                    <div className="bg-muted p-3 rounded-2xl"><Users className="h-6 w-6 text-muted-foreground" /></div>
+                    <div>
+                      <span className="font-black text-lg uppercase tracking-tight">{team}</span>
+                      {event.teamAgreements?.[team] && (
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Signed by: {event.teamAgreements[team].captainName}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {event.teamAgreements?.[team] ? (
+                      <Badge className="bg-green-100 text-green-700 border-none font-black text-[10px] px-4 h-8 flex items-center gap-2 rounded-full"><CheckCircle2 className="h-4 w-4" /> VERIFIED SIGNATURE</Badge>
+                    ) : (
+                      <>
+                        <Badge variant="outline" className="border-amber-500/20 text-amber-600 font-black text-[10px] px-4 h-8 rounded-full">PENDING EXECUTION</Badge>
+                        <Button variant="ghost" size="sm" className="h-8 px-4 text-[9px] font-black uppercase border rounded-full" onClick={() => signTeamTournamentWaiver(event.teamId, event.id, team)}>Manual Verify</Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="portals" className="mt-0">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 bg-white overflow-hidden group">
+              <CardHeader className="bg-primary/5 p-8 border-b"><div className="flex items-center gap-4"><Eye className="h-6 w-6 text-primary" /><CardTitle className="text-lg font-black uppercase tracking-tight">Spectator Hub</CardTitle></div></CardHeader>
+              <CardContent className="p-8 space-y-6">
+                <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Public-facing link for fans and families to follow live scoring and standings.</p>
+                <div className="flex gap-2"><Input readOnly value={`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`} className="h-12 text-[10px] font-mono bg-muted/30 border-none" /><Button size="icon" variant="secondary" className="h-12 w-12 shrink-0 rounded-xl" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`); toast({ title: "Portal Link Copied" }); }}><Copy className="h-5 w-5" /></Button></div>
+              </CardContent>
+            </Card>
+            <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 bg-white overflow-hidden group">
+              <CardHeader className="bg-black text-white p-8 border-b"><div className="flex items-center gap-4"><Terminal className="h-6 w-6 text-primary" /><CardTitle className="text-lg font-black uppercase tracking-tight">Scorekeeper Hub</CardTitle></div></CardHeader>
+              <CardContent className="p-8 space-y-6">
+                <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Administrative portal for field marshals to log official match results.</p>
+                <div className="flex gap-2"><Input readOnly value={`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}`} className="h-12 text-[10px] font-mono bg-muted/30 border-none" /><Button size="icon" variant="secondary" className="h-12 w-12 shrink-0 rounded-xl" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}`); toast({ title: "Portal Link Copied" }); }}><Copy className="h-5 w-5" /></Button></div>
+              </CardContent>
+            </Card>
+            <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 bg-white overflow-hidden group">
+              <CardHeader className="bg-amber-500 text-white p-8 border-b"><div className="flex items-center gap-4"><Signature className="h-6 w-6 text-white" /><CardTitle className="text-lg font-black uppercase tracking-tight">Waiver Portal</CardTitle></div></CardHeader>
+              <CardContent className="p-8 space-y-6">
+                <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Public link for external coaches to provide digital signatures for the squad roster.</p>
+                <div className="flex gap-2"><Input readOnly value={`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`} className="h-12 text-[10px] font-mono bg-muted/30 border-none" /><Button size="icon" variant="secondary" className="h-12 w-12 shrink-0 rounded-xl" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`); toast({ title: "Portal Link Copied" }); }}><Copy className="h-5 w-5" /></Button></div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="manage" className="mt-0 space-y-12">
+          <div className="bg-muted/20 p-10 rounded-[3rem] border-2 border-dashed space-y-8">
+            <div className="flex items-center gap-4"><div className="bg-white p-4 rounded-2xl shadow-sm text-primary"><Users className="h-8 w-8" /></div><h3 className="text-2xl font-black uppercase tracking-tight">Enroll Participating Squads</h3></div>
+            <div className="space-y-6">
+              <p className="text-sm font-medium text-muted-foreground leading-relaxed italic">Generating an itinerary requires a full roster of teams to build pairings and distribution logic.</p>
+              <Textarea 
+                placeholder="e.g. Westside Warriors, Eastside Elite, Northside Knights..." 
+                value={enrollmentText} 
+                onChange={e => setEnrollmentText(e.target.value)}
+                className="rounded-3xl min-h-[120px] border-2 font-black bg-white p-6 text-lg"
+              />
+              <Button onClick={() => { updateEvent(event.id, { tournamentTeams: enrollmentText.split(',').map(t => t.trim()).filter(t => !!t) }); toast({ title: "Roster Enrolled" }); }} className="w-full h-14 rounded-2xl font-black uppercase tracking-widest">Update Tournament Roster</Button>
+            </div>
+          </div>
+
+          <div className="bg-primary/5 p-10 rounded-[3rem] border-2 border-dashed border-primary/20 space-y-10">
+            <div className="flex items-center gap-4"><div className="bg-white p-4 rounded-2xl shadow-sm text-primary"><Zap className="h-8 w-8" /></div><h3 className="text-2xl font-black uppercase tracking-tight">Auto-Scheduler Configuration</h3></div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Match (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-14 rounded-2xl border-2 bg-white font-black text-lg" /></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Break (Min)</Label><Input type="number" value={genBreakLength} onChange={e => setGenBreakLength(e.target.value)} className="h-14 rounded-2xl border-2 bg-white font-black text-lg" /></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Max Per Day</Label><Input type="number" value={maxGamesPerDay} onChange={e => setMaxGamesPerDay(e.target.value)} className="h-14 rounded-2xl border-2 bg-white font-black text-lg" /></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Max Per Team</Label><Input type="number" value={maxGamesPerTeam} onChange={e => setMaxGamesPerTeam(e.target.value)} className="h-14 rounded-2xl border-2 bg-white font-black text-lg" /></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Total Match Cap</Label><Input type="number" value={maxTotalGames} onChange={e => setMaxTotalGames(e.target.value)} className="h-14 rounded-2xl border-2 bg-white font-black text-lg" /></div>
+            </div>
+
+            <div className="space-y-6">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Daily Itinerary Blocks</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {Object.entries(dayConfigs).map(([day, config]) => (
+                  <div key={day} className="p-6 bg-white rounded-3xl border flex flex-col gap-4 shadow-sm hover:border-primary/20 transition-all">
+                    <p className="text-sm font-black text-primary uppercase">{format(new Date(day), 'EEEE, MMM d')}</p>
+                    <div className="flex gap-4">
+                      <div className="flex-1"><Label className="text-[8px] uppercase font-black opacity-40">Start</Label><Input type="time" value={config.start} onChange={e => setDayConfigs(prev => ({...prev, [day]: {...config, start: e.target.value}}))} className="h-12 text-sm font-bold rounded-xl" /></div>
+                      <div className="flex-1"><Label className="text-[8px] uppercase font-black opacity-40">End</Label><Input type="time" value={config.end} onChange={e => setDayConfigs(prev => ({...prev, [day]: {...config, end: e.target.value}}))} className="h-12 text-sm font-bold rounded-xl" /></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Button className="w-full h-20 rounded-[2rem] text-xl font-black shadow-2xl shadow-primary/30 active:scale-[0.98] transition-all" onClick={handleGenerateSchedule} disabled={isGenerating}>{isGenerating ? <Loader2 className="h-8 w-8 animate-spin mr-3" /> : "Deploy Complex Itinerary"}</Button>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* Internal Match Result Editor */}
+      <Dialog open={!!editingGame} onOpenChange={(open) => !open && setEditingGame(null)}>
+        <DialogContent className="sm:max-w-md rounded-[3rem] border-none shadow-2xl overflow-hidden p-0">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-10 space-y-8">
+            <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight text-center">Post Results</DialogTitle></DialogHeader>
+            {editingGame && (
+              <div className="space-y-8">
+                <div className="grid grid-cols-2 gap-10">
+                  <div className="space-y-3 text-center"><Label className="text-xs font-black uppercase truncate block">{editingGame.team1}</Label><Input type="number" value={editingGame.score1} onChange={e => setEditingGame({...editingGame, score1: parseInt(e.target.value) || 0})} className="h-20 rounded-2xl font-black text-4xl text-center border-2" /></div>
+                  <div className="space-y-3 text-center"><Label className="text-xs font-black uppercase truncate block">{editingGame.team2}</Label><Input type="number" value={editingGame.score2} onChange={e => setEditingGame({...editingGame, score2: parseInt(e.target.value) || 0})} className="h-20 rounded-2xl font-black text-4xl text-center border-2" /></div>
+                </div>
+                <div className="flex items-center justify-between p-6 bg-muted/30 rounded-[2rem] border-2 border-dashed"><p className="text-[10px] font-black uppercase tracking-widest">Mark as Final</p><Checkbox checked={editingGame.isCompleted} onCheckedChange={v => setEditingGame({...editingGame, isCompleted: !!v})} className="h-8 w-8 rounded-xl border-2" /></div>
+              </div>
+            )}
+            <div className="flex flex-col gap-4">
+              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={async () => { const updatedGames = (event.tournamentGames || []).map(g => g.id === editingGame?.id ? editingGame : g); await updateEvent(event.id, { tournamentGames: updatedGames }); setEditingGame(null); }}>Commit Result</Button>
+              <Button variant="ghost" className="w-full text-destructive font-black uppercase text-[10px]" onClick={async () => { const updatedGames = (event.tournamentGames || []).filter(g => g.id !== editingGame?.id); await updateEvent(event.id, { tournamentGames: updatedGames }); setEditingGame(null); }}>Remove Matchup</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 export default function TournamentsPage() {
-  const { activeTeam, isStaff, isSuperAdmin, hasFeature, purchasePro } = useTeam();
+  const { activeTeam, isStaff, isSuperAdmin, purchasePro } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
+  const [selectedTournament, setSelectedTournament] = useState<TeamEvent | null>(null);
 
   const tournamentsQuery = useMemoFirebase(() => {
     if (!activeTeam?.id || !db) return null;
@@ -52,109 +572,133 @@ export default function TournamentsPage() {
     return list.filter(e => isPast(new Date(e.date)) && !isSameDay(new Date(e.date), now)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [allTournaments, filterMode]);
 
+  if (selectedTournament) {
+    return <TournamentDetailView event={selectedTournament} onBack={() => setSelectedTournament(null)} />;
+  }
+
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Opening Tournament Hub...</p>
+      <div className="flex flex-col items-center justify-center py-32 gap-6">
+        <div className="bg-primary/10 p-10 rounded-[3rem] shadow-xl animate-pulse"><Trophy className="h-16 w-16 text-primary" /></div>
+        <p className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground">Accessing Tournament Repositories...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-10 pb-20 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Competitive Hub</Badge>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Tournaments</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Strategic Bracket Management</p>
+    <div className="space-y-12 pb-32 animate-in fade-in duration-700">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
+        <div className="space-y-2">
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[10px] h-7 px-4">Institutional Hub</Badge>
+          <h1 className="text-4xl md:text-6xl font-black tracking-tighter uppercase leading-[0.9]">Tournaments</h1>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[11px] ml-1">Elite Bracket & Operational Command</p>
         </div>
         
         {isStaff && (
-          <Button onClick={() => router.push('/events')} className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all">
-            <Plus className="h-5 w-5 mr-2" /> Launch Series
+          <Button onClick={() => router.push('/events')} className="h-16 px-10 rounded-[2rem] text-lg font-black shadow-2xl shadow-primary/20 active:scale-95 transition-all">
+            <Plus className="h-6 w-6 mr-2" /> Launch Elite Series
           </Button>
         )}
       </div>
 
-      <div className="flex bg-muted/50 p-1.5 rounded-2xl border-2 w-fit">
-        <Button 
-          variant={filterMode === 'live' ? 'default' : 'ghost'} 
-          size="sm" 
-          onClick={() => setFilterMode('live')} 
-          className="h-9 px-6 rounded-xl font-black text-[10px] uppercase transition-all"
-        >
-          Live Series
-        </Button>
-        <Button 
-          variant={filterMode === 'past' ? 'default' : 'ghost'} 
-          size="sm" 
-          onClick={() => setFilterMode('past')} 
-          className="h-9 px-6 rounded-xl font-black text-[10px] uppercase transition-all"
-        >
-          Historical
-        </Button>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <Card className="rounded-[3rem] border-none shadow-xl bg-primary text-white overflow-hidden relative group">
+          <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000"><Trophy className="h-40 w-40" /></div>
+          <CardContent className="p-10 relative z-10 space-y-2">
+            <p className="text-5xl font-black leading-none">{allTournaments?.length || 0}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Total Series Hosted</p>
+          </CardContent>
+        </Card>
+        <Card className="rounded-[3rem] border-none shadow-xl bg-black text-white overflow-hidden relative group">
+          <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000"><ShieldCheck className="h-40 w-40" /></div>
+          <CardContent className="p-10 relative z-10 space-y-2">
+            <p className="text-5xl font-black leading-none">100%</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Verification Rating</p>
+          </CardContent>
+        </Card>
+        <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 overflow-hidden relative group">
+          <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000"><Zap className="h-40 w-40 text-primary" /></div>
+          <CardContent className="p-10 relative z-10 space-y-2">
+            <p className="text-5xl font-black leading-none text-primary">PRO</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Enabled Modules</p>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
+      <div className="flex bg-muted/50 p-1.5 rounded-2xl border-2 w-fit shadow-inner">
+        <Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-10 px-8 rounded-xl font-black text-[10px] uppercase transition-all">Live Series</Button>
+        <Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-10 px-8 rounded-xl font-black text-[10px] uppercase transition-all">Historical Archive</Button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-8">
         {filteredTournaments.length > 0 ? filteredTournaments.map((tournament) => (
-          <Card key={tournament.id} className="rounded-[2.5rem] border-none shadow-xl hover:shadow-2xl transition-all duration-500 overflow-hidden ring-1 ring-black/5 bg-white group cursor-pointer" onClick={() => router.push('/events')}>
+          <Card key={tournament.id} className="rounded-[3rem] border-none shadow-xl hover:shadow-2xl transition-all duration-500 overflow-hidden ring-1 ring-black/5 bg-white group cursor-pointer" onClick={() => setSelectedTournament(tournament)}>
             <div className="flex flex-col md:flex-row items-stretch h-full">
-              <div className="w-full md:w-32 bg-black text-white flex flex-col items-center justify-center p-6 border-r shrink-0 group-hover:bg-primary transition-colors">
-                <span className="text-[10px] font-black uppercase opacity-60 leading-none mb-1">{format(new Date(tournament.date), 'MMM')}</span>
-                <span className="text-4xl font-black tracking-tighter">{format(new Date(tournament.date), 'dd')}</span>
+              <div className="w-full md:w-40 bg-black text-white flex flex-col items-center justify-center p-8 border-r shrink-0 group-hover:bg-primary transition-colors duration-500">
+                <span className="text-[11px] font-black uppercase opacity-60 leading-none mb-1">{format(new Date(tournament.date), 'MMM')}</span>
+                <span className="text-5xl font-black tracking-tighter">{format(new Date(tournament.date), 'dd')}</span>
               </div>
-              <div className="flex-1 p-8 flex flex-col md:flex-row md:items-center justify-between gap-8">
-                <div className="space-y-2">
+              <div className="flex-1 p-10 flex flex-col md:flex-row md:items-center justify-between gap-10">
+                <div className="space-y-3">
                   <div className="flex items-center gap-3">
-                    <Badge className="bg-primary/5 text-primary border-none font-black text-[8px] uppercase px-2 h-5">Verified Series</Badge>
-                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
-                      <Clock className="h-3 w-3" /> {tournament.startTime}
+                    <Badge className="bg-primary/5 text-primary border-none font-black text-[9px] uppercase px-3 h-6 rounded-full">Elite Series</Badge>
+                    <span className="text-xs font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                      <Clock className="h-4 w-4" /> {tournament.startTime}
                     </span>
                   </div>
-                  <h3 className="text-3xl font-black tracking-tight leading-none group-hover:text-primary transition-colors uppercase">{tournament.title}</h3>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-                    <MapPin className="h-3 w-3 text-primary" /> {tournament.location}
+                  <h3 className="text-4xl font-black tracking-tight leading-none group-hover:text-primary transition-colors uppercase">{tournament.title}</h3>
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-primary" /> {tournament.location}
                   </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="flex items-center gap-3 bg-muted/30 px-5 py-3 rounded-2xl border">
+                <div className="flex flex-wrap items-center gap-6">
+                  <div className="flex items-center gap-4 bg-muted/30 px-8 py-4 rounded-[2rem] border-2 border-dashed">
                     <div className="flex flex-col items-center">
-                      <span className="text-[8px] font-black uppercase text-muted-foreground mb-0.5">Participating</span>
-                      <span className="text-lg font-black leading-none">{tournament.tournamentTeams?.length || 0} Squads</span>
+                      <span className="text-[9px] font-black uppercase text-muted-foreground mb-1">Squads</span>
+                      <span className="text-2xl font-black leading-none">{tournament.tournamentTeams?.length || 0}</span>
+                    </div>
+                    <div className="w-px h-8 bg-muted-foreground/20" />
+                    <div className="flex flex-col items-center">
+                      <span className="text-[9px] font-black uppercase text-muted-foreground mb-1">Matches</span>
+                      <span className="text-2xl font-black leading-none">{tournament.tournamentGames?.length || 0}</span>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" className="rounded-full h-14 w-14 hover:bg-primary hover:text-white shadow-sm ring-1 ring-black/5 group-hover:scale-110 transition-all">
-                    <ArrowRight className="h-6 w-6" />
+                  <Button variant="ghost" size="icon" className="rounded-full h-16 w-16 hover:bg-primary hover:text-white shadow-xl ring-1 ring-black/5 group-hover:scale-110 transition-all">
+                    <ArrowRight className="h-8 w-8" />
                   </Button>
                 </div>
               </div>
             </div>
           </Card>
         )) : (
-          <div className="text-center py-24 bg-muted/10 rounded-[3rem] border-2 border-dashed space-y-6 opacity-40">
-            <div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl">
-              <Trophy className="h-10 w-10 text-muted-foreground" />
+          <div className="text-center py-32 bg-muted/10 rounded-[4rem] border-2 border-dashed space-y-8 opacity-40">
+            <div className="bg-white w-24 h-24 rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl relative">
+              <Trophy className="h-12 w-12 text-muted-foreground" />
+              <Zap className="absolute -top-2 -right-2 h-8 w-8 text-primary animate-pulse" />
             </div>
             <div className="space-y-2">
-              <p className="font-black text-2xl uppercase tracking-tight">No Active Series</p>
-              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Time to establish your next tournament victory.</p>
+              <p className="font-black text-3xl uppercase tracking-tight">No Active Series Hubs</p>
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-w-sm mx-auto">Launch an Elite Tournament to unlock strategic brackets and coordination.</p>
             </div>
           </div>
         )}
       </div>
 
-      <Card className="rounded-[3rem] border-none shadow-2xl bg-black text-white overflow-hidden relative">
-        <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none">
-          <Zap className="h-48 w-48" />
+      <Card className="rounded-[4rem] border-none shadow-2xl bg-black text-white overflow-hidden relative">
+        <div className="absolute top-0 right-0 p-12 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
+          <Zap className="h-64 w-64" />
         </div>
-        <CardContent className="p-12 relative z-10 space-y-6">
-          <Badge className="bg-primary text-white border-none font-black text-[10px] px-4 h-7 shadow-lg shadow-primary/40">Elite Protocol</Badge>
-          <h2 className="text-4xl font-black tracking-tight leading-tight uppercase">Tournament Management</h2>
-          <p className="text-white/60 font-medium text-lg leading-relaxed max-w-2xl">
-            This module provides total operational control over championship series. Coordinate brackets, verify scores, and manage multi-team logistical hubs from a single unified tactical dashboard.
+        <CardContent className="p-16 relative z-10 space-y-8">
+          <Badge className="bg-primary text-white border-none font-black text-[11px] px-6 h-8 rounded-full shadow-lg shadow-primary/40 uppercase tracking-widest">Elite Infrastructure</Badge>
+          <h2 className="text-5xl md:text-6xl font-black tracking-tight leading-[0.9] uppercase">Institutional <br />Series Coordination</h2>
+          <p className="text-white/60 font-medium text-xl leading-relaxed max-w-3xl">
+            This hub provides absolute operational control over championship series. Coordinate complex brackets across multiple venues, verify digital compliance waivers, and distribute real-time results to fans via the automated Public Spectator Hub.
           </p>
+          <div className="flex gap-4 pt-4">
+            <div className="flex items-center gap-3 bg-white/10 px-6 py-3 rounded-2xl border border-white/10"><ShieldCheck className="h-5 w-5 text-primary" /><span className="text-[10px] font-black uppercase tracking-widest">Verified Vault</span></div>
+            <div className="flex items-center gap-3 bg-white/10 px-6 py-3 rounded-2xl border border-white/10"><Users className="h-5 w-5 text-primary" /><span className="text-[10px] font-black uppercase tracking-widest">Multi-Team Ledger</span></div>
+          </div>
         </CardContent>
       </Card>
     </div>
