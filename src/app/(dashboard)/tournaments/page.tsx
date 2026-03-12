@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -94,13 +95,12 @@ function calculateTournamentStandings(teams: string[], games: TournamentGame[]) 
 }
 
 function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () => void }) {
-  const { user, updateEvent, signTeamTournamentWaiver, isPro, activeTeam, members, formatTime } = useTeam();
+  const { user, updateEvent, signTeamTournamentWaiver, isPro, activeTeam, members, formatTime, isStaff } = useTeam();
   const db = useFirestore();
   
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  // Scheduler Configuration
   const [genMatchLength, setGenMatchLength] = useState('60');
   const [genBreakLength, setGenBreakLength] = useState('15');
   const [maxGamesPerDay, setMaxGamesPerDay] = useState('10');
@@ -247,7 +247,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
     } finally { setIsGenerating(false); }
   };
 
-  const isOrganizer = activeTeam?.role === 'Admin' || (event.createdBy === user?.id);
+  const isOrganizer = isStaff && (event.createdBy === user?.id || activeTeam?.role === 'Admin');
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-right-4 duration-500">
@@ -513,7 +513,6 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
         </TabsContent>
       </Tabs>
 
-      {/* Internal Match Result Editor */}
       <Dialog open={!!editingGame} onOpenChange={(open) => !open && setEditingGame(null)}>
         <DialogContent className="sm:max-w-md rounded-[3rem] border-none shadow-2xl overflow-hidden p-0">
           <div className="h-2 bg-primary w-full" />

@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
@@ -49,10 +49,13 @@ export default function PublicTournamentWaiverPage() {
   const [agreed, setAgreed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSigned, setIsSigned] = useState(false);
+  const hasInitializedDate = useRef(false);
 
   useEffect(() => {
-    // Only set once on mount to avoid re-render loops
-    setSignDate(format(new Date(), 'yyyy-MM-dd'));
+    if (!hasInitializedDate.current) {
+      setSignDate(format(new Date(), 'yyyy-MM-dd'));
+      hasInitializedDate.current = true;
+    }
   }, []);
 
   const eventRef = useMemoFirebase(() => {

@@ -57,6 +57,7 @@ import { Badge } from '@/components/ui/badge';
 import { useFirestore, useDoc, useMemoFirebase, useCollection } from '@/firebase';
 import { collection, query, orderBy, limit, doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { Checkbox } from '@/components/ui/checkbox';
+import { updateDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 export default function ChatRoomPage() {
   const { chatId } = useParams();
@@ -82,6 +83,7 @@ export default function ChatRoomPage() {
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasInitializedName = useRef(false);
 
   const chatDocRef = useMemoFirebase(() => {
     if (!activeTeam || !db || !chatId) return null;
@@ -112,7 +114,10 @@ export default function ChatRoomPage() {
   }, [messages.length]);
 
   useEffect(() => {
-    if (currentChat) setNewName(currentChat.name);
+    if (currentChat && !hasInitializedName.current) {
+      setNewName(currentChat.name);
+      hasInitializedName.current = true;
+    }
   }, [currentChat]);
 
   const handleSendMessage = () => {
@@ -122,16 +127,16 @@ export default function ChatRoomPage() {
     setChatImage(undefined);
   };
 
-  const handleRename = async () => {
-    if (!newName.trim() || !chatId) return;
-    await updateChat(chatId as string, { name: newName.trim() });
+  const handleRename = () => {
+    if (!newName.trim() || !chatId || !activeTeam) return;
     setIsRenameDialogOpen(false);
-    toast({ title: "Channel Renamed" });
+    updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'groupChats', chatId as string), { name: newName.trim() });
+    toast({ title: "Channel Identity Updated" });
   };
 
-  const handleAddMember = async (memberId: string) => {
-    if (!chatId) return;
-    await updateChat(chatId as string, { memberIds: arrayUnion(memberId) });
+  const handleAddMember = (memberId: string) => {
+    if (!chatId || !activeTeam) return;
+    updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'groupChats', chatId as string), { memberIds: arrayUnion(memberId) });
     toast({ title: "Squad Member Added" });
   };
 
