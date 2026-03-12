@@ -1,3 +1,4 @@
+
 "use client";
 
 import Shell from '@/components/layout/Shell';
@@ -173,23 +174,25 @@ export default function DashboardLayout({
   }
 
   return (
-    <>
-      <AlertOverlay />
-      <RevenueCatPaywall />
-      <QuotaResolutionOverlay />
-      <Shell>{children}</Shell>
+    <div className="flex flex-col min-h-screen">
       {userProfile?.isDemo && (
-        <div className="fixed bottom-6 right-6 z-[100] pointer-events-none">
-          <Badge className="bg-black/80 backdrop-blur-md text-white border-primary/20 h-10 px-4 rounded-full flex items-center gap-3 shadow-2xl animate-in slide-in-from-bottom-4">
-            <Timer className="h-4 w-4 text-primary animate-pulse" />
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-widest">Guest Tactical Mode</span>
-              <span className="h-4 w-px bg-white/20" />
-              <span className="text-[10px] font-mono font-bold text-primary">{timeLeft !== null ? formatTimeLeft(timeLeft) : '...'}</span>
-            </div>
-          </Badge>
+        <div className="w-full bg-black text-white h-9 flex items-center justify-center gap-4 z-[60] border-b border-primary/20 shrink-0 sticky top-0">
+          <Timer className="h-3.5 w-3.5 text-primary animate-pulse" />
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-black uppercase tracking-widest">Guest Tactical Mode</span>
+            <div className="h-3 w-px bg-white/20" />
+            <span className="text-[10px] font-mono font-bold text-primary">
+              Session Expiration: {timeLeft !== null ? formatTimeLeft(timeLeft) : '...'}
+            </span>
+          </div>
         </div>
       )}
-    </>
+      <div className="flex-1 flex flex-col relative">
+        <AlertOverlay />
+        <RevenueCatPaywall />
+        <QuotaResolutionOverlay />
+        <Shell>{children}</Shell>
+      </div>
+    </div>
   );
 }
