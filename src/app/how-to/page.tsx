@@ -55,7 +55,8 @@ import {
   MapPin,
   Package,
   Terminal,
-  MessageSquare
+  MessageSquare,
+  Megaphone
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -334,7 +335,7 @@ export default function HowToGuidePage() {
                       "h-2 w-full",
                       type === 'starter' ? "bg-muted" : type === 'pro' ? "bg-primary" : "bg-black"
                     )} />
-                    <CardContent className="p-8 space-y-4">
+                    <CardContent className="p-8 space-y-4 text-foreground">
                       <div className="bg-muted p-4 rounded-2xl w-fit group-hover:bg-primary group-hover:text-white transition-all">
                         <Icon className="h-8 w-8" />
                       </div>
