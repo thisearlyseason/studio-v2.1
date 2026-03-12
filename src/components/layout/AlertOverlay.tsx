@@ -87,6 +87,7 @@ export function AlertOverlay() {
       }
     }}>
       <DialogContent className="sm:max-w-md border-t-4 border-t-primary rounded-3xl overflow-hidden">
+        <DialogTitle className="sr-only">Priority Broadcast: {latestAlert.title}</DialogTitle>
         <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
           <Megaphone className="h-32 w-32 -rotate-12" />
         </div>
@@ -146,6 +147,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
         {children}
       </DialogTrigger>
       <DialogContent className="sm:max-w-md rounded-3xl p-0 overflow-hidden">
+        <DialogTitle className="sr-only">Squad Alert Inbox</DialogTitle>
         <DialogHeader className="p-6 pb-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -208,14 +210,14 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
 }
 
 export function CreateAlertButton() {
-  const { createAlert, user, activeTeam, isSuperAdmin, hasFeature, purchasePro } = useTeam();
+  const { createAlert, user, activeTeam, isSuperAdmin, purchasePro } = useTeam();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
 
-  // Unified Admin Check
+  // UNLOCKED FOR ALL PRO TIERS
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
-  const canAlert = hasFeature('high_priority_alerts');
+  const canAlert = activeTeam?.isPro || isSuperAdmin;
 
   if (!isAdmin) return null;
 
@@ -228,7 +230,7 @@ export function CreateAlertButton() {
         onClick={purchasePro}
       >
         <Megaphone className="h-4 w-4" />
-        <Lock className="absolute -top-1 -right-1 h-3 w-3 bg-black text-white p-0.5 rounded-full border-2 border-background" />
+        <Lock className="absolute -top-1 -right-1 h-3 w-3 bg-black text-white p-0.5 rounded-full border-2 border-background shadow-sm" />
       </Button>
     );
   }
@@ -244,44 +246,45 @@ export function CreateAlertButton() {
   return (
     <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="icon" className="h-9 w-9 rounded-full border-primary/20 text-primary hover:bg-primary/5">
+        <Button variant="outline" size="icon" className="h-9 w-9 rounded-full border-primary/20 text-primary hover:bg-primary/5 shadow-sm">
           <Megaphone className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md rounded-3xl">
+      <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl">
+        <DialogTitle className="sr-only">Create Team Broadcast</DialogTitle>
         <DialogHeader>
-          <DialogTitle>Broadcast Team Alert</DialogTitle>
-          <DialogDescription>
-            This will trigger a popup for every team member. Use only for urgent news.
+          <DialogTitle className="text-2xl font-black uppercase tracking-tight">Broadcast Alert</DialogTitle>
+          <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">
+            Notify every verified squad member instantly.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label>Alert Headline</Label>
+            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Headline</Label>
             <Input 
-              placeholder="e.g. Practice Moved Indoors" 
+              placeholder="e.g. Venue Shift: Game moved to Field 4" 
               value={title} 
               onChange={e => setTitle(e.target.value)}
-              className="rounded-xl h-11"
+              className="rounded-xl h-12 border-2 font-bold"
             />
           </div>
           <div className="space-y-2">
-            <Label>Detailed Message</Label>
+            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Detailed Brief</Label>
             <Textarea 
-              placeholder="Provide more context..." 
+              placeholder="Provide tactical context for the squad..." 
               value={message} 
               onChange={e => setMessage(e.target.value)}
-              className="rounded-xl min-h-[100px]"
+              className="rounded-xl min-h-[120px] border-2 font-medium"
             />
           </div>
         </div>
         <DialogFooter>
           <Button 
-            className="w-full rounded-2xl h-12 text-base font-bold" 
+            className="w-full rounded-2xl h-14 text-lg font-black shadow-xl shadow-primary/20" 
             onClick={handleCreate}
             disabled={!title || !message}
           >
-            Send Alert Now
+            Deploy Broadcast
           </Button>
         </DialogFooter>
       </DialogContent>
