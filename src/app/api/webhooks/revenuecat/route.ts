@@ -1,11 +1,9 @@
-
 import { NextResponse } from 'next/server';
 import { initializeFirebase } from '@/firebase';
 import { doc, updateDoc, setDoc } from 'firebase/firestore';
 
 /**
  * Authoritative mapping of RevenueCat Product IDs to internal Plans and Quotas.
- * Updated to reflect the new 4-tier model.
  */
 const PRODUCT_PLAN_MAP: Record<string, { planId: string; limit: number }> = {
   'squad_pro_monthly': { planId: 'squad_pro', limit: 1 },
@@ -19,7 +17,7 @@ const PRODUCT_PLAN_MAP: Record<string, { planId: string; limit: number }> = {
 
 /**
  * Next.js Route Handler for RevenueCat Webhooks.
- * This function synchronizes subscription state from RevenueCat to Firestore.
+ * Hardened with explicit JSON parsing error handling.
  */
 export async function POST(req: Request) {
   try {
@@ -31,11 +29,18 @@ export async function POST(req: Request) {
       return new Response('Unauthorized', { status: 401 });
     }
 
-    const body = await req.json();
-    const event = body.event;
+    let body;
+    try {
+      body = await req.json();
+    } catch (e) {
+      console.error('RevenueCat Webhook: Failed to parse request body as JSON');
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+
+    const event = body?.event;
 
     if (!event) {
-      return NextResponse.json({ error: 'Invalid webhook payload' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid webhook payload structure' }, { status: 400 });
     }
 
     const { 
@@ -98,6 +103,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('RevenueCat Webhook processing failed:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Return 500 only for unexpected runtime failures
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
