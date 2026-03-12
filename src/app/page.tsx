@@ -113,7 +113,8 @@ export default function LandingPage() {
     try {
       await signOut(auth);
       await signInAnonymously(auth);
-      router.push(`/dashboard?seed_demo=${planId}`);
+      // Use window.location.href to ensure a clean slate for the demo entry
+      window.location.href = `/dashboard?seed_demo=${planId}`;
     } catch (error: any) {
       toast({
         title: "Demo Launch Failed",
@@ -213,7 +214,7 @@ export default function LandingPage() {
             )}
             <Dialog open={isDemoDialogOpen} onOpenChange={setIsDemoDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="lg" variant="outline" className="h-16 px-6 sm:px-10 rounded-full text-lg font-black bg-white/10 border-white/20 text-white backdrop-blur-md hover:bg-white/20 active:scale-95 transition-all w-full sm:w-auto">
+                <Button size="lg" variant="outline" className="h-16 px-10 rounded-full text-lg font-black bg-white/10 border-white/20 text-white backdrop-blur-md hover:bg-white/20 active:scale-95 transition-all w-full sm:w-auto">
                   Experience Demo
                 </Button>
               </DialogTrigger>

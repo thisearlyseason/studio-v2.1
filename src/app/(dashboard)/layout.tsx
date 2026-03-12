@@ -24,7 +24,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isUserLoading } = useUser();
+  const { user, isUserLoading, isAuthResolved } = useUser();
   const auth = useAuth();
   const { teams, isTeamsLoading, isSeedingDemo, user: userProfile, setActiveTeam } = useTeam();
   const db = useFirestore();
@@ -104,21 +104,33 @@ export default function DashboardLayout({
     if (demoPlanId && teams.length === 0) {
       setIsDemoInitializing(true);
       const seed = async () => {
-        await seedSubscriptionData(db);
-        await seedGuestDemoTeam(db, user.uid, demoPlanId);
-        window.location.href = '/dashboard'; 
+        try {
+          await seedSubscriptionData(db);
+          await seedGuestDemoTeam(db, user.uid, demoPlanId);
+          window.location.href = '/dashboard'; 
+        } catch (e) {
+          console.error("Demo seeding failed:", e);
+          setIsDemoInitializing(false);
+        }
       };
       seed();
     }
   }, [mounted, user, teams.length, db, isDemoInitializing]);
 
+  // Global Auth Guard
   useEffect(() => {
-    if (!mounted) return;
-    if (!isUserLoading && !user) {
+    if (!mounted || !isAuthResolved) return;
+    
+    // Check if we are currently launching a demo
+    const urlParams = new URLSearchParams(window.location.search);
+    const isLaunchingDemo = urlParams.has('seed_demo');
+
+    if (!user && !isLaunchingDemo) {
       router.push('/login');
     }
-  }, [user, isUserLoading, router, mounted]);
+  }, [user, isAuthResolved, router, mounted]);
 
+  // Team Setup Guard
   useEffect(() => {
     if (!mounted || isSeedingDemo || isTeamsLoading || !user || isDemoInitializing) return;
 
@@ -151,7 +163,9 @@ export default function DashboardLayout({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  if (!mounted || isUserLoading || !user || isSeedingDemo || isDemoInitializing) {
+  const showLoading = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing;
+
+  if (showLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-6 animate-in fade-in duration-500">

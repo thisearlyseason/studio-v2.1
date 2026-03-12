@@ -48,7 +48,8 @@ export default function LoginPage() {
     try {
       await signOut(auth);
       await signInAnonymously(auth);
-      router.push(`/dashboard?seed_demo=${planId}`);
+      // Use window.location.href to ensure a clean slate for the demo entry
+      window.location.href = `/dashboard?seed_demo=${planId}`;
     } catch (error: any) {
       toast({
         title: "Demo Launch Failed",

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { 
@@ -92,7 +93,9 @@ export async function seedSubscriptionData(db: Firestore) {
       plans.forEach((p) => batch.set(doc(db, 'plans', p.id), p));
       await batch.commit();
     }
-  } catch (error) {}
+  } catch (error) {
+    console.error("Critical seeding failure:", error);
+  }
 }
 
 export async function seedDemoData(db: Firestore, teamId: string, demoTier: string, userId: string) {
@@ -146,7 +149,7 @@ export async function seedDemoData(db: Firestore, teamId: string, demoTier: stri
   batch.set(doc(db, 'teams', teamId, 'volunteers', `demo_vol_${teamId}_1`), clean({
     id: `demo_vol_${teamId}_1`, title: 'Tournament Hospitality', date: new Date(now.getTime() + 172800000).toISOString(),
     location: 'Main Arena', slots: 5, hoursPerSlot: 4, 
-    signups: { [userId]: { userId, userName: 'Demo User', status: 'pending' } }
+    signups: { [userId]: { userId, userName: 'Guest User', status: 'pending' } }
   }));
 
   batch.set(doc(db, 'teams', teamId, 'fundraising', `demo_fund_${teamId}_1`), clean({
@@ -207,7 +210,7 @@ export async function seedDemoData(db: Firestore, teamId: string, demoTier: stri
       ],
       totalVotes: 16, voters: { [`demo_user_0`]: 0 }, isClosed: false
     },
-    authorId: userId, author: { name: 'Coach Guest', avatar: 'https://picsum.photos/seed/coach/50/50' },
+    authorId: userId, author: { name: 'Guest User', avatar: 'https://picsum.photos/seed/coach/50/50' },
     createdAt: now.toISOString()
   }));
 
