@@ -42,7 +42,8 @@ import {
   Filter,
   UserPlus,
   Copy,
-  FileSignature
+  FileSignature,
+  AlertTriangle
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -423,6 +424,16 @@ export default function LeagueRegistrationAdminPage() {
                 </Button>
               </CardContent>
             </Card>
+
+            <div className="bg-amber-50 p-8 rounded-[2.5rem] border-2 border-dashed border-amber-200 space-y-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">Preview Mode Info</h4>
+              </div>
+              <p className="text-[11px] font-medium leading-relaxed italic text-amber-800">
+                In this development preview, recruitment links require active workstation permissions (401 error otherwise). <strong>Deploy your app</strong> to make these links fully public.
+              </p>
+            </div>
 
             <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-4">
               <div className="flex items-center gap-3">

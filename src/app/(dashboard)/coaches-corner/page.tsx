@@ -466,6 +466,10 @@ export default function CoachesCornerPage() {
                               <Input readOnly value={`${window.location.origin}/register/league/${activeTeam.id}?protocol=${activeProtocol.id}`} className="h-12 rounded-xl bg-muted/10 border-none font-mono text-[10px]" />
                               <Button size="icon" variant="outline" className="h-12 w-12 shrink-0 rounded-xl" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeTeam.id}?protocol=${activeProtocol.id}`); toast({ title: "Link Copied" }); }}><Copy className="h-4 w-4" /></Button>
                             </div>
+                            <div className="flex items-center gap-2 mt-2 bg-amber-50 p-3 rounded-xl border border-amber-100">
+                              <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0" />
+                              <p className="text-[8px] font-bold text-amber-800 uppercase leading-relaxed">Preview Environment Warning: These development links require active workstation permission (401 error otherwise). They will be public after deployment.</p>
+                            </div>
                           </div>
                         </div>
 
