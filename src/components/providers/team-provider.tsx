@@ -568,7 +568,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const pId = planId || 'starter_squad';
       const batch = writeBatch(db);
       batch.set(doc(db, 'teams', tid), clean({ id: tid, teamName: name, teamCode: code, type, createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, createdAt: new Date().toISOString(), isPro: pId !== 'starter_squad', planId: pId, members: { [firebaseUser.uid]: 'admin' } }));
-      batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ id: firebaseUser.uid, userId: firebaseUser.uid, teamId: tid, role: 'Admin', position: fontStyle, name: userProfile?.name || 'Coach', avatar: userProfile?.avatar || '', joinedAt: new Date().toISOString(), jersey: 'HQ' }));
+      batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ id: firebaseUser.uid, userId: firebaseUser.uid, teamId: tid, role: 'Admin', position: pos, name: userProfile?.name || 'Coach', avatar: userProfile?.avatar || '', joinedAt: new Date().toISOString(), jersey: 'HQ' }));
       batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ teamId: tid, teamName: name, teamCode: code, type, role: 'Admin', isPro: pId !== 'starter_squad', planId: pId, ownerUserId: firebaseUser.uid }));
       await batch.commit(); return tid;
     },
@@ -622,10 +622,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     },
 
     updateTeamPlan: async (teamId: string, planId: string) => {
-      const plan = plans.find(p => p.id === planId);
       const isPro = planId !== 'starter_squad';
       await updateDoc(doc(db, 'teams', teamId), { planId, isPro });
-      // Update memberships for all users in this team (simplified for MVP)
       const memberships = await getDocs(collectionGroup(db, 'teamMemberships'));
       const batch = writeBatch(db);
       memberships.docs.forEach(m => {
@@ -971,7 +969,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         const mid = `recruit_${Date.now()}`;
         batch.set(doc(db, 'teams', activeTeam.id, 'members', mid), clean({
           id: mid, userId: 'none', teamId: activeTeam.id, name, role: 'Member', position: 'Player',
-          jersey: 'TBD', joinedAt: new Date().toISOString()
+          jersey: 'TBD', joinedAt: new Date().toISOString(),
+          birthdate: answers['birthdate'] || answers['dob'] || '',
+          phone: answers['phone'] || '',
+          notes: answers['notes'] || ''
         }));
       }
       await batch.commit();

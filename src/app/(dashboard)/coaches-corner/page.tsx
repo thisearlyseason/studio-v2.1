@@ -1,10 +1,10 @@
 
 "use client";
 
-import React, { useState, useMemo } from 'react';
-import { useTeam, TeamDocument, Member, DocumentSignature, TeamEvent } from '@/components/providers/team-provider';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, where, doc, getDocs } from 'firebase/firestore';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useTeam, TeamDocument, Member, DocumentSignature, TeamEvent, RegistrationFormField, LeagueRegistrationConfig } from '@/components/providers/team-provider';
+import { useFirestore, useCollection, useMemoFirebase, useDoc } from '@/firebase';
+import { collection, query, orderBy, where, doc, getDocs, setDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,7 +37,12 @@ import {
   Target,
   Trophy,
   Building,
-  Info
+  Info,
+  Globe,
+  Settings,
+  Copy,
+  Share2,
+  UserPlus
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -66,11 +71,13 @@ import {
   SelectValue 
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Link from 'next/link';
 
 function SignatureList({ teamId, documentId }: { teamId: string, documentId: string }) {
   const db = useFirestore();
@@ -111,9 +118,10 @@ function SignatureList({ teamId, documentId }: { teamId: string, documentId: str
 }
 
 export default function CoachesCornerPage() {
-  const { activeTeam, isStaff, members, createTeamDocument, deleteTeamDocument, resetSquadData } = useTeam();
+  const { activeTeam, isStaff, members, createTeamDocument, deleteTeamDocument, resetSquadData, saveLeagueRegistrationConfig } = useTeam();
   const db = useFirestore();
   
+  const [activeTab, setActiveTab] = useState('compliance');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isResetOpen, setIsResetOpen] = useState(false);
   const [isDoubleConfirmOpen, setIsDoubleConfirmOpen] = useState(false);
@@ -122,6 +130,11 @@ export default function CoachesCornerPage() {
   const [newDoc, setNewDoc] = useState({ title: '', content: '', type: 'waiver' as any, assignedTo: ['all'] });
   
   const [resetOptions, setResetOptions] = useState<string[]>(['games', 'events']);
+
+  // Registration Builder State
+  const [editingField, setEditingField] = useState<Partial<RegistrationFormField> | null>(null);
+  const configRef = useMemoFirebase(() => (db && activeTeam) ? doc(db, 'teams', activeTeam.id, 'registration', 'config') : null, [db, activeTeam?.id]);
+  const { data: regConfig } = useDoc<LeagueRegistrationConfig>(configRef);
 
   const docsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
@@ -159,39 +172,18 @@ export default function CoachesCornerPage() {
     setIsProcessing(false);
   };
 
-  const handleExport = async (type: 'games' | 'tournaments' | 'scouting') => {
-    if (!activeTeam || !db) return;
-    let coll = '';
-    let fileName = '';
-    let headers: string[] = [];
-    
-    if (type === 'games') {
-      coll = 'games'; fileName = 'match_ledger'; headers = ['Date', 'Opponent', 'Us', 'Them', 'Result', 'Notes'];
-    } else if (type === 'tournaments') {
-      coll = 'events'; fileName = 'tournament_records'; headers = ['Title', 'Date', 'Location', 'Teams'];
-    } else if (type === 'scouting') {
-      coll = 'scouting'; fileName = 'intel_scouting'; headers = ['Opponent', 'Date', 'Strengths', 'Weaknesses', 'Keys'];
-    }
+  const handleSaveRegConfig = async (updates: Partial<LeagueRegistrationConfig>) => {
+    if (!activeTeam) return;
+    await setDoc(doc(db, 'teams', activeTeam.id, 'registration', 'config'), updates, { merge: true });
+    toast({ title: "Recruitment Protocol Synchronized" });
+  };
 
-    const snap = await getDocs(collection(db, 'teams', activeTeam.id, coll));
-    const rows = snap.docs.map(d => {
-      const data = d.data();
-      if (type === 'games') return [data.date, data.opponent, data.myScore, data.opponentScore, data.result, `"${data.notes || ''}"`];
-      if (type === 'tournaments' && data.isTournament) return [data.title, data.date, data.location, `"${data.tournamentTeams?.join(', ') || ''}"`];
-      if (type === 'scouting') return [data.opponentName, data.date, `"${data.strengths}"`, `"${data.weaknesses}"`, `"${data.keysToVictory}"`];
-      return null;
-    }).filter(r => r !== null);
-
-    if (rows.length === 0) { toast({ title: "Empty Ledger", description: "No data found for this category." }); return; }
-
-    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].map(e => e?.join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `${activeTeam.name}_${fileName}_${format(new Date(), 'yyyyMMdd')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleAddField = () => {
+    if (!editingField?.label || !editingField?.type || !activeTeam) return;
+    const currentSchema = regConfig?.form_schema || [];
+    const newField = { ...editingField, id: `f_${Date.now()}` } as RegistrationFormField;
+    handleSaveRegConfig({ form_schema: [...currentSchema, newField], form_version: (regConfig?.form_version || 0) + 1 });
+    setEditingField(null);
   };
 
   return (
@@ -201,97 +193,51 @@ export default function CoachesCornerPage() {
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Command Hub</Badge>
           <h1 className="text-4xl font-black uppercase tracking-tight">Coaches Corner</h1>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Dialog open={isResetOpen} onOpenChange={setIsResetOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="h-12 px-6 rounded-xl font-black uppercase text-[10px] border-2 border-primary/20 text-primary hover:bg-primary hover:text-black transition-colors">
-                <RotateCcw className="h-4 w-4 mr-2" /> Reset Season
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden">
-              <div className="h-2 bg-primary w-full" />
-              <div className="p-8 space-y-6">
-                <DialogHeader>
-                  <div className="flex items-center gap-3 mb-2">
-                    <AlertTriangle className="h-6 w-6 text-primary" />
-                    <DialogTitle className="text-2xl font-black uppercase tracking-tight">Season Purge</DialogTitle>
-                  </div>
-                  <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-widest">Select data categories to wipe for the new season.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-2">
-                  {[
-                    { id: 'games', label: 'Match Ledger (Win/Loss Records)', icon: Trophy },
-                    { id: 'events', label: 'Itinerary (Matches & Practices)', icon: Clock },
-                    { id: 'scouting', label: 'Scouting Intel (Opponent Reports)', icon: Target },
-                    { id: 'feed', label: 'Squad Feed (Historical Broadcasts)', icon: Activity },
-                    { id: 'members', label: 'Squad Roster (Players & Members)', icon: Users },
-                    { id: 'facilities', label: 'Facility Data (Venues & Fields)', icon: Building }
-                  ].map(opt => (
-                    <div key={opt.id} className={cn(
-                      "flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer",
-                      resetOptions.includes(opt.id) ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:border-muted"
-                    )} onClick={() => setResetOptions(prev => prev.includes(opt.id) ? prev.filter(i => i !== opt.id) : [...prev, opt.id])}>
-                      <div className="flex items-center gap-3">
-                        <opt.icon className={cn("h-4 w-4", resetOptions.includes(opt.id) ? "text-primary" : "text-muted-foreground opacity-60")} />
-                        <span className="text-xs font-black uppercase">{opt.label}</span>
-                      </div>
-                      <Checkbox checked={resetOptions.includes(opt.id)} onCheckedChange={() => {}} className="rounded-lg h-5 w-5" />
-                    </div>
-                  ))}
-                </div>
-                <div className="bg-amber-50 p-4 rounded-2xl border-2 border-dashed border-amber-200 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Info className="h-3 w-3 text-amber-600" />
-                    <p className="text-[9px] font-black uppercase text-amber-700 tracking-widest">Strategic Reminder</p>
-                  </div>
-                  <p className="text-[10px] font-bold text-amber-800 leading-relaxed italic">
-                    Ensure you have exported all Match Ledgers and Scouting Intel as CSV files before proceeding.
-                  </p>
-                </div>
-                <DialogFooter>
-                  <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleResetClick} disabled={isProcessing || resetOptions.length === 0}>
-                    {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Tactical Reset"}
-                  </Button>
-                </DialogFooter>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button className="h-12 px-8 rounded-xl font-black shadow-xl shadow-primary/20">
-                <Plus className="h-4 w-4 mr-2" /> Create Protocol
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="rounded-[2.5rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl">
-              <div className="h-2 bg-primary w-full" />
-              <div className="p-8 space-y-6">
-                <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Document Architect</DialogTitle></DialogHeader>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1"><Label className="text-[10px] uppercase font-black">Title</Label><Input value={newDoc.title} onChange={e => setNewDoc({...newDoc, title: e.target.value})} className="h-11 rounded-xl" /></div>
-                    <div className="space-y-1"><Label className="text-[10px] uppercase font-black">Type</Label>
-                      <Select value={newDoc.type} onValueChange={v => setNewDoc({...newDoc, type: v})}>
-                        <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                        <SelectContent className="rounded-xl"><SelectItem value="waiver">Waiver</SelectItem><SelectItem value="policy">Policy</SelectItem><SelectItem value="info">Info</SelectItem></SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-1"><Label className="text-[10px] uppercase font-black">Content</Label><Textarea value={newDoc.content} onChange={e => setNewDoc({...newDoc, content: e.target.value})} className="min-h-[200px] rounded-xl" /></div>
-                </div>
-                <DialogFooter><Button className="w-full h-14 rounded-2xl font-black shadow-xl" onClick={handleCreate} disabled={isProcessing}>Deploy to Roster</Button></DialogFooter>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
+        
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full md:w-auto">
+          <TabsList className="bg-muted/50 rounded-xl h-12 p-1 border-2 w-full md:w-auto">
+            <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 data-[state=active]:bg-black data-[state=active]:text-white">Documents</TabsTrigger>
+            <TabsTrigger value="recruitment" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Recruitment</TabsTrigger>
+            <TabsTrigger value="governance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 data-[state=active]:bg-black data-[state=active]:text-white">Governance</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-8 space-y-6">
-          <div className="flex items-center gap-2 px-2">
-            <FileSignature className="h-5 w-5 text-primary" />
-            <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Compliance Ledger</h2>
+      <Tabs value={activeTab} className="mt-0">
+        <TabsContent value="compliance" className="space-y-8 mt-0">
+          <div className="flex justify-between items-center px-2">
+            <div className="flex items-center gap-2">
+              <FileSignature className="h-5 w-5 text-primary" />
+              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Compliance Ledger</h2>
+            </div>
+            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+              <DialogTrigger asChild>
+                <Button className="h-11 px-6 rounded-xl font-black shadow-lg shadow-primary/20">
+                  <Plus className="h-4 w-4 mr-2" /> Create Protocol
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="rounded-[2.5rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl">
+                <div className="h-2 bg-primary w-full" />
+                <div className="p-8 space-y-6">
+                  <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Document Architect</DialogTitle></DialogHeader>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1"><Label className="text-[10px] uppercase font-black">Title</Label><Input value={newDoc.title} onChange={e => setNewDoc({...newDoc, title: e.target.value})} className="h-11 rounded-xl" /></div>
+                      <div className="space-y-1"><Label className="text-[10px] uppercase font-black">Type</Label>
+                        <Select value={newDoc.type} onValueChange={v => setNewDoc({...newDoc, type: v})}>
+                          <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                          <SelectContent className="rounded-xl"><SelectItem value="waiver">Waiver</SelectItem><SelectItem value="policy">Policy</SelectItem><SelectItem value="info">Info</SelectItem></SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-1"><Label className="text-[10px] uppercase font-black">Content</Label><Textarea value={newDoc.content} onChange={e => setNewDoc({...newDoc, content: e.target.value})} className="min-h-[200px] rounded-xl" /></div>
+                  </div>
+                  <DialogFooter><Button className="w-full h-14 rounded-2xl font-black shadow-xl" onClick={handleCreate} disabled={isProcessing}>Deploy to Roster</Button></DialogFooter>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
+
           <div className="grid grid-cols-1 gap-4">
             {documents?.map(doc => (
               <Card key={doc.id} className="rounded-3xl border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5 group">
@@ -313,57 +259,165 @@ export default function CoachesCornerPage() {
                 </CardContent>
               </Card>
             ))}
-            {(!documents || documents.length === 0) && (
-              <div className="text-center py-20 bg-muted/10 rounded-[2.5rem] border-2 border-dashed opacity-40">
-                <PenTool className="h-12 w-12 mx-auto mb-4" />
-                <p className="text-sm font-black uppercase tracking-widest">No protocols established.</p>
-              </div>
-            )}
           </div>
-        </div>
+        </TabsContent>
 
-        <aside className="lg:col-span-4 space-y-8">
+        <TabsContent value="recruitment" className="space-y-8 mt-0">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="lg:col-span-8 space-y-8">
+              <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white">
+                <CardHeader className="bg-primary/5 border-b p-8">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-primary p-3 rounded-2xl text-white shadow-lg shadow-primary/20">
+                        <Globe className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-2xl font-black uppercase tracking-tight">Roster Portal Protocol</CardTitle>
+                        <CardDescription className="font-bold text-primary text-[10px] uppercase tracking-widest">Public Squad Recruitment</CardDescription>
+                      </div>
+                    </div>
+                    <Switch 
+                      checked={regConfig?.is_active || false} 
+                      onCheckedChange={(v) => handleSaveRegConfig({ is_active: v })} 
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent className="p-8 space-y-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Portal Heading</Label>
+                      <Input 
+                        value={regConfig?.title || ''} 
+                        onChange={e => handleSaveRegConfig({ title: e.target.value })}
+                        placeholder="e.g. Join the Elite Summer Program"
+                        className="h-12 rounded-xl font-bold border-2"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Portal Description</Label>
+                      <Input 
+                        value={regConfig?.description || ''} 
+                        onChange={e => handleSaveRegConfig({ description: e.target.value })}
+                        placeholder="Define your recruitment criteria..."
+                        className="h-12 rounded-xl font-bold border-2"
+                      />
+                    </div>
+                  </div>
+                  <div className="p-6 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <Share2 className="h-6 w-6 text-primary" />
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest">Recruitment URL</p>
+                        <p className="text-xs font-mono font-bold text-primary truncate max-w-[250px]">/register/squad/{activeTeam.id}</p>
+                      </div>
+                    </div>
+                    <Button variant="secondary" size="sm" className="rounded-xl h-9 px-4 font-black uppercase text-[10px]" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/squad/${activeTeam.id}`); toast({ title: "Link Copied" }); }}>Copy Link</Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white">
+                <CardHeader className="bg-black text-white p-8">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-primary p-3 rounded-2xl text-white">
+                        <Settings className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-2xl font-black uppercase tracking-tight">Form Architect</CardTitle>
+                        <CardDescription className="text-white/60 text-[10px] font-bold uppercase tracking-widest">Recruit Data Payload</CardDescription>
+                      </div>
+                    </div>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="secondary" className="rounded-full h-10 px-6 font-black uppercase text-[10px]" onClick={() => setEditingField({ type: 'short_text', label: '', required: true })}>
+                          <Plus className="h-4 w-4 mr-2" /> Add Field
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="rounded-[2.5rem] shadow-2xl p-8">
+                        <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Add Form Field</DialogTitle></DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Field Label</Label><Input value={editingField?.label || ''} onChange={e => setEditingField({...editingField, label: e.target.value})} className="h-12 rounded-xl" /></div>
+                          <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Type</Label>
+                            <Select value={editingField?.type} onValueChange={(v: any) => setEditingField({...editingField, type: v})}>
+                              <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
+                              <SelectContent className="rounded-xl">
+                                <SelectItem value="short_text">Short Text</SelectItem>
+                                <SelectItem value="long_text">Long Text</SelectItem>
+                                <SelectItem value="dropdown">Selection</SelectItem>
+                                <SelectItem value="header">Section Header</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <DialogFooter><Button className="w-full h-14 rounded-2xl font-black shadow-xl" onClick={handleAddField}>Add to Protocol</Button></DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="divide-y">
+                    {(regConfig?.form_schema || []).map((field, i) => (
+                      <div key={field.id} className="p-6 flex items-center justify-between group hover:bg-muted/10 transition-colors">
+                        <div className="flex items-center gap-4">
+                          <div className="text-[10px] font-black text-muted-foreground w-6">{i + 1}</div>
+                          <div>
+                            <p className="font-black text-sm uppercase tracking-tight">{field.label}</p>
+                            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{field.type.replace(/_/g, ' ')}</p>
+                          </div>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleSaveRegConfig({ form_schema: regConfig?.form_schema?.filter(f => f.id !== field.id) })}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    {(!regConfig?.form_schema || regConfig.form_schema.length === 0) && (
+                      <div className="p-12 text-center opacity-30 italic font-bold text-sm">No custom fields established. Standard ID required.</div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <aside className="lg:col-span-4 space-y-6">
+              <div className="bg-black text-white p-8 rounded-[2.5rem] shadow-xl space-y-6">
+                <div className="flex items-center gap-3">
+                  <UserPlus className="h-6 w-6 text-primary" />
+                  <h4 className="text-lg font-black uppercase tracking-tight">Active Recruitment</h4>
+                </div>
+                <p className="text-xs font-medium text-white/60 leading-relaxed italic">
+                  Public portals allow you to scale your roster without manual data entry. Use the "Choose from Pool" workflow in League Ledger to deploy recruits to your active squad.
+                </p>
+                <Button asChild className="w-full h-12 rounded-xl bg-primary text-white font-black uppercase text-[10px] tracking-widest shadow-lg shadow-primary/20">
+                  <Link href="/leagues">Enter Recruit Pool</Link>
+                </Button>
+              </div>
+            </aside>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="governance" className="space-y-8 mt-0">
           <section className="space-y-4">
             <div className="flex items-center gap-2 px-2">
-              <Download className="h-5 w-5 text-primary" />
-              <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Intelligence Export</h3>
+              <RotateCcw className="h-5 w-5 text-primary" />
+              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Seasonal Protocols</h2>
             </div>
-            <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden group relative">
-              <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform">
-                <Zap className="h-32 w-32" />
-              </div>
-              <CardContent className="p-8 relative z-10 space-y-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Seasonal Archives</p>
-                <div className="grid grid-cols-1 gap-3">
-                  <Button variant="ghost" className="w-full justify-between h-12 bg-white/5 border border-white/10 rounded-xl text-white hover:bg-white/10 px-4 font-bold uppercase text-[10px] tracking-widest" onClick={() => handleExport('games')}>
-                    <div className="flex items-center gap-3"><Trophy className="h-4 w-4 text-primary" /> League Ledger</div>
-                    <Download className="h-3.5 w-3.5 opacity-40" />
-                  </Button>
-                  <Button variant="ghost" className="w-full justify-between h-12 bg-white/5 border border-white/10 rounded-xl text-white hover:bg-white/10 px-4 font-bold uppercase text-[10px] tracking-widest" onClick={() => handleExport('tournaments')}>
-                    <div className="flex items-center gap-3"><TableIcon className="h-4 w-4 text-primary" /> Tournament Brackets</div>
-                    <Download className="h-3.5 w-3.5 opacity-40" />
-                  </Button>
-                  <Button variant="ghost" className="w-full justify-between h-12 bg-white/5 border border-white/10 rounded-xl text-white hover:bg-white/10 px-4 font-bold uppercase text-[10px] tracking-widest" onClick={() => handleExport('scouting')}>
-                    <div className="flex items-center gap-3"><Target className="h-4 w-4 text-primary" /> Scouting Reports</div>
-                    <Download className="h-3.5 w-3.5 opacity-40" />
-                  </Button>
-                </div>
-                <p className="text-[8px] font-medium text-white/40 italic text-center pt-2">All files generated in CSV format.</p>
+            <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
+              <CardHeader className="bg-primary/5 border-b p-8">
+                <CardTitle className="text-xl font-black uppercase">Squad Pulse Reset</CardTitle>
+                <CardDescription className="text-[10px] font-bold uppercase tracking-widest">Operational Data Purge</CardDescription>
+              </CardHeader>
+              <CardContent className="p-8 space-y-6">
+                <p className="text-sm font-medium text-muted-foreground leading-relaxed italic">Wipe tactical records to begin a new competitive season. This action is audited and irreversible.</p>
+                <Button variant="outline" className="h-12 px-8 rounded-xl font-black uppercase text-[10px] border-2 border-red-100 text-red-600 hover:bg-red-50" onClick={() => setIsResetOpen(true)}>
+                  Initialize Season Reset
+                </Button>
               </CardContent>
             </Card>
           </section>
-
-          <Card className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 p-8 space-y-4">
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Compliance Protocol</h4>
-            </div>
-            <p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">
-              Official squad agreements are legally binding digital signatures. Export certificates from the audit view for insurance verification.
-            </p>
-          </Card>
-        </aside>
-      </div>
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={!!selectedDoc} onOpenChange={o => !o && setSelectedDoc(null)}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-xl border-none shadow-2xl p-0 overflow-hidden">

@@ -361,27 +361,27 @@ export default function LandingPage() {
                     </td>
                     <td className="py-6 px-8 bg-primary/5 border-x-2 border-primary/10">
                       <div className="flex justify-center">
-                        <div className="bg-primary text-white p-1 rounded-full"><Check className="h-4 w-4 stroke-[4px]" /></div>
+                        <Check className="h-6 w-6 text-primary stroke-[4px]" />
                       </div>
                     </td>
                     <td className="py-6 px-8 text-center">
                       <div className="flex justify-center">
-                        {row.tsnap === true ? <Check className="h-4 w-4 opacity-20" /> : (row.tsnap === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.tsnap}</span>)}
+                        {row.tsnap === true ? <Check className="h-5 w-5 text-primary stroke-[3px]" /> : (row.tsnap === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.tsnap}</span>)}
                       </div>
                     </td>
                     <td className="py-6 px-8 text-center">
                       <div className="flex justify-center">
-                        {row.hudl === true ? <Check className="h-4 w-4 opacity-20" /> : (row.hudl === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.hudl}</span>)}
+                        {row.hudl === true ? <Check className="h-5 w-5 text-primary stroke-[3px]" /> : (row.hudl === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.hudl}</span>)}
                       </div>
                     </td>
                     <td className="py-6 px-8 text-center">
                       <div className="flex justify-center">
-                        {row.treach === true ? <Check className="h-4 w-4 opacity-20" /> : (row.treach === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.treach}</span>)}
+                        {row.treach === true ? <Check className="h-5 w-5 text-primary stroke-[3px]" /> : (row.treach === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.treach}</span>)}
                       </div>
                     </td>
                     <td className="py-6 px-8 text-center">
                       <div className="flex justify-center">
-                        {row.gchanger === true ? <Check className="h-4 w-4 opacity-20" /> : (row.gchanger === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.gchanger}</span>)}
+                        {row.gchanger === true ? <Check className="h-5 w-5 text-primary stroke-[3px]" /> : (row.gchanger === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.gchanger}</span>)}
                       </div>
                     </td>
                   </tr>
