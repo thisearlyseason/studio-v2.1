@@ -35,7 +35,9 @@ import {
   ShieldCheck,
   Terminal,
   Activity,
-  Table as TableIcon
+  Table as TableIcon,
+  Plus,
+  Layout
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -135,33 +137,50 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <SidebarHeader className="p-6">
               <BrandLogo variant="light-background" className="h-10 w-44 justify-start mb-10" priority />
               
-              {isParent && (
-                <Button 
-                  asChild 
-                  className={cn(
-                    "w-full h-12 rounded-2xl justify-start gap-3 font-black text-xs uppercase tracking-widest mb-6 transition-all", 
-                    pathname === '/family' 
-                      ? "bg-primary text-white shadow-lg hover:bg-primary/90 hover:text-white" 
-                      : "bg-primary/5 text-primary hover:bg-primary/10"
-                  )}
-                >
-                  <Link href="/family"><Baby className="h-5 w-5" />Family Hub</Link>
-                </Button>
-              )}
+              <SidebarMenu className="space-y-2 mb-6">
+                <SidebarMenuItem>
+                  <SidebarMenuButton 
+                    asChild 
+                    isActive={pathname === '/'} 
+                    className={cn(
+                      "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
+                      pathname === '/' ? "bg-primary text-white shadow-lg" : "bg-primary/5 text-primary hover:bg-primary/10"
+                    )}
+                  >
+                    <Link href="/"><Layout className="h-5 w-5 mr-3" />Dashboard</Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
 
-              {isClubManager && (
-                <Button 
-                  asChild 
-                  className={cn(
-                    "w-full h-12 rounded-2xl justify-start gap-3 font-black text-xs uppercase tracking-widest mb-6 transition-all", 
-                    pathname === '/club' 
-                      ? "bg-black text-white shadow-lg hover:bg-black/90 hover:text-white" 
-                      : "bg-primary/5 text-primary hover:bg-primary/10"
-                  )}
-                >
-                  <Link href="/club"><Building className="h-5 w-5" />Club Hub</Link>
-                </Button>
-              )}
+                {isParent && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      asChild 
+                      isActive={pathname === '/family'} 
+                      className={cn(
+                        "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
+                        pathname === '/family' ? "bg-primary text-white shadow-lg" : "bg-primary/5 text-primary hover:bg-primary/10"
+                      )}
+                    >
+                      <Link href="/family"><Baby className="h-5 w-5 mr-3" />Family Hub</Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+
+                {isClubManager && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      asChild 
+                      isActive={pathname === '/club'} 
+                      className={cn(
+                        "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
+                        pathname === '/club' ? "bg-black text-white shadow-lg" : "bg-primary/5 text-primary hover:bg-primary/10"
+                      )}
+                    >
+                      <Link href="/club"><Building className="h-5 w-5 mr-3" />Club Hub</Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+              </SidebarMenu>
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -171,27 +190,45 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         <AvatarImage src={activeTeam?.teamLogoUrl} className="object-cover" />
                         <AvatarFallback className="hero-gradient text-white font-black text-xs">{activeTeam?.name?.[0] || 'T'}</AvatarFallback>
                       </Avatar>
-                      <span className="font-extrabold text-sm truncate">{activeTeam?.name || 'Squad'}</span>
+                      <span className="font-extrabold text-sm truncate">{activeTeam?.name || 'Select Squad'}</span>
                     </div>
                     <ChevronDown className="h-4 w-4 opacity-40" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-72 p-2 rounded-2xl">
-                  {teams.map(team => (
-                    <DropdownMenuItem key={team.id} onClick={() => setActiveTeam(team)} className={cn("flex items-center gap-3 p-3 rounded-xl cursor-pointer", activeTeam?.id === team.id ? "bg-primary/5" : "")}>
-                      <Avatar className="h-8 w-8 rounded-lg shrink-0">
-                        <AvatarImage src={team.teamLogoUrl} />
-                        <AvatarFallback>{team.name?.[0] || 'T'}</AvatarFallback>
-                      </Avatar>
-                      <span className="font-bold text-sm truncate">{team.name}</span>
-                    </DropdownMenuItem>
-                  ))}
-                  {isStaff && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => router.push('/teams/new')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-3"><PlusCircle className="h-4 w-4" />Deploy New Squad</DropdownMenuItem>
-                    </>
-                  )}
+                <DropdownMenuContent align="start" className="w-72 p-2 rounded-2xl shadow-2xl">
+                  <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground p-3">My Squads</DropdownMenuLabel>
+                  <ScrollArea className="h-[200px]">
+                    {teams.map(team => (
+                      <DropdownMenuItem key={team.id} onClick={() => setActiveTeam(team)} className={cn("flex items-center gap-3 p-3 rounded-xl cursor-pointer", activeTeam?.id === team.id ? "bg-primary/5 text-primary" : "")}>
+                        <Avatar className="h-8 w-8 rounded-lg shrink-0">
+                          <AvatarImage src={team.teamLogoUrl} />
+                          <AvatarFallback className="font-black text-[10px]">{team.name?.[0] || 'T'}</AvatarFallback>
+                        </Avatar>
+                        <span className="font-bold text-sm truncate">{team.name}</span>
+                        {activeTeam?.id === team.id && <CheckCircle2 className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </ScrollArea>
+                  
+                  <DropdownMenuSeparator className="my-2" />
+                  
+                  <DropdownMenuItem onClick={() => router.push('/team')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-3">
+                    <Settings className="h-4 w-4 text-primary" /> View Squad Profile
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-3">
+                    <UserPlus className="h-4 w-4 text-primary" /> Recruitment Hub
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator className="my-2" />
+                  
+                  <DropdownMenuItem onClick={() => router.push('/teams/new?tier=starter')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-3">
+                    <PlusCircle className="h-4 w-4 text-primary" /> Deploy Free Starter Team
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuItem onClick={() => router.push('/teams/new?tier=pro')} className="p-3 cursor-pointer rounded-xl font-bold text-xs gap-3">
+                    <Zap className="h-4 w-4 text-amber-500" /> Deploy Elite Pro Team
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </SidebarHeader>
@@ -225,7 +262,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between">
               <div className="hidden md:block">
                 <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter">
-                  {coordinationTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard'}
+                  {pathname === '/' ? 'Strategic Command' : coordinationTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard'}
                 </h2>
               </div>
               <div className="md:hidden"><BrandLogo variant="light-background" className="h-6 w-28" /></div>

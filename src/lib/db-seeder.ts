@@ -9,7 +9,8 @@ import {
   writeBatch,
   setDoc,
   updateDoc,
-  arrayUnion
+  arrayUnion,
+  addDoc
 } from 'firebase/firestore';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -112,6 +113,17 @@ export async function seedDemoData(db: Firestore, teamId: string, demoTier: stri
   batch.set(doc(db, 'teams', teamId, 'events', `demo_evt_${teamId}_1`), clean({
     id: `demo_evt_${teamId}_1`, teamId, title: 'Championship Match', eventType: 'game', date: new Date(now.getTime() + 86400000).toISOString(),
     startTime: '10:00 AM', location: 'City Stadium', description: 'Season finale.', userRsvps: { [userId]: 'going' }
+  }));
+
+  // Seeding Volunteers & Fundraisers
+  batch.set(doc(db, 'teams', teamId, 'volunteers', `demo_vol_${teamId}_1`), clean({
+    id: `demo_vol_${teamId}_1`, title: 'Tournament Hospitality', date: new Date(now.getTime() + 172800000).toISOString(),
+    location: 'Main Arena', slots: 5, hoursPerSlot: 4, signups: {}
+  }));
+
+  batch.set(doc(db, 'teams', teamId, 'fundraising', `demo_fund_${teamId}_1`), clean({
+    id: `demo_fund_${teamId}_1`, title: 'Uniform Sponsorship', goalAmount: 2500, currentAmount: 1200, 
+    deadline: new Date(now.getTime() + 604800000).toISOString(), participants: {}
   }));
 
   // Seeding Documents (Waivers)

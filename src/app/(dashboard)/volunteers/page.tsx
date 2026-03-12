@@ -93,6 +93,9 @@ export default function VolunteerHubPage() {
     );
   }
 
+  // ALLOWED FOR STAFF OR PARENTS
+  const canInteract = isStaff || isParent;
+
   return (
     <div className="space-y-10 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -225,16 +228,25 @@ export default function VolunteerHubPage() {
                   </CardContent>
                   <CardFooter className="p-8 pt-0">
                     {isStaff ? (
-                      <Button variant="ghost" className="w-full h-12 rounded-xl text-destructive hover:bg-destructive/5 font-black uppercase text-[10px]" onClick={() => deleteVolunteerOpportunity(opp.id)}>
-                        <Trash2 className="h-4 w-4 mr-2" /> Withdraw Assignment
-                      </Button>
+                      <div className="flex gap-2 w-full">
+                        <Button 
+                          className={cn("flex-1 h-14 rounded-2xl font-black uppercase shadow-lg", hasSignedUp ? "bg-muted text-muted-foreground" : "bg-black text-white hover:bg-primary")}
+                          onClick={() => signUpForVolunteer(opp.id)}
+                          disabled={hasSignedUp || isFull}
+                        >
+                          {hasSignedUp ? "Enrolled" : "Sign Up"}
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-14 w-14 rounded-2xl text-destructive hover:bg-destructive/5" onClick={() => deleteVolunteerOpportunity(opp.id)}>
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      </div>
                     ) : (
                       <Button 
                         className={cn("w-full h-14 rounded-2xl font-black uppercase shadow-lg", hasSignedUp ? "bg-muted text-muted-foreground" : "bg-black text-white hover:bg-primary shadow-black/20")}
                         onClick={() => signUpForVolunteer(opp.id)}
-                        disabled={hasSignedUp || isFull}
+                        disabled={hasSignedUp || isFull || !isParent}
                       >
-                        {hasSignedUp ? "Deployment Confirmed" : isFull ? "Full Strength" : "Claim Assignment"}
+                        {hasSignedUp ? "Deployment Confirmed" : isFull ? "Full Strength" : !isParent ? "Parents Only" : "Claim Assignment"}
                       </Button>
                     )}
                   </CardFooter>
