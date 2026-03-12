@@ -158,8 +158,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   const [maxGamesPerTeam, setMaxGamesPerTeam] = useState('5');
   const [dayConfigs, setDayConfigs] = useState<Record<string, { start: string, end: string }>>({});
   
-  const [isEditingWaiver, setIsEditingWaiver] = useState(false);
-  const [tempWaiver, setTempWaiver] = useState(event.teamWaiverText || '');
   const [baseUrl, setBaseUrl] = useState('');
 
   const [manualMatch, setManualMatch] = useState({ team1: '', team2: '', date: format(new Date(event.date), 'yyyy-MM-dd'), time: '12:00', location: '' });
@@ -168,7 +166,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   useEffect(() => {
     if (typeof window !== 'undefined') setBaseUrl(window.location.origin);
     
-    // Initialize day configs based on event range
     if (event.isTournament) {
       const start = new Date(event.date);
       const end = event.endDate ? new Date(event.endDate) : start;
@@ -210,7 +207,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
       if (!groups[key]) groups[key] = [];
       groups[key].push(game);
     });
-    // Sort each field's games by time
     Object.keys(groups).forEach(key => {
       groups[key].sort((a, b) => a.time.localeCompare(b.time));
     });
@@ -678,7 +674,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                           <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Squad B</Label><Input value={manualMatch.team2} onChange={e => setManualMatch({...manualMatch, team2: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
                           <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Date</Label><Input type="date" value={manualMatch.date} onChange={e => setManualMatch({...manualMatch, date: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
                           <div className="space-y-1.5"><Label className="text-[9px] font-black uppercase ml-1">Time</Label><Input type="time" value={manualMatch.time} onChange={e => setManualMatch({...manualMatch, time: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
-                          <div className="space-y-1.5 lg:col-span-2"><Label className="text-[9px] font-black uppercase ml-1">Location Label</Label><Input value={manualMatch.location} onChange={e => setManualMatch({...manualMatch, location: e.target.value})} className="h-12 rounded-xl border-2 bg-white" /></div>
+                          <div className="space-y-1.5 lg:col-span-2"><Label className="text-[9px] font-black uppercase ml-1">Location Label</Label><Input value={manualMatch.location} onChange={setManualMatch.bind(null, { ...manualMatch, location: '' })} className="h-12 rounded-xl border-2 bg-white" /></div>
                           <Button className="col-span-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleAddManualMatch} disabled={!manualMatch.team1 || !manualMatch.team2}>Establish Matchup</Button>
                         </div>
                       </div>

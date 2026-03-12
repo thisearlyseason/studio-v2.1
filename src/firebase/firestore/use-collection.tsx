@@ -110,9 +110,12 @@ export function useCollection<T = any>(
         setIsLoading(false);
         
         // Only emit if it's a real permission issue on a valid non-root path
-        if (err.code !== 'permission-denied' || (trimmedPath && trimmedPath !== '/')) {
-          errorEmitter.emit('permission-error', contextualError);
+        // Code 7 is permission-denied
+        if (err.code === 'permission-denied' && (trimmedPath === '' || trimmedPath === '/')) {
+          return;
         }
+
+        errorEmitter.emit('permission-error', contextualError);
       }
     );
 

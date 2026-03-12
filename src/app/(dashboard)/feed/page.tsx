@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -390,39 +389,39 @@ export default function FeedPage() {
             </CardHeader>
             <CardContent className="p-6 relative z-10 space-y-3">
               <Button asChild variant="ghost" className="w-full justify-between h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
-                <Link href="/coaches-corner" className="flex items-center w-full">
+                <Link href="/coaches-corner" className="flex items-center w-full justify-between">
                   <div className="flex items-center gap-3">
                     <PenTool className="h-4 w-4 text-primary" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Coaches Corner</span>
                   </div>
-                  <ChevronRight className="h-3 w-3 ml-auto opacity-40" />
+                  <ChevronRight className="h-3 w-3 opacity-40" />
                 </Link>
               </Button>
               <Button asChild variant="ghost" className="w-full justify-between h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
-                <Link href="/leagues" className="flex items-center w-full">
+                <Link href="/leagues" className="flex items-center w-full justify-between">
                   <div className="flex items-center gap-3">
                     <Shield className="h-4 w-4 text-primary" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Leagues Hub</span>
                   </div>
-                  <ChevronRight className="h-3 w-3 ml-auto opacity-40" />
+                  <ChevronRight className="h-3 w-3 opacity-40" />
                 </Link>
               </Button>
               <Button asChild variant="ghost" className="w-full justify-between h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
-                <Link href="/facilities" className="flex items-center w-full">
+                <Link href="/facilities" className="flex items-center w-full justify-between">
                   <div className="flex items-center gap-3">
                     <MapPin className="h-4 w-4 text-primary" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Facilities</span>
                   </div>
-                  <ChevronRight className="h-3 w-3 ml-auto opacity-40" />
+                  <ChevronRight className="h-3 w-3 opacity-40" />
                 </Link>
               </Button>
               <Button asChild variant="ghost" className="w-full justify-between h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
-                <Link href="/equipment" className="flex items-center w-full">
+                <Link href="/equipment" className="flex items-center w-full justify-between">
                   <div className="flex items-center gap-3">
                     <Package className="h-4 w-4 text-primary" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Equipment</span>
                   </div>
-                  <ChevronRight className="h-3 w-3 ml-auto opacity-40" />
+                  <ChevronRight className="h-3 w-3 opacity-40" />
                 </Link>
               </Button>
             </CardContent>
