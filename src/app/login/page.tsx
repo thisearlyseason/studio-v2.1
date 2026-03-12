@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -38,7 +39,7 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      router.push('/');
+      router.push('/dashboard');
     } catch (error: any) {
       toast({
         title: "Login Failed",
@@ -55,8 +56,8 @@ export default function LoginPage() {
     try {
       await signOut(auth);
       await signInAnonymously(auth);
-      // Redirect to dashboard root with the seed param
-      router.push(`/?seed_demo=${planId}`);
+      // Redirect to unified dashboard with seeding instructions
+      router.push(`/dashboard?seed_demo=${planId}`);
     } catch (error: any) {
       toast({
         title: "Demo Launch Failed",
@@ -137,7 +138,6 @@ export default function LoginPage() {
           </form>
         </Card>
 
-        {/* Interactive Demo Section */}
         <div id="demos" className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-1000 scroll-mt-10 overflow-y-auto max-h-[80vh] custom-scrollbar pr-2">
           <div className="bg-primary text-white p-8 rounded-[3rem] shadow-2xl relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">

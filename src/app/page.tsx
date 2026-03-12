@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { 
   ChevronRight, 
   Calendar, 
@@ -33,14 +34,23 @@ import BrandLogo from '@/components/BrandLogo';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
+import { useUser } from '@/firebase';
 
 export default function LandingPage() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isScrolled, setIsScrolled] = useState(false);
+  const { user, isUserLoading } = useUser();
+  const router = useRouter();
 
   const sportsImages = PlaceHolderImages
     .filter(img => img.id.startsWith('sport-'))
     .map(img => img.imageUrl);
+
+  useEffect(() => {
+    if (!isUserLoading && user) {
+      router.push('/dashboard');
+    }
+  }, [user, isUserLoading, router]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -57,6 +67,8 @@ export default function LandingPage() {
       window.removeEventListener('scroll', handleScroll);
     };
   }, [sportsImages.length]);
+
+  if (user) return null;
 
   return (
     <div className="min-h-screen bg-background selection:bg-primary/20">

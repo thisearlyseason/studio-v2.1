@@ -143,13 +143,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <SidebarMenuItem>
                   <SidebarMenuButton 
                     asChild 
-                    isActive={pathname === '/'} 
+                    isActive={pathname === '/dashboard'} 
                     className={cn(
                       "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                      pathname === '/' ? "bg-primary text-white shadow-lg hover:bg-primary hover:text-white" : "bg-primary/5 text-primary hover:bg-primary/10"
+                      pathname === '/dashboard' ? "bg-primary text-white shadow-lg hover:bg-primary hover:text-white" : "bg-primary/5 text-primary hover:bg-primary/10"
                     )}
                   >
-                    <Link href="/"><Layout className="h-5 w-5 mr-3" />Dashboard</Link>
+                    <Link href="/dashboard"><Layout className="h-5 w-5 mr-3" />Dashboard</Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
 
@@ -264,7 +264,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between">
               <div className="hidden md:block">
                 <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter">
-                  {pathname === '/' ? 'Strategic Command' : coordinationTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard'}
+                  {pathname === '/dashboard' ? 'Strategic Command' : coordinationTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard'}
                 </h2>
               </div>
               <div className="md:hidden"><BrandLogo variant="light-background" className="h-6 w-28" /></div>
