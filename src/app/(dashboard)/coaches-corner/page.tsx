@@ -186,7 +186,7 @@ export default function CoachesCornerPage() {
     if (!activeTeam || !activeProtocol) return;
     
     // Update local UI state immediately for smooth response
-    const updated = { ...activeProtocol, ...updates };
+    const updated = { ...activeProtocol, ...updates } as LeagueRegistrationConfig;
     setActiveProtocol(updated);
 
     if (syncTimeoutRef.current) {
@@ -378,8 +378,8 @@ export default function CoachesCornerPage() {
                             <div className="flex justify-end gap-2">
                               {entry.status === 'pending' && (
                                 <>
-                                  <Button size="sm" variant="ghost" className="rounded-xl h-9 w-9 text-destructive" onClick={() => respondToAssignment('league', entry.id, 'declined')}><XCircle className="h-4 w-4" /></Button>
-                                  <Button size="sm" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] shadow-md" onClick={() => respondToAssignment('league', entry.id, 'accepted')}><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Deploy</Button>
+                                  <Button size="sm" variant="ghost" className="rounded-xl h-9 w-9 text-destructive" onClick={() => respondToAssignment(entry.league_id, entry.id, 'declined')}><XCircle className="h-4 w-4" /></Button>
+                                  <Button size="sm" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] shadow-md" onClick={() => respondToAssignment(entry.league_id, entry.id, 'accepted')}><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Deploy</Button>
                                 </>
                               )}
                               <Dialog>

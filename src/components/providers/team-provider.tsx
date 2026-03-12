@@ -426,10 +426,10 @@ interface TeamContextType {
   acceptLeagueInvite: (inviteId: string, leagueId: string) => Promise<void>;
   manuallyAddTeamToLeague: (leagueId: string, teamName: string, coachEmail?: string, logoUrl?: string) => Promise<void>;
   saveLeagueRegistrationConfig: (leagueId: string, updates: Partial<LeagueRegistrationConfig>) => Promise<void>;
-  submitRegistrationEntry: (leagueId: string, protocolId: string, answers: any, version: number, signature?: string) => Promise<void>;
+  submitRegistrationEntry: (targetId: string, protocolId: string, answers: any, version: number, signature?: string, targetType?: 'leagues' | 'teams') => Promise<void>;
   assignEntryToTeam: (leagueId: string, entryId: string, teamId: string | null) => Promise<void>;
   toggleRegistrationPaymentStatus: (leagueId: string, entryId: string, paid: boolean) => Promise<void>;
-  respondToAssignment: (leagueId: string, entryId: string, status: 'accepted' | 'declined') => Promise<void>;
+  respondToAssignment: (contextId: string, entryId: string, status: 'accepted' | 'declined') => Promise<void>;
   addRegistration: (teamId: string, eventId: string, data: any) => Promise<boolean>;
   signTeamTournamentWaiver: (teamId: string, eventId: string, tournamentTeamName: string) => Promise<void>;
   signPublicTournamentWaiver: (teamId: string, eventId: string, tournamentTeamName: string, coachName: string) => Promise<boolean>;
@@ -974,15 +974,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       toast({ title: "Protocol Config Synchronized" });
     },
 
-    submitRegistrationEntry: async (leagueId: string, protocolId: string, answers: any, version: number, signature?: string) => {
-      await addDoc(collection(db, 'leagues', leagueId, 'registrationEntries'), clean({ 
-        league_id: leagueId, 
+    submitRegistrationEntry: async (targetId: string, protocolId: string, answers: any, version: number, signature?: string, targetType: 'leagues' | 'teams' = 'leagues') => {
+      await addDoc(collection(db, targetType, targetId, 'registrationEntries'), clean({ 
+        league_id: targetId, 
         protocol_id: protocolId,
         answers, 
         status: 'pending', 
         created_at: new Date().toISOString(), 
         form_version: version,
-        waiver_signed_text: signature 
+        waiver_signed_text: signature,
+        target_type: targetType
       }));
     },
 
@@ -1002,11 +1003,22 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { payment_received: paid });
     },
 
-    respondToAssignment: async (leagueId: string, entryId: string, status: 'accepted' | 'declined') => {
+    respondToAssignment: async (contextId: string, entryId: string, status: 'accepted' | 'declined') => {
       if (!activeTeam) return;
-      const entryRef = doc(db, 'leagues', leagueId, 'registrationEntries', entryId);
-      const entrySnap = await getDoc(entryRef);
-      if (!entrySnap.exists()) return;
+      
+      // Try to find the entry in both leagues and teams collections
+      let entryRef = doc(db, 'leagues', contextId, 'registrationEntries', entryId);
+      let entrySnap = await getDoc(entryRef);
+      
+      if (!entrySnap.exists()) {
+        entryRef = doc(db, 'teams', contextId, 'registrationEntries', entryId);
+        entrySnap = await getDoc(entryRef);
+      }
+
+      if (!entrySnap.exists()) {
+        toast({ title: "Entry Not Found", variant: "destructive" });
+        return;
+      }
       
       const batch = writeBatch(db);
       batch.update(entryRef, { status });
