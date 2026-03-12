@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -57,10 +58,11 @@ import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 export default function LeagueRegistrationAdminPage() {
   const { leagueId } = useParams();
   const router = useRouter();
-  const { saveLeagueRegistrationConfig, assignEntryToTeam, activeLeague, isClubManager, hasFeature, toggleRegistrationPaymentStatus, purchasePro } = useTeam();
+  const { saveLeagueRegistrationConfig, assignEntryToTeam, activeTeam, isClubManager, hasFeature, toggleRegistrationPaymentStatus, purchasePro, isStaff } = useTeam();
   const db = useFirestore();
 
-  const canRegister = hasFeature('league_registration');
+  // ACCESS LOGIC: Registration hub is available to any staff on an Elite Pro squad.
+  const canRegister = hasFeature('league_registration') || (activeTeam?.isPro && isStaff);
 
   const configRef = useMemoFirebase(() => (db && leagueId) ? doc(db, 'leagues', leagueId as string, 'registration', 'config') : null, [db, leagueId]);
   const { data: config, isLoading: isConfigLoading } = useDoc<LeagueRegistrationConfig>(configRef);

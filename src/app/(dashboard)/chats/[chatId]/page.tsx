@@ -190,48 +190,59 @@ export default function ChatRoomPage() {
   }
 
   const currentMemberIds = currentChat?.memberIds || [];
+  const activeMembers = teamMembers.filter(m => currentMemberIds.includes(m.userId));
   const availableMembers = teamMembers.filter(m => !currentMemberIds.includes(m.userId));
 
   return (
     <div className="flex flex-col h-[calc(100vh-160px)] md:h-[calc(100vh-130px)] -mt-4 md:-mt-4 -mx-4 overflow-hidden bg-muted/5">
-      <div className="flex items-center gap-3 p-4 border-b bg-white sticky top-0 z-20 shadow-sm">
-        <Button variant="ghost" size="icon" onClick={() => router.push('/chats')} className="rounded-xl h-10 w-10 shrink-0">
-          <ChevronLeft className="h-6 w-6" />
-        </Button>
-        <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
-          <Hash className="h-5 w-5 stroke-[3px]" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h2 className="font-black truncate text-lg tracking-tight uppercase leading-none">{currentChat?.name}</h2>
-          <div className="flex items-center gap-2 mt-1">
-            <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Active Coordination</p>
+      <div className="flex flex-col p-4 border-b bg-white sticky top-0 z-20 shadow-sm gap-3">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => router.push('/chats')} className="rounded-xl h-10 w-10 shrink-0">
+            <ChevronLeft className="h-6 w-6" />
+          </Button>
+          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+            <Hash className="h-5 w-5 stroke-[3px]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="font-black truncate text-lg tracking-tight uppercase leading-none">{currentChat?.name}</h2>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Active Coordination</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary" onClick={() => setIsMembersDialogOpen(true)}>
+              <Users className="h-5 w-5" />
+            </Button>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary">
+                  <MoreVertical className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 rounded-2xl p-2 shadow-2xl">
+                <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsRenameDialogOpen(true)}>
+                  <Edit3 className="h-4 w-4 text-primary" /> Rename Tactical Group
+                </DropdownMenuItem>
+                <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsMembersDialogOpen(true)}>
+                  <UserPlus className="h-4 w-4 text-primary" /> Manage Squad Members
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="my-2" />
+                <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3 text-destructive" onClick={handleDeleteChat}>
+                  <Trash2 className="h-4 w-4" /> {isStaff ? 'Delete Global Hub' : 'Hide from Operations'}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary" onClick={() => setIsMembersDialogOpen(true)}>
-            <Users className="h-5 w-5" />
-          </Button>
-          
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary">
-                <MoreVertical className="h-5 w-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 rounded-2xl p-2 shadow-2xl">
-              <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsRenameDialogOpen(true)}>
-                <Edit3 className="h-4 w-4 text-primary" /> Rename Tactical Group
-              </DropdownMenuItem>
-              <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsMembersDialogOpen(true)}>
-                <UserPlus className="h-4 w-4 text-primary" /> Manage Squad Members
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="my-2" />
-              <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3 text-destructive" onClick={handleDeleteChat}>
-                <Trash2 className="h-4 w-4" /> {isStaff ? 'Delete Global Hub' : 'Hide from Operations'}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <div className="flex items-center gap-2 px-1 overflow-x-auto custom-scrollbar whitespace-nowrap pb-1">
+          <p className="text-[8px] font-black uppercase text-muted-foreground/60 tracking-widest shrink-0">Members:</p>
+          {activeMembers.map((m, i) => (
+            <span key={m.id} className="text-[9px] font-bold text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full uppercase">
+              {m.name}{i < activeMembers.length - 1 ? '' : ''}
+            </span>
+          ))}
         </div>
       </div>
 
@@ -406,7 +417,7 @@ export default function ChatRoomPage() {
               <div className="space-y-3">
                 <p className="text-[10px] font-black uppercase text-muted-foreground px-1 tracking-widest">Active Teammates ({currentMemberIds.length})</p>
                 <div className="max-h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
-                  {teamMembers.filter(m => currentMemberIds.includes(m.userId)).map(m => (
+                  {activeMembers.map(m => (
                     <div key={m.id} className="flex items-center gap-3 p-3 bg-primary/5 rounded-2xl border border-primary/10">
                       <Avatar className="h-8 w-8 rounded-xl border-2 border-background shadow-sm">
                         <AvatarImage src={m.avatar} />
@@ -437,7 +448,12 @@ export default function ChatRoomPage() {
                             <p className="text-[8px] font-bold text-muted-foreground uppercase">{m.position}</p>
                           </div>
                         </div>
-                        <Button size="sm" variant="ghost" className="h-8 w-8 rounded-xl p-0 hover:bg-primary hover:text-white" onClick={() => handleAddMember(m.userId)}>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-8 w-8 rounded-xl p-0 hover:bg-destructive hover:text-destructive-foreground transition-all" 
+                          onClick={() => handleAddMember(m.userId)}
+                        >
                           <Plus className="h-4 w-4" />
                         </Button>
                       </div>
