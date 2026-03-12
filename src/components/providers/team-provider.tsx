@@ -849,9 +849,30 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     },
 
     createLeague: async (name: string) => {
-      if (!firebaseUser) return '';
-      const docRef = await addDoc(collection(db, 'leagues'), clean({ name, sport: 'Multi-Sport', teams: {}, creatorId: firebaseUser.uid, registrationEnabled: true }));
-      return docRef.id;
+      if (!firebaseUser || !activeTeam) return '';
+      const tid = activeTeam.id;
+      const tName = activeTeam.name;
+      const batch = writeBatch(db);
+      
+      const leagueRef = doc(collection(db, 'leagues'));
+      const leagueId = leagueRef.id;
+      
+      batch.set(leagueRef, clean({ 
+        id: leagueId, 
+        name, 
+        sport: activeTeam.sport || 'Multi-Sport', 
+        teams: { 
+          [tid]: { teamName: tName, wins: 0, losses: 0, ties: 0, points: 0, teamLogoUrl: activeTeam.teamLogoUrl || null } 
+        }, 
+        creatorId: firebaseUser.uid, 
+        registrationEnabled: true 
+      }));
+      
+      batch.update(doc(db, 'teams', tid), { leagueIds: arrayUnion(leagueId) });
+      batch.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { leagueIds: arrayUnion(leagueId) });
+      
+      await batch.commit(); 
+      return leagueId;
     },
 
     inviteTeamToLeague: async (leagueId: string, leagueName: string, email: string) => {

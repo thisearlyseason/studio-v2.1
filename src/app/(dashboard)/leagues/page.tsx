@@ -26,7 +26,10 @@ import {
   Globe,
   Info,
   ClipboardList,
-  ArrowUpRight
+  ArrowUpRight,
+  TrendingUp,
+  Activity,
+  BarChart2
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -131,10 +134,9 @@ export default function LeaguesPage() {
   const [scoutTeamId, setScoutTeamId] = useState<string | null>(null);
   const [scoutTeamName, setScoutTeamName] = useState<string | null>(null);
 
-  const canRegister = hasFeature('league_registration');
-
   const leaguesQuery = useMemoFirebase(() => {
     if (!isAuthResolved || !activeTeam?.id || !db) return null;
+    // Query leagues where the active team is present in the teams map
     return query(collection(db, 'leagues'), where(`teams.${activeTeam.id}`, '!=', null));
   }, [isAuthResolved, activeTeam?.id, db]);
 
@@ -169,11 +171,16 @@ export default function LeaguesPage() {
   const handleCreateLeague = async () => {
     if (!leagueName.trim()) return;
     setIsProcessing(true);
-    await createLeague(leagueName);
-    setIsCreateOpen(false);
-    setLeagueName('');
-    setIsProcessing(false);
-    toast({ title: "League Established", description: `${leagueName} is now live.` });
+    try {
+      await createLeague(leagueName);
+      setIsCreateOpen(false);
+      setLeagueName('');
+      toast({ title: "League Established", description: `${leagueName} is now live.` });
+    } catch (e) {
+      toast({ title: "Creation Failed", variant: "destructive" });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleSendInvite = async () => {
@@ -213,7 +220,7 @@ export default function LeaguesPage() {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Opening Standings...</p>
+        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Opening Standings Hub...</p>
       </div>
     );
   }
@@ -229,7 +236,7 @@ export default function LeaguesPage() {
         {!activeLeague && isStaff && (
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
-              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20">
+              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 transition-all active:scale-95">
                 <Plus className="h-5 w-5 mr-2" /> Start New League
               </Button>
             </DialogTrigger>
@@ -255,7 +262,8 @@ export default function LeaguesPage() {
       </div>
 
       {activeLeague ? (
-        <div className="space-y-8">
+        <div className="space-y-8 animate-in fade-in duration-700">
+          {/* League Premium Header */}
           <Card className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-black text-white relative group">
             <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
               <Shield className="h-48 w-48" />
@@ -267,15 +275,18 @@ export default function LeaguesPage() {
                     <Trophy className="h-10 w-10 text-white" />
                   </div>
                   <div>
-                    <Badge className="bg-primary text-white mb-2 h-5 text-[8px] uppercase tracking-[0.2em] font-black px-3">Premier Hub</Badge>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge className="bg-primary text-white border-none h-5 text-[8px] uppercase tracking-[0.2em] font-black px-3">Premier Hub</Badge>
+                      {isPro && <Badge variant="outline" className="border-white/20 text-white h-5 text-[8px] uppercase font-black px-2">ELITE ACCESS</Badge>}
+                    </div>
                     <h2 className="text-4xl font-black tracking-tight leading-none uppercase">{activeLeague.name}</h2>
                     <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-2">{activeLeague.sport} • {Object.keys(activeLeague.teams || {}).length} Squads Enrolled</p>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center justify-center gap-3">
                   {isStaff && (
                     isPro ? (
-                      <Button asChild variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest border-white/20 bg-white/10 text-white hover:bg-white/20">
+                      <Button asChild className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20">
                         <Link href={`/leagues/registration/${activeLeague.id}`}>
                           <ClipboardList className="h-4 w-4 mr-2" />
                           Registration Hub
@@ -353,6 +364,43 @@ export default function LeaguesPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Premium Performance Module (Pro Only) */}
+          {isPro && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4 ring-1 ring-black/5">
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 p-2 rounded-xl text-primary"><TrendingUp className="h-5 w-5" /></div>
+                  <h4 className="text-[10px] font-black uppercase tracking-widest">Win Trajectory</h4>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-black text-primary">Top 10%</span>
+                  <span className="text-[8px] font-bold text-muted-foreground uppercase">League Standing</span>
+                </div>
+              </Card>
+              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4 ring-1 ring-black/5">
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 p-2 rounded-xl text-primary"><Activity className="h-5 w-5" /></div>
+                  <h4 className="text-[10px] font-black uppercase tracking-widest">Avg PPG</h4>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-black">14.2</span>
+                  <span className="text-[8px] font-bold text-muted-foreground uppercase">+2.1 vs League Avg</span>
+                </div>
+              </Card>
+              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4 ring-1 ring-black/5">
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 p-2 rounded-xl text-primary"><BarChart2 className="h-5 w-5" /></div>
+                  <h4 className="text-[10px] font-black uppercase tracking-widest">Recruitment Pulse</h4>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-black">Active</span>
+                  <span className="text-[8px] font-bold text-muted-foreground uppercase">High Engagement</span>
+                </div>
+              </Card>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-6">
               <div className="flex items-center justify-between px-2">
@@ -455,7 +503,7 @@ export default function LeaguesPage() {
           </div>
           {isStaff && (
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-              <Button className="h-12 px-8 rounded-xl font-black uppercase text-xs tracking-widest" onClick={() => setIsCreateOpen(true)}>Create Hub League</Button>
+              <Button className="h-12 px-8 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>Create Hub League</Button>
               <div className="relative group">
                 <Button variant="outline" className="h-12 px-8 rounded-xl font-black uppercase text-xs tracking-widest border-2 opacity-50 cursor-not-allowed">Browse Public Leagues</Button>
                 <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-500 text-white font-black text-[8px] uppercase px-2 h-5 shadow-lg whitespace-nowrap">Coming Soon</Badge>

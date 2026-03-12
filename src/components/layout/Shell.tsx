@@ -100,8 +100,8 @@ const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boo
         className={cn(
           "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
           isActive 
-            ? "bg-primary/10 text-primary shadow-none hover:bg-primary/10 hover:text-primary" 
-            : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
+            ? "bg-primary/5 text-primary shadow-none hover:bg-primary/5 hover:text-primary" 
+            : "text-muted-foreground hover:bg-muted/50 hover:text-primary"
         )}
       >
         <Link href={tab.href} className="flex items-center justify-between w-full">
@@ -146,7 +146,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     isActive={pathname === '/dashboard'} 
                     className={cn(
                       "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                      pathname === '/dashboard' ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
+                      pathname === '/dashboard' ? "bg-primary/5 text-primary" : "text-muted-foreground hover:bg-muted/50 hover:text-primary"
                     )}
                   >
                     <Link href="/dashboard" className={cn(pathname === '/dashboard' && "text-primary")}>
@@ -162,7 +162,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       isActive={pathname === '/family'} 
                       className={cn(
                         "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                        pathname === '/family' ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
+                        pathname === '/family' ? "bg-primary/5 text-primary" : "text-muted-foreground hover:bg-muted/50 hover:text-primary"
                       )}
                     >
                       <Link href="/family" className={cn(pathname === '/family' && "text-primary")}>
@@ -179,7 +179,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       isActive={pathname === '/club'} 
                       className={cn(
                         "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                        pathname === '/club' ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
+                        pathname === '/club' ? "bg-primary/5 text-primary" : "text-muted-foreground hover:bg-muted/50 hover:text-primary"
                       )}
                     >
                       <Link href="/club" className={cn(pathname === '/club' && "text-primary")}>
