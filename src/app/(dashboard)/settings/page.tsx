@@ -31,7 +31,13 @@ import {
   ArrowRight,
   RotateCcw,
   AlertTriangle,
-  BookOpen
+  BookOpen,
+  Trophy,
+  Clock,
+  Target,
+  Activity,
+  Users,
+  Info
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -39,7 +45,7 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogTrigger,
-  DialogDescription,
+  DialogDescription, 
   DialogFooter
 } from '@/components/ui/dialog';
 import { 
@@ -51,21 +57,26 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useTeam } from '@/components/providers/team-provider';
 import { useAuth } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
 
 export default function SettingsPage() {
-  const { user, updateUser, members, activeTeam, updateMember, manageSubscription, isPro, isClubManager, resetSeasonData, isStaff } = useTeam();
+  const { user, updateUser, members, activeTeam, updateMember, manageSubscription, isPro, isClubManager, resetSquadData, isStaff } = useTeam();
   const auth = useAuth();
   const router = useRouter();
   const [notifications, setNotifications] = useState(true);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isResetOpen, setIsResetOpen] = useState(false);
+  const [isDoubleConfirmOpen, setIsDoubleConfirmOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [resetOptions, setResetOptions] = useState<string[]>(['games', 'events']);
   const [mounted, setMounted] = useState(false);
   const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -143,6 +154,23 @@ export default function SettingsPage() {
     }
     setIsEditOpen(false);
     toast({ title: "Profile Updated" });
+  };
+
+  const handleResetClick = () => {
+    const highImpact = resetOptions.includes('members') || resetOptions.includes('facilities');
+    if (highImpact) {
+      setIsDoubleConfirmOpen(true);
+    } else {
+      handleFinalReset();
+    }
+  };
+
+  const handleFinalReset = async () => {
+    setIsProcessing(true);
+    await resetSquadData(resetOptions);
+    setIsResetOpen(false);
+    setIsDoubleConfirmOpen(false);
+    setIsProcessing(false);
   };
 
   const handleLogout = async () => {
@@ -276,8 +304,8 @@ export default function SettingsPage() {
                 </button>
               )}
               {isAdmin && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
+                <Dialog open={isResetOpen} onOpenChange={setIsResetOpen}>
+                  <DialogTrigger asChild>
                     <button className="w-full p-4 flex items-center justify-between hover:bg-red-50 transition-colors group">
                       <div className="flex items-center gap-3">
                         <div className="bg-red-100 p-2.5 rounded-2xl text-red-600"><RotateCcw className="h-5 w-5" /></div>
@@ -288,19 +316,55 @@ export default function SettingsPage() {
                       </div>
                       <ChevronRight className="h-4 w-4 text-muted-foreground opacity-30 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
                     </button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
-                    <AlertDialogHeader>
-                      <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle className="h-8 w-8 text-red-600" /></div>
-                      <AlertDialogTitle className="text-center text-2xl font-black">Purge Season Data?</AlertDialogTitle>
-                      <AlertDialogDescription className="text-center text-base font-medium pt-2">This will permanently delete all logged games, tournament brackets, and schedule itineraries for the current year. This action cannot be undone.</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter className="mt-6">
-                      <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={resetSeasonData} className="rounded-xl font-black bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/20">Purge & Reset</AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                  </DialogTrigger>
+                  <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden">
+                    <div className="h-2 bg-primary w-full" />
+                    <div className="p-8 space-y-6">
+                      <DialogHeader>
+                        <div className="flex items-center gap-3 mb-2">
+                          <AlertTriangle className="h-6 w-6 text-primary" />
+                          <DialogTitle className="text-2xl font-black uppercase tracking-tight">Season Purge</DialogTitle>
+                        </div>
+                        <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-widest">Select data categories to wipe for the new season.</DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-2">
+                        {[
+                          { id: 'games', label: 'Match Ledger (Win/Loss Records)', icon: Trophy },
+                          { id: 'events', label: 'Itinerary (Matches & Practices)', icon: Clock },
+                          { id: 'scouting', label: 'Scouting Intel (Opponent Reports)', icon: Target },
+                          { id: 'feed', label: 'Squad Feed (Historical Broadcasts)', icon: Activity },
+                          { id: 'members', label: 'Squad Roster (Players & Members)', icon: Users },
+                          { id: 'facilities', label: 'Facility Data (Venues & Fields)', icon: Building }
+                        ].map(opt => (
+                          <div key={opt.id} className={cn(
+                            "flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer",
+                            resetOptions.includes(opt.id) ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:border-muted"
+                          )} onClick={() => setResetOptions(prev => prev.includes(opt.id) ? prev.filter(i => i !== opt.id) : [...prev, opt.id])}>
+                            <div className="flex items-center gap-3">
+                              <opt.icon className={cn("h-4 w-4", resetOptions.includes(opt.id) ? "text-primary" : "text-muted-foreground opacity-60")} />
+                              <span className="text-xs font-black uppercase">{opt.label}</span>
+                            </div>
+                            <Checkbox checked={resetOptions.includes(opt.id)} onCheckedChange={() => {}} className="rounded-lg h-5 w-5" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="bg-amber-50 p-4 rounded-2xl border-2 border-dashed border-amber-200 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Info className="h-3 w-3 text-amber-600" />
+                          <p className="text-[9px] font-black uppercase text-amber-700 tracking-widest">Strategic Reminder</p>
+                        </div>
+                        <p className="text-[10px] font-bold text-amber-800 leading-relaxed italic">
+                          Ensure you have exported all Match Ledgers and Scouting Intel as CSV files before proceeding.
+                        </p>
+                      </div>
+                      <DialogFooter>
+                        <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleResetClick} disabled={isProcessing || resetOptions.length === 0}>
+                          {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Tactical Reset"}
+                        </Button>
+                      </DialogFooter>
+                    </div>
+                  </DialogContent>
+                </Dialog>
               )}
               <button onClick={() => router.push('/privacy')} className="w-full p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group"><div className="flex items-center gap-3"><div className="bg-amber-100 p-2.5 rounded-2xl text-amber-600"><Lock className="h-5 w-5" /></div><div className="text-left"><p className="text-sm font-bold">Privacy & Security</p><p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Manage your account protection</p></div></div><ChevronRight className="h-4 w-4 text-muted-foreground opacity-30 group-hover:opacity-100 group-hover:translate-x-1 transition-all" /></button>
               <button onClick={() => router.push('/safety')} className="w-full p-4 flex items-center justify-between hover:bg-muted/30 transition-colors group"><div className="flex items-center gap-3"><div className="bg-green-100 p-2.5 rounded-2xl text-green-600"><HelpCircle className="h-5 w-5" /></div><div className="text-left"><p className="text-sm font-bold">Help & Support</p><p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Get assistance or report an issue</p></div></div><ChevronRight className="h-4 w-4 text-muted-foreground opacity-30 group-hover:opacity-100 group-hover:translate-x-1 transition-all" /></button>
@@ -310,6 +374,24 @@ export default function SettingsPage() {
         <Card className="border-none shadow-sm rounded-3xl overflow-hidden ring-1 ring-black/5"><CardContent className="p-0"><button onClick={handleLogout} className="w-full p-4 flex items-center justify-between hover:bg-destructive/5 text-destructive transition-colors group"><div className="flex items-center gap-3"><div className="bg-destructive/10 p-2.5 rounded-2xl"><LogOut className="h-5 w-5" /></div><div className="text-left"><p className="text-sm font-bold">Log Out</p><p className="text-[10px] opacity-70 font-bold uppercase tracking-widest">Sign out of your session</p></div></div></button></CardContent></Card>
       </div>
       <div className="text-center pt-4"><p className="text-[10px] text-muted-foreground font-black uppercase tracking-[0.2em] opacity-40">The Squad v1.0.0 • Professional Team Hub</p></div>
+
+      <AlertDialog open={isDoubleConfirmOpen} onOpenChange={setIsDoubleConfirmOpen}>
+        <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
+          <AlertDialogHeader>
+            <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="h-8 w-8 text-red-600" />
+            </div>
+            <AlertDialogTitle className="text-center text-2xl font-black uppercase">Irreversible Purge</AlertDialogTitle>
+            <AlertDialogDescription className="text-center text-base font-medium pt-2 text-foreground/80">
+              You have selected high-impact data categories (Roster or Facilities). This will permanently delete squad members or organization venue records. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-6">
+            <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel Operation</AlertDialogCancel>
+            <AlertDialogAction onClick={handleFinalReset} className="rounded-xl font-black bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/20">Purge Permanently</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -702,21 +702,36 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     },
     
     resetSquadData: async (categories: string[]) => {
-      if (!activeTeam || !db) return;
+      if (!activeTeam || !db || !firebaseUser) return;
       const batch = writeBatch(db);
       for (const cat of categories) {
         let collPath = '';
         if (cat === 'games') collPath = `teams/${activeTeam.id}/games`;
-        if (cat === 'events') collPath = `teams/${activeTeam.id}/events`;
-        if (cat === 'scouting') collPath = `teams/${activeTeam.id}/scouting`;
-        if (cat === 'feed') collPath = `teams/${activeTeam.id}/feedPosts`;
+        else if (cat === 'events') collPath = `teams/${activeTeam.id}/events`;
+        else if (cat === 'scouting') collPath = `teams/${activeTeam.id}/scouting`;
+        else if (cat === 'feed') collPath = `teams/${activeTeam.id}/feedPosts`;
+        else if (cat === 'volunteers') collPath = `teams/${activeTeam.id}/volunteers`;
+        else if (cat === 'fundraising') collPath = `teams/${activeTeam.id}/fundraising`;
+        else if (cat === 'members') {
+          const membersSnap = await getDocs(collection(db, `teams/${activeTeam.id}/members`));
+          membersSnap.docs.forEach(d => {
+            if (d.id !== firebaseUser.uid) batch.delete(d.ref);
+          });
+          continue;
+        }
+        else if (cat === 'facilities') {
+          const facSnap = await getDocs(query(collection(db, 'facilities'), where('clubId', '==', firebaseUser.uid)));
+          facSnap.docs.forEach(d => batch.delete(d.ref));
+          continue;
+        }
+
         if (collPath) {
           const snap = await getDocs(collection(db, collPath));
           snap.docs.forEach(d => batch.delete(d.ref));
         }
       }
       await batch.commit();
-      toast({ title: "Season Reset Complete" });
+      toast({ title: "Strategic Purge Complete" });
     },
 
     resetSeasonData: async () => {

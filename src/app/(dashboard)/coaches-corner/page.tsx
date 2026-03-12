@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -34,7 +35,8 @@ import {
   Activity,
   AlertTriangle,
   Target,
-  Trophy
+  Trophy,
+  Building
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -45,6 +47,16 @@ import {
   DialogFooter,
   DialogDescription
 } from '@/components/ui/dialog';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   Select, 
   SelectContent, 
@@ -103,6 +115,7 @@ export default function CoachesCornerPage() {
   
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isResetOpen, setIsResetOpen] = useState(false);
+  const [isDoubleConfirmOpen, setIsDoubleConfirmOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<TeamDocument | null>(null);
   const [newDoc, setNewDoc] = useState({ title: '', content: '', type: 'waiver' as any, assignedTo: ['all'] });
@@ -128,10 +141,20 @@ export default function CoachesCornerPage() {
     toast({ title: "Document Deployed" });
   };
 
-  const handleResetSeason = async () => {
+  const handleResetClick = () => {
+    const highImpact = resetOptions.includes('members') || resetOptions.includes('facilities');
+    if (highImpact) {
+      setIsDoubleConfirmOpen(true);
+    } else {
+      handleFinalReset();
+    }
+  };
+
+  const handleFinalReset = async () => {
     setIsProcessing(true);
     await resetSquadData(resetOptions);
     setIsResetOpen(false);
+    setIsDoubleConfirmOpen(false);
     setIsProcessing(false);
   };
 
@@ -180,7 +203,7 @@ export default function CoachesCornerPage() {
         <div className="flex flex-wrap gap-2">
           <Dialog open={isResetOpen} onOpenChange={setIsResetOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" className="h-12 px-6 rounded-xl font-black uppercase text-[10px] border-2 border-primary/20 text-primary hover:bg-primary/5">
+              <Button variant="outline" className="h-12 px-6 rounded-xl font-black uppercase text-[10px] border-2 border-primary/20 text-primary hover:bg-primary/5 hover:text-black transition-colors">
                 <RotateCcw className="h-4 w-4 mr-2" /> Reset Season
               </Button>
             </DialogTrigger>
@@ -199,27 +222,33 @@ export default function CoachesCornerPage() {
                     { id: 'games', label: 'Match Ledger (Win/Loss Records)', icon: Trophy },
                     { id: 'events', label: 'Itinerary (Matches & Practices)', icon: Clock },
                     { id: 'scouting', label: 'Scouting Intel (Opponent Reports)', icon: Target },
-                    { id: 'feed', label: 'Squad Feed (Historical Broadcasts)', icon: Activity }
+                    { id: 'feed', label: 'Squad Feed (Historical Broadcasts)', icon: Activity },
+                    { id: 'members', label: 'Squad Roster (Players & Members)', icon: Users },
+                    { id: 'facilities', label: 'Facility Data (Venues & Fields)', icon: Building }
                   ].map(opt => (
                     <div key={opt.id} className={cn(
                       "flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer",
                       resetOptions.includes(opt.id) ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:border-muted"
                     )} onClick={() => setResetOptions(prev => prev.includes(opt.id) ? prev.filter(i => i !== opt.id) : [...prev, opt.id])}>
                       <div className="flex items-center gap-3">
-                        <opt.icon className="h-4 w-4 text-primary opacity-60" />
+                        <opt.icon className={cn("h-4 w-4", resetOptions.includes(opt.id) ? "text-primary" : "text-muted-foreground opacity-60")} />
                         <span className="text-xs font-black uppercase">{opt.label}</span>
                       </div>
                       <Checkbox checked={resetOptions.includes(opt.id)} onCheckedChange={() => {}} className="rounded-lg h-5 w-5" />
                     </div>
                   ))}
                 </div>
-                <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10">
-                  <p className="text-[10px] font-bold text-primary leading-relaxed text-center italic">
-                    Note: Members, Rosters, and Facility data will NOT be deleted.
+                <div className="bg-amber-50 p-4 rounded-2xl border-2 border-dashed border-amber-200 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Info className="h-3 w-3 text-amber-600" />
+                    <p className="text-[9px] font-black uppercase text-amber-700 tracking-widest">Strategic Reminder</p>
+                  </div>
+                  <p className="text-[10px] font-bold text-amber-800 leading-relaxed italic">
+                    Ensure you have exported all Match Ledgers and Scouting Intel as CSV files before proceeding.
                   </p>
                 </div>
                 <DialogFooter>
-                  <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleResetSeason} disabled={isProcessing || resetOptions.length === 0}>
+                  <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleResetClick} disabled={isProcessing || resetOptions.length === 0}>
                     {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Tactical Reset"}
                   </Button>
                 </DialogFooter>
@@ -351,6 +380,24 @@ export default function CoachesCornerPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={isDoubleConfirmOpen} onOpenChange={setIsDoubleConfirmOpen}>
+        <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
+          <AlertDialogHeader>
+            <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="h-8 w-8 text-red-600" />
+            </div>
+            <AlertDialogTitle className="text-center text-2xl font-black uppercase">Irreversible Purge</AlertDialogTitle>
+            <AlertDialogDescription className="text-center text-base font-medium pt-2 text-foreground/80">
+              You have selected high-impact data categories (Roster or Facilities). This will permanently delete squad members or organization venue records. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-6">
+            <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel Operation</AlertDialogCancel>
+            <AlertDialogAction onClick={handleFinalReset} className="rounded-xl font-black bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/20">Purge Permanently</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
