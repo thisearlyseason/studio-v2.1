@@ -1,4 +1,3 @@
-
 "use client";
 
 import Shell from '@/components/layout/Shell';
@@ -41,8 +40,9 @@ export default function DashboardLayout({
       setIsDemoInitializing(true);
       const seed = async () => {
         await seedSubscriptionData(db);
-        const tid = await seedGuestDemoTeam(db, user.uid, demoPlanId);
-        window.location.href = '/feed'; // Refresh to clean URL
+        await seedGuestDemoTeam(db, user.uid, demoPlanId);
+        // Redirect to root dashboard after seeding is complete
+        window.location.href = '/'; 
       };
       seed();
     }
@@ -57,11 +57,6 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (!mounted || isSeedingDemo || isTeamsLoading || !user || isDemoInitializing) return;
-
-    if (userProfile?.isDemo && pathname === '/') {
-      router.push('/feed');
-      return;
-    }
 
     const isSetupPage = pathname === '/teams/new' || 
                         pathname === '/teams/join' || 

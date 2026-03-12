@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -39,7 +38,7 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      router.push('/feed');
+      router.push('/');
     } catch (error: any) {
       toast({
         title: "Login Failed",
@@ -56,7 +55,8 @@ export default function LoginPage() {
     try {
       await signOut(auth);
       await signInAnonymously(auth);
-      router.push(`/feed?seed_demo=${planId}`);
+      // Redirect to dashboard root with the seed param
+      router.push(`/?seed_demo=${planId}`);
     } catch (error: any) {
       toast({
         title: "Demo Launch Failed",
