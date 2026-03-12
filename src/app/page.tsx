@@ -114,7 +114,6 @@ export default function LandingPage() {
     try {
       await signOut(auth);
       await signInAnonymously(auth);
-      // Use window.location.href to ensure a clean slate for the demo entry
       window.location.href = `/dashboard?seed_demo=${planId}`;
     } catch (error: any) {
       toast({
@@ -348,8 +347,8 @@ export default function LandingPage() {
               <tbody className="divide-y">
                 {[
                   { feature: "AI Scouting Analyst", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Built-in GenAI tactical analysis" },
-                  { feature: "75% Film Watch Rule", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Verified compliance monitoring" },
-                  { feature: "Auto-Brackets + Public Hub", squad: true, tsnap: "Partial", hudl: false, treach: false, gchanger: "Scores Only", note: "One-click championship series" },
+                  { feature: "75% Film Watch Rule", squad: true, tsnap: false, hudl: "Partial", treach: false, gchanger: false, note: "Verified compliance monitoring" },
+                  { feature: "Auto-Brackets + Public Hub", squad: true, tsnap: "Partial", hudl: false, treach: false, gchanger: "Basic", note: "One-click championship series" },
                   { feature: "Form Architect (Recruitment)", squad: true, tsnap: "Add-on", hudl: false, treach: false, gchanger: false, note: "Custom data entry + waivers" },
                   { feature: "Institutional Fiscal Audit", squad: true, tsnap: "Partial", hudl: false, treach: false, gchanger: false, note: "Club-wide dues aggregation" },
                   { feature: "Encrypted Tactical Chat", squad: true, tsnap: true, hudl: true, treach: true, gchanger: true, note: "Foundational comms" },
