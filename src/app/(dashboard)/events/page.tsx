@@ -62,7 +62,7 @@ import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebas
 import { collection, query, orderBy, doc, where, collectionGroup, getDocs } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
-import { format, isSameDay, isPast, addMinutes, parse, eachDayOfInterval } from 'date-fns';
+import { format, isSameDay, isPast, addMinutes, parse, eachDayOfInterval, isValid } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -166,20 +166,26 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   useEffect(() => {
     if (typeof window !== 'undefined') setBaseUrl(window.location.origin);
     
-    if (event.isTournament) {
+    if (event.isTournament && event.date) {
       const start = new Date(event.date);
       const end = event.endDate ? new Date(event.endDate) : start;
-      try {
-        const days = eachDayOfInterval({ start, end });
-        const config: Record<string, { start: string, end: string }> = {};
-        days.forEach(day => {
-          const key = format(day, 'yyyy-MM-dd');
-          config[key] = { start: '09:00', end: '21:00' };
-        });
-        setDayConfigs(config);
-      } catch (e) {}
+      
+      if (isValid(start)) {
+        try {
+          const days = eachDayOfInterval({ start, end: isValid(end) ? end : start });
+          const config: Record<string, { start: string, end: string }> = {};
+          days.forEach(day => {
+            const key = format(day, 'yyyy-MM-dd');
+            // Preserve existing time settings if already in state, otherwise default
+            config[key] = dayConfigs[key] || { start: '09:00', end: '21:00' };
+          });
+          setDayConfigs(config);
+        } catch (e) {
+          console.error("Auto-scheduler date generation error:", e);
+        }
+      }
     }
-  }, [event]);
+  }, [event.date, event.endDate, event.isTournament]);
 
   const tournamentStandings = useMemo(() => (event.isTournament && event.tournamentTeams) ? calculateTournamentStandings(event.tournamentTeams, event.tournamentGames || []) : [], [event]);
   
@@ -684,7 +690,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     </TabsContent>
                   </div>
                 </ScrollArea>
-              </Tabs>
+              </div>
             </div>
           </div>
         </div>
@@ -752,7 +758,7 @@ export default function EventsPage() {
   const { data: facilities } = useCollection<Facility>(facilitiesQuery);
 
   const fieldsQuery = useMemoFirebase(() => db ? query(collectionGroup(db, 'fields')) : null, [db]);
-  const { data: allFields } = useCollection<Field>(fieldsQuery);
+  const { data: allFields, isLoading: isFieldsLoading } = useCollection<Field>(fieldsQuery);
 
   const filteredEvents = useMemo(() => { 
     const now = new Date(); 
@@ -865,7 +871,7 @@ export default function EventsPage() {
                     <div className="space-y-1.5">
                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label>
                       <Select value={eventType} onValueChange={(v: EventType) => setEventType(v)}>
-                        <SelectTrigger className="h-12 rounded-xl font-black border-2 bg-white"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="h-12 rounded-xl border-2 bg-white"><SelectValue /></SelectTrigger>
                         <SelectContent className="rounded-xl"><SelectItem value="game">Match Day</SelectItem><SelectItem value="practice">Training</SelectItem><SelectItem value="meeting">Tactical Meeting</SelectItem><SelectItem value="other">Event</SelectItem></SelectContent>
                       </Select>
                     </div> 
@@ -929,7 +935,12 @@ export default function EventsPage() {
                       <div className="space-y-3 animate-in slide-in-from-top-2">
                         <p className="text-[9px] font-black uppercase text-primary ml-1">Assign Fields/Courts</p>
                         <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                          {selectedFacilityIds.map(fid => {
+                          {isFieldsLoading ? (
+                            <div className="flex items-center justify-center py-4 gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                              <span className="text-[10px] font-black uppercase opacity-40">Synchronizing Resources...</span>
+                            </div>
+                          ) : selectedFacilityIds.map(fid => {
                             const fac = facilities?.find(f => f.id === fid);
                             const facFields = allFields?.filter(f => f.facilityId === fid) || [];
                             return (
@@ -942,7 +953,11 @@ export default function EventsPage() {
                                       <span className="truncate">{field.name}</span>
                                     </div>
                                   ))}
-                                  {facFields.length === 0 && <p className="text-[8px] italic opacity-40 px-2">No fields registered.</p>}
+                                  {facFields.length === 0 && (
+                                    <div className="col-span-full p-4 text-center border-2 border-dashed rounded-xl opacity-40">
+                                      <p className="text-[8px] font-black uppercase">No fields registered for this venue.</p>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             );
