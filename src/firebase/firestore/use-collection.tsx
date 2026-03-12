@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -56,12 +55,11 @@ export function useCollection<T = any>(
     } catch (e) {}
 
     const trimmedPath = (path || '').trim();
-    if (!trimmedPath || trimmedPath === '/' || trimmedPath === '//' || trimmedPath.includes('//')) {
-      if (trimmedPath !== 'query') {
-        setData(null);
-        setIsLoading(false);
-        return;
-      }
+    // CRITICAL FIX: Explicitly block root paths and the 'query' fallback string
+    if (!trimmedPath || trimmedPath === '/' || trimmedPath === '//' || trimmedPath.includes('//') || trimmedPath === 'query') {
+      setData(null);
+      setIsLoading(false);
+      return;
     }
 
     setIsLoading(true);
@@ -83,7 +81,7 @@ export function useCollection<T = any>(
         if (!isMounted.current) return;
         
         // Suppress errors for transient/invalid paths during auth handshake
-        if (!trimmedPath || trimmedPath === '/' || trimmedPath.includes('demo_guest')) {
+        if (!trimmedPath || trimmedPath === '/' || trimmedPath.includes('demo_guest') || trimmedPath === 'query') {
           setIsLoading(false);
           return;
         }
