@@ -10,6 +10,8 @@ import { RevenueCatPaywall } from '@/components/RevenueCatPaywall';
 import { QuotaResolutionOverlay } from '@/components/layout/QuotaResolutionOverlay';
 import { useTeam } from '@/components/providers/team-provider';
 import { Loader2 } from 'lucide-react';
+import { seedGuestDemoTeam, seedSubscriptionData } from '@/lib/db-seeder';
+import { useFirestore } from '@/firebase';
 
 export default function DashboardLayout({
   children,
@@ -17,14 +19,34 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { user, isUserLoading } = useUser();
-  const { teams, isTeamsLoading, isSeedingDemo, user: userProfile } = useTeam();
+  const { teams, isTeamsLoading, isSeedingDemo, user: userProfile, setActiveTeam } = useTeam();
+  const db = useFirestore();
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const [isDemoInitializing, setIsDemoInitializing] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Handle Demo Seeding
+  useEffect(() => {
+    if (!mounted || !user || isDemoInitializing) return;
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const demoPlanId = urlParams.get('seed_demo');
+    
+    if (demoPlanId && teams.length === 0) {
+      setIsDemoInitializing(true);
+      const seed = async () => {
+        await seedSubscriptionData(db);
+        const tid = await seedGuestDemoTeam(db, user.uid, demoPlanId);
+        window.location.href = '/feed'; // Refresh to clean URL
+      };
+      seed();
+    }
+  }, [mounted, user, teams.length, db, isDemoInitializing]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -34,15 +56,13 @@ export default function DashboardLayout({
   }, [user, isUserLoading, router, mounted]);
 
   useEffect(() => {
-    if (!mounted || isSeedingDemo || isTeamsLoading || !user) return;
+    if (!mounted || isSeedingDemo || isTeamsLoading || !user || isDemoInitializing) return;
 
-    // Force demo users to land on the feed first
     if (userProfile?.isDemo && pathname === '/') {
       router.push('/feed');
       return;
     }
 
-    // Exclude settings and pricing to allow management
     const isSetupPage = pathname === '/teams/new' || 
                         pathname === '/teams/join' || 
                         pathname === '/family' || 
@@ -59,13 +79,9 @@ export default function DashboardLayout({
         router.push('/teams/join');
       }
     }
-  }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, mounted]);
+  }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, mounted, isDemoInitializing]);
 
-  /**
-   * HYDRATION GUARD: Ensuring the initial render handshake between server and client.
-   * Return a consistent loading state until mounted to prevent reconciliation mismatches.
-   */
-  if (!mounted || isUserLoading || !user || isSeedingDemo) {
+  if (!mounted || isUserLoading || !user || isSeedingDemo || isDemoInitializing) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-6 animate-in fade-in duration-500">
@@ -76,7 +92,7 @@ export default function DashboardLayout({
           </div>
           <div className="text-center space-y-2">
             <p className="text-lg font-black uppercase tracking-widest text-primary">
-              Authenticating...
+              {isDemoInitializing ? "Seeding Demo..." : "Authenticating..."}
             </p>
             <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest opacity-60">
               Synchronising Elite Infrastructure

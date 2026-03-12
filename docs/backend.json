@@ -97,6 +97,10 @@
         "definition": { "entityName": "Team", "description": "Squad data hub." }
       },
       {
+        "path": "/teams/{teamId}/documents/{docId}/signatures/{sigId}",
+        "definition": { "entityName": "DocumentSignature", "description": "Verified legal signatures." }
+      },
+      {
         "path": "/facilities/{facilityId}",
         "definition": { "entityName": "Facility", "description": "Venue management." }
       },
