@@ -427,19 +427,19 @@ export default function LandingPage() {
                   <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
                     <Mail className="h-5 w-5" />
                   </div>
-                  <span className="font-bold">team@thesquad.pro</span>
+                  <span className="font-bold text-foreground">team@thesquad.pro</span>
                 </div>
                 <div className="flex items-center gap-4 group">
                   <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
                     <MapPin className="h-5 w-5" />
                   </div>
-                  <span className="font-bold">Worldwide</span>
+                  <span className="font-bold text-foreground">Worldwide</span>
                 </div>
                 <div className="flex items-center gap-4 group">
                   <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
                     <Infinity className="h-5 w-5" />
                   </div>
-                  <span className="font-bold">Unlimited Starter Support</span>
+                  <span className="font-bold text-foreground">Unlimited Starter Support</span>
                 </div>
               </div>
             </div>
