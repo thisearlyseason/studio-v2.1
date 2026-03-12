@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -60,8 +61,9 @@ export default function LoginPage() {
 
   const DEMO_LIST = [
     { id: 'starter_squad', name: 'Starter Demo', icon: Users, desc: 'Grassroots essentials' },
-    { id: 'elite_teams', name: 'Elite Team Demo', icon: Zap, desc: 'Advanced coordination & analytics' },
-    { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Individual teammate view' },
+    { id: 'squad_pro', name: 'Squad Pro Demo', icon: Zap, desc: 'Professional elite coordination' },
+    { id: 'elite_teams', name: 'Elite Org Demo', icon: Trophy, desc: 'Institutional multi-team hub' },
+    { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Teammate recruiting view' },
     { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Guardian safety view' }
   ];
 
@@ -162,7 +164,7 @@ export default function LoginPage() {
                     <demo.icon className="h-7 w-7" />
                   </div>
                   <div className="text-left">
-                    <p className="font-black text-base uppercase tracking-tight">{demo.name}</p>
+                    <p className="font-black text-sm uppercase tracking-tight">{demo.name}</p>
                     <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{demo.desc}</p>
                   </div>
                 </div>

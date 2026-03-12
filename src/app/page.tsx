@@ -69,8 +69,9 @@ import {
 
 const DEMO_OPTIONS = [
   { id: 'starter_squad', name: 'Starter Demo', icon: Users, desc: 'Grassroots essentials' },
-  { id: 'elite_teams', name: 'Elite Team Demo', icon: Zap, desc: 'Advanced coordination & analytics' },
-  { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Individual teammate view' },
+  { id: 'squad_pro', name: 'Squad Pro Demo', icon: Zap, desc: 'Professional elite coordination' },
+  { id: 'elite_teams', name: 'Elite Org Demo', icon: Trophy, desc: 'Institutional multi-team hub' },
+  { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Teammate recruiting view' },
   { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Guardian safety view' }
 ];
 
