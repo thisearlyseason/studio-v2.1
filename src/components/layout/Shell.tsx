@@ -372,7 +372,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </header>
             
             <main className="flex-1 overflow-y-auto p-4 md:p-10 max-w-7xl mx-auto w-full custom-scrollbar pb-32 md:pb-10">
-              <AlertOverlay />
               {children}
             </main>
 
@@ -402,18 +401,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   );
                 })}
 
+                <button 
+                  onClick={() => setIsMoreMenuOpen(true)}
+                  className="flex flex-col items-center justify-center w-14 h-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all relative"
+                >
+                  <Menu className="h-5 w-5 stroke-[2.5]" />
+                  {unreadAlertsCount > 0 && (
+                    <span className="absolute top-2 right-3 h-2 w-2 bg-primary rounded-full border border-white" />
+                  )}
+                  <span className="text-[7px] font-black uppercase tracking-tighter mt-0.5">More</span>
+                </button>
+
                 <Sheet open={isMoreMenuOpen} onOpenChange={setIsMoreMenuOpen}>
-                  <SheetTrigger asChild>
-                    <button 
-                      className="flex flex-col items-center justify-center w-14 h-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all relative"
-                    >
-                      <Menu className="h-5 w-5 stroke-[2.5]" />
-                      {unreadAlertsCount > 0 && (
-                        <span className="absolute top-2 right-3 h-2 w-2 bg-primary rounded-full border border-white" />
-                      )}
-                      <span className="text-[7px] font-black uppercase tracking-tighter mt-0.5">More</span>
-                    </button>
-                  </SheetTrigger>
                   <SheetContent side="bottom" className="rounded-t-[3rem] p-0 border-none shadow-2xl h-[80vh] flex flex-col">
                     <div className="h-2 bg-primary w-full shrink-0" />
                     <SheetHeader className="p-8 pb-4">

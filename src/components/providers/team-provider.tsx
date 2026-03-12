@@ -2,7 +2,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
-import { useFirebase, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
+import { useFirebase, useFirestore, useMemoFirebase, useUser } from '@/firebase';
 import { 
   collection, 
   query, 
@@ -438,6 +438,7 @@ interface TeamContextType {
   manageSubscription: () => Promise<void>;
   resolveQuota: (selectedTeamIds: string[]) => Promise<void>;
   createAlert: (title: string, message: string, audience: TeamAlert['audience']) => Promise<void>;
+  deleteAlert: (alertId: string) => Promise<void>;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -1098,6 +1099,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         title, message, audience, createdAt: new Date().toISOString(), createdBy: firebaseUser.uid
       }));
       toast({ title: "Broadcast Dispatched", description: `Sent to ${audience}.` });
+    },
+
+    deleteAlert: async (alertId: string) => {
+      if (!activeTeam) return;
+      await deleteDoc(doc(db, 'teams', activeTeam.id, 'alerts', alertId));
+      toast({ title: "Broadcast Purged" });
     }
   };
 

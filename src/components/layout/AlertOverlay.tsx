@@ -24,11 +24,12 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { Megaphone, Bell, Info, History, Clock, X, Lock, Users, ShieldAlert, GraduationCap, Baby } from 'lucide-react';
+import { Megaphone, Bell, Info, History, Clock, X, Lock, Users, ShieldAlert, GraduationCap, Baby, Trash2 } from 'lucide-react';
 import { useTeam, TeamAlert } from '@/components/providers/team-provider';
 import { formatDistanceToNow } from 'date-fns';
 
 const SEEN_ALERTS_KEY = 'squad_seen_alerts_ids';
+const DISMISSED_ALERTS_KEY = 'squad_dismissed_alerts_ids';
 
 /**
  * Handles the automatic one-time popup for high priority alerts
@@ -76,6 +77,8 @@ export function AlertOverlay() {
       if (prev.includes(id)) return prev;
       const updated = [...prev, id];
       localStorage.setItem(SEEN_ALERTS_KEY, JSON.stringify(updated));
+      // Notify other components (like Shell bell indicator)
+      window.dispatchEvent(new Event('storage'));
       return updated;
     });
   };
@@ -125,20 +128,27 @@ export function AlertOverlay() {
 }
 
 export function AlertsHistoryDialog({ children }: { children: React.ReactNode }) {
-  const { alerts = [], isStaff, isPlayer, isParent } = useTeam();
+  const { alerts = [], isStaff, isPlayer, isParent, deleteAlert } = useTeam();
   const [isOpen, setIsOpen] = useState(false);
   const [seenIds, setSeenIds] = useState<string[]>([]);
+  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
 
   useEffect(() => {
-    const stored = localStorage.getItem(SEEN_ALERTS_KEY);
-    if (stored) {
-      try {
-        setSeenIds(JSON.parse(stored));
-      } catch (e) {}
-    }
+    const loadIds = () => {
+      const storedSeen = localStorage.getItem(SEEN_ALERTS_KEY);
+      if (storedSeen) {
+        try { setSeenIds(JSON.parse(storedSeen)); } catch (e) {}
+      }
+      const storedDismissed = localStorage.getItem(DISMISSED_ALERTS_KEY);
+      if (storedDismissed) {
+        try { setDismissedIds(JSON.parse(storedDismissed)); } catch (e) {}
+      }
+    };
+    loadIds();
   }, [isOpen]);
 
   const myAlerts = alerts.filter(alert => {
+    if (dismissedIds.includes(alert.id)) return false;
     if (alert.audience === 'everyone') return true;
     if (alert.audience === 'coaches' && isStaff) return true;
     if (alert.audience === 'players' && isPlayer) return true;
@@ -148,10 +158,16 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
 
   const markAllAsSeen = () => {
     const allIds = myAlerts.map(a => a.id);
-    localStorage.setItem(SEEN_ALERTS_KEY, JSON.stringify(allIds));
-    setSeenIds(allIds);
-    // Force a visual update
+    const updated = Array.from(new Set([...seenIds, ...allIds]));
+    localStorage.setItem(SEEN_ALERTS_KEY, JSON.stringify(updated));
+    setSeenIds(updated);
     window.dispatchEvent(new Event('storage'));
+  };
+
+  const dismissAlertLocal = (id: string) => {
+    const updated = [...dismissedIds, id];
+    localStorage.setItem(DISMISSED_ALERTS_KEY, JSON.stringify(updated));
+    setDismissedIds(updated);
   };
 
   return (
@@ -166,9 +182,11 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
               <History className="h-6 w-6 text-primary" />
               <DialogTitle className="text-2xl font-black uppercase tracking-tight">Alerts History</DialogTitle>
             </div>
-            <Button variant="ghost" size="sm" className="text-[10px] font-black uppercase tracking-widest h-8 px-3 hover:bg-primary/5 text-primary" onClick={markAllAsSeen}>
-              Mark all read
-            </Button>
+            {myAlerts.length > 0 && (
+              <Button variant="ghost" size="sm" className="text-[10px] font-black uppercase tracking-widest h-8 px-3 hover:bg-primary/5 text-primary" onClick={markAllAsSeen}>
+                Mark all read
+              </Button>
+            )}
           </div>
         </DialogHeader>
         <ScrollArea className="max-h-[450px] px-8 pb-8">
@@ -176,7 +194,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
             {myAlerts.length > 0 ? myAlerts.map((alert) => (
               <div key={alert.id} className="group relative p-5 rounded-2xl bg-muted/30 border-2 border-transparent hover:border-primary/10 transition-all">
                 {!seenIds.includes(alert.id) && (
-                  <div className="absolute top-5 right-5 h-2 w-2 bg-primary rounded-full animate-pulse shadow-[0_0_8px_rgba(255,0,0,0.5)]" />
+                  <div className="absolute top-5 right-5 h-2.5 w-2.5 bg-primary rounded-full animate-pulse shadow-[0_0_8px_rgba(255,0,0,0.5)]" />
                 )}
                 <div className="flex items-start gap-4">
                   <div className="bg-white p-2.5 rounded-xl shadow-sm border shrink-0">
@@ -184,13 +202,25 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-1">
-                      <h4 className="font-black text-sm tracking-tight leading-tight uppercase truncate">{alert.title}</h4>
+                      <h4 className="font-black text-sm tracking-tight leading-tight uppercase truncate pr-6">{alert.title}</h4>
                       <Badge variant="outline" className="text-[7px] font-black uppercase px-1.5 h-4 border-primary/20 text-primary">{alert.audience}</Badge>
                     </div>
                     <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">"{alert.message}"</p>
-                    <div className="flex items-center gap-1.5 mt-3 opacity-50">
-                      <Clock className="h-3 w-3" />
-                      <span className="text-[9px] font-black uppercase tracking-widest">{formatDistanceToNow(new Date(alert.createdAt))} ago</span>
+                    <div className="flex items-center justify-between mt-3">
+                      <div className="flex items-center gap-1.5 opacity-50">
+                        <Clock className="h-3 w-3" />
+                        <span className="text-[9px] font-black uppercase tracking-widest">{formatDistanceToNow(new Date(alert.createdAt))} ago</span>
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg hover:bg-white text-muted-foreground hover:text-primary" onClick={() => dismissAlertLocal(alert.id)}>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                        {isStaff && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg hover:bg-white text-destructive" onClick={() => deleteAlert(alert.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
