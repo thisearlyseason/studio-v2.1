@@ -40,7 +40,9 @@ import {
   Zap,
   CheckCircle2,
   Home,
-  Users
+  Users,
+  Menu,
+  MoreHorizontal
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -68,6 +70,14 @@ import {
   SidebarSeparator,
   SidebarTrigger
 } from "@/components/ui/sidebar";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import BrandLogo from '@/components/BrandLogo';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -127,6 +137,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     isClubManager, isStaff, isParent, hasFeature
   } = useTeam();
 
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+
   const filteredCoordTabs = coordinationTabs.filter(tab => {
     if (tab.gate === 'staff_or_parent') return isStaff || isParent;
     if (tab.name === 'Feed' && isParent && !activeTeam?.parentCommentsEnabled) return false;
@@ -138,7 +150,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     { name: 'Schedule', href: '/events', icon: CalendarDays },
     { name: 'Feed', href: '/feed', icon: LayoutDashboard, gate: () => hasFeature('live_feed_read') },
     { name: 'Chats', href: '/chats', icon: MessageCircle },
-    { name: 'Profile', href: '/team', icon: Users },
   ];
 
   return (
@@ -296,7 +307,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <div className="flex flex-col flex-1 h-screen overflow-hidden">
             <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between">
               <div className="flex items-center gap-4">
-                <div className="md:hidden"><SidebarTrigger className="h-10 w-10 text-foreground" /></div>
+                <div className="md:hidden">
+                  <SidebarTrigger className="h-10 w-10 text-foreground" />
+                </div>
                 <div className="hidden md:block">
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
                     {pathname === '/dashboard' ? 'Strategic Command' : coordinationTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard'}
@@ -320,33 +333,155 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </div>
             </header>
             
-            <main className="flex-1 overflow-y-auto p-4 md:p-10 max-w-7xl mx-auto w-full custom-scrollbar pb-24 md:pb-10">
+            <main className="flex-1 overflow-y-auto p-4 md:p-10 max-w-7xl mx-auto w-full custom-scrollbar pb-32 md:pb-10">
               {children}
             </main>
 
-            {/* Mobile Bottom Navigation Bar */}
-            <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-white/95 backdrop-blur-md border-t border-muted z-50 flex items-center justify-around px-4 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
-              {bottomNavItems.map((item) => {
-                if (item.gate && !item.gate()) return null;
-                const isActive = pathname === item.href;
-                return (
-                  <Link key={item.name} href={item.href} className="flex flex-col items-center gap-1 group">
-                    <div className={cn(
-                      "p-2 rounded-xl transition-all",
-                      isActive ? "bg-primary text-white shadow-lg shadow-primary/20 scale-110" : "text-muted-foreground group-hover:text-primary"
-                    )}>
+            {/* Floating Mobile Bottom Navigation Bar */}
+            <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-max max-w-[95vw]">
+              <nav className="flex items-center gap-1 bg-white/95 backdrop-blur-md border rounded-full px-2 py-2 shadow-2xl ring-1 ring-black/5">
+                {bottomNavItems.map((item) => {
+                  if (item.gate && !item.gate()) return null;
+                  const isActive = pathname === item.href;
+                  return (
+                    <Link 
+                      key={item.name} 
+                      href={item.href} 
+                      className={cn(
+                        "flex flex-col items-center justify-center w-14 h-12 rounded-full transition-all duration-300",
+                        isActive ? "bg-primary text-white shadow-lg shadow-primary/20 scale-105" : "text-muted-foreground hover:text-primary hover:bg-primary/5"
+                      )}
+                    >
                       <item.icon className={cn("h-5 w-5", isActive ? "stroke-[3px]" : "stroke-[2.5]")} />
-                    </div>
-                    <span className={cn(
-                      "text-[8px] font-black uppercase tracking-widest",
-                      isActive ? "text-primary" : "text-muted-foreground"
-                    )}>
-                      {item.name}
-                    </span>
-                  </Link>
-                );
-              })}
-            </nav>
+                      <span className={cn(
+                        "text-[7px] font-black uppercase tracking-tighter mt-0.5",
+                        isActive ? "text-white" : "text-muted-foreground"
+                      )}>
+                        {item.name}
+                      </span>
+                    </Link>
+                  );
+                })}
+
+                <Sheet open={isMoreMenuOpen} onOpenChange={setIsMoreMenuOpen}>
+                  <SheetTrigger asChild>
+                    <button 
+                      className="flex flex-col items-center justify-center w-14 h-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all"
+                    >
+                      <Menu className="h-5 w-5 stroke-[2.5]" />
+                      <span className="text-[7px] font-black uppercase tracking-tighter mt-0.5">More</span>
+                    </button>
+                  </SheetTrigger>
+                  <SheetContent side="bottom" className="rounded-t-[3rem] p-0 border-none shadow-2xl h-[80vh] flex flex-col">
+                    <div className="h-2 bg-primary w-full shrink-0" />
+                    <SheetHeader className="p-8 pb-4">
+                      <SheetTitle className="text-2xl font-black uppercase tracking-tight">Tactical Menu</SheetTitle>
+                      <SheetDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">
+                        Extended Squad Operations
+                      </SheetDescription>
+                    </SheetHeader>
+                    <ScrollArea className="flex-1 px-6 pb-10">
+                      <div className="space-y-8 pt-4">
+                        <div className="space-y-3">
+                          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Operational Hub</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            {coordinationTabs.map((tab) => {
+                              if (tab.gate === 'staff_or_parent' && !(isStaff || isParent)) return null;
+                              if (bottomNavItems.find(item => item.href === tab.href)) return null;
+                              const isLocked = tab.pro && !isPro && isStaff;
+                              
+                              return (
+                                <Link 
+                                  key={tab.name} 
+                                  href={tab.href}
+                                  onClick={() => setIsMoreMenuOpen(false)}
+                                  className={cn(
+                                    "flex items-center gap-3 p-4 rounded-2xl border transition-all group active:scale-95",
+                                    pathname === tab.href ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:bg-white hover:border-primary/20"
+                                  )}
+                                >
+                                  <div className={cn(
+                                    "p-2 rounded-xl transition-colors",
+                                    pathname === tab.href ? "bg-primary text-white" : "bg-white text-muted-foreground group-hover:text-primary"
+                                  )}>
+                                    <tab.icon className="h-4 w-4" />
+                                  </div>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className={cn(
+                                      "text-[10px] font-black uppercase tracking-tight truncate",
+                                      pathname === tab.href ? "text-primary" : "text-foreground"
+                                    )}>
+                                      {tab.name}
+                                    </span>
+                                    {isLocked && <span className="text-[7px] font-bold text-muted-foreground flex items-center gap-1 uppercase tracking-tighter"><Lock className="h-2 w-2" /> PRO</span>}
+                                  </div>
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {isStaff && (
+                          <div className="space-y-3">
+                            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Command Hub</p>
+                            <div className="grid grid-cols-1 gap-2">
+                              {adminTabs.map((tab) => {
+                                const isLocked = tab.pro && !isPro;
+                                return (
+                                  <Link 
+                                    key={tab.name} 
+                                    href={tab.href}
+                                    onClick={() => setIsMoreMenuOpen(false)}
+                                    className={cn(
+                                      "flex items-center justify-between p-4 rounded-2xl border bg-black text-white transition-all active:scale-[0.98]",
+                                      pathname === tab.href ? "ring-2 ring-primary ring-offset-2" : ""
+                                    )}
+                                  >
+                                    <div className="flex items-center gap-4">
+                                      <div className="bg-primary/20 p-2 rounded-xl text-primary">
+                                        <tab.icon className="h-5 w-5" />
+                                      </div>
+                                      <div className="flex flex-col">
+                                        <span className="text-xs font-black uppercase tracking-widest">{tab.name}</span>
+                                        <span className="text-[8px] font-bold text-white/40 uppercase">{tab.desc}</span>
+                                      </div>
+                                    </div>
+                                    {isLocked ? <Lock className="h-4 w-4 text-white/20" /> : <ChevronRight className="h-4 w-4 text-white/20" />}
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-3">
+                          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Account Management</p>
+                          <div className="grid grid-cols-1 gap-2">
+                            <Link 
+                              href="/settings"
+                              onClick={() => setIsMoreMenuOpen(false)}
+                              className="flex items-center justify-between p-4 rounded-2xl border bg-muted/30 border-transparent transition-all"
+                            >
+                              <div className="flex items-center gap-4">
+                                <Avatar className="h-8 w-8 rounded-xl border shadow-sm">
+                                  <AvatarImage src={user?.avatar} />
+                                  <AvatarFallback className="font-black text-[10px]">{user?.name?.[0]}</AvatarFallback>
+                                </Avatar>
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-black uppercase tracking-widest">Profile & Settings</span>
+                                  <span className="text-[8px] font-bold text-muted-foreground uppercase">Managed Global ID</span>
+                                </div>
+                              </div>
+                              <ChevronRight className="h-4 w-4 text-muted-foreground/30" />
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </ScrollArea>
+                  </SheetContent>
+                </Sheet>
+              </nav>
+            </div>
           </div>
         </div>
       </div>
