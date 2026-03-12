@@ -263,6 +263,20 @@ export type League = {
   registrationEnabled?: boolean;
 };
 
+export type Facility = {
+  id: string;
+  name: string;
+  address: string;
+  clubId: string;
+  notes?: string;
+};
+
+export type Field = {
+  id: string;
+  name: string;
+  facilityId: string;
+};
+
 export type LeagueInvite = {
   id: string;
   leagueId: string;
@@ -403,6 +417,10 @@ interface TeamContextType {
   deleteFile: (id: string) => Promise<void>;
   markMediaAsViewed: (id: string) => Promise<void>;
   addMediaComment: (id: string, text: string) => Promise<void>;
+  addFacility: (data: any) => Promise<void>;
+  deleteFacility: (id: string) => Promise<void>;
+  addField: (facilityId: string, name: string) => Promise<void>;
+  deleteField: (facilityId: string, fieldId: string) => Promise<void>;
   createLeague: (name: string) => Promise<string>;
   inviteTeamToLeague: (leagueId: string, leagueName: string, email: string) => Promise<void>;
   acceptLeagueInvite: (inviteId: string, leagueId: string) => Promise<void>;
@@ -882,6 +900,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await updateDoc(doc(db, 'teams', activeTeam.id, 'files', id), {
         comments: arrayUnion({ id: `c_${Date.now()}`, authorId: userProfile.id, authorName: userProfile.name, text, createdAt: new Date().toISOString() })
       });
+    },
+
+    addFacility: async (data: any) => {
+      if (!firebaseUser) return;
+      await addDoc(collection(db, 'facilities'), clean({ ...data, clubId: firebaseUser.uid, createdAt: new Date().toISOString() }));
+    },
+
+    deleteFacility: async (id: string) => {
+      await deleteDoc(doc(db, 'facilities', id));
+    },
+
+    addField: async (facilityId: string, name: string) => {
+      await addDoc(collection(db, 'facilities', facilityId, 'fields'), clean({ name, facilityId, createdAt: new Date().toISOString() }));
+    },
+
+    deleteField: async (facilityId: string, fieldId: string) => {
+      await deleteDoc(doc(db, 'facilities', facilityId, 'fields', fieldId));
     },
 
     createLeague: async (name: string) => {
