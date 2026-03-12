@@ -22,7 +22,9 @@ import {
   Clock,
   CheckCircle2,
   Paperclip,
-  MessageSquare
+  MessageSquare,
+  Edit3,
+  UserPlus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,30 +34,46 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogTrigger,
-  DialogDescription,
+  DialogDescription, 
   DialogFooter,
   DialogClose
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { suggestPollQuestionAndOptions } from '@/ai/flows/poll-question-and-option-suggestion';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
-import { useTeam, Message } from '@/components/providers/team-provider';
+import { useTeam, Message, Member } from '@/components/providers/team-provider';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { useFirestore, useDoc, useMemoFirebase, useCollection } from '@/firebase';
-import { collection, query, orderBy, limit, doc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { Checkbox } from '@/components/ui/checkbox';
 
 export default function ChatRoomPage() {
   const { chatId } = useParams();
   const router = useRouter();
-  const { addMessage, votePoll, user, formatTime, activeTeam } = useTeam();
+  const { 
+    addMessage, votePoll, user, formatTime, activeTeam, 
+    updateChat, deleteChat, hideChatForUser, members: teamMembers, 
+    isStaff 
+  } = useTeam();
   const db = useFirestore();
   
   const [input, setInput] = useState('');
   const [isPollDialogOpen, setIsPollDialogOpen] = useState(false);
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [isMembersDialogOpen, setIsMembersDialogOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  
   const [pollPrompt, setPollPrompt] = useState('');
   const [pollOptions, setPollOptions] = useState<{text: string, image?: string}[]>([{text: '', image: undefined}, {text: '', image: undefined}]);
   const [suggestedPoll, setSuggestedPoll] = useState<{question: string, options: string[]} | null>(null);
@@ -93,11 +111,41 @@ export default function ChatRoomPage() {
     }
   }, [messages.length]);
 
+  useEffect(() => {
+    if (currentChat) setNewName(currentChat.name);
+  }, [currentChat]);
+
   const handleSendMessage = () => {
     if ((!input.trim() && !chatImage) || !chatId || !user) return;
     addMessage(chatId as string, user.name, input, chatImage ? 'image' : 'text', chatImage);
     setInput('');
     setChatImage(undefined);
+  };
+
+  const handleRename = async () => {
+    if (!newName.trim() || !chatId) return;
+    await updateChat(chatId as string, { name: newName.trim() });
+    setIsRenameDialogOpen(false);
+    toast({ title: "Channel Renamed" });
+  };
+
+  const handleAddMember = async (memberId: string) => {
+    if (!chatId) return;
+    await updateChat(chatId as string, { memberIds: arrayUnion(memberId) });
+    toast({ title: "Squad Member Added" });
+  };
+
+  const handleDeleteChat = async () => {
+    if (!chatId) return;
+    if (isStaff) {
+      await deleteChat(chatId as string);
+      router.push('/chats');
+      toast({ title: "Channel Purged", description: "The group chat has been globally deleted." });
+    } else {
+      await hideChatForUser(chatId as string);
+      router.push('/chats');
+      toast({ title: "Channel Hidden", description: "Removed from your personal tactical view." });
+    }
   };
 
   const handleSuggestPoll = async () => {
@@ -136,6 +184,9 @@ export default function ChatRoomPage() {
     );
   }
 
+  const currentMemberIds = currentChat?.memberIds || [];
+  const availableMembers = teamMembers.filter(m => !currentMemberIds.includes(m.userId));
+
   return (
     <div className="flex flex-col h-[calc(100vh-160px)] md:h-[calc(100vh-130px)] -mt-4 md:-mt-4 -mx-4 overflow-hidden bg-muted/5">
       <div className="flex items-center gap-3 p-4 border-b bg-white sticky top-0 z-20 shadow-sm">
@@ -153,12 +204,29 @@ export default function ChatRoomPage() {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary">
+          <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary" onClick={() => setIsMembersDialogOpen(true)}>
             <Users className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary">
-            <MoreVertical className="h-5 w-5" />
-          </Button>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary">
+                <MoreVertical className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 rounded-2xl p-2 shadow-2xl">
+              <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsRenameDialogOpen(true)}>
+                <Edit3 className="h-4 w-4 text-primary" /> Rename Tactical Group
+              </DropdownMenuItem>
+              <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsMembersDialogOpen(true)}>
+                <UserPlus className="h-4 w-4 text-primary" /> Manage Squad Members
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="my-2" />
+              <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3 text-destructive" onClick={handleDeleteChat}>
+                <Trash2 className="h-4 w-4" /> {isStaff ? 'Delete Global Hub' : 'Hide from Operations'}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -300,6 +368,85 @@ export default function ChatRoomPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+        <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-8">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black uppercase tracking-tight">Identity Management</DialogTitle>
+            <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update channel name</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tactical Group Name</Label>
+            <Input 
+              value={newName} 
+              onChange={e => setNewName(e.target.value)} 
+              className="h-14 rounded-2xl border-2 font-black text-lg" 
+            />
+          </div>
+          <DialogFooter>
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleRename}>Commit New Identity</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isMembersDialogOpen} onOpenChange={setIsMembersDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 space-y-6">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Squad Enrollment</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Manage access to coordination channel</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <p className="text-[10px] font-black uppercase text-muted-foreground px-1 tracking-widest">Active Teammates ({currentMemberIds.length})</p>
+                <div className="max-h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                  {teamMembers.filter(m => currentMemberIds.includes(m.userId)).map(m => (
+                    <div key={m.id} className="flex items-center gap-3 p-3 bg-primary/5 rounded-2xl border border-primary/10">
+                      <Avatar className="h-8 w-8 rounded-xl border-2 border-background shadow-sm">
+                        <AvatarImage src={m.avatar} />
+                        <AvatarFallback className="font-black text-[10px] bg-white">{m.name[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="text-xs font-black uppercase truncate">{m.name}</p>
+                        <p className="text-[8px] font-bold text-muted-foreground uppercase">{m.position}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {availableMembers.length > 0 && (
+                <div className="space-y-3 pt-4 border-t">
+                  <p className="text-[10px] font-black uppercase text-primary px-1 tracking-widest">Recruit to Channel</p>
+                  <div className="max-h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                    {availableMembers.map(m => (
+                      <div key={m.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-2xl border border-transparent hover:border-primary/20 transition-all group">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8 rounded-xl border shadow-sm">
+                            <AvatarImage src={m.avatar} />
+                            <AvatarFallback className="font-black text-[10px]">{m.name[0]}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black uppercase truncate">{m.name}</p>
+                            <p className="text-[8px] font-bold text-muted-foreground uppercase">{m.position}</p>
+                          </div>
+                        </div>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 rounded-xl p-0 hover:bg-primary hover:text-white" onClick={() => handleAddMember(m.userId)}>
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-xs tracking-widest border-2" onClick={() => setIsMembersDialogOpen(false)}>Close Roster</Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isPollDialogOpen} onOpenChange={setIsPollDialogOpen}>
         <DialogContent className="sm:max-w-md rounded-[3rem] border-none shadow-2xl overflow-hidden p-0">

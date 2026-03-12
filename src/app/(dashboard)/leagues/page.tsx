@@ -116,7 +116,7 @@ function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: 
 
 export default function LeaguesPage() {
   const { user: authUser, isAuthResolved } = useUser();
-  const { activeTeam, createLeague, inviteTeamToLeague, manuallyAddTeamToLeague, acceptLeagueInvite, hasFeature, purchasePro, createChat, isStaff } = useTeam();
+  const { activeTeam, createLeague, inviteTeamToLeague, manuallyAddTeamToLeague, acceptLeagueInvite, hasFeature, purchasePro, createChat, isStaff, isPro } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
@@ -235,7 +235,7 @@ export default function LeaguesPage() {
             </DialogTrigger>
             <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl">
               <DialogHeader>
-                <DialogTitle className="text-2xl font-black tracking-tight uppercase">League Identity</DialogTitle>
+                <DialogTitle className="text-2xl font-black uppercase tracking-tight">League Identity</DialogTitle>
                 <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Establish a new competitive hub</DialogDescription>
               </DialogHeader>
               <div className="space-y-6 py-4">
@@ -273,8 +273,8 @@ export default function LeaguesPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  {isStaff && activeLeague.creatorId === authUser?.uid && (
-                    canRegister ? (
+                  {isStaff && (
+                    isPro ? (
                       <Button asChild variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest border-white/20 bg-white/10 text-white hover:bg-white/20">
                         <Link href={`/leagues/registration/${activeLeague.id}`}>
                           <ClipboardList className="h-4 w-4 mr-2" />

@@ -316,6 +316,17 @@ export type Field = {
   name: string;
 };
 
+export type Message = {
+  id: string;
+  author: string;
+  authorId: string;
+  content: string;
+  type: 'text' | 'image' | 'poll';
+  imageUrl?: string;
+  poll?: any;
+  createdAt: string;
+};
+
 interface TeamContextType {
   user: UserProfile | null;
   activeTeam: Team | null;
@@ -353,6 +364,9 @@ interface TeamContextType {
   manageSubscription: () => void;
   resetSeasonData: () => Promise<void>;
   createChat: (name: string, memberIds: string[]) => Promise<string>;
+  updateChat: (chatId: string, updates: any) => Promise<void>;
+  deleteChat: (chatId: string) => Promise<void>;
+  hideChatForUser: (chatId: string) => Promise<void>;
   addMessage: (chatId: string, author: string, content: string, type: any, imageUrl?: string, poll?: any) => Promise<void>;
   votePoll: (chatId: string, msgId: string, optIdx: number) => Promise<void>;
   formatTime: (date: string | Date) => string;
@@ -716,8 +730,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     resetSeasonData: async () => { if (!activeTeam) return; toast({ title: "Resetting Season..." }); },
     createChat: async (name: string, memberIds: string[]) => {
       if (!activeTeam || !firebaseUser) return '';
-      const docRef = await addDoc(collection(db, 'teams', activeTeam.id, 'groupChats'), clean({ name: name || 'Team Chat', memberIds: [...memberIds, firebaseUser.uid], createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), lastMessage: 'New channel established.' }));
+      const docRef = await addDoc(collection(db, 'teams', activeTeam.id, 'groupChats'), clean({ name: name || 'Team Chat', memberIds: Array.from(new Set([...memberIds, firebaseUser.uid])), createdBy: firebaseUser.uid, createdAt: new Date().toISOString(), lastMessage: 'New channel established.', isDeleted: false }));
       return docRef.id;
+    },
+    updateChat: async (chatId: string, updates: any) => {
+      if (!activeTeam) return;
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'groupChats', chatId), clean(updates));
+    },
+    deleteChat: async (chatId: string) => {
+      if (!activeTeam) return;
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'groupChats', chatId), { isDeleted: true });
+    },
+    hideChatForUser: async (chatId: string) => {
+      if (!firebaseUser) return;
+      await setDoc(doc(db, 'users', firebaseUser.uid, 'hiddenChats', chatId), {
+        id: chatId,
+        userId: firebaseUser.uid,
+        chatId,
+        hiddenAt: new Date().toISOString()
+      });
     },
     addMessage: async (chatId: string, author: string, content: string, type: any, imageUrl?: string, poll?: any) => {
       if (!activeTeam || !firebaseUser) return;
