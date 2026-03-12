@@ -1,8 +1,6 @@
-
 "use client";
 
 import React, { useState } from 'react';
-import Link from 'next/link';
 import { 
   ChevronLeft, 
   CalendarDays, 
@@ -81,8 +79,6 @@ export default function HowToGuidePage() {
   const router = useRouter();
   const { user } = useUser();
   const [selectedType, setSelectedAccountType] = useState<AccountType | null>(null);
-
-  // --- REUSABLE BLOCK DEFINITIONS ---
 
   const BLOCK_DEPLOYMENT = {
     title: "1. Squad Deployment & Recruitment",
