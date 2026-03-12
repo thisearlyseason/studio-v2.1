@@ -1,4 +1,3 @@
-
 "use client";
 
 import Shell from '@/components/layout/Shell';
@@ -32,6 +31,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
   const [isDemoInitializing, setIsDemoInitializing] = useState(false);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -50,11 +50,14 @@ export default function DashboardLayout({
     }
 
     const checkSession = () => {
-      const elapsed = Date.now() - parseInt(startTime!);
-      const remaining = DEMO_TIMEOUT_MS - elapsed;
+      const start = parseInt(startTime!);
+      const elapsed = Date.now() - start;
+      const remaining = Math.max(0, DEMO_TIMEOUT_MS - elapsed);
+      
+      setTimeLeft(remaining);
 
       // 60-second warning
-      if (remaining <= 60000 && remaining > 55000) {
+      if (remaining <= 60000 && remaining > 59000) {
         toast({
           title: "Session Expiring",
           description: "Guest tactical access ends in 60 seconds.",
@@ -74,10 +77,11 @@ export default function DashboardLayout({
       window.location.href = `/login?reason=${encodeURIComponent(reason)}`;
     };
 
-    // 2. Start heartbeat
-    heartbeatInterval.current = setInterval(checkSession, 5000);
+    // 2. Start heartbeat (update every second for countdown)
+    checkSession();
+    heartbeatInterval.current = setInterval(checkSession, 1000);
 
-    // 3. Immediate reset if they leave
+    // 3. Reset if they leave
     const handleExit = () => {
       sessionStorage.removeItem(DEMO_START_KEY);
     };
@@ -139,6 +143,13 @@ export default function DashboardLayout({
     }
   }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, mounted, isDemoInitializing]);
 
+  const formatTimeLeft = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   if (!mounted || isUserLoading || !user || isSeedingDemo || isDemoInitializing) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background">
@@ -169,9 +180,13 @@ export default function DashboardLayout({
       <Shell>{children}</Shell>
       {userProfile?.isDemo && (
         <div className="fixed bottom-6 right-6 z-[100] pointer-events-none">
-          <Badge className="bg-black/80 backdrop-blur-md text-white border-primary/20 h-10 px-4 rounded-full flex items-center gap-2 shadow-2xl animate-in slide-in-from-bottom-4">
+          <Badge className="bg-black/80 backdrop-blur-md text-white border-primary/20 h-10 px-4 rounded-full flex items-center gap-3 shadow-2xl animate-in slide-in-from-bottom-4">
             <Timer className="h-4 w-4 text-primary animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-widest">Guest Tactical Mode Active</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-widest">Guest Mode</span>
+              <span className="h-4 w-px bg-white/20" />
+              <span className="text-[10px] font-mono font-bold text-primary">{timeLeft !== null ? formatTimeLeft(timeLeft) : '...'}</span>
+            </div>
           </Badge>
         </div>
       )}

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from 'react';
@@ -9,7 +8,7 @@ import {
   Shield, 
   Trophy, 
   Dumbbell, 
-  MessageCircle, 
+  MessageSquare, 
   Users2, 
   FolderClosed,
   Zap,
@@ -52,7 +51,6 @@ import {
   MapPin,
   Package,
   Terminal,
-  MessageSquare,
   Megaphone,
   HandHelping,
   BrainCircuit,
@@ -330,7 +328,7 @@ export default function HowToGuidePage() {
                       type === 'starter' ? "bg-muted" : type === 'pro' ? "bg-primary" : "bg-black"
                     )} />
                     <CardContent className="p-8 space-y-4">
-                      <div className="bg-muted p-4 rounded-2xl w-fit group-hover:bg-primary group-hover:text-white transition-all">
+                      <div className="bg-muted p-4 rounded-2xl w-fit group-hover:bg-primary group-hover:text-white transition-all shadow-inner">
                         <Icon className="h-8 w-8" />
                       </div>
                       <div className="space-y-1">
@@ -360,7 +358,7 @@ export default function HowToGuidePage() {
                 </div>
               </div>
 
-              <div className="bg-muted/30 p-6 rounded-[2rem] border-2 border-dashed">
+              <div className="bg-muted/30 p-6 rounded-[2rem] border-2 border-dashed border-primary/20">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-4 ml-1">Tactical Capability Matrix</p>
                 <div className="flex flex-wrap gap-2">
                   {MANUAL_CONTENT[selectedType].highlights.map((h, i) => (
