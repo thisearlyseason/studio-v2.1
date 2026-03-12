@@ -209,6 +209,7 @@ interface TeamContextType {
   createNewTeam: (name: string, type: "adult" | "youth", pos: string, description?: string, planId?: string) => Promise<string>;
   joinTeamWithCode: (code: string, playerId: string, position: string) => Promise<boolean>;
   registerChild: (firstName: string, lastName: string, dob: string) => Promise<string>;
+  upgradeChildToLogin: (childId: string) => Promise<void>;
   updateUser: (updates: Partial<UserProfile>) => Promise<void>;
   updateMember: (memberId: string, updates: Partial<Member>) => Promise<void>;
   updateTeamDetails: (updates: Partial<Team>) => Promise<void>;
@@ -340,7 +341,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
     const eventUnsubs = teams.map(team => {
       return onSnapshot(collection(db, 'teams', team.id, 'events'), (snap) => {
-        const teamEvts = snap.docs.map(d => ({ id: d.id, ...d.data() } as TeamEvent));
+        const teamEvts = snap.docs.map(d => ({ id: d.id, ...d.data(), teamId: team.id } as TeamEvent));
         setHouseholdEvents(prev => {
           const otherTeams = prev.filter(e => e.teamId !== team.id);
           return [...otherTeams, ...teamEvts].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -405,6 +406,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const docRef = await addDoc(collection(db, 'players'), clean({ firstName, lastName, dateOfBirth: dob, isMinor: true, parentId: firebaseUser.uid, createdAt: new Date().toISOString(), joinedTeamIds: [] }));
       if (userProfile?.role === 'parent') await updateDoc(doc(db, 'households', firebaseUser.uid), { playerIds: arrayUnion(docRef.id) });
       return docRef.id;
+    },
+    upgradeChildToLogin: async (childId: string) => {
+      if (!db || !firebaseUser) return;
+      await updateDoc(doc(db, 'players', childId), { hasLogin: true });
     },
     updateUser: async (updates: Partial<UserProfile>) => {
       if (!firebaseUser) return;

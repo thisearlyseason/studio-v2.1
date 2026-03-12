@@ -31,7 +31,8 @@ import {
   MapPin,
   DollarSign,
   CalendarDays,
-  Activity
+  Activity,
+  FileText
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -53,6 +54,7 @@ export default function FamilyDashboardPage() {
   const router = useRouter();
   
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isNoWaiversOpen, setIsNoWaiversOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [newChild, setNewChild] = useState({ firstName: '', lastName: '', dob: '' });
 
@@ -80,6 +82,15 @@ export default function FamilyDashboardPage() {
       toast({ title: "Player Registered", description: "Your child has been added to your hub." });
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleSignWaiversClick = () => {
+    // Check if there are any active teams or files first
+    if (teams.length === 0) {
+      setIsNoWaiversOpen(true);
+    } else {
+      router.push('/files');
     }
   };
 
@@ -129,7 +140,6 @@ export default function FamilyDashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Statistics & Overview */}
         <div className="lg:col-span-1 space-y-6">
           <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden group">
             <CardContent className="p-8 space-y-6">
@@ -178,7 +188,6 @@ export default function FamilyDashboardPage() {
           </Card>
         </div>
 
-        {/* Aggregated Household Schedule */}
         <div className="lg:col-span-2 space-y-6">
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-3">
@@ -228,7 +237,6 @@ export default function FamilyDashboardPage() {
         </div>
       </div>
 
-      {/* Roster & Individual Profiles */}
       <section className="space-y-6 pt-10 border-t">
         <div className="flex items-center gap-3 px-2">
           <Baby className="h-6 w-6 text-primary" />
@@ -277,17 +285,25 @@ export default function FamilyDashboardPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 pt-4">
-                    <Button variant="outline" className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 group-hover:border-primary transition-colors">
+                    <Button variant="outline" className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 group-hover:border-primary transition-colors" onClick={handleSignWaiversClick}>
                       <Signature className="h-4 w-4 text-primary" />
                       <span>Sign Waivers</span>
                     </Button>
-                    <Button variant="outline" className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1" onClick={() => {}} disabled={child.hasLogin}>
+                    <Button 
+                      variant="outline" 
+                      className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1" 
+                      onClick={() => {
+                        upgradeChildToLogin(child.id);
+                        toast({ title: "Account Initialized", description: `A linked player account for ${child.firstName} has been created and attached to your dashboard.` });
+                      }} 
+                      disabled={child.hasLogin}
+                    >
                       <Key className={cn("h-4 w-4", child.hasLogin ? "text-green-600" : "text-amber-600")} />
                       <span>{child.hasLogin ? "Login Enabled" : "Enable Login"}</span>
                     </Button>
                   </div>
                 </CardContent>
-                <CardFooter className="px-8 lg:px-10 pb-8 pt-0">
+                <CardFooter className="px-8 lg:p-10 pb-8 pt-0">
                   <Button className="w-full h-14 rounded-2xl bg-black text-white font-black uppercase text-xs tracking-widest shadow-xl group-hover:bg-primary transition-colors" onClick={() => router.push('/teams/join')}>
                     Enroll in New League <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
@@ -297,6 +313,32 @@ export default function FamilyDashboardPage() {
           })}
         </div>
       </section>
+
+      <Dialog open={isNoWaiversOpen} onOpenChange={setIsNoWaiversOpen}>
+        <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-10 max-w-md text-center">
+          <div className="bg-primary/5 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <FileText className="h-10 w-10 text-primary" />
+          </div>
+          <DialogHeader>
+            <DialogTitle className="text-3xl font-black uppercase tracking-tight">Compliance Verified</DialogTitle>
+            <DialogDescription className="font-bold text-base text-foreground/80 pt-2 leading-relaxed">
+              No waivers pending for your roster at this time.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-6 space-y-4">
+            <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground leading-relaxed">
+                Make sure you sign up for a league by using the special league code shared by your organization lead!
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={() => router.push('/teams/join')}>
+              Go to Recruitment Hub
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card className="rounded-[3rem] border-none shadow-2xl bg-black text-white overflow-hidden relative">
         <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none">

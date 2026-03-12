@@ -96,7 +96,7 @@ const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boo
         className={cn(
           "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
           isActive 
-            ? "bg-primary text-primary-foreground shadow-lg" 
+            ? "bg-primary text-white shadow-lg" 
             : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
         )}
       >
@@ -136,7 +136,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <BrandLogo variant="light-background" className="h-10 w-44 justify-start mb-10" priority />
               
               {isParent && (
-                <Button asChild className={cn("w-full h-12 rounded-2xl justify-start gap-3 font-black text-xs uppercase tracking-widest mb-6", pathname === '/family' ? "bg-black text-white" : "bg-primary/5 text-primary")}>
+                <Button asChild className={cn("w-full h-12 rounded-2xl justify-start gap-3 font-black text-xs uppercase tracking-widest mb-6", pathname === '/family' ? "bg-primary text-white" : "bg-primary/5 text-primary")}>
                   <Link href="/family"><Baby className="h-5 w-5" />Family Hub</Link>
                 </Button>
               )}
