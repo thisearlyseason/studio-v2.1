@@ -89,13 +89,26 @@ export default function LeagueRegistrationAdminPage() {
   }, [config, localConfig]);
 
   const handleUpdateConfig = (updates: Partial<LeagueRegistrationConfig>, immediate = false) => {
-    if (!leagueId || !localConfig) return;
+    if (!leagueId) return;
     
-    // 1. Update local state immediately for smooth typing
-    const updated = { ...localConfig, ...updates } as LeagueRegistrationConfig;
+    // Fallback to existing config or empty defaults to ensure inputs aren't blocked
+    const base = localConfig || config || {
+      id: 'config',
+      title: '',
+      description: '',
+      registration_cost: '0',
+      payment_instructions: 'Standard instructions.',
+      is_active: false,
+      form_schema: [
+        { id: 'name', type: 'short_text', label: 'Full Name', required: true },
+        { id: 'email', type: 'short_text', label: 'Email Address', required: true }
+      ],
+      form_version: 1
+    };
+
+    const updated = { ...base, ...updates } as LeagueRegistrationConfig;
     setLocalConfig(updated);
 
-    // 2. Clear existing timeout
     if (syncTimeoutRef.current) {
       clearTimeout(syncTimeoutRef.current);
     }
@@ -111,12 +124,11 @@ export default function LeagueRegistrationAdminPage() {
     if (immediate) {
       performSync();
     } else {
-      // 3. Debounce the sync call
       syncTimeoutRef.current = setTimeout(performSync, 1500);
     }
   };
 
-  const formSchema = localConfig?.form_schema || [
+  const formSchema = localConfig?.form_schema || config?.form_schema || [
     { id: 'name', type: 'short_text', label: 'Full Name', required: true },
     { id: 'email', type: 'short_text', label: 'Email Address', required: true }
   ];
@@ -128,13 +140,13 @@ export default function LeagueRegistrationAdminPage() {
   }, [entries, filterStatus]);
 
   const handleAddField = () => {
-    if (!editingField?.label || !editingField?.type || !localConfig) return;
+    if (!editingField?.label || !editingField?.type) return;
     const newField = { ...editingField, id: `f_${Date.now()}` } as RegistrationFormField;
     const updatedSchema = [...formSchema, newField];
     handleUpdateConfig({ 
       form_schema: updatedSchema, 
-      form_version: (localConfig.form_version || 0) + 1 
-    }, true); // Structural changes sync immediately
+      form_version: (localConfig?.form_version || config?.form_version || 0) + 1 
+    }, true); 
     setEditingField(null);
   };
 
@@ -267,15 +279,36 @@ export default function LeagueRegistrationAdminPage() {
                     <div className="bg-primary p-3 rounded-2xl text-white shadow-lg shadow-primary/20"><Globe className="h-6 w-6" /></div>
                     <div><CardTitle className="text-2xl font-black uppercase tracking-tight">Public Protocol</CardTitle><CardDescription className="font-bold text-primary text-[10px] uppercase tracking-widest">Global Signup Visibility</CardDescription></div>
                   </div>
-                  <Switch checked={localConfig?.is_active || false} onCheckedChange={(v) => handleUpdateConfig({ is_active: v }, true)} />
+                  <Switch checked={localConfig?.is_active || config?.is_active || false} onCheckedChange={(v) => handleUpdateConfig({ is_active: v }, true)} />
                 </div>
               </CardHeader>
               <CardContent className="p-8 space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Signup Title</Label><Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-12 rounded-xl font-bold border-2" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Registration Fee</Label><Input value={localConfig?.registration_cost || ''} onChange={e => handleUpdateConfig({ registration_cost: e.target.value })} className="h-12 rounded-xl font-black border-2 text-primary" /></div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Signup Title</Label>
+                    <Input 
+                      value={localConfig?.title ?? config?.title ?? ''} 
+                      onChange={e => handleUpdateConfig({ title: e.target.value })} 
+                      className="h-12 rounded-xl font-bold border-2" 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Registration Fee</Label>
+                    <Input 
+                      value={localConfig?.registration_cost ?? config?.registration_cost ?? ''} 
+                      onChange={e => handleUpdateConfig({ registration_cost: e.target.value })} 
+                      className="h-12 rounded-xl font-black border-2 text-primary" 
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Protocol Brief</Label><Textarea value={localConfig?.description || ''} onChange={e => handleUpdateConfig({ description: e.target.value })} className="rounded-xl min-h-[100px] border-2 font-medium" /></div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Protocol Brief</Label>
+                  <Textarea 
+                    value={localConfig?.description ?? config?.description ?? ''} 
+                    onChange={e => handleUpdateConfig({ description: e.target.value })} 
+                    className="rounded-xl min-h-[100px] border-2 font-medium" 
+                  />
+                </div>
               </CardContent>
             </Card>
 

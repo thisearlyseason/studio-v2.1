@@ -144,7 +144,7 @@ export default function CoachesCornerPage() {
   const protocolsQuery = useMemoFirebase(() => (db && activeTeam) ? collection(db, 'teams', activeTeam.id, 'registration') : null, [db, activeTeam?.id]);
   const { data: protocols } = useCollection<LeagueRegistrationConfig>(protocolsQuery);
 
-  const entriesQuery = useMemoFirebase(() => (db && activeTeam) ? collectionGroup(db, 'registrationEntries') : null, [db, activeTeam?.id]);
+  const entriesQuery = useMemoFirebase(() => (db && activeTeam) ? collectionGroup(db, 'registrationEntries') : null, [db]);
   const { data: allEntries } = useCollection<RegistrationEntry>(entriesQuery);
 
   const teamEntries = useMemo(() => {
@@ -185,11 +185,10 @@ export default function CoachesCornerPage() {
   const handleSaveActiveProtocol = (updates: Partial<LeagueRegistrationConfig>, immediate = false) => {
     if (!activeTeam || !activeProtocol) return;
     
-    // 1. Update local UI state immediately
+    // Update local UI state immediately for smooth response
     const updated = { ...activeProtocol, ...updates };
     setActiveProtocol(updated);
 
-    // 2. Clear existing sync timeout
     if (syncTimeoutRef.current) {
       clearTimeout(syncTimeoutRef.current);
     }
@@ -206,7 +205,6 @@ export default function CoachesCornerPage() {
     if (immediate) {
       performSync();
     } else {
-      // 3. Debounce the network request (1.5 seconds)
       syncTimeoutRef.current = setTimeout(performSync, 1500);
     }
   };
@@ -218,7 +216,7 @@ export default function CoachesCornerPage() {
     handleSaveActiveProtocol({ 
       form_schema: [...currentSchema, newField], 
       form_version: (activeProtocol.form_version || 0) + 1 
-    }, true); // Use immediate sync for structural changes
+    }, true); 
     setEditingField(null);
   };
 
