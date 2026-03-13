@@ -551,12 +551,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                           </div>
                         </div>
                         <div className="space-y-4">
-                          <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-100 rounded-2xl">
-                            <Avatar className="h-8 w-8 rounded-lg border shadow-sm"><AvatarImage src={user?.avatar} /><AvatarFallback className="font-black text-[10px]">{user?.name?.[0]}</AvatarFallback></Avatar>
-                            <span className="text-xs font-black uppercase truncate">{user?.name}</span>
-                          </div>
-                        </div>
-                        <div className="space-y-4">
                           <div className="flex items-center gap-2 px-1 text-red-600"><XCircle className="h-4 w-4" /><span className="text-[10px] font-black uppercase tracking-widest">Declined ({attendanceGroups.declined.length})</span></div>
                           <div className="space-y-2">
                             {attendanceGroups.declined.map(m => (
@@ -724,7 +718,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     </TabsContent>
                   </div>
                 </ScrollArea>
-              </div>
+              </Tabs>
             </div>
           </div>
         </div>
