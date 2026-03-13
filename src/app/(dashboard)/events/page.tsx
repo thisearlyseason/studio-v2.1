@@ -147,10 +147,9 @@ interface EventDetailDialogProps {
   onDelete: (eventId: string) => void;
   children: React.ReactNode;
   facilities: Facility[];
-  allFields: Field[];
 }
 
-function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, children, facilities, allFields }: EventDetailDialogProps) {
+function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, children, facilities }: EventDetailDialogProps) {
   const { user, updateEvent, signTeamTournamentWaiver, isPro, activeTeam, members } = useTeam();
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -514,7 +513,7 @@ export default function EventsPage() {
   const { data: facilities } = useCollection<Facility>(facilitiesQuery);
 
   const fieldsQuery = useMemoFirebase(() => db ? query(collectionGroup(db, 'fields')) : null, [db]);
-  const { data: allFields } = useCollection<Field>(fieldsQuery);
+  const { data: allFields, isLoading: isFieldsLoading } = useCollection<Field>(fieldsQuery);
 
   const filteredEvents = useMemo(() => { 
     const now = new Date(); 
@@ -688,11 +687,14 @@ export default function EventsPage() {
                   
                   <div className="space-y-6">
                     <div className="space-y-4">
-                      <p className="text-[9px] font-black uppercase text-muted-foreground ml-1">Assign Automatic Resources</p>
+                      <div className="flex items-center justify-between ml-1">
+                        <p className="text-[9px] font-black uppercase text-muted-foreground">Assign Automatic Resources</p>
+                        {isFieldsLoading && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+                      </div>
                       <div className="space-y-3">
                         {facilities?.map(f => (
                           <Collapsible key={f.id} open={selectedFacilityIds.includes(f.id)}>
-                            <div className="flex items-center space-x-3 p-3 bg-white rounded-xl border-2 hover:border-primary/20 transition-all group">
+                            <div className="flex items-center space-x-3 p-3 bg-white rounded-xl border-2 hover:border-primary/20 transition-all group shadow-sm">
                               <Checkbox 
                                 id={`fac-${f.id}`} 
                                 checked={selectedFacilityIds.includes(f.id)} 
@@ -708,11 +710,11 @@ export default function EventsPage() {
                                 </Button>
                               </CollapsibleTrigger>
                             </div>
-                            <CollapsibleContent className="pt-2 pl-8 space-y-2">
+                            <CollapsibleContent className="pt-2 pl-8 space-y-2 animate-in slide-in-from-top-2 duration-300">
                               {allFields?.filter(field => field.facilityId === f.id).map(field => {
                                 const fid = `${f.id}:${field.name}`;
                                 return (
-                                  <div key={fid} className="flex items-center space-x-3 p-2 hover:bg-primary/5 rounded-lg transition-colors group">
+                                  <div key={fid} className="flex items-center space-x-3 p-2.5 bg-muted/20 rounded-xl hover:bg-primary/5 transition-colors group">
                                     <Checkbox 
                                       id={`field-${fid}`} 
                                       checked={selectedFieldIds.includes(fid)} 
@@ -725,8 +727,8 @@ export default function EventsPage() {
                                   </div>
                                 );
                               })}
-                              {allFields?.filter(field => field.facilityId === f.id).length === 0 && (
-                                <p className="text-[8px] font-bold text-muted-foreground italic uppercase">No fields defined for this venue.</p>
+                              {allFields?.filter(field => field.facilityId === f.id).length === 0 && !isFieldsLoading && (
+                                <p className="text-[8px] font-bold text-muted-foreground italic uppercase pl-2">No fields defined for this venue.</p>
                               )}
                             </CollapsibleContent>
                           </Collapsible>
@@ -751,7 +753,7 @@ export default function EventsPage() {
                       <p className="text-[9px] font-black uppercase text-primary ml-1">Active Pool Ledger</p>
                       <div className="flex flex-wrap gap-2">
                         {poolResources.map((res) => (
-                          <Badge key={res.id} className="bg-primary text-white h-8 px-3 flex items-center gap-2 rounded-lg">
+                          <Badge key={res.id} className="bg-primary text-white h-8 px-3 flex items-center gap-2 rounded-lg border-none">
                             {res.label}
                             <button onClick={() => {
                               if (res.id.startsWith('manual:')) {
@@ -784,7 +786,7 @@ export default function EventsPage() {
                         </SelectContent>
                       </Select>
                       {(newLocation === '' || !poolResources.find(r => r.label === newLocation)) && (
-                        <Input placeholder="Type display location..." value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-10 mt-2 rounded-xl border-2 bg-white font-bold" />
+                        <Input placeholder="Type display location..." value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-10 mt-2 rounded-xl border-2 bg-white font-bold shadow-inner" />
                       )}
                     </div>
                   </div>
@@ -831,7 +833,7 @@ export default function EventsPage() {
         <div className="flex items-center justify-between px-2"><h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2><div className="flex bg-muted/50 p-1 rounded-xl border shadow-inner"><Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button><Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button></div></div>
         <div className="grid gap-4">
           {filteredEvents.map((event) => ( 
-            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent} facilities={facilities || []} allFields={allFields || []}>
+            <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent} facilities={facilities || []}>
               <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                 <div className="flex items-stretch h-32">
                   <div className={cn("w-20 lg:w-24 flex flex-col items-center justify-center border-r-2 shrink-0", event.isTournament ? "bg-black text-white" : EVENT_TYPE_COLORS[event.eventType || 'other'])}>
