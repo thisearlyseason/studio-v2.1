@@ -36,7 +36,8 @@ import {
   HelpCircle,
   XCircle,
   Search,
-  Table as TableIcon
+  Table as TableIcon,
+  Trash2
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -322,7 +323,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
               <div className="grid grid-cols-2 gap-2">
                 <Button 
                   variant={myRsvp === 'maybe' ? 'default' : 'outline'} 
-                  className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'maybe' ? "bg-amber-500 border-none" : "bg-white/5 border-white/10")}
+                  className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'maybe' ? "bg-amber-50 border-none" : "bg-white/5 border-white/10")}
                   onClick={() => updateRSVP(event.id, 'maybe')}
                 >
                   Maybe
@@ -724,7 +725,7 @@ export default function TournamentsPage() {
         <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 overflow-hidden relative group">
           <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000"><Zap className="h-40 w-40 text-primary" /></div>
           <CardContent className="p-10 relative z-10 space-y-2">
-            <p className="text-5xl font-black leading-none text-primary">PRO</p>
+            <p className="text-5xl font-black text-primary">PRO</p>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Enabled Modules</p>
           </CardContent>
         </Card>

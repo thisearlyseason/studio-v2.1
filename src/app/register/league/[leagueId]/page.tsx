@@ -108,7 +108,7 @@ export default function PublicLeagueRegistrationPage() {
           <h2 className="text-3xl font-black uppercase tracking-tighter">Application Dispatched</h2>
           <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] mt-2 mb-8">Submission Successful</p>
           <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 text-left">
-            <p className="text-[10px] font-black uppercase text-primary">Next Steps</p>
+            <p className="text-[10px] font-black uppercase text-primary">Status</p>
             <p className="text-sm font-bold mt-1">
               {config?.confirmation_message || "The squad coordinator has been notified. You will be contacted once your application has been reviewed and assigned."}
             </p>

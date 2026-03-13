@@ -80,7 +80,7 @@ export default function LeagueRegistrationAdminPage() {
   const [activeTab, setActiveTab] = useState<'entries' | 'config'>('entries');
   const [editingField, setEditingField] = useState<Partial<RegistrationFormField> | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'assigned' | 'accepted'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'assigned' | 'accepted']('all');
 
   const [localConfig, setLocalConfig] = useState<Partial<LeagueRegistrationConfig> | null>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
