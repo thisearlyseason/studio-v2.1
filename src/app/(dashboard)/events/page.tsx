@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -698,7 +699,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     )}
                   </div>
                 </ScrollArea>
-              </div>
+              </Tabs>
             </div>
           </div>
         </div>
@@ -872,7 +873,9 @@ export default function EventsPage() {
     const startDate = new Date(event.date);
     const month = format(startDate, 'MMM').toUpperCase();
     if (event.endDate && !isSameDay(startDate, new Date(event.endDate))) {
-      return { month, day: `${format(startDate, 'd')}-${format(new Date(event.endDate), 'd')}` };
+      const startDay = format(startDate, 'd');
+      const endDay = format(new Date(event.endDate), 'd');
+      return { month, day: `${startDay}-${endDay}` };
     }
     return { month, day: format(startDate, 'd') };
   };

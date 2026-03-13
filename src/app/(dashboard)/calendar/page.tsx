@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -165,10 +166,10 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
             <div className="pt-6 border-t space-y-4">
               <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest">Attendance Pulse</h3></div>
               <div className="flex flex-wrap gap-2">
-                {Object.entries(event.userRsvps || {}).slice(0, 8).map(([uid, status]) => (
+                {Object.entries(event.userRsvps || {}).map(([uid, status]) => (
                   <Badge key={uid} variant="outline" className={cn(
                     "text-[8px] font-black uppercase border-none h-6",
-                    status === 'going' ? "bg-green-50 text-green-700" : status === 'maybe' ? "bg-amber-50 text-amber-700" : status === 'declined' ? "bg-red-50 text-red-700" : "bg-muted text-muted-foreground"
+                    status === 'going' ? "bg-green-50 text-green-700" : status === 'maybe' ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"
                   )}>
                     {status}
                   </Badge>
