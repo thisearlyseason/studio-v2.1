@@ -129,7 +129,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
               <TabsList className="bg-muted/50 h-auto p-1.5 rounded-2xl border w-full flex-wrap gap-1 mb-8">
                 <TabsTrigger value="attendance" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Attendance</TabsTrigger>
                 <TabsTrigger value="brief" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Brief</TabsTrigger>
-                {event.isTournament && (
+                {event.eventType === 'tournament' && (
                   <>
                     <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
                     <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>
@@ -177,7 +177,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                 </div>
               </TabsContent>
 
-              {event.isTournament && (
+              {event.eventType === 'tournament' && (
                 <>
                   <TabsContent value="portals" className="mt-0 space-y-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -344,14 +344,14 @@ export default function EventsPage() {
             <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent} members={members}>
               <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                 <div className="flex items-stretch h-32">
-                  <div className={cn("w-24 lg:w-32 flex flex-col items-center justify-center border-r-2 shrink-0 px-2 text-center", event.isTournament ? "bg-black text-white" : EVENT_TYPE_COLORS[event.eventType || 'other'])}>
+                  <div className={cn("w-24 lg:w-32 flex flex-col items-center justify-center border-r-2 shrink-0 px-2 text-center", event.eventType === 'tournament' ? "bg-black text-white" : EVENT_TYPE_COLORS[event.eventType || 'other'])}>
                     <span className="text-[9px] font-black uppercase opacity-60 leading-none mb-1">{format(new Date(event.date), 'MMM').toUpperCase()}</span>
                     <span className="text-3xl lg:text-4xl font-black tracking-tighter leading-none">{format(new Date(event.date), 'd')}</span>
                   </div>
                   <div className="flex-1 p-6 flex flex-col justify-center min-w-0">
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="flex gap-2 mb-1.5"><Badge className="text-[7px] uppercase font-black">{event.isTournament ? 'Elite Series' : (event.eventType || 'Activity')}</Badge><Badge variant="outline" className="text-[7px] uppercase font-black text-primary border-primary/20">{event.startTime}</Badge></div>
+                        <div className="flex gap-2 mb-1.5"><Badge className="text-[7px] uppercase font-black">{event.eventType === 'tournament' ? 'Elite Series' : (event.eventType || 'Activity')}</Badge><Badge variant="outline" className="text-[7px] uppercase font-black text-primary border-primary/20">{event.startTime}</Badge></div>
                         <h3 className="text-xl font-black tracking-tight leading-none truncate group-hover:text-primary transition-colors">{event.title}</h3>
                         <p className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1 mt-1"><MapPin className="h-3 w-3 text-primary" /> {event.location}</p>
                       </div>

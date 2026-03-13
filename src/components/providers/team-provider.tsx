@@ -562,6 +562,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     toast({ title: "Broadcast Dispatched", description: `Sent to ${audience}.` });
   }, [activeTeam, firebaseUser, db]);
 
+  const deleteAlert = useCallback(async (id: string) => {
+    if (activeTeam) await deleteDoc(doc(db, 'teams', activeTeam.id, 'alerts', id));
+  }, [activeTeam, db]);
+
   const signTeamDocument = useCallback(async (docId: string, signatureText: string) => {
     if (!activeTeam || !userProfile || !currentMember) return;
     const docSnap = await getDoc(doc(db, 'teams', activeTeam.id, 'documents', docId));
@@ -603,6 +607,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       'everyone'
     );
   }, [activeTeam, firebaseUser, db, createAlert]);
+
+  const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined') => {
+    const entryRef = doc(db, 'leagues', contextId, 'registrationEntries', entryId);
+    const entrySnap = await getDoc(entryRef);
+    let finalRef = entryRef;
+    if (!entrySnap.exists()) {
+      const teamEntryRef = doc(db, 'teams', contextId, 'registrationEntries', entryId);
+      const teamEntrySnap = await getDoc(teamEntryRef);
+      if (teamEntrySnap.exists()) finalRef = teamEntryRef;
+    }
+    await updateDoc(finalRef, { status });
+    toast({ title: status === 'accepted' ? "Recruit Enrolled" : "Application Declined" });
+  }, [db]);
 
   const value = {
     user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading,
@@ -681,7 +698,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     manageSubscription: async () => router.push('/pricing'),
     resolveQuota: async (sids: string[]) => { if (firebaseUser) { const b = writeBatch(db); teams.filter(t => t.ownerUserId === firebaseUser.uid && t.isPro).forEach(t => { const ok = sids.includes(t.id); b.update(doc(db, 'teams', t.id), { isPro: ok, planId: ok ? t.planId : 'starter_squad' }); b.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', t.id), { isPro: ok, planId: ok ? t.planId : 'starter_squad' }); }); await b.commit(); } },
     createAlert,
-    deleteAlert: async (id: string) => { if (activeTeam) await deleteDoc(doc(db, 'teams', activeTeam.id, 'alerts', id)); }
+    deleteAlert
   };
 
   return <TeamContext.Provider value={value}>{children}</TeamContext.Provider>;

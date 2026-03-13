@@ -261,7 +261,10 @@ export default function CoachesCornerPage() {
                             {members.map(member => (
                               <div key={member.id} className={cn("p-3 rounded-xl flex items-center justify-between cursor-pointer transition-all", newDoc.assignedTo.includes(member.id) ? "bg-black text-white" : "hover:bg-white")} onClick={() => toggleAssignment(member.id)}>
                                 <div className="flex items-center gap-3">
-                                  <Avatar className="h-7 w-7 rounded-lg border shadow-sm"><AvatarImage src={member.avatar} /><AvatarFallback className="text-[8px] font-black">{member.name[0]}</AvatarFallback></Avatar>
+                                  <Avatar className="h-7 w-7 rounded-lg border shadow-sm">
+                                    <AvatarImage src={member.avatar} />
+                                    <AvatarFallback className="text-[8px] font-black">{member.name[0]}</AvatarFallback>
+                                  </Avatar>
                                   <div className="min-w-0"><p className="text-xs font-black uppercase truncate">{member.name}</p><p className="text-[8px] font-bold opacity-60 uppercase">{member.position}</p></div>
                                 </div>
                                 {newDoc.assignedTo.includes(member.id) && <CheckCircle2 className="h-4 w-4 text-primary" />}
