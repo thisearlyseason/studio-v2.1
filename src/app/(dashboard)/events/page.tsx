@@ -434,7 +434,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
             
             <div className="flex-1 flex flex-col bg-background relative overflow-hidden">
               <Tabs defaultValue={event.isTournament ? "bracket" : "roster"} className="flex-1 flex flex-col h-full overflow-hidden">
-                <div className="px-6 py-6 border-b bg-muted/30 sticky top-0 z-20 backdrop-blur-md shrink-0">
+                <div className="px-6 py-6 border-b bg-muted/30 backdrop-blur-md shrink-0">
                   <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit overflow-x-auto custom-scrollbar">
                     {event.isTournament && <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Itinerary</TabsTrigger>}
                     <TabsTrigger value="roster" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Attendance</TabsTrigger>
@@ -700,7 +700,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     )}
                   </div>
                 </ScrollArea>
-              </div>
+              </Tabs>
             </div>
           </div>
         </div>

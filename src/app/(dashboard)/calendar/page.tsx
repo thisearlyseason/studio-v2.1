@@ -110,7 +110,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
   const { updateRSVP, user } = useTeam();
   if (!event) return null;
 
-  const myRsvp = event.userRsvps?.[user?.id || ''];
+  const myRsvp = event.userRsvps?.[user?.id || ''] || 'no_response';
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -119,7 +119,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
         <div className="flex flex-col lg:flex-row h-full">
           <div className="w-full lg:w-1/2 flex flex-col text-white bg-black p-8 relative">
             <div className="flex justify-between items-start mb-8 relative z-10">
-              <Badge className="uppercase font-black tracking-widest text-[9px] h-6 px-3 bg-primary text-white border-none">{event.eventType.toUpperCase()}</Badge>
+              <Badge className="uppercase font-black tracking-widest text-[9px] h-6 px-3 bg-primary text-white border-none">{(event.eventType || 'other').toUpperCase()}</Badge>
               <DialogClose asChild><X className="h-5 w-5 text-white/40 cursor-pointer hover:text-white" /></DialogClose>
             </div>
             <div className="space-y-6 relative z-10">
