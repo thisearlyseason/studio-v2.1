@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -16,35 +15,23 @@ import { Badge } from '@/components/ui/badge';
 import { 
   Plus, 
   Trash2, 
-  Save, 
-  Share2, 
-  Users, 
-  CheckCircle2, 
-  XCircle, 
   ChevronLeft, 
-  Download,
-  Settings,
-  ShieldCheck,
-  Globe,
-  Clock,
-  LayoutGrid,
-  Info,
-  Loader2,
-  Table as TableIcon,
-  DollarSign,
+  Settings, 
+  Users, 
+  Lock, 
+  ClipboardList, 
+  Target, 
+  Globe, 
+  FileSignature, 
+  Share2, 
+  Copy, 
+  AlertTriangle, 
+  LayoutGrid, 
+  UserPlus, 
+  MessageSquare, 
+  DollarSign, 
   CreditCard,
-  Circle,
-  Lock,
-  Sparkles,
-  ClipboardList,
-  Target,
-  ArrowRight,
-  Filter,
-  UserPlus,
-  Copy,
-  FileSignature,
-  AlertTriangle,
-  MessageSquare
+  Loader2
 } from 'lucide-react';
 import { 
   Dialog, 

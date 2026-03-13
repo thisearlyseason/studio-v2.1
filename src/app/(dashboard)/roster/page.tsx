@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -8,56 +7,20 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { 
   Search, 
-  MoreVertical, 
-  ShieldCheck, 
-  Mail, 
-  Phone, 
-  UserPlus, 
-  AtSign, 
-  Copy, 
-  Check, 
-  DollarSign, 
-  Lock, 
-  Sparkles, 
-  Users2, 
-  CreditCard, 
-  Plus, 
-  Trash2, 
-  Circle,
-  Heart,
-  Baby,
-  Stethoscope,
-  BookOpen,
-  Edit3,
-  Eye,
-  XCircle,
-  Clock,
-  MessageSquare,
-  Loader2,
-  FileCheck,
-  Truck,
-  HeartPulse,
-  Camera as CameraIcon,
-  Cake,
-  Users,
-  ChevronDown,
-  ShieldAlert,
-  ClipboardList,
+  ChevronRight, 
+  ShieldAlert, 
+  Loader2, 
   Download,
-  GraduationCap,
-  Award,
   Zap,
-  TrendingUp,
-  Target
+  Award,
+  GraduationCap,
+  CheckCircle2,
+  XCircle,
+  UserPlus,
+  Copy
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useTeam, Member, FeeItem } from '@/components/providers/team-provider';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { useTeam, Member } from '@/components/providers/team-provider';
 import { 
   Dialog, 
   DialogContent, 
@@ -65,32 +28,21 @@ import {
   DialogTitle, 
   DialogTrigger,
   DialogDescription, 
-  DialogFooter,
-  DialogClose
+  DialogFooter
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { format, differenceInYears } from 'date-fns';
-import { useIsMobile } from '@/hooks/use-mobile';
-import { useFirestore } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function RosterPage() {
-  const { activeTeam, updateMember, user, isPro, isSuperAdmin, purchasePro, hasFeature, members, isMembersLoading, isStaff, isParent, updateStaffEvaluation, getStaffEvaluation } = useTeam();
+  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation } = useTeam();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const isMobile = useIsMobile();
   
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState<Partial<Member>>({});
-  const [newFee, setNewFee] = useState({ title: '', amount: '' });
-  
   const [staffNote, setStaffNote] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
 
@@ -99,31 +51,20 @@ export default function RosterPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedMember) {
-      setEditForm({
-        name: selectedMember.name,
-        position: selectedMember.position,
-        jersey: selectedMember.jersey,
-        role: selectedMember.role,
-        phone: selectedMember.phone || '',
-        birthdate: selectedMember.birthdate || '',
-        parentName: selectedMember.parentName || '',
-        parentEmail: selectedMember.parentEmail || '',
-        parentPhone: selectedMember.parentPhone || '',
-        emergencyContactName: selectedMember.emergencyContactName || '',
-        emergencyContactPhone: selectedMember.emergencyContactPhone || '',
-        notes: selectedMember.notes || '',
-        waiverSigned: !!selectedMember.waiverSigned,
-        transportationWaiverSigned: !!selectedMember.transportationWaiverSigned,
-        medicalClearance: !!selectedMember.medicalClearance,
-        mediaRelease: !!selectedMember.mediaRelease,
-      });
-
-      if (isStaff) {
-        getStaffEvaluation(selectedMember.id).then(setStaffNote);
-      }
+    if (selectedMember && isStaff) {
+      getStaffEvaluation(selectedMember.id).then(setStaffNote);
     }
   }, [selectedMember, isStaff, getStaffEvaluation]);
+
+  const calculateAge = (dob?: string) => {
+    if (!dob) return null;
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return `U${age + 1}`;
+  };
 
   const handleExportPortfolio = () => {
     if (!selectedMember) return;
@@ -156,13 +97,7 @@ export default function RosterPage() {
     );
   }
 
-  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
   const filteredRoster = members.filter(member => member.name.toLowerCase().includes(searchTerm.toLowerCase()));
-
-  const handleMemberClick = (member: Member) => {
-    setSelectedMember(member);
-    setIsEditing(false);
-  };
 
   const handleSaveNote = async () => {
     if (!selectedMember) return;
@@ -217,7 +152,7 @@ export default function RosterPage() {
 
       <div className="grid grid-cols-1 gap-3">
         {filteredRoster.map((member) => (
-          <Card key={member.id} className="overflow-hidden border-none shadow-sm transition-all duration-300 ring-1 ring-black/5 rounded-[2rem] cursor-pointer group hover:shadow-md" onClick={() => handleMemberClick(member)}>
+          <Card key={member.id} className="overflow-hidden border-none shadow-sm transition-all duration-300 ring-1 ring-black/5 rounded-[2rem] cursor-pointer group hover:shadow-md" onClick={() => setSelectedMember(member)}>
             <CardContent className="p-4 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <Avatar className="h-14 w-14 rounded-2xl border-2 border-background shadow-md">
@@ -239,10 +174,10 @@ export default function RosterPage() {
       </div>
 
       <Dialog open={!!selectedMember} onOpenChange={(open) => !open && setSelectedMember(null)}>
-        <DialogContent className="rounded-[3rem] sm:max-w-5xl overflow-hidden max-h-[95vh] border-none shadow-2xl p-0 flex flex-col bg-white">
+        <DialogContent className="rounded-[3rem] sm:max-w-5xl overflow-hidden h-[100dvh] sm:h-[90vh] border-none shadow-2xl p-0 flex flex-col bg-white">
           <DialogTitle className="sr-only">Player Profile: {selectedMember?.name}</DialogTitle>
           {selectedMember && (
-            <div className="flex flex-col lg:flex-row h-full">
+            <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
               <div className="w-full lg:w-5/12 bg-black text-white p-8 lg:p-12 space-y-8 shrink-0 flex flex-col relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none">
                   <Zap className="h-48 w-48" />

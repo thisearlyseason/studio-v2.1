@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -44,7 +43,7 @@ import {
   Mail,
   UserPlus,
   Info,
-  Signature
+  FileSignature
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -365,8 +364,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
       <DialogContent className="sm:max-w-7xl p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl overflow-hidden flex flex-col bg-white">
         <DialogTitle className="sr-only">{event.title} Hub</DialogTitle>
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-hidden">
-            <div className="w-full lg:w-1/3 flex flex-col text-white bg-black lg:border-r border-white/10 shrink-0 p-8 relative lg:overflow-y-auto custom-scrollbar">
+          <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+            <div className="w-full lg:w-1/3 flex flex-col text-white bg-black lg:border-r border-white/10 shrink-0 p-8 relative overflow-y-auto custom-scrollbar">
               <div className="flex justify-between items-start mb-8 relative z-10">
                 <Badge className="uppercase font-black tracking-widest text-[9px] h-6 px-3 bg-primary text-white border-none">{event.isTournament ? "Elite Hub" : (event.eventType || 'other').toUpperCase()}</Badge>
                 <DialogClose asChild><X className="h-5 w-5 text-white/40 cursor-pointer hover:text-white" /></DialogClose>
@@ -574,7 +573,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                         <div className="space-y-6">
                           <div className="flex items-center justify-between px-2">
                             <div className="flex items-center gap-3">
-                              <Signature className="h-5 w-5 text-primary" />
+                              <FileSignature className="h-5 w-5 text-primary" />
                               <h3 className="text-xl font-black uppercase tracking-tight">Team Agreement Ledger</h3>
                             </div>
                             <Button variant="outline" className="h-9 px-4 rounded-xl font-black uppercase text-[10px] border-2" onClick={() => window.open(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`, '_blank')}>Open Waiver Portal <ExternalLink className="ml-2 h-3 w-3" /></Button>
@@ -636,7 +635,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                         </Card>
                         {isOrganizer && (
                           <Card className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 bg-white overflow-hidden group">
-                            <CardHeader className="bg-amber-500/5 p-6 border-b"><div className="flex items-center gap-3"><Signature className="h-5 w-5 text-amber-600" /><CardTitle className="text-sm font-black uppercase">Waiver Portal</CardTitle></div></CardHeader>
+                            <CardHeader className="bg-amber-500/5 p-6 border-b"><div className="flex items-center gap-3"><FileSignature className="h-5 w-5 text-amber-600" /><CardTitle className="text-sm font-black uppercase">Waiver Portal</CardTitle></div></CardHeader>
                             <CardContent className="p-6 space-y-4">
                               <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">Verification link for participating squad leads to sign the digital agreement.</p>
                               <div className="flex gap-2">
@@ -884,7 +883,7 @@ export default function EventsPage() {
       </div>
       
       <Dialog open={isCreateOpen} onOpenChange={(o) => { if(!o) resetForm(); setIsCreateOpen(o); }}>
-        <DialogContent className="sm:max-w-5xl p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl overflow-y-auto flex flex-col bg-white">
+        <DialogContent className="sm:max-w-5xl p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl overflow-hidden flex flex-col bg-white">
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             <div className="flex flex-col lg:flex-row min-h-full">
               <div className="w-full lg:w-5/12 bg-muted/30 p-10 space-y-8 lg:border-r shrink-0">

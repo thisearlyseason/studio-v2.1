@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -53,8 +52,7 @@ export function useCollection<T = any>(
       path = 'query';
     }
 
-    // CRITICAL GUARD: Do not establish listeners on uninitialized or root paths
-    // This specifically prevents "Unexpected state" assertion failures (ID: ca9 / b815)
+    // CRITICAL GUARD: Do not establish listeners on uninitialized, root, or malformed paths
     if (!path || path === '/' || path === '' || path.includes('undefined') || path.includes('//')) {
       setData(null);
       setIsLoading(false);
@@ -79,7 +77,7 @@ export function useCollection<T = any>(
       (err: FirestoreError) => {
         if (!isMounted.current) return;
         
-        // Suppress known transient errors or demo guest issues
+        // Suppress transient errors for demo users
         if (err.code === 'failed-precondition' || path.includes('demo_guest')) {
           setIsLoading(false);
           return;
