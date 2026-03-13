@@ -18,7 +18,9 @@ import {
   CheckCircle2,
   XCircle,
   UserPlus,
-  Copy
+  Copy,
+  FileSignature,
+  Clock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTeam, Member } from '@/components/providers/team-provider';
@@ -36,6 +38,41 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, orderBy, where } from 'firebase/firestore';
+import { format } from 'date-fns';
+
+function MemberComplianceLedger({ teamId, memberId }: { teamId: string, memberId: string }) {
+  const db = useFirestore();
+  const q = useMemoFirebase(() => {
+    if (!db || !teamId || !memberId) return null;
+    return query(collection(db, 'teams', teamId, 'members', memberId, 'signatures'), orderBy('signedAt', 'desc'));
+  }, [db, teamId, memberId]);
+
+  const { data: signatures, isLoading } = useCollection(q);
+
+  if (isLoading) return <Loader2 className="h-4 w-4 animate-spin mx-auto text-primary" />;
+
+  return (
+    <div className="space-y-3">
+      {signatures?.map(sig => (
+        <div key={sig.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
+          <div className="min-w-0">
+            <p className="font-black text-[10px] uppercase text-white truncate">{sig.title || 'Waiver'}</p>
+            <div className="flex items-center gap-2 opacity-40 mt-0.5">
+              <Clock className="h-2 w-2" />
+              <span className="text-[8px] font-bold uppercase">{format(new Date(sig.signedAt), 'MMM d, yyyy')}</span>
+            </div>
+          </div>
+          <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+        </div>
+      ))}
+      {(!signatures || signatures.length === 0) && (
+        <p className="text-[9px] font-bold text-white/30 uppercase text-center py-2 italic">No signatures recorded.</p>
+      )}
+    </div>
+  );
+}
 
 export default function RosterPage() {
   const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation } = useTeam();
@@ -124,7 +161,7 @@ export default function RosterPage() {
                     <UserPlus className="h-4 w-4 mr-2" /> Invite
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0">
+                <DialogContent data-dark-header="true" className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0">
                   <div className="h-2 bg-primary w-full" />
                   <div className="p-8 space-y-6">
                     <DialogHeader>
@@ -193,7 +230,13 @@ export default function RosterPage() {
                     <h2 className="text-4xl font-black tracking-tighter leading-none uppercase">{selectedMember.name}</h2>
                     <p className="text-primary font-black uppercase tracking-[0.2em] text-sm">{selectedMember.position} • #{selectedMember.jersey}</p>
                   </div>
-                  <div className="w-full pt-8 border-t border-white/10 space-y-4">
+
+                  <div className="w-full space-y-4 pt-4 border-t border-white/10">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Compliance Ledger</p>
+                    <MemberComplianceLedger teamId={activeTeam.id} memberId={selectedMember.id} />
+                  </div>
+
+                  <div className="w-full pt-4 border-t border-white/10 space-y-4">
                     <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-white/40">
                       <span>Recruiting Portfolio</span>
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/10" onClick={handleExportPortfolio}><Download className="h-4 w-4" /></Button>

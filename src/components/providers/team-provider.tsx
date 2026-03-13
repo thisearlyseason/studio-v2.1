@@ -144,6 +144,7 @@ export type DocumentSignature = {
   signedAt: string;
   signatureText: string;
   documentTitle: string;
+  documentId: string;
 };
 
 export type EventType = 'game' | 'practice' | 'meeting' | 'tournament' | 'other';
@@ -374,8 +375,9 @@ interface TeamContextType {
   updateTeamDetails: (updates: Partial<Team>) => Promise<void>;
   updateTeamHero: (url: string) => Promise<void>;
   updateTeamPlan: (teamId: string, planId: string) => Promise<void>;
-  signTeamDocument: (docId: string, signatureText: string) => Promise<void>;
+  signTeamDocument: (docId: string, signatureText: string, targetMemberId: string) => Promise<void>;
   createTeamDocument: (data: any) => Promise<void>;
+  updateTeamDocument: (docId: string, data: any) => Promise<void>;
   deleteTeamDocument: (docId: string) => Promise<void>;
   updateStaffEvaluation: (memberId: string, note: string) => Promise<void>;
   getStaffEvaluation: (memberId: string) => Promise<string>;
@@ -557,7 +559,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return { current, limit: limitCount, exceeded: current > limitCount };
   }, [teams, userProfile, firebaseUser?.uid]);
 
-  // Defined before value object to avoid circular reference initialization errors
   const createAlert = useCallback(async (title: string, message: string, audience: TeamAlert['audience']) => {
     if (!activeTeam || !firebaseUser) return;
     await addDoc(collection(db, 'teams', activeTeam.id, 'alerts'), clean({ title, message, audience, createdAt: new Date().toISOString(), createdBy: firebaseUser.uid }));
@@ -581,45 +582,71 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     toast({ title: status === 'accepted' ? "Recruit Enrolled" : "Application Declined" });
   }, [db]);
 
-  const signTeamDocument = useCallback(async (docId: string, signatureText: string) => {
-    if (!activeTeam || !userProfile || !currentMember) return;
+  const signTeamDocument = useCallback(async (docId: string, signatureText: string, targetMemberId: string) => {
+    if (!activeTeam || !userProfile) return;
+    
     const docSnap = await getDoc(doc(db, 'teams', activeTeam.id, 'documents', docId));
     if (!docSnap.exists()) return;
     const docData = docSnap.data() as TeamDocument;
 
+    const targetMember = members.find(m => m.id === targetMemberId);
+    if (!targetMember) return;
+
     const batch = writeBatch(db);
-    const sigId = `sig_${userProfile.id}`;
+    const sigId = `sig_${targetMember.id}_${Date.now()}`;
+    
+    // 1. Log the signature in the document's central ledger
     batch.set(doc(db, 'teams', activeTeam.id, 'documents', docId, 'signatures', sigId), clean({
-      id: sigId, memberId: currentMember.id, userId: userProfile.id, userName: userProfile.name,
-      signedAt: new Date().toISOString(), signatureText, documentTitle: docData.title
+      id: sigId, 
+      memberId: targetMember.id, 
+      userId: userProfile.id, // Who physically clicked sign
+      userName: targetMember.name, // Who the signature is for
+      signedAt: new Date().toISOString(), 
+      signatureText, 
+      documentTitle: docData.title,
+      documentId: docId
     }));
+
+    // 2. Log the signature in the member's private history for Bio view
+    batch.set(doc(db, 'teams', activeTeam.id, 'members', targetMember.id, 'signatures', docId), clean({
+      id: sigId,
+      docId,
+      title: docData.title,
+      signedAt: new Date().toISOString(),
+      signatureText
+    }));
+
     batch.update(doc(db, 'teams', activeTeam.id, 'documents', docId), { signatureCount: increment(1) });
     
-    const fileId = `cert_${docId}_${userProfile.id}`;
+    // 3. Create a certified file in the Library (Coach only view)
+    const fileId = `cert_${docId}_${targetMember.id}`;
     batch.set(doc(db, 'teams', activeTeam.id, 'files', fileId), clean({
-      name: `Signed: ${docData.title} - ${userProfile.name}`,
+      name: `Signed: ${docData.title} - ${targetMember.name}`,
       type: 'pdf',
       size: 'Digital Certificate',
       sizeBytes: 0,
       url: '#',
       category: 'Signed Certificate',
-      description: `Verified execution of ${docData.title} by ${userProfile.name}.`,
+      description: `Verified execution of ${docData.title} by ${targetMember.name}. Signed by: ${userProfile.name}.`,
       date: new Date().toISOString(),
       authorId: userProfile.id,
+      targetMemberId: targetMember.id,
       documentId: docId
     }));
 
     await batch.commit(); 
-    toast({ title: "Document Signed & Archived" });
-  }, [activeTeam, userProfile, db, currentMember]);
+    toast({ title: "Compliance Verified", description: `Document signed for ${targetMember.name}` });
+  }, [activeTeam, userProfile, db, members]);
 
   const value = {
     user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading,
     currentMember,
     isStaff: activeTeam?.role === 'Admin', isPro: activeTeam?.isPro || false, isParent: userProfile?.role === 'parent', isPlayer: userProfile?.role === 'adult_player',
     isSuperAdmin, isClubManager: ['elite_teams', 'elite_league', 'squad_organization'].includes(userProfile?.activePlanId || ''), household, householdEvents, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus,
-    isPaywallOpen, setIsPaywallOpen, purchasePro: () => setIsPaywallOpen(true), hasFeature: (fid: string) => !!plans.find(p => p.id === (activeTeam?.planId || 'starter_squad'))?.features?.[fid], alerts,
-    unreadAlertsCount, markAlertAsSeen: (id: string) => { setSeenAlertIds(prev => [...new Set([...prev, id])]); localStorage.setItem('squad_seen_alerts_ids', JSON.stringify([...seenAlertIds, id])); },
+    isPaywallOpen, setIsPaywallOpen, purchasePro: () => setIsPaywallOpen(true), 
+    hasFeature: (fid: string) => !!plans.find(p => p.id === (activeTeam?.planId || 'starter_squad'))?.features?.[fid], 
+    alerts, unreadAlertsCount, 
+    markAlertAsSeen: (id: string) => { setSeenAlertIds(prev => [...new Set([...prev, id])]); localStorage.setItem('squad_seen_alerts_ids', JSON.stringify([...seenAlertIds, id])); },
     markAllAlertsAsSeen: () => { const ids = alerts.map(a => a.id); setSeenAlertIds(ids); localStorage.setItem('squad_seen_alerts_ids', JSON.stringify(ids)); },
     seenAlertIds,
     formatTime: (date: string | Date) => { try { return new Date(date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch (e) { return 'TBD'; } },
@@ -633,15 +660,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     updateTeamHero: async (url: string) => { if (activeTeam) await updateDoc(doc(db, 'teams', activeTeam.id), { heroImageUrl: url }); },
     updateTeamPlan: async (tid: string, pid: string) => { await updateDoc(doc(db, 'teams', tid), { planId: pid, isPro: pid !== 'starter_squad' }); },
     signTeamDocument,
-    createTeamDocument: useCallback(async (data: any) => {
+    createTeamDocument: async (data: any) => {
       if (!activeTeam || !firebaseUser) return;
       await addDoc(collection(db, 'teams', activeTeam.id, 'documents'), clean({ ...data, teamId: activeTeam.id, signatureCount: 0, createdAt: new Date().toISOString() }));
-      await createAlert(
-        `Required Document: ${data.title}`, 
-        `A new ${data.type} requires your digital signature. Please visit the Library to execute.`, 
-        'everyone'
-      );
-    }, [activeTeam, firebaseUser, db, createAlert]),
+      await createAlert(`Waiver Required: ${data.title}`, `A new protocol requires your signature. Please visit the Library to execute.`, 'everyone');
+    },
+    updateTeamDocument: async (id: string, data: any) => {
+      if (activeTeam) await updateDoc(doc(db, 'teams', activeTeam.id, 'documents', id), clean(data));
+    },
     deleteTeamDocument: async (id: string) => { if (activeTeam) await deleteDoc(doc(db, 'teams', activeTeam.id, 'documents', id)); },
     updateStaffEvaluation: async (mid: string, note: string) => { if (activeTeam) await setDoc(doc(db, 'teams', activeTeam.id, 'members', mid, 'private', 'evaluation'), { note, updatedAt: new Date().toISOString() }); },
     getStaffEvaluation: async (mid: string) => { if (!activeTeam) return ''; const s = await getDoc(doc(db, 'teams', activeTeam.id, 'members', mid, 'private', 'evaluation')); return s.exists() ? s.data().note : ''; },

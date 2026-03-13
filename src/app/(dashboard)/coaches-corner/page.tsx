@@ -48,7 +48,8 @@ import {
   DollarSign,
   CreditCard,
   XCircle,
-  Circle
+  Circle,
+  Edit3
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -124,7 +125,7 @@ function SignatureList({ teamId, documentId }: { teamId: string, documentId: str
 }
 
 export default function CoachesCornerPage() {
-  const { activeTeam, isStaff, members, createTeamDocument, deleteTeamDocument, resetSquadData, respondToAssignment } = useTeam();
+  const { activeTeam, isStaff, members, createTeamDocument, updateTeamDocument, deleteTeamDocument, resetSquadData, respondToAssignment } = useTeam();
   const db = useFirestore();
   
   const [activeTab, setActiveTab] = useState('compliance');
@@ -133,6 +134,7 @@ export default function CoachesCornerPage() {
   const [isDoubleConfirmOpen, setIsDoubleConfirmOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<TeamDocument | null>(null);
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [newDoc, setNewDoc] = useState({ title: '', content: '', type: 'waiver' as any, assignedTo: ['all'] });
   
   const [resetOptions, setResetOptions] = useState<string[]>(['games', 'events']);
@@ -157,11 +159,28 @@ export default function CoachesCornerPage() {
   const handleCreateDocument = async () => {
     if (!newDoc.title || !newDoc.content) return;
     setIsProcessing(true);
-    await createTeamDocument(newDoc);
+    if (editingDocId) {
+      await updateTeamDocument(editingDocId, newDoc);
+      toast({ title: "Document Protocol Synchronized" });
+    } else {
+      await createTeamDocument(newDoc);
+      toast({ title: "New Document Deployed" });
+    }
     setIsCreateOpen(false);
     setIsProcessing(false);
+    setEditingDocId(null);
     setNewDoc({ title: '', content: '', type: 'waiver', assignedTo: ['all'] });
-    toast({ title: "Document Deployed" });
+  };
+
+  const handleEditDocument = (doc: TeamDocument) => {
+    setEditingDocId(doc.id);
+    setNewDoc({
+      title: doc.title,
+      content: doc.content,
+      type: doc.type,
+      assignedTo: doc.assignedTo
+    });
+    setIsCreateOpen(true);
   };
 
   const handleResetClick = () => {
@@ -221,7 +240,10 @@ export default function CoachesCornerPage() {
               <FileSignature className="h-5 w-5 text-primary" />
               <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Compliance Ledger</h2>
             </div>
-            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <Dialog open={isCreateOpen} onOpenChange={(open) => {
+              if (!open) { setEditingDocId(null); setNewDoc({ title: '', content: '', type: 'waiver', assignedTo: ['all'] }); }
+              setIsCreateOpen(open);
+            }}>
               <DialogTrigger asChild>
                 <Button className="h-11 px-6 rounded-xl font-black shadow-lg shadow-primary/20">
                   <Plus className="h-4 w-4 mr-2" /> New Waiver
@@ -230,7 +252,7 @@ export default function CoachesCornerPage() {
               <DialogContent data-dark-header="true" className="rounded-[2.5rem] sm:max-w-4xl p-0 overflow-hidden border-none shadow-2xl">
                 <div className="h-2 bg-primary w-full" />
                 <div className="p-8 space-y-8">
-                  <DialogHeader><DialogTitle className="text-3xl font-black uppercase">Document Architect</DialogTitle></DialogHeader>
+                  <DialogHeader><DialogTitle className="text-3xl font-black uppercase">{editingDocId ? 'Edit Document' : 'Document Architect'}</DialogTitle></DialogHeader>
                   
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                     <div className="space-y-6">
@@ -277,7 +299,7 @@ export default function CoachesCornerPage() {
                     </div>
                   </div>
                   
-                  <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleCreateDocument} disabled={isProcessing || !newDoc.title || !newDoc.content}>Deploy Verified Protocol</Button></DialogFooter>
+                  <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleCreateDocument} disabled={isProcessing || !newDoc.title || !newDoc.content}>{editingDocId ? 'Update & Synchronize' : 'Deploy Verified Protocol'}</Button></DialogFooter>
                 </div>
               </DialogContent>
             </Dialog>
@@ -286,7 +308,7 @@ export default function CoachesCornerPage() {
           <div className="grid grid-cols-1 gap-4">
             {documents?.map(doc => (
               <Card key={doc.id} className="rounded-3xl border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5 group transition-all hover:shadow-xl">
-                <CardContent className="p-6 flex items-center justify-between">
+                <CardContent className="p-6 flex flex-col sm:flex-row items-center justify-between gap-6">
                   <div className="flex items-center gap-6">
                     <div className="bg-primary/5 p-4 rounded-2xl text-primary"><PenTool className="h-6 w-6" /></div>
                     <div>
@@ -299,8 +321,9 @@ export default function CoachesCornerPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] border-2" onClick={() => setSelectedDoc(doc)}>Audit Signatures</Button>
-                    <Button variant="ghost" size="icon" className="text-destructive h-10 w-10 hover:bg-destructive/5" onClick={() => deleteTeamDocument(doc.id)}><Trash2 className="h-4 w-4" /></Button>
+                    <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] border-2" onClick={() => setSelectedDoc(doc)}>Audit</Button>
+                    <Button variant="ghost" size="icon" className="h-10 w-10 hover:bg-primary/5 rounded-xl" onClick={() => handleEditDocument(doc)}><Edit3 className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="text-destructive h-10 w-10 hover:bg-destructive/5 rounded-xl" onClick={() => deleteTeamDocument(doc.id)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </CardContent>
               </Card>

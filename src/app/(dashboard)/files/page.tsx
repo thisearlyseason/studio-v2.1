@@ -33,11 +33,12 @@ import {
   PenTool,
   ArrowRight,
   Clock,
-  Shield
+  Shield,
+  Loader2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { useTeam, TeamFile, TeamDocument, DocumentSignature } from '@/components/providers/team-provider';
+import { useTeam, TeamFile, TeamDocument, DocumentSignature, Member } from '@/components/providers/team-provider';
 import { 
   Dialog, 
   DialogContent, 
@@ -69,15 +70,16 @@ import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
-function DocumentSigningDialog({ doc: d, onSign }: { doc: TeamDocument, onSign: (id: string, sig: string) => Promise<void> }) {
+function DocumentSigningDialog({ doc: d, onSign, members }: { doc: TeamDocument, onSign: (id: string, sig: string, mid: string) => Promise<void>, members: Member[] }) {
   const [signature, setSignature] = useState('');
+  const [targetMemberId, setTargetMemberId] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [agreed, setAgreed] = useState(false);
 
   const handleSign = async () => {
-    if (!signature.trim() || !agreed) return;
+    if (!signature.trim() || !agreed || !targetMemberId) return;
     setIsProcessing(true);
-    await onSign(d.id, signature);
+    await onSign(d.id, signature, targetMemberId);
     setIsProcessing(false);
   };
 
@@ -88,7 +90,7 @@ function DocumentSigningDialog({ doc: d, onSign }: { doc: TeamDocument, onSign: 
           Execute Document <ChevronRight className="ml-2 h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="rounded-[2.5rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl">
+      <DialogContent data-dark-header="true" className="rounded-[2.5rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl">
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 space-y-8">
           <DialogHeader>
@@ -103,6 +105,18 @@ function DocumentSigningDialog({ doc: d, onSign }: { doc: TeamDocument, onSign: 
           </div>
 
           <div className="space-y-6">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Executing Signature For</Label>
+              <Select value={targetMemberId} onValueChange={setTargetMemberId}>
+                <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue placeholder="Select roster member..." /></SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  {members.map(m => (
+                    <SelectItem key={m.id} value={m.id} className="font-bold">{m.name} ({m.position})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="flex items-center space-x-3 p-4 bg-primary/5 rounded-2xl border border-primary/10 group cursor-pointer" onClick={() => setAgreed(!agreed)}>
               <div className={cn(
                 "h-6 w-6 rounded-lg border-2 flex items-center justify-center transition-all",
@@ -127,8 +141,8 @@ function DocumentSigningDialog({ doc: d, onSign }: { doc: TeamDocument, onSign: 
           </div>
 
           <DialogFooter>
-            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleSign} disabled={!agreed || !signature.trim() || isProcessing}>
-              Confirm & Verify Signatures
+            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleSign} disabled={!agreed || !signature.trim() || !targetMemberId || isProcessing}>
+              {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Confirm & Verify Signatures"}
             </Button>
           </DialogFooter>
         </div>
@@ -138,7 +152,7 @@ function DocumentSigningDialog({ doc: d, onSign }: { doc: TeamDocument, onSign: 
 }
 
 export default function FilesPage() {
-  const { activeTeam, addFile, deleteFile, user, isPro, purchasePro, isSuperAdmin, isStaff, currentMember, signTeamDocument } = useTeam();
+  const { activeTeam, addFile, deleteFile, user, isPro, purchasePro, isSuperAdmin, isStaff, members, currentMember, signTeamDocument } = useTeam();
   const db = useFirestore();
   
   const [mounted, setMounted] = useState(false);
@@ -148,6 +162,19 @@ export default function FilesPage() {
   const [uploadDescription, setUploadDescription] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Filter members list for parent to include themselves and their children
+  const signingMembers = useMemo(() => {
+    if (!user) return [];
+    if (!members) return [];
+    
+    // Admin/Coach can sign for anyone if needed (or just themselves)
+    if (isStaff) return members;
+    
+    // Players sign for themselves
+    // Parents sign for themselves or their children
+    return members.filter(m => m.userId === user.id || m.parentEmail === user.email);
+  }, [members, user, isStaff]);
 
   // Queries
   const filesQuery = useMemoFirebase(() => {
@@ -177,33 +204,33 @@ export default function FilesPage() {
 
   useEffect(() => {
     setMounted(true);
-    if (activeTeam && currentMember && db) {
-      // Check which documents current user has signed
+    if (activeTeam && signingMembers.length > 0 && db) {
+      // Check which documents current user has signed for any of their linked members
       const checkSigs = async () => {
         const ids: string[] = [];
         const docsSnap = await getDocs(collection(db, 'teams', activeTeam.id, 'documents'));
         for (const d of docsSnap.docs) {
-          const sigSnap = await getDocs(query(collection(db, 'teams', activeTeam.id, 'documents', d.id, 'signatures'), where('memberId', '==', currentMember.id)));
-          if (!sigSnap.empty) ids.push(d.id);
+          let allSigned = true;
+          for (const m of signingMembers) {
+            const sigSnap = await getDocs(query(collection(db, 'teams', activeTeam.id, 'documents', d.id, 'signatures'), where('memberId', '==', m.id)));
+            if (sigSnap.empty) allSigned = false;
+          }
+          if (allSigned && signingMembers.length > 0) ids.push(d.id);
         }
         setSignedDocIds(ids);
       };
       checkSigs();
     }
-  }, [activeTeam, currentMember, db, documents]);
+  }, [activeTeam, signingMembers, db, documents]);
 
   const pendingDocs = useMemo(() => {
     if (!documents) return [];
     return documents.filter(d => {
-      const isAssigned = d.assignedTo.includes('all') || d.assignedTo.includes(currentMember?.id || '');
+      // Show if ANY associated member needs to sign
+      const isAssigned = d.assignedTo.includes('all') || signingMembers.some(m => d.assignedTo.includes(m.id));
       return isAssigned && !signedDocIds.includes(d.id);
     });
-  }, [documents, signedDocIds, currentMember]);
-
-  const signedDocs = useMemo(() => {
-    if (!documents) return [];
-    return documents.filter(d => signedDocIds.includes(d.id));
-  }, [documents, signedDocIds]);
+  }, [documents, signedDocIds, signingMembers]);
 
   const filteredFiles = useMemo(() => {
     return teamFiles.filter(f => f.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -243,7 +270,7 @@ export default function FilesPage() {
                   <Upload className="h-4 w-4 mr-2" /> Upload Resource
                 </Button>
               </DialogTrigger>
-              <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
+              <DialogContent data-dark-header="true" className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
                 <div className="h-2 bg-primary w-full" />
                 <div className="p-8 space-y-6">
                   <DialogHeader>
@@ -295,7 +322,7 @@ export default function FilesPage() {
                   <p className="text-xs font-medium text-muted-foreground line-clamp-3 leading-relaxed mb-6 italic">
                     "{d.content}"
                   </p>
-                  <DocumentSigningDialog doc={d} onSign={signTeamDocument} />
+                  <DocumentSigningDialog doc={d} onSign={signTeamDocument} members={signingMembers} />
                 </CardContent>
               </Card>
             ))}
@@ -323,7 +350,6 @@ export default function FilesPage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {/* Regular Files & Certificates */}
           {filteredFiles.map(file => {
             const isCertificate = file.category === 'Signed Certificate';
             return (
@@ -354,7 +380,7 @@ export default function FilesPage() {
                 </CardContent>
                 <CardFooter className="p-6 pt-0 flex gap-2">
                   <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20" onClick={() => window.open(file.url, '_blank')}>
-                    {isCertificate ? 'Track Execution' : 'Download Hub'}
+                    {isCertificate ? 'Audit Execution' : 'Download Hub'}
                   </Button>
                   {isAdmin && <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => setFileToDelete(file.id)}><Trash2 className="h-4 w-4" /></Button>}
                 </CardFooter>
@@ -362,7 +388,7 @@ export default function FilesPage() {
             );
           })}
 
-          {filteredFiles.length === 0 && signedDocs.length === 0 && pendingDocs.length === 0 && (
+          {filteredFiles.length === 0 && pendingDocs.length === 0 && (
             <div className="col-span-full py-24 text-center bg-muted/10 rounded-[3rem] border-2 border-dashed space-y-4 opacity-40">
               <FolderClosed className="h-12 w-12 mx-auto" />
               <p className="text-sm font-black uppercase tracking-widest">No Documents Found</p>
