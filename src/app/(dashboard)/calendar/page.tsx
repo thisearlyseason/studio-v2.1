@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -24,22 +23,16 @@ import {
   LayoutGrid, 
   List, 
   MapPin, 
-  ChevronRight as ChevronRightIcon,
-  Trophy,
-  Zap,
-  Clock,
-  ArrowRight,
+  Clock, 
   X,
   Info,
-  CheckCircle2,
   CalendarDays,
   Users
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useTeam, TeamEvent, EventType, Member } from '@/components/providers/team-provider';
-import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
+import { useTeam, TeamEvent, EventType } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -49,11 +42,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { 
   Dialog, 
   DialogContent, 
-  DialogHeader, 
   DialogTitle, 
-  DialogTrigger,
-  DialogDescription, 
-  DialogFooter,
   DialogClose
 } from '@/components/ui/dialog';
 
@@ -99,9 +88,7 @@ function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], 
           </div>
           <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
           <p className="text-[9px] font-medium text-muted-foreground truncate uppercase flex items-center gap-1 mt-1"><MapPin className="h-2 w-2" /> {event.location}</p>
-          <p className="text-[8px] font-black text-primary uppercase mt-1">{formatDateRange(event.date, event.endDate)}</p>
         </div>
-        <ChevronRightIcon className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all shrink-0" />
       </CardContent>
     </Card>
   );
@@ -133,28 +120,10 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
               <div className="pt-4 border-t border-white/10">
                 <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em] mb-4">Tactical RSVP</p>
                 <div className="grid grid-cols-1 gap-2">
-                  <Button 
-                    variant={myRsvp === 'going' ? 'default' : 'outline'} 
-                    className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'going' ? "bg-primary border-none" : "bg-white/5 border-white/10")}
-                    onClick={() => updateRSVP(event.id, 'going')}
-                  >
-                    Going
-                  </Button>
+                  <Button variant={myRsvp === 'going' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'going' ? "bg-primary border-none" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'going')}>Going</Button>
                   <div className="grid grid-cols-2 gap-2">
-                    <Button 
-                      variant={myRsvp === 'maybe' ? 'default' : 'outline'} 
-                      className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'maybe' ? "bg-amber-50 border-none" : "bg-white/5 border-white/10")}
-                      onClick={() => updateRSVP(event.id, 'maybe')}
-                    >
-                      Maybe
-                    </Button>
-                    <Button 
-                      variant={myRsvp === 'declined' ? 'default' : 'outline'} 
-                      className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'declined' ? "bg-red-600 border-none" : "bg-white/5 border-white/10")}
-                      onClick={() => updateRSVP(event.id, 'declined')}
-                    >
-                      Decline
-                    </Button>
+                    <Button variant={myRsvp === 'maybe' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'maybe' ? "bg-amber-50" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'maybe')}>Maybe</Button>
+                    <Button variant={myRsvp === 'declined' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'declined' ? "bg-red-600" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'declined')}>Decline</Button>
                   </div>
                 </div>
               </div>
@@ -162,17 +131,15 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
           </div>
           <div className="flex-1 p-8 bg-white space-y-6">
             <div className="flex items-center gap-3"><Info className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest">Event Brief</h3></div>
-            <p className="text-sm font-medium text-muted-foreground leading-relaxed italic">"{event.description || 'No specific coordination notes provided for this assignment.'}"</p>
+            <p className="text-sm font-medium text-muted-foreground leading-relaxed italic">"{event.description || 'No specific coordination notes provided.'}"</p>
             <div className="pt-6 border-t space-y-4">
               <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest">Attendance Pulse</h3></div>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(event.userRsvps || {}).map(([uid, status]) => (
                   <Badge key={uid} variant="outline" className={cn(
                     "text-[8px] font-black uppercase border-none h-6",
-                    status === 'going' ? "bg-green-50 text-green-700" : status === 'maybe' ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"
-                  )}>
-                    {status}
-                  </Badge>
+                    status === 'going' ? "bg-green-100 text-green-700" : status === 'maybe' ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                  )}>{status}</Badge>
                 ))}
               </div>
             </div>
@@ -194,14 +161,7 @@ export default function MasterCalendarPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeDetailedEvent, setActiveDetailedEvent] = useState<TeamEvent | null>(null);
 
-  const allEvents = householdEvents;
-
-  const discoveryTeamIds = useMemo(() => {
-    return Array.from(new Set([
-      ...teams.map(t => t.id),
-      ...allEvents.map(e => e.teamId)
-    ]));
-  }, [teams, allEvents]);
+  const discoveryTeamIds = useMemo(() => Array.from(new Set([...teams.map(t => t.id), ...householdEvents.map(e => e.teamId)])), [teams, householdEvents]);
 
   useEffect(() => {
     if (discoveryTeamIds.length > 0 && selectedTeamIds.length === 0) {
@@ -210,15 +170,13 @@ export default function MasterCalendarPage() {
   }, [discoveryTeamIds, selectedTeamIds.length]);
 
   const filteredEvents = useMemo(() => {
-    const sorted = [...allEvents].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    return sorted.filter(event => {
+    return householdEvents.filter(event => {
       const matchesTeam = selectedTeamIds.includes(event.teamId);
       const matchesType = selectedEventTypes.includes(event.eventType || 'other');
-      const matchesSearch = (event.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-                           (event.location || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = (event.title || '').toLowerCase().includes(searchTerm.toLowerCase());
       return matchesTeam && matchesType && matchesSearch;
     });
-  }, [allEvents, selectedTeamIds, selectedEventTypes, searchTerm]);
+  }, [householdEvents, selectedTeamIds, selectedEventTypes, searchTerm]);
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
@@ -230,129 +188,73 @@ export default function MasterCalendarPage() {
     const map: Record<string, TeamEvent[]> = {};
     filteredEvents.forEach(event => {
       const start = new Date(event.date);
-      const end = event.endDate ? new Date(event.endDate) : start;
-      
-      try {
-        const days = eachDayOfInterval({ start, end });
-        days.forEach(day => {
-          const dayKey = format(day, 'yyyy-MM-dd');
-          if (!map[dayKey]) map[dayKey] = [];
-          map[dayKey].push(event);
-        });
-      } catch (e) {
-        const dayKey = format(start, 'yyyy-MM-dd');
-        if (!map[dayKey]) map[dayKey] = [];
-        map[dayKey].push(event);
-      }
+      const key = format(start, 'yyyy-MM-dd');
+      if (!map[key]) map[key] = [];
+      map[key].push(event);
     });
     return map;
   }, [filteredEvents]);
 
   const selectedDayEvents = useMemo(() => {
     if (!selectedDay) return [];
-    const key = format(selectedDay, 'yyyy-MM-dd');
-    return eventsByDay[key] || [];
+    return eventsByDay[format(selectedDay, 'yyyy-MM-dd')] || [];
   }, [selectedDay, eventsByDay]);
-
-  const toggleEventType = (type: EventType) => {
-    setSelectedEventTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
-  };
-
-  const toggleTeam = (tid: string) => {
-    setSelectedTeamIds(prev => prev.includes(tid) ? prev.filter(id => id !== tid) : [...prev, tid]);
-  };
-
-  const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
-  const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
 
   return (
     <div className="space-y-8 pb-32">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">
-            {isParent ? "Household Intelligence" : "Multi-Squad Intelligence"}
-          </Badge>
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">{isParent ? "Household Hub" : "Squad Operations"}</Badge>
           <h1 className="text-4xl font-black uppercase tracking-tight">Master Calendar</h1>
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Unified Operational Visibility</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-3">
           <div className="bg-muted/50 p-1 rounded-xl border-2 flex items-center shadow-inner">
-            <Button variant={viewMode === 'grid' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('grid')} className="h-9 px-4 rounded-lg font-black text-[10px] uppercase">
-              <LayoutGrid className="h-3.5 w-3.5 mr-2" /> Grid
-            </Button>
-            <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-4 rounded-lg font-black text-[10px] uppercase">
-              <List className="h-3.5 w-3.5 mr-2" /> Agenda
-            </Button>
+            <Button variant={viewMode === 'grid' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('grid')} className="h-9 px-4 rounded-lg font-black text-[10px] uppercase"><LayoutGrid className="h-3.5 w-3.5 mr-2" /> Grid</Button>
+            <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-4 rounded-lg font-black text-[10px] uppercase"><List className="h-3.5 w-3.5 mr-2" /> Agenda</Button>
           </div>
-
           <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2"><Filter className="h-4 w-4" /> Filters</Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80 rounded-2xl shadow-2xl p-6 space-y-6" align="end">
+            <PopoverTrigger asChild><Button variant="outline" className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2"><Filter className="h-4 w-4" /> Filters</Button></PopoverTrigger>
+            <PopoverContent className="w-80 rounded-2xl shadow-2xl p-6" align="end">
               <div className="space-y-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-primary">Squad Enrollment</p>
-                <ScrollArea className="h-48 pr-2">
+                <ScrollArea className="h-48">
                   <div className="space-y-2">
-                    {discoveryTeamIds.map(tid => {
-                      const team = teams.find(t => t.id === tid);
-                      return (
-                        <div key={tid} className="flex items-center space-x-3 p-2 hover:bg-muted/5 rounded-lg transition-colors cursor-pointer" onClick={() => toggleTeam(tid)}>
-                          <Checkbox checked={selectedTeamIds.includes(tid)} id={`team-${tid}`} onCheckedChange={() => toggleTeam(tid)} />
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Avatar className="h-6 w-6 rounded-md shrink-0 border">
-                              <AvatarImage src={team?.teamLogoUrl} />
-                              <AvatarFallback className="font-black text-[8px] bg-muted">{team?.name?.[0] || 'T'}</AvatarFallback>
-                            </Avatar>
-                            <Label htmlFor={`team-${tid}`} className="text-xs font-bold truncate cursor-pointer uppercase">{team?.name || `Squad ${tid.slice(-4)}`}</Label>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {discoveryTeamIds.map(tid => (
+                      <div key={tid} className="flex items-center space-x-3 p-2 hover:bg-muted/5 rounded-lg transition-colors cursor-pointer" onClick={() => setSelectedTeamIds(prev => prev.includes(tid) ? prev.filter(id => id !== tid) : [...prev, tid])}>
+                        <Checkbox checked={selectedTeamIds.includes(tid)} onCheckedChange={() => {}} />
+                        <Label className="text-xs font-bold truncate uppercase">{teams.find(t => t.id === tid)?.name || `Team ${tid.slice(-4)}`}</Label>
+                      </div>
+                    ))}
                   </div>
                 </ScrollArea>
-              </div>
-              <div className="space-y-4 pt-4 border-t">
-                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Activity Profile</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['game', 'practice', 'tournament', 'meeting', 'other'] as EventType[]).map(type => (
-                    <div key={type} className="flex items-center space-x-2">
-                      <Checkbox checked={selectedEventTypes.includes(type)} id={`type-${type}`} onCheckedChange={() => toggleEventType(type)} />
-                      <Label htmlFor={`type-${type}`} className="text-[10px] font-bold uppercase cursor-pointer">{type}</Label>
-                    </div>
-                  ))}
-                </div>
               </div>
             </PopoverContent>
           </Popover>
         </div>
       </div>
 
-      <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white">
+      <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white">
         <div className="bg-black text-white p-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="bg-primary p-2 rounded-xl text-white shadow-lg shadow-primary/20"><CalendarIcon className="h-5 w-5" /></div>
+            <div className="bg-primary p-2 rounded-xl text-white shadow-lg"><CalendarIcon className="h-5 w-5" /></div>
             <h2 className="text-2xl font-black uppercase tracking-tight">{format(currentDate, 'MMMM yyyy')}</h2>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={prevMonth} className="text-white hover:bg-white/10 rounded-full h-10 w-10"><ChevronLeft className="h-6 w-6" /></Button>
-            <Button variant="ghost" size="sm" onClick={() => { setCurrentDate(new Date()); setSelectedDay(new Date()); }} className="text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest h-10 px-4 rounded-full">Today</Button>
-            <Button variant="ghost" size="icon" onClick={nextMonth} className="text-white hover:bg-white/10 rounded-full h-10 w-10"><ChevronRight className="h-6 w-6" /></Button>
+            <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="text-white hover:bg-white/10 rounded-full"><ChevronLeft className="h-6 w-6" /></Button>
+            <Button variant="ghost" size="sm" onClick={() => { setCurrentDate(new Date()); setSelectedDay(new Date()); }} className="text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest px-4 rounded-full">Today</Button>
+            <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="text-white hover:bg-white/10 rounded-full"><ChevronRight className="h-6 w-6" /></Button>
           </div>
         </div>
 
         <CardContent className="p-0">
-          {viewMode === 'grid' && (
-            <div className="grid grid-cols-7 border-b bg-muted/10">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                <div key={day} className="py-4 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground border-r last:border-r-0">{day}</div>
-              ))}
-            </div>
-          )}
-
           {viewMode === 'grid' ? (
             <div className="flex flex-col">
+              <div className="grid grid-cols-7 border-b bg-muted/10">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                  <div key={day} className="py-4 text-center text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground border-r last:border-r-0">{day}</div>
+                ))}
+              </div>
               <div className="grid grid-cols-7 grid-rows-5 auto-rows-fr min-h-[600px]">
                 {calendarDays.map((day, i) => {
                   const dayKey = format(day, 'yyyy-MM-dd');
@@ -364,43 +266,24 @@ export default function MasterCalendarPage() {
                   return (
                     <div key={i} className={cn("p-2 border-r border-b min-h-[120px] transition-all cursor-pointer relative", !isCurrentMonth ? "bg-muted/5 opacity-30" : "bg-white", isTodayDate && "bg-primary/[0.02]", isSelected && "bg-primary/[0.05] ring-2 ring-inset ring-primary/20")} onClick={() => setSelectedDay(day)}>
                       <div className="flex justify-between items-center mb-2">
-                        <span className={cn("h-7 w-7 flex items-center justify-center rounded-full text-xs font-black transition-all", isTodayDate ? "bg-primary text-white shadow-lg" : (isSelected ? "bg-black text-white" : "text-muted-foreground"))}>{format(day, 'd')}</span>
+                        <span className={cn("h-7 w-7 flex items-center justify-center rounded-full text-xs font-black transition-all", isTodayDate ? "bg-primary text-white" : (isSelected ? "bg-black text-white" : "text-muted-foreground"))}>{format(day, 'd')}</span>
                       </div>
-                      <div className="space-y-1 overflow-y-auto max-h-[100px] custom-scrollbar">
+                      <div className="space-y-1">
                         {dayEvents.map(event => (
-                          <div key={event.id} className={cn("w-full h-1.5 rounded-full mb-0.5", EVENT_TYPE_COLORS[event.eventType || 'other'])} />
+                          <div key={event.id} className={cn("w-full h-1.5 rounded-full", EVENT_TYPE_COLORS[event.eventType || 'other'])} />
                         ))}
                       </div>
                     </div>
                   );
                 })}
               </div>
-              
               <div className="p-8 border-t bg-muted/5 space-y-6">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-primary/10 p-2 rounded-xl text-primary"><Clock className="h-5 w-5" /></div>
-                    <h3 className="text-xl font-black uppercase tracking-tight">
-                      {selectedDay ? format(selectedDay, 'EEEE, MMMM do') : 'Select a day'}
-                    </h3>
-                  </div>
-                  <Badge variant="outline" className="font-black text-[10px] uppercase tracking-widest">{selectedDayEvents.length} Events</Badge>
+                  <h3 className="text-xl font-black uppercase tracking-tight">{selectedDay ? format(selectedDay, 'EEEE, MMMM do') : 'Select a day'}</h3>
+                  <Badge variant="outline" className="font-black text-[10px] uppercase">{selectedDayEvents.length} Events</Badge>
                 </div>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {selectedDayEvents.map(event => (
-                    <EventItem 
-                      key={event.id} 
-                      event={event} 
-                      teams={teams} 
-                      onClick={() => setActiveDetailedEvent(event)} 
-                    />
-                  ))}
-                  {selectedDay && selectedDayEvents.length === 0 && (
-                    <div className="col-span-full py-12 text-center border-2 border-dashed rounded-[2rem] opacity-30">
-                      <p className="text-sm font-black uppercase tracking-widest">No strategic engagements scheduled</p>
-                    </div>
-                  )}
+                  {selectedDayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => setActiveDetailedEvent(event)} />)}
                 </div>
               </div>
             </div>
@@ -417,14 +300,7 @@ export default function MasterCalendarPage() {
                       <div className="h-px bg-muted flex-1" />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-4 md:ml-16">
-                      {dayEvents.map(event => (
-                        <EventItem 
-                          key={event.id} 
-                          event={event} 
-                          teams={teams} 
-                          onClick={() => setActiveDetailedEvent(event)} 
-                        />
-                      ))}
+                      {dayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => setActiveDetailedEvent(event)} />)}
                     </div>
                   </div>
                 ))}
@@ -434,11 +310,7 @@ export default function MasterCalendarPage() {
         </CardContent>
       </Card>
 
-      <EventDetailDialog 
-        event={activeDetailedEvent} 
-        isOpen={!!activeDetailedEvent} 
-        onOpenChange={(o) => !o && setActiveDetailedEvent(null)} 
-      />
+      <EventDetailDialog event={activeDetailedEvent} isOpen={!!activeDetailedEvent} onOpenChange={(o) => !o && setActiveDetailedEvent(null)} />
     </div>
   );
 }

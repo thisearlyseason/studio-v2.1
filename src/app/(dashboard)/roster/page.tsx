@@ -174,10 +174,10 @@ export default function RosterPage() {
       </div>
 
       <Dialog open={!!selectedMember} onOpenChange={(open) => !open && setSelectedMember(null)}>
-        <DialogContent className="rounded-[3rem] sm:max-w-5xl overflow-hidden h-[100dvh] sm:h-[90vh] border-none shadow-2xl p-0 flex flex-col bg-white">
+        <DialogContent className="rounded-[3rem] sm:max-w-5xl overflow-hidden border-none shadow-2xl p-0 flex flex-col bg-white">
           <DialogTitle className="sr-only">Player Profile: {selectedMember?.name}</DialogTitle>
           {selectedMember && (
-            <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
+            <div className="flex flex-col lg:flex-row min-h-0">
               <div className="w-full lg:w-5/12 bg-black text-white p-8 lg:p-12 space-y-8 shrink-0 flex flex-col relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none">
                   <Zap className="h-48 w-48" />
@@ -202,7 +202,7 @@ export default function RosterPage() {
                 </div>
               </div>
               
-              <div className="flex-1 p-8 lg:p-12 space-y-10 overflow-y-auto custom-scrollbar bg-white">
+              <div className="flex-1 p-8 lg:p-12 space-y-10 bg-white">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-10">
                   <div className="space-y-6">
                     <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Award className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em]">Vital Stats</h4></div>

@@ -1,4 +1,3 @@
-
 'use client';
     
 import { useState, useEffect, useRef } from 'react';
@@ -69,7 +68,7 @@ export function useDoc<T = any>(
       (err: FirestoreError) => {
         if (!isMounted.current) return;
         
-        if (!path || path === '/' || path.includes('demo_guest')) {
+        if (!path || path === '/' || path.includes('undefined')) {
           setIsLoading(false);
           return;
         }
