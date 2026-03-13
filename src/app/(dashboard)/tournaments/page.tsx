@@ -353,34 +353,34 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
           </div>
         </aside>
 
-        <div className="flex-1 flex flex-col min-w-0 bg-white rounded-[3rem] border-2 shadow-sm">
-          <Tabs defaultValue="bracket" className="w-full flex flex-col">
-            <div className="bg-muted/30 p-6 border-b rounded-t-[3rem]">
-              <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit overflow-x-auto custom-scrollbar">
-                <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Itinerary</TabsTrigger>
-                <TabsTrigger value="standings" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Standings</TabsTrigger>
-                <TabsTrigger value="attendance" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Attendance</TabsTrigger>
-                <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
+        <div className="flex-1 flex flex-col min-w-0 bg-white rounded-[3rem] border-2 shadow-sm overflow-hidden">
+          <Tabs defaultValue="bracket" className="w-full flex flex-col h-full">
+            <div className="bg-muted/30 p-6 border-b">
+              <TabsList className="bg-white/50 h-auto p-1.5 rounded-2xl shadow-inner border w-full overflow-x-auto flex-wrap sm:flex-nowrap custom-scrollbar">
+                <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-6 sm:px-8 data-[state=active]:bg-black data-[state=active]:text-white">Itinerary</TabsTrigger>
+                <TabsTrigger value="standings" className="rounded-xl font-black text-xs uppercase px-6 sm:px-8 data-[state=active]:bg-black data-[state=active]:text-white">Standings</TabsTrigger>
+                <TabsTrigger value="attendance" className="rounded-xl font-black text-xs uppercase px-6 sm:px-8 data-[state=active]:bg-black data-[state=active]:text-white">Attendance</TabsTrigger>
+                <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-6 sm:px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
                 {isOrganizer && (
                   <>
-                    <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>
-                    <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Deploy</TabsTrigger>
+                    <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-6 sm:px-8 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>
+                    <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-6 sm:px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Deploy</TabsTrigger>
                   </>
                 )}
               </TabsList>
             </div>
 
-            <div className="p-8 lg:p-10 pb-24">
+            <div className="flex-1 p-8 lg:p-10 pb-24 overflow-y-auto custom-scrollbar">
               <TabsContent value="bracket" className="mt-0 space-y-10">
                 {itineraryDays.length > 0 ? (
                   <div className="space-y-8">
-                    <div className="flex bg-muted/50 p-1.5 rounded-2xl border w-fit mx-auto shadow-inner">
+                    <div className="flex bg-muted/50 p-1.5 rounded-2xl border w-fit mx-auto shadow-inner overflow-x-auto max-w-full custom-scrollbar">
                       {itineraryDays.map(day => (
                         <Button 
                           key={day} 
                           variant={activeItineraryDay === day ? 'default' : 'ghost'} 
                           onClick={() => setActiveItineraryDay(day)}
-                          className="h-10 px-8 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
+                          className="h-10 px-8 rounded-xl font-black text-[10px] uppercase tracking-widest whitespace-nowrap"
                         >
                           {format(new Date(day), 'MMM d')}
                         </Button>

@@ -361,9 +361,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   return (
     <Dialog onOpenChange={(open) => { if(!open) setEditingGame(null); }}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-7xl p-0 sm:rounded-[2.5rem] h-full sm:h-[90vh] border-none shadow-2xl overflow-y-auto sm:overflow-hidden flex flex-col bg-white">
+      <DialogContent className="sm:max-w-7xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-hidden flex flex-col">
         <DialogTitle className="sr-only">{event.title} Hub</DialogTitle>
-        <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 overflow-y-auto sm:overflow-hidden">
           <div className="flex flex-col lg:flex-row flex-1 min-h-0">
             <div className="w-full lg:w-1/3 flex flex-col text-white bg-black lg:border-r border-white/10 shrink-0 p-8 relative overflow-y-auto custom-scrollbar">
               <div className="flex justify-between items-start mb-8 relative z-10">
@@ -432,34 +432,34 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
               )}
             </div>
             
-            <div className="flex-1 flex flex-col bg-background relative">
-              <Tabs defaultValue={event.isTournament ? "bracket" : "roster"} className="flex-1 flex flex-col h-full">
+            <div className="flex-1 flex flex-col bg-background relative overflow-y-auto sm:overflow-hidden">
+              <Tabs defaultValue={event.isTournament ? "bracket" : "roster"} className="flex-1 flex flex-col min-h-0">
                 <div className="px-6 py-6 border-b bg-muted/30 backdrop-blur-md shrink-0">
-                  <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit overflow-x-auto custom-scrollbar">
-                    {event.isTournament && <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Itinerary</TabsTrigger>}
-                    <TabsTrigger value="roster" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Attendance</TabsTrigger>
-                    <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
+                  <TabsList className="bg-white/50 h-auto p-1.5 rounded-2xl shadow-inner border w-full overflow-x-auto flex-wrap sm:flex-nowrap custom-scrollbar">
+                    {event.isTournament && <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-6 sm:px-8 data-[state=active]:bg-black data-[state=active]:text-white">Itinerary</TabsTrigger>}
+                    <TabsTrigger value="roster" className="rounded-xl font-black text-xs uppercase px-6 sm:px-8 data-[state=active]:bg-black data-[state=active]:text-white">Attendance</TabsTrigger>
+                    <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-6 sm:px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
                     {isOrganizer && (
                       <>
-                        <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>
-                        <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Deploy</TabsTrigger>
+                        <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-6 sm:px-8 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>
+                        <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-6 sm:px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Deploy</TabsTrigger>
                       </>
                     )}
                   </TabsList>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto sm:overflow-hidden">
-                  <div className="p-6 lg:p-10 pb-24 h-full">
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                  <div className="p-6 lg:p-10 pb-24">
                     <TabsContent value="bracket" className="mt-0 space-y-10">
                       {itineraryDays.length > 0 ? (
                         <div className="space-y-8">
-                          <div className="flex bg-muted/50 p-1.5 rounded-2xl border w-fit mx-auto shadow-inner">
+                          <div className="flex bg-muted/50 p-1.5 rounded-2xl border w-fit mx-auto shadow-inner overflow-x-auto custom-scrollbar max-w-full">
                             {itineraryDays.map(day => (
                               <Button 
                                 key={day} 
                                 variant={activeItineraryDay === day ? 'default' : 'ghost'} 
                                 onClick={() => setActiveItineraryDay(day)}
-                                className="h-10 px-6 rounded-xl font-black text-[10px] uppercase tracking-widest"
+                                className="h-10 px-6 rounded-xl font-black text-[10px] uppercase tracking-widest whitespace-nowrap"
                               >
                                 {format(new Date(day), 'MMM d')}
                               </Button>
@@ -792,7 +792,7 @@ export default function EventsPage() {
     setNewDate(format(new Date(event.date), 'yyyy-MM-dd')); 
     setNewEndDate(event.endDate ? format(new Date(event.endDate), 'yyyy-MM-dd') : '');
     setNewTime(event.startTime); 
-    setNewEndTime(event.endTime || ''); 
+    setNewTime(event.endTime || ''); 
     setNewLocation(event.location); 
     setNewTournamentTeams(event.tournamentTeams?.join(', ') || '');
     setNewWaiverText(event.teamWaiverText || '');
@@ -883,7 +883,7 @@ export default function EventsPage() {
       </div>
       
       <Dialog open={isCreateOpen} onOpenChange={(o) => { if(!o) resetForm(); setIsCreateOpen(o); }}>
-        <DialogContent className="sm:max-w-5xl p-0 sm:rounded-[2.5rem] h-full sm:h-[90vh] border-none shadow-2xl overflow-y-auto sm:overflow-hidden flex flex-col bg-white">
+        <DialogContent className="sm:max-w-5xl p-0 sm:rounded-[2.5rem] h-full sm:h-[90vh] border-none shadow-2xl bg-white flex flex-col">
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             <div className="flex flex-col lg:flex-row min-h-full">
               <div className="w-full lg:w-5/12 bg-muted/30 p-10 space-y-8 lg:border-r shrink-0">
