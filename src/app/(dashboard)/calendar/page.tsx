@@ -65,6 +65,18 @@ const EVENT_TYPE_COLORS: Record<EventType, string> = {
   other: 'bg-slate-600 border-slate-600 text-white',
 };
 
+const formatDateRange = (start: string | Date, end?: string | Date) => {
+  const startDate = new Date(start);
+  if (!end) return format(startDate, 'MMM dd');
+  const endDate = new Date(end);
+  if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
+  
+  if (startDate.getMonth() === endDate.getMonth()) {
+    return `${format(startDate, 'MMM d')} - ${format(endDate, 'd')}`;
+  }
+  return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
+};
+
 function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], onClick: () => void }) {
   const team = teams.find(t => t.id === event.teamId);
   return (
@@ -87,6 +99,7 @@ function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], 
           </div>
           <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
           <p className="text-[9px] font-medium text-muted-foreground truncate uppercase flex items-center gap-1 mt-1"><MapPin className="h-2 w-2" /> {event.location}</p>
+          <p className="text-[8px] font-black text-primary uppercase mt-1">{formatDateRange(event.date, event.endDate)}</p>
         </div>
         <ChevronRightIcon className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all shrink-0" />
       </CardContent>
@@ -113,7 +126,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
             <div className="space-y-6 relative z-10">
               <h2 className="text-3xl font-black tracking-tighter leading-tight uppercase">{event.title}</h2>
               <div className="bg-white/10 p-4 rounded-2xl border border-white/10 space-y-3 font-bold text-sm">
-                <div className="flex items-center gap-3"><CalendarDays className="h-4 w-4 text-primary" />{format(new Date(event.date), 'MMM dd, yyyy')}</div>
+                <div className="flex items-center gap-3"><CalendarDays className="h-4 w-4 text-primary" />{formatDateRange(event.date, event.endDate)}</div>
                 <div className="flex items-center gap-3"><Clock className="h-4 w-4 text-primary" />{event.startTime}</div>
                 <div className="flex items-center gap-3"><MapPin className="h-4 w-4 text-primary" /><span className="truncate">{event.location}</span></div>
               </div>
@@ -156,7 +169,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                 {Object.entries(event.userRsvps || {}).slice(0, 8).map(([uid, status]) => (
                   <Badge key={uid} variant="outline" className={cn(
                     "text-[8px] font-black uppercase border-none h-6",
-                    status === 'going' ? "bg-green-50 text-green-700" : status === 'maybe' ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"
+                    status === 'going' ? "bg-green-50 text-green-700" : status === 'maybe' ? "bg-amber-50 text-amber-700" : status === 'red-50 text-red-700"
                   )}>
                     {status}
                   </Badge>
@@ -183,7 +196,6 @@ export default function MasterCalendarPage() {
   const [activeDetailedEvent, setActiveDetailedEvent] = useState<TeamEvent | null>(null);
 
   // 1. Unified Itinerary Source
-  // We use householdEvents from the TeamProvider which is already aggregated and real-time.
   const allEvents = householdEvents;
 
   const discoveryTeamIds = useMemo(() => {
@@ -219,9 +231,21 @@ export default function MasterCalendarPage() {
   const eventsByDay = useMemo(() => {
     const map: Record<string, TeamEvent[]> = {};
     filteredEvents.forEach(event => {
-      const dayKey = format(new Date(event.date), 'yyyy-MM-dd');
-      if (!map[dayKey]) map[dayKey] = [];
-      map[dayKey].push(event);
+      const start = new Date(event.date);
+      const end = event.endDate ? new Date(event.endDate) : start;
+      
+      try {
+        const days = eachDayOfInterval({ start, end });
+        days.forEach(day => {
+          const dayKey = format(day, 'yyyy-MM-dd');
+          if (!map[dayKey]) map[dayKey] = [];
+          map[dayKey].push(event);
+        });
+      } catch (e) {
+        const dayKey = format(start, 'yyyy-MM-dd');
+        if (!map[dayKey]) map[dayKey] = [];
+        map[dayKey].push(event);
+      }
     });
     return map;
   }, [filteredEvents]);

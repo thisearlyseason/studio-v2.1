@@ -63,6 +63,18 @@ import { format, isPast, isSameDay, addMinutes, eachDayOfInterval, parse as pars
 import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
 
+const formatDateRange = (start: string | Date, end?: string | Date) => {
+  const startDate = new Date(start);
+  if (!end) return format(startDate, 'MMM dd');
+  const endDate = new Date(end);
+  if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
+  
+  if (startDate.getMonth() === endDate.getMonth()) {
+    return `${format(startDate, 'MMM d')} - ${format(endDate, 'd')}`;
+  }
+  return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
+};
+
 function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
     acc[team] = { name: team, wins: 0, losses: 0, ties: 0, points: 0 };
@@ -260,7 +272,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><CalendarIcon className="h-4 w-4 mr-2" /> {format(new Date(event.date), 'MMM d, yyyy')}</Badge>
+          <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><CalendarIcon className="h-4 w-4 mr-2" /> {formatDateRange(event.date, event.endDate)}</Badge>
           <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><MapPin className="h-4 w-4 mr-2" /> {event.location}</Badge>
         </div>
       </div>
@@ -560,8 +572,8 @@ export default function TournamentsPage() {
   const filteredTournaments = useMemo(() => {
     const now = new Date();
     const list = allTournaments || [];
-    if (filterMode === 'live') return list.filter(e => !isPast(new Date(e.date)) || isSameDay(new Date(e.date), now));
-    return list.filter(e => isPast(new Date(e.date)) && !isSameDay(new Date(e.date), now)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    if (filterMode === 'live') return list.filter(e => !isPast(new Date(e.endDate || e.date)) || isSameDay(new Date(e.endDate || e.date), now));
+    return list.filter(e => isPast(new Date(e.endDate || e.date)) && !isSameDay(new Date(e.endDate || e.date), now)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [allTournaments, filterMode]);
 
   if (selectedTournament) {
@@ -642,6 +654,7 @@ export default function TournamentsPage() {
                   <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-primary" /> {tournament.location}
                   </p>
+                  <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">{formatDateRange(tournament.date, tournament.endDate)}</p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-6">
@@ -671,7 +684,7 @@ export default function TournamentsPage() {
             </div>
             <div className="space-y-2">
               <p className="font-black text-3xl uppercase tracking-tight">No Active Series Hubs</p>
-              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-w-sm mx-auto">Launch an Elite Tournament to unlock strategic brackets and coordination.</p>
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto">Launch an Elite Tournament to unlock strategic brackets and coordination.</p>
             </div>
           </div>
         )}

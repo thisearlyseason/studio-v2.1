@@ -103,7 +103,10 @@ const formatDateRange = (start: string | Date, end?: string | Date) => {
   if (!end) return format(startDate, 'MMM dd');
   const endDate = new Date(end);
   if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
-  if (startDate.getMonth() === endDate.getMonth()) return `${format(startDate, 'MMM d')}-${format(endDate, 'd')}`;
+  
+  if (startDate.getMonth() === endDate.getMonth()) {
+    return `${format(startDate, 'MMM d')} - ${format(endDate, 'd')}`;
+  }
   return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
 };
 
@@ -704,7 +707,7 @@ export default function EventsPage() {
         title: newTitle, 
         eventType: isTournamentMode ? 'tournament' : eventType, 
         date: eventDate.toISOString(), 
-        endDate: isTournamentMode && newEndDate ? new Date(newEndDate).toISOString() : null,
+        endDate: isTournamentMode && newEndDate ? new Date(newEndDate).toISOString() : eventDate.toISOString(),
         startTime: newTime, 
         endTime: newEndTime || 'TBD', 
         location: newLocation, 
@@ -941,6 +944,7 @@ export default function EventsPage() {
                       <div>
                         <div className="flex gap-2 mb-1.5">
                           <Badge className="text-[7px] uppercase font-black">{event.isTournament ? 'Elite Tournament' : (event.eventType || 'Activity')}</Badge>
+                          <Badge variant="outline" className="text-[7px] uppercase font-black text-primary border-primary/20">{formatDateRange(event.date, event.endDate)}</Badge>
                           <Badge variant="outline" className="text-[7px] uppercase font-black">{event.startTime}</Badge>
                         </div>
                         <h3 className="text-xl font-black tracking-tight leading-none truncate group-hover:text-primary transition-colors">{event.title}</h3>

@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useMemo } from 'react';
@@ -23,13 +24,26 @@ import {
   AlertCircle,
   FileText,
   Building,
-  ArrowRight
+  ArrowRight,
+  MapPin
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { format, isFuture, isToday } from 'date-fns';
+import { format, isFuture, isToday, isSameDay } from 'date-fns';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, limit, where, collectionGroup } from 'firebase/firestore';
+
+const formatDateRange = (start: string | Date, end?: string | Date) => {
+  const startDate = new Date(start);
+  if (!end) return format(startDate, 'MMM dd');
+  const endDate = new Date(end);
+  if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
+  
+  if (startDate.getMonth() === endDate.getMonth()) {
+    return `${format(startDate, 'MMM d')} - ${format(endDate, 'd')}`;
+  }
+  return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
+};
 
 export default function UniversalAccountDashboard() {
   const { 
@@ -78,7 +92,7 @@ export default function UniversalAccountDashboard() {
   const { data: fundraisers } = useCollection(fundQuery);
 
   const upcomingItinerary = useMemo(() => {
-    return householdEvents.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date))).slice(0, 3);
+    return householdEvents.filter(e => isFuture(new Date(e.endDate || e.date)) || isToday(new Date(e.endDate || e.date))).slice(0, 3);
   }, [householdEvents]);
 
   if (!user) return null;
@@ -182,6 +196,10 @@ export default function UniversalAccountDashboard() {
                           <span className="text-[10px] font-bold text-muted-foreground">{event.startTime}</span>
                         </div>
                         <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-[9px] font-medium text-muted-foreground uppercase flex items-center gap-1"><MapPin className="h-2 w-2" /> {event.location}</p>
+                          <p className="text-[8px] font-black text-primary uppercase">{formatDateRange(event.date, event.endDate)}</p>
+                        </div>
                       </div>
                     </div>
                   </CardContent>
@@ -270,7 +288,7 @@ export default function UniversalAccountDashboard() {
               <Badge variant="outline" className="border-primary/20 text-primary font-black text-[8px] px-2 h-5">{pendingWaiversCount} PENDING</Badge>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
-              <p className="text-sm font-medium text-muted-foreground leading-relaxed">
+              <p className="text-[10px] font-medium text-muted-foreground leading-relaxed">
                 Ensure all teammates have signed their liability and media release waivers before match day.
               </p>
               <Button onClick={() => router.push('/files')} variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px] tracking-widest border-2">
