@@ -99,9 +99,9 @@ export default function PublicLeagueRegistrationPage() {
 
   if (isSuccess) {
     return (
-      <div className="min-h-screen bg-muted/30 flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-muted/30 flex flex-col items-center justify-center p-6 text-center">
         <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
-        <Card className="max-w-md w-full text-center p-10 rounded-[3rem] border-none shadow-2xl bg-white animate-in zoom-in-95 duration-500">
+        <Card className="max-w-md w-full p-10 rounded-[3rem] border-none shadow-2xl bg-white animate-in zoom-in-95 duration-500">
           <div className="bg-green-100 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-8">
             <CheckCircle2 className="h-10 w-10 text-green-600" />
           </div>
@@ -109,7 +109,9 @@ export default function PublicLeagueRegistrationPage() {
           <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] mt-2 mb-8">Submission Successful</p>
           <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 text-left">
             <p className="text-[10px] font-black uppercase text-primary">Next Steps</p>
-            <p className="text-sm font-bold mt-1">The squad coordinator has been notified. You will be contacted once your application has been reviewed and assigned.</p>
+            <p className="text-sm font-bold mt-1">
+              {config?.confirmation_message || "The squad coordinator has been notified. You will be contacted once your application has been reviewed and assigned."}
+            </p>
           </div>
           <Button variant="ghost" className="mt-8 font-black uppercase text-xs" onClick={() => window.location.reload()}>Submit Another</Button>
         </Card>
@@ -334,7 +336,7 @@ export default function PublicLeagueRegistrationPage() {
               <Button 
                 type="submit" 
                 className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all"
-                disabled={isSubmitting}
+                disabled={!config?.title || isSubmitting}
               >
                 {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Dispatch Application"}
               </Button>

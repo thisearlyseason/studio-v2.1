@@ -161,11 +161,17 @@ export type TeamEvent = {
   teamName?: string;
   isTournament?: boolean;
   tournamentTeams?: string[];
-  tournamentGames?: any[];
+  tournamentGames?: TournamentGame[];
   userRsvps?: Record<string, string>;
   createdBy?: string;
   teamWaiverText?: string;
-  teamAgreements?: Record<string, any>;
+  teamAgreements?: Record<string, {
+    agreed: boolean;
+    signedAt: string;
+    captainName: string;
+    userId: string;
+  }>;
+  facilityIds?: string[];
   fieldIds?: string[];
   manualLocations?: string[];
 };
@@ -304,6 +310,7 @@ export type LeagueRegistrationConfig = {
   form_schema: RegistrationFormField[];
   form_version: number;
   waiver_text?: string;
+  confirmation_message?: string;
 };
 
 export type RegistrationEntry = {
@@ -318,6 +325,7 @@ export type RegistrationEntry = {
   form_version: number;
   protocol_id: string;
   waiver_signed_text?: string;
+  target_type?: 'leagues' | 'teams';
 };
 
 export type TournamentGame = {
@@ -1053,7 +1061,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     respondToAssignment: async (contextId: string, entryId: string, status: 'accepted' | 'declined') => {
       if (!activeTeam) return;
       
-      // Try to find the entry in both leagues and teams collections
       let entryRef = doc(db, 'leagues', contextId, 'registrationEntries', entryId);
       let entrySnap = await getDoc(entryRef);
       

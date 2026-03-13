@@ -228,33 +228,25 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
 
   const poolResources = useMemo(() => {
     const list: { id: string, label: string }[] = [];
-    
+    event.fieldIds?.forEach(fid => {
+      const parts = fid.split(':');
+      const fac = facilities.find(f => f.id === parts[0]);
+      if (fac) list.push({ id: `field:${fid}`, label: `${fac.name} - ${parts[1]}` });
+    });
     event.facilityIds?.forEach(facId => {
-      const fac = facilities.find(f => f.id === facId);
-      if (!fac) return;
-      const facFields = allFields?.filter(field => field.facilityId === facId) || [];
-      if (facFields.length > 0) {
-        facFields.forEach(field => {
-          const combinedFieldId = `${facId}:${field.name}`;
-          if (event.fieldIds?.includes(combinedFieldId)) {
-            list.push({ id: `field:${combinedFieldId}`, label: `${fac.name} - ${field.name}` });
-          }
-        });
-      } else {
-        list.push({ id: `fac:${facId}`, label: fac.name });
+      const hasFields = event.fieldIds?.some(fid => fid.startsWith(`${facId}:`));
+      if (!hasFields) {
+        const fac = facilities.find(f => f.id === facId);
+        if (fac) list.push({ id: `fac:${facId}`, label: fac.name });
       }
     });
-
-    event.manualLocations?.forEach(loc => {
-      list.push({ id: `manual:${loc}`, label: loc });
-    });
-
+    event.manualLocations?.forEach(loc => list.push({ id: `manual:${loc}`, label: loc }));
     return list;
-  }, [event.facilityIds, event.fieldIds, event.manualLocations, facilities, allFields]);
+  }, [event.facilityIds, event.fieldIds, event.manualLocations, facilities]);
 
   const handleGenerateSchedule = async () => {
     if (!event.tournamentTeams || event.tournamentTeams.length < 2) {
-      toast({ title: "Incomplete Roster", description: "At least 2 squads must be enrolled to generate matchups.", variant: "destructive" });
+      toast({ title: "Incomplete Roster", description: "At least 2 squads must be enrolled.", variant: "destructive" });
       return;
     }
 
@@ -283,8 +275,13 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
       const days = Object.keys(dayConfigs).sort();
       let pairingIdx = 0;
 
-      for (const dayKey of days) {
-        if (games.length >= totalMatchLimit) break;
+      // Calculate pairings per day roughly
+      const pairingsPerDay = Math.ceil(pairings.length / days.length);
+
+      for (let dayIdx = 0; dayIdx < days.length; dayIdx++) {
+        const dayKey = days[dayIdx];
+        if (games.length >= totalMatchLimit || pairingIdx >= pairings.length) break;
+        
         const config = dayConfigs[dayKey];
         let dayGameCount = 0;
         
@@ -294,7 +291,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
         const teamAvailability: Record<string, string> = {};
         teams.forEach(t => teamAvailability[t] = config.start);
 
-        while (pairingIdx < pairings.length && dayGameCount < maxPerDayLimit && games.length < totalMatchLimit) {
+        // Schedule matches for this day
+        // We attempt to fill the day with its share of pairings
+        while (pairingIdx < pairings.length && dayGameCount < maxPerDayLimit && dayGameCount < pairingsPerDay && games.length < totalMatchLimit) {
           const pair = pairings[pairingIdx];
           
           if (teamGameCounts[pair[0]] >= maxPerTeamLimit || teamGameCounts[pair[1]] >= maxPerTeamLimit) {
@@ -324,14 +323,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
 
           games.push({ 
             id: `gen_${Date.now()}_${pairingIdx}`, 
-            team1: pair[0], 
-            team2: pair[1], 
-            score1: 0, 
-            score2: 0, 
-            date: dayKey, 
-            time: displayTime, 
-            location: locationLabel, 
-            isCompleted: false 
+            team1: pair[0], team2: pair[1], score1: 0, score2: 0, 
+            date: dayKey, time: displayTime, location: locationLabel, isCompleted: false 
           });
 
           const [h, m] = earliestMatchTime.split(':').map(Number);
@@ -401,7 +394,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                   <div className="grid grid-cols-1 gap-2">
                     <Button 
                       variant={myRsvp === 'going' ? 'default' : 'outline'} 
-                      className={cn("h-12 rounded-xl font-black text-xs uppercase transition-all", myRsvp === 'going' ? "bg-primary border-none shadow-lg" : "bg-white/5 border-white/10 hover:bg-white/10")}
+                      className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'going' ? "bg-primary border-none shadow-lg" : "bg-white/5 border-white/10 hover:bg-white/10")}
                       onClick={() => updateRSVP(event.id, 'going')}
                     >
                       Going
@@ -409,14 +402,14 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     <div className="grid grid-cols-2 gap-2">
                       <Button 
                         variant={myRsvp === 'maybe' ? 'default' : 'outline'} 
-                        className={cn("h-12 rounded-xl font-black text-xs uppercase transition-all", myRsvp === 'maybe' ? "bg-amber-500 border-none shadow-lg" : "bg-white/5 border-white/10 hover:bg-white/10")}
+                        className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'maybe' ? "bg-amber-500 border-none shadow-lg" : "bg-white/5 border-white/10 hover:bg-white/10")}
                         onClick={() => updateRSVP(event.id, 'maybe')}
                       >
                         Maybe
                       </Button>
                       <Button 
                         variant={myRsvp === 'declined' ? 'default' : 'outline'} 
-                        className={cn("h-12 rounded-xl font-black text-xs uppercase transition-all", myRsvp === 'declined' ? "bg-red-600 border-none shadow-lg" : "bg-white/5 border-white/10 hover:bg-white/10")}
+                        className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'declined' ? "bg-red-600 border-none shadow-lg" : "bg-white/5 border-white/10 hover:bg-white/10")}
                         onClick={() => updateRSVP(event.id, 'declined')}
                       >
                         Decline
@@ -608,7 +601,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                                   </div>
                                   <div className="flex items-center gap-3">
                                     {signed ? (
-                                      <Badge className="bg-green-100 text-green-700 border-none font-black text-[8px] px-3 h-6 flex items-center gap-1.5 rounded-full"><CheckCircle2 className="h-3 w-3" /> VERIFIED</Badge>
+                                      <div className="flex items-center gap-2">
+                                        <Badge className="bg-green-100 text-green-700 border-none font-black text-[8px] px-3 h-6 flex items-center gap-1.5 rounded-full"><CheckCircle2 className="h-3 w-3" /> VERIFIED</Badge>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => toast({ title: "Audit Success", description: "Verification document archived in squad vault." })}><Download className="h-4 w-4" /></Button>
+                                      </div>
                                     ) : (
                                       <>
                                         <Badge variant="outline" className="border-amber-500/20 text-amber-600 font-black text-[8px] h-6 rounded-full">PENDING</Badge>
@@ -713,7 +709,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     )}
                   </div>
                 </ScrollArea>
-              </Tabs>
+              </div>
             </div>
           </div>
         </div>

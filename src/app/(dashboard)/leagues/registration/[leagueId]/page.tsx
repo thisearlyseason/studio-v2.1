@@ -43,7 +43,8 @@ import {
   UserPlus,
   Copy,
   FileSignature,
-  AlertTriangle
+  AlertTriangle,
+  MessageSquare
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -106,7 +107,8 @@ export default function LeagueRegistrationAdminPage() {
         { id: 'email', type: 'short_text', label: 'Email Address', required: true }
       ],
       form_version: 1,
-      waiver_text: ''
+      waiver_text: '',
+      confirmation_message: ''
     };
 
     const updated = { ...base, ...updates } as LeagueRegistrationConfig;
@@ -327,6 +329,18 @@ export default function LeagueRegistrationAdminPage() {
                     value={localConfig?.description ?? config?.description ?? ''} 
                     onChange={e => handleUpdateConfig({ description: e.target.value })} 
                     className="rounded-xl min-h-[100px] border-2 font-medium" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 ml-1">
+                    <MessageSquare className="h-3 w-3 text-primary" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest">Custom Confirmation Message</Label>
+                  </div>
+                  <Textarea 
+                    placeholder="Show this message after submission (e.g. 'Welcome to the league! Check your email.')"
+                    value={localConfig?.confirmation_message ?? config?.confirmation_message ?? ''} 
+                    onChange={e => handleUpdateConfig({ confirmation_message: e.target.value })} 
+                    className="rounded-xl min-h-[80px] border-2 font-medium bg-muted/5" 
                   />
                 </div>
               </CardContent>

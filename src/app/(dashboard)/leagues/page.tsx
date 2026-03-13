@@ -136,7 +136,6 @@ export default function LeaguesPage() {
 
   const leaguesQuery = useMemoFirebase(() => {
     if (!isAuthResolved || !activeTeam?.id || !db) return null;
-    // Query leagues where the active team is present in the teams map
     return query(collection(db, 'leagues'), where(`teams.${activeTeam.id}`, '!=', null));
   }, [isAuthResolved, activeTeam?.id, db]);
 
@@ -145,7 +144,6 @@ export default function LeaguesPage() {
 
   const invitesQuery = useMemoFirebase(() => {
     if (!isAuthResolved || !authUser?.email || !db || activeTeam?.id?.startsWith('demo_')) return null;
-    
     return query(
       collection(db, 'leagues', 'global', 'invites'), 
       where('invitedEmail', '==', authUser.email.toLowerCase()), 
@@ -167,6 +165,10 @@ export default function LeaguesPage() {
       .map(([id, stats]) => ({ id, ...stats }))
       .sort((a, b) => b.wins - a.wins || b.points - a.points);
   }, [activeLeague]);
+
+  const hasGamesPlayed = useMemo(() => {
+    return sortedStandings.some(t => (t.wins || 0) + (t.losses || 0) + (t.ties || 0) > 0);
+  }, [sortedStandings]);
 
   const handleCreateLeague = async () => {
     if (!leagueName.trim()) return;
@@ -263,7 +265,6 @@ export default function LeaguesPage() {
 
       {activeLeague ? (
         <div className="space-y-8 animate-in fade-in duration-700">
-          {/* League Premium Header */}
           <Card className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-black text-white relative group">
             <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
               <Shield className="h-48 w-48" />
@@ -365,8 +366,7 @@ export default function LeaguesPage() {
             </CardContent>
           </Card>
 
-          {/* Premium Performance Module (Pro Only) */}
-          {isPro && (
+          {isPro && hasGamesPlayed && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4 ring-1 ring-black/5">
                 <div className="flex items-center gap-3">
@@ -541,7 +541,6 @@ export default function LeaguesPage() {
         </div>
       )}
 
-      {/* Roster Scout Dialog */}
       <TeamRosterDialog 
         teamId={scoutTeamId} 
         teamName={scoutTeamName} 
