@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -326,7 +325,7 @@ export default function LeagueRegistrationAdminPage() {
                   <Textarea 
                     placeholder="Show this message after submission (e.g. 'Welcome to the league! Check your email.')"
                     value={localConfig?.confirmation_message ?? config?.confirmation_message ?? ''} 
-                    onChange={e => handleUpdateConfig({ confirmation_message: e.target.value })} 
+                    onChange={handleUpdateConfig({ confirmation_message: e.target.value })} 
                     className="rounded-xl min-h-[80px] border-2 font-medium bg-muted/5" 
                   />
                 </div>

@@ -1,9 +1,8 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useTeam, TeamDocument, Member, DocumentSignature, RegistrationFormField, LeagueRegistrationConfig, RegistrationEntry } from '@/components/providers/team-provider';
-import { useFirestore, useCollection, useMemoFirebase, useDoc } from '@/firebase';
+import { useTeam, TeamDocument, Member, DocumentSignature, RegistrationEntry } from '@/components/providers/team-provider';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, where, doc, getDocs, setDoc, deleteDoc, collectionGroup } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { 
   PenTool, 
   FileSignature, 
