@@ -85,7 +85,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-5xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-hidden">
+      <DialogContent data-dark-header="true" className="sm:max-w-5xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-hidden">
         <DialogTitle className="sr-only">{event.title} Details</DialogTitle>
         <div className="flex flex-col lg:flex-row">
           <div className="w-full lg:w-1/3 flex flex-col text-white bg-black p-8 relative shrink-0">
@@ -106,7 +106,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
               <div className="space-y-4 pt-4 border-t border-white/10">
                 <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em] mb-4">Tactical RSVP</p>
                 <div className="grid grid-cols-1 gap-2">
-                  <Button variant={myRsvp === 'going' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'going' ? "bg-primary" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'going')}>Going</Button>
+                  <Button variant={myRsvp === 'going' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'going' ? "bg-primary border-none" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'going')}>Going</Button>
                   <div className="grid grid-cols-2 gap-2">
                     <Button variant={myRsvp === 'maybe' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'maybe' ? "bg-amber-50" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'maybe')}>Maybe</Button>
                     <Button variant={myRsvp === 'declined' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'declined' ? "bg-red-600" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'declined')}>Decline</Button>
