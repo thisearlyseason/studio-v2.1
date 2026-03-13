@@ -31,7 +31,8 @@ import {
   MessageSquare, 
   DollarSign, 
   CreditCard,
-  Loader2
+  Loader2,
+  ShieldCheck
 } from 'lucide-react';
 import { 
   Dialog, 

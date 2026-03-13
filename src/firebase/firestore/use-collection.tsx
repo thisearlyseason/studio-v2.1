@@ -77,7 +77,7 @@ export function useCollection<T = any>(
       (err: FirestoreError) => {
         if (!isMounted.current) return;
         
-        // Suppress transient errors for demo users
+        // Suppress transient errors for demo users or malformed paths during transition
         if (err.code === 'failed-precondition' || path.includes('demo_guest')) {
           setIsLoading(false);
           return;
