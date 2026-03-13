@@ -119,12 +119,14 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
   const [maxGamesPerTeam, setMaxGamesPerTeam] = useState('5');
   const [maxTotalGames, setMaxTotalGames] = useState('20');
   const [dayConfigs, setDayConfigs] = useState<Record<string, { start: string, end: string }>>({});
-  const [enrollmentText, setEnrollmentText] = useState(event.tournamentTeams?.join(', ') || '');
   const [baseUrl, setBaseUrl] = useState('');
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamEmail, setNewTeamEmail] = useState('');
 
   const myRsvp = event.userRsvps?.[user?.id || ''] || 'no_response';
+
+  // LOGIC: Check if current active team is the organizer of this event
+  const isOrganizer = isStaff && event.teamId === activeTeam?.id;
 
   useEffect(() => {
     if (typeof window !== 'undefined') setBaseUrl(window.location.origin);
@@ -277,7 +279,10 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
     toast({ title: "Team Enrolled", description: `${newTeamName} added to roster.` });
   };
 
-  const isOrganizer = isStaff && (event.createdBy === user?.id || activeTeam?.role === 'Admin');
+  const confirmedTeams = useMemo(() => {
+    if (!event.tournamentTeams || !event.teamAgreements) return [];
+    return event.tournamentTeams.filter(team => event.teamAgreements?.[team]?.agreed);
+  }, [event.tournamentTeams, event.teamAgreements]);
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-right-4 duration-500 min-h-screen">
@@ -354,10 +359,10 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
               <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Itinerary</TabsTrigger>
               <TabsTrigger value="standings" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Standings</TabsTrigger>
               <TabsTrigger value="attendance" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Attendance</TabsTrigger>
+              <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
               {isOrganizer && (
                 <>
                   <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>
-                  <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
                   <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Deploy</TabsTrigger>
                 </>
               )}
@@ -453,54 +458,92 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                 </Card>
               </TabsContent>
 
-              <TabsContent value="attendance" className="mt-0">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {members.map(member => {
-                    const rsvp = event.userRsvps?.[member.userId] || 'no_response';
-                    return (
-                      <Card key={member.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white">
-                        <div className="flex items-center gap-4">
-                          <Avatar className="h-10 w-10 rounded-xl border">
-                            <AvatarImage src={member.avatar} />
-                            <AvatarFallback className="font-black text-xs">{member.name[0]}</AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0 flex-1">
-                            <p className="font-black text-xs uppercase truncate">{member.name}</p>
-                            <p className="text-[8px] font-bold text-muted-foreground uppercase">{member.position}</p>
+              <TabsContent value="attendance" className="mt-0 space-y-12">
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 px-2">
+                    <Users className="h-5 w-5 text-primary" />
+                    <h3 className="text-xl font-black uppercase tracking-tight">{activeTeam?.name} Tourney Roster</h3>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {members.map(member => {
+                      const rsvp = event.userRsvps?.[member.userId] || 'no_response';
+                      return (
+                        <Card key={member.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white">
+                          <div className="flex items-center gap-4">
+                            <Avatar className="h-10 w-10 rounded-xl border">
+                              <AvatarImage src={member.avatar} />
+                              <AvatarFallback className="font-black text-xs">{member.name[0]}</AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-black text-xs uppercase truncate">{member.name}</p>
+                              <p className="text-[8px] font-bold text-muted-foreground uppercase">{member.position}</p>
+                            </div>
+                            <Badge className={cn(
+                              "border-none font-black text-[8px] uppercase px-2 h-5",
+                              rsvp === 'going' ? "bg-green-100 text-green-700" : rsvp === 'maybe' ? "bg-amber-100 text-amber-700" : rsvp === 'declined' ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground"
+                            )}>{rsvp.replace('_', ' ')}</Badge>
                           </div>
-                          <Badge className={cn(
-                            "border-none font-black text-[8px] uppercase px-2 h-5",
-                            rsvp === 'going' ? "bg-green-100 text-green-700" : rsvp === 'maybe' ? "bg-amber-100 text-amber-700" : rsvp === 'declined' ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground"
-                          )}>{rsvp.replace('_', ' ')}</Badge>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 px-2">
+                    <ShieldCheck className="h-5 w-5 text-primary" />
+                    <h3 className="text-xl font-black uppercase tracking-tight">Confirmed Strategic Partners</h3>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {confirmedTeams.map(teamName => (
+                      <Card key={teamName} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-5 bg-green-50/30 border-green-100/50">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="bg-white p-2.5 rounded-xl shadow-sm border border-green-100">
+                              <ShieldCheck className="h-5 w-5 text-green-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-black text-sm uppercase truncate">{teamName}</p>
+                              <p className="text-[8px] font-bold text-green-700 uppercase tracking-widest">VERIFIED SQUAD</p>
+                            </div>
+                          </div>
+                          <CheckCircle2 className="h-5 w-5 text-green-600" />
                         </div>
                       </Card>
-                    );
-                  })}
+                    ))}
+                    {confirmedTeams.length === 0 && (
+                      <div className="col-span-full py-12 text-center border-2 border-dashed rounded-3xl opacity-30 italic font-bold text-xs uppercase tracking-widest">
+                        Awaiting squad confirmations...
+                      </div>
+                    )}
+                  </div>
                 </div>
               </TabsContent>
 
-              <TabsContent value="compliance" className="mt-0">
-                <div className="grid grid-cols-1 gap-4">
-                  {event.tournamentTeams?.map(team => (
-                    <div key={team} className="flex items-center justify-between p-6 bg-white rounded-[2rem] border shadow-sm ring-1 ring-black/5">
-                      <div className="flex items-center gap-6">
-                        <div className="bg-muted p-3 rounded-2xl"><Users className="h-6 w-6 text-muted-foreground" /></div>
-                        <div>
-                          <span className="font-black text-lg uppercase tracking-tight">{team}</span>
-                          {event.teamAgreements?.[team] && <p className="text-[10px] font-bold text-muted-foreground uppercase mt-1">Signed by: {event.teamAgreements[team].captainName}</p>}
+              {isOrganizer && (
+                <TabsContent value="compliance" className="mt-0">
+                  <div className="grid grid-cols-1 gap-4">
+                    {event.tournamentTeams?.map(team => (
+                      <div key={team} className="flex items-center justify-between p-6 bg-white rounded-[2rem] border shadow-sm ring-1 ring-black/5">
+                        <div className="flex items-center gap-6">
+                          <div className="bg-muted p-3 rounded-2xl"><Users className="h-6 w-6 text-muted-foreground" /></div>
+                          <div>
+                            <span className="font-black text-lg uppercase tracking-tight">{team}</span>
+                            {event.teamAgreements?.[team] && <p className="text-[10px] font-bold text-muted-foreground uppercase mt-1">Signed by: {event.teamAgreements[team].captainName}</p>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          {event.teamAgreements?.[team] ? (
+                            <Badge className="bg-green-100 text-green-700 border-none font-black text-[10px] px-4 h-8 flex items-center gap-2 rounded-full"><CheckCircle2 className="h-4 w-4" /> VERIFIED</Badge>
+                          ) : (
+                            <Badge variant="outline" className="border-amber-500/20 text-amber-600 font-black text-[10px] px-4 h-8 rounded-full">PENDING</Badge>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        {event.teamAgreements?.[team] ? (
-                          <Badge className="bg-green-100 text-green-700 border-none font-black text-[10px] px-4 h-8 flex items-center gap-2 rounded-full"><CheckCircle2 className="h-4 w-4" /> VERIFIED</Badge>
-                        ) : (
-                          <Badge variant="outline" className="border-amber-500/20 text-amber-600 font-black text-[10px] px-4 h-8 rounded-full">PENDING</Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </TabsContent>
+                    ))}
+                  </div>
+                </TabsContent>
+              )}
 
               <TabsContent value="portals" className="mt-0">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -514,56 +557,60 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                     <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Portal for marshals to log match results.</p>
                     <div className="flex gap-2"><Input readOnly value={`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}`} className="h-12 text-[10px] font-mono bg-muted/30 border-none" /><Button size="icon" variant="secondary" className="h-12 w-12 shrink-0 rounded-xl" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}`); toast({ title: "Link Copied" }); }}><Copy className="h-5 w-5" /></Button></div>
                   </Card>
-                  <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 bg-white overflow-hidden p-8 space-y-6">
-                    <div className="flex items-center gap-4"><Signature className="h-6 w-6 text-primary" /><h3 className="text-lg font-black uppercase">Waiver Portal</h3></div>
-                    <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Public link for digital coach signatures.</p>
-                    <div className="flex gap-2"><Input readOnly value={`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`} className="h-12 text-[10px] font-mono bg-muted/30 border-none" /><Button size="icon" variant="secondary" className="h-12 w-12 shrink-0 rounded-xl" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`); toast({ title: "Link Copied" }); }}><Copy className="h-5 w-5" /></Button></div>
-                  </Card>
+                  {isOrganizer && (
+                    <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 bg-white overflow-hidden p-8 space-y-6">
+                      <div className="flex items-center gap-4"><Signature className="h-6 w-6 text-primary" /><h3 className="text-lg font-black uppercase">Waiver Portal</h3></div>
+                      <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Public link for digital coach signatures.</p>
+                      <div className="flex gap-2"><Input readOnly value={`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`} className="h-12 text-[10px] font-mono bg-muted/30 border-none" /><Button size="icon" variant="secondary" className="h-12 w-12 shrink-0 rounded-xl" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`); toast({ title: "Link Copied" }); }}><Copy className="h-5 w-5" /></Button></div>
+                    </Card>
+                  )}
                 </div>
               </TabsContent>
 
-              <TabsContent value="manage" className="mt-0 space-y-10">
-                <div className="bg-muted/20 p-8 rounded-[2.5rem] border-2 border-dashed space-y-6">
-                  <div className="flex items-center gap-3"><Users className="h-6 w-6 text-primary" /><h3 className="text-lg font-black uppercase tracking-tight">Tournament Roster</h3></div>
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-6 rounded-2xl border shadow-sm">
-                      <div className="space-y-2">
-                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label>
-                        <Input placeholder="e.g. Metro Warriors" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-12 border-2 rounded-xl" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email</Label>
-                        <Input placeholder="coach@example.com" value={newTeamEmail} onChange={e => setNewTeamEmail(e.target.value)} className="h-12 border-2 rounded-xl" />
-                      </div>
-                      <Button className="md:col-span-2 h-12 rounded-xl font-black uppercase text-xs" onClick={handleAddTeam} disabled={!newTeamName.trim()}><Plus className="h-4 w-4 mr-2" /> Enroll Squad</Button>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {event.tournamentTeams?.map(team => (
-                        <div key={team} className="flex items-center justify-between p-4 bg-white rounded-2xl border shadow-sm group">
-                          <div className="min-w-0">
-                            <p className="font-black text-sm uppercase truncate">{team}</p>
-                            {event.invitedTeamEmails?.[team] && <p className="text-[8px] font-bold text-muted-foreground truncate">{event.invitedTeamEmails[team]}</p>}
-                          </div>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100" onClick={() => updateEvent(event.id, { tournamentTeams: event.tournamentTeams!.filter(t => t !== team) })}><Trash2 className="h-4 w-4" /></Button>
+              {isOrganizer && (
+                <TabsContent value="manage" className="mt-0 space-y-10">
+                  <div className="bg-muted/20 p-8 rounded-[2.5rem] border-2 border-dashed space-y-6">
+                    <div className="flex items-center gap-3"><Users className="h-6 w-6 text-primary" /><h3 className="text-lg font-black uppercase tracking-tight">Tournament Roster</h3></div>
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-6 rounded-2xl border shadow-sm">
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label>
+                          <Input placeholder="e.g. Metro Warriors" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-12 border-2 rounded-xl" />
                         </div>
-                      ))}
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email</Label>
+                          <Input placeholder="coach@example.com" value={newTeamEmail} onChange={e => setNewTeamEmail(e.target.value)} className="h-12 border-2 rounded-xl" />
+                        </div>
+                        <Button className="md:col-span-2 h-12 rounded-xl font-black uppercase text-xs" onClick={handleAddTeam} disabled={!newTeamName.trim()}><Plus className="h-4 w-4 mr-2" /> Enroll Squad</Button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {event.tournamentTeams?.map(team => (
+                          <div key={team} className="flex items-center justify-between p-4 bg-white rounded-2xl border shadow-sm group">
+                            <div className="min-w-0">
+                              <p className="font-black text-sm uppercase truncate">{team}</p>
+                              {event.invitedTeamEmails?.[team] && <p className="text-[8px] font-bold text-muted-foreground truncate">{event.invitedTeamEmails[team]}</p>}
+                            </div>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100" onClick={() => updateEvent(event.id, { tournamentTeams: event.tournamentTeams!.filter(t => t !== team) })}><Trash2 className="h-4 w-4" /></Button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-8">
-                  <div className="flex items-center gap-3"><Zap className="h-6 w-6 text-primary" /><h3 className="text-lg font-black uppercase tracking-tight">Auto-Scheduler</h3></div>
-                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                    <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Match (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-11 rounded-xl border-2" /></div>
-                    <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Break (Min)</Label><Input type="number" value={genBreakLength} onChange={e => setGenBreakLength(e.target.value)} className="h-11 rounded-xl border-2" /></div>
-                    <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Max/Day</Label><Input type="number" value={maxGamesPerDay} onChange={e => setMaxGamesPerDay(e.target.value)} className="h-11 rounded-xl border-2" /></div>
-                    <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Max/Team</Label><Input type="number" value={maxGamesPerTeam} onChange={e => setMaxGamesPerTeam(e.target.value)} className="h-11 rounded-xl border-2" /></div>
-                    <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Total Cap</Label><Input type="number" value={maxTotalGames} onChange={e => setMaxTotalGames(e.target.value)} className="h-11 rounded-xl border-2" /></div>
+                  <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-8">
+                    <div className="flex items-center gap-3"><Zap className="h-6 w-6 text-primary" /><h3 className="text-lg font-black uppercase tracking-tight">Auto-Scheduler</h3></div>
+                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                      <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Match (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-11 rounded-xl border-2" /></div>
+                      <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Break (Min)</Label><Input type="number" value={genBreakLength} onChange={e => setGenBreakLength(e.target.value)} className="h-11 rounded-xl border-2" /></div>
+                      <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Max/Day</Label><Input type="number" value={maxGamesPerDay} onChange={e => setMaxGamesPerDay(e.target.value)} className="h-11 rounded-xl border-2" /></div>
+                      <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Max/Team</Label><Input type="number" value={maxGamesPerTeam} onChange={e => setMaxGamesPerTeam(e.target.value)} className="h-11 rounded-xl border-2" /></div>
+                      <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Total Cap</Label><Input type="number" value={maxTotalGames} onChange={e => setMaxTotalGames(e.target.value)} className="h-11 rounded-xl border-2" /></div>
+                    </div>
+                    <Button className="w-full h-16 rounded-2xl text-base font-black shadow-xl" onClick={handleGenerateSchedule} disabled={isGenerating}>Deploy Complex Itinerary</Button>
                   </div>
-                  <Button className="w-full h-16 rounded-2xl text-base font-black shadow-xl" onClick={handleGenerateSchedule} disabled={isGenerating}>Deploy Complex Itinerary</Button>
-                </div>
-              </TabsContent>
+                </TabsContent>
+              )}
             </div>
           </Tabs>
         </div>
@@ -599,13 +646,13 @@ export default function TournamentsPage() {
   const [selectedTournament, setSelectedTournament] = useState<TeamEvent | null>(null);
 
   const tournamentsQuery = useMemoFirebase(() => {
-    if (!activeTeam?.id || !db) return null;
+    if (!db) return null;
     return query(
-      collection(db, 'teams', activeTeam.id, 'events'),
+      collectionGroup(db, 'events'),
       where('isTournament', '==', true),
       orderBy('date', 'asc')
     );
-  }, [activeTeam?.id, db]);
+  }, [db]);
 
   const { data: allTournaments, isLoading } = useCollection<TeamEvent>(tournamentsQuery);
 

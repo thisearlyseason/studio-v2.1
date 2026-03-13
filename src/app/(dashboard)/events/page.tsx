@@ -174,6 +174,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
 
   const myRsvp = event.userRsvps?.[user?.id || ''] || 'no_response';
 
+  // LOGIC: Check if current active team is the organizer of this event
+  const isOrganizer = isStaff && event.teamId === activeTeam?.id;
+
   useEffect(() => {
     if (typeof window !== 'undefined') setBaseUrl(window.location.origin);
     
@@ -367,7 +370,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
     toast({ title: "Team Enrolled", description: `${newTeamName} added to roster.` });
   };
 
-  const isOrganizer = isStaff && (event.createdBy === user?.id || activeTeam?.role === 'Admin');
+  const confirmedTeams = useMemo(() => {
+    if (!event.tournamentTeams || !event.teamAgreements) return [];
+    return event.tournamentTeams.filter(team => event.teamAgreements?.[team]?.agreed);
+  }, [event.tournamentTeams, event.teamAgreements]);
 
   return (
     <Dialog onOpenChange={(open) => { if(!open) setEditingGame(null); }}>
@@ -421,7 +427,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                 </div>
 
                 {event.isTournament && (
-                  <div className="space-y-4 pb-8">
+                  <div className="space-y-4 pb-8 border-t border-white/10 pt-4">
                     <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Leadership Board</h4>
                     <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
                       {tournamentStandings.length > 0 ? tournamentStandings.map((team) => (
@@ -445,9 +451,13 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                   <TabsList className="bg-white/50 h-14 p-1.5 rounded-2xl shadow-inner border w-full lg:w-fit overflow-x-auto custom-scrollbar">
                     {event.isTournament && <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Itinerary</TabsTrigger>}
                     <TabsTrigger value="roster" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Attendance</TabsTrigger>
-                    {event.isTournament && <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>}
-                    {event.isTournament && isOrganizer && <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>}
-                    {isOrganizer && event.isTournament && <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Deploy</TabsTrigger>}
+                    <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
+                    {isOrganizer && (
+                      <>
+                        <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>
+                        <TabsTrigger value="manage" className="rounded-xl font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Deploy</TabsTrigger>
+                      </>
+                    )}
                   </TabsList>
                 </div>
                 
@@ -509,11 +519,11 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                       )}
                     </TabsContent>
 
-                    <TabsContent value="roster" className="mt-0">
+                    <TabsContent value="roster" className="mt-0 space-y-12">
                       <div className="space-y-6">
                         <div className="flex items-center gap-3 px-2">
                           <Users className="h-5 w-5 text-primary" />
-                          <h3 className="text-xl font-black uppercase tracking-tight">Personnel Pulse</h3>
+                          <h3 className="text-xl font-black uppercase tracking-tight">{activeTeam?.name} Tourney Roster</h3>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                           {members.map(member => {
@@ -539,45 +549,77 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                           })}
                         </div>
                       </div>
-                    </TabsContent>
 
-                    <TabsContent value="compliance" className="mt-0">
                       <div className="space-y-6">
-                        <div className="flex items-center justify-between px-2">
-                          <div className="flex items-center gap-3">
-                            <Signature className="h-5 w-5 text-primary" />
-                            <h3 className="text-xl font-black uppercase tracking-tight">Team Agreement Ledger</h3>
-                          </div>
-                          <Button variant="outline" className="h-9 px-4 rounded-xl font-black uppercase text-[10px] border-2" onClick={() => window.open(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`, '_blank')}>Open Waiver Portal <ExternalLink className="ml-2 h-3 w-3" /></Button>
+                        <div className="flex items-center gap-3 px-2">
+                          <ShieldCheck className="h-5 w-5 text-primary" />
+                          <h3 className="text-xl font-black uppercase tracking-tight">Confirmed Strategic Partners</h3>
                         </div>
-                        <div className="grid grid-cols-1 gap-4">
-                          {event.tournamentTeams?.map(team => {
-                            const signed = event.teamAgreements?.[team]?.agreed;
-                            return (
-                              <Card key={team} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 p-6 bg-white flex items-center justify-between">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {confirmedTeams.map(teamName => (
+                            <Card key={teamName} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-5 bg-green-50/30 border-green-100/50">
+                              <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-4">
-                                  <div className="bg-muted p-3 rounded-2xl"><Users className="h-5 w-5 text-muted-foreground" /></div>
-                                  <div>
-                                    <p className="font-black text-sm uppercase">{team}</p>
-                                    {signed && <p className="text-[8px] font-bold text-muted-foreground uppercase">Signed by: {event.teamAgreements![team].captainName}</p>}
+                                  <div className="bg-white p-2.5 rounded-xl shadow-sm border border-green-100">
+                                    <ShieldCheck className="h-5 w-5 text-green-600" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="font-black text-sm uppercase truncate">{teamName}</p>
+                                    <p className="text-[8px] font-bold text-green-700 uppercase tracking-widest">VERIFIED SQUAD</p>
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-3">
-                                  {signed ? (
-                                    <Badge className="bg-green-100 text-green-700 border-none font-black text-[8px] px-3 h-6 flex items-center gap-1.5 rounded-full"><CheckCircle2 className="h-3 w-3" /> VERIFIED</Badge>
-                                  ) : (
-                                    <>
-                                      <Badge variant="outline" className="border-amber-500/20 text-amber-600 font-black text-[8px] h-6 rounded-full">PENDING</Badge>
-                                      {isOrganizer && <Button size="sm" variant="ghost" className="h-6 px-3 text-[8px] font-black uppercase border rounded-full" onClick={() => signTeamTournamentWaiver(event.teamId, event.id, team)}>Manual Override</Button>}
-                                    </>
-                                  )}
-                                </div>
-                              </Card>
-                            );
-                          })}
+                                <CheckCircle2 className="h-5 w-5 text-green-600" />
+                              </div>
+                            </Card>
+                          ))}
+                          {confirmedTeams.length === 0 && (
+                            <div className="col-span-full py-12 text-center border-2 border-dashed rounded-3xl opacity-30 italic font-bold text-xs uppercase tracking-widest">
+                              Awaiting squad confirmations...
+                            </div>
+                          )}
                         </div>
                       </div>
                     </TabsContent>
+
+                    {isOrganizer && (
+                      <TabsContent value="compliance" className="mt-0">
+                        <div className="space-y-6">
+                          <div className="flex items-center justify-between px-2">
+                            <div className="flex items-center gap-3">
+                              <Signature className="h-5 w-5 text-primary" />
+                              <h3 className="text-xl font-black uppercase tracking-tight">Team Agreement Ledger</h3>
+                            </div>
+                            <Button variant="outline" className="h-9 px-4 rounded-xl font-black uppercase text-[10px] border-2" onClick={() => window.open(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`, '_blank')}>Open Waiver Portal <ExternalLink className="ml-2 h-3 w-3" /></Button>
+                          </div>
+                          <div className="grid grid-cols-1 gap-4">
+                            {event.tournamentTeams?.map(team => {
+                              const signed = event.teamAgreements?.[team]?.agreed;
+                              return (
+                                <Card key={team} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 p-6 bg-white flex items-center justify-between">
+                                  <div className="flex items-center gap-4">
+                                    <div className="bg-muted p-3 rounded-2xl"><Users className="h-5 w-5 text-muted-foreground" /></div>
+                                    <div>
+                                      <p className="font-black text-sm uppercase">{team}</p>
+                                      {signed && <p className="text-[8px] font-bold text-muted-foreground uppercase">Signed by: {event.teamAgreements![team].captainName}</p>}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    {signed ? (
+                                      <Badge className="bg-green-100 text-green-700 border-none font-black text-[8px] px-3 h-6 flex items-center gap-1.5 rounded-full"><CheckCircle2 className="h-3 w-3" /> VERIFIED</Badge>
+                                    ) : (
+                                      <>
+                                        <Badge variant="outline" className="border-amber-500/20 text-amber-600 font-black text-[8px] h-6 rounded-full">PENDING</Badge>
+                                        <Button size="sm" variant="ghost" className="h-6 px-3 text-[8px] font-black uppercase border rounded-full" onClick={() => signTeamTournamentWaiver(event.teamId, event.id, team)}>Manual Override</Button>
+                                      </>
+                                    )}
+                                  </div>
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </TabsContent>
+                    )}
 
                     <TabsContent value="portals" className="mt-0">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -601,70 +643,74 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                             </div>
                           </CardContent>
                         </Card>
-                        <Card className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 bg-white overflow-hidden group">
-                          <CardHeader className="bg-amber-500/5 p-6 border-b"><div className="flex items-center gap-3"><Signature className="h-5 w-5 text-amber-600" /><CardTitle className="text-sm font-black uppercase">Waiver Portal</CardTitle></div></CardHeader>
-                          <CardContent className="p-6 space-y-4">
-                            <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">Verification link for participating squad leads to sign the digital agreement.</p>
-                            <div className="flex gap-2">
-                              <Input readOnly value={`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`} className="h-10 text-[9px] font-mono bg-muted/30 border-none" />
-                              <Button size="icon" variant="secondary" className="h-10 w-10 shrink-0 rounded-xl" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`); toast({ title: "Link Copied" }); }}><Copy className="h-4 w-4" /></Button>
-                            </div>
-                          </CardContent>
-                        </Card>
+                        {isOrganizer && (
+                          <Card className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 bg-white overflow-hidden group">
+                            <CardHeader className="bg-amber-500/5 p-6 border-b"><div className="flex items-center gap-3"><Signature className="h-5 w-5 text-amber-600" /><CardTitle className="text-sm font-black uppercase">Waiver Portal</CardTitle></div></CardHeader>
+                            <CardContent className="p-6 space-y-4">
+                              <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">Verification link for participating squad leads to sign the digital agreement.</p>
+                              <div className="flex gap-2">
+                                <Input readOnly value={`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`} className="h-10 text-[9px] font-mono bg-muted/30 border-none" />
+                                <Button size="icon" variant="secondary" className="h-10 w-10 shrink-0 rounded-xl" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`); toast({ title: "Link Copied" }); }}><Copy className="h-4 w-4" /></Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        )}
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="manage" className="mt-0 space-y-10">
-                      <div className="bg-muted/20 p-8 rounded-[2.5rem] border-2 border-dashed space-y-6">
-                        <div className="flex items-center gap-3"><Users className="h-6 w-6 text-primary" /><h3 className="text-lg font-black uppercase tracking-tight">Tournament Roster</h3></div>
-                        <div className="space-y-6">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-6 rounded-2xl border shadow-sm">
-                            <div className="space-y-2">
-                              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label>
-                              <Input placeholder="e.g. Metro Warriors" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-12 border-2 rounded-xl" />
+                    {isOrganizer && (
+                      <TabsContent value="manage" className="mt-0 space-y-10">
+                        <div className="bg-muted/20 p-8 rounded-[2.5rem] border-2 border-dashed space-y-6">
+                          <div className="flex items-center gap-3"><Users className="h-6 w-6 text-primary" /><h3 className="text-lg font-black uppercase tracking-tight">Tournament Roster</h3></div>
+                          <div className="space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-6 rounded-2xl border shadow-sm">
+                              <div className="space-y-2">
+                                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label>
+                                <Input placeholder="e.g. Metro Warriors" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-12 border-2 rounded-xl" />
+                              </div>
+                              <div className="space-y-2">
+                                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email (Auto-Enroll)</Label>
+                                <Input placeholder="coach@example.com" value={newTeamEmail} onChange={e => setNewTeamEmail(e.target.value)} className="h-12 border-2 rounded-xl" />
+                              </div>
+                              <Button className="md:col-span-2 h-12 rounded-xl font-black uppercase text-xs" onClick={handleAddTeam} disabled={!newTeamName.trim()}><Plus className="h-4 w-4 mr-2" /> Enroll Squad & Send Challenge</Button>
                             </div>
-                            <div className="space-y-2">
-                              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email (Auto-Enroll)</Label>
-                              <Input placeholder="coach@example.com" value={newTeamEmail} onChange={e => setNewTeamEmail(e.target.value)} className="h-12 border-2 rounded-xl" />
-                            </div>
-                            <Button className="md:col-span-2 h-12 rounded-xl font-black uppercase text-xs" onClick={handleAddTeam} disabled={!newTeamName.trim()}><Plus className="h-4 w-4 mr-2" /> Enroll Squad & Send Challenge</Button>
-                          </div>
-                          
-                          <div className="space-y-3">
-                            <p className="text-[10px] font-black uppercase text-muted-foreground px-1">Enrolled Squads ({event.tournamentTeams?.length || 0})</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {event.tournamentTeams?.map(team => (
-                                <div key={team} className="flex items-center justify-between p-4 bg-white rounded-2xl border shadow-sm group">
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className="bg-primary/5 p-2 rounded-lg text-primary"><Users className="h-4 w-4" /></div>
-                                    <div className="min-w-0">
-                                      <p className="font-black text-sm uppercase truncate">{team}</p>
-                                      {event.invitedTeamEmails?.[team] && <p className="text-[8px] font-bold text-muted-foreground truncate">{event.invitedTeamEmails[team]}</p>}
+                            
+                            <div className="space-y-3">
+                              <p className="text-[10px] font-black uppercase text-muted-foreground px-1">Enrolled Squads ({event.tournamentTeams?.length || 0})</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {event.tournamentTeams?.map(team => (
+                                  <div key={team} className="flex items-center justify-between p-4 bg-white rounded-2xl border shadow-sm group">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <div className="bg-primary/5 p-2 rounded-lg text-primary"><Users className="h-4 w-4" /></div>
+                                      <div className="min-w-0">
+                                        <p className="font-black text-sm uppercase truncate">{team}</p>
+                                        {event.invitedTeamEmails?.[team] && <p className="text-[8px] font-bold text-muted-foreground truncate">{event.invitedTeamEmails[team]}</p>}
+                                      </div>
                                     </div>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100" onClick={() => updateEvent(event.id, { tournamentTeams: event.tournamentTeams!.filter(t => t !== team) })}><Trash2 className="h-4 w-4" /></Button>
                                   </div>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100" onClick={() => updateEvent(event.id, { tournamentTeams: event.tournamentTeams!.filter(t => t !== team) })}><Trash2 className="h-4 w-4" /></Button>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-8">
-                        <div className="flex items-center gap-3"><Zap className="h-6 w-6 text-primary" /><h3 className="text-lg font-black uppercase tracking-tight">Itinerary Deployment Deck</h3></div>
-                        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                          <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Match Length (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-11 rounded-xl border-2 font-black" /></div>
-                          <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Break Length (Min)</Label><Input type="number" value={genBreakLength} onChange={e => setGenBreakLength(e.target.value)} className="h-11 rounded-xl border-2 font-black" /></div>
-                          <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Max Matches / Day</Label><Input type="number" value={maxGamesPerDay} onChange={e => setMaxGamesPerDay(e.target.value)} className="h-11 rounded-xl border-2 font-black" /></div>
-                          <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Max Matches / Team</Label><Input type="number" value={maxGamesPerTeam} onChange={e => setMaxGamesPerTeam(e.target.value)} className="h-11 rounded-xl border-2 font-black" /></div>
-                          <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Total Match Limit</Label><Input type="number" value={maxTotalGames} onChange={e => setMaxTotalGames(e.target.value)} className="h-11 rounded-xl border-2 font-black" /></div>
+                        <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-8">
+                          <div className="flex items-center gap-3"><Zap className="h-6 w-6 text-primary" /><h3 className="text-lg font-black uppercase tracking-tight">Itinerary Deployment Deck</h3></div>
+                          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                            <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Match Length (Min)</Label><Input type="number" value={genMatchLength} onChange={e => setGenMatchLength(e.target.value)} className="h-11 rounded-xl border-2 font-black" /></div>
+                            <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Break Length (Min)</Label><Input type="number" value={genBreakLength} onChange={e => setGenBreakLength(e.target.value)} className="h-11 rounded-xl border-2 font-black" /></div>
+                            <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Max Matches / Day</Label><Input type="number" value={maxGamesPerDay} onChange={e => setMaxGamesPerDay(e.target.value)} className="h-11 rounded-xl border-2 font-black" /></div>
+                            <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Max Matches / Team</Label><Input type="number" value={maxGamesPerTeam} onChange={e => setMaxGamesPerTeam(e.target.value)} className="h-11 rounded-xl border-2 font-black" /></div>
+                            <div className="space-y-1.5"><Label className="text-[8px] font-black uppercase tracking-widest ml-1">Total Match Limit</Label><Input type="number" value={maxTotalGames} onChange={e => setMaxTotalGames(e.target.value)} className="h-11 rounded-xl border-2 font-black" /></div>
+                          </div>
+                          <Button className="w-full h-16 rounded-2xl text-base font-black shadow-xl shadow-primary/20" onClick={handleGenerateSchedule} disabled={isGenerating}>{isGenerating ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Deploy Complex Itinerary"}</Button>
                         </div>
-                        <Button className="w-full h-16 rounded-2xl text-base font-black shadow-xl shadow-primary/20" onClick={handleGenerateSchedule} disabled={isGenerating}>{isGenerating ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Deploy Complex Itinerary"}</Button>
-                      </div>
-                    </TabsContent>
+                      </TabsContent>
+                    )}
                   </div>
                 </ScrollArea>
-              </Tabs>
+              </div>
             </div>
           </div>
         </div>
@@ -717,9 +763,9 @@ export default function EventsPage() {
   const [eventType, setEventType] = useState<EventType>('game');
 
   const eventsQuery = useMemoFirebase(() => { 
-    if (!activeTeam?.id || !db || !firebaseUser?.uid) return null; 
-    return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc')); 
-  }, [activeTeam?.id, db, firebaseUser?.uid]);
+    if (!db || !firebaseUser?.uid) return null; 
+    return query(collectionGroup(db, 'events'), orderBy('date', 'asc')); 
+  }, [db, firebaseUser?.uid]);
 
   const { data: allEvents } = useCollection<TeamEvent>(eventsQuery);
 
@@ -758,8 +804,6 @@ export default function EventsPage() {
     return list;
   }, [selectedFacilityIds, selectedFieldIds, manualLocations, facilities, allFields]);
 
-  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
-
   const handleEdit = (event: TeamEvent) => { 
     setEditingEvent(event); 
     setIsTournamentMode(!!event.isTournament); 
@@ -787,6 +831,11 @@ export default function EventsPage() {
       const [hour, minute] = timeISO.split(':').map(Number);
       const eventDate = new Date(year, month - 1, day, hour, minute);
       
+      let teamsList = newTournamentTeams.split(',').map(t => t.trim()).filter(t => !!t);
+      if (isTournamentMode && activeTeam && !teamsList.includes(activeTeam.name)) {
+        teamsList.unshift(activeTeam.name);
+      }
+
       const payload: any = { 
         title: newTitle, 
         eventType: isTournamentMode ? 'tournament' : eventType, 
@@ -800,7 +849,7 @@ export default function EventsPage() {
         manualLocations: manualLocations,
         description: newDescription, 
         isTournament: isTournamentMode, 
-        tournamentTeams: newTournamentTeams.split(',').map(t => t.trim()).filter(t => !!t),
+        tournamentTeams: teamsList,
         teamWaiverText: newWaiverText,
         lastUpdated: new Date().toISOString() 
       }; 
@@ -1033,6 +1082,7 @@ export default function EventsPage() {
         <div className="grid gap-4">
           {filteredEvents.map((event) => {
             const { month, day } = getCardDateDisplay(event);
+            const isOrganizer = isStaff && event.teamId === activeTeam?.id;
             return (
               <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent} facilities={facilities || []} allFields={allFields || []}>
                 <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
