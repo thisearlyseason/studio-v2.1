@@ -276,7 +276,6 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
       const totalPairings = pairings.length;
       const totalDays = days.length;
       
-      // Calculate matches per day to spread them out
       const targetMatchesPerDay = Math.ceil(totalPairings / totalDays);
       let pairingIdx = 0;
 
@@ -701,7 +700,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     )}
                   </div>
                 </ScrollArea>
-              </div>
+              </Tabs>
             </div>
           </div>
         </div>
@@ -1010,7 +1009,7 @@ export default function EventsPage() {
                 {isTournamentMode && (
                   <div className="space-y-6">
                     <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Participating Squads (Comma Separated)</Label><Textarea placeholder="e.g. Warriors, Elite, Knights..." value={newTournamentTeams} onChange={e => setNewTournamentTeams(e.target.value)} className="rounded-xl min-h-[80px] border-2 font-bold" /></div>
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tournament Waiver Text</Label><Textarea placeholder="Define participation terms..." value={newWaiverText} onChange={e => setNewWaiverText(event?.teamWaiverText || '')} className="rounded-xl min-h-[120px] border-2 font-medium bg-muted/10" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tournament Waiver Text</Label><Textarea placeholder="Define participation terms..." value={newWaiverText} onChange={e => setNewWaiverText(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium bg-muted/10" /></div>
                   </div>
                 )}
                 <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Event Brief</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[100px] border-2 font-medium" /></div>
