@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -470,7 +471,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [householdBalance, setHouseholdBalance] = useState(0);
   const [seenAlertIds, setSeenAlertIds] = useState<string[]>([]);
 
-  // Queries
+  // --- QUERIES ---
   const plansQuery = useMemoFirebase(() => (db && isAuthResolved && firebaseUser) ? collection(db, 'plans') : null, [db, isAuthResolved, firebaseUser]);
   const { data: plansData, isLoading: isPlansLoading } = useCollection(plansQuery);
   const plans = plansData || [];
@@ -560,16 +561,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return { current: currentCount, limit: limitCount, remaining: Math.max(0, limitCount - currentCount), exceeded: currentCount > limitCount };
   }, [teams, userProfile, firebaseUser?.uid]);
 
-  // --- CORE CALLBACKS ---
+  // --- REFACTORED CORE CALLBACKS (FIXED CIRCULARITY) ---
   const createAlert = useCallback(async (title: string, message: string, audience: TeamAlert['audience']) => {
     if (!activeTeam || !firebaseUser) return;
     await addDoc(collection(db, 'teams', activeTeam.id, 'alerts'), clean({ title, message, audience, createdAt: new Date().toISOString(), createdBy: firebaseUser.uid }));
-    toast({ title: "Broadcast Dispatched", description: `Sent to ${audience}.` });
-  }, [activeTeam, firebaseUser, db]);
+    toast({ title: "Broadcast Dispatched" });
+  }, [activeTeam?.id, firebaseUser, db]);
 
   const deleteAlert = useCallback(async (alertId: string) => {
     if (activeTeam) await deleteDoc(doc(db, 'teams', activeTeam.id, 'alerts', alertId));
-  }, [activeTeam, db]);
+  }, [activeTeam?.id, db]);
 
   const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined') => {
     const entryRef = doc(db, 'leagues', contextId, 'registrationEntries', entryId);
@@ -586,31 +587,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const signTeamDocument = useCallback(async (docId: string, signatureText: string, targetMemberId: string) => {
     if (!activeTeam || !userProfile) return;
-    
-    const docSnap = await getDoc(doc(db, 'teams', activeTeam.id, 'documents', docId));
+    const docRef = doc(db, 'teams', activeTeam.id, 'documents', docId);
+    const docSnap = await getDoc(docRef);
     if (!docSnap.exists()) return;
     const docData = docSnap.data() as TeamDocument;
-
     const targetMember = members.find(m => m.id === targetMemberId);
     if (!targetMember) return;
 
     const batch = writeBatch(db);
     const sigId = `sig_${targetMember.id}_${Date.now()}`;
-    
-    // 1. Central Document Signature Ledger
     batch.set(doc(db, 'teams', activeTeam.id, 'documents', docId, 'signatures', sigId), clean({
       id: sigId, memberId: targetMember.id, userId: userProfile.id, userName: targetMember.name,
       signedAt: new Date().toISOString(), signatureText, documentTitle: docData.title, documentId: docId
     }));
-
-    // 2. Individual Member Compliance History
     batch.set(doc(db, 'teams', activeTeam.id, 'members', targetMember.id, 'signatures', docId), clean({
       id: sigId, docId, title: docData.title, signedAt: new Date().toISOString(), signatureText
     }));
-
-    batch.update(doc(db, 'teams', activeTeam.id, 'documents', docId), { signatureCount: increment(1) });
-    
-    // 3. Certified Certificate in Library
+    batch.update(docRef, { signatureCount: increment(1) });
     const certId = `cert_${docId}_${targetMember.id}`;
     batch.set(doc(db, 'teams', activeTeam.id, 'files', certId), clean({
       name: `Signed: ${docData.title} - ${targetMember.name}`,
@@ -618,27 +611,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       category: 'Signed Certificate', description: `Verified execution of ${docData.title}.`,
       date: new Date().toISOString(), authorId: userProfile.id, targetMemberId: targetMember.id, documentId: docId
     }));
-
     await batch.commit(); 
-    toast({ title: "Compliance Verified", description: `Signed for ${targetMember.name}` });
-  }, [activeTeam, userProfile, db, members]);
+    toast({ title: "Compliance Verified" });
+  }, [activeTeam?.id, userProfile, db, members]);
 
   const createTeamDocument = useCallback(async (data: any) => {
     if (!activeTeam || !firebaseUser) return;
     await addDoc(collection(db, 'teams', activeTeam.id, 'documents'), clean({ ...data, teamId: activeTeam.id, signatureCount: 0, createdAt: new Date().toISOString() }));
     await createAlert(`Waiver Required: ${data.title}`, `Please visit the Library to sign.`, 'everyone');
-  }, [activeTeam, firebaseUser, db, createAlert]);
-
-  const updateTeamDocument = useCallback(async (id: string, data: any) => {
-    if (activeTeam) await updateDoc(doc(db, 'teams', activeTeam.id, 'documents', id), clean(data));
-  }, [activeTeam, db]);
-
-  const deleteTeamDocument = useCallback(async (id: string) => {
-    if (activeTeam) await deleteDoc(doc(db, 'teams', activeTeam.id, 'documents', id));
-  }, [activeTeam, db]);
+  }, [activeTeam?.id, firebaseUser, db, createAlert]);
 
   // --- CONTEXT VALUE ---
-  const value = {
+  const value = useMemo(() => ({
     user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading,
     currentMember, isStaff: activeTeam?.role === 'Admin', isPro: activeTeam?.isPro || false, isParent: userProfile?.role === 'parent', isPlayer: userProfile?.role === 'adult_player',
     isSuperAdmin, isClubManager: ['elite_teams', 'elite_league', 'squad_organization'].includes(userProfile?.activePlanId || ''), household, householdEvents, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus,
@@ -660,8 +644,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     updateTeamPlan: async (tid: string, pid: string) => { await updateDoc(doc(db, 'teams', tid), { planId: pid, isPro: pid !== 'starter_squad' }); },
     signTeamDocument,
     createTeamDocument,
-    updateTeamDocument,
-    deleteTeamDocument,
+    updateTeamDocument: async (id: string, data: any) => { if (activeTeam) await updateDoc(doc(db, 'teams', activeTeam.id, 'documents', id), clean(data)); },
+    deleteTeamDocument: async (id: string) => { if (activeTeam) await deleteDoc(doc(db, 'teams', activeTeam.id, 'documents', id)); },
     updateStaffEvaluation: async (mid: string, note: string) => { if (activeTeam) await setDoc(doc(db, 'teams', activeTeam.id, 'members', mid, 'private', 'evaluation'), { note, updatedAt: new Date().toISOString() }); },
     getStaffEvaluation: async (mid: string) => { if (!activeTeam) return ''; const s = await getDoc(doc(db, 'teams', activeTeam.id, 'members', mid, 'private', 'evaluation')); return s.exists() ? s.data().note : ''; },
     addEvent: async (d: any) => { if (!activeTeam) return false; await addDoc(collection(db, 'teams', activeTeam.id, 'events'), clean({ ...d, teamId: activeTeam.id })); return true; },
@@ -718,7 +702,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     resolveQuota: async (sids: string[]) => { if (firebaseUser) { const b = writeBatch(db); teams.filter(t => t.ownerUserId === firebaseUser.uid && t.isPro).forEach(t => { const ok = sids.includes(t.id); b.update(doc(db, 'teams', t.id), { isPro: ok, planId: ok ? t.planId : 'starter_squad' }); b.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', t.id), { isPro: ok, planId: ok ? t.planId : 'starter_squad' }); }); await b.commit(); } },
     createAlert,
     deleteAlert
-  };
+  }), [userProfile, activeTeam?.id, activeTeam?.role, activeTeam?.isPro, activeTeam?.planId, teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading, currentMember, isSuperAdmin, household, householdEvents, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus, isPaywallOpen, firebaseUser?.uid, db, signTeamDocument, createTeamDocument, respondToAssignment, createAlert, deleteAlert]);
 
   return <TeamContext.Provider value={value}>{children}</TeamContext.Provider>;
 }

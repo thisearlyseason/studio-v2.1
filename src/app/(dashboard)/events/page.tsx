@@ -1,6 +1,7 @@
+
 "use client";
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -109,10 +110,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
               <div className="space-y-4 pt-4 border-t border-white/10">
                 <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em] mb-4">Tactical RSVP</p>
                 <div className="grid grid-cols-1 gap-2">
-                  <Button variant={myRsvp === 'going' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'going' ? "bg-primary border-none" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'going')}>Going</Button>
+                  <button onClick={() => updateRSVP(event.id, 'going')} className={cn("h-12 rounded-xl font-black text-xs uppercase flex items-center justify-center transition-all", myRsvp === 'going' ? "bg-primary text-white" : "bg-white/5 border border-white/10 text-white")}>Going</button>
                   <div className="grid grid-cols-2 gap-2">
-                    <Button variant={myRsvp === 'maybe' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'maybe' ? "bg-amber-50" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'maybe')}>Maybe</Button>
-                    <Button variant={myRsvp === 'declined' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'declined' ? "bg-red-600" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'declined')}>Decline</Button>
+                    <button onClick={() => updateRSVP(event.id, 'maybe')} className={cn("h-12 rounded-xl font-black text-xs uppercase flex items-center justify-center transition-all", myRsvp === 'maybe' ? "bg-amber-500 text-white" : "bg-white/5 border border-white/10 text-white")}>Maybe</button>
+                    <button onClick={() => updateRSVP(event.id, 'declined')} className={cn("h-12 rounded-xl font-black text-xs uppercase flex items-center justify-center transition-all", myRsvp === 'declined' ? "bg-red-600 text-white" : "bg-white/5 border border-white/10 text-white")}>Decline</button>
                   </div>
                 </div>
               </div>
