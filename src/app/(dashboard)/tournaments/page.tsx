@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -51,7 +52,7 @@ import { useTeam, TeamEvent, TournamentGame, Member } from '@/components/provide
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy, where, doc, collectionGroup, deleteDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
-import { format, isPast, isSameDay, addMinutes, eachDayOfInterval } from 'date-fns';
+import { format, isPast, isSameDay } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
 
@@ -213,7 +214,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 }
 
 export default function TournamentsPage() {
-  const { activeTeam, isStaff, isSuperAdmin, purchasePro } = useTeam();
+  const { activeTeam, isStaff, isSuperAdmin } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   

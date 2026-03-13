@@ -131,7 +131,7 @@ export type TeamDocument = {
   title: string;
   content: string;
   type: 'waiver' | 'policy' | 'info';
-  assignedTo: string[]; // Can be ['all'] or specific member IDs
+  assignedTo: string[];
   signatureCount: number;
   createdAt: string;
 };
@@ -560,6 +560,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
   const members = useMemo(() => membersData || [], [membersData]);
 
+  const currentMember = useMemo(() => members.find(m => m.userId === firebaseUser?.uid) || null, [members, firebaseUser?.uid]);
+
   const alertsQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10)) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: alertsData } = useCollection<TeamAlert>(alertsQuery);
   const alerts = alertsData || [];
@@ -631,9 +633,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     };
   }, [teams, myChildren, db, isAuthResolved, firebaseUser]);
 
+  const createAlert = useCallback(async (title: string, message: string, audience: TeamAlert['audience']) => {
+    if (!activeTeam || !firebaseUser) return;
+    await addDoc(collection(db, 'teams', activeTeam.id, 'alerts'), clean({ title, message, audience, createdAt: new Date().toISOString(), createdBy: firebaseUser.uid }));
+    toast({ title: "Broadcast Dispatched", description: `Sent to ${audience}.` });
+  }, [activeTeam, firebaseUser, db]);
+
+  const deleteAlert = useCallback(async (alertId: string) => {
+    if (!activeTeam) return;
+    await deleteDoc(doc(db, 'teams', activeTeam.id, 'alerts', alertId));
+    toast({ title: "Broadcast Purged" });
+  }, [activeTeam, db]);
+
   const value = {
     user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading,
-    currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
+    currentMember,
     isStaff: activeTeam?.role === 'Admin', isPro: activeTeam?.isPro || false, isParent: userProfile?.role === 'parent', isPlayer: userProfile?.role === 'adult_player',
     isSuperAdmin, isClubManager: ['elite_teams', 'elite_league', 'squad_organization'].includes(userProfile?.activePlanId || ''), household, householdEvents, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus,
     isPaywallOpen, setIsPaywallOpen, purchasePro: () => setIsPaywallOpen(true), hasFeature, alerts,
@@ -712,7 +726,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }, [db]),
     
     signTeamDocument: useCallback(async (docId: string, signatureText: string) => {
-      if (!activeTeam || !userProfile || !value.currentMember) return;
+      if (!activeTeam || !userProfile || !currentMember) return;
       const docSnap = await getDoc(doc(db, 'teams', activeTeam.id, 'documents', docId));
       if (!docSnap.exists()) return;
       const docData = docSnap.data() as TeamDocument;
@@ -720,7 +734,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const batch = writeBatch(db);
       const sigId = `sig_${userProfile.id}`;
       batch.set(doc(db, 'teams', activeTeam.id, 'documents', docId, 'signatures', sigId), clean({
-        id: sigId, memberId: value.currentMember.id, userId: userProfile.id, userName: userProfile.name,
+        id: sigId, memberId: currentMember.id, userId: userProfile.id, userName: userProfile.name,
         signedAt: new Date().toISOString(), signatureText, documentTitle: docData.title
       }));
       batch.update(doc(db, 'teams', activeTeam.id, 'documents', docId), { signatureCount: increment(1) });
@@ -741,17 +755,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
       await batch.commit(); 
       toast({ title: "Document Signed & Archived" });
-    }, [activeTeam, userProfile, db, value.currentMember]),
+    }, [activeTeam, userProfile, db, currentMember]),
     
     createTeamDocument: useCallback(async (data: any) => {
       if (!activeTeam || !firebaseUser) return;
       await addDoc(collection(db, 'teams', activeTeam.id, 'documents'), clean({ ...data, teamId: activeTeam.id, signatureCount: 0, createdAt: new Date().toISOString() }));
-      await value.createAlert(
+      await createAlert(
         `Required Document: ${data.title}`, 
         `A new ${data.type} requires your digital signature. Please visit the Library to execute.`, 
         'everyone'
       );
-    }, [activeTeam, firebaseUser, db]),
+    }, [activeTeam, firebaseUser, db, createAlert]),
     
     deleteTeamDocument: useCallback(async (docId: string) => {
       if (!activeTeam) return;
@@ -856,7 +870,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }, [activeTeam, db, firebaseUser]),
 
     resetSeasonData: useCallback(async () => {
-      if (!activeTeam) return;
       await value.resetSquadData(['games', 'events', 'scouting', 'feed']);
     }, [activeTeam]),
 
@@ -1125,17 +1138,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       toast({ title: "Squad Tiers Synchronized" });
     }, [firebaseUser, db, teams]),
 
-    createAlert: useCallback(async (title: string, message: string, audience: TeamAlert['audience']) => {
-      if (!activeTeam || !firebaseUser) return;
-      await addDoc(collection(db, 'teams', activeTeam.id, 'alerts'), clean({ title, message, audience, createdAt: new Date().toISOString(), createdBy: firebaseUser.uid }));
-      toast({ title: "Broadcast Dispatched", description: `Sent to ${audience}.` });
-    }, [activeTeam, firebaseUser, db]),
-
-    deleteAlert: useCallback(async (alertId: string) => {
-      if (!activeTeam) return;
-      await deleteDoc(doc(db, 'teams', activeTeam.id, 'alerts', alertId));
-      toast({ title: "Broadcast Purged" });
-    }, [activeTeam, db])
+    createAlert, deleteAlert
   };
 
   return <TeamContext.Provider value={value}>{children}</TeamContext.Provider>;
