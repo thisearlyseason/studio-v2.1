@@ -189,8 +189,9 @@ export default function DashboardLayout({
 
   return (
     <div className="flex flex-col min-h-screen">
+      {/* Demo Banner moved to Top with lower z-index */}
       {userProfile?.isDemo && (
-        <div className="w-full bg-black text-white h-9 flex items-center justify-center gap-4 z-[60] border-b border-primary/20 shrink-0 sticky top-0">
+        <div className="w-full bg-black text-white h-9 flex items-center justify-center gap-4 z-[40] border-b border-primary/20 shrink-0 sticky top-0">
           <Timer className="h-3.5 w-3.5 text-primary animate-pulse" />
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-black uppercase tracking-widest">Guest Tactical Mode</span>
