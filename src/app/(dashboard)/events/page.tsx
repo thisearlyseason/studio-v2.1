@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -700,7 +699,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     )}
                   </div>
                 </ScrollArea>
-              </Tabs>
+              </div>
             </div>
           </div>
         </div>

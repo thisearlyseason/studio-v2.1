@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -44,7 +43,7 @@ export function useCollection<T = any>(
       return;
     }
 
-    // Defensive path check to prevent root-level listing attempts
+    // Defensive path check to prevent root-level listing attempts or malformed segments
     let path = '';
     let isCollectionGroup = false;
     try {
@@ -52,7 +51,6 @@ export function useCollection<T = any>(
       if (q.type === 'collection') {
         path = q.path;
       } else {
-        // Safe query path detection
         path = q._query?.path?.canonicalString() || '';
         if (!path && q._query?.collectionGroup) {
           path = q._query.collectionGroup;
@@ -66,7 +64,7 @@ export function useCollection<T = any>(
 
     const trimmedPath = (path || '').trim();
     
-    // CRITICAL GUARD: Explicitly block root paths or uninitialized segments
+    // CRITICAL GUARD: Explicitly block root paths, malformed segments, or uninitialized segments
     if (
       !trimmedPath || 
       trimmedPath === '/' || 
@@ -100,7 +98,7 @@ export function useCollection<T = any>(
       (err: FirestoreError) => {
         if (!isMounted.current) return;
         
-        // Suppress index errors (failed-precondition) or auth-transient errors
+        // Suppress known transient errors or demo guest issues
         if (err.code === 'failed-precondition' || trimmedPath.includes('demo_guest') || trimmedPath === 'query') {
           setIsLoading(false);
           return;
