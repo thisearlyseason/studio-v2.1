@@ -275,6 +275,8 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
       const days = Object.keys(dayConfigs).sort();
       const totalPairings = pairings.length;
       const totalDays = days.length;
+      
+      // Calculate matches per day to spread them out
       const targetMatchesPerDay = Math.ceil(totalPairings / totalDays);
       let pairingIdx = 0;
 
@@ -699,7 +701,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     )}
                   </div>
                 </ScrollArea>
-              </Tabs>
+              </div>
             </div>
           </div>
         </div>
@@ -776,9 +778,8 @@ export default function EventsPage() {
     selectedFacilityIds.forEach(id => {
       const fac = facilities?.find(f => f.id === id);
       if (!fac) return;
-      const facFields = allFields?.filter(field => field.facilityId === id) || [];
       const selectedFieldsInFac = selectedFieldIds.filter(fid => fid.startsWith(`${id}:`));
-      if (facFields.length > 0) {
+      if (selectedFieldsInFac.length > 0) {
         selectedFieldsInFac.forEach(fid => {
           const fieldName = fid.split(':')[1];
           list.push({ id: `field:${fid}`, label: `${fac.name} - ${fieldName}` });
@@ -789,7 +790,7 @@ export default function EventsPage() {
     });
     manualLocations.forEach(loc => list.push({ id: `manual:${loc}`, label: loc }));
     return list;
-  }, [selectedFacilityIds, selectedFieldIds, manualLocations, facilities, allFields]);
+  }, [selectedFacilityIds, selectedFieldIds, manualLocations, facilities]);
 
   const handleEdit = (event: TeamEvent) => { 
     setEditingEvent(event); 
@@ -1009,7 +1010,7 @@ export default function EventsPage() {
                 {isTournamentMode && (
                   <div className="space-y-6">
                     <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Participating Squads (Comma Separated)</Label><Textarea placeholder="e.g. Warriors, Elite, Knights..." value={newTournamentTeams} onChange={e => setNewTournamentTeams(e.target.value)} className="rounded-xl min-h-[80px] border-2 font-bold" /></div>
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tournament Waiver Text</Label><Textarea placeholder="Define participation terms..." value={newWaiverText} onChange={e => setNewWaiverText(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium bg-muted/10" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tournament Waiver Text</Label><Textarea placeholder="Define participation terms..." value={newWaiverText} onChange={e => setNewWaiverText(event?.teamWaiverText || '')} className="rounded-xl min-h-[120px] border-2 font-medium bg-muted/10" /></div>
                   </div>
                 )}
                 <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Event Brief</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[100px] border-2 font-medium" /></div>

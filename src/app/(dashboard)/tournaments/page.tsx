@@ -405,12 +405,12 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                                   <div className="grid grid-cols-7 items-center gap-4 text-center mt-10">
                                     <div className="col-span-3 space-y-2">
                                       <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team1}</p>
-                                      <p className={cn("text-5xl font-black tracking-tighter", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")}>{game.score1}</p>
+                                      <p className={cn("text-3xl font-black", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")}>{game.score1}</p>
                                     </div>
                                     <div className="col-span-1 opacity-20 font-black text-[10px]">VS</div>
                                     <div className="col-span-3 space-y-2">
                                       <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team2}</p>
-                                      <p className={cn("text-5xl font-black tracking-tighter", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")}>{game.score2}</p>
+                                      <p className={cn("text-3xl font-black", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")}>{game.score2}</p>
                                     </div>
                                   </div>
                                 </button>
