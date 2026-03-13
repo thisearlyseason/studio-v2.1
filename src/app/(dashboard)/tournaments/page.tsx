@@ -540,7 +540,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                             {event.teamAgreements?.[team]?.agreed ? (
                               <>
                                 <Badge className="bg-green-100 text-green-700 border-none font-black text-[10px] px-4 h-8 flex items-center gap-2 rounded-full"><CheckCircle2 className="h-4 w-4" /> VERIFIED</Badge>
-                                <Button variant="ghost" size="icon" className="h-10 w-10 text-primary" onClick={() => toast({ title: "Audit Success", description: "Signed waiver verified in squad vault." })}><Download className="h-5 w-5" /></Button>
+                                <Button variant="ghost" size="icon" className="h-10 w-10 text-primary" onClick={() => toast({ title: "Audit Success", description: "Signed waiver verified in squad vault." })}><Download className="h-4 w-4" /></Button>
                               </>
                             ) : (
                               <>
