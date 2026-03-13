@@ -62,11 +62,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useTeam, TeamEvent, TournamentGame, EventType, Facility, Field, Member } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, doc, where, collectionGroup, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, doc, where, collectionGroup, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { format, isPast, isSameDay, addMinutes, parse, eachDayOfInterval, isValid } from 'date-fns';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -378,7 +378,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   return (
     <Dialog onOpenChange={(open) => { if(!open) setEditingGame(null); }}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-7xl p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl overflow-y-auto lg:overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-7xl p-0 sm:rounded-[2.5rem] h-[100dvh] sm:h-[90vh] border-none shadow-2xl overflow-y-auto lg:overflow-hidden flex flex-col bg-white">
         <DialogTitle className="sr-only">{event.title} Hub</DialogTitle>
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex flex-col lg:flex-row flex-1 min-h-0">
@@ -710,7 +710,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     )}
                   </div>
                 </ScrollArea>
-              </div>
+              </Tabs>
             </div>
           </div>
         </div>
@@ -897,6 +897,8 @@ export default function EventsPage() {
     return { month, day: format(startDate, 'd') };
   };
 
+  const isAdmin = isStaff || isSuperAdmin;
+
   return (
     <div className="space-y-10 pb-20">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -1082,7 +1084,6 @@ export default function EventsPage() {
         <div className="grid gap-4">
           {filteredEvents.map((event) => {
             const { month, day } = getCardDateDisplay(event);
-            const isOrganizer = isStaff && event.teamId === activeTeam?.id;
             return (
               <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} formatTime={formatTime} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent} facilities={facilities || []} allFields={allFields || []}>
                 <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
