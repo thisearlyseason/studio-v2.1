@@ -42,7 +42,8 @@ import {
   Table as TableIcon,
   ChevronDown,
   Mail,
-  UserPlus
+  UserPlus,
+  Info
 } from 'lucide-react';
 import { 
   Dialog, 
