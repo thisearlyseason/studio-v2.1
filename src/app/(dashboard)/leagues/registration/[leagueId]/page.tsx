@@ -253,12 +253,12 @@ export default function LeagueRegistrationAdminPage() {
                                       </SelectContent>
                                     </Select>
                                   </div>
-                                  <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed space-y-4">
-                                    <div className="flex items-center gap-2">
-                                      <Info className="h-4 w-4 text-primary" />
-                                      <p className="text-[10px] font-black uppercase text-primary">Deployment Note</p>
+                                  <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-4">
+                                    <div className="flex items-center gap-3">
+                                      <ShieldCheck className="h-5 w-5 text-primary" />
+                                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Strategic Enrollment</h4>
                                     </div>
-                                    <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">
+                                    <p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">
                                       Assigning a recruit to a squad allows that squad's coach to review and officially enroll them into their active roster.
                                     </p>
                                   </div>

@@ -22,7 +22,7 @@ export interface UseDocResult<T> {
 
 /**
  * React hook to subscribe to a single Firestore document in real-time.
- * Hardened with strictly defensive path guards to prevent assertion failures (ID: ca9 / b815).
+ * Hardened with strictly defensive path guards to prevent assertion failures.
  */
 export function useDoc<T = any>(
   memoizedDocRef: DocumentReference<DocumentData> | null | undefined,

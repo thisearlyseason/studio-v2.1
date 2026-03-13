@@ -1,10 +1,10 @@
 
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useTeam, TeamDocument, Member, DocumentSignature, RegistrationEntry } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, where, doc, getDocs, setDoc, deleteDoc, collectionGroup } from 'firebase/firestore';
+import { collection, query, orderBy, where, doc, collectionGroup } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,14 +77,11 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Switch } from '@/components/ui/switch';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import Link from 'next/link';
 
 function SignatureList({ teamId, documentId }: { teamId: string, documentId: string }) {
   const db = useFirestore();
@@ -181,15 +178,6 @@ export default function CoachesCornerPage() {
       assignedTo: doc.assignedTo
     });
     setIsCreateOpen(true);
-  };
-
-  const handleResetClick = () => {
-    const highImpact = resetOptions.includes('members') || resetOptions.includes('facilities');
-    if (highImpact) {
-      setIsDoubleConfirmOpen(true);
-    } else {
-      handleFinalReset();
-    }
   };
 
   const handleFinalReset = async () => {

@@ -23,7 +23,7 @@ export interface UseCollectionResult<T> {
 
 /**
  * React hook to subscribe to a Firestore collection or query in real-time.
- * Hardened with strictly defensive path guards to prevent internal assertion errors (ID: ca9 / b815).
+ * Hardened with strictly defensive path guards to prevent internal assertion errors.
  */
 export function useCollection<T = any>(
     memoizedTargetRefOrQuery: ((CollectionReference<DocumentData> | Query<DocumentData>) & {__memo?: boolean})  | null | undefined,
