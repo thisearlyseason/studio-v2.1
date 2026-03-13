@@ -32,7 +32,8 @@ import {
   FileSignature,
   PenTool,
   ArrowRight,
-  Clock
+  Clock,
+  Shield
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -43,7 +44,7 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogTrigger,
-  DialogDescription,
+  DialogDescription, 
   DialogFooter,
   DialogClose
 } from '@/components/ui/dialog';
@@ -157,8 +158,13 @@ export default function FilesPage() {
   const { data: rawFiles } = useCollection<TeamFile>(filesQuery);
   const teamFiles = useMemo(() => {
     const all = rawFiles || [];
-    return all.filter(f => !['Game Tape', 'Practice Session', 'Highlights'].includes(f.category));
-  }, [rawFiles]);
+    // SECURITY FILTER: Only staff can see 'Signed Certificate' category
+    return all.filter(f => {
+      const isCertificate = f.category === 'Signed Certificate';
+      if (isCertificate) return isStaff || isSuperAdmin;
+      return !['Game Tape', 'Practice Session', 'Highlights'].includes(f.category);
+    });
+  }, [rawFiles, isStaff, isSuperAdmin]);
 
   const docsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
@@ -317,49 +323,44 @@ export default function FilesPage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {/* Signed Documents */}
-          {signedDocs.map(doc => (
-            <Card key={doc.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-green-50/30 overflow-hidden">
-              <CardHeader className="p-6 pb-2">
-                <div className="flex justify-between items-start">
-                  <div className="bg-green-100 p-3 rounded-2xl text-green-600"><CheckCircle2 className="h-6 w-6" /></div>
-                  <Badge className="bg-green-600 text-white border-none text-[8px] font-black uppercase">SIGNED</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="p-6 pt-2 space-y-3">
-                <h3 className="font-black text-sm uppercase tracking-tight truncate">{doc.title}</h3>
-                <p className="text-[9px] font-bold text-muted-foreground uppercase leading-tight">Certified Legal Record</p>
-              </CardContent>
-              <CardFooter className="p-6 pt-0">
-                <Button variant="outline" className="w-full h-10 rounded-xl font-black text-[10px] uppercase border-2 bg-white" onClick={() => window.open('#', '_blank')}>
-                  View Certificate
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
-
-          {/* Regular Files */}
-          {filteredFiles.map(file => (
-            <Card key={file.id} className="group border-none shadow-sm hover:shadow-xl transition-all duration-500 rounded-[2rem] overflow-hidden ring-1 ring-black/5 bg-white">
-              <CardHeader className="p-6 pb-2">
-                <div className="flex justify-between items-start">
-                  <div className="bg-primary/5 p-3 rounded-2xl text-primary"><FileText className="h-6 w-6" /></div>
-                  <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary">{file.category}</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="p-6 pt-2 space-y-3">
-                <div className="space-y-1">
-                  <h3 className="font-black text-sm uppercase tracking-tight truncate">{file.name}</h3>
-                  <p className="text-[9px] font-bold text-muted-foreground uppercase">{file.size || 'N/A'} • {format(new Date(file.date), 'MMM d, yyyy')}</p>
-                </div>
-                {file.description && <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 leading-relaxed italic">"{file.description}"</p>}
-              </CardContent>
-              <CardFooter className="p-6 pt-0 flex gap-2">
-                <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20" onClick={() => window.open(file.url, '_blank')}>Download Hub</Button>
-                {isAdmin && <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => setFileToDelete(file.id)}><Trash2 className="h-4 w-4" /></Button>}
-              </CardFooter>
-            </Card>
-          ))}
+          {/* Regular Files & Certificates */}
+          {filteredFiles.map(file => {
+            const isCertificate = file.category === 'Signed Certificate';
+            return (
+              <Card key={file.id} className={cn(
+                "group border-none shadow-sm hover:shadow-xl transition-all duration-500 rounded-[2rem] overflow-hidden ring-1 ring-black/5",
+                isCertificate ? "bg-primary/5 border-primary/20 ring-primary/10" : "bg-white"
+              )}>
+                <CardHeader className="p-6 pb-2">
+                  <div className="flex justify-between items-start">
+                    <div className={cn(
+                      "p-3 rounded-2xl shadow-sm",
+                      isCertificate ? "bg-primary text-white" : "bg-primary/5 text-primary"
+                    )}>
+                      {isCertificate ? <Shield className="h-6 w-6" /> : <FileText className="h-6 w-6" />}
+                    </div>
+                    <Badge variant={isCertificate ? "default" : "outline"} className={cn(
+                      "text-[8px] font-black uppercase",
+                      !isCertificate && "border-primary/20 text-primary"
+                    )}>{file.category}</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6 pt-2 space-y-3">
+                  <div className="space-y-1">
+                    <h3 className="font-black text-sm uppercase tracking-tight truncate">{file.name}</h3>
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase">{file.size || 'N/A'} • {format(new Date(file.date), 'MMM d, yyyy')}</p>
+                  </div>
+                  {file.description && <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 leading-relaxed italic">"{file.description}"</p>}
+                </CardContent>
+                <CardFooter className="p-6 pt-0 flex gap-2">
+                  <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20" onClick={() => window.open(file.url, '_blank')}>
+                    {isCertificate ? 'Track Execution' : 'Download Hub'}
+                  </Button>
+                  {isAdmin && <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => setFileToDelete(file.id)}><Trash2 className="h-4 w-4" /></Button>}
+                </CardFooter>
+              </Card>
+            );
+          })}
 
           {filteredFiles.length === 0 && signedDocs.length === 0 && pendingDocs.length === 0 && (
             <div className="col-span-full py-24 text-center bg-muted/10 rounded-[3rem] border-2 border-dashed space-y-4 opacity-40">

@@ -1,8 +1,8 @@
 
 "use client";
 
-import React, { useState, useMemo } from 'react';
-import { useTeam, PlayerProfile, Team, TeamEvent } from '@/components/providers/team-provider';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useTeam, PlayerProfile, Team, TeamEvent, TeamDocument, Member } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,7 +32,8 @@ import {
   DollarSign,
   CalendarDays,
   Activity,
-  FileText
+  FileText,
+  FileSignature
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -48,15 +49,46 @@ import { format, differenceInYears, isFuture, isToday } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useFirestore } from '@/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 export default function FamilyDashboardPage() {
   const { user, myChildren, registerChild, upgradeChildToLogin, teams, householdEvents, householdBalance } = useTeam();
+  const db = useFirestore();
   const router = useRouter();
   
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isNoWaiversOpen, setIsNoWaiversOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [newChild, setNewChild] = useState({ firstName: '', lastName: '', dob: '' });
+  const [childrenCompliance, setChildrenCompliance] = useState<Record<string, { pending: number, signed: number }>>({});
+
+  useEffect(() => {
+    if (!myChildren.length || !db) return;
+
+    const fetchCompliance = async () => {
+      const results: Record<string, { pending: number, signed: number }> = {};
+      
+      for (const child of myChildren) {
+        let pending = 0;
+        let signed = 0;
+        
+        // We look across all teams the child joined
+        for (const tid of child.joinedTeamIds || []) {
+          const docsSnap = await getDocs(collection(db, 'teams', tid, 'documents'));
+          for (const d of docsSnap.docs) {
+            const sigSnap = await getDocs(query(collection(db, 'teams', tid, 'documents', d.id, 'signatures'), where('memberId', '==', child.id)));
+            if (sigSnap.empty) pending++;
+            else signed++;
+          }
+        }
+        results[child.id] = { pending, signed };
+      }
+      setChildrenCompliance(results);
+    };
+
+    fetchCompliance();
+  }, [myChildren, db]);
 
   const upcomingEvents = useMemo(() => {
     return householdEvents.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date))).slice(0, 5);
@@ -86,7 +118,6 @@ export default function FamilyDashboardPage() {
   };
 
   const handleSignWaiversClick = () => {
-    // Check if there are any active teams or files first
     if (teams.length === 0) {
       setIsNoWaiversOpen(true);
     } else {
@@ -179,10 +210,10 @@ export default function FamilyDashboardPage() {
               </div>
               <div className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl border border-transparent">
                 <div>
-                  <p className="text-[10px] font-black uppercase opacity-40">Pending Waivers</p>
-                  <p className="text-xl font-black">0</p>
+                  <p className="text-[10px] font-black uppercase opacity-40">Total Signatures</p>
+                  <p className="text-xl font-black">{Object.values(childrenCompliance).reduce((sum, c) => sum + c.signed, 0)}</p>
                 </div>
-                <Signature className="h-6 w-6 text-primary/40" />
+                <FileSignature className="h-6 w-6 text-primary/40" />
               </div>
             </CardContent>
           </Card>
@@ -247,6 +278,7 @@ export default function FamilyDashboardPage() {
           {myChildren.map((child) => {
             const age = differenceInYears(new Date(), new Date(child.dateOfBirth));
             const childTeams = teams.filter(t => child.joinedTeamIds?.includes(t.id));
+            const compliance = childrenCompliance[child.id] || { pending: 0, signed: 0 };
 
             return (
               <Card key={child.id} className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group">
@@ -264,16 +296,31 @@ export default function FamilyDashboardPage() {
                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Minor Player Hub • Guardian ID: {user?.id.slice(-4)}</p>
                   </div>
 
-                  <div className="space-y-4 pt-4 border-t">
-                    <div className="flex items-center justify-between px-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Enrolled Squads</p>
-                      <Badge variant="outline" className="text-[8px] font-black border-primary/20 text-primary">{childTeams.length} TOTAL</Badge>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-muted/30 p-4 rounded-2xl space-y-1 border">
+                      <p className="text-[8px] font-black uppercase opacity-40">Compliance</p>
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-xl font-black", compliance.pending > 0 ? "text-red-600" : "text-green-600")}>
+                          {compliance.pending > 0 ? `${compliance.pending} PENDING` : "VERIFIED"}
+                        </span>
+                      </div>
                     </div>
+                    <div className="bg-muted/30 p-4 rounded-2xl space-y-1 border">
+                      <p className="text-[8px] font-black uppercase opacity-40">Enrolled Squads</p>
+                      <p className="text-xl font-black text-primary">{childTeams.length}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 pt-4 border-t">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Active Squads</p>
                     <div className="space-y-2">
                       {childTeams.map(t => (
-                        <div key={t.id} className="flex items-center gap-3 p-3 bg-muted/30 rounded-2xl border">
-                          <Users className="h-4 w-4 text-primary" />
-                          <span className="text-xs font-black uppercase tracking-tight truncate">{t.name}</span>
+                        <div key={t.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-2xl border">
+                          <div className="flex items-center gap-3">
+                            <Users className="h-4 w-4 text-primary" />
+                            <span className="text-xs font-black uppercase tracking-tight truncate">{t.name}</span>
+                          </div>
+                          <ChevronRight className="h-4 w-4 opacity-20" />
                         </div>
                       ))}
                       {childTeams.length === 0 && (
@@ -285,9 +332,12 @@ export default function FamilyDashboardPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 pt-4">
-                    <Button variant="outline" className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 group-hover:border-primary transition-colors" onClick={handleSignWaiversClick}>
-                      <Signature className="h-4 w-4 text-primary" />
-                      <span>Sign Waivers</span>
+                    <Button variant="outline" className={cn(
+                      "rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 group-hover:border-primary transition-colors",
+                      compliance.pending > 0 && "border-red-200 bg-red-50 text-red-600"
+                    )} onClick={handleSignWaiversClick}>
+                      <Signature className="h-4 w-4" />
+                      <span>{compliance.pending > 0 ? "Execute Waivers" : "View Vault"}</span>
                     </Button>
                     <Button 
                       variant="outline" 

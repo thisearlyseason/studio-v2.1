@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -130,7 +131,7 @@ export type TeamDocument = {
   title: string;
   content: string;
   type: 'waiver' | 'policy' | 'info';
-  assignedTo: string[];
+  assignedTo: string[]; // Can be ['all'] or specific member IDs
   signatureCount: number;
   createdAt: string;
 };
@@ -142,6 +143,7 @@ export type DocumentSignature = {
   userName: string;
   signedAt: string;
   signatureText: string;
+  documentTitle: string;
 };
 
 export type EventType = 'game' | 'practice' | 'meeting' | 'tournament' | 'other';
@@ -560,7 +562,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const alertsQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10)) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: alertsData } = useCollection<TeamAlert>(alertsQuery);
-  const alerts = useMemo(() => alertsData || [], [alertsData]);
+  const alerts = alertsData || [];
 
   const unreadAlertsCount = useMemo(() => {
     if (!userProfile || !alertsData) return 0;
@@ -711,19 +713,52 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     
     signTeamDocument: async (docId: string, signatureText: string) => {
       if (!activeTeam || !userProfile || !value.currentMember) return;
+      const docSnap = await getDoc(doc(db, 'teams', activeTeam.id, 'documents', docId));
+      if (!docSnap.exists()) return;
+      const docData = docSnap.data() as TeamDocument;
+
       const batch = writeBatch(db);
       const sigId = `sig_${userProfile.id}`;
       batch.set(doc(db, 'teams', activeTeam.id, 'documents', docId, 'signatures', sigId), clean({
         id: sigId, memberId: value.currentMember.id, userId: userProfile.id, userName: userProfile.name,
-        signedAt: new Date().toISOString(), signatureText
+        signedAt: new Date().toISOString(), signatureText, documentTitle: docData.title
       }));
       batch.update(doc(db, 'teams', activeTeam.id, 'documents', docId), { signatureCount: increment(1) });
-      await batch.commit(); toast({ title: "Document Signed & Filed" });
+      
+      // CREATE ARCHIVED FILE RECORD (Only visible to staff via Library filters)
+      const fileId = `cert_${docId}_${userProfile.id}`;
+      batch.set(doc(db, 'teams', activeTeam.id, 'files', fileId), clean({
+        name: `Signed: ${docData.title} - ${userProfile.name}`,
+        type: 'pdf',
+        size: 'Digital Certificate',
+        sizeBytes: 0,
+        url: '#', // Placeholder for virtual file
+        category: 'Signed Certificate',
+        description: `Verified execution of ${docData.title} by ${userProfile.name}.`,
+        date: new Date().toISOString(),
+        authorId: userProfile.id,
+        documentId: docId
+      }));
+
+      await batch.commit(); 
+      toast({ title: "Document Signed & Archived" });
     },
     
     createTeamDocument: async (data: any) => {
-      if (!activeTeam) return;
-      await addDoc(collection(db, 'teams', activeTeam.id, 'documents'), clean({ ...data, teamId: activeTeam.id, signatureCount: 0, createdAt: new Date().toISOString() }));
+      if (!activeTeam || !firebaseUser) return;
+      const docRef = await addDoc(collection(db, 'teams', activeTeam.id, 'documents'), clean({ ...data, teamId: activeTeam.id, signatureCount: 0, createdAt: new Date().toISOString() }));
+      
+      // AUTO-ALERT TARGET AUDIENCE
+      let audience: TeamAlert['audience'] = 'everyone';
+      if (data.assignedTo?.length > 0 && !data.assignedTo.includes('all')) {
+        audience = 'everyone'; // Simplified for MVP, real would target specific IDs
+      }
+      
+      await value.createAlert(
+        `Required Document: ${data.title}`, 
+        `A new ${data.type} requires your digital signature. Please visit the Library to execute.`, 
+        audience
+      );
     },
     
     deleteTeamDocument: async (docId: string) => {
