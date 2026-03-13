@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -664,7 +663,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (playerId !== `p_${firebaseUser.uid}`) {
         batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ id: firebaseUser.uid, userId: firebaseUser.uid, playerId: 'guardian', teamId: tid, role: 'Member', position: 'Parent', name: userProfile?.name || 'Guardian', avatar: userProfile?.avatar || '', joinedAt: new Date().toISOString(), jersey: 'HQ' }));
       }
-      batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ teamId: tid, teamName: tData.teamName, teamCode: (code || '').toUpperCase(), role: 'Member', ownerUserId: tData.ownerUserId || '', isPro: !!tData.isPro, planId: tData.planId || 'starter_squad' }));
+      batch.set(db ? doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid) : null as any, clean({ teamId: tid, teamName: tData.teamName, teamCode: (code || '').toUpperCase(), role: 'Member', ownerUserId: tData.ownerUserId || '', isPro: !!tData.isPro, planId: tData.planId || 'starter_squad' }));
       await batch.commit(); return true;
     },
     
@@ -996,7 +995,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       }));
       
       batch.update(doc(db, 'teams', tid), { leagueIds: arrayUnion(leagueId) });
-      batch.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), { leagueIds: arrayUnion(leagueId) });
+      batch.update(db ? doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid) : null as any, { leagueIds: arrayUnion(leagueId) });
       
       await batch.commit(); 
       return leagueId;
@@ -1141,7 +1140,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       ownedProTeams.forEach(t => {
         const isStillPro = selectedTeamIds.includes(t.id);
         batch.update(doc(db, 'teams', t.id), { isPro: isStillPro, planId: isStillPro ? t.planId : 'starter_squad' });
-        batch.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', t.id), { isPro: isStillPro, planId: isStillPro ? t.planId : 'starter_squad' });
+        batch.update(db ? doc(db, 'users', firebaseUser.uid, 'teamMemberships', t.id) : null as any, { isPro: isStillPro, planId: isStillPro ? t.planId : 'starter_squad' });
       });
       await batch.commit();
       toast({ title: "Squad Tiers Synchronized" });

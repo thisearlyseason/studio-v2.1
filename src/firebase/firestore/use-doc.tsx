@@ -21,7 +21,7 @@ export interface UseDocResult<T> {
 
 /**
  * React hook to subscribe to a single Firestore document in real-time.
- * Hardened with strictly defensive path guards and unmount protection.
+ * Hardened with strictly defensive path guards.
  */
 export function useDoc<T = any>(
   memoizedDocRef: DocumentReference<DocumentData> | null | undefined,
@@ -41,14 +41,8 @@ export function useDoc<T = any>(
       return;
     }
 
-    const path = (memoizedDocRef.path || '').trim();
-    if (
-      !path || 
-      path === '/' || 
-      path.includes('//') || 
-      path.includes('/undefined') || 
-      path.includes('undefined/')
-    ) {
+    const path = memoizedDocRef.path || '';
+    if (!path || path === '/' || path.includes('undefined') || path.includes('//')) {
       setData(null);
       setIsLoading(false);
       return;

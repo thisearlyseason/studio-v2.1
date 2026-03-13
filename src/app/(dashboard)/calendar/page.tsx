@@ -297,7 +297,7 @@ export default function MasterCalendarPage() {
                     {discoveryTeamIds.map(tid => {
                       const team = teams.find(t => t.id === tid);
                       return (
-                        <div key={tid} className="flex items-center space-x-3 p-2 hover:bg-muted/50 rounded-lg transition-colors cursor-pointer" onClick={() => toggleTeam(tid)}>
+                        <div key={tid} className="flex items-center space-x-3 p-2 hover:bg-muted/5 rounded-lg transition-colors cursor-pointer" onClick={() => toggleTeam(tid)}>
                           <Checkbox checked={selectedTeamIds.includes(tid)} id={`team-${tid}`} onCheckedChange={() => toggleTeam(tid)} />
                           <div className="flex items-center gap-2 min-w-0">
                             <Avatar className="h-6 w-6 rounded-md shrink-0 border">

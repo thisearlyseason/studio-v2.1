@@ -22,7 +22,7 @@ export interface UseCollectionResult<T> {
 
 /**
  * React hook to subscribe to a Firestore collection or query in real-time.
- * Hardened with strictly defensive path guards and unmount protection to prevent SDK assertion errors.
+ * Hardened with strictly defensive path guards to prevent internal assertion errors (ID: ca9).
  */
 export function useCollection<T = any>(
     memoizedTargetRefOrQuery: ((CollectionReference<DocumentData> | Query<DocumentData>) & {__memo?: boolean})  | null | undefined,
@@ -43,38 +43,17 @@ export function useCollection<T = any>(
       return;
     }
 
-    // Defensive path check to prevent root-level listing attempts or malformed segments
+    // Defensive path check to prevent root-level listing attempts
     let path = '';
-    let isCollectionGroup = false;
     try {
       const q = memoizedTargetRefOrQuery as any;
-      if (q.type === 'collection') {
-        path = q.path;
-      } else {
-        path = q._query?.path?.canonicalString() || '';
-        if (!path && q._query?.collectionGroup) {
-          path = q._query.collectionGroup;
-          isCollectionGroup = true;
-        }
-        if (!path) path = 'query';
-      }
+      path = q.path || q._query?.path?.canonicalString() || '';
     } catch (e) {
       path = 'query';
     }
 
-    const trimmedPath = (path || '').trim();
-    
-    // CRITICAL GUARD: Explicitly block root paths, malformed segments, or uninitialized segments
-    if (
-      !trimmedPath || 
-      trimmedPath === '/' || 
-      trimmedPath === '//' || 
-      trimmedPath.includes('//') || 
-      trimmedPath.includes('/undefined') ||
-      trimmedPath.includes('undefined/') ||
-      (trimmedPath === 'query' && !isCollectionGroup) || 
-      (trimmedPath === 'collection' && !isCollectionGroup)
-    ) {
+    // CRITICAL GUARD: Do not establish listeners on uninitialized or root paths
+    if (!path || path === '/' || path.includes('undefined') || path.includes('//')) {
       setData(null);
       setIsLoading(false);
       return;
@@ -99,14 +78,14 @@ export function useCollection<T = any>(
         if (!isMounted.current) return;
         
         // Suppress known transient errors or demo guest issues
-        if (err.code === 'failed-precondition' || trimmedPath.includes('demo_guest') || trimmedPath === 'query') {
+        if (err.code === 'failed-precondition' || path.includes('demo_guest')) {
           setIsLoading(false);
           return;
         }
 
         const contextualError = new FirestorePermissionError({
           operation: 'list',
-          path: trimmedPath || 'collection',
+          path: path || 'collection',
         });
 
         setError(contextualError);
