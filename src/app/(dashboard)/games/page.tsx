@@ -156,7 +156,7 @@ export default function GamesPage() {
           <div className="bg-white p-6 rounded-[2rem] shadow-sm relative"><ChartIcon className="h-12 w-12 text-primary/40" /><Lock className="absolute -top-2 -right-2 h-6 w-6 bg-black text-white p-1 rounded-full border-4 border-background" /></div>
           <div className="space-y-2">
             <h3 className="text-xl font-black uppercase tracking-tight">Performance Analytics Locked</h3>
-            <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-w-sm">Upgrade to Pro to visualize season trajectory and win/loss metrics.</p>
+            <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto">Upgrade to Pro to visualize season trajectory and win/loss metrics.</p>
           </div>
           <Button onClick={purchasePro} className="rounded-full px-10 h-12 font-black uppercase text-xs tracking-widest">Unlock Pro Analytics</Button>
         </div>

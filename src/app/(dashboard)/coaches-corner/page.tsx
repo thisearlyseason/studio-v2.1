@@ -541,7 +541,7 @@ export default function CoachesCornerPage() {
                       <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{member.position}</p>
                     </div>
                   </div>
-                  <ChevronRight className="h-6 w-6 text-primary opacity-20 group-hover:opacity-100 transition-all" />
+                  <ChevronRight className="h-5 w-5 text-primary opacity-20 group-hover:opacity-100 transition-all" />
                 </CardContent>
               </Card>
             ))}
