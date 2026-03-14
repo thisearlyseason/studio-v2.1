@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -565,14 +564,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const activeTeam = useMemo(() => teams.find(t => t.id === activeTeamId) || teams[0] || null, [teams, activeTeamId]);
 
   useEffect(() => {
-    if (!db || !isAuthResolved || !firebaseUser || teams.length === 0) return;
+    if (!db || !isAuthResolved || !firebaseUser || (teams.length === 0 && myChildren.length === 0)) return;
 
     const relevantTeamIds = new Set<string>();
-    teams.forEach(t => relevantTeamIds.add(t.id));
+    const myTeamNames = new Set<string>();
+    
+    teams.forEach(t => {
+      relevantTeamIds.add(t.id);
+      myTeamNames.add(t.name);
+    });
+    
     myChildren.forEach(c => (c.joinedTeamIds || []).forEach(tid => relevantTeamIds.add(tid)));
 
     const unsubscribes: (() => void)[] = [];
 
+    // Sync standard team events
     Array.from(relevantTeamIds).forEach(tid => {
       const q = query(collection(db, 'teams', tid, 'events'), orderBy('date', 'asc'));
       const unsub = onSnapshot(q, (snap) => {
@@ -586,6 +592,39 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       });
       unsubscribes.push(unsub);
     });
+
+    // Sync specific league matches involving the user's teams
+    const leaguesQ = query(collection(db, 'leagues'));
+    const leagueUnsub = onSnapshot(leaguesQ, (snap) => {
+      const allLeagueGames: TeamEvent[] = [];
+      snap.docs.forEach(doc => {
+        const data = doc.data() as League;
+        if (data.schedule) {
+          data.schedule.forEach(game => {
+            // Filter: Only include if one of the user's teams is team1 or team2
+            if (myTeamNames.has(game.team1) || myTeamNames.has(game.team2)) {
+              allLeagueGames.push({
+                id: game.id,
+                teamId: `league_${data.id}`,
+                title: `${game.team1} vs ${game.team2}`,
+                date: game.date,
+                startTime: game.time,
+                location: game.location || 'League Venue',
+                description: `Official League Match - ${data.name}`,
+                eventType: 'game',
+                teamName: data.name
+              });
+            }
+          });
+        }
+      });
+      
+      setHouseholdEvents(prev => {
+        const nonLeague = prev.filter(e => !e.teamId.startsWith('league_'));
+        return [...nonLeague, ...allLeagueGames].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      });
+    });
+    unsubscribes.push(leagueUnsub);
 
     return () => unsubscribes.forEach(unsub => unsub());
   }, [db, isAuthResolved, firebaseUser, teams, myChildren]);

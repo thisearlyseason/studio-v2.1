@@ -1,4 +1,3 @@
-
 /**
  * @fileOverview Utilities for generating calendar export links and ICS files.
  */
@@ -15,10 +14,8 @@ export interface CalendarEvent {
 
 /**
  * Generates a Google Calendar link for a specific single event.
- * Note: Google URLs do not officially support multiple events in a single template.
  */
 export function generateGoogleCalendarLink(event: CalendarEvent): string {
-  // Use local time format without 'Z' for Google Template URLs to avoid offset shifts
   const startStr = format(event.start, "yyyyMMdd'T'HHmmss");
   const end = event.end || addHours(event.start, 1);
   const endStr = format(end, "yyyyMMdd'T'HHmmss");
@@ -36,8 +33,7 @@ export function generateGoogleCalendarLink(event: CalendarEvent): string {
 
 /**
  * Generates and downloads an ICS file for one or more events.
- * Follows RFC 5545 specifications for maximum compatibility with Outlook, Google, and Apple.
- * Uses "Floating Time" (local time without Z) which is standard for local sports schedules.
+ * Follows RFC 5545 specifications for maximum compatibility.
  */
 export function downloadICS(events: CalendarEvent[], fileName: string = 'squad_schedule.ics') {
   const escapeText = (str: string = '') => str.replace(/[,;]/g, '\\$&').replace(/\n/g, '\\n');
@@ -53,7 +49,6 @@ export function downloadICS(events: CalendarEvent[], fileName: string = 'squad_s
   ];
 
   events.forEach(event => {
-    // Basic validation to prevent crashing on invalid dates
     if (isNaN(event.start.getTime())) return;
 
     const startStr = formatDate(event.start);
@@ -63,9 +58,9 @@ export function downloadICS(events: CalendarEvent[], fileName: string = 'squad_s
     icsLines.push(
       'BEGIN:VEVENT',
       `UID:${Date.now()}-${Math.random().toString(36).substring(7)}@thesquad.pro`,
-      `DTSTAMP:${formatDate(new Date())}Z`, // DTSTAMP is always UTC
-      `DTSTART:${startStr}`, // Floating time (Local)
-      `DTEND:${endStr}`,     // Floating time (Local)
+      `DTSTAMP:${formatDate(new Date())}Z`,
+      `DTSTART:${startStr}`,
+      `DTEND:${endStr}`,
       `SUMMARY:${escapeText(event.title)}`,
       `LOCATION:${escapeText(event.location)}`,
       `DESCRIPTION:${escapeText(event.description)}`,
@@ -81,7 +76,6 @@ export function downloadICS(events: CalendarEvent[], fileName: string = 'squad_s
   const icsString = icsLines.join('\r\n');
   const blob = new Blob([icsString], { type: 'text/calendar;charset=utf-8' });
   
-  // Standard download handler
   const link = document.createElement('a');
   if (link.download !== undefined) {
     const url = URL.createObjectURL(blob);

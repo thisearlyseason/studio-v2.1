@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -19,7 +18,8 @@ import {
   FileSignature,
   Info,
   ExternalLink,
-  Download
+  Download,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -42,6 +42,7 @@ import { format, isPast, isSameDay } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { generateGoogleCalendarLink, downloadICS } from '@/lib/calendar-utils';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary border-primary text-white',
@@ -88,6 +89,17 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   const myRsvp = event.userRsvps?.[user?.id || ''] || 'no_response';
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
+  const handleSyncToCalendar = () => {
+    const calendarEvent = {
+      title: event.title,
+      start: new Date(event.date),
+      end: event.endDate ? new Date(event.endDate) : undefined,
+      location: event.location,
+      description: event.description
+    };
+    downloadICS([calendarEvent], `${event.title.replace(/\s+/g, '_')}.ics`);
+  };
+
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
@@ -106,6 +118,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                   <div className="flex items-center gap-3"><Clock className="h-4 w-4 text-primary" />{event.startTime}</div>
                   <div className="flex items-center gap-3"><MapPin className="h-4 w-4 text-primary" /><span className="truncate">{event.location}</span></div>
                 </div>
+                <Button variant="outline" className="w-full h-10 rounded-xl border-white/20 text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest" onClick={handleSyncToCalendar}>
+                  <CalendarIcon className="h-4 w-4 mr-2" /> Add to Calendar
+                </Button>
               </div>
 
               <div className="space-y-4 pt-4 border-t border-white/10">
