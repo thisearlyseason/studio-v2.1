@@ -59,6 +59,15 @@ service cloud.firestore {
       allow update, delete: if isTeamStaff(teamId);
 
       // Subcollections
+      match /registration/{docId} {
+        allow read: if true;
+      }
+      
+      match /registrationEntries/{entryId} {
+        allow create: if true;
+        allow read, write: if isTeamStaff(teamId);
+      }
+
       match /alerts/{alertId} {
         allow get, list: if isSignedIn();
         allow create: if isSignedIn(); 
@@ -157,16 +166,6 @@ service cloud.firestore {
         }
       }
 
-      match /registration/{protocolId} {
-        allow read: if true; 
-        allow write: if isTeamStaff(teamId);
-      }
-
-      match /registrationEntries/{entryId} {
-        allow create: if true; 
-        allow read, write: if isTeamStaff(teamId) || isSuperAdmin();
-      }
-
       match /files/{fileId} {
         allow read, list: if isSignedIn();
         allow create: if isSignedIn();
@@ -193,7 +192,7 @@ service cloud.firestore {
       
       match /registrationEntries/{entryId} {
         allow create: if true;
-        allow read, write: if isTeamStaff(path.split('/')[1]) || isSuperAdmin() || isSignedIn();
+        allow read, write: if isSignedIn();
       }
 
       match /registration/{protocolId} {
@@ -203,9 +202,14 @@ service cloud.firestore {
       }
     }
 
+    match /leagues/global/invites/{inviteId} {
+      allow create, read: if isSignedIn();
+      allow update, delete: if isSuperAdmin();
+    }
+
     match /plans/{planId} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn(); 
+      allow write: if isSuperAdmin(); 
     }
 
     match /subscriptions/{subId} {
@@ -216,7 +220,6 @@ service cloud.firestore {
     match /{path=**}/registrationEntries/{entryId} {
       allow read, list: if isSignedIn();
       allow create: if true;
-      allow write: if isTeamStaff(path.split('/')[1]) || isSuperAdmin() || isSignedIn();
     }
   }
 }

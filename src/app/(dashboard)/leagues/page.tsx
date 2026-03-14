@@ -64,6 +64,16 @@ import { generateLeagueSchedule } from '@/lib/scheduler-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format, isSameDay } from 'date-fns';
 
+const DAYS_OF_WEEK = [
+  { id: 1, label: 'Mon' },
+  { id: 2, label: 'Tue' },
+  { id: 3, label: 'Wed' },
+  { id: 4, label: 'Thu' },
+  { id: 5, label: 'Fri' },
+  { id: 6, label: 'Sat' },
+  { id: 0, label: 'Sun' },
+];
+
 function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: League, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
   const { user: authUser } = useUser();
   const { db, activeTeam, updateLeagueSchedule } = useTeam();
@@ -92,7 +102,8 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   const { data: facilities } = useCollection<Facility>(facilitiesQuery);
   
   const allFields = useMemo(() => {
-    return [];
+    if (!facilities) return [];
+    return []; // Logic moved to explicit allocation for accuracy
   }, [facilities]);
 
   const handleGenerate = async () => {
@@ -133,6 +144,13 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     }));
   };
 
+  const toggleDay = (dayId: number) => {
+    setConfig(p => ({
+      ...p,
+      playDays: p.playDays.includes(dayId) ? p.playDays.filter(d => d !== dayId) : [...p.playDays, dayId]
+    }));
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-5xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
@@ -152,6 +170,25 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season Start</Label><Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season End</Label><Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
                 </div>
+                
+                <div className="space-y-4">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Schedule Days</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS_OF_WEEK.map(day => (
+                      <button
+                        key={day.id}
+                        onClick={() => toggleDay(day.id)}
+                        className={cn(
+                          "h-10 px-4 rounded-xl font-black text-[10px] uppercase transition-all border-2",
+                          config.playDays.includes(day.id) ? "bg-primary border-primary text-white shadow-lg shadow-primary/20" : "bg-white border-muted-foreground/10 text-muted-foreground hover:border-primary/20"
+                        )}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Games/Team</Label><Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
                   <div className="space-y-2">
@@ -186,8 +223,8 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                 {config.selectedVenues.length > 0 && (
                   <div className="space-y-4 animate-in slide-in-from-top-4">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Assign Fields/Courts</Label>
-                    <div className="bg-muted/20 rounded-2xl p-4 border-2 border-dashed space-y-2">
-                      <p className="text-[9px] font-bold text-muted-foreground uppercase text-center py-4">Select fields manually in Facilities to map them here.</p>
+                    <div className="bg-muted/20 rounded-2xl p-4 border-2 border-dashed space-y-2 text-center">
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase py-4">Selected venues will be used for auto-balancing.</p>
                       <Button variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px]" onClick={() => setConfig({...config, selectedFields: ['Field 1', 'Field 2', 'Court A']})}>Map Standard Resources</Button>
                     </div>
                   </div>
@@ -198,14 +235,16 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
             <aside className="lg:col-span-5 space-y-10">
               <section className="space-y-6">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Blackout Dates</h3>
-                <div className="bg-white border-2 rounded-[2rem] p-4 shadow-inner">
-                  <Calendar 
-                    mode="multiple"
-                    selected={config.blackoutDates}
-                    onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})}
-                    className="w-full"
-                  />
-                  <div className="mt-4 pt-4 border-t">
+                <div className="bg-white border-2 rounded-[2rem] p-4 shadow-inner flex flex-col items-center">
+                  <div className="w-fit">
+                    <Calendar 
+                      mode="multiple"
+                      selected={config.blackoutDates}
+                      onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})}
+                      className="rounded-xl border-none"
+                    />
+                  </div>
+                  <div className="w-full mt-4 pt-4 border-t">
                     <p className="text-[9px] font-black uppercase text-muted-foreground px-2">{config.blackoutDates.length} Dates Booked Off</p>
                   </div>
                 </div>
@@ -288,12 +327,12 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          <Card className="lg:col-span-5 rounded-[2.5rem] border-none shadow-xl bg-white p-6">
+          <Card className="lg:col-span-5 rounded-[2.5rem] border-none shadow-xl bg-white p-6 flex flex-col items-center">
             <Calendar 
               mode="single"
               selected={selectedDate}
               onSelect={(d) => d && setSelectedDate(d)}
-              className="w-full"
+              className="rounded-xl"
             />
           </Card>
           <div className="lg:col-span-7 space-y-4">
@@ -368,8 +407,15 @@ export default function LeaguesPage() {
   const handleSendInvite = async () => {
     if (!inviteEmail.trim() || !activeLeague) return;
     setIsProcessing(true);
-    await inviteTeamToLeague(activeLeague.id, activeLeague.name, inviteEmail.toLowerCase());
-    setIsInviteOpen(false); setInviteEmail(''); setIsProcessing(false);
+    try {
+      await inviteTeamToLeague(activeLeague.id, activeLeague.name, inviteEmail.toLowerCase());
+      setIsInviteOpen(false); setInviteEmail(''); 
+      toast({ title: "Invite Dispatched", description: `Invitation sent to ${inviteEmail}.` });
+    } catch (e) {
+      toast({ title: "Invite Failed", variant: "destructive" });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   if (isLeaguesLoading) return <div className="flex flex-col items-center justify-center py-20 animate-pulse"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Standings Hub...</p></div>;
@@ -409,7 +455,7 @@ export default function LeaguesPage() {
                           <span>Registration Hub</span>
                         </Link>
                       </Button>
-                      <Button variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase border-white/20 text-white hover:bg-white/10" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Invite Team</Button>
+                      <Button variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase border-white text-white hover:bg-white/10" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Invite Team</Button>
                     </>
                   )}
                   <Button asChild variant="ghost" className="h-12 px-6 rounded-xl font-black text-xs uppercase text-white/60 hover:text-white"><Link href={`/leagues/spectator/${activeLeague.id}`} target="_blank"><ExternalLink className="h-4 w-4 mr-2" /> Public Portal</Link></Button>
@@ -470,7 +516,7 @@ export default function LeaguesPage() {
       </Dialog>
 
       <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 border-none shadow-2xl"><div className="bg-primary/5 p-8 border-b"><DialogHeader><DialogTitle className="text-2xl font-black uppercase tracking-tight">Expand Competition</DialogTitle><DialogDescription className="font-bold text-primary/60 uppercase text-[10px] tracking-widest">Enroll verified squads</DialogDescription></DialogHeader></div><div className="p-8 space-y-6"><div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Coach Email</Label><Input placeholder="coach@opposingteam.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSendInvite} disabled={isProcessing || !inviteEmail.trim()}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Dispatch Digital Invite"}</Button></div></DialogContent>
+        <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden"><div className="h-2 bg-primary w-full" /><div className="bg-primary/5 p-8 border-b"><DialogHeader><DialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Expand Competition</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Enroll verified squads</DialogDescription></DialogHeader></div><div className="p-8 space-y-6 bg-white"><div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Coach Email</Label><Input placeholder="coach@opposingteam.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSendInvite} disabled={isProcessing || !inviteEmail.trim()}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Dispatch Digital Invite"}</Button></div></DialogContent>
       </Dialog>
     </div>
   );
