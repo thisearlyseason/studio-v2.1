@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -241,7 +242,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
 }
 
 export default function EventsPage() {
-  const { householdEvents, updateRSVP, isSuperAdmin, isStaff, addEvent, updateEvent, deleteEvent, members } = useTeam();
+  const { householdEvents, updateRSVP, isSuperAdmin, isStaff, addEvent, updateEvent, deleteEvent, members, activeTeam } = useTeam();
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<TeamEvent | null>(null);
@@ -253,12 +254,13 @@ export default function EventsPage() {
   const [newDescription, setNewDescription] = useState('');
   const [eventType, setEventType] = useState<EventType>('game');
 
+  // Filter events for the active squad view
   const filteredEvents = useMemo(() => { 
     const now = new Date(); 
-    const list = householdEvents || []; 
+    const list = householdEvents.filter(e => e.teamId === activeTeam?.id) || []; 
     if (filterMode === 'live') return list.filter(e => !isPast(new Date(e.endDate || e.date)) || isSameDay(new Date(e.endDate || e.date), now)); 
     return list.filter(e => isPast(new Date(e.endDate || e.date)) && !isSameDay(new Date(e.endDate || e.date), now)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); 
-  }, [householdEvents, filterMode]);
+  }, [householdEvents, filterMode, activeTeam?.id]);
 
   const handleCreateEvent = async () => { 
     if (!newTitle || !newDate || !newTime) return;
@@ -363,6 +365,12 @@ export default function EventsPage() {
               </Card>
             </EventDetailDialog> 
           ))}
+          {filteredEvents.length === 0 && (
+            <div className="text-center py-20 bg-muted/10 rounded-[3rem] border-2 border-dashed opacity-40">
+              <CalendarDays className="h-12 w-12 mx-auto mb-4" />
+              <p className="text-sm font-black uppercase tracking-widest">No activities scheduled.</p>
+            </div>
+          )}
         </div>
       </section>
     </div>

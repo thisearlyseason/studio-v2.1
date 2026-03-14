@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -19,7 +20,8 @@ import {
   increment,
   arrayUnion,
   getDoc,
-  deleteField
+  deleteField,
+  collectionGroup
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -533,6 +535,34 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [teams, activeTeamId]);
 
   const activeTeam = useMemo(() => teams.find(t => t.id === activeTeamId) || teams[0] || null, [teams, activeTeamId]);
+
+  // --- UNIFIED EVENT SYNC ---
+  // This effect listens for events across all teams relevant to the user
+  useEffect(() => {
+    if (!db || !isAuthResolved || !firebaseUser || teams.length === 0) return;
+
+    const relevantTeamIds = new Set<string>();
+    teams.forEach(t => relevantTeamIds.add(t.id));
+    myChildren.forEach(c => (c.joinedTeamIds || []).forEach(tid => relevantTeamIds.add(tid)));
+
+    const unsubscribes: (() => void)[] = [];
+
+    Array.from(relevantTeamIds).forEach(tid => {
+      const q = query(collection(db, 'teams', tid, 'events'), orderBy('date', 'asc'));
+      const unsub = onSnapshot(q, (snap) => {
+        setHouseholdEvents(prev => {
+          const otherEvents = prev.filter(e => e.teamId !== tid);
+          const teamEvents = snap.docs.map(d => ({ id: d.id, teamId: tid, ...d.data() } as TeamEvent));
+          return [...otherEvents, ...teamEvents].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        });
+      }, (error) => {
+        console.warn(`Event sync failed for team ${tid}:`, error);
+      });
+      unsubscribes.push(unsub);
+    });
+
+    return () => unsubscribes.forEach(unsub => unsub());
+  }, [db, isAuthResolved, firebaseUser, teams, myChildren]);
 
   const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);

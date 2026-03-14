@@ -40,11 +40,23 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTeam, TeamEvent, TournamentGame } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, where, collectionGroup } from 'firebase/firestore';
+import { collection, query, orderBy, where } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { format, isPast, isSameDay } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
+
+const formatDateRange = (start: string | Date, end?: string | Date) => {
+  const startDate = new Date(start);
+  if (!end) return format(startDate, 'MMM dd');
+  const endDate = new Date(end);
+  if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
+  
+  if (startDate.getMonth() === endDate.getMonth()) {
+    return `${format(startDate, 'MMM d')} - ${format(endDate, 'd')}`;
+  }
+  return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
+};
 
 function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
@@ -80,7 +92,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><CalendarIcon className="h-4 w-4 mr-2" /> {format(new Date(event.date), 'MMM d, yyyy')}</Badge>
+          <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><CalendarIcon className="h-4 w-4 mr-2" /> {formatDateRange(event.date, event.endDate)}</Badge>
           <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><MapPin className="h-4 w-4 mr-2" /> {event.location}</Badge>
         </div>
       </div>
@@ -131,6 +143,12 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                     </div>
                   </Card>
                 ))}
+                {(!event.tournamentGames || event.tournamentGames.length === 0) && (
+                  <div className="text-center py-20 opacity-30">
+                    <Clock className="h-12 w-12 mx-auto mb-4" />
+                    <p className="text-sm font-black uppercase">No matches scheduled.</p>
+                  </div>
+                )}
               </TabsContent>
               <TabsContent value="attendance" className="mt-0">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -160,38 +178,45 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 }
 
 export default function TournamentsPage() {
-  const { isStaff, addEvent } = useTeam();
-  const db = useFirestore();
-  const router = useRouter();
-  
+  const { isStaff, addEvent, activeTeam, householdEvents } = useTeam();
   const [isDeployOpen, setIsDeployOpen] = useState(false);
   const [selectedTournament, setSelectedTournament] = useState<TeamEvent | null>(null);
-  const [newTourney, setNewTourney] = useState({ title: '', date: '', location: '', description: '', teams: '' });
+  const [newTourney, setNewTourney] = useState({ title: '', date: '', endDate: '', location: '', description: '', teams: '' });
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const tourneysQuery = useMemoFirebase(() => (db) ? query(collectionGroup(db, 'events'), where('isTournament', '==', true), orderBy('date', 'asc')) : null, [db]);
-  const { data: allTournaments, isLoading } = useCollection<TeamEvent>(tourneysQuery);
+  // Filter tournaments from the unified events list for the active team
+  const tournaments = useMemo(() => {
+    return householdEvents.filter(e => e.isTournament && e.teamId === activeTeam?.id);
+  }, [householdEvents, activeTeam?.id]);
 
   const handleDeployTournament = async () => {
-    if (!newTourney.title || !newTourney.date) return;
+    if (!newTourney.title || !newTourney.date || !activeTeam) return;
     setIsProcessing(true);
     const teams = newTourney.teams.split(',').map(t => t.trim()).filter(t => t);
-    await addEvent({
-      ...newTourney,
-      isTournament: true,
-      eventType: 'tournament',
-      tournamentTeams: teams,
-      tournamentGames: [],
-      date: new Date(newTourney.date).toISOString()
-    });
-    setIsDeployOpen(false);
-    setIsProcessing(false);
-    setNewTourney({ title: '', date: '', location: '', description: '', teams: '' });
-    toast({ title: "Elite Series Launched" });
+    try {
+      await addEvent({
+        title: newTourney.title,
+        date: new Date(newTourney.date).toISOString(),
+        endDate: newTourney.endDate ? new Date(newTourney.endDate).toISOString() : new Date(newTourney.date).toISOString(),
+        location: newTourney.location,
+        description: newTourney.description,
+        isTournament: true,
+        eventType: 'tournament',
+        tournamentTeams: teams,
+        tournamentGames: [],
+        startTime: 'TBD'
+      });
+      setIsDeployOpen(false);
+      setNewTourney({ title: '', date: '', endDate: '', location: '', description: '', teams: '' });
+      toast({ title: "Elite Series Launched" });
+    } catch (e) {
+      toast({ title: "Deployment Failed", variant: "destructive" });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   if (selectedTournament) return <TournamentDetailView event={selectedTournament} onBack={() => setSelectedTournament(null)} />;
-  if (isLoading) return <div className="flex flex-col items-center justify-center py-32"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
 
   return (
     <div className="space-y-12 pb-32 animate-in fade-in duration-700">
@@ -230,13 +255,17 @@ export default function TournamentsPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Series Date</Label>
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label>
                       <Input type="date" value={newTourney.date} onChange={e => setNewTourney({...newTourney, date: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label>
-                      <Input placeholder="Official Venue..." value={newTourney.location} onChange={e => setNewTourney({...newTourney, location: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label>
+                      <Input type="date" value={newTourney.endDate} onChange={e => setNewTourney({...newTourney, endDate: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" />
                     </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label>
+                    <Input placeholder="Official Venue..." value={newTourney.location} onChange={e => setNewTourney({...newTourney, location: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Participating Squads (Comma Separated)</Label>
@@ -248,7 +277,7 @@ export default function TournamentsPage() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleDeployTournament} disabled={isProcessing || !newTourney.title}>
+                  <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleDeployTournament} disabled={isProcessing || !newTourney.title || !newTourney.date}>
                     {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Authorize Strategic Deployment"}
                   </Button>
                 </DialogFooter>
@@ -259,7 +288,7 @@ export default function TournamentsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-8">
-        {allTournaments?.map((tournament) => (
+        {tournaments.map((tournament) => (
           <Card key={tournament.id} className="rounded-[3rem] border-none shadow-xl hover:shadow-2xl transition-all duration-500 overflow-hidden ring-1 ring-black/5 bg-white group cursor-pointer" onClick={() => setSelectedTournament(tournament)}>
             <div className="flex flex-col md:flex-row items-stretch">
               <div className="w-full md:w-40 bg-black text-white flex flex-col items-center justify-center p-8 border-r group-hover:bg-primary transition-colors">
@@ -269,13 +298,22 @@ export default function TournamentsPage() {
               <div className="flex-1 p-10 flex items-center justify-between">
                 <div className="space-y-3">
                   <h3 className="text-4xl font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{tournament.title}</h3>
-                  <p className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> {tournament.location}</p>
+                  <div className="flex items-center gap-6">
+                    <p className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> {tournament.location}</p>
+                    <p className="text-[10px] font-black text-primary uppercase tracking-widest">{formatDateRange(tournament.date, tournament.endDate)}</p>
+                  </div>
                 </div>
                 <ArrowRight className="h-8 w-8 text-primary opacity-20 group-hover:opacity-100 group-hover:translate-x-2 transition-all" />
               </div>
             </div>
           </Card>
         ))}
+        {tournaments.length === 0 && (
+          <div className="text-center py-24 border-2 border-dashed rounded-[3rem] bg-muted/10 opacity-40">
+            <Trophy className="h-16 w-16 mx-auto mb-4" />
+            <p className="text-sm font-black uppercase tracking-widest">No active championship series.</p>
+          </div>
+        )}
       </div>
     </div>
   );
