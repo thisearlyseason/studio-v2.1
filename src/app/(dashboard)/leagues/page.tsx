@@ -450,7 +450,7 @@ export default function LeaguesPage() {
                           <span>Registration Hub</span>
                         </Link>
                       </Button>
-                      <Button variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase border-primary text-primary hover:bg-primary hover:text-white transition-all shadow-sm" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Invite Team</Button>
+                      <Button variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase bg-white text-black border-2 border-primary/20 hover:bg-primary hover:text-white transition-all shadow-sm" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Invite Team</Button>
                     </>
                   )}
                   <Button asChild variant="ghost" className="h-12 px-6 rounded-xl font-black text-xs uppercase text-white/60 hover:text-white"><Link href={`/leagues/spectator/${activeLeague.id}`} target="_blank"><ExternalLink className="h-4 w-4 mr-2" /> Public Portal</Link></Button>

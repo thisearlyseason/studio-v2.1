@@ -53,7 +53,7 @@ service cloud.firestore {
     }
 
     match /teams/{teamId} {
-      allow get: if true; // Allow public get for spectator/registration hubs
+      allow get: if true; 
       allow list: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if isTeamStaff(teamId);
@@ -74,7 +74,7 @@ service cloud.firestore {
       }
 
       match /members/{memberId} {
-        allow read, list: if true; // Allow public roster viewing for recruiting/scouting
+        allow read, list: if true; 
         allow create: if isSignedIn(); 
         allow update, delete: if isTeamStaff(teamId) || isOwner(memberId);
 
@@ -100,10 +100,10 @@ service cloud.firestore {
       }
 
       match /events/{eventId} {
-        allow get: if true; // Allow public viewing for tournament hubs
+        allow get: if true; 
         allow read, list: if true; 
         allow create: if isSignedIn();
-        allow update: if true; // Allow public scoring and waiver signing
+        allow update: if true; // Public scoring and waiver signing
         allow delete: if isTeamStaff(teamId);
         
         match /registrations/{regId} {
@@ -186,7 +186,7 @@ service cloud.firestore {
     }
 
     match /leagues/{leagueId} {
-      allow get: if true; // Public spectator views
+      allow get: if true; 
       allow list: if isSignedIn();
       allow create: if isSignedIn();
       allow update: if true; // Public scoring entry
