@@ -264,9 +264,18 @@ export default function RosterPage() {
               </div>
               
               <div className="flex-1 p-8 lg:p-12 space-y-10 bg-white">
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Award className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em]">Athlete Narrative</h4></div>
+                  <div className="bg-muted/30 p-6 rounded-[2.5rem] border-2 border-dashed">
+                    <p className="text-sm font-medium leading-relaxed italic text-foreground/80">
+                      {selectedMember.notes || "This athlete has not yet established a squad bio. Visit Settings to update."}
+                    </p>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-10">
                   <div className="space-y-6">
-                    <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Award className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em]">Vital Stats</h4></div>
+                    <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><ShieldCheck className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em]">Vital Stats</h4></div>
                     <div className="grid grid-cols-1 gap-3">
                       <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
                         <span className="text-[10px] font-black uppercase opacity-40">Medical Clearance</span>

@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTeam, TeamDocument, Member, DocumentSignature, RegistrationEntry } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, where, doc, collectionGroup } from 'firebase/firestore';
@@ -49,7 +49,11 @@ import {
   CreditCard,
   XCircle,
   Circle,
-  Edit3
+  Edit3,
+  SearchCode,
+  LineChart,
+  UserCog,
+  Save
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -138,6 +142,98 @@ function SignatureList({ teamId, documentId }: { teamId: string, documentId: str
   );
 }
 
+function PersonnelAuditDialog({ member, isOpen, onOpenChange }: { member: Member, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
+  const { updateStaffEvaluation, getStaffEvaluation } = useTeam();
+  const [note, setNote] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      getStaffEvaluation(member.id).then(setNote);
+    }
+  }, [isOpen, member.id, getStaffEvaluation]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    await updateStaffEvaluation(member.id, note);
+    setIsSaving(false);
+    toast({ title: "Evaluation Saved" });
+  };
+
+  const handleExportPortfolio = useCallback(() => {
+    const headers = ["Player", "Position", "Jersey", "Medical", "Fees Owed", "Staff Evaluations"];
+    const row = [
+      member.name, member.position, member.jersey,
+      member.medicalClearance ? 'Cleared' : 'Pending',
+      `$${member.amountOwed || 0}`,
+      note.replace(/,/g, ';').replace(/\n/g, ' ')
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," + [headers, row].map(e => e.join(",")).join("\n");
+    const link = document.createElement("a");
+    link.setAttribute("href", encodeURI(csvContent));
+    link.setAttribute("download", `${member.name.replace(/\s+/g, '_')}_Portfolio.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [member, note]);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-4xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
+        <div className="h-2 bg-black w-full" />
+        <div className="flex flex-col lg:flex-row">
+          <div className="w-full lg:w-5/12 bg-muted/20 p-8 lg:p-10 space-y-8 border-r">
+            <div className="flex flex-col items-center text-center space-y-6">
+              <Avatar className="h-32 w-32 rounded-[2.5rem] border-4 border-background shadow-2xl">
+                <AvatarImage src={member.avatar} />
+                <AvatarFallback className="font-black text-2xl">{member.name[0]}</AvatarFallback>
+              </Avatar>
+              <div className="space-y-2">
+                <Badge className="bg-primary text-white border-none font-black uppercase text-[10px] h-6">Verified Personnel</Badge>
+                <h3 className="text-3xl font-black uppercase tracking-tight">{member.name}</h3>
+                <p className="text-primary font-black uppercase tracking-widest text-[10px]">{member.position} • #{member.jersey}</p>
+              </div>
+              <div className="w-full pt-6 border-t border-muted space-y-4">
+                <div className="bg-white p-4 rounded-2xl border flex justify-between items-center">
+                  <span className="text-[10px] font-black uppercase opacity-40">Identity Proof</span>
+                  <Badge variant="outline" className="text-[8px] border-green-200 text-green-600 bg-green-50 font-black">ACTIVE</Badge>
+                </div>
+                <Button className="w-full h-12 rounded-xl bg-black text-white font-black uppercase text-[10px] tracking-widest" onClick={handleExportPortfolio}>
+                  <Download className="h-4 w-4 mr-2" /> Export Recruiting Pack
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 p-8 lg:p-10 space-y-8">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <ShieldAlert className="h-5 w-5 text-primary" />
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Staff Evaluation Ledger</h4>
+              </div>
+              <p className="text-[10px] font-medium text-muted-foreground leading-relaxed italic border-l-2 border-primary/20 pl-4">
+                Notes entered here are private to the coaching staff and are used for tactical deployment and player development tracking.
+              </p>
+              <Textarea 
+                placeholder="Log performance benchmarks, tactical aptitude, or recruitment observations..." 
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                className="min-h-[300px] rounded-3xl bg-muted/10 border-none font-bold p-6 text-base shadow-inner resize-none focus:bg-white transition-all"
+              />
+            </div>
+            <div className="pt-4 border-t flex justify-end gap-3">
+              <Button variant="outline" className="h-12 rounded-xl font-black uppercase text-[10px] px-8 border-2" onClick={() => onOpenChange(false)}>Close Audit</Button>
+              <Button className="h-12 rounded-xl font-black uppercase text-[10px] px-8 shadow-lg shadow-primary/20" onClick={handleSave} disabled={isSaving}>
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Commit Evaluation
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function CoachesCornerPage() {
   const { activeTeam, isStaff, members, createTeamDocument, updateTeamDocument, deleteTeamDocument, resetSquadData, respondToAssignment, exportSignaturesCSV } = useTeam();
   const db = useFirestore();
@@ -151,6 +247,9 @@ export default function CoachesCornerPage() {
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [newDoc, setNewDoc] = useState({ title: '', content: '', type: 'waiver' as any, assignedTo: ['all'] });
   
+  const [selectedPersonnel, setSelectedPersonnel] = useState<Member | null>(null);
+  const [personnelSearch, setPersonnelPersonnelSearch] = useState('');
+
   const [resetOptions, setResetOptions] = useState<string[]>(['games', 'events']);
 
   const docsQuery = useMemoFirebase(() => {
@@ -167,6 +266,10 @@ export default function CoachesCornerPage() {
     if (!allEntries || !activeTeam) return [];
     return allEntries.filter(e => e.assigned_team_id === activeTeam.id || e.league_id === activeTeam.id);
   }, [allEntries, activeTeam]);
+
+  const filteredPersonnel = useMemo(() => {
+    return members.filter(m => m.name.toLowerCase().includes(personnelSearch.toLowerCase()));
+  }, [members, personnelSearch]);
 
   if (!isStaff) return <div className="py-24 text-center opacity-20"><ShieldCheck className="h-16 w-16 mx-auto" /><h1 className="text-2xl font-black mt-4 uppercase">Staff Access Restricted</h1></div>;
 
@@ -233,7 +336,8 @@ export default function CoachesCornerPage() {
           <TabsList className="bg-muted/50 rounded-xl h-auto p-1 border-2 w-full md:w-auto flex-wrap gap-1">
             <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Waivers</TabsTrigger>
             <TabsTrigger value="recruitment" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Recruitment</TabsTrigger>
-            <TabsTrigger value="governance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Governance</TabsTrigger>
+            <TabsTrigger value="personnel" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Personnel</TabsTrigger>
+            <TabsTrigger value="governance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Logistics</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -285,7 +389,7 @@ export default function CoachesCornerPage() {
                             {newDoc.assignedTo.includes('all') && <CheckCircle2 className="h-5 w-5" />}
                           </div>
                           <div className="h-px bg-muted mx-4" />
-                          <div className="space-y-2">
+                          <div className="space-y-2 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
                             {members.map(member => (
                               <div key={member.id} className={cn("p-4 rounded-2xl flex items-center justify-between cursor-pointer transition-all", newDoc.assignedTo.includes(member.id) ? "bg-black text-white shadow-lg" : "hover:bg-white")} onClick={() => toggleAssignment(member.id)}>
                                 <div className="flex items-center gap-4">
@@ -322,8 +426,8 @@ export default function CoachesCornerPage() {
                   <div className="flex items-center gap-6">
                     <div className="bg-primary/5 p-4 rounded-2xl text-primary"><PenTool className="h-6 w-6" /></div>
                     <div>
-                      <h3 className="font-black text-xl uppercase tracking-tight leading-tight">{doc.title}</h3>
-                      <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
+                      <h3 className="font-black text-xl uppercase tracking-tight leading-none">{doc.title}</h3>
+                      <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1.5">
                         <span className="flex items-center gap-1.5"><Users className="h-3 w-3" /> {doc.signatureCount} Signed</span>
                         <span className="flex items-center gap-1.5"><Clock className="h-3 w-3" /> {format(new Date(doc.createdAt), 'MMM d, yyyy')}</span>
                         <Badge variant="outline" className="h-4 px-1.5 text-[7px] border-primary/20 text-primary">{doc.type}</Badge>
@@ -429,6 +533,47 @@ export default function CoachesCornerPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="personnel" className="space-y-8 mt-0">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
+            <div className="flex items-center gap-3">
+              <div className="bg-black p-2.5 rounded-xl text-white shadow-lg"><UserCog className="h-5 w-5" /></div>
+              <div><h3 className="text-xl font-black uppercase tracking-tight">Personnel Intelligence</h3><p className="text-[9px] font-bold text-muted-foreground uppercase">{members.length} Enrolled Members</p></div>
+            </div>
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Tactical search..." 
+                className="pl-9 h-11 rounded-xl bg-muted/30 border-none font-bold shadow-inner" 
+                value={personnelSearch}
+                onChange={e => setPersonnelPersonnelSearch(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredPersonnel.map(member => (
+              <Card key={member.id} className="rounded-3xl border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5 group hover:ring-primary/20 transition-all cursor-pointer" onClick={() => setSelectedPersonnel(member)}>
+                <CardContent className="p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <Avatar className="h-14 w-14 rounded-2xl border-2 border-background shadow-md">
+                      <AvatarImage src={member.avatar} />
+                      <AvatarFallback className="font-black text-xs">{member.name[0]}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <h4 className="font-black text-lg uppercase tracking-tight group-hover:text-primary transition-colors truncate">{member.name}</h4>
+                        <Badge variant="outline" className="text-[8px] h-4 font-black border-primary/20 text-primary px-1.5 uppercase">#{member.jersey}</Badge>
+                      </div>
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{member.position}</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-6 w-6 text-primary opacity-20 group-hover:opacity-100 transition-all" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
         <TabsContent value="governance" className="space-y-8 mt-0">
           <section className="space-y-4">
             <div className="flex items-center gap-2 px-2">
@@ -467,6 +612,14 @@ export default function CoachesCornerPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {selectedPersonnel && (
+        <PersonnelAuditDialog 
+          member={selectedPersonnel} 
+          isOpen={!!selectedPersonnel} 
+          onOpenChange={(o) => !o && setSelectedPersonnel(null)} 
+        />
+      )}
 
       <AlertDialog open={isDoubleConfirmOpen} onOpenChange={setIsDoubleConfirmOpen}>
         <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
