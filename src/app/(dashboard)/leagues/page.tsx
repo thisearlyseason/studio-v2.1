@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -285,7 +286,9 @@ export default function LeaguesPage() {
                   {isStaff && activeLeague.creatorId === authUser?.uid && (
                     <>
                       <Button onClick={() => setIsSeasonOpen(true)} className="h-12 px-8 rounded-xl font-black text-xs uppercase bg-white text-black hover:bg-primary hover:text-white"><CalendarDays className="h-4 w-4 mr-2" /> Season Architect</Button>
-                      <Button asChild variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase border-white/20 text-white hover:bg-white/10"><Link href={`/leagues/registration/${activeLeague.id}`}><ClipboardList className="h-4 w-4 mr-2" /> Registration Hub</Link></Button>
+                      <Button asChild variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase border-white/20 text-white hover:bg-white/10 hover:text-white hover:border-primary">
+                        <Link href={`/leagues/registration/${activeLeague.id}`}><ClipboardList className="h-4 w-4 mr-2" /> Registration Hub</Link>
+                      </Button>
                       <Button variant="secondary" className="h-12 px-8 rounded-xl font-black text-xs uppercase" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Add/Invite Team</Button>
                     </>
                   )}
@@ -326,7 +329,7 @@ export default function LeaguesPage() {
           </div>
         </div>
       ) : (
-        <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6"><div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl relative"><Shield className="h-10 w-10 text-primary opacity-20" /><Trophy className="absolute -top-2 -right-2 h-8 w-8 text-amber-500 animate-bounce" /></div><div className="space-y-2"><h3 className="text-2xl font-black uppercase tracking-tight">Competitive Desert</h3><p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-w-sm mx-auto">Your squad hasn't joined a league yet. Start your own or accept a challenge to enter the standings.</p></div></div>
+        <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6"><div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl relative"><Shield className="h-10 w-10 text-primary opacity-20" /><Trophy className="absolute -top-2 -right-2 h-8 w-8 text-amber-500 animate-bounce" /></div><div className="space-y-2"><h3 className="text-2xl font-black uppercase tracking-tight">Competitive Desert</h3><p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto">Your squad hasn't joined a league yet. Start your own or accept a challenge to enter the standings.</p></div></div>
       )}
 
       {activeLeague && <SeasonSchedulerDialog league={activeLeague} isOpen={isSeasonOpen} onOpenChange={setIsSeasonOpen} />}

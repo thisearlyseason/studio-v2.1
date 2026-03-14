@@ -34,7 +34,7 @@ import {
   UserCog
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useTeam, Member } from '@/components/providers/team-provider';
+import { useTeam, Member, TeamDocument } from '@/components/providers/team-provider';
 import { 
   Dialog, 
   DialogContent, 
@@ -61,10 +61,10 @@ import { collection, query, orderBy, where } from 'firebase/firestore';
 import { format, differenceInYears } from 'date-fns';
 
 const STANDARD_WAIVERS = [
-  { id: 'medical', label: 'Medical Clearance', icon: HeartPulse },
-  { id: 'travel', label: 'Travel Consent', icon: Plane },
-  { id: 'parental', label: 'Parental Waiver', icon: ShieldCheck, minorOnly: true },
-  { id: 'photography', label: 'Photography Release', icon: Camera }
+  { id: 'medical', label: 'Medical Clearance', icon: HeartPulse, docId: 'default_medical' },
+  { id: 'travel', label: 'Travel Consent', icon: Plane, docId: 'default_travel' },
+  { id: 'parental', label: 'Parental Waiver', icon: ShieldCheck, minorOnly: true, docId: 'default_parental' },
+  { id: 'photography', label: 'Photography Release', icon: Camera, docId: 'default_photography' }
 ];
 
 const POSITION_OPTIONS = [
@@ -79,7 +79,7 @@ const POSITION_OPTIONS = [
   'Squad Leader'
 ];
 
-function MemberComplianceLedger({ teamId, memberId, birthdate }: { teamId: string, memberId: string, birthdate?: string }) {
+function MemberComplianceLedger({ teamId, memberId, birthdate, activeProtocols }: { teamId: string, memberId: string, birthdate?: string, activeProtocols: string[] }) {
   const db = useFirestore();
   const q = useMemoFirebase(() => {
     if (!db || !teamId || !memberId) return null;
@@ -107,7 +107,7 @@ function MemberComplianceLedger({ teamId, memberId, birthdate }: { teamId: strin
 
   if (isLoading) return <Loader2 className="h-4 w-4 animate-spin mx-auto text-primary" />;
 
-  const sigTitles = (signatures || []).map(s => (s.title || '').toLowerCase());
+  const sigDocIds = (signatures || []).map(s => s.docId);
 
   return (
     <div className="space-y-6">
@@ -115,8 +115,11 @@ function MemberComplianceLedger({ teamId, memberId, birthdate }: { teamId: strin
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 mb-3">Institutional Compliance</p>
         <div className="grid grid-cols-1 gap-2">
           {STANDARD_WAIVERS.map(w => {
+            if (!activeProtocols.includes(w.docId)) return null;
             if (w.minorOnly && isAdult) return null;
-            const isSigned = sigTitles.some(t => t.includes(w.id));
+            
+            const isSigned = sigDocIds.includes(w.docId);
+            
             return (
               <div key={w.id} className={cn(
                 "flex items-center justify-between p-3 rounded-xl border transition-all",
@@ -162,6 +165,7 @@ function MemberComplianceLedger({ teamId, memberId, birthdate }: { teamId: strin
 
 export default function RosterPage() {
   const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember } = useTeam();
+  const db = useFirestore();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -171,6 +175,19 @@ export default function RosterPage() {
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [isEditPositionOpen, setIsEditPositionOpen] = useState(false);
   const [newPosition, setNewPosition] = useState('');
+
+  // Fetch team protocols to see what's "turned on"
+  const docsQuery = useMemoFirebase(() => (db && activeTeam?.id) ? query(collection(db, 'teams', activeTeam.id, 'documents')) : null, [db, activeTeam?.id]);
+  const { data: teamDocs } = useCollection<TeamDocument>(docsQuery);
+  const activeProtocols = useMemo(() => (teamDocs || []).map(d => d.id), [teamDocs]);
+
+  // Fetch signatures for Vital Stats specifically
+  const memberSigsQuery = useMemoFirebase(() => {
+    if (!db || !activeTeam?.id || !selectedMember?.id) return null;
+    return query(collection(db, 'teams', activeTeam.id, 'members', selectedMember.id, 'signatures'));
+  }, [db, activeTeam?.id, selectedMember?.id]);
+  const { data: memberSigs } = useCollection(memberSigsQuery);
+  const signedDocIds = useMemo(() => (memberSigs || []).map(s => s.docId), [memberSigs]);
 
   useEffect(() => {
     setMounted(true);
@@ -348,7 +365,12 @@ export default function RosterPage() {
                   </div>
 
                   <div className="w-full space-y-4 pt-4 border-t border-white/10">
-                    <MemberComplianceLedger teamId={activeTeam.id} memberId={selectedMember.id} birthdate={selectedMember.birthdate} />
+                    <MemberComplianceLedger 
+                      teamId={activeTeam.id} 
+                      memberId={selectedMember.id} 
+                      birthdate={selectedMember.birthdate} 
+                      activeProtocols={activeProtocols}
+                    />
                   </div>
 
                   <div className="w-full pt-4 border-t border-white/10 space-y-4">
@@ -389,10 +411,18 @@ export default function RosterPage() {
                   <div className="space-y-6">
                     <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><ShieldCheck className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em]">Vital Stats</h4></div>
                     <div className="grid grid-cols-1 gap-3">
-                      <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
-                        <span className="text-[10px] font-black uppercase opacity-40">Medical Clearance</span>
-                        {selectedMember.medicalClearance ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : <XCircle className="h-5 w-5 text-destructive" />}
-                      </div>
+                      {STANDARD_WAIVERS.filter(w => activeProtocols.includes(w.docId)).map(w => {
+                        const isAdult = selectedMember.birthdate && differenceInYears(new Date(), new Date(selectedMember.birthdate)) >= 18;
+                        if (w.minorOnly && isAdult) return null;
+                        const isSigned = signedDocIds.includes(w.docId);
+                        
+                        return (
+                          <div key={w.id} className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
+                            <span className="text-[10px] font-black uppercase opacity-40">{w.label}</span>
+                            {isSigned ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : <XCircle className="h-5 w-5 text-destructive" />}
+                          </div>
+                        );
+                      })}
                       <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
                         <span className="text-[10px] font-black uppercase opacity-40">Age Group</span>
                         <span className="text-sm font-black uppercase">{calculateAgeGroup(selectedMember.birthdate) || 'U18'}</span>

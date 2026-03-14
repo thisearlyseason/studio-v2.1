@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -174,8 +175,8 @@ export default function LeagueRegistrationAdminPage() {
           </div>
         </div>
         <div className="flex bg-muted/50 p-1.5 rounded-2xl border-2">
-          <Button variant={activeTab === 'entries' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px]" onClick={() => setActiveTab('entries')}><Target className="h-4 w-4 mr-2" /> Recruit Pool</Button>
-          <Button variant={activeTab === 'config' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px]" onClick={() => setActiveTab('config')}><Settings className="h-4 w-4 mr-2" /> Protocol Architect</Button>
+          <Button variant={activeTab === 'entries' ? 'default' : 'ghost'} className={cn("rounded-xl h-10 px-6 font-black uppercase text-[10px]", activeTab === 'entries' ? "bg-black text-white" : "text-muted-foreground hover:bg-muted")} onClick={() => setActiveTab('entries')}><Target className="h-4 w-4 mr-2" /> Recruit Pool</Button>
+          <Button variant={activeTab === 'config' ? 'default' : 'ghost'} className={cn("rounded-xl h-10 px-6 font-black uppercase text-[10px]", activeTab === 'config' ? "bg-black text-white" : "text-muted-foreground hover:bg-muted")} onClick={() => setActiveTab('config')}><Settings className="h-4 w-4 mr-2" /> Protocol Architect</Button>
         </div>
       </div>
 
@@ -221,7 +222,7 @@ export default function LeagueRegistrationAdminPage() {
                         <div className="flex justify-end gap-2">
                           <Dialog>
                             <DialogTrigger asChild><Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl border hover:bg-primary hover:text-white transition-all"><UserPlus className="h-4 w-4" /></Button></DialogTrigger>
-                            <DialogContent data-dark-header="true" className="rounded-3xl border-none shadow-2xl p-8 max-w-2xl">
+                            <DialogContent className="rounded-3xl border-none shadow-2xl p-8 max-w-2xl overflow-y-auto max-h-[90vh] custom-scrollbar">
                               <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Review & Dispatch</DialogTitle></DialogHeader>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-6">
                                 <div className="space-y-4">
@@ -342,21 +343,22 @@ export default function LeagueRegistrationAdminPage() {
                     <div><CardTitle className="text-2xl font-black uppercase tracking-tight">Field Architect</CardTitle><CardDescription className="font-bold text-white/60 text-[10px] uppercase tracking-widest">Applicant Data Payload</CardDescription></div>
                   </div>
                   <Dialog>
-                    <DialogTrigger asChild><Button variant="secondary" className="rounded-full h-10 px-6 font-black uppercase text-[10px]" onClick={() => setEditingField({ type: 'short_text', label: '', required: true })}><Plus className="h-4 w-4 mr-2" /> Add Field</Button></DialogTrigger>
-                    <DialogContent data-dark-header="true" className="rounded-3xl border-none shadow-2xl p-8"><DialogHeader><DialogTitle className="text-2xl font-black uppercase">New Data Segment</DialogTitle></DialogHeader>
+                    <DialogTrigger asChild><Button variant="secondary" className="rounded-full h-10 px-6 font-black uppercase text-[10px] hover:bg-white hover:text-black transition-colors" onClick={() => setEditingField({ type: 'short_text', label: '', required: true })}><Plus className="h-4 w-4 mr-2" /> Add Field</Button></DialogTrigger>
+                    <DialogContent className="rounded-3xl border-none shadow-2xl p-8 overflow-y-auto max-h-[90vh] custom-scrollbar">
+                      <DialogHeader><DialogTitle className="text-2xl font-black uppercase">New Data Segment</DialogTitle></DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Segment Label</Label><Input value={editingField?.label || ''} onChange={e => setEditingField({ ...editingField, label: e.target.value })} className="h-12 rounded-xl" /></div>
                         <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Input Type</Label>
                           <Select value={editingField?.type} onValueChange={(v: any) => setEditingField({ ...editingField, type: v })}>
                             <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
                             <SelectContent className="rounded-xl">
-                              <SelectItem value="short_text">Short Text</SelectItem>
-                              <SelectItem value="long_text">Long Text Block</SelectItem>
-                              <SelectItem value="dropdown">Dropdown Selection</SelectItem>
-                              <SelectItem value="checkbox">Checkbox Group</SelectItem>
-                              <SelectItem value="yes_no">Yes / No Toggle</SelectItem>
-                              <SelectItem value="image">Image Attachment</SelectItem>
-                              <SelectItem value="header">Section Header</SelectItem>
+                              <SelectItem value="short_text" className="font-bold">Short Text</SelectItem>
+                              <SelectItem value="long_text" className="font-bold">Long Text Block</SelectItem>
+                              <SelectItem value="dropdown" className="font-bold">Dropdown Selection</SelectItem>
+                              <SelectItem value="checkbox" className="font-bold">Checkbox Group</SelectItem>
+                              <SelectItem value="yes_no" className="font-bold">Yes / No Toggle</SelectItem>
+                              <SelectItem value="image" className="font-bold">Image Attachment</SelectItem>
+                              <SelectItem value="header" className="font-bold">Section Header</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -421,7 +423,7 @@ export default function LeagueRegistrationAdminPage() {
                   <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest">Recruitment Link</p>
                 </div>
                 <div className="bg-white/10 p-4 rounded-2xl border border-white/10 text-center"><p className="text-[8px] font-black uppercase opacity-60 mb-1">Public Link</p><p className="text-[10px] font-bold truncate">/register/league/{leagueId}</p></div>
-                <Button className="w-full h-14 rounded-2xl bg-white text-primary font-black uppercase text-xs shadow-xl active:scale-95 transition-all" onClick={handleCopyPortalUrl}>
+                <Button className="w-full h-14 rounded-2xl bg-white text-primary font-black uppercase text-xs shadow-xl active:scale-95 transition-all hover:bg-white/90" onClick={handleCopyPortalUrl}>
                   <Copy className="h-4 w-4 mr-2" /> Copy Portal Link
                 </Button>
               </CardContent>
