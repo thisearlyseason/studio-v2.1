@@ -21,9 +21,9 @@ service cloud.firestore {
     }
 
     function isTeamStaff(teamId) {
-      let team = get(/databases/$(database)/documents/teams/$(teamId)).data;
-      return isSignedIn() && (
-        team.ownerUserId == request.auth.uid ||
+      let team = get(/databases/$(database)/documents/teams/$(teamId));
+      return isSignedIn() && team != null && (
+        team.data.ownerUserId == request.auth.uid ||
         isSuperAdmin()
       );
     }
@@ -59,7 +59,7 @@ service cloud.firestore {
 
       // Subcollections
       match /alerts/{alertId} {
-        allow read, list: if isSignedIn();
+        allow get, list: if isSignedIn();
         allow write: if isTeamStaff(teamId);
       }
 
@@ -95,6 +95,11 @@ service cloud.firestore {
           allow create: if true;
           allow read, write: if isTeamStaff(teamId);
         }
+      }
+
+      match /games/{gameId} {
+        allow read, list: if isSignedIn();
+        allow write: if isTeamStaff(teamId);
       }
 
       match /equipment/{itemId} {
