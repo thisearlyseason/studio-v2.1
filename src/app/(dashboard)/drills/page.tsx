@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -10,37 +11,18 @@ import {
   Plus, 
   Search, 
   Play, 
-  ExternalLink, 
   Trash2, 
-  Lock, 
-  Sparkles, 
   Dumbbell, 
   ChevronRight,
-  X,
-  Camera,
   Loader2,
-  Youtube,
-  XCircle,
-  ImageIcon,
   Video,
-  HardDrive,
   Filter,
-  FolderClosed,
-  Star,
-  ShieldCheck,
-  MessageSquare,
   CheckCircle2,
   Upload,
-  Link as LinkIcon,
-  Globe,
   Edit3,
-  Save,
-  Target,
-  Eye,
-  ShieldAlert,
-  BrainCircuit,
-  Wand2,
-  Info
+  Info,
+  Package,
+  HardDrive
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -52,216 +34,61 @@ import {
   DialogFooter
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { useTeam, TeamFile, ScoutingReport } from '@/components/providers/team-provider';
+import { useTeam, TeamFile } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, doc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Progress } from '@/components/ui/progress';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
-import { generateScoutingBrief } from '@/ai/flows/scouting-report-agent';
 
-export default function DrillsAndGamePlayPage() {
-  const { activeTeam, addDrill, deleteDrill, hasFeature, isSuperAdmin, purchasePro, isStaff, addFile, addExternalLink, deleteFile, user, isPro, markMediaAsViewed, addMediaComment, addScoutingReport, deleteScoutingReport } = useTeam();
+export default function PlaybookAndGamePlayPage() {
+  const { activeTeam, addDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro, markMediaAsViewed } = useTeam();
   const db = useFirestore();
 
-  const [viewMode, setViewMode] = useState<'drills' | 'gameplay' | 'scouting'>('drills');
-  const [mounted, setMounted] = useState(false);
+  const [viewMode, setViewMode] = useState<'drills' | 'gameplay'>('drills');
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Queries
   const drillsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'drills'), orderBy('createdAt', 'desc'));
+    return query(collection(db, 'teams', activeTeam.id, 'drills'), orderBy('createdAt', 'desc'), limit(20));
   }, [activeTeam?.id, db]);
-  const { data: rawDrills } = useCollection(drillsQuery);
+  const { data: rawDrills, isLoading: isDrillsLoading } = useCollection(drillsQuery);
   const drills = useMemo(() => rawDrills || [], [rawDrills]);
 
   const filesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'files'), orderBy('date', 'desc'));
+    return query(collection(db, 'teams', activeTeam.id, 'files'), orderBy('date', 'desc'), limit(20));
   }, [activeTeam?.id, db]);
-  const { data: rawFiles } = useCollection<TeamFile>(filesQuery);
+  const { data: rawFiles, isLoading: isFilesLoading } = useCollection<TeamFile>(filesQuery);
   const teamFiles = useMemo(() => rawFiles || [], [rawFiles]);
 
-  const scoutingQuery = useMemoFirebase(() => {
-    if (!activeTeam || !db) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'scouting'), orderBy('date', 'desc'));
-  }, [activeTeam?.id, db]);
-  const { data: rawScouting } = useCollection<ScoutingReport>(scoutingQuery);
-  const scoutingReports = useMemo(() => rawScouting || [], [rawScouting]);
-  
-  // State
-  const [isAddOpen, setIsAddOpen] = useState(false);
   const [isAddDrillOpen, setIsAddDrillOpen] = useState(false);
-  const [isAddScoutingOpen, setIsAddScoutingOpen] = useState(false);
   const [selectedDrill, setSelectedDrill] = useState<any>(null);
-  const [selectedScouting, setSelectedScouting] = useState<ScoutingReport | null>(null);
-  const [editingDrillId, setEditingDrillId] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<string>('all');
   const [selectedFile, setSelectedFile] = useState<TeamFile | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isLinkOpen, setIsLinkOpen] = useState(false);
-  const [isEditFilmOpen, setIsEditFilmOpen] = useState(false);
-  const [editingFilmId, setEditingFilmId] = useState<string | null>(null);
-  const [newComment, setNewComment] = useState('');
-
+  const [uploadCat, setUploadCat] = useState('Game Tape');
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newUrl, setNewUrl] = useState('');
-  const [newPhoto, setNewPhoto] = useState<string | undefined>();
-  const [uploadCat, setUploadCat] = useState('Game Tape');
-
-  const [newScouting, setNewScouting] = useState({ opponentName: '', date: '', strengths: '', weaknesses: '', keysToVictory: '', videoUrl: '' });
-  const [isAiGenerating, setIsAiGenerating] = useState(false);
-  const [aiObservations, setAiObservations] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  useEffect(() => { setMounted(true); }, []);
-
-  const totalUsedBytes = useMemo(() => teamFiles.reduce((sum, f) => sum + (f.sizeBytes || 0), 0), [teamFiles]);
-  const STORAGE_LIMIT = isPro ? 10 * 1024 * 1024 * 1024 : 500 * 1024 * 1024;
-  const storagePercentage = (totalUsedBytes / STORAGE_LIMIT) * 100;
-
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
-
-  const filteredDrills = useMemo(() => drills.filter(d => d.title.toLowerCase().includes(searchTerm.toLowerCase()) || d.description.toLowerCase().includes(searchTerm.toLowerCase())), [drills, searchTerm]);
-  
-  const filteredFiles = useMemo(() => {
-    return teamFiles.filter(f => {
-      const isGameplay = ['Game Tape', 'Practice Session', 'Highlights'].includes(f.category);
-      if (!isGameplay) return false;
-      const matchesSearch = f.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCat = activeCategory === 'all' || f.category === activeCategory;
-      return matchesSearch && matchesCat;
-    });
-  }, [teamFiles, searchTerm, activeCategory]);
-
-  const filteredScouting = useMemo(() => scoutingReports.filter(r => r.opponentName.toLowerCase().includes(searchTerm.toLowerCase())), [scoutingReports, searchTerm]);
-
-  if (!mounted || !activeTeam) return null;
-
-  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
-
-  const handleVideoProgress = () => {
-    if (!videoRef.current || !selectedFile || !user) return;
-    const progress = videoRef.current.currentTime / videoRef.current.duration;
-    if (progress >= 0.75 && !selectedFile.viewedBy?.[user.id]) {
-      markMediaAsViewed(selectedFile.id);
-      toast({ title: "Verified Viewed", description: "75% watch threshold met." });
-    }
-  };
+  const filteredDrills = useMemo(() => drills.filter(d => d.title.toLowerCase().includes(searchTerm.toLowerCase())), [drills, searchTerm]);
+  const filteredFiles = useMemo(() => teamFiles.filter(f => ['Game Tape', 'Practice Session', 'Highlights'].includes(f.category) && f.name.toLowerCase().includes(searchTerm.toLowerCase())), [teamFiles, searchTerm]);
 
   const handleAddDrill = async () => {
     if (!newTitle || !newDesc) return;
-    if (editingDrillId) {
-      updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'drills', editingDrillId), {
-        title: newTitle,
-        description: newDesc,
-        videoUrl: newUrl
-      });
-      toast({ title: "Drill Updated" });
-    } else {
-      addDrill({ title: newTitle, description: newDesc, videoUrl: newUrl, photoUrl: newPhoto, createdAt: new Date().toISOString() });
-      toast({ title: "Drill Published" });
-    }
+    addDrill({ title: newTitle, description: newDesc, videoUrl: newUrl, createdAt: new Date().toISOString() });
     setIsAddDrillOpen(false);
-    resetForm();
-  };
-
-  const handleAddScouting = async () => {
-    if (!newScouting.opponentName || !newScouting.date) return;
-    await addScoutingReport(newScouting);
-    setIsAddScoutingOpen(false);
-    setNewScouting({ opponentName: '', date: '', strengths: '', weaknesses: '', keysToVictory: '', videoUrl: '' });
-    setAiObservations('');
-    toast({ title: "Scouting Finalized" });
-  };
-
-  const handleAiAnalyze = async () => {
-    if (!aiObservations.trim() || !newScouting.opponentName) {
-      toast({ title: "Identification Required", description: "Enter opponent name and observations.", variant: "destructive" });
-      return;
-    }
-    setIsAiGenerating(true);
-    try {
-      const result = await generateScoutingBrief({
-        opponentName: newScouting.opponentName,
-        sport: activeTeam.sport || 'General',
-        rawObservations: aiObservations
-      });
-      setNewScouting(prev => ({
-        ...prev,
-        strengths: result.strengths,
-        weaknesses: result.weaknesses,
-        keysToVictory: result.keysToVictory
-      }));
-      toast({ title: "Intelligence Generated" });
-    } catch (e) {
-      toast({ title: "Analysis Failed", variant: "destructive" });
-    } finally {
-      setIsAiGenerating(false);
-    }
-  };
-
-  const handleEditDrill = (e: React.MouseEvent, drill: any) => {
-    e.stopPropagation();
-    setEditingDrillId(drill.id);
-    setNewTitle(drill.title);
-    setNewDesc(drill.description);
-    setNewUrl(drill.videoUrl || '');
-    setIsAddDrillOpen(true);
-  };
-
-  const handleEditFilm = (e: React.MouseEvent, file: TeamFile) => {
-    e.stopPropagation();
-    setEditingFilmId(file.id);
-    setNewTitle(file.name);
-    setNewDesc(file.description || '');
-    setUploadCat(file.category);
-    setIsEditFilmOpen(true);
-  };
-
-  const handleSaveFilmEdits = () => {
-    if (!editingFilmId || !activeTeam?.id) return;
-    updateDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'files', editingFilmId), {
-      name: newTitle,
-      description: newDesc,
-      category: uploadCat
-    });
-    toast({ title: "Film Metadata Updated" });
-    setIsEditFilmOpen(false);
-    resetForm();
-  };
-
-  const resetForm = () => {
-    setEditingDrillId(null);
-    setEditingFilmId(null);
-    setNewTitle('');
-    setNewDesc('');
-    setNewUrl('');
-    setNewPhoto(undefined);
-    setUploadCat('Game Tape');
+    setNewTitle(''); setNewDesc(''); setNewUrl('');
+    toast({ title: "Drill Published" });
   };
 
   const handleUploadFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (totalUsedBytes + file.size > STORAGE_LIMIT) {
-        toast({ title: "Quota Exceeded", variant: "destructive" });
-        return;
-      }
       const reader = new FileReader();
       reader.onload = (ev) => {
         addFile(file.name, file.name.split('.').pop() || 'file', file.size, ev.target?.result as string, uploadCat, newDesc);
@@ -272,405 +99,121 @@ export default function DrillsAndGamePlayPage() {
     }
   };
 
+  if (isDrillsLoading || isFilesLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Tactical Hub...</p></div>;
+
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-8 pb-20 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
-          <h1 className="text-3xl font-black tracking-tight uppercase">Tactical Hub</h1>
-          <p className="text-muted-foreground text-sm font-bold">Study the playbook, analyze the tape, and scout opponents.</p>
+          <h1 className="text-3xl font-black tracking-tight uppercase">Playbook Hub</h1>
+          <p className="text-muted-foreground text-sm font-bold">Execution protocols and match study archives.</p>
         </div>
-        
-        <div className="bg-muted/50 p-1.5 rounded-2xl border-2 flex items-center shadow-inner shrink-0 overflow-x-auto">
-          <button 
-            onClick={() => { setViewMode('drills'); resetForm(); }}
-            className={cn("px-6 lg:px-8 h-11 rounded-xl font-black text-[10px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap", viewMode === 'drills' ? "bg-white text-primary shadow-md" : "text-muted-foreground hover:text-foreground")}
-          >
-            Drills
-          </button>
-          <button 
-            onClick={() => { setViewMode('gameplay'); resetForm(); }}
-            className={cn("px-6 lg:px-8 h-11 rounded-xl font-black text-[10px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap", viewMode === 'gameplay' ? "bg-white text-primary shadow-md" : "text-muted-foreground hover:text-foreground")}
-          >
-            Game Play
-          </button>
-          <button 
-            onClick={() => { setViewMode('scouting'); resetForm(); }}
-            className={cn("px-6 lg:px-8 h-11 rounded-xl font-black text-[10px] lg:text-xs uppercase tracking-widest transition-all whitespace-nowrap", viewMode === 'scouting' ? "bg-white text-primary shadow-md" : "text-muted-foreground hover:text-foreground")}
-          >
-            Scouting
-          </button>
+        <div className="flex bg-muted/50 p-1.5 rounded-2xl border-2 shadow-inner">
+          <button onClick={() => setViewMode('drills')} className={cn("px-8 h-11 rounded-xl font-black text-xs uppercase tracking-widest transition-all", viewMode === 'drills' ? "bg-white text-primary shadow-md" : "text-muted-foreground")}>Drills</button>
+          <button onClick={() => setViewMode('gameplay')} className={cn("px-8 h-11 rounded-xl font-black text-xs uppercase tracking-widest transition-all", viewMode === 'gameplay' ? "bg-white text-primary shadow-md" : "text-muted-foreground")}>Game Play</button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <aside className="space-y-6">
-          {viewMode === 'gameplay' && (
-            <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 overflow-hidden">
-              <CardHeader className="bg-muted/30 border-b p-6">
-                <div className="flex items-center gap-3">
-                  <HardDrive className="h-4 w-4 text-primary" />
-                  <CardTitle className="text-[10px] font-black uppercase tracking-widest">Storage Audit</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-end">
-                    <p className="text-[10px] font-black uppercase opacity-60">Utilization</p>
-                    <p className="text-xs font-black">{formatSize(totalUsedBytes)} / {formatSize(STORAGE_LIMIT)}</p>
-                  </div>
-                  <Progress value={storagePercentage} className="h-2 rounded-full" />
-                </div>
-                {!isPro && isStaff && <Button size="sm" className="w-full h-8 rounded-lg text-[8px] font-black uppercase" onClick={purchasePro}>Upgrade to 10GB</Button>}
-              </CardContent>
-            </Card>
-          )}
-
-          <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
-            <CardHeader className="bg-muted/30 border-b p-6">
-              <div className="flex items-center gap-3">
-                <Filter className="h-4 w-4 text-primary" />
-                <CardTitle className="text-[10px] font-black uppercase tracking-widest">Context Navigation</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="p-4 space-y-1">
-              {viewMode === 'drills' && <div className="p-4 text-center opacity-40"><Dumbbell className="h-8 w-8 mx-auto mb-2" /><p className="text-[10px] font-black uppercase tracking-widest">Execution Protocols</p></div>}
-              {viewMode === 'gameplay' && ['all', 'Game Tape', 'Practice Session', 'Highlights'].map(cat => (
-                <button key={cat} onClick={() => setActiveCategory(cat)} className={cn("w-full flex items-center justify-between p-3 rounded-xl transition-all font-black text-[10px] uppercase tracking-widest", activeCategory === cat ? "bg-primary text-white" : "text-muted-foreground hover:bg-muted")}>
-                  <span>{cat === 'all' ? 'All Film' : cat}</span>
-                  <ChevronRight className="h-3 w-3 opacity-40" />
-                </button>
-              ))}
-              {viewMode === 'scouting' && (
-                <div className="p-4 space-y-4">
-                  <div className="bg-primary/5 p-4 rounded-2xl border-2 border-dashed border-primary/20 text-center">
-                    <BrainCircuit className="h-8 w-8 text-primary mx-auto mb-2" />
-                    <p className="text-[10px] font-black uppercase tracking-widest text-primary">AI Strategy Active</p>
-                  </div>
-                  <p className="text-[9px] font-medium leading-relaxed italic text-muted-foreground">Draft scouting briefs instantly using the AI Tactical Assistant in the New Scouting modal.</p>
-                </div>
-              )}
-            </CardContent>
+          <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 p-8 bg-black text-white relative group overflow-hidden">
+            <Package className="absolute -right-4 -bottom-4 h-32 w-32 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
+            <div className="relative z-10 space-y-4">
+              <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-2">SQUAD READY</Badge>
+              <h3 className="text-xl font-black uppercase leading-tight">Master Execution</h3>
+              <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Verify squad comprehension via study audits.</p>
+            </div>
           </Card>
+          <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20 space-y-4">
+            <div className="flex items-center gap-3"><Info className="h-5 w-5 text-primary" /><h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Strategic Repository</h4></div>
+            <p className="text-[11px] font-medium italic text-muted-foreground leading-relaxed">Playbook data is private to the active squad and authorized staff.</p>
+          </div>
         </aside>
 
         <div className="lg:col-span-3 space-y-6">
           <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
             <div className="relative flex-1 w-full">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder={`Search ${viewMode === 'drills' ? 'drills' : viewMode === 'gameplay' ? 'game film' : 'opponents'}...`} className="pl-11 h-14 rounded-2xl bg-muted/50 border-none shadow-inner font-black" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <Input placeholder={`Search ${viewMode}...`} className="pl-11 h-14 rounded-2xl bg-muted/50 border-none shadow-inner font-black" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
-            {isAdmin && (
-              <div className="flex gap-2 shrink-0">
-                {viewMode === 'drills' && <Button onClick={() => { resetForm(); setIsAddDrillOpen(true); }} className="rounded-full h-12 px-8 font-black uppercase text-xs shadow-lg shadow-primary/20"><Plus className="h-4 w-4 mr-2" /> Add Drill</Button>}
-                {viewMode === 'gameplay' && (
-                  <>
-                    <Button onClick={() => { resetForm(); setIsUploadOpen(true); }} className="rounded-full h-12 px-8 font-black uppercase text-xs shadow-lg shadow-primary/20"><Upload className="h-4 w-4 mr-2" /> Upload Film</Button>
-                  </>
-                )}
-                {viewMode === 'scouting' && <Button onClick={() => setIsAddScoutingOpen(true)} className="rounded-full h-12 px-8 font-black uppercase text-xs shadow-lg shadow-primary/20"><Plus className="h-4 w-4 mr-2" /> New Scouting</Button>}
-              </div>
+            {isStaff && (
+              <Button onClick={() => viewMode === 'drills' ? setIsAddDrillOpen(true) : setIsUploadOpen(true)} className="rounded-full h-12 px-8 font-black uppercase text-xs shadow-lg shadow-primary/20 shrink-0">
+                <Plus className="h-4 w-4 mr-2" /> Add {viewMode === 'drills' ? 'Drill' : 'Film'}
+              </Button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-            {viewMode === 'drills' && filteredDrills.map(drill => (
-              <Card key={drill.id} className="group border-none shadow-sm hover:shadow-xl transition-all duration-500 rounded-[2rem] overflow-hidden ring-1 ring-black/5 cursor-pointer bg-white" onClick={() => setSelectedDrill(drill)}>
-                <div className="aspect-video bg-muted relative overflow-hidden">
-                  <img src={drill.thumbnailUrl || "https://picsum.photos/seed/drill/400/300"} className="w-full h-full object-cover transition-transform group-hover:scale-110" alt={drill.title} />
-                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center transition-colors">
-                    <Play className="h-10 w-10 text-white fill-current opacity-0 group-hover:opacity-100 transition-opacity scale-50 group-hover:scale-100 transition-transform" />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {viewMode === 'drills' ? filteredDrills.map(drill => (
+              <Card key={drill.id} className="rounded-[2rem] overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedDrill(drill)}>
+                <div className="aspect-video bg-muted relative">
+                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                    <Play className="h-10 w-10 text-white fill-current opacity-0 group-hover:opacity-100 transition-all scale-50 group-hover:scale-100" />
                   </div>
-                  {isAdmin && (
-                    <Button variant="secondary" size="icon" className="absolute top-4 right-4 h-8 w-8 rounded-full bg-white/90 text-primary shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => handleEditDrill(e, drill)}>
-                      <Edit3 className="h-4 w-4" />
-                    </Button>
-                  )}
                 </div>
                 <CardContent className="p-6 space-y-2">
-                  <h3 className="font-black text-sm uppercase tracking-tight truncate">{drill.title}</h3>
-                  <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 leading-relaxed">{drill.description}</p>
+                  <h3 className="font-black text-sm uppercase truncate">{drill.title}</h3>
+                  <p className="text-[10px] font-medium text-muted-foreground line-clamp-2">{drill.description}</p>
                 </CardContent>
               </Card>
-            ))}
-
-            {viewMode === 'gameplay' && (
-              !isPro && isStaff ? (
-                <div className="col-span-full py-24 text-center space-y-6 bg-primary/5 rounded-[3rem] border-2 border-dashed border-primary/20">
-                  <Video className="h-12 w-12 text-primary mx-auto" />
-                  <h3 className="text-2xl font-black uppercase tracking-tight">Game Film Locked</h3>
-                  <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto">Film analysis requires an Elite Pro subscription.</p>
-                  <Button onClick={purchasePro} className="h-12 px-10 rounded-xl font-black uppercase">Upgrade to Elite</Button>
+            )) : filteredFiles.map(file => (
+              <Card key={file.id} className="rounded-[2rem] overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedFile(file)}>
+                <div className="aspect-video bg-black/90 flex items-center justify-center relative">
+                  <Play className="h-10 w-10 text-white fill-current opacity-40 group-hover:opacity-100 transition-all" />
+                  <Badge className="absolute top-4 left-4 bg-black/50 border-none font-black text-[8px] uppercase">{file.category}</Badge>
                 </div>
-              ) : filteredFiles.map(file => {
-                const viewed = file.viewedBy?.[user?.id || ''];
-                return (
-                  <Card key={file.id} className="group border-none shadow-sm hover:shadow-xl transition-all duration-500 rounded-[2rem] overflow-hidden ring-1 ring-black/5 cursor-pointer bg-white" onClick={() => setSelectedFile(file)}>
-                    <div className="aspect-video bg-muted relative overflow-hidden">
-                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center transition-colors">
-                        <Play className="h-10 w-10 text-white fill-current opacity-0 group-hover:opacity-100 transition-opacity scale-50 group-hover:scale-100 transition-transform" />
-                      </div>
-                      <Badge className="absolute top-4 left-4 bg-black/50 text-white border-none font-black text-[8px] uppercase tracking-widest">{file.category}</Badge>
-                      {viewed && <div className="absolute top-4 right-4 bg-green-500 text-white rounded-full p-1 shadow-lg"><CheckCircle2 className="h-3 w-3" /></div>}
-                    </div>
-                    <CardContent className="p-6 space-y-2">
-                      <h3 className="font-black text-sm uppercase tracking-tight truncate">{file.name}</h3>
-                      <div className="flex items-center justify-between text-[9px] font-black text-muted-foreground uppercase">
-                        <span>{file.type} • {file.size}</span>
-                        {viewed && <span className="text-green-600">WATCHED</span>}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
-            )}
-
-            {viewMode === 'scouting' && filteredScouting.map(report => (
-              <Card key={report.id} className="group border-none shadow-sm hover:shadow-xl transition-all duration-500 rounded-[2rem] overflow-hidden ring-1 ring-black/5 cursor-pointer bg-white" onClick={() => setSelectedScouting(report)}>
-                <div className="h-2 w-full bg-black" />
-                <CardHeader className="p-6 pb-2">
-                  <div className="flex justify-between items-start">
-                    <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest border-black/20 text-black">Scouting</Badge>
-                    <span className="text-[10px] font-bold text-muted-foreground">{report.date}</span>
-                  </div>
-                  <CardTitle className="text-xl font-black uppercase tracking-tight leading-tight pt-2 truncate group-hover:text-primary transition-colors">Vs {report.opponentName}</CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 pt-0 space-y-4">
-                  <div className="space-y-1">
-                    <p className="text-[8px] font-black uppercase opacity-40">Primary Focus</p>
-                    <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 italic">"{report.strengths}"</p>
-                  </div>
+                <CardContent className="p-6 space-y-2">
+                  <h3 className="font-black text-sm uppercase truncate">{file.name}</h3>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">{file.size} • {format(new Date(file.date), 'MMM d')}</p>
                 </CardContent>
-                <CardFooter className="p-6 pt-0 border-t flex items-center justify-between bg-muted/10 mt-auto">
-                  <div className="flex items-center gap-2 text-[9px] font-black text-muted-foreground uppercase"><Eye className="h-3 w-3" /> Tactical Brief</div>
-                  <ChevronRight className="h-4 w-4 text-primary opacity-20 group-hover:opacity-100 transition-all" />
-                </CardFooter>
               </Card>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Drill Detail Dialog */}
-      <Dialog open={!!selectedDrill} onOpenChange={o => !o && setSelectedDrill(null)}>
-        <DialogContent data-dark-header="true" className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl">
-          {selectedDrill && (
-            <div className="flex flex-col lg:flex-row">
-              <div className="w-full lg:w-1/2 bg-black text-white p-8 lg:p-12 space-y-8 flex flex-col">
-                <div className="space-y-4">
-                  <Badge className="bg-primary text-white border-none font-black text-[10px] uppercase h-6 px-3">Execution Protocol</Badge>
-                  <h2 className="text-4xl font-black uppercase tracking-tight leading-none">{selectedDrill.title}</h2>
-                </div>
-                {selectedDrill.videoUrl && (
-                  <div className="mt-auto pt-8">
-                    <Button className="w-full h-14 rounded-2xl bg-white text-black font-black uppercase text-xs tracking-widest shadow-xl" onClick={() => window.open(selectedDrill.videoUrl, '_blank')}>
-                      <Play className="h-4 w-4 mr-2 fill-current" /> Watch External Drill
-                    </Button>
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 p-8 lg:p-12 bg-white space-y-8">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3"><Info className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest">Protocol Description</h3></div>
-                  <p className="text-sm font-medium text-muted-foreground leading-relaxed italic whitespace-pre-wrap">"{selectedDrill.description}"</p>
-                </div>
-                <div className="pt-8 border-t flex justify-end gap-3">
-                  {isAdmin && <Button variant="ghost" size="icon" className="text-destructive h-12 w-12 rounded-xl" onClick={() => { deleteDrill(selectedDrill.id); setSelectedDrill(null); }}><Trash2 className="h-5 w-5" /></Button>}
-                  <Button variant="outline" className="px-8 h-12 rounded-xl font-black uppercase text-[10px] border-2" onClick={() => setSelectedDrill(null)}>Close Hub</Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Film Detail Dialog */}
-      <Dialog open={!!selectedFile} onOpenChange={o => !o && setSelectedFile(null)}>
-        <DialogContent data-dark-header="true" className="sm:max-w-5xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl">
-          {selectedFile && (
-            <div className="flex flex-col lg:flex-row">
-              <div className="w-full lg:w-2/3 bg-black flex flex-col">
-                <div className="aspect-video bg-muted relative">
-                  <video 
-                    ref={videoRef}
-                    src={selectedFile.url} 
-                    className="w-full h-full object-contain" 
-                    controls 
-                    onTimeUpdate={handleVideoProgress}
-                  />
-                </div>
-                <div className="p-8 text-white space-y-4">
-                  <div className="flex justify-between items-start">
-                    <div className="space-y-1">
-                      <Badge className="bg-primary text-white border-none font-black text-[8px] uppercase tracking-widest px-2">{selectedFile.category}</Badge>
-                      <h2 className="text-2xl font-black uppercase tracking-tight">{selectedFile.name}</h2>
-                    </div>
-                    {isAdmin && <Button variant="ghost" size="icon" className="text-white/40 hover:text-white" onClick={(e) => handleEditFilm(e, selectedFile)}><Edit3 className="h-5 w-5" /></Button>}
-                  </div>
-                  <p className="text-xs text-white/60 font-medium leading-relaxed italic">"{selectedFile.description || 'Professional match film archived for tactical review.'}"</p>
-                </div>
-              </div>
-              <div className="flex-1 p-8 bg-white border-l flex flex-col">
-                <div className="flex items-center gap-3 mb-6"><MessageSquare className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest">Tactical discussion</h3></div>
-                <div className="flex-1 mb-6 space-y-4 overflow-y-auto pr-2 custom-scrollbar max-h-[400px]">
-                  {selectedFile.comments?.map(c => (
-                    <div key={c.id} className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase">{c.authorName}</span>
-                        <span className="text-[8px] text-muted-foreground">{new Date(c.createdAt).toLocaleDateString()}</span>
-                      </div>
-                      <p className="text-xs font-medium bg-muted/30 p-3 rounded-xl border italic">"{c.text}"</p>
-                    </div>
-                  ))}
-                  {(!selectedFile.comments || selectedFile.comments.length === 0) && (
-                    <p className="text-[10px] font-bold text-muted-foreground text-center py-10 opacity-40 uppercase tracking-widest">No strategic notes yet.</p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Input placeholder="Add tactical note..." value={newComment} onChange={e => setNewComment(e.target.value)} className="h-11 rounded-xl" onKeyDown={e => e.key === 'Enter' && newComment.trim() && (addMediaComment(selectedFile.id, newComment), setNewComment(''))} />
-                  <Button size="icon" className="rounded-xl h-11 w-11" onClick={() => { if(newComment.trim()) { addMediaComment(selectedFile.id, newComment); setNewComment(''); } }}><Plus className="h-4 w-4" /></Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Add/Edit Drill Dialog */}
       <Dialog open={isAddDrillOpen} onOpenChange={setIsAddDrillOpen}>
-        <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-8">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black uppercase tracking-tight">{editingDrillId ? 'Edit Drill' : 'New Drill protocol'}</DialogTitle>
-            <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Enroll training resources</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-6 py-4">
-            <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Headline</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div>
-            <div className="space-y-2"><Label className="text-[10px] font-black uppercase">External Video URL</Label><Input placeholder="YouTube or Vimeo link..." value={newUrl} onChange={e => setNewUrl(e.target.value)} className="h-12 rounded-xl border-2" /></div>
-            <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Execution Brief</Label><Textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} className="min-h-[120px] rounded-xl border-2" /></div>
+        <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <DialogTitle className="sr-only">New Drill Enrollment</DialogTitle>
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 lg:p-12 space-y-8">
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight">New Protocol</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px]">Enroll training resource</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Headline</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl border-2 font-bold" /></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Study Link (Opt)</Label><Input value={newUrl} onChange={e => setNewUrl(e.target.value)} className="h-12 rounded-xl border-2 font-bold" /></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Instructions</Label><Textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} className="min-h-[120px] rounded-xl border-2 p-4 font-medium" /></div>
+            </div>
+            <DialogFooter><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleAddDrill}>Commit Protocol</Button></DialogFooter>
           </div>
-          <DialogFooter><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleAddDrill}>{editingDrillId ? 'Update Drill' : 'Publish Protocol'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Upload Film Dialog */}
       <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
-        <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-8">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black uppercase tracking-tight">Archive Game Film</DialogTitle>
-            <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Enroll Match footage</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-6 py-4">
-            <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Film Category</Label>
-              <Select value={uploadCat} onValueChange={setUploadCat}>
-                <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
-                <SelectContent className="rounded-xl"><SelectItem value="Game Tape">Match Day Film</SelectItem><SelectItem value="Practice Session">Training Session</SelectItem><SelectItem value="Highlights">Squad Highlights</SelectItem></SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Coordination Notes</Label><Textarea placeholder="Context for the squad..." value={newDesc} onChange={e => setNewDesc(e.target.value)} className="min-h-[100px] rounded-xl border-2 font-medium" /></div>
-            <div className="p-10 border-2 border-dashed rounded-[2rem] bg-muted/20 text-center space-y-4 group cursor-pointer hover:border-primary/20 transition-all" onClick={() => fileInputRef.current?.click()}>
-              <input type="file" ref={fileInputRef} className="hidden" accept="video/*" onChange={handleUploadFile} />
-              <div className="bg-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm group-hover:scale-110 transition-transform"><Video className="h-8 w-8 text-primary" /></div>
-              <p className="text-sm font-black uppercase">Select Video File</p>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isAddScoutingOpen} onOpenChange={setIsAddScoutingOpen}>
-        <DialogContent className="sm:max-w-4xl rounded-[2.5rem] p-0 border-none shadow-2xl">
+        <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <DialogTitle className="sr-only">Game Film Archiving Hub</DialogTitle>
           <div className="h-2 bg-black w-full" />
-          <div className="flex flex-col lg:flex-row">
-            <div className="w-full lg:w-5/12 bg-primary/5 p-8 lg:p-10 space-y-8 border-r">
-              <DialogHeader>
-                <DialogTitle className="text-2xl font-black uppercase tracking-tight">Intelligence Log</DialogTitle>
-                <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Draft Opponent scouting brief</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-6">
-                <div className="space-y-4 bg-white p-6 rounded-3xl border-2 border-dashed border-primary/20">
-                  <div className="flex items-center gap-3">
-                    <BrainCircuit className="h-5 w-5 text-primary" />
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-primary">AI Tactical Assistant</Label>
-                  </div>
-                  <Textarea 
-                    placeholder="Paste match notes or raw observations here..." 
-                    value={aiObservations}
-                    onChange={e => setAiObservations(e.target.value)}
-                    className="min-h-[150px] rounded-2xl bg-muted/10 border-none font-medium text-sm"
-                  />
-                  <Button 
-                    className="w-full h-12 rounded-xl font-black uppercase text-xs shadow-lg shadow-primary/20"
-                    onClick={handleAiAnalyze}
-                    disabled={isAiGenerating || !aiObservations.trim() || !newScouting.opponentName}
-                  >
-                    {isAiGenerating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Wand2 className="h-4 w-4 mr-2" />}
-                    Generate AI Brief
-                  </Button>
-                </div>
+          <div className="p-8 lg:p-12 space-y-8">
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight">Archive Film</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px]">Enroll Match footage</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Category</Label>
+                <Select value={uploadCat} onValueChange={setUploadCat}>
+                  <SelectTrigger className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all"><SelectValue /></SelectTrigger>
+                  <SelectContent className="rounded-xl"><SelectItem value="Game Tape" className="font-bold">Match Day Film</SelectItem><SelectItem value="Practice Session" className="font-bold">Training Session</SelectItem></SelectContent>
+                </Select>
               </div>
-            </div>
-            <div className="flex-1 p-8 lg:p-10 space-y-6 bg-white">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Opponent Name</Label><Input value={newScouting.opponentName} onChange={e => setNewScouting({...newScouting, opponentName: e.target.value})} className="h-11 rounded-xl border-2" /></div>
-                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Match Date</Label><Input type="date" value={newScouting.date} onChange={e => setNewScouting({...newScouting, date: e.target.value})} className="h-11 rounded-xl border-2" /></div>
+              <div className="p-10 border-2 border-dashed rounded-[2rem] bg-muted/20 text-center space-y-4 group cursor-pointer hover:border-primary/20 transition-all" onClick={() => fileInputRef.current?.click()}>
+                <input type="file" ref={fileInputRef} className="hidden" accept="video/*" onChange={handleUploadFile} />
+                <div className="bg-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm group-hover:scale-110 transition-transform"><Video className="h-8 w-8 text-primary" /></div>
+                <p className="text-sm font-black uppercase">Select Video File</p>
               </div>
-              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Video Study Link (Optional)</Label><Input value={newScouting.videoUrl} onChange={e => setNewScouting({...newScouting, videoUrl: e.target.value})} className="h-11 rounded-xl border-2" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Strengths</Label><Textarea value={newScouting.strengths} onChange={e => setNewScouting({...newScouting, strengths: e.target.value})} className="h-20 rounded-xl border-2 resize-none text-xs font-bold" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Weaknesses</Label><Textarea value={newScouting.weaknesses} onChange={e => setNewScouting({...newScouting, weaknesses: e.target.value})} className="h-20 rounded-xl border-2 resize-none text-xs font-bold" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase text-primary">Keys to Victory</Label><Textarea value={newScouting.keysToVictory} onChange={e => setNewScouting({...newScouting, keysToVictory: e.target.value})} className="h-24 rounded-xl border-primary border-2 resize-none text-sm font-black" /></div>
-              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleAddScouting} disabled={!newScouting.opponentName || !newScouting.date}>Commit Scouting Report</Button>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!selectedScouting} onOpenChange={o => !o && setSelectedScouting(null)}>
-        <DialogContent data-dark-header="true" className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl">
-          <DialogTitle className="sr-only">Scouting Report: {selectedScouting?.opponentName}</DialogTitle>
-          {selectedScouting && (
-            <div className="flex flex-col lg:flex-row">
-              <div className="lg:w-5/12 bg-black text-white p-8 lg:p-12 space-y-8 flex flex-col">
-                <div className="space-y-4">
-                  <Badge className="bg-primary text-white border-none font-black text-[10px] uppercase h-6 px-3">Elite Intel</Badge>
-                  <h2 className="text-4xl lg:text-5xl font-black uppercase tracking-tight leading-none">Vs {selectedScouting.opponentName}</h2>
-                  <p className="text-white/40 font-bold uppercase tracking-widest text-xs">{selectedScouting.date}</p>
-                </div>
-                
-                {selectedScouting.videoUrl && (
-                  <div className="bg-white/10 p-6 rounded-2xl border border-white/10 space-y-4 mt-auto">
-                    <div className="flex items-center gap-3"><Video className="h-5 w-5 text-primary" /><span className="text-[10px] font-black uppercase">Film Attached</span></div>
-                    <Button className="w-full rounded-xl h-12 bg-white text-black font-black uppercase text-[10px]" onClick={() => window.open(selectedScouting.videoUrl, '_blank')}>Study Opponent Tape</Button>
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex-1 p-8 lg:p-12 space-y-10 bg-white">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2"><div className="h-2 w-2 bg-green-500 rounded-full" /><h4 className="text-[10px] font-black uppercase tracking-widest">Strengths</h4></div>
-                    <p className="text-sm font-bold text-foreground/80 leading-relaxed whitespace-pre-wrap italic bg-muted/30 p-4 rounded-2xl">{selectedScouting.strengths}</p>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2"><div className="h-2 w-2 bg-red-500 rounded-full" /><h4 className="text-[10px] font-black uppercase tracking-widest">Weaknesses</h4></div>
-                    <p className="text-sm font-bold text-foreground/80 leading-relaxed whitespace-pre-wrap italic bg-muted/30 p-4 rounded-2xl">{selectedScouting.weaknesses}</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 px-1">
-                    <Target className="h-5 w-5 text-primary" />
-                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Primary Keys to Victory</h4>
-                  </div>
-                  <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-dashed border-primary/20">
-                    <p className="text-lg font-black leading-snug text-primary text-center italic">"{selectedScouting.keysToVictory}"</p>
-                  </div>
-                </div>
-
-                <div className="pt-8 border-t flex justify-end gap-3 mt-auto">
-                  {isAdmin && <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => { deleteScoutingReport(selectedScouting.id); setSelectedScouting(null); }}><Trash2 className="h-5 w-5" /></Button>}
-                  <Button variant="outline" className="px-8 h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setSelectedScouting(null)}>Close Intel Hub</Button>
-                </div>
-              </div>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
     </div>

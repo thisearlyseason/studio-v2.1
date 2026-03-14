@@ -1,7 +1,8 @@
+
 "use client";
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { useTeam, TeamDocument, Member, DocumentSignature, RegistrationEntry } from '@/components/providers/team-provider';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useTeam, TeamDocument, Member, DocumentSignature, RegistrationEntry, ScoutingReport } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, where, doc, collectionGroup } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -22,38 +23,34 @@ import {
   ChevronRight,
   Download,
   Search,
-  Filter,
   ShieldCheck,
-  ClipboardList,
   Eye,
   Loader2,
   HardDrive,
   FileText,
   RotateCcw,
   Zap,
-  Table as TableIcon,
   Activity,
   AlertTriangle,
   Target,
   Trophy,
-  Building,
   Info,
   Globe,
   Settings,
-  Copy,
-  Share2,
   UserPlus,
   ArrowUpRight,
   DollarSign,
-  CreditCard,
   XCircle,
-  Circle,
   Edit3,
   SearchCode,
   LineChart,
   UserCog,
   Save,
-  ShieldAlert
+  ShieldAlert,
+  BrainCircuit,
+  Wand2,
+  Camera,
+  LayoutGrid
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -86,6 +83,7 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { generateScoutingBrief } from '@/ai/flows/scouting-report-agent';
 
 function SignatureList({ teamId, documentId }: { teamId: string, documentId: string }) {
   const db = useFirestore();
@@ -143,30 +141,64 @@ function SignatureList({ teamId, documentId }: { teamId: string, documentId: str
 }
 
 function PersonnelAuditDialog({ member, isOpen, onOpenChange }: { member: Member, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
-  const { updateStaffEvaluation, getStaffEvaluation } = useTeam();
+  const { updateStaffEvaluation, getStaffEvaluation, updateMember, isStaff } = useTeam();
   const [note, setNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const [editForm, setEditForm] = useState({
+    name: member.name || '',
+    position: member.position || '',
+    jersey: member.jersey || '',
+    notes: member.notes || ''
+  });
 
   useEffect(() => {
     if (isOpen) {
       getStaffEvaluation(member.id).then(setNote);
+      setEditForm({
+        name: member.name || '',
+        position: member.position || '',
+        jersey: member.jersey || '',
+        notes: member.notes || ''
+      });
     }
-  }, [isOpen, member.id, getStaffEvaluation]);
+  }, [isOpen, member, getStaffEvaluation]);
 
-  const handleSave = async () => {
+  const handleSaveAll = async () => {
     setIsSaving(true);
-    await updateStaffEvaluation(member.id, note);
-    setIsSaving(false);
-    toast({ title: "Evaluation Saved" });
+    try {
+      await updateStaffEvaluation(member.id, note);
+      await updateMember(member.id, editForm);
+      toast({ title: "Personnel Record Synchronized" });
+      onOpenChange(false);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setIsUpdatingAvatar(true);
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        await updateMember(member.id, { avatar: ev.target?.result as string });
+        toast({ title: "Photo Updated" });
+        setIsUpdatingAvatar(false);
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    }
   };
 
   const handleExportPortfolio = useCallback(() => {
-    const headers = ["Player", "Position", "Jersey", "Medical", "Fees Owed", "Staff Evaluations"];
+    const headers = ["Player", "Position", "Jersey", "Medical", "Fees Owed", "Staff Evaluations", "Bio"];
     const row = [
       member.name, member.position, member.jersey,
       member.medicalClearance ? 'Cleared' : 'Pending',
       `$${member.amountOwed || 0}`,
-      note.replace(/,/g, ';').replace(/\n/g, ' ')
+      note.replace(/,/g, ';').replace(/\n/g, ' '),
+      (member.notes || '').replace(/,/g, ';').replace(/\n/g, ' ')
     ];
     const csvContent = "data:text/csv;charset=utf-8," + [headers, row].map(e => e.join(",")).join("\n");
     const link = document.createElement("a");
@@ -179,53 +211,70 @@ function PersonnelAuditDialog({ member, isOpen, onOpenChange }: { member: Member
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl rounded-[3rem] p-0 border-none shadow-2xl bg-white overflow-hidden">
-        <DialogTitle className="sr-only">Personnel Evaluation: {member.name}</DialogTitle>
+      <DialogContent className="sm:max-w-5xl rounded-[3rem] p-0 border-none shadow-2xl bg-white overflow-hidden">
+        <DialogTitle className="sr-only">Personnel Evaluation & Roster Update: {member.name}</DialogTitle>
         <div className="h-2 bg-black w-full" />
-        <div className="flex flex-col lg:flex-row">
-          <div className="w-full lg:w-5/12 bg-muted/20 p-8 lg:p-10 space-y-8 border-r">
+        <div className="flex flex-col lg:flex-row h-full">
+          <div className="w-full lg:w-5/12 bg-muted/20 p-8 lg:p-10 space-y-8 border-r overflow-y-auto custom-scrollbar max-h-[85vh]">
             <div className="flex flex-col items-center text-center space-y-6">
-              <Avatar className="h-32 w-32 rounded-[2.5rem] border-4 border-background shadow-2xl">
-                <AvatarImage src={member.avatar} />
-                <AvatarFallback className="font-black text-2xl">{member.name[0]}</AvatarFallback>
-              </Avatar>
-              <div className="space-y-2">
-                <Badge className="bg-primary text-white border-none font-black uppercase text-[10px] h-6">Verified Personnel</Badge>
-                <h3 className="text-3xl font-black uppercase tracking-tight">{member.name}</h3>
-                <p className="text-primary font-black uppercase tracking-widest text-[10px]">{member.position} • #{member.jersey}</p>
+              <div className="relative group">
+                <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
+                <Avatar className="h-32 w-32 rounded-[2.5rem] border-4 border-background shadow-2xl transition-transform group-hover:scale-105">
+                  <AvatarImage src={member.avatar} />
+                  <AvatarFallback className="font-black text-2xl">{member.name[0]}</AvatarFallback>
+                </Avatar>
+                <Button size="icon" variant="secondary" className="absolute bottom-1 right-1 h-9 w-9 rounded-xl shadow-xl bg-white text-primary opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => avatarInputRef.current?.click()} disabled={isUpdatingAvatar}>
+                  {isUpdatingAvatar ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                </Button>
+              </div>
+              <div className="space-y-4 w-full">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Identity</Label>
+                  <Input value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} className="h-12 rounded-xl font-black text-lg border-2" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2 text-left">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Position</Label>
+                    <Input value={editForm.position} onChange={e => setEditForm({...editForm, position: e.target.value})} className="h-11 rounded-xl font-bold border-2" />
+                  </div>
+                  <div className="space-y-2 text-left">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Jersey #</Label>
+                    <Input value={editForm.jersey} onChange={e => setEditForm({...editForm, jersey: e.target.value})} className="h-11 rounded-xl font-black border-2" />
+                  </div>
+                </div>
+                <div className="space-y-2 text-left">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Public Squad Bio</Label>
+                  <Textarea value={editForm.notes} onChange={e => setEditForm({...editForm, notes: e.target.value})} className="min-h-[100px] rounded-2xl font-medium text-sm p-4 border-2 resize-none" placeholder="Athlete narrative..." />
+                </div>
               </div>
               <div className="w-full pt-6 border-t border-muted space-y-4">
-                <div className="bg-white p-4 rounded-2xl border flex justify-between items-center">
-                  <span className="text-[10px] font-black uppercase opacity-40">Identity Proof</span>
-                  <Badge variant="outline" className="text-[8px] border-green-200 text-green-600 bg-green-50 font-black">ACTIVE</Badge>
-                </div>
-                <Button className="w-full h-12 rounded-xl bg-black text-white font-black uppercase text-[10px] tracking-widest" onClick={handleExportPortfolio}>
+                <Button variant="outline" className="w-full h-12 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest" onClick={handleExportPortfolio}>
                   <Download className="h-4 w-4 mr-2" /> Export Recruiting Pack
                 </Button>
               </div>
             </div>
           </div>
-          <div className="flex-1 p-8 lg:p-10 space-y-8 overflow-y-auto max-h-[80vh] custom-scrollbar">
+          <div className="flex-1 p-8 lg:p-10 space-y-8 overflow-y-auto max-h-[85vh] custom-scrollbar bg-white">
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <ShieldAlert className="h-5 w-5 text-primary" />
-                <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Staff Evaluation Ledger</h4>
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Private Staff Evaluation</h4>
               </div>
               <p className="text-[10px] font-medium text-muted-foreground leading-relaxed italic border-l-2 border-primary/20 pl-4">
-                Notes entered here are private to the coaching staff and are used for tactical deployment and player development tracking.
+                This evaluation ledger is strictly restricted to coaching staff and organization leads. Use this space for tactical aptitude logs and scouting benchmarks.
               </p>
               <Textarea 
                 placeholder="Log performance benchmarks, tactical aptitude, or recruitment observations..." 
                 value={note}
                 onChange={e => setNote(e.target.value)}
-                className="min-h-[300px] rounded-3xl bg-muted/10 border-none font-bold p-6 text-base shadow-inner resize-none focus:bg-white transition-all"
+                className="min-h-[400px] rounded-3xl bg-muted/10 border-none font-bold p-6 text-base shadow-inner resize-none focus:bg-white transition-all"
               />
             </div>
             <div className="pt-4 border-t flex justify-end gap-3">
-              <Button variant="outline" className="h-12 rounded-xl font-black uppercase text-[10px] px-8 border-2" onClick={() => onOpenChange(false)}>Close Audit</Button>
-              <Button className="h-12 rounded-xl font-black uppercase text-[10px] px-8 shadow-lg shadow-primary/20" onClick={handleSave} disabled={isSaving}>
+              <Button variant="outline" className="h-12 px-8 rounded-xl font-black uppercase text-[10px] border-2" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button className="h-12 px-10 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={handleSaveAll} disabled={isSaving}>
                 {isSaving ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : <Save className="h-6 w-6 mr-2" />}
-                Commit Evaluation
+                Synchronize Personnel Record
               </Button>
             </div>
           </div>
@@ -236,13 +285,11 @@ function PersonnelAuditDialog({ member, isOpen, onOpenChange }: { member: Member
 }
 
 export default function CoachesCornerPage() {
-  const { activeTeam, isStaff, members, createTeamDocument, updateTeamDocument, deleteTeamDocument, resetSquadData, respondToAssignment, exportSignaturesCSV } = useTeam();
+  const { activeTeam, isStaff, members, createTeamDocument, updateTeamDocument, deleteTeamDocument, respondToAssignment, exportSignaturesCSV, addScoutingReport, deleteScoutingReport } = useTeam();
   const db = useFirestore();
   
   const [activeTab, setActiveTab] = useState('compliance');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isResetOpen, setIsResetOpen] = useState(false);
-  const [isDoubleConfirmOpen, setIsDoubleConfirmOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<TeamDocument | null>(null);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
@@ -251,14 +298,25 @@ export default function CoachesCornerPage() {
   const [selectedPersonnel, setSelectedPersonnel] = useState<Member | null>(null);
   const [personnelSearch, setPersonnelPersonnelSearch] = useState('');
 
-  const [resetOptions, setResetOptions] = useState<string[]>(['games', 'events']);
+  const [isAddScoutingOpen, setIsAddScoutingOpen] = useState(false);
+  const [newScouting, setNewScouting] = useState({ opponentName: '', date: '', strengths: '', weaknesses: '', keysToVictory: '', videoUrl: '' });
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [aiObservations, setAiObservations] = useState('');
+  const [scoutingSearch, setScoutingSearch] = useState('');
 
   const docsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
     return query(collection(db, 'teams', activeTeam.id, 'documents'), orderBy('createdAt', 'desc'));
   }, [activeTeam?.id, db]);
 
+  const scoutingQuery = useMemoFirebase(() => {
+    if (!activeTeam || !db) return null;
+    return query(collection(db, 'teams', activeTeam.id, 'scouting'), orderBy('date', 'desc'));
+  }, [activeTeam?.id, db]);
+
   const { data: documents } = useCollection<TeamDocument>(docsQuery);
+  const { data: rawScouting } = useCollection<ScoutingReport>(scoutingQuery);
+  const scoutingReports = useMemo(() => rawScouting || [], [rawScouting]);
 
   const teamEntriesQuery = useMemoFirebase(() => (db && activeTeam) ? collectionGroup(db, 'registrationEntries') : null, [db, activeTeam?.id]);
   const { data: allEntries } = useCollection<RegistrationEntry>(teamEntriesQuery);
@@ -271,6 +329,8 @@ export default function CoachesCornerPage() {
   const filteredPersonnel = useMemo(() => {
     return members.filter(m => m.name.toLowerCase().includes(personnelSearch.toLowerCase()));
   }, [members, personnelSearch]);
+
+  const filteredScouting = useMemo(() => scoutingReports.filter(r => r.opponentName.toLowerCase().includes(scoutingSearch.toLowerCase())), [scoutingReports, scoutingSearch]);
 
   if (!isStaff) return <div className="py-24 text-center opacity-20"><ShieldCheck className="h-16 w-16 mx-auto" /><h1 className="text-2xl font-black mt-4 uppercase">Staff Access Restricted</h1></div>;
 
@@ -290,23 +350,39 @@ export default function CoachesCornerPage() {
     setNewDoc({ title: '', content: '', type: 'waiver', assignedTo: ['all'] });
   };
 
-  const handleEditDocument = (doc: TeamDocument) => {
-    setEditingDocId(doc.id);
-    setNewDoc({
-      title: doc.title,
-      content: doc.content,
-      type: doc.type,
-      assignedTo: doc.assignedTo
-    });
-    setIsCreateOpen(true);
+  const handleAddScouting = async () => {
+    if (!newScouting.opponentName || !newScouting.date) return;
+    await addScoutingReport(newScouting);
+    setIsAddScoutingOpen(false);
+    setNewScouting({ opponentName: '', date: '', strengths: '', weaknesses: '', keysToVictory: '', videoUrl: '' });
+    setAiObservations('');
+    toast({ title: "Scouting Brief Finalized" });
   };
 
-  const handleFinalReset = async () => {
-    setIsProcessing(true);
-    await resetSquadData(resetOptions);
-    setIsResetOpen(false);
-    setIsDoubleConfirmOpen(false);
-    setIsProcessing(false);
+  const handleAiAnalyze = async () => {
+    if (!aiObservations.trim() || !newScouting.opponentName) {
+      toast({ title: "Identification Required", description: "Enter opponent name and observations.", variant: "destructive" });
+      return;
+    }
+    setIsAiGenerating(true);
+    try {
+      const result = await generateScoutingBrief({
+        opponentName: newScouting.opponentName,
+        sport: activeTeam?.sport || 'General',
+        rawObservations: aiObservations
+      });
+      setNewScouting(prev => ({
+        ...prev,
+        strengths: result.strengths,
+        weaknesses: result.weaknesses,
+        keysToVictory: result.keysToVictory
+      }));
+      toast({ title: "Intelligence Generated" });
+    } catch (e) {
+      toast({ title: "Analysis Failed", variant: "destructive" });
+    } finally {
+      setIsAiGenerating(false);
+    }
   };
 
   const toggleAssignment = (memberId: string) => {
@@ -326,7 +402,7 @@ export default function CoachesCornerPage() {
   };
 
   return (
-    <div className="space-y-10 pb-20">
+    <div className="space-y-10 pb-20 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Command Hub</Badge>
@@ -334,11 +410,11 @@ export default function CoachesCornerPage() {
         </div>
         
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full md:w-auto">
-          <TabsList className="bg-muted/50 rounded-xl h-auto p-1 border-2 w-full md:w-auto flex-wrap gap-1">
+          <TabsList className="bg-muted/50 rounded-xl h-auto p-1 border-2 w-full md:w-auto flex-wrap gap-1 shadow-sm">
             <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Waivers</TabsTrigger>
             <TabsTrigger value="recruitment" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Recruitment</TabsTrigger>
             <TabsTrigger value="personnel" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Personnel</TabsTrigger>
-            <TabsTrigger value="governance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Logistics</TabsTrigger>
+            <TabsTrigger value="scouting" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Scouting</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -350,75 +426,9 @@ export default function CoachesCornerPage() {
               <FileSignature className="h-5 w-5 text-primary" />
               <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Compliance Ledger</h2>
             </div>
-            <Dialog open={isCreateOpen} onOpenChange={(open) => {
-              if (!open) { setEditingDocId(null); setNewDoc({ title: '', content: '', type: 'waiver', assignedTo: ['all'] }); }
-              setIsCreateOpen(open);
-            }}>
-              <DialogTrigger asChild>
-                <Button className="h-11 px-6 rounded-xl font-black shadow-lg shadow-primary/20">
-                  <Plus className="h-4 w-4 mr-2" /> New Waiver
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="rounded-[2.5rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-y-auto custom-scrollbar">
-                <DialogTitle className="sr-only">Document Architect</DialogTitle>
-                <div className="h-2 bg-primary w-full" />
-                <div className="p-8 lg:p-12 space-y-10">
-                  <DialogHeader><DialogTitle className="text-3xl lg:text-4xl font-black uppercase tracking-tight">{editingDocId ? 'Update Waiver' : 'Document Architect'}</DialogTitle></DialogHeader>
-                  
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                    <div className="space-y-8">
-                      <div className="space-y-6">
-                        <div className="space-y-2"><Label className="text-[10px] uppercase font-black tracking-widest ml-1">Headline</Label><Input value={newDoc.title} onChange={e => setNewDoc({...newDoc, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold text-lg" placeholder="e.g. 2024 Medical Release" /></div>
-                        <div className="space-y-2"><Label className="text-[10px] uppercase font-black tracking-widest ml-1">Document Type</Label>
-                          <Select value={newDoc.type} onValueChange={v => setNewDoc({...newDoc, type: v})}>
-                            <SelectTrigger className="h-14 rounded-2xl border-2 font-bold"><SelectValue /></SelectTrigger>
-                            <SelectContent className="rounded-xl"><SelectItem value="waiver" className="font-bold">Legal Waiver</SelectItem><SelectItem value="policy" className="font-bold">Conduct Policy</SelectItem><SelectItem value="info" className="font-bold">Informational</SelectItem></SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2"><Label className="text-[10px] uppercase font-black tracking-widest ml-1">Legal Content</Label><Textarea value={newDoc.content} onChange={e => setNewDoc({...newDoc, content: e.target.value})} className="min-h-[300px] rounded-3xl border-2 font-medium bg-muted/5 p-6 resize-none" placeholder="Paste full legal text here..." /></div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-8">
-                      <div className="space-y-6">
-                        <div className="flex items-center justify-between px-1">
-                          <Label className="text-[10px] uppercase font-black tracking-widest">Assignment Logic</Label>
-                          <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary">{newDoc.assignedTo.includes('all') ? 'Global' : `${newDoc.assignedTo.length} Targeted`}</Badge>
-                        </div>
-                        <div className="bg-muted/10 rounded-[2.5rem] border-2 p-3 space-y-2">
-                          <div className={cn("p-4 rounded-2xl flex items-center justify-between cursor-pointer transition-all", newDoc.assignedTo.includes('all') ? "bg-primary text-white shadow-lg" : "hover:bg-white")} onClick={() => toggleAssignment('all')}>
-                            <span className="text-sm font-black uppercase tracking-tight">Assign to Entire Roster</span>
-                            {newDoc.assignedTo.includes('all') && <CheckCircle2 className="h-5 w-5" />}
-                          </div>
-                          <div className="h-px bg-muted mx-4" />
-                          <div className="space-y-2">
-                            {members.map(member => (
-                              <div key={member.id} className={cn("p-4 rounded-2xl flex items-center justify-between cursor-pointer transition-all", newDoc.assignedTo.includes(member.id) ? "bg-black text-white shadow-lg" : "hover:bg-white")} onClick={() => toggleAssignment(member.id)}>
-                                <div className="flex items-center gap-4">
-                                  <Avatar className="h-10 w-10 rounded-xl border-2 border-background shadow-sm">
-                                    <AvatarImage src={member.avatar} />
-                                    <AvatarFallback className="font-black text-xs">{member.name[0]}</AvatarFallback>
-                                  </Avatar>
-                                  <div className="min-w-0"><p className="text-sm font-black uppercase truncate">{member.name}</p><p className="text-[9px] font-bold opacity-60 uppercase tracking-widest">{member.position}</p></div>
-                                </div>
-                                {newDoc.assignedTo.includes(member.id) && <CheckCircle2 className="h-5 w-5 text-primary" />}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="pt-6 border-t">
-                    <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleCreateDocument} disabled={isProcessing || !newDoc.title || !newDoc.content}>
-                      {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <ShieldCheck className="h-6 w-6 mr-3" />}
-                      {editingDocId ? 'Update & Synchronize Protocol' : 'Deploy Verified Protocol'}
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <Button onClick={() => { setEditingDocId(null); setNewDoc({ title: '', content: '', type: 'waiver', assignedTo: ['all'] }); setIsCreateOpen(true); }} className="h-11 px-6 rounded-xl font-black shadow-lg shadow-primary/20">
+              <Plus className="h-4 w-4 mr-2" /> New Waiver
+            </Button>
           </div>
 
           <div className="grid grid-cols-1 gap-4">
@@ -438,29 +448,24 @@ export default function CoachesCornerPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] border-2" onClick={() => setSelectedDoc(doc)}>Audit</Button>
-                    <Button variant="ghost" size="icon" className="h-10 w-10 hover:bg-primary/5 rounded-xl" onClick={() => handleEditDocument(doc)}><Edit3 className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-10 w-10 hover:bg-primary/5 rounded-xl" onClick={() => { setEditingDocId(doc.id); setNewDoc({ title: doc.title, content: doc.content, type: doc.type, assignedTo: doc.assignedTo }); setIsCreateOpen(true); }}><Edit3 className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" className="text-destructive h-10 w-10 hover:bg-destructive/5 rounded-xl" onClick={() => deleteTeamDocument(doc.id)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </CardContent>
               </Card>
             ))}
-            {documents?.length === 0 && (
-              <div className="py-24 text-center border-2 border-dashed rounded-[3rem] opacity-30 italic font-bold uppercase text-xs tracking-widest">
-                No compliance protocols established.
-              </div>
-            )}
           </div>
         </TabsContent>
 
         <TabsContent value="recruitment" className="space-y-8 mt-0">
           <div className="flex items-center gap-3 px-2">
             <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><Users className="h-5 w-5" /></div>
-            <div><h3 className="text-xl font-black uppercase tracking-tight">Recruit Ledger</h3><p className="text-[9px] font-bold text-muted-foreground uppercase">{teamEntries.length} Applicants in Pool</p></div>
+            <div><h3 className="text-xl font-black uppercase tracking-tight">Recruit Pool</h3><p className="text-[9px] font-bold text-muted-foreground uppercase">{teamEntries.length} Applicants</p></div>
           </div>
 
           <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left">
                 <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b">
                   <tr>
                     <th className="px-8 py-5">Applicant</th>
@@ -494,42 +499,13 @@ export default function CoachesCornerPage() {
                           {entry.status === 'pending' && (
                             <>
                               <Button size="sm" variant="ghost" className="rounded-xl h-9 w-9 text-destructive" onClick={() => respondToAssignment(entry.league_id, entry.id, 'declined')}><XCircle className="h-4 w-4" /></Button>
-                              <Button size="sm" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] shadow-md" onClick={() => respondToAssignment(entry.league_id, entry.id, 'accepted')}><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Deploy</Button>
+                              <Button size="sm" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] shadow-md shadow-primary/20" onClick={() => respondToAssignment(entry.league_id, entry.id, 'accepted')}><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Enroll</Button>
                             </>
                           )}
-                          <Dialog>
-                            <DialogTrigger asChild><Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl border"><Eye className="h-4 w-4" /></Button></DialogTrigger>
-                            <DialogContent className="rounded-3xl border-none shadow-2xl p-0 sm:max-w-lg overflow-y-auto custom-scrollbar">
-                              <DialogTitle className="sr-only">Recruit File Details</DialogTitle>
-                              <div className="h-2 bg-primary w-full" />
-                              <div className="p-8 space-y-6">
-                                <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Recruit File</DialogTitle></DialogHeader>
-                                <div className="space-y-4">
-                                  <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed space-y-4">
-                                    {Object.entries(entry.answers).map(([key, val]) => (
-                                      <div key={key} className="space-y-1">
-                                        <p className="text-[8px] font-black uppercase opacity-40">{key.replace(/_/g, ' ')}</p>
-                                        <p className="text-sm font-bold">{val.toString()}</p>
-                                      </div>
-                                    ))}
-                                    {entry.waiver_signed_text && (
-                                      <div className="pt-4 border-t border-muted-foreground/10 space-y-1">
-                                        <p className="text-[8px] font-black uppercase text-green-600">Digital Signature Verified</p>
-                                        <p className="text-xs font-mono italic">"{entry.waiver_signed_text}"</p>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
                         </div>
                       </td>
                     </tr>
                   ))}
-                  {teamEntries.length === 0 && (
-                    <tr><td colSpan={3} className="py-20 text-center opacity-30 italic font-bold">No applicants in pool. Share a pipeline link to recruit.</td></tr>
-                  )}
                 </tbody>
               </table>
             </div>
@@ -544,18 +520,13 @@ export default function CoachesCornerPage() {
             </div>
             <div className="relative w-full md:w-72">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Tactical search..." 
-                className="pl-9 h-11 rounded-xl bg-muted/30 border-none font-bold shadow-inner" 
-                value={personnelSearch}
-                onChange={e => setPersonnelPersonnelSearch(e.target.value)}
-              />
+              <Input placeholder="Search roster..." className="pl-9 h-11 rounded-xl bg-muted/30 border-none font-bold" value={personnelSearch} onChange={e => setPersonnelPersonnelSearch(e.target.value)} />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filteredPersonnel.map(member => (
-              <Card key={member.id} className="rounded-3xl border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5 group hover:ring-primary/20 transition-all cursor-pointer" onClick={() => setSelectedPersonnel(member)}>
+              <Card key={member.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 group hover:ring-primary/20 transition-all cursor-pointer bg-white" onClick={() => setSelectedPersonnel(member)}>
                 <CardContent className="p-5 flex items-center justify-between">
                   <div className="flex items-center gap-4 min-w-0">
                     <Avatar className="h-14 w-14 rounded-2xl border-2 border-background shadow-md">
@@ -577,37 +548,137 @@ export default function CoachesCornerPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="governance" className="space-y-8 mt-0">
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 px-2">
-              <RotateCcw className="h-5 w-5 text-primary" />
-              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Seasonal Protocols</h2>
+        <TabsContent value="scouting" className="space-y-8 mt-0">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
+            <div className="flex items-center gap-3">
+              <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><BrainCircuit className="h-5 w-5" /></div>
+              <div><h3 className="text-xl font-black uppercase tracking-tight">Opponent Intelligence</h3><p className="text-[9px] font-bold text-muted-foreground uppercase">{scoutingReports.length} Active Briefs</p></div>
             </div>
-            <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
-              <CardHeader className="bg-primary/5 border-b p-8">
-                <CardTitle className="text-xl font-black uppercase">Squad Pulse Reset</CardTitle>
-                <CardDescription className="text-[10px] font-bold uppercase tracking-widest">Operational Data Purge</CardDescription>
-              </CardHeader>
-              <CardContent className="p-8 space-y-6">
-                <p className="text-sm font-medium text-muted-foreground leading-relaxed italic">Wipe tactical records to begin a new competitive season. This action is audited and irreversible.</p>
-                <Button variant="outline" className="h-12 px-8 rounded-xl font-black uppercase text-[10px] border-2 border-red-100 text-red-600 hover:bg-red-50" onClick={() => setIsResetOpen(true)}>
-                  Initialize Season Reset
-                </Button>
-              </CardContent>
-            </Card>
-          </section>
+            <div className="flex gap-2">
+              <div className="relative w-full md:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Search intel..." className="pl-9 h-11 rounded-xl bg-muted/30 border-none font-bold" value={scoutingSearch} onChange={e => setScoutingSearch(e.target.value)} />
+              </div>
+              <Button onClick={() => setIsAddScoutingOpen(true)} className="h-11 rounded-xl font-black shadow-lg shadow-primary/20">
+                <Plus className="h-4 w-4 mr-2" /> New Brief
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredScouting.map(report => (
+              <Card key={report.id} className="rounded-3xl border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5 group hover:shadow-xl transition-all">
+                <div className="h-1.5 w-full bg-black" />
+                <CardHeader className="p-6 pb-2">
+                  <div className="flex justify-between items-start">
+                    <Badge variant="outline" className="font-black uppercase text-[8px] border-black/20 text-black">Scouting</Badge>
+                    <span className="text-[10px] font-bold text-muted-foreground">{report.date}</span>
+                  </div>
+                  <CardTitle className="text-xl font-black uppercase tracking-tight pt-2 truncate group-hover:text-primary transition-colors">Vs {report.opponentName}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-6 pt-0 space-y-4">
+                  <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 italic">"{report.keysToVictory}"</p>
+                </CardContent>
+                <CardFooter className="p-6 pt-0 border-t flex items-center justify-between bg-muted/10">
+                  <Button variant="ghost" size="sm" className="text-destructive h-8 w-8 p-0 hover:bg-destructive/10" onClick={() => deleteScoutingReport(report.id)}><Trash2 className="h-4 w-4" /></Button>
+                  <ChevronRight className="h-5 w-5 text-primary opacity-20 group-hover:opacity-100 transition-all" />
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
         </TabsContent>
       </Tabs>
 
+      {/* --- DIALOGS --- */}
+
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-y-auto custom-scrollbar bg-white">
+          <DialogTitle className="sr-only">Document Architect</DialogTitle>
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 lg:p-12 space-y-10">
+            <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">{editingDocId ? 'Update Waiver' : 'Document Architect'}</DialogTitle></DialogHeader>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+              <div className="space-y-6">
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Headline</Label><Input value={newDoc.title} onChange={e => setNewDoc({...newDoc, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Type</Label>
+                  <Select value={newDoc.type} onValueChange={v => setNewDoc({...newDoc, type: v})}>
+                    <SelectTrigger className="h-14 rounded-2xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                    <SelectContent className="rounded-xl"><SelectItem value="waiver" className="font-bold">Legal Waiver</SelectItem><SelectItem value="policy" className="font-bold">Conduct Policy</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Content</Label><Textarea value={newDoc.content} onChange={e => setNewDoc({...newDoc, content: e.target.value})} className="min-h-[250px] rounded-2xl border-2 p-4 font-medium" /></div>
+              </div>
+              <div className="space-y-6">
+                <Label className="text-[10px] font-black uppercase ml-1">Assignment Logic</Label>
+                <div className="bg-muted/10 rounded-3xl border-2 p-2 space-y-2">
+                  <div className={cn("p-4 rounded-xl flex items-center justify-between cursor-pointer", newDoc.assignedTo.includes('all') ? "bg-primary text-white" : "hover:bg-white")} onClick={() => toggleAssignment('all')}>
+                    <span className="text-xs font-black uppercase">Entire Roster</span>
+                    {newDoc.assignedTo.includes('all') && <CheckCircle2 className="h-4 w-4" />}
+                  </div>
+                  {members.map(m => (
+                    <div key={m.id} className={cn("p-3 rounded-xl flex items-center justify-between cursor-pointer", newDoc.assignedTo.includes(m.id) ? "bg-black text-white" : "hover:bg-white")} onClick={() => toggleAssignment(m.id)}>
+                      <span className="text-xs font-bold uppercase truncate">{m.name}</span>
+                      {newDoc.assignedTo.includes(m.id) && <CheckCircle2 className="h-4 w-4 text-primary" />}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <DialogFooter><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleCreateDocument} disabled={isProcessing}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Protocol"}</Button></DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAddScoutingOpen} onOpenChange={setIsAddScoutingOpen}>
+        <DialogContent className="sm:max-w-4xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <DialogTitle className="sr-only">New Scouting Brief Initialization</DialogTitle>
+          <div className="h-2 bg-black w-full" />
+          <div className="flex flex-col lg:flex-row h-full">
+            <div className="w-full lg:w-5/12 bg-primary/5 p-8 lg:p-10 space-y-8 border-r overflow-y-auto custom-scrollbar max-h-[85vh]">
+              <DialogHeader>
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="bg-primary/10 p-3 rounded-2xl text-primary"><BrainCircuit className="h-6 w-6" /></div>
+                  <div>
+                    <DialogTitle className="text-2xl font-black uppercase tracking-tight">AI Tactical Assist</DialogTitle>
+                    <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Generate brief from observations</DialogDescription>
+                  </div>
+                </div>
+              </DialogHeader>
+              <div className="space-y-6">
+                <div className="bg-white p-6 rounded-[2rem] border-2 border-dashed border-primary/20 space-y-4">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Raw Match Observations</Label>
+                  <Textarea placeholder="Paste raw notes or tendencies here..." value={aiObservations} onChange={e => setAiObservations(e.target.value)} className="min-h-[200px] rounded-2xl bg-muted/10 border-none font-medium text-sm" />
+                  <Button className="w-full h-12 rounded-xl font-black uppercase text-xs shadow-lg" onClick={handleAiAnalyze} disabled={isAiGenerating || !aiObservations.trim() || !newScouting.opponentName}>
+                    {isAiGenerating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Wand2 className="h-4 w-4 mr-2" />}
+                    Generate AI Brief
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 p-8 lg:p-10 space-y-6 bg-white overflow-y-auto custom-scrollbar max-h-[85vh]">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Opponent Name</Label><Input value={newScouting.opponentName} onChange={e => setNewScouting({...newScouting, opponentName: e.target.value})} className="h-12 rounded-xl border-2" /></div>
+                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Match Date</Label><Input type="date" value={newScouting.date} onChange={e => setNewScouting({...newScouting, date: e.target.value})} className="h-12 rounded-xl border-2" /></div>
+              </div>
+              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Study Link</Label><Input placeholder="Video or playbook URL..." value={newScouting.videoUrl} onChange={e => setNewScouting({...newScouting, videoUrl: e.target.value})} className="h-12 rounded-xl border-2" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Strengths</Label><Textarea value={newScouting.strengths} onChange={e => setNewScouting({...newScouting, strengths: e.target.value})} className="h-24 rounded-xl border-2 p-4 font-bold text-sm" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Weaknesses</Label><Textarea value={newScouting.weaknesses} onChange={e => setNewScouting({...newScouting, weaknesses: e.target.value})} className="h-24 rounded-xl border-2 p-4 font-bold text-sm" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase text-primary">Primary Keys to Victory</Label><Textarea value={newScouting.keysToVictory} onChange={e => setNewScouting({...newScouting, keysToVictory: e.target.value})} className="h-24 rounded-xl border-primary border-2 p-4 font-black text-sm" /></div>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleAddScouting} disabled={!newScouting.opponentName || !newScouting.date}>Commit Scouting Brief</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!selectedDoc} onOpenChange={o => !o && setSelectedDoc(null)}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-xl border-none shadow-2xl p-0 overflow-y-auto custom-scrollbar">
-          <DialogTitle className="sr-only">Document Audit: {selectedDoc?.title}</DialogTitle>
+        <DialogContent className="rounded-[2.5rem] sm:max-w-xl p-0 overflow-hidden bg-white shadow-2xl border-none">
+          <DialogTitle className="sr-only">Document Audit Ledger</DialogTitle>
           <div className="h-2 bg-black w-full" />
           <div className="p-8 space-y-6">
             <DialogHeader>
               <div className="flex justify-between items-start">
                 <div><DialogTitle className="text-2xl font-black uppercase">{selectedDoc?.title}</DialogTitle><DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-primary">Compliance Audit</DialogDescription></div>
-                <Button variant="outline" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] border-2" onClick={() => selectedDoc && exportSignaturesCSV(selectedDoc.id)}><Download className="h-3 w-3 mr-2" /> Export CSV</Button>
+                <Button variant="outline" className="rounded-xl h-9 px-4 font-black uppercase text-[10px]" onClick={() => selectedDoc && exportSignaturesCSV(selectedDoc.id)}><Download className="h-3 w-3 mr-2" /> CSV</Button>
               </div>
             </DialogHeader>
             <div className="space-y-4">
@@ -624,24 +695,6 @@ export default function CoachesCornerPage() {
           onOpenChange={(o) => !o && setSelectedPersonnel(null)} 
         />
       )}
-
-      <AlertDialog open={isDoubleConfirmOpen} onOpenChange={setIsDoubleConfirmOpen}>
-        <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
-          <AlertDialogHeader>
-            <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="h-8 w-8 text-red-600" />
-            </div>
-            <AlertDialogTitle className="text-center text-2xl font-black uppercase">Irreversible Purge</AlertDialogTitle>
-            <AlertDialogDescription className="text-center text-base font-medium pt-2 text-foreground/80">
-              You have selected high-impact data categories (Roster or Facilities). This will permanently delete squad members or organization venue records. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="mt-6">
-            <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel Operation</AlertDialogCancel>
-            <AlertDialogAction onClick={handleFinalReset} className="rounded-xl font-black bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/20">Purge Permanently</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

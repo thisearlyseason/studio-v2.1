@@ -3,6 +3,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useTeam, FundraisingOpportunity } from '@/components/providers/team-provider';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, orderBy } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,12 +17,9 @@ import {
   DollarSign, 
   Target, 
   Users, 
-  CheckCircle2, 
   Clock, 
-  ChevronRight,
-  TrendingUp,
-  Loader2,
-  Trash2,
+  Loader2, 
+  Trash2, 
   Globe
 } from 'lucide-react';
 import { 
@@ -29,11 +28,9 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogTrigger,
-  DialogFooter,
-  DialogDescription
+  DialogDescription, 
+  DialogFooter
 } from '@/components/ui/dialog';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -92,7 +89,7 @@ export default function FundraisingPage() {
   }
 
   return (
-    <div className="space-y-10 pb-20">
+    <div className="space-y-10 pb-20 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Squad Capital</Badge>
@@ -103,40 +100,51 @@ export default function FundraisingPage() {
         {isStaff && (
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
-              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20">
+              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 transition-all active:scale-95">
                 <Plus className="h-5 w-5 mr-2" /> Launch Campaign
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl">
-              <DialogHeader>
-                <DialogTitle className="text-2xl font-black tracking-tight uppercase">New Campaign</DialogTitle>
-                <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Define the squad capital target</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-6 py-4">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Campaign Title</Label>
-                  <Input placeholder="e.g. 2024 Nationals Travel Fund" value={newFund.title} onChange={e => setNewFund({...newFund, title: e.target.value})} className="h-12 rounded-xl font-bold border-2" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+            <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+              <DialogTitle className="sr-only">New Fundraising Campaign Initialization</DialogTitle>
+              <div className="h-2 bg-primary w-full" />
+              <div className="p-8 lg:p-12 space-y-10">
+                <DialogHeader>
+                  <div className="flex items-center gap-4 mb-2">
+                    <div className="bg-primary/10 p-3 rounded-2xl text-primary">
+                      <PiggyBank className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-3xl font-black uppercase tracking-tight">New Campaign</DialogTitle>
+                      <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Define the squad capital target</DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+                <div className="space-y-6">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Target Amount ($)</Label>
-                    <Input type="number" value={newFund.goal} onChange={e => setNewFund({...newFund, goal: e.target.value})} className="h-12 rounded-xl font-black border-2" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Campaign Title</Label>
+                    <Input placeholder="e.g. 2024 Nationals Travel Fund" value={newFund.title} onChange={e => setNewFund({...newFund, title: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Target Goal ($)</Label>
+                      <Input type="number" value={newFund.goal} onChange={e => setNewFund({...newFund, goal: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Campaign Deadline</Label>
+                      <Input type="date" value={newFund.deadline} onChange={e => setNewFund({...newFund, deadline: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" />
+                    </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Deadline</Label>
-                    <Input type="date" value={newFund.deadline} onChange={e => setNewFund({...newFund, deadline: e.target.value})} className="h-12 rounded-xl font-black border-2" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Strategy Brief</Label>
+                    <Textarea placeholder="Describe how the funds will empower the squad..." value={newFund.description} onChange={e => setNewFund({...newFund, description: e.target.value})} className="rounded-[1.5rem] min-h-[120px] border-2 font-medium focus:border-primary/20 transition-all p-4 resize-none" />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Strategy Brief</Label>
-                  <Input placeholder="Describe how funds will be used..." value={newFund.description} onChange={e => setNewFund({...newFund, description: e.target.value})} className="h-12 rounded-xl font-bold border-2" />
-                </div>
+                <DialogFooter className="pt-4">
+                  <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title}>
+                    {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Authorize & Launch Campaign"}
+                  </Button>
+                </DialogFooter>
               </div>
-              <DialogFooter>
-                <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title}>
-                  Authorize Campaign
-                </Button>
-              </DialogFooter>
             </DialogContent>
           </Dialog>
         )}
@@ -220,7 +228,8 @@ export default function FundraisingPage() {
       </div>
 
       <Dialog open={isUpdateOpen} onOpenChange={setIsUpdateOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-8">
+        <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-8 bg-white">
+          <DialogTitle className="sr-only">Sync Campaign Ledger</DialogTitle>
           <DialogHeader>
             <DialogTitle className="text-2xl font-black uppercase tracking-tight">Sync Ledger</DialogTitle>
             <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Post campaign revenue</DialogDescription>

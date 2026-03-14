@@ -48,7 +48,6 @@ import { collection, query, orderBy } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function EquipmentPage() {
   const { activeTeam, isStaff, members, addEquipmentItem, updateEquipmentItem, deleteEquipmentItem, assignEquipment, returnEquipment } = useTeam();
@@ -133,48 +132,59 @@ export default function EquipmentPage() {
         {isStaff && (
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
-              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20">
+              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 transition-all active:scale-95">
                 <Plus className="h-5 w-5 mr-2" /> Add Asset
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl">
-              <DialogHeader>
-                <DialogTitle className="text-2xl font-black tracking-tight uppercase">Enroll Equipment</DialogTitle>
-                <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Add new tactical assets to the vault</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-6 py-4">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Asset Name</Label>
-                  <Input placeholder="e.g. Away Jerseys" value={newEq.name} onChange={e => setNewEq({...newEq, name: e.target.value})} className="h-12 rounded-xl font-bold border-2" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+            <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+              <DialogTitle className="sr-only">Enroll Equipment Asset</DialogTitle>
+              <div className="h-2 bg-primary w-full" />
+              <div className="p-8 lg:p-12 space-y-10">
+                <DialogHeader>
+                  <div className="flex items-center gap-4 mb-2">
+                    <div className="bg-primary/10 p-3 rounded-2xl text-primary">
+                      <Package className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-3xl font-black uppercase tracking-tight">Enroll Equipment</DialogTitle>
+                      <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Add new tactical assets to the vault</DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+                <div className="space-y-6 py-2">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Category</Label>
-                    <Select value={newEq.category} onValueChange={v => setNewEq({...newEq, category: v})}>
-                      <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        <SelectItem value="Uniforms">Uniforms</SelectItem>
-                        <SelectItem value="Training Gear">Training Gear</SelectItem>
-                        <SelectItem value="Facility Kit">Facility Kit</SelectItem>
-                        <SelectItem value="Medical">Medical</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Asset Name</Label>
+                    <Input placeholder="e.g. Away Jerseys" value={newEq.name} onChange={e => setNewEq({...newEq, name: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Category</Label>
+                      <Select value={newEq.category} onValueChange={v => setNewEq({...newEq, category: v})}>
+                        <SelectTrigger className="h-14 rounded-2xl border-2 font-bold focus:border-primary/20"><SelectValue /></SelectTrigger>
+                        <SelectContent className="rounded-2xl">
+                          <SelectItem value="Uniforms" className="font-bold">Uniforms</SelectItem>
+                          <SelectItem value="Training Gear" className="font-bold">Training Gear</SelectItem>
+                          <SelectItem value="Facility Kit" className="font-bold">Facility Kit</SelectItem>
+                          <SelectItem value="Medical" className="font-bold">Medical</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Total Stock</Label>
+                      <Input type="number" value={newEq.totalQuantity} onChange={e => setNewEq({...newEq, totalQuantity: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" />
+                    </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Total Stock</Label>
-                    <Input type="number" value={newEq.totalQuantity} onChange={e => setNewEq({...newEq, totalQuantity: e.target.value})} className="h-12 rounded-xl font-black border-2" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Asset Description</Label>
+                    <Textarea placeholder="Condition notes or sizing..." value={newEq.description} onChange={e => setNewEq({...newEq, description: e.target.value})} className="rounded-[1.5rem] min-h-[120px] border-2 font-medium focus:border-primary/20 transition-all p-4 resize-none" />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Asset Description</Label>
-                  <Textarea placeholder="Condition notes or sizing..." value={newEq.description} onChange={e => setNewEq({...newEq, description: e.target.value})} className="rounded-xl min-h-[100px] border-2 font-medium" />
-                </div>
+                <DialogFooter>
+                  <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddItem} disabled={isProcessing || !newEq.name}>
+                    {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Commit Asset to Vault"}
+                  </Button>
+                </DialogFooter>
               </div>
-              <DialogFooter>
-                <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleAddItem} disabled={isProcessing || !newEq.name}>
-                  Log Asset to Vault
-                </Button>
-              </DialogFooter>
             </DialogContent>
           </Dialog>
         )}

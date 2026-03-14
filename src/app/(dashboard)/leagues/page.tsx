@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -63,7 +64,7 @@ function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: 
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl overflow-hidden p-0">
+      <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl overflow-hidden p-0 bg-white">
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 space-y-6">
           <DialogHeader>
@@ -165,10 +166,6 @@ export default function LeaguesPage() {
       .sort((a, b) => b.wins - a.wins || b.points - a.points);
   }, [activeLeague]);
 
-  const hasGamesPlayed = useMemo(() => {
-    return sortedStandings.some(t => (t.wins || 0) + (t.losses || 0) + (t.ties || 0) > 0);
-  }, [sortedStandings]);
-
   const handleCreateLeague = async () => {
     if (!leagueName.trim()) return;
     setIsProcessing(true);
@@ -204,19 +201,6 @@ export default function LeaguesPage() {
     setIsProcessing(false);
   };
 
-  const handleMessageOpponent = async (teamName: string) => {
-    setIsProcessing(true);
-    try {
-      const chatId = await createChat(`Tactical: ${teamName}`, []);
-      router.push(`/chats/${chatId}`);
-      toast({ title: "Channel Established", description: `Cross-team chat created for ${teamName}.` });
-    } catch (e) {
-      toast({ title: "Connection Failed", variant: "destructive" });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   if (isLeaguesLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -241,22 +225,33 @@ export default function LeaguesPage() {
                 <Plus className="h-5 w-5 mr-2" /> Start New League
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl">
-              <DialogHeader>
-                <DialogTitle className="text-2xl font-black uppercase tracking-tight">League Identity</DialogTitle>
-                <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Establish a new competitive hub</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-6 py-4">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">League Name</Label>
-                  <Input placeholder="e.g. Regional Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+            <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+              <DialogTitle className="sr-only">League Identity Initialization</DialogTitle>
+              <div className="h-2 bg-primary w-full" />
+              <div className="p-8 lg:p-12 space-y-10">
+                <DialogHeader>
+                  <div className="flex items-center gap-4 mb-2">
+                    <div className="bg-primary/10 p-3 rounded-2xl text-primary">
+                      <Shield className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-3xl font-black uppercase tracking-tight">League Identity</DialogTitle>
+                      <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Establish a new competitive hub</DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Official League Name</Label>
+                    <Input placeholder="e.g. Regional Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />
+                  </div>
                 </div>
+                <DialogFooter className="pt-4">
+                  <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleCreateLeague} disabled={isProcessing || !leagueName.trim()}>
+                    {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Deploy Competitive Hub"}
+                  </Button>
+                </DialogFooter>
               </div>
-              <DialogFooter>
-                <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleCreateLeague} disabled={isProcessing || !leagueName.trim()}>
-                  {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Deploy League"}
-                </Button>
-              </DialogFooter>
             </DialogContent>
           </Dialog>
         )}
@@ -284,21 +279,6 @@ export default function LeaguesPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-center gap-3">
-                  {isStaff && (
-                    isPro ? (
-                      <Button asChild className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20">
-                        <Link href={`/leagues/registration/${activeLeague.id}`}>
-                          <ClipboardList className="h-4 w-4 mr-2" />
-                          Registration Hub
-                        </Link>
-                      </Button>
-                    ) : (
-                      <Button variant="outline" onClick={purchasePro} className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest border-white/20 bg-white/10 text-white hover:bg-white/20 opacity-60">
-                        <Lock className="h-4 w-4 mr-2" />
-                        Registration Hub
-                      </Button>
-                    )
-                  )}
                   {isStaff && activeLeague.creatorId === authUser?.uid && (
                     <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
                       <DialogTrigger asChild>
@@ -306,7 +286,8 @@ export default function LeaguesPage() {
                           <UserPlus className="h-4 w-4 mr-2" /> Add/Invite Team
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 overflow-hidden border-none shadow-2xl">
+                      <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 overflow-hidden border-none shadow-2xl bg-white">
+                        <DialogTitle className="sr-only">Invite Team to League</DialogTitle>
                         <Tabs defaultValue="invite" className="w-full">
                           <div className="bg-primary/5 p-8 border-b">
                             <DialogHeader>
@@ -364,41 +345,6 @@ export default function LeaguesPage() {
               </div>
             </CardContent>
           </Card>
-
-          {isPro && hasGamesPlayed && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in zoom-in-95 duration-500">
-              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4 ring-1 ring-black/5">
-                <div className="flex items-center gap-3">
-                  <div className="bg-primary/10 p-2 rounded-xl text-primary"><TrendingUp className="h-5 w-5" /></div>
-                  <h4 className="text-[10px] font-black uppercase tracking-widest">Win Trajectory</h4>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-black text-primary">Top 10%</span>
-                  <span className="text-[8px] font-bold text-muted-foreground uppercase">League Standing</span>
-                </div>
-              </Card>
-              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4 ring-1 ring-black/5">
-                <div className="flex items-center gap-3">
-                  <div className="bg-primary/10 p-2 rounded-xl text-primary"><Activity className="h-5 w-5" /></div>
-                  <h4 className="text-[10px] font-black uppercase tracking-widest">Avg PPG</h4>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-black">14.2</span>
-                  <span className="text-[8px] font-bold text-muted-foreground uppercase">+2.1 vs League Avg</span>
-                </div>
-              </Card>
-              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4 ring-1 ring-black/5">
-                <div className="flex items-center gap-3">
-                  <div className="bg-primary/10 p-2 rounded-xl text-primary"><BarChart2 className="h-5 w-5" /></div>
-                  <h4 className="text-[10px] font-black uppercase tracking-widest">Recruitment Pulse</h4>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-black">Active</span>
-                  <span className="text-[8px] font-bold text-muted-foreground uppercase">High Engagement</span>
-                </div>
-              </Card>
-            </div>
-          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-6">
@@ -466,7 +412,7 @@ export default function LeaguesPage() {
               </div>
               <div className="space-y-3">
                 {sortedStandings.filter(t => t.id !== activeTeam?.id).map((team) => (
-                  <Card key={team.id} className="rounded-2xl border-none shadow-md ring-1 ring-black/5 hover:ring-primary/20 transition-all cursor-pointer bg-white group" onClick={() => handleMessageOpponent(team.teamName || 'Coach')}>
+                  <Card key={team.id} className="rounded-2xl border-none shadow-md ring-1 ring-black/5 hover:ring-primary/20 transition-all cursor-pointer bg-white group">
                     <CardContent className="p-4 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-10 w-10 rounded-xl border shadow-inner">
@@ -503,40 +449,8 @@ export default function LeaguesPage() {
           {isStaff && (
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
               <Button className="h-12 px-8 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>Create Hub League</Button>
-              <div className="relative group">
-                <Button variant="outline" className="h-12 px-8 rounded-xl font-black uppercase text-xs tracking-widest border-2 opacity-50 cursor-not-allowed">Browse Public Leagues</Button>
-                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-50 text-white font-black text-[8px] uppercase px-2 h-5 shadow-lg whitespace-nowrap">Coming Soon</Badge>
-              </div>
             </div>
           )}
-        </div>
-      )}
-      {invites.length > 0 && isStaff && (
-        <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-500">
-          <div className="flex items-center gap-2 px-2">
-            <Zap className="h-4 w-4 text-amber-500" />
-            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Tactical Challenges ({invites.length})</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {invites.map((invite) => (
-              <Card key={invite.id} className="rounded-3xl border-none shadow-xl ring-2 ring-amber-500/20 bg-amber-50 overflow-hidden">
-                <CardContent className="p-6 flex items-center justify-between gap-6">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-white p-3 rounded-2xl shadow-sm">
-                      <Shield className="h-6 w-6 text-amber-600" />
-                    </div>
-                    <div>
-                      <p className="text-[8px] font-black uppercase text-amber-700 tracking-widest">League Invitation</p>
-                      <h4 className="text-lg font-black uppercase tracking-tight">{invite.leagueName}</h4>
-                    </div>
-                  </div>
-                  <Button className="rounded-xl h-11 px-6 font-black bg-amber-600 hover:bg-amber-700 text-white shadow-lg shadow-amber-600/20" onClick={() => acceptLeagueInvite(invite.id, invite.leagueId)}>
-                    Accept Challenge
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
         </div>
       )}
 

@@ -3,6 +3,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useTeam, VolunteerOpportunity } from '@/components/providers/team-provider';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, orderBy } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,10 +17,7 @@ import {
   Plus, 
   Calendar, 
   MapPin, 
-  Clock, 
   Users, 
-  CheckCircle2, 
-  XCircle, 
   ShieldCheck, 
   Loader2, 
   Trash2, 
@@ -32,15 +31,12 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogTrigger,
-  DialogFooter,
-  DialogDescription
+  DialogDescription, 
+  DialogFooter
 } from '@/components/ui/dialog';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function VolunteerHubPage() {
   const { activeTeam, user, isStaff, isParent, addVolunteerOpportunity, signUpForVolunteer, verifyVolunteerHours, deleteVolunteerOpportunity } = useTeam();
@@ -93,11 +89,8 @@ export default function VolunteerHubPage() {
     );
   }
 
-  // ALLOWED FOR STAFF OR PARENTS
-  const canInteract = isStaff || isParent;
-
   return (
-    <div className="space-y-10 pb-20">
+    <div className="space-y-10 pb-20 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Squad Support</Badge>
@@ -108,44 +101,61 @@ export default function VolunteerHubPage() {
         {isStaff && (
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
-              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all">
+              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 transition-all active:scale-95">
                 <Plus className="h-5 w-5 mr-2" /> Dispatch Request
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl">
-              <DialogHeader>
-                <DialogTitle className="text-2xl font-black tracking-tight uppercase">New Assignment</DialogTitle>
-                <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Enroll tactical squad support</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-6 py-4">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title</Label>
-                  <Input placeholder="e.g. Concession Management" value={newOpp.title} onChange={e => setNewOpp({...newOpp, title: e.target.value})} className="h-12 rounded-xl font-bold border-2" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+            <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+              <DialogTitle className="sr-only">New Volunteer Assignment</DialogTitle>
+              <div className="h-2 bg-primary w-full" />
+              <div className="p-8 lg:p-12 space-y-10">
+                <DialogHeader>
+                  <div className="flex items-center gap-4 mb-2">
+                    <div className="bg-primary/10 p-3 rounded-2xl text-primary">
+                      <HandHelping className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-3xl font-black uppercase tracking-tight">New Assignment</DialogTitle>
+                      <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Enroll tactical squad support</DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+                <div className="space-y-6">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date</Label>
-                    <Input type="date" value={newOpp.date} onChange={e => setNewOpp({...newOpp, date: e.target.value})} className="h-12 rounded-xl font-black border-2" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Assignment Title</Label>
+                    <Input placeholder="e.g. Concession Management" value={newOpp.title} onChange={e => setNewOpp({...newOpp, title: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Deployment Date</Label>
+                      <Input type="date" value={newOpp.date} onChange={e => setNewOpp({...newOpp, date: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Open Slots</Label>
+                      <Input type="number" value={newOpp.slots} onChange={e => setNewOpp({...newOpp, slots: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Venue/Location</Label>
+                      <Input placeholder="Field or Stadium..." value={newOpp.location} onChange={e => setNewOpp({...newOpp, location: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Hours per Slot</Label>
+                      <Input type="number" step="0.5" value={newOpp.hoursPerSlot} onChange={e => setNewOpp({...newOpp, hoursPerSlot: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" />
+                    </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Slots</Label>
-                    <Input type="number" value={newOpp.slots} onChange={e => setNewOpp({...newOpp, slots: e.target.value})} className="h-12 rounded-xl font-black border-2" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Brief Description</Label>
+                    <Textarea placeholder="Define the support needs..." value={newOpp.description} onChange={e => setNewOpp({...newOpp, description: e.target.value})} className="rounded-[1.5rem] min-h-[100px] border-2 font-medium focus:border-primary/20 transition-all p-4 resize-none" />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label>
-                  <Input placeholder="Venue/Field name" value={newOpp.location} onChange={e => setNewOpp({...newOpp, location: e.target.value})} className="h-12 rounded-xl font-bold border-2" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Hours per Person</Label>
-                  <Input type="number" step="0.5" value={newOpp.hoursPerSlot} onChange={e => setNewOpp({...newOpp, hoursPerSlot: e.target.value})} className="h-12 rounded-xl font-black border-2" />
-                </div>
+                <DialogFooter>
+                  <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddOpportunity} disabled={isProcessing || !newOpp.title}>
+                    {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Publish Support Request"}
+                  </Button>
+                </DialogFooter>
               </div>
-              <DialogFooter>
-                <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleAddOpportunity} disabled={isProcessing || !newOpp.title}>
-                  Publish Assignment
-                </Button>
-              </DialogFooter>
             </DialogContent>
           </Dialog>
         )}
@@ -156,7 +166,7 @@ export default function VolunteerHubPage() {
           <CardContent className="p-8 space-y-2">
             <div className="flex justify-between items-start">
               <Timer className="h-10 w-10 text-white/40" />
-              <Badge className="bg-white/20 text-white font-black text-[8px] uppercase tracking-widest px-2">Audit</Badge>
+              <Badge className="bg-white/20 text-white border-none font-black text-[8px] uppercase tracking-widest px-2">Audit</Badge>
             </div>
             <div>
               <p className="text-4xl font-black leading-none">{totalVerifiedHours}</p>
