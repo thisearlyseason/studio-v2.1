@@ -70,27 +70,32 @@ import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
-function DocumentSigningDialog({ doc: d, onSign, members }: { doc: TeamDocument, onSign: (id: string, sig: string, mid: string) => Promise<void>, members: Member[] }) {
+function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: TeamDocument, onSign: (id: string, sig: string, mid: string) => Promise<boolean>, members: Member[], onComplete: () => void }) {
   const [signature, setSignature] = useState('');
   const [targetMemberId, setTargetMemberId] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   const handleSign = async () => {
     if (!signature.trim() || !agreed || !targetMemberId) return;
     setIsProcessing(true);
-    await onSign(d.id, signature, targetMemberId);
+    const success = await onSign(d.id, signature, targetMemberId);
+    if (success) {
+      setIsOpen(false);
+      onComplete();
+    }
     setIsProcessing(false);
   };
 
   return (
-    <Dialog>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
         <Button className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all">
           Execute Document <ChevronRight className="ml-2 h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent data-dark-header="true" className="rounded-[2.5rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl">
+      <DialogContent className="rounded-[2.5rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl">
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 space-y-8">
           <DialogHeader>
@@ -152,7 +157,7 @@ function DocumentSigningDialog({ doc: d, onSign, members }: { doc: TeamDocument,
 }
 
 export default function FilesPage() {
-  const { activeTeam, addFile, deleteFile, user, isPro, purchasePro, isSuperAdmin, isStaff, members, currentMember, signTeamDocument } = useTeam();
+  const { activeTeam, addFile, deleteFile, user, isPro, purchasePro, isSuperAdmin, isStaff, members, signTeamDocument } = useTeam();
   const db = useFirestore();
   
   const [mounted, setMounted] = useState(false);
@@ -160,6 +165,7 @@ export default function FilesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [uploadCategory, setUploadCategory] = useState<string>('Compliance');
   const [uploadDescription, setUploadDescription] = useState('');
+  const [signedDocIds, setSignedDocIds] = useState<string[]>([]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -167,12 +173,7 @@ export default function FilesPage() {
   const signingMembers = useMemo(() => {
     if (!user) return [];
     if (!members) return [];
-    
-    // Admin/Coach can sign for anyone if needed (or just themselves)
     if (isStaff) return members;
-    
-    // Players sign for themselves
-    // Parents sign for themselves or their children
     return members.filter(m => m.userId === user.id || m.parentEmail === user.email);
   }, [members, user, isStaff]);
 
@@ -185,13 +186,17 @@ export default function FilesPage() {
   const { data: rawFiles } = useCollection<TeamFile>(filesQuery);
   const teamFiles = useMemo(() => {
     const all = rawFiles || [];
-    // SECURITY FILTER: Only staff can see 'Signed Certificate' category
     return all.filter(f => {
       const isCertificate = f.category === 'Signed Certificate';
-      if (isCertificate) return isStaff || isSuperAdmin;
+      if (isCertificate) {
+        // Show certificate only if user is staff or it belongs to them/their children
+        if (isStaff || isSuperAdmin) return true;
+        const myMemberIds = signingMembers.map(m => m.id);
+        return f.memberId && myMemberIds.includes(f.memberId);
+      }
       return !['Game Tape', 'Practice Session', 'Highlights'].includes(f.category);
     });
-  }, [rawFiles, isStaff, isSuperAdmin]);
+  }, [rawFiles, isStaff, isSuperAdmin, signingMembers]);
 
   const docsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
@@ -200,33 +205,35 @@ export default function FilesPage() {
 
   const { data: documents } = useCollection<TeamDocument>(docsQuery);
 
-  const [signedDocIds, setSignedDocIds] = useState<string[]>([]);
+  const checkSigs = useCallback(async () => {
+    if (!activeTeam || signingMembers.length === 0 || !db) return;
+    const ids: string[] = [];
+    const docsSnap = await getDocs(collection(db, 'teams', activeTeam.id, 'documents'));
+    for (const d of docsSnap.docs) {
+      let allSigned = true;
+      for (const m of signingMembers) {
+        const sigSnap = await getDocs(query(collection(db, 'teams', activeTeam.id, 'documents', d.id, 'signatures'), where('memberId', '==', m.id)));
+        if (sigSnap.empty) {
+          // If the doc is NOT assigned to this member, we don't mark it as "needed"
+          const assignedTo = d.data().assignedTo || ['all'];
+          if (assignedTo.includes('all') || assignedTo.includes(m.id)) {
+            allSigned = false;
+          }
+        }
+      }
+      if (allSigned && signingMembers.length > 0) ids.push(d.id);
+    }
+    setSignedDocIds(ids);
+  }, [activeTeam, signingMembers, db]);
 
   useEffect(() => {
     setMounted(true);
-    if (activeTeam && signingMembers.length > 0 && db) {
-      // Check which documents current user has signed for any of their linked members
-      const checkSigs = async () => {
-        const ids: string[] = [];
-        const docsSnap = await getDocs(collection(db, 'teams', activeTeam.id, 'documents'));
-        for (const d of docsSnap.docs) {
-          let allSigned = true;
-          for (const m of signingMembers) {
-            const sigSnap = await getDocs(query(collection(db, 'teams', activeTeam.id, 'documents', d.id, 'signatures'), where('memberId', '==', m.id)));
-            if (sigSnap.empty) allSigned = false;
-          }
-          if (allSigned && signingMembers.length > 0) ids.push(d.id);
-        }
-        setSignedDocIds(ids);
-      };
-      checkSigs();
-    }
-  }, [activeTeam, signingMembers, db, documents]);
+    checkSigs();
+  }, [checkSigs, documents]);
 
   const pendingDocs = useMemo(() => {
     if (!documents) return [];
     return documents.filter(d => {
-      // Show if ANY associated member needs to sign
       const isAssigned = d.assignedTo.includes('all') || signingMembers.some(m => d.assignedTo.includes(m.id));
       return isAssigned && !signedDocIds.includes(d.id);
     });
@@ -238,7 +245,17 @@ export default function FilesPage() {
 
   if (!mounted || !activeTeam) return null;
 
-  const isAdmin = activeTeam.role === 'Admin' || isSuperAdmin;
+  const handleDownloadCertificate = (file: TeamFile) => {
+    const content = `CERTIFICATE OF VERIFIED SIGNATURE\n\nDocument: ${file.name}\nTimestamp: ${file.date}\nDescription: ${file.description}\n\nThis document was digitally executed within the SquadForge platform.`;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${file.name.replace(/\s+/g, '_')}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -246,7 +263,7 @@ export default function FilesPage() {
       const reader = new FileReader();
       reader.onload = (event) => {
         addFile(file.name, file.name.split('.').pop()?.toLowerCase() || 'file', file.size, event.target?.result as string, uploadCategory, uploadDescription);
-        toast({ title: "Document Archived", description: `${file.name} is now available.` });
+        toast({ title: "Document Archived" });
         setUploadDescription('');
       };
       reader.readAsDataURL(file);
@@ -261,7 +278,7 @@ export default function FilesPage() {
           <h1 className="text-4xl font-black uppercase tracking-tight">Library & Docs</h1>
           <p className="text-sm font-bold text-muted-foreground">Official squad repository for waivers and administration.</p>
         </div>
-        {isAdmin && (
+        {isStaff && (
           <div className="flex flex-wrap gap-2">
             <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
             <Dialog>
@@ -270,7 +287,7 @@ export default function FilesPage() {
                   <Upload className="h-4 w-4 mr-2" /> Upload Resource
                 </Button>
               </DialogTrigger>
-              <DialogContent data-dark-header="true" className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
+              <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
                 <div className="h-2 bg-primary w-full" />
                 <div className="p-8 space-y-6">
                   <DialogHeader>
@@ -322,7 +339,7 @@ export default function FilesPage() {
                   <p className="text-xs font-medium text-muted-foreground line-clamp-3 leading-relaxed mb-6 italic">
                     "{d.content}"
                   </p>
-                  <DocumentSigningDialog doc={d} onSign={signTeamDocument} members={signingMembers} />
+                  <DocumentSigningDialog doc={d} onSign={signTeamDocument} members={signingMembers} onComplete={checkSigs} />
                 </CardContent>
               </Card>
             ))}
@@ -379,10 +396,16 @@ export default function FilesPage() {
                   {file.description && <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 leading-relaxed italic">"{file.description}"</p>}
                 </CardContent>
                 <CardFooter className="p-6 pt-0 flex gap-2">
-                  <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20" onClick={() => window.open(file.url, '_blank')}>
-                    {isCertificate ? 'Audit Execution' : 'Download Hub'}
-                  </Button>
-                  {isAdmin && <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => setFileToDelete(file.id)}><Trash2 className="h-4 w-4" /></Button>}
+                  {isCertificate ? (
+                    <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20" onClick={() => handleDownloadCertificate(file)}>
+                      <Download className="h-3 w-3 mr-2" /> Download Cert
+                    </Button>
+                  ) : (
+                    <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20" onClick={() => window.open(file.url, '_blank')}>
+                      View Resource
+                    </Button>
+                  )}
+                  {isStaff && <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => setFileToDelete(file.id)}><Trash2 className="h-4 w-4" /></Button>}
                 </CardFooter>
               </Card>
             );
@@ -405,7 +428,7 @@ export default function FilesPage() {
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-6">
             <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { if(fileToDelete) { deleteFile(fileToDelete); setFileToDelete(null); toast({ title: "Vault Updated" }); } }} className="rounded-xl font-black bg-red-600">Purge Permanently</AlertDialogAction>
+            <AlertDialogAction onClick={() => { if(fileToDelete) { deleteFile(fileToDelete); setFileToDelete(null); } }} className="rounded-xl font-black bg-red-600">Purge Permanently</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

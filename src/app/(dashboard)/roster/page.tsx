@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -50,12 +51,24 @@ function MemberComplianceLedger({ teamId, memberId }: { teamId: string, memberId
 
   const { data: signatures, isLoading } = useCollection(q);
 
+  const handleDownload = (sig: any) => {
+    const content = `CERTIFICATE OF VERIFIED SIGNATURE\n\nDocument: ${sig.title}\nTimestamp: ${sig.signedAt}\nLegal Signature: "${sig.signatureText}"\n\nThis document was digitally executed within the SquadForge platform.`;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Signed_${sig.title.replace(/\s+/g, '_')}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (isLoading) return <Loader2 className="h-4 w-4 animate-spin mx-auto text-primary" />;
 
   return (
     <div className="space-y-3">
       {signatures?.map(sig => (
-        <div key={sig.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
+        <div key={sig.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10 group/sig">
           <div className="min-w-0">
             <p className="font-black text-[10px] uppercase text-white truncate">{sig.title || 'Waiver'}</p>
             <div className="flex items-center gap-2 opacity-40 mt-0.5">
@@ -63,7 +76,12 @@ function MemberComplianceLedger({ teamId, memberId }: { teamId: string, memberId
               <span className="text-[8px] font-bold uppercase">{format(new Date(sig.signedAt), 'MMM d, yyyy')}</span>
             </div>
           </div>
-          <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg opacity-0 group-hover/sig:opacity-100 text-white" onClick={() => handleDownload(sig)}>
+              <Download className="h-3 w-3" />
+            </Button>
+            <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+          </div>
         </div>
       ))}
       {(!signatures || signatures.length === 0) && (

@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -252,6 +253,9 @@ export type TeamFile = {
   date: string;
   viewedBy?: Record<string, boolean>;
   comments?: Array<{ id: string; authorId: string; authorName: string; text: string; createdAt: string }>;
+  signatureId?: string;
+  memberId?: string;
+  documentId?: string;
 };
 
 export type League = {
@@ -375,7 +379,7 @@ interface TeamContextType {
   updateTeamDetails: (updates: Partial<Team>) => Promise<void>;
   updateTeamHero: (url: string) => Promise<void>;
   updateTeamPlan: (teamId: string, planId: string) => Promise<void>;
-  signTeamDocument: (docId: string, signatureText: string, targetMemberId: string) => Promise<void>;
+  signTeamDocument: (docId: string, signatureText: string, targetMemberId: string) => Promise<boolean>;
   createTeamDocument: (data: any) => Promise<void>;
   updateTeamDocument: (docId: string, data: any) => Promise<void>;
   deleteTeamDocument: (docId: string) => Promise<void>;
@@ -435,6 +439,7 @@ interface TeamContextType {
   resolveQuota: (selectedTeamIds: string[]) => Promise<void>;
   createAlert: (title: string, message: string, audience: TeamAlert['audience']) => Promise<void>;
   deleteAlert: (alertId: string) => Promise<void>;
+  exportSignaturesCSV: (documentId: string) => Promise<void>;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -559,7 +564,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return { current: currentCount, limit: limitCount, remaining: Math.max(0, limitCount - currentCount), exceeded: currentCount > limitCount };
   }, [teams, userProfile, firebaseUser?.uid]);
 
-  // --- REFACTORED CORE CALLBACKS ---
+  // --- CORE CALLBACKS ---
   const createAlert = useCallback(async (title: string, message: string, audience: TeamAlert['audience']) => {
     if (!activeTeam || !firebaseUser) return;
     await addDoc(collection(db, 'teams', activeTeam.id, 'alerts'), clean({ title, message, audience, createdAt: new Date().toISOString(), createdBy: firebaseUser.uid }));
@@ -584,33 +589,45 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
 
   const signTeamDocument = useCallback(async (docId: string, signatureText: string, targetMemberId: string) => {
-    if (!activeTeam || !userProfile) return;
+    if (!activeTeam || !userProfile) return false;
     const docRef = doc(db, 'teams', activeTeam.id, 'documents', docId);
     const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) return;
+    if (!docSnap.exists()) return false;
     const docData = docSnap.data() as TeamDocument;
     const targetMember = members.find(m => m.id === targetMemberId);
-    if (!targetMember) return;
+    if (!targetMember) return false;
 
     const batch = writeBatch(db);
     const sigId = `sig_${targetMember.id}_${Date.now()}`;
+    
+    // 1. Log to document's signatures list
     batch.set(doc(db, 'teams', activeTeam.id, 'documents', docId, 'signatures', sigId), clean({
       id: sigId, memberId: targetMember.id, userId: userProfile.id, userName: targetMember.name,
       signedAt: new Date().toISOString(), signatureText, documentTitle: docData.title, documentId: docId
     }));
+    
+    // 2. Log to member's signatures bio
     batch.set(doc(db, 'teams', activeTeam.id, 'members', targetMember.id, 'signatures', docId), clean({
       id: sigId, docId, title: docData.title, signedAt: new Date().toISOString(), signatureText
     }));
+    
+    // 3. Update doc summary
     batch.update(docRef, { signatureCount: increment(1) });
+    
+    // 4. Create certified file record
     const certId = `cert_${docId}_${targetMember.id}`;
     batch.set(doc(db, 'teams', activeTeam.id, 'files', certId), clean({
+      id: certId,
       name: `Signed: ${docData.title} - ${targetMember.name}`,
       type: 'pdf', size: 'Digital Certificate', sizeBytes: 0, url: '#',
-      category: 'Signed Certificate', description: `Verified execution of ${docData.title}.`,
-      date: new Date().toISOString(), authorId: userProfile.id, targetMemberId: targetMember.id, documentId: docId
+      category: 'Signed Certificate', description: `Verified execution of ${docData.title}. Signed as "${signatureText}".`,
+      date: new Date().toISOString(), authorId: userProfile.id, targetMemberId: targetMember.id, documentId: docId,
+      signatureId: sigId
     }));
+    
     await batch.commit(); 
-    toast({ title: "Compliance Verified" });
+    toast({ title: "Compliance Verified", description: "Record added to roster." });
+    return true;
   }, [activeTeam?.id, userProfile, db, members]);
 
   const createTeamDocument = useCallback(async (data: any) => {
@@ -618,6 +635,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await addDoc(collection(db, 'teams', activeTeam.id, 'documents'), clean({ ...data, teamId: activeTeam.id, signatureCount: 0, createdAt: new Date().toISOString() }));
     await createAlert(`Waiver Required: ${data.title}`, `Please visit the Library to sign.`, 'everyone');
   }, [activeTeam?.id, firebaseUser, db, createAlert]);
+
+  const exportSignaturesCSV = useCallback(async (documentId: string) => {
+    if (!activeTeam) return;
+    const s = await getDocs(collection(db, 'teams', activeTeam.id, 'documents', documentId, 'signatures'));
+    const rows = s.docs.map(d => d.data());
+    const headers = ["Member", "Legal Signature", "Date Signed", "Document"];
+    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows.map(r => [r.userName, r.signatureText, r.signedAt, r.documentTitle])].map(e => e.join(",")).join("\n");
+    const link = document.createElement("a");
+    link.setAttribute("href", encodeURI(csvContent));
+    link.setAttribute("download", `Signatures_${documentId}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [activeTeam?.id, db]);
 
   // --- CONTEXT VALUE ---
   const value = useMemo(() => ({
@@ -698,8 +729,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     manageSubscription: async () => router.push('/pricing'),
     resolveQuota: async (sids: string[]) => { if (firebaseUser) { const b = writeBatch(db); teams.filter(t => t.ownerUserId === firebaseUser.uid && t.isPro).forEach(t => { const ok = sids.includes(t.id); b.update(doc(db, 'teams', t.id), { isPro: ok, planId: ok ? t.planId : 'starter_squad' }); b.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', t.id), { isPro: ok, planId: ok ? t.planId : 'starter_squad' }); }); await b.commit(); } },
     createAlert,
-    deleteAlert
-  }), [userProfile, activeTeam?.id, activeTeam?.role, activeTeam?.isPro, activeTeam?.planId, teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading, currentMember, isSuperAdmin, household, householdEvents, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus, isPaywallOpen, firebaseUser?.uid, db, signTeamDocument, createTeamDocument, respondToAssignment, createAlert, deleteAlert]);
+    deleteAlert,
+    exportSignaturesCSV
+  }), [userProfile, activeTeam?.id, activeTeam?.role, activeTeam?.isPro, activeTeam?.planId, teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading, currentMember, isSuperAdmin, household, householdEvents, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus, isPaywallOpen, firebaseUser?.uid, db, signTeamDocument, createTeamDocument, respondToAssignment, createAlert, deleteAlert, exportSignaturesCSV]);
 
   return <TeamContext.Provider value={value}>{children}</TeamContext.Provider>;
 }

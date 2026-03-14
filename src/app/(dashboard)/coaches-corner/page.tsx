@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -91,6 +92,18 @@ function SignatureList({ teamId, documentId }: { teamId: string, documentId: str
 
   const { data: signatures, isLoading } = useCollection<DocumentSignature>(q);
 
+  const handleDownloadOne = (sig: DocumentSignature) => {
+    const content = `CERTIFICATE OF VERIFIED SIGNATURE\n\nDocument: ${sig.documentTitle}\nMember: ${sig.userName}\nTimestamp: ${sig.signedAt}\nLegal Signature: "${sig.signatureText}"\n\nThis document was digitally executed within the SquadForge platform and verified by team organizers.`;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Signature_${sig.userName.replace(/\s+/g, '_')}_${sig.id}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (isLoading) return <Loader2 className="h-6 w-6 animate-spin mx-auto my-10 text-primary" />;
 
   return (
@@ -104,9 +117,14 @@ function SignatureList({ teamId, documentId }: { teamId: string, documentId: str
               <p className="text-[10px] font-bold text-muted-foreground uppercase">{format(new Date(sig.signedAt), 'MMM d, yyyy h:mm a')}</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest mb-1">Execution</p>
-            <p className="text-[10px] font-bold font-mono italic">"{sig.signatureText}"</p>
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block">
+              <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest mb-1">Execution</p>
+              <p className="text-[10px] font-bold font-mono italic">"{sig.signatureText}"</p>
+            </div>
+            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => handleDownloadOne(sig)}>
+              <Download className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       ))}
@@ -121,7 +139,7 @@ function SignatureList({ teamId, documentId }: { teamId: string, documentId: str
 }
 
 export default function CoachesCornerPage() {
-  const { activeTeam, isStaff, members, createTeamDocument, updateTeamDocument, deleteTeamDocument, resetSquadData, respondToAssignment } = useTeam();
+  const { activeTeam, isStaff, members, createTeamDocument, updateTeamDocument, deleteTeamDocument, resetSquadData, respondToAssignment, exportSignaturesCSV } = useTeam();
   const db = useFirestore();
   
   const [activeTab, setActiveTab] = useState('compliance');
@@ -440,7 +458,7 @@ export default function CoachesCornerPage() {
             <DialogHeader>
               <div className="flex justify-between items-start">
                 <div><DialogTitle className="text-2xl font-black uppercase">{selectedDoc?.title}</DialogTitle><DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-primary">Compliance Audit</DialogDescription></div>
-                <Button variant="outline" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] border-2"><Download className="h-3 w-3 mr-2" /> Export CSV</Button>
+                <Button variant="outline" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] border-2" onClick={() => selectedDoc && exportSignaturesCSV(selectedDoc.id)}><Download className="h-3 w-3 mr-2" /> Export CSV</Button>
               </div>
             </DialogHeader>
             <div className="space-y-4">
