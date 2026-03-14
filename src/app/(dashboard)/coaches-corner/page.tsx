@@ -267,7 +267,7 @@ export default function CoachesCornerPage() {
                             {newDoc.assignedTo.includes('all') && <CheckCircle2 className="h-5 w-5" />}
                           </div>
                           <div className="h-px bg-muted mx-4" />
-                          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                          <div className="space-y-2">
                             {members.map(member => (
                               <div key={member.id} className={cn("p-4 rounded-2xl flex items-center justify-between cursor-pointer transition-all", newDoc.assignedTo.includes(member.id) ? "bg-black text-white shadow-lg" : "hover:bg-white")} onClick={() => toggleAssignment(member.id)}>
                                 <div className="flex items-center gap-4">
