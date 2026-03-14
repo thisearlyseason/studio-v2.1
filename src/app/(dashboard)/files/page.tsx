@@ -184,6 +184,7 @@ export default function FilesPage() {
   }, [activeTeam?.id, db]);
 
   const { data: rawFiles } = useCollection<TeamFile>(filesQuery);
+  
   const teamFiles = useMemo(() => {
     const all = rawFiles || [];
     return all.filter(f => {
@@ -197,6 +198,13 @@ export default function FilesPage() {
       return !['Game Tape', 'Practice Session', 'Highlights'].includes(f.category);
     });
   }, [rawFiles, isStaff, isSuperAdmin, signingMembers]);
+
+  const filteredFiles = useMemo(() => {
+    return teamFiles.filter(file => 
+      file.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      file.category.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [teamFiles, searchTerm]);
 
   const docsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
