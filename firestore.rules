@@ -21,12 +21,12 @@ service cloud.firestore {
     }
 
     function isTeamStaff(teamId) {
-      let team = get(/databases/$(database)/documents/teams/$(teamId));
-      let member = get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
+      let teamDoc = get(/databases/$(database)/documents/teams/$(teamId));
+      let memberDoc = get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
       return isSignedIn() && (
         isSuperAdmin() || 
-        (team != null && (team.data.ownerUserId == request.auth.uid || team.data.createdBy == request.auth.uid)) ||
-        (member != null && member.data.position in ['Coach', 'Assistant Coach', 'Team Representative', 'Manager', 'Organization Lead', 'Platform Admin', 'Squad Leader'])
+        (teamDoc != null && (teamDoc.data.ownerUserId == request.auth.uid || teamDoc.data.createdBy == request.auth.uid)) ||
+        (memberDoc != null && memberDoc.data.position in ['Coach', 'Assistant Coach', 'Team Representative', 'Manager', 'Organization Lead', 'Platform Admin', 'Squad Leader'])
       );
     }
 

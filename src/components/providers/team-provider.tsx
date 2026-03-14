@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -685,8 +684,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (teamEntrySnap.exists()) finalRef = teamEntryRef;
     }
     await updateDoc(finalRef, { status });
+    
+    // Create notification alert for new member acceptance
+    if (status === 'accepted' && activeTeam) {
+      await createAlert("Enrollment Confirmed", "A new recruit has been officially approved for the roster.", 'coaches');
+    }
+    
     toast({ title: status === 'accepted' ? "Recruit Enrolled" : "Application Declined" });
-  }, [db]);
+  }, [db, activeTeam, createAlert]);
 
   const signTeamDocument = useCallback(async (docId: string, signatureText: string, targetMemberId: string) => {
     if (!activeTeam?.id || !userProfile) return false;
@@ -783,7 +788,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const csvContent = "data:text/csv;charset=utf-8," + [headers, ...standings].map(e => e.join(",")).join("\n");
     const link = document.createElement("a");
     link.setAttribute("href", encodeURI(csvContent));
-    link.setAttribute("download", `Standings_${event.title.replace(/\s+/g, '_')}.csv`);
+    link.setAttribute("download", `Standings_${tournamentId}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

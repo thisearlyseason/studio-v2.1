@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useTeam, TeamDocument, Member, DocumentSignature, RegistrationEntry, ScoutingReport } from '@/components/providers/team-provider';
+import { useTeam, TeamDocument, Member, DocumentSignature, RegistrationEntry } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, where, doc, collectionGroup, setDoc, deleteDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';

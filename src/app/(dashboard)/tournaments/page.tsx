@@ -335,9 +335,9 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
               <Input value={editForm.invitedEmails} onChange={e => setEditForm({ ...editForm, invitedEmails: e.target.value })} className="h-12 rounded-xl border-2 font-bold" placeholder="coach@tigers.com, coach@lions.com..." />
             </div>
           </div>
-          <DialogFooter className="p-8 bg-muted/10 border-t">
+          <div className="p-8 bg-muted/10 border-t">
             <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdateTeams}>Synchronize Roster</Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 

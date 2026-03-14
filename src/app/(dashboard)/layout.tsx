@@ -55,7 +55,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 
   // --- AUTH GUARDS (Optimized for Mobile Demo stability) ---
   useEffect(() => {
-    // If we're initializing a demo, we MUST NOT redirect even if user is briefly null
+    // CRITICAL: Prevent redirects if a demo is in progress or about to seed
     const demoParam = searchParams.get('seed_demo');
     if (!mounted || !isAuthResolved || isDemoInitializing || demoParam) return;
     
