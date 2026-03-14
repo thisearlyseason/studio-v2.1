@@ -1,4 +1,3 @@
-
 'use client';
 
 import { 
@@ -128,9 +127,4 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
   await batch.commit();
   return teamId;
-}
-
-export async function seedSubscriptionData(db: Firestore) {
-  // Integrated into atomic seeder for performance optimization
-  return;
 }

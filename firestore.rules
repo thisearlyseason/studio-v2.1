@@ -1,4 +1,3 @@
-
 rules_version = '2';
 
 service cloud.firestore {
@@ -29,13 +28,6 @@ service cloud.firestore {
       );
     }
 
-    function isHouseholdParent(householdId) {
-      return isSignedIn() && (
-        request.auth.uid == householdId || 
-        request.auth.uid in get(/databases/$(database)/documents/households/$(householdId)).data.parentIds
-      );
-    }
-
     // --- COLLECTION RULES ---
 
     match /users/{userId} {
@@ -47,7 +39,7 @@ service cloud.firestore {
     }
 
     match /households/{householdId} {
-      allow read, write: if isOwner(householdId) || isHouseholdParent(householdId);
+      allow read, write: if isOwner(householdId) || (isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/households/$(householdId)).data.parentIds);
     }
 
     match /players/{playerId} {
@@ -63,10 +55,7 @@ service cloud.firestore {
     match /teams/{teamId} {
       allow get, list: if isSignedIn();
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && (
-        resource.data.ownerUserId == request.auth.uid ||
-        isSuperAdmin()
-      );
+      allow update, delete: if isTeamStaff(teamId);
 
       // Subcollections
       match /alerts/{alertId} {
@@ -101,6 +90,11 @@ service cloud.firestore {
       match /events/{eventId} {
         allow read: if isSignedIn();
         allow write: if isTeamStaff(teamId);
+        
+        match /registrations/{regId} {
+          allow create: if true;
+          allow read, write: if isTeamStaff(teamId);
+        }
       }
 
       match /equipment/{itemId} {
@@ -155,10 +149,7 @@ service cloud.firestore {
     match /facilities/{facilityId} {
       allow get, list: if isSignedIn();
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && (
-        resource.data.clubId == request.auth.uid ||
-        isSuperAdmin()
-      );
+      allow update, delete: if isSuperAdmin() || resource.data.clubId == request.auth.uid;
       
       match /fields/{fieldId} {
         allow read: if isSignedIn();
@@ -169,10 +160,7 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       allow get, list: if isSignedIn();
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && (
-        resource.data.creatorId == request.auth.uid ||
-        isSuperAdmin()
-      );
+      allow update, delete: if isSuperAdmin() || resource.data.creatorId == request.auth.uid;
       
       match /registrationEntries/{entryId} {
         allow create: if true;
