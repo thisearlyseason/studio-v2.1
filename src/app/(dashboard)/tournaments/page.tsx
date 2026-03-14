@@ -58,6 +58,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
 import { generateTournamentSchedule } from '@/lib/scheduler-utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { downloadICS } from '@/lib/calendar-utils';
 
 function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
@@ -118,7 +119,7 @@ function BracketVisualizer({ games }: { games: TournamentGame[] }) {
 
 function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () => void }) {
   const { user: authUser } = useUser();
-  const { members, isStaff, activeTeam, db, exportTournamentStandingsCSV } = useTeam();
+  const { members, isStaff, activeTeam, db, exportTournamentStandingsCSV, exportAttendanceCSV } = useTeam();
   const standings = useMemo(() => calculateTournamentStandings(event.tournamentTeams || [], event.tournamentGames || []), [event.tournamentTeams, event.tournamentGames]);
   const isOrganizer = isStaff && event.teamId === activeTeam?.id;
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
@@ -201,6 +202,16 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
     toast({ title: "Waiver Link Copied", description: "Share this link with participating squads." });
   };
 
+  const handleAddCalendar = () => {
+    downloadICS([{
+      title: event.title,
+      start: new Date(event.date),
+      end: event.endDate ? new Date(event.endDate) : undefined,
+      location: event.location,
+      description: event.description
+    }], `${event.title.replace(/\s+/g, '_')}.ics`);
+  };
+
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-right-4 duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -211,8 +222,8 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
         <div className="flex items-center gap-3">
           {isOrganizer && (
             <>
-              <Button variant="outline" className="rounded-xl h-10 px-6 border-2 font-black uppercase text-[10px] bg-white text-black hover:bg-primary hover:text-white hover:border-transparent transition-all" onClick={() => setIsGenOpen(true)}><Sparkles className="h-4 w-4 mr-2" /> Auto-Deploy Itinerary</Button>
-              <Button variant="outline" className="rounded-xl h-10 px-6 border-2 font-black uppercase text-[10px] bg-white text-black hover:bg-primary hover:text-white hover:border-transparent transition-all" onClick={() => setIsEditOpen(true)}><Edit3 className="h-4 w-4 mr-2" /> Manage Teams</Button>
+              <Button variant="outline" className="rounded-xl h-10 px-6 border-2 font-black uppercase text-[10px] bg-white text-black hover:bg-black hover:text-white transition-all" onClick={() => setIsGenOpen(true)}><Sparkles className="h-4 w-4 mr-2" /> Itinerary</Button>
+              <Button variant="outline" className="rounded-xl h-10 px-6 border-2 font-black uppercase text-[10px] bg-white text-black hover:bg-black hover:text-white transition-all" onClick={() => setIsEditOpen(true)}><Edit3 className="h-4 w-4 mr-2" /> Roster</Button>
             </>
           )}
           <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><CalendarDaysIcon className="h-4 w-4 mr-2" /> {event.date ? format(new Date(event.date), 'MMM d') : ''} - {event.endDate ? format(new Date(event.endDate), 'MMM d, yyyy') : ''}</Badge>
@@ -222,6 +233,18 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
       <div className="flex flex-col lg:flex-row gap-8">
         <aside className="w-full lg:w-1/3 flex flex-col text-white bg-black rounded-[3rem] p-8 lg:p-10 space-y-8">
           <div className="space-y-4"><p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Operational Brief</p><p className="text-sm font-medium text-white/80 leading-relaxed italic">"{event.description || 'Championship coordination itinerary established.'}"</p></div>
+          
+          <div className="grid grid-cols-1 gap-3">
+            <Button variant="outline" className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] border-none hover:bg-primary hover:text-white" onClick={handleAddCalendar}>
+              <CalendarIcon className="h-4 w-4 mr-2" /> Add to Calendar
+            </Button>
+            {isOrganizer && (
+              <Button variant="outline" className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] border-none hover:bg-primary hover:text-white" onClick={() => exportAttendanceCSV(event.id)}>
+                <Download className="h-4 w-4 mr-2" /> Export RSVP Ledger
+              </Button>
+            )}
+          </div>
+
           <div className="space-y-4 pt-4 border-t border-white/10">
             <div className="flex justify-between items-center"><h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Leaderboard Pulse</h4>{isOrganizer && <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-white/10" onClick={() => exportTournamentStandingsCSV(event.id)}><Download className="h-4 w-4" /></Button>}</div>
             <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">{standings.map((team) => (<div key={team.name} className="flex justify-between items-center px-5 py-4 border-b border-white/5 last:border-0"><span className="text-xs font-black uppercase truncate pr-2">{team.name}</span><Badge className="bg-primary text-white border-none font-black text-[9px] px-2 h-5">{team.points} PTS</Badge></div>))}</div>
@@ -412,7 +435,7 @@ export default function TournamentsPage() {
         description: newTourney.description,
         isTournament: true,
         eventType: 'tournament',
-        tournamentTeams: [activeTeam.name], // Organizer's team automatically joined
+        tournamentTeams: [activeTeam.name], 
         tournamentGames: [],
         invitedTeamEmails: {},
         startTime: 'TBD'
@@ -481,7 +504,7 @@ export default function TournamentsPage() {
             <div className="flex flex-col md:flex-row items-stretch">
               <div className="w-full md:w-40 bg-black text-white flex flex-col items-center justify-center p-8 border-r group-hover:bg-primary transition-colors">
                 <span className="text-[11px] font-black uppercase opacity-60 mb-1">{new Date(tournament.date).toLocaleString('default', { month: 'short' }).toUpperCase()}</span>
-                <span className="text-5xl font-black tracking-tighter">{new Date(tournament.date).getDate()}</span>
+                <span className="text-5xl font-black tracking-tighter">{new Date(tournament.date).getDate()} {tournament.endDate && `- ${new Date(tournament.endDate).getDate()}`}</span>
               </div>
               <div className="flex-1 p-10 flex items-center justify-between">
                 <div className="space-y-3">

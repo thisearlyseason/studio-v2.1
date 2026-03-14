@@ -10,7 +10,7 @@ import {
   Trophy, 
   UserPlus, 
   Plus, 
-  ChevronRight, 
+  ChevronLeft, 
   Mail, 
   Search, 
   Clock, 
@@ -38,7 +38,8 @@ import {
   Calendar as CalendarIcon,
   List,
   LayoutGrid,
-  X
+  X,
+  ChevronRight
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -237,6 +238,9 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                     selected={config.blackoutDates}
                     onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})}
                     className="rounded-xl border-none"
+                    classNames={{
+                      nav: "flex items-center justify-center gap-4 absolute top-4 left-0 right-0 px-2",
+                    }}
                   />
                 </div>
                 <div className="w-full mt-4 pt-4 border-t">
@@ -271,7 +275,7 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
       <div className="flex items-center justify-between px-2">
         <div className="flex items-center gap-3">
           <Activity className="h-5 w-5 text-primary" />
-          <h3 className="text-xl font-black uppercase tracking-tight">League command Overview</h3>
+          <h3 className="text-xl font-black uppercase tracking-tight">League Command Overview</h3>
         </div>
         <div className="bg-muted/50 p-1 rounded-xl border flex items-center shadow-inner">
           <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-8 px-4 rounded-lg font-black text-[10px] uppercase"><List className="h-3.5 w-3.5 mr-2" /> List</Button>
@@ -449,7 +453,7 @@ export default function LeaguesPage() {
                           <span>Registration Hub</span>
                         </Link>
                       </Button>
-                      <Button variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase border-white text-white hover:bg-black hover:text-white hover:border-primary transition-all" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Invite Team</Button>
+                      <Button variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase border-primary text-primary hover:bg-primary hover:text-white transition-all" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Invite Team</Button>
                     </>
                   )}
                   <Button asChild variant="ghost" className="h-12 px-6 rounded-xl font-black text-xs uppercase text-white/60 hover:text-white"><Link href={`/leagues/spectator/${activeLeague.id}`} target="_blank"><ExternalLink className="h-4 w-4 mr-2" /> Public Portal</Link></Button>

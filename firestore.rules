@@ -53,12 +53,11 @@ service cloud.firestore {
     }
 
     match /teams/{teamId} {
-      allow get: if true; // Allow public get for registration portals
+      allow get: if true; // Allow public get for spectator/registration hubs
       allow list: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if isTeamStaff(teamId);
 
-      // Subcollections
       match /registration/{docId} {
         allow read: if true;
       }
@@ -75,7 +74,7 @@ service cloud.firestore {
       }
 
       match /members/{memberId} {
-        allow read, list: if isSignedIn();
+        allow read, list: if true; // Allow public roster viewing for recruiting/scouting
         allow create: if isSignedIn(); 
         allow update, delete: if isTeamStaff(teamId) || isOwner(memberId);
 
@@ -101,7 +100,8 @@ service cloud.firestore {
       }
 
       match /events/{eventId} {
-        allow read, list: if isSignedIn();
+        allow get: if true; // Allow public viewing for tournament hubs
+        allow read, list: if isSignedIn() || true; 
         allow create: if isSignedIn();
         allow update: if true; // Allow public scoring and waiver signing
         allow delete: if isTeamStaff(teamId);
@@ -186,10 +186,10 @@ service cloud.firestore {
     }
 
     match /leagues/{leagueId} {
-      allow get: if true; // Allow public get for registration portals
+      allow get: if true; // Public spectator views
       allow list: if isSignedIn();
       allow create: if isSignedIn();
-      allow update: if isSuperAdmin() || resource.data.creatorId == request.auth.uid || isSignedIn(); 
+      allow update: if true; // Public scoring entry
       
       match /registrationEntries/{entryId} {
         allow create: if true;

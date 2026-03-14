@@ -1,7 +1,6 @@
-
 "use client";
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useTeam, TeamDocument, Member, DocumentSignature, RegistrationEntry, ScoutingReport } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, where, doc, collectionGroup, setDoc, deleteDoc } from 'firebase/firestore';
@@ -55,7 +54,8 @@ import {
   HeartPulse,
   Plane,
   GraduationCap,
-  Scale
+  Scale,
+  FileBadge
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -78,14 +78,13 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { generateScoutingBrief } from '@/ai/flows/scouting-report-agent';
 
 const DEFAULT_PROTOCOLS = [
   { id: 'medical', label: 'Medical Clearance', icon: HeartPulse, type: 'waiver' },
   { id: 'travel', label: 'Travel Consent', icon: Plane, type: 'waiver' },
   { id: 'parental', label: 'Parental Waiver', icon: ShieldCheck, type: 'waiver' },
   { id: 'photography', label: 'Photography Release', icon: Camera, type: 'waiver' },
-  { id: 'tournament', label: 'Tournament Terms', icon: Scale, type: 'waiver' }
+  { id: 'tournament', label: 'Tournament Master', icon: Scale, type: 'waiver' }
 ];
 
 function SignatureList({ teamId, documentId }: { teamId: string, documentId: string }) {
@@ -320,7 +319,7 @@ export default function CoachesCornerPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] border-2" onClick={() => setSelectedDoc(doc)}>Audit</Button>
+                      <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] border-2 bg-white text-black hover:bg-black hover:text-white transition-all" onClick={() => setSelectedDoc(doc)}>Audit</Button>
                       <Button variant="ghost" size="icon" className="h-10 w-10 hover:bg-primary/5 rounded-xl transition-all" onClick={() => { setEditingDocId(doc.id); setNewDoc({ title: doc.title, content: doc.content, type: doc.type, assignedTo: doc.assignedTo }); setIsCreateOpen(true); }}><Edit3 className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="text-destructive h-10 w-10 hover:bg-destructive/5 rounded-xl transition-all" onClick={() => deleteTeamDocument(doc.id)}><Trash2 className="h-4 w-4" /></Button>
                     </div>
@@ -388,14 +387,14 @@ export default function CoachesCornerPage() {
       </Tabs>
 
       <Dialog open={!!selectedDoc} onOpenChange={o => !o && setSelectedDoc(null)}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-xl p-0 overflow-hidden bg-white shadow-2xl border-none max-h-[90vh]">
+        <DialogContent className="rounded-[2.5rem] sm:max-w-xl p-0 overflow-hidden bg-white shadow-2xl border-none max-h-[90vh] flex flex-col">
           <DialogTitle className="sr-only">Document Audit Ledger</DialogTitle>
-          <div className="h-2 bg-black w-full" />
-          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="h-2 bg-black w-full shrink-0" />
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1">
             <DialogHeader>
               <div className="flex justify-between items-start">
                 <div><DialogTitle className="text-2xl font-black uppercase">{selectedDoc?.title}</DialogTitle><DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-primary">Compliance Audit</DialogDescription></div>
-                <Button variant="outline" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] border-2 transition-all active:scale-95" onClick={() => selectedDoc && exportSignaturesCSV(selectedDoc.id)}><Download className="h-3 w-3 mr-2" /> CSV</Button>
+                <Button variant="outline" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] border-2 transition-all active:scale-95 bg-white text-black hover:bg-black hover:text-white" onClick={() => selectedDoc && exportSignaturesCSV(selectedDoc.id)}><Download className="h-3 w-3 mr-2" /> CSV</Button>
               </div>
             </DialogHeader>
             <div className="space-y-4">
