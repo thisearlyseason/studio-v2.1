@@ -407,7 +407,7 @@ export default function LeaguesPage() {
       setIsInviteOpen(false); setInviteEmail(''); 
       toast({ title: "Invite Dispatched", description: `Invitation sent to ${inviteEmail}.` });
     } catch (e) {
-      toast({ title: "Invite Failed", variant: "destructive" });
+      toast({ title: "Invite Failed", description: "Verification failed. Please try again.", variant: "destructive" });
     } finally {
       setIsProcessing(false);
     }
@@ -450,7 +450,7 @@ export default function LeaguesPage() {
                           <span>Registration Hub</span>
                         </Link>
                       </Button>
-                      <Button variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase bg-white text-black border-2 border-black hover:bg-black hover:text-white transition-all shadow-sm" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Invite Team</Button>
+                      <Button variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase bg-white text-black border-2 border-white/20 hover:bg-primary hover:border-transparent transition-all shadow-sm" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Invite Team</Button>
                     </>
                   )}
                   <Button asChild variant="ghost" className="h-12 px-6 rounded-xl font-black text-xs uppercase text-white/60 hover:text-white"><Link href={`/leagues/spectator/${activeLeague.id}`} target="_blank"><ExternalLink className="h-4 w-4 mr-2" /> Public Portal</Link></Button>
@@ -507,7 +507,7 @@ export default function LeaguesPage() {
       {activeLeague && <SeasonSchedulerDialog league={activeLeague} isOpen={isSeasonOpen} onOpenChange={setIsSeasonOpen} />}
       
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white"><div className="h-2 bg-primary w-full" /><div className="p-8 lg:p-12 space-y-10"><DialogHeader><div className="flex items-center gap-4 mb-2"><div className="bg-primary/10 p-3 rounded-2xl text-primary"><Shield className="h-6 w-6" /></div><div><DialogTitle className="text-3xl font-black uppercase tracking-tight">League Identity</DialogTitle><DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Establish a new competitive hub</DialogDescription></div></div></DialogHeader><div className="space-y-6"><div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Official League Name</Label><Input placeholder="e.g. Regional Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl font-bold border-2" /></div></div><DialogFooter className="pt-4"><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleCreateLeague} disabled={isProcessing || !leagueName.trim()}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Competitive Hub"}</Button></DialogFooter></div></DialogContent>
+        <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white"><div className="h-2 bg-primary w-full" /><div className="p-8 lg:p-12 space-y-10"><DialogHeader><div className="flex items-center gap-4 mb-2"><div className="bg-primary/10 p-3 rounded-2xl text-primary"><Shield className="h-6 w-6" /></div><div><DialogTitle className="text-3xl font-black uppercase tracking-tight">League Identity</DialogTitle><DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Establish a new competitive hub</DialogDescription></div></div></DialogHeader><div className="space-y-6"><div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Official League Name</Label><Input placeholder="e.g. Regional Varsity Premier" leagueName={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl font-bold border-2" /></div></div><DialogFooter className="pt-4"><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleCreateLeague} disabled={isProcessing || !leagueName.trim()}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Competitive Hub"}</Button></DialogFooter></div></DialogContent>
       </Dialog>
 
       <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
