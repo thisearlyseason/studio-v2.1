@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/firebase';
 import { signInWithEmailAndPassword, signInAnonymously, signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
@@ -42,14 +43,15 @@ export default function LoginPage() {
   const handleLaunchDemo = async (planId: string) => {
     setIsDemoLoading(true);
     try {
-      // Clear current session first
+      // Clear current session first to prevent state pollution
       await signOut(auth);
-      // Wait for sign out to propagate
+      // Brief delay to ensure auth state clean
       await new Promise(resolve => setTimeout(resolve, 500));
       
       await signInAnonymously(auth);
       
-      // Use location.replace to bypass internal router cache and ensure clean redirect
+      // Use window.location.replace to bypass internal router cache 
+      // and ensure DashboardLayout initializes with fresh demo parameters
       window.location.replace(`/dashboard?seed_demo=${planId}`);
     } catch (error: any) {
       toast({

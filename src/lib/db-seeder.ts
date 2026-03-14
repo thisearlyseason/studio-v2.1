@@ -32,7 +32,8 @@ const clean = (obj: any): any => {
 
 /**
  * PRE-DEFINED DEMO BLUEPRINTS
- * Using static objects instead of loops significantly reduces compute time during seeding.
+ * Using static objects instead of procedural loops significantly reduces 
+ * compute time and environment preparation latency during guest session initialization.
  */
 const DEMO_TEMPLATE = (teamId: string, userId: string) => {
   const now = new Date();
@@ -105,7 +106,6 @@ export async function seedSubscriptionData(db: Firestore) {
 }
 
 export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string) {
-  const timestamp = Date.now();
   const teamId = `demo_${planId}_${userId.slice(-4)}`;
   const isParentDemo = planId === 'parent_demo';
   const isPlayerDemo = planId === 'player_demo';
@@ -140,7 +140,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     joinedAt: now, isDemo: true, avatar: `https://picsum.photos/seed/${userId}/150/150`
   }));
 
-  // 2. Load Template Data
+  // 2. Load Template Data from Static Blueprint
   const data = DEMO_TEMPLATE(teamId, userId);
   data.members.forEach(m => batch.set(doc(db, 'teams', teamId, 'members', m.id), clean({ ...m, teamId, joinedAt: now, avatar: `https://picsum.photos/seed/${m.id}/150/150` })));
   data.games.forEach(g => batch.set(doc(db, 'teams', teamId, 'games', g.id), clean(g)));
