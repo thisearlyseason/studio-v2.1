@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -36,11 +35,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useTeam, TeamFile } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, doc } from 'firebase/firestore';
+import { collection, query, orderBy, doc, limit } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 export default function PlaybookAndGamePlayPage() {
   const { activeTeam, addDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro, markMediaAsViewed } = useTeam();
@@ -73,7 +71,6 @@ export default function PlaybookAndGamePlayPage() {
   const [newUrl, setNewUrl] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   const filteredDrills = useMemo(() => drills.filter(d => d.title.toLowerCase().includes(searchTerm.toLowerCase())), [drills, searchTerm]);
   const filteredFiles = useMemo(() => teamFiles.filter(f => ['Game Tape', 'Practice Session', 'Highlights'].includes(f.category) && f.name.toLowerCase().includes(searchTerm.toLowerCase())), [teamFiles, searchTerm]);
@@ -164,7 +161,7 @@ export default function PlaybookAndGamePlayPage() {
                 </div>
                 <CardContent className="p-6 space-y-2">
                   <h3 className="font-black text-sm uppercase truncate">{file.name}</h3>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">{file.size} • {format(new Date(file.date), 'MMM d')}</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">{file.size} • {new Date(file.date).toLocaleDateString()}</p>
                 </CardContent>
               </Card>
             ))}

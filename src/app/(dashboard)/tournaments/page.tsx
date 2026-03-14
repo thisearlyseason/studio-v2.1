@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -184,9 +183,8 @@ export default function TournamentsPage() {
   const [newTourney, setNewTourney] = useState({ title: '', date: '', endDate: '', location: '', description: '', teams: '' });
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Filter tournaments from the unified events list for the active team
   const tournaments = useMemo(() => {
-    return householdEvents.filter(e => e.isTournament && e.teamId === activeTeam?.id);
+    return householdEvents.filter(e => (e.isTournament || e.eventType === 'tournament') && e.teamId === activeTeam?.id);
   }, [householdEvents, activeTeam?.id]);
 
   const handleDeployTournament = async () => {
@@ -292,8 +290,8 @@ export default function TournamentsPage() {
           <Card key={tournament.id} className="rounded-[3rem] border-none shadow-xl hover:shadow-2xl transition-all duration-500 overflow-hidden ring-1 ring-black/5 bg-white group cursor-pointer" onClick={() => setSelectedTournament(tournament)}>
             <div className="flex flex-col md:flex-row items-stretch">
               <div className="w-full md:w-40 bg-black text-white flex flex-col items-center justify-center p-8 border-r group-hover:bg-primary transition-colors">
-                <span className="text-[11px] font-black uppercase opacity-60 mb-1">{format(new Date(tournament.date), 'MMM')}</span>
-                <span className="text-5xl font-black tracking-tighter">{format(new Date(tournament.date), 'dd')}</span>
+                <span className="text-[11px] font-black uppercase opacity-60 mb-1">{new Date(tournament.date).toLocaleString('default', { month: 'short' }).toUpperCase()}</span>
+                <span className="text-5xl font-black tracking-tighter">{new Date(tournament.date).getDate()}</span>
               </div>
               <div className="flex-1 p-10 flex items-center justify-between">
                 <div className="space-y-3">

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -537,7 +536,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const activeTeam = useMemo(() => teams.find(t => t.id === activeTeamId) || teams[0] || null, [teams, activeTeamId]);
 
   // --- UNIFIED EVENT SYNC ---
-  // This effect listens for events across all teams relevant to the user
   useEffect(() => {
     if (!db || !isAuthResolved || !firebaseUser || teams.length === 0) return;
 
