@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -393,7 +392,6 @@ interface TeamContextType {
   hideChatForUser: (chatId: string) => Promise<void>;
   formatTime: (date: string | Date) => string;
   resetSquadData: (categories: string[]) => Promise<void>;
-  resetSeasonData: () => Promise<void>;
   addVolunteerOpportunity: (data: any) => Promise<void>;
   signUpForVolunteer: (oppId: string) => Promise<void>;
   verifyVolunteerHours: (oppId: string, userId: string, hours: number) => Promise<void>;
@@ -658,7 +656,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     deleteChat: async (id: string) => { if (activeTeam) await deleteDoc(doc(db, 'teams', activeTeam.id, 'groupChats', id)); },
     hideChatForUser: async (id: string) => { if (activeTeam && firebaseUser) await updateDoc(doc(db, 'teams', activeTeam.id, 'groupChats', id), { [`hiddenFor.${firebaseUser.uid}`]: true }); },
     resetSquadData: async (cats: string[]) => { if (!activeTeam) return; const b = writeBatch(db); for (const c of cats) { const s = await getDocs(collection(db, `teams/${activeTeam.id}/${c}`)); s.docs.forEach(d => b.delete(d.ref)); } await b.commit(); },
-    resetSeasonData: async () => { },
     addVolunteerOpportunity: async (d: any) => { if (activeTeam) await addDoc(collection(db, 'teams', activeTeam.id, 'volunteers'), clean({ ...d, signups: {}, createdAt: new Date().toISOString() })); },
     signUpForVolunteer: async (id: string) => { if (activeTeam && userProfile) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', id), { [`signups.${userProfile.id}`]: { userId: userProfile.id, userName: userProfile.name, status: 'pending' } }); },
     verifyVolunteerHours: async (id: string, uid: string, h: number) => { if (activeTeam) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', id), { [`signups.${uid}.status`]: 'verified', [`signups.${uid}.verifiedHours`]: h }); },
