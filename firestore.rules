@@ -142,7 +142,7 @@ service cloud.firestore {
 
       match /registrationEntries/{entryId} {
         allow create: if true;
-        allow read, write: if isTeamStaff(teamId);
+        allow read, write: if isTeamStaff(teamId) || isSuperAdmin();
       }
     }
 

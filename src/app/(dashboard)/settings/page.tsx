@@ -42,7 +42,8 @@ import {
   AtSign,
   PenTool,
   Save,
-  ChevronDown
+  ChevronDown,
+  Edit3
 } from 'lucide-react';
 import { 
   Dialog, 
