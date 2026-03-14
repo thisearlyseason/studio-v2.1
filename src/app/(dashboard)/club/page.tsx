@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -53,15 +52,13 @@ export default function ClubManagementPage() {
   const [initialCoach, setInitialCoach] = useState('');
 
   // TACTICAL AUDIT: Aggregate organization financials
-  // In a real scenario, we would query the 'members' subcollection of all club teams.
-  // For this high-performance UI, we simulate the organizational pulse.
   const clubTeams = useMemo(() => {
     return teams.filter(t => t.ownerUserId === user?.id && t.isPro);
   }, [teams, user?.id]);
 
-  const totalDuesOwed = clubTeams.length * 1250; // Simulated aggregation
+  const totalDuesOwed = clubTeams.length * 1250; 
   const totalDuesCollected = clubTeams.length * 840;
-  const collectionRate = Math.round((totalDuesCollected / totalDuesOwed) * 100);
+  const collectionRate = Math.round((totalDuesCollected / totalDuesOwed) * 100) || 0;
 
   const filteredTeams = useMemo(() => {
     return clubTeams.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -69,13 +66,13 @@ export default function ClubManagementPage() {
 
   if (!isClubManager) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-center space-y-6">
-        <div className="bg-muted p-6 rounded-[2.5rem] opacity-20">
-          <Building className="h-16 w-16" />
+      <div className="flex flex-col items-center justify-center py-24 text-center space-y-6 animate-in fade-in duration-500">
+        <div className="bg-muted/30 p-10 rounded-[3rem] opacity-20">
+          <Building className="h-20 w-20" />
         </div>
-        <h1 className="text-3xl font-black uppercase tracking-tight">Access Restricted</h1>
-        <p className="text-muted-foreground font-bold">This dashboard is reserved for Club Managers on an Elite League plan.</p>
-        <Button onClick={() => router.push('/pricing')}>Explore Club Solutions</Button>
+        <h1 className="text-3xl font-black uppercase tracking-tight">Institutional Hub Locked</h1>
+        <p className="text-muted-foreground font-bold text-sm uppercase tracking-widest max-w-sm">This command center is reserved for multi-squad managers on Elite or Club tiers.</p>
+        <Button onClick={() => router.push('/pricing')} className="rounded-full px-10 h-12 shadow-lg shadow-primary/20">Explore Institutional Solutions</Button>
       </div>
     );
   }
@@ -96,12 +93,12 @@ export default function ClubManagementPage() {
   };
 
   return (
-    <div className="space-y-10 pb-20 animate-in fade-in duration-500">
+    <div className="space-y-10 pb-20 animate-in fade-in duration-700">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Institutional Hub</Badge>
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Institutional Command</Badge>
           <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Club Hub</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Centralized Organizational Command</p>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Centralized Organizational Logistics</p>
         </div>
         
         <Dialog>
@@ -110,34 +107,38 @@ export default function ClubManagementPage() {
               <Plus className="h-5 w-5 mr-2" /> Add Club Team
             </Button>
           </DialogTrigger>
-          <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black uppercase tracking-tight">New Club Squad</DialogTitle>
-              <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Scale your organization</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-6 py-4">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Name</Label>
-                <Input placeholder="e.g. U14 Regional Stars" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+          <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl overflow-hidden p-0">
+            <DialogTitle className="sr-only">New Club Squad Enrollment</DialogTitle>
+            <div className="h-2 bg-primary w-full" />
+            <div className="p-8 lg:p-10 space-y-8">
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-black uppercase tracking-tight">New Club Squad</DialogTitle>
+                <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Scale your institutional roster</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Name</Label>
+                  <Input placeholder="e.g. U14 Regional Stars" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-12 rounded-xl font-bold border-2 focus:border-primary/20 transition-all" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Initial Coach Email (Optional)</Label>
+                  <Input type="email" placeholder="coach@example.com" value={initialCoach} onChange={e => setInitialCoach(e.target.value)} className="h-12 rounded-xl font-bold border-2 focus:border-primary/20 transition-all" />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Initial Coach Email (Optional)</Label>
-                <Input type="email" placeholder="coach@example.com" value={initialCoach} onChange={e => setInitialCoach(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
-              </div>
+              <DialogFooter>
+                <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleCreateTeam} disabled={isCreating || !newTeamName.trim()}>
+                  {isCreating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <ShieldCheck className="h-5 w-5 mr-2" />}
+                  Enroll Squad
+                </Button>
+              </DialogFooter>
             </div>
-            <DialogFooter>
-              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleCreateTeam} disabled={isCreating || !newTeamName.trim()}>
-                {isCreating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <ShieldCheck className="h-5 w-5 mr-2" />}
-                Enroll Squad
-              </Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 bg-primary text-white overflow-hidden relative group">
-          <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform">
+          <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
             <Trophy className="h-24 w-24" />
           </div>
           <CardContent className="p-8 space-y-2 relative z-10">
@@ -148,7 +149,7 @@ export default function ClubManagementPage() {
         </Card>
 
         <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 bg-black text-white overflow-hidden relative group">
-          <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform">
+          <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
             <DollarSign className="h-24 w-24 text-primary" />
           </div>
           <CardContent className="p-8 space-y-4 relative z-10">
@@ -181,10 +182,10 @@ export default function ClubManagementPage() {
               <p className="text-[10px] font-black uppercase tracking-widest">Admin Oversight</p>
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-black truncate">{user?.name}</p>
-              <p className="text-[8px] font-bold text-muted-foreground uppercase">Master Organization Lead</p>
+              <p className="text-sm font-black truncate uppercase">{user?.name}</p>
+              <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter">Master Organization Lead</p>
             </div>
-            <Button variant="outline" className="w-full h-8 rounded-lg text-[8px] font-black uppercase border-primary/20 text-primary">Master Settings</Button>
+            <Button variant="outline" className="w-full h-8 rounded-lg text-[8px] font-black uppercase border-primary/20 text-primary hover:bg-primary hover:text-white transition-all">Master Settings</Button>
           </CardContent>
         </Card>
       </div>
@@ -213,14 +214,14 @@ export default function ClubManagementPage() {
                 <CardContent className="p-0">
                   <div className="flex flex-col md:flex-row items-stretch">
                     <div className="w-full md:w-24 bg-muted/30 flex items-center justify-center p-6 border-r group-hover:bg-primary/5 transition-colors shrink-0">
-                      <Avatar className="h-14 w-14 rounded-2xl shadow-lg border-2 border-background ring-2 ring-primary/10">
+                      <Avatar className="h-14 w-14 rounded-2xl shadow-lg border-2 border-background ring-2 ring-primary/10 transition-transform group-hover:scale-110">
                         <AvatarImage src={team.teamLogoUrl} className="object-cover" />
                         <AvatarFallback className="font-black bg-white text-xs">{team.name[0]}</AvatarFallback>
                       </Avatar>
                     </div>
                     <div className="flex-1 p-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
                       <div className="space-y-1">
-                        <h3 className="text-xl font-black tracking-tight leading-tight group-hover:text-primary transition-colors">{team.name}</h3>
+                        <h3 className="text-xl font-black tracking-tight leading-tight group-hover:text-primary transition-colors uppercase">{team.name}</h3>
                         <div className="flex items-center gap-4 text-[9px] font-black text-muted-foreground uppercase tracking-widest">
                           <span className="flex items-center gap-1.5"><ShieldCheck className="h-3 w-3 text-primary" /> Elite Status</span>
                           <span className="flex items-center gap-1.5"><Activity className="h-3 w-3" /> PPG: 14.5</span>
@@ -235,7 +236,7 @@ export default function ClubManagementPage() {
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          className="rounded-full h-12 w-12 hover:bg-primary hover:text-white shadow-sm ring-1 ring-black/5"
+                          className="rounded-full h-12 w-12 hover:bg-primary hover:text-white shadow-sm ring-1 ring-black/5 transition-all"
                           onClick={() => { setActiveTeam(team); router.push('/team'); }}
                         >
                           <ArrowUpRight className="h-5 w-5" />
@@ -246,6 +247,12 @@ export default function ClubManagementPage() {
                 </CardContent>
               </Card>
             ))}
+            {filteredTeams.length === 0 && (
+              <div className="py-20 text-center border-2 border-dashed rounded-[3rem] bg-muted/10 opacity-40">
+                <LayoutGrid className="h-12 w-12 mx-auto mb-4" />
+                <p className="text-sm font-black uppercase tracking-widest">No active squads found.</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -261,7 +268,7 @@ export default function ClubManagementPage() {
                   <p className="text-[10px] font-black uppercase text-white/40 tracking-widest">Recruitment Funnel</p>
                   <div className="flex justify-between items-end">
                     <p className="text-3xl font-black">124</p>
-                    <Badge className="bg-primary text-white border-none text-[8px]">+12% this week</Badge>
+                    <Badge className="bg-primary text-white border-none text-[8px] h-5">+12% this week</Badge>
                   </div>
                   <Progress value={75} className="h-1 bg-white/10" />
                 </div>
@@ -271,7 +278,7 @@ export default function ClubManagementPage() {
                   <Progress value={82} className="h-1 bg-white/10" />
                 </div>
               </div>
-              <Button className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] tracking-widest hover:bg-white/90">Export Org Audit</Button>
+              <Button className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] tracking-widest hover:bg-primary hover:text-white transition-all">Export Org Audit</Button>
             </Card>
           </section>
 

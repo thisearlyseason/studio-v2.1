@@ -37,9 +37,9 @@ const GET_DEMO_DATA = (teamId: string, userId: string) => {
 
   return {
     members: [
-      { id: `m1_${teamId}`, userId: `u1_${teamId}`, name: 'Jordan Smith', role: 'Member', position: 'Forward', jersey: '10', medicalClearance: true, amountOwed: 0, avatar: `https://picsum.photos/seed/m1/150/150` },
-      { id: `m2_${teamId}`, userId: `u2_${teamId}`, name: 'Alex Rivera', role: 'Member', position: 'Midfield', jersey: '22', medicalClearance: true, amountOwed: 50, avatar: `https://picsum.photos/seed/m2/150/150` },
-      { id: `m3_${teamId}`, userId: `u3_${teamId}`, name: 'Sam Taylor', role: 'Member', position: 'Defender', jersey: '04', medicalClearance: false, amountOwed: 125, avatar: `https://picsum.photos/seed/m3/150/150` }
+      { id: `m1_${teamId}`, userId: `u1_${teamId}`, name: 'Jordan Smith', role: 'Member', position: 'Forward', jersey: '10', medicalClearance: true, amountOwed: 0, avatar: `https://picsum.photos/seed/m1/150/150`, gradYear: '2026', gpa: '3.9', school: 'Metro Academy', highlightUrl: 'https://youtube.com/watch?v=demo1', notes: 'Elite finisher with explosive first step.', skills: ['Scoring', 'Speed', 'Agility'], achievements: ['State MVP', 'All-City First Team'] },
+      { id: `m2_${teamId}`, userId: `u2_${teamId}`, name: 'Alex Rivera', role: 'Member', position: 'Midfield', jersey: '22', medicalClearance: true, amountOwed: 50, avatar: `https://picsum.photos/seed/m2/150/150`, gradYear: '2027', gpa: '3.7', school: 'Heights High', highlightUrl: 'https://youtube.com/watch?v=demo2', notes: 'Visionary playmaker with exceptional passing range.', skills: ['Vision', 'Passing', 'Control'], achievements: ['District Champion'] },
+      { id: `m3_${teamId}`, userId: `u3_${teamId}`, name: 'Sam Taylor', role: 'Member', position: 'Defender', jersey: '04', medicalClearance: false, amountOwed: 125, avatar: `https://picsum.photos/seed/m3/150/150`, gradYear: '2026', gpa: '3.8', school: 'Metro Academy', highlightUrl: 'https://youtube.com/watch?v=demo3', notes: 'Physical presence with strong aerial capability.', skills: ['Strength', 'Tackling', 'Heading'], achievements: ['Defensive Player of Year'] }
     ],
     games: [
       { id: `g1_${teamId}`, opponent: 'Tigers', date: yesterday, myScore: 12, opponentScore: 8, result: 'Win', location: 'City Arena' }
@@ -60,15 +60,82 @@ const GET_DEMO_DATA = (teamId: string, userId: string) => {
     ],
     documents: [
       { id: `doc1_${teamId}`, teamId, title: '2024 Liability Waiver', content: 'Standard participation agreement and medical release.', type: 'waiver', assignedTo: ['all'], signatureCount: 0, createdAt: now.toISOString() }
+    ],
+    facilities: [
+      { id: `fac1_${teamId}`, name: 'Elite Sports Complex', address: '100 Athlete Way', notes: 'Gate code: 1234', clubId: userId }
     ]
   };
 };
 
 const STANDARD_PLANS = [
-  { id: 'starter_squad', name: 'Starter Squad', billingType: 'free', features: { schedule_basic: true, live_feed_read: true }, proTeamLimit: 0 },
-  { id: 'squad_pro', name: 'Squad Pro', billingType: 'monthly', features: { schedule_basic: true, schedule_elite: true, tournament_basic: true, tournament_elite: true, live_feed_read: true, live_feed_post: true, stats_basic: true, media_uploads: true }, proTeamLimit: 1 },
-  { id: 'elite_teams', name: 'Elite Teams', billingType: 'monthly', features: { schedule_basic: true, schedule_elite: true, tournament_basic: true, tournament_elite: true, live_feed_read: true, live_feed_post: true, stats_basic: true, media_uploads: true, leagues: true, league_registration: true }, proTeamLimit: 8 },
-  { id: 'elite_league', name: 'Elite League', billingType: 'monthly', features: { schedule_basic: true, schedule_elite: true, tournament_basic: true, tournament_elite: true, live_feed_read: true, live_feed_post: true, stats_basic: true, media_uploads: true, leagues: true, league_registration: true }, proTeamLimit: 20 }
+  { 
+    id: 'starter_squad', 
+    name: 'Starter Squad', 
+    billingType: 'free', 
+    features: { 
+      schedule_basic: true, 
+      live_feed_read: true 
+    }, 
+    proTeamLimit: 0 
+  },
+  { 
+    id: 'squad_pro', 
+    name: 'Squad Pro', 
+    billingType: 'monthly', 
+    priceDisplay: '$12.99',
+    billingCycle: 'monthly',
+    features: { 
+      schedule_basic: true, 
+      schedule_elite: true, 
+      tournament_basic: true, 
+      tournament_elite: true, 
+      live_feed_read: true, 
+      live_feed_post: true, 
+      stats_basic: true, 
+      media_uploads: true 
+    }, 
+    proTeamLimit: 1 
+  },
+  { 
+    id: 'elite_teams', 
+    name: 'Elite Teams', 
+    billingType: 'monthly', 
+    priceDisplay: '$110',
+    billingCycle: 'monthly',
+    features: { 
+      schedule_basic: true, 
+      schedule_elite: true, 
+      tournament_basic: true, 
+      tournament_elite: true, 
+      live_feed_read: true, 
+      live_feed_post: true, 
+      stats_basic: true, 
+      media_uploads: true, 
+      leagues: true, 
+      league_registration: true 
+    }, 
+    proTeamLimit: 8 
+  },
+  { 
+    id: 'elite_league', 
+    name: 'Elite League', 
+    billingType: 'monthly', 
+    priceDisplay: '$279',
+    billingCycle: 'monthly',
+    features: { 
+      schedule_basic: true, 
+      schedule_elite: true, 
+      tournament_basic: true, 
+      tournament_elite: true, 
+      live_feed_read: true, 
+      live_feed_post: true, 
+      stats_basic: true, 
+      media_uploads: true, 
+      leagues: true, 
+      league_registration: true 
+    }, 
+    proTeamLimit: 20 
+  }
 ];
 
 /**
@@ -110,7 +177,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
   batch.set(doc(db, 'teams', teamId, 'members', userId), clean({
     id: userId, userId, teamId, name: `Guest ${pos}`, role, position: pos, jersey: isParentDemo ? 'HQ' : '22',
-    joinedAt: now, isDemo: true, avatar: `https://picsum.photos/seed/${userId}/150/150`
+    joinedAt: now, isDemo: true, avatar: `https://picsum.photos/seed/${userId}/150/150`,
+    notes: 'Primary tactical coordinator for the demo squad.'
   }));
 
   // 3. Static Blueprint Injection
@@ -122,11 +190,12 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   data.scouting.forEach(s => batch.set(doc(db, 'teams', teamId, 'scouting', s.id), clean(s)));
   data.feed.forEach(p => batch.set(doc(db, 'teams', teamId, 'feedPosts', p.id), clean({ ...p, teamId })));
   data.documents.forEach(d => batch.set(doc(db, 'teams', teamId, 'documents', d.id), clean(d)));
+  data.facilities.forEach(f => batch.set(doc(db, 'facilities', f.id), clean(f)));
 
   if (isParentDemo) {
     const childId = `child_${teamId}`;
     batch.set(doc(db, 'players', childId), clean({ id: childId, firstName: 'Junior', lastName: 'Guest', dateOfBirth: '2012-01-01', isMinor: true, parentId: userId, joinedTeamIds: [teamId], createdAt: now }));
-    batch.set(doc(db, 'teams', teamId, 'members', childId), clean({ id: childId, userId: 'none', playerId: childId, teamId, name: 'Junior Guest', role: 'Member', position: 'Player', jersey: '10', joinedAt: now, isMinor: true, amountOwed: 75, avatar: `https://picsum.photos/seed/junior/150/150` }));
+    batch.set(doc(db, 'teams', teamId, 'members', childId), clean({ id: childId, userId: 'none', playerId: childId, teamId, name: 'Junior Guest', role: 'Member', position: 'Player', jersey: '10', joinedAt: now, isMinor: true, amountOwed: 75, avatar: `https://picsum.photos/seed/junior/150/150`, medicalClearance: true }));
   }
 
   await batch.commit();

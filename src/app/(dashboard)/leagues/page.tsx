@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -76,7 +75,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     selectedFields: [] as string[]
   });
 
-  // CRITICAL FIX: Only show facilities belonging to the league creator
+  // Only show facilities belonging to the league creator
   const facilitiesQuery = useMemoFirebase(() => {
     if (!db || !authUser?.uid) return null;
     return query(collection(db, 'facilities'), where('clubId', '==', authUser.uid));
@@ -136,69 +135,79 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
+      <DialogContent className="sm:max-w-4xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
+        <DialogTitle className="sr-only">Season Architect Wizard</DialogTitle>
         <div className="h-2 bg-primary w-full" />
-        <div className="p-8 lg:p-12 space-y-10">
+        <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
           <DialogHeader>
-            <DialogTitle className="text-3xl font-black uppercase tracking-tight">Season Architect</DialogTitle>
-            <DialogDescription className="font-bold text-primary uppercase text-[10px]">Automated Resource Distribution Protocol</DialogDescription>
+            <DialogTitle className="text-3xl font-black uppercase tracking-tight leading-none">Season Architect</DialogTitle>
+            <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-2">Automated Resource Distribution Protocol</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Season Start</Label><Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Season End (Opt)</Label><Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Games/Team</Label><Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase">Double Headers</Label>
-                  <div className="flex items-center h-12">
-                    <button onClick={() => setConfig({...config, doubleHeaders: !config.doubleHeaders})} className={cn("h-6 w-11 rounded-full transition-all relative", config.doubleHeaders ? "bg-primary" : "bg-muted")}>
-                      <div className={cn("absolute top-1 h-4 w-4 rounded-full bg-white transition-all", config.doubleHeaders ? "left-6" : "left-1")} />
-                    </button>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            <div className="space-y-8">
+              <div className="space-y-6">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Timeline & Volume</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season Start</Label><Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season End (Opt)</Label><Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Games/Team</Label><Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Double Headers</Label>
+                    <div className="flex items-center h-12">
+                      <button onClick={() => setConfig({...config, doubleHeaders: !config.doubleHeaders})} className={cn("h-7 w-12 rounded-full transition-all relative", config.doubleHeaders ? "bg-primary" : "bg-muted")}>
+                        <div className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-all", config.doubleHeaders ? "left-6" : "left-1")} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">Recurring Play Days</Label>
+              <div className="space-y-4">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Recurring Play Days</Label>
                 <div className="flex flex-wrap gap-2">
-                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-                    <button key={i} onClick={() => toggleDay(i)} className={cn("h-10 w-10 rounded-xl font-black text-xs transition-all", config.playDays.includes(i) ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>{d}</button>
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
+                    <button key={i} onClick={() => toggleDay(i)} className={cn("h-12 w-12 rounded-2xl font-black text-xs transition-all border-2", config.playDays.includes(i) ? "bg-primary border-primary text-white shadow-lg shadow-primary/20" : "bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/50")}>{d[0]}</button>
                   ))}
                 </div>
               </div>
             </div>
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">Host Facility</Label>
-                <select className="w-full h-12 rounded-xl border-2 px-3 font-bold bg-muted/10 outline-none focus:ring-2 focus:ring-primary/20" value={config.selectedFacilityId} onChange={e => setConfig({...config, selectedFacilityId: e.target.value, selectedFields: []})}>
-                  <option value="">Select organizational venue...</option>
-                  {facilities?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">Resource Allocation (Select Fields/Courts)</Label>
-                <ScrollArea className="h-40 border-2 rounded-2xl p-2 bg-muted/5">
-                  <div className="space-y-1 p-1">
-                    {fields?.map(f => (
-                      <div key={f.id} className={cn("flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all", config.selectedFields.includes(f.name) ? "bg-primary text-white" : "hover:bg-white")} onClick={() => toggleField(f.name)}>
-                        <span className="text-[10px] font-black uppercase">{f.name}</span>
-                        {config.selectedFields.includes(f.name) ? <CheckCircle2 className="h-4 w-4" /> : <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />}
-                      </div>
-                    ))}
-                    {(!fields || fields.length === 0) && (
-                      <p className="text-[9px] font-bold text-muted-foreground italic text-center py-10">Select a facility to see fields.</p>
-                    )}
-                  </div>
-                </ScrollArea>
+            <div className="space-y-8">
+              <div className="space-y-6">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Host Logistics</h3>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Organizational Venue</Label>
+                  <select className="w-full h-12 rounded-xl border-2 px-3 font-bold bg-muted/10 outline-none focus:ring-2 focus:ring-primary/20 transition-all" value={config.selectedFacilityId} onChange={e => setConfig({...config, selectedFacilityId: e.target.value, selectedFields: []})}>
+                    <option value="">Select organizational venue...</option>
+                    {facilities?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Resource Allocation (Select Fields/Courts)</Label>
+                  <ScrollArea className="h-48 border-2 rounded-2xl p-2 bg-muted/5">
+                    <div className="space-y-1 p-1">
+                      {fields?.map(f => (
+                        <div key={f.id} className={cn("flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all group", config.selectedFields.includes(f.name) ? "bg-primary text-white" : "hover:bg-white")} onClick={() => toggleField(f.name)}>
+                          <span className="text-[10px] font-black uppercase tracking-widest">{f.name}</span>
+                          {config.selectedFields.includes(f.name) ? <CheckCircle2 className="h-4 w-4" /> : <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />}
+                        </div>
+                      ))}
+                      {(!fields || fields.length === 0) && (
+                        <div className="flex flex-col items-center justify-center py-12 text-center opacity-30">
+                          <Building className="h-8 w-8 mb-2" />
+                          <p className="text-[9px] font-bold uppercase tracking-widest max-w-[150px]">Select a facility to allocate field resources.</p>
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleGenerate} disabled={isProcessing || !config.startDate || config.selectedFields.length === 0}>
+          <DialogFooter className="pt-6">
+            <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleGenerate} disabled={isProcessing || !config.startDate || config.selectedFields.length === 0}>
               {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : <Sparkles className="h-6 w-6 mr-3" />}
-              Deploy Balanced League Itinerary
+              Deploy Seasonal Itinerary
             </Button>
           </DialogFooter>
         </div>

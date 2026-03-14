@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -96,10 +95,11 @@ export default function FamilyDashboardPage() {
 
   if (user?.role !== 'parent') {
     return (
-      <div className="py-24 text-center space-y-6 max-w-md mx-auto">
-        <div className="bg-muted p-6 rounded-[3rem] opacity-20"><Users className="h-16 w-16 mx-auto" /></div>
-        <h1 className="text-3xl font-black uppercase">Guardian Access Only</h1>
-        <p className="text-muted-foreground font-bold text-sm uppercase tracking-widest">This dashboard is reserved for parent accounts managing minor players.</p>
+      <div className="py-24 text-center space-y-6 max-w-md mx-auto animate-in fade-in duration-500">
+        <div className="bg-muted/30 p-10 rounded-[3rem] opacity-20"><Users className="h-20 w-20 mx-auto" /></div>
+        <h1 className="text-3xl font-black uppercase tracking-tight">Guardian Access Only</h1>
+        <p className="text-muted-foreground font-bold text-sm uppercase tracking-widest max-w-xs mx-auto">This dashboard is reserved for parent accounts managing minor player rosters.</p>
+        <Button onClick={() => router.push('/settings')} variant="outline" className="rounded-full px-8">Update Account Role</Button>
       </div>
     );
   }
@@ -126,7 +126,7 @@ export default function FamilyDashboardPage() {
   };
 
   return (
-    <div className="space-y-10 pb-20">
+    <div className="space-y-10 pb-20 animate-in fade-in duration-700">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Household Command</Badge>
@@ -136,43 +136,47 @@ export default function FamilyDashboardPage() {
 
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
-            <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20">
+            <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all">
               <Plus className="h-5 w-5 mr-2" /> Register New Player
             </Button>
           </DialogTrigger>
-          <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-10">
-            <DialogHeader>
-              <DialogTitle className="text-3xl font-black uppercase tracking-tight">Athlete Data</DialogTitle>
-              <DialogDescription className="font-bold text-primary text-[10px] uppercase tracking-widest">Under-18 Enrollment Hub</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-6 py-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest">First Name</Label>
-                  <Input value={newChild.firstName} onChange={e => setNewChild({...newChild, firstName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+          <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-md">
+            <DialogTitle className="sr-only">Minor Player Registration</DialogTitle>
+            <div className="h-2 bg-primary w-full" />
+            <div className="p-8 lg:p-10 space-y-8">
+              <DialogHeader>
+                <DialogTitle className="text-3xl font-black uppercase tracking-tight">Athlete Data</DialogTitle>
+                <DialogDescription className="font-bold text-primary text-[10px] uppercase tracking-widest">Under-18 Enrollment Hub</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">First Name</Label>
+                    <Input value={newChild.firstName} onChange={e => setNewChild({...newChild, firstName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Last Name</Label>
+                    <Input value={newChild.lastName} onChange={e => setNewChild({...newChild, lastName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all" />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest">Last Name</Label>
-                  <Input value={newChild.lastName} onChange={e => setNewChild({...newChild, lastName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth</Label>
+                  <Input type="date" value={newChild.dob} onChange={e => setNewChild({...newChild, dob: e.target.value})} className="h-12 rounded-xl border-2 font-black focus:border-primary/20 transition-all" />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest">Date of Birth</Label>
-                <Input type="date" value={newChild.dob} onChange={e => setNewChild({...newChild, dob: e.target.value})} className="h-12 rounded-xl border-2 font-black" />
-              </div>
+              <DialogFooter>
+                <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddChild} disabled={isProcessing}>
+                  {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Enroll Athlete"}
+                </Button>
+              </DialogFooter>
             </div>
-            <DialogFooter>
-              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleAddChild} disabled={isProcessing}>
-                {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Enroll Athlete"}
-              </Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1 space-y-6">
-          <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden group">
+          <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden group transition-all hover:ring-4 hover:ring-primary/10">
             <CardContent className="p-8 space-y-6">
               <div className="flex justify-between items-start">
                 <div className="bg-primary p-4 rounded-2xl shadow-lg">
@@ -187,28 +191,28 @@ export default function FamilyDashboardPage() {
               <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-relaxed">
                 Aggregated dues across all registered players.
               </p>
-              <Button className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-xs tracking-widest hover:bg-white/90" onClick={() => router.push('/pricing')}>
+              <Button className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-xs tracking-widest hover:bg-primary hover:text-white transition-all shadow-xl" onClick={() => router.push('/pricing')}>
                 Manage Payments
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="rounded-[2.5rem] border-none shadow-md bg-white ring-1 ring-black/5">
-            <CardHeader>
+          <Card className="rounded-[2.5rem] border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b p-6">
               <div className="flex items-center gap-3">
                 <Activity className="h-5 w-5 text-primary" />
                 <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">Operational Pulse</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl border border-transparent">
+            <CardContent className="p-6 space-y-4">
+              <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border border-transparent shadow-inner">
                 <div>
                   <p className="text-[10px] font-black uppercase opacity-40">Active Squads</p>
                   <p className="text-xl font-black">{Array.from(new Set(myChildren.flatMap(c => c.joinedTeamIds || []))).length}</p>
                 </div>
                 <Users className="h-6 w-6 text-primary/40" />
               </div>
-              <div className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl border border-transparent">
+              <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border border-transparent shadow-inner">
                 <div>
                   <p className="text-[10px] font-black uppercase opacity-40">Total Signatures</p>
                   <p className="text-xl font-black">{Object.values(childrenCompliance).reduce((sum, c) => sum + c.signed, 0)}</p>
@@ -225,7 +229,7 @@ export default function FamilyDashboardPage() {
               <CalendarDays className="h-5 w-5 text-primary" />
               <h2 className="text-xl font-black uppercase tracking-tight">Household Itinerary</h2>
             </div>
-            <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest" onClick={() => router.push('/calendar')}>
+            <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest hover:bg-primary/5 hover:text-primary transition-all" onClick={() => router.push('/calendar')}>
               Master View <ChevronRight className="ml-1 h-3.5 w-3.5" />
             </Button>
           </div>
@@ -245,7 +249,7 @@ export default function FamilyDashboardPage() {
                         <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-2">
                             <Badge className="bg-primary/10 text-primary border-none text-[7px] uppercase font-black px-1.5 h-4">{event.eventType}</Badge>
-                            <span className="text-[9px] font-black uppercase text-muted-foreground">{team?.name}</span>
+                            <span className="text-[9px] font-black uppercase text-muted-foreground truncate max-w-[120px]">{team?.name}</span>
                           </div>
                           <span className="text-[10px] font-bold text-muted-foreground">{event.startTime}</span>
                         </div>
@@ -281,7 +285,7 @@ export default function FamilyDashboardPage() {
             const compliance = childrenCompliance[child.id] || { pending: 0, signed: 0 };
 
             return (
-              <Card key={child.id} className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group">
+              <Card key={child.id} className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group transition-all hover:ring-primary/20">
                 <div className="h-2 hero-gradient w-full" />
                 <CardContent className="p-8 lg:p-10 space-y-8 flex-1">
                   <div className="flex justify-between items-start">
@@ -292,12 +296,12 @@ export default function FamilyDashboardPage() {
                   </div>
                   
                   <div className="space-y-1">
-                    <h3 className="text-3xl font-black uppercase tracking-tight">{child.firstName} {child.lastName}</h3>
+                    <h3 className="text-3xl font-black uppercase tracking-tight group-hover:text-primary transition-colors">{child.firstName} {child.lastName}</h3>
                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Minor Player Hub • Guardian ID: {user?.id.slice(-4)}</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-muted/30 p-4 rounded-2xl space-y-1 border">
+                    <div className="bg-muted/30 p-4 rounded-2xl space-y-1 border shadow-inner">
                       <p className="text-[8px] font-black uppercase opacity-40">Compliance</p>
                       <div className="flex items-center gap-2">
                         <span className={cn("text-xl font-black", compliance.pending > 0 ? "text-red-600" : "text-green-600")}>
@@ -305,7 +309,7 @@ export default function FamilyDashboardPage() {
                         </span>
                       </div>
                     </div>
-                    <div className="bg-muted/30 p-4 rounded-2xl space-y-1 border">
+                    <div className="bg-muted/30 p-4 rounded-2xl space-y-1 border shadow-inner">
                       <p className="text-[8px] font-black uppercase opacity-40">Enrolled Squads</p>
                       <p className="text-xl font-black text-primary">{childTeams.length}</p>
                     </div>
@@ -315,7 +319,7 @@ export default function FamilyDashboardPage() {
                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Active Squads</p>
                     <div className="space-y-2">
                       {childTeams.map(t => (
-                        <div key={t.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-2xl border">
+                        <div key={t.id} className="flex items-center justify-between p-3 bg-muted/20 rounded-2xl border transition-all hover:bg-white hover:shadow-sm">
                           <div className="flex items-center gap-3">
                             <Users className="h-4 w-4 text-primary" />
                             <span className="text-xs font-black uppercase tracking-tight truncate">{t.name}</span>
@@ -324,7 +328,7 @@ export default function FamilyDashboardPage() {
                         </div>
                       ))}
                       {childTeams.length === 0 && (
-                        <Button variant="ghost" className="w-full h-12 rounded-2xl border-2 border-dashed text-[10px] font-black uppercase text-muted-foreground hover:bg-primary/5 hover:text-primary hover:border-primary/20" onClick={() => router.push('/teams/join')}>
+                        <Button variant="ghost" className="w-full h-12 rounded-2xl border-2 border-dashed text-[10px] font-black uppercase text-muted-foreground hover:bg-primary/5 hover:text-primary hover:border-primary/20 transition-all" onClick={() => router.push('/teams/join')}>
                           <Plus className="h-4 w-4 mr-2" /> Enroll in first squad
                         </Button>
                       )}
@@ -333,7 +337,7 @@ export default function FamilyDashboardPage() {
 
                   <div className="grid grid-cols-2 gap-3 pt-4">
                     <Button variant="outline" className={cn(
-                      "rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 group-hover:border-primary transition-colors",
+                      "rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 group-hover:border-primary transition-all",
                       compliance.pending > 0 && "border-red-200 bg-red-50 text-red-600"
                     )} onClick={handleSignWaiversClick}>
                       <Signature className="h-4 w-4" />
@@ -341,7 +345,7 @@ export default function FamilyDashboardPage() {
                     </Button>
                     <Button 
                       variant="outline" 
-                      className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1" 
+                      className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 transition-all hover:border-primary active:scale-95" 
                       onClick={() => {
                         upgradeChildToLogin(child.id);
                         toast({ title: "Account Initialized", description: `A linked player account for ${child.firstName} has been created and attached to your dashboard.` });
@@ -354,7 +358,7 @@ export default function FamilyDashboardPage() {
                   </div>
                 </CardContent>
                 <CardFooter className="px-8 lg:p-10 pb-8 pt-0">
-                  <Button className="w-full h-14 rounded-2xl bg-black text-white font-black uppercase text-xs tracking-widest shadow-xl group-hover:bg-primary transition-colors" onClick={() => router.push('/teams/join')}>
+                  <Button className="w-full h-14 rounded-2xl bg-black text-white font-black uppercase text-xs tracking-widest shadow-xl group-hover:bg-primary transition-colors active:scale-95" onClick={() => router.push('/teams/join')}>
                     Enroll in New League <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </CardFooter>
@@ -365,7 +369,8 @@ export default function FamilyDashboardPage() {
       </section>
 
       <Dialog open={isNoWaiversOpen} onOpenChange={setIsNoWaiversOpen}>
-        <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-10 max-w-md text-center">
+        <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-10 max-w-md text-center overflow-hidden">
+          <DialogTitle className="sr-only">Compliance Verification Complete</DialogTitle>
           <div className="bg-primary/5 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-6">
             <FileText className="h-10 w-10 text-primary" />
           </div>
@@ -383,7 +388,7 @@ export default function FamilyDashboardPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={() => router.push('/teams/join')}>
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={() => router.push('/teams/join')}>
               Go to Recruitment Hub
             </Button>
           </DialogFooter>
@@ -395,7 +400,7 @@ export default function FamilyDashboardPage() {
           <ShieldCheck className="h-48 w-48" />
         </div>
         <CardContent className="p-12 relative z-10 space-y-6">
-          <Badge className="bg-primary text-white border-none font-black text-[10px] px-4 h-7">Institutional Compliance</Badge>
+          <Badge className="bg-primary text-white border-none font-black text-[10px] px-4 h-7 uppercase tracking-widest">Institutional Compliance</Badge>
           <h2 className="text-4xl font-black tracking-tight leading-tight uppercase">Unified Household Control</h2>
           <p className="text-white/60 font-medium text-lg leading-relaxed max-w-2xl">
             As a guardian, you maintain absolute authority over your children's data and schedules. The household collection links multiple athletes to your account, allowing for single-point billing and unified scheduling across the entire organization.

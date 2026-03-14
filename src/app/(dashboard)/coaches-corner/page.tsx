@@ -219,10 +219,10 @@ function PersonnelAuditDialog({ member, isOpen, onOpenChange }: { member: Member
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl rounded-[3rem] p-0 border-none shadow-2xl bg-white overflow-y-auto max-h-[90vh] custom-scrollbar">
+      <DialogContent className="sm:max-w-5xl rounded-[3rem] p-0 border-none shadow-2xl bg-white overflow-hidden max-h-[90vh]">
         <DialogTitle className="sr-only">Recruiting Intelligence Hub: {member.name}</DialogTitle>
         <div className="h-2 bg-black w-full" />
-        <div className="flex flex-col lg:flex-row h-full">
+        <div className="flex flex-col lg:flex-row h-full overflow-hidden">
           <div className="w-full lg:w-5/12 bg-muted/20 p-8 lg:p-10 space-y-8 border-r overflow-y-auto custom-scrollbar">
             <div className="flex flex-col items-center text-center space-y-6">
               <div className="relative group">
@@ -286,7 +286,7 @@ function PersonnelAuditDialog({ member, isOpen, onOpenChange }: { member: Member
               </div>
             </div>
           </div>
-          <div className="flex-1 p-8 lg:p-10 space-y-8 overflow-y-auto bg-white">
+          <div className="flex-1 p-8 lg:p-10 space-y-8 overflow-y-auto bg-white custom-scrollbar">
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <ShieldAlert className="h-5 w-5 text-primary" />
@@ -388,11 +388,12 @@ function DefaultProtocolCard({ protocol, activeTeam, db }: { protocol: any, acti
         {docData && (
           <Dialog open={isEditing} onOpenChange={setIsEditing}>
             <DialogTrigger asChild>
-              <Button variant="ghost" size="sm" className="w-full h-8 rounded-lg font-black text-[8px] uppercase tracking-widest hover:bg-primary/5 hover:text-primary border border-transparent hover:border-primary/20">
+              <Button variant="ghost" size="sm" className="w-full h-8 rounded-lg font-black text-[8px] uppercase tracking-widest hover:bg-primary/5 hover:text-primary border border-transparent hover:border-primary/20 transition-all">
                 Edit Legal Text
               </Button>
             </DialogTrigger>
             <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-xl">
+              <DialogTitle className="sr-only">Edit Mandatory Protocol</DialogTitle>
               <div className="h-2 bg-primary w-full" />
               <div className="p-8 space-y-6">
                 <DialogHeader>
@@ -550,16 +551,16 @@ export default function CoachesCornerPage() {
         
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full md:w-auto">
           <TabsList className="bg-muted/50 rounded-xl h-auto p-1 border-2 w-full md:w-auto flex-wrap gap-1 shadow-sm">
-            <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Waivers</TabsTrigger>
-            <TabsTrigger value="recruitment" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Recruitment</TabsTrigger>
-            <TabsTrigger value="personnel" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Personnel</TabsTrigger>
-            <TabsTrigger value="scouting" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Scouting</TabsTrigger>
+            <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Waivers</TabsTrigger>
+            <TabsTrigger value="recruitment" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">Recruitment</TabsTrigger>
+            <TabsTrigger value="personnel" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Personnel</TabsTrigger>
+            <TabsTrigger value="scouting" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">Scouting</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
       <Tabs value={activeTab} className="mt-0">
-        <TabsContent value="compliance" className="space-y-10 mt-0">
+        <TabsContent value="compliance" className="space-y-10 mt-0 animate-in fade-in duration-300">
           <div className="space-y-6">
             <div className="flex items-center gap-3 px-2">
               <ShieldCheck className="h-5 w-5 text-primary" />
@@ -600,8 +601,8 @@ export default function CoachesCornerPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] border-2" onClick={() => setSelectedDoc(doc)}>Audit</Button>
-                      <Button variant="ghost" size="icon" className="h-10 w-10 hover:bg-primary/5 rounded-xl" onClick={() => { setEditingDocId(doc.id); setNewDoc({ title: doc.title, content: doc.content, type: doc.type, assignedTo: doc.assignedTo }); setIsCreateOpen(true); }}><Edit3 className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="text-destructive h-10 w-10 hover:bg-destructive/5 rounded-xl" onClick={() => deleteTeamDocument(doc.id)}><Trash2 className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-10 w-10 hover:bg-primary/5 rounded-xl transition-all" onClick={() => { setEditingDocId(doc.id); setNewDoc({ title: doc.title, content: doc.content, type: doc.type, assignedTo: doc.assignedTo }); setIsCreateOpen(true); }}><Edit3 className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="text-destructive h-10 w-10 hover:bg-destructive/5 rounded-xl transition-all" onClick={() => deleteTeamDocument(doc.id)}><Trash2 className="h-4 w-4" /></Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -616,7 +617,7 @@ export default function CoachesCornerPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="recruitment" className="space-y-8 mt-0">
+        <TabsContent value="recruitment" className="space-y-8 mt-0 animate-in fade-in duration-300">
           <div className="flex items-center gap-3 px-2">
             <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><Users className="h-5 w-5" /></div>
             <div><h3 className="text-xl font-black uppercase tracking-tight">Recruit Pool</h3><p className="text-[9px] font-bold text-muted-foreground uppercase">{teamEntries.length} Applicants</p></div>
@@ -637,8 +638,8 @@ export default function CoachesCornerPage() {
                     <tr key={entry.id} className="hover:bg-muted/5 transition-colors">
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-4">
-                          <Avatar className="h-10 w-10 rounded-xl border">
-                            <AvatarImage src={entry.answers['photo']} />
+                          <Avatar className="h-10 w-10 rounded-xl border shadow-sm">
+                            <AvatarImage src={entry.answers['photo']} className="object-cover" />
                             <AvatarFallback className="font-black text-xs">{entry.answers['name']?.[0] || '?'}</AvatarFallback>
                           </Avatar>
                           <div>
@@ -657,21 +658,28 @@ export default function CoachesCornerPage() {
                         <div className="flex justify-end gap-2">
                           {entry.status === 'pending' && (
                             <>
-                              <Button size="sm" variant="ghost" className="rounded-xl h-9 w-9 text-destructive" onClick={() => respondToAssignment(entry.league_id, entry.id, 'declined')}><XCircle className="h-4 w-4" /></Button>
-                              <Button size="sm" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] shadow-md shadow-primary/20" onClick={() => respondToAssignment(entry.league_id, entry.id, 'accepted')}><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Enroll</Button>
+                              <Button size="sm" variant="ghost" className="rounded-xl h-9 w-9 text-destructive hover:bg-destructive/5" onClick={() => respondToAssignment(entry.league_id, entry.id, 'declined')}><XCircle className="h-4 w-4" /></Button>
+                              <Button size="sm" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] shadow-md shadow-primary/20 transition-all active:scale-95" onClick={() => respondToAssignment(entry.league_id, entry.id, 'accepted')}><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Enroll</Button>
                             </>
                           )}
                         </div>
                       </td>
                     </tr>
                   ))}
+                  {teamEntries.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="py-20 text-center opacity-30">
+                        <p className="text-xs font-black uppercase tracking-widest">No applicants found in pool.</p>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
           </Card>
         </TabsContent>
 
-        <TabsContent value="personnel" className="space-y-8 mt-0">
+        <TabsContent value="personnel" className="space-y-8 mt-0 animate-in fade-in duration-300">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
             <div className="flex items-center gap-3">
               <div className="bg-black p-2.5 rounded-xl text-white shadow-lg"><UserCog className="h-5 w-5" /></div>
@@ -679,7 +687,7 @@ export default function CoachesCornerPage() {
             </div>
             <div className="relative w-full md:w-72">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search roster..." className="pl-9 h-11 rounded-xl bg-muted/30 border-none font-bold" value={personnelSearch} onChange={e => setPersonnelPersonnelSearch(e.target.value)} />
+              <Input placeholder="Search roster..." className="pl-9 h-11 rounded-xl bg-muted/30 border-none font-bold shadow-inner" value={personnelSearch} onChange={e => setPersonnelPersonnelSearch(e.target.value)} />
             </div>
           </div>
 
@@ -689,13 +697,13 @@ export default function CoachesCornerPage() {
                 <CardContent className="p-5 flex items-center justify-between">
                   <div className="flex items-center gap-4 min-w-0">
                     <Avatar className="h-14 w-14 rounded-2xl border-2 border-background shadow-md">
-                      <AvatarImage src={member.avatar} />
-                      <AvatarFallback className="font-black text-xs">{member.name[0]}</AvatarFallback>
+                      <AvatarImage src={member.avatar} className="object-cover" />
+                      <AvatarFallback className="font-black text-xs bg-muted">{member.name[0]}</AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <h4 className="font-black text-lg uppercase tracking-tight group-hover:text-primary transition-colors truncate">{member.name}</h4>
-                        <Badge variant="outline" className="text-[8px] h-4 font-black border-primary/20 text-primary px-1.5 uppercase">#{member.jersey}</Badge>
+                        {member.jersey && <Badge variant="outline" className="text-[8px] h-4 font-black border-primary/20 text-primary px-1.5 uppercase">#{member.jersey}</Badge>}
                       </div>
                       <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{member.position}</p>
                     </div>
@@ -707,7 +715,7 @@ export default function CoachesCornerPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="scouting" className="space-y-8 mt-0">
+        <TabsContent value="scouting" className="space-y-8 mt-0 animate-in fade-in duration-300">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
             <div className="flex items-center gap-3">
               <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><BrainCircuit className="h-5 w-5" /></div>
@@ -716,9 +724,9 @@ export default function CoachesCornerPage() {
             <div className="flex gap-2">
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search intel..." className="pl-9 h-11 rounded-xl bg-muted/30 border-none font-bold" value={scoutingSearch} onChange={e => setScoutingSearch(e.target.value)} />
+                <Input placeholder="Search intel..." className="pl-9 h-11 rounded-xl bg-muted/30 border-none font-bold shadow-inner" value={scoutingSearch} onChange={e => setScoutingSearch(e.target.value)} />
               </div>
-              <Button onClick={() => setIsAddScoutingOpen(true)} className="h-11 rounded-xl font-black shadow-lg shadow-primary/20">
+              <Button onClick={() => setIsAddScoutingOpen(true)} className="h-11 rounded-xl font-black shadow-lg shadow-primary/20 transition-all active:scale-95">
                 <Plus className="h-4 w-4 mr-2" /> New Brief
               </Button>
             </div>
@@ -739,11 +747,17 @@ export default function CoachesCornerPage() {
                   <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 italic">"{report.keysToVictory}"</p>
                 </CardContent>
                 <CardFooter className="p-6 pt-0 border-t flex items-center justify-between bg-muted/10">
-                  <Button variant="ghost" size="sm" className="text-destructive h-8 w-8 p-0 hover:bg-destructive/10" onClick={() => deleteScoutingReport(report.id)}><Trash2 className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="sm" className="text-destructive h-8 w-8 p-0 hover:bg-destructive/10 transition-colors" onClick={() => deleteScoutingReport(report.id)}><Trash2 className="h-4 w-4" /></Button>
                   <ChevronRight className="h-5 w-5 text-primary opacity-20 group-hover:opacity-100 transition-all" />
                 </CardFooter>
               </Card>
             ))}
+            {filteredScouting.length === 0 && (
+              <div className="col-span-full py-24 text-center border-2 border-dashed rounded-[3rem] bg-muted/10 opacity-40">
+                <BrainCircuit className="h-12 w-12 mx-auto mb-4" />
+                <p className="text-sm font-black uppercase tracking-widest">No scouting briefs established.</p>
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>
@@ -751,31 +765,31 @@ export default function CoachesCornerPage() {
       {/* --- DIALOGS --- */}
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar bg-white">
-          <DialogTitle className="sr-only">Document Architect</DialogTitle>
+        <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <DialogTitle className="sr-only">Document Architect Wizard</DialogTitle>
           <div className="h-2 bg-primary w-full" />
-          <div className="p-8 lg:p-12 space-y-10">
-            <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">{editingDocId ? 'Update Waiver' : 'Document Architect'}</DialogTitle></DialogHeader>
+          <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
+            <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight leading-none">{editingDocId ? 'Update Waiver' : 'Document Architect'}</DialogTitle></DialogHeader>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
               <div className="space-y-6">
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Headline</Label><Input value={newDoc.title} onChange={e => setNewDoc({...newDoc, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold" /></div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Type</Label>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Headline</Label><Input value={newDoc.title} onChange={e => setNewDoc({...newDoc, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold focus:border-primary/20 transition-all" /></div>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Type</Label>
                   <Select value={newDoc.type} onValueChange={v => setNewDoc({...newDoc, type: v})}>
-                    <SelectTrigger className="h-14 rounded-2xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-14 rounded-2xl border-2 font-bold focus:border-primary/20"><SelectValue /></SelectTrigger>
                     <SelectContent className="rounded-xl"><SelectItem value="waiver" className="font-bold">Legal Waiver</SelectItem><SelectItem value="policy" className="font-bold">Conduct Policy</SelectItem></SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Content</Label><Textarea value={newDoc.content} onChange={e => setNewDoc({...newDoc, content: e.target.value})} className="min-h-[250px] rounded-2xl border-2 p-4 font-medium" /></div>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Content</Label><Textarea value={newDoc.content} onChange={e => setNewDoc({...newDoc, content: e.target.value})} className="min-h-[250px] rounded-2xl border-2 p-4 font-medium focus:border-primary/20 transition-all resize-none shadow-inner" /></div>
               </div>
               <div className="space-y-6">
-                <Label className="text-[10px] font-black uppercase ml-1">Assignment Logic</Label>
-                <div className="bg-muted/10 rounded-3xl border-2 p-2 space-y-2">
-                  <div className={cn("p-4 rounded-xl flex items-center justify-between cursor-pointer", newDoc.assignedTo.includes('all') ? "bg-primary text-white" : "hover:bg-white")} onClick={() => toggleAssignment('all')}>
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Assignment Logic</Label>
+                <div className="bg-muted/10 rounded-3xl border-2 p-2 space-y-2 overflow-y-auto max-h-[400px] custom-scrollbar">
+                  <div className={cn("p-4 rounded-xl flex items-center justify-between cursor-pointer transition-all", newDoc.assignedTo.includes('all') ? "bg-primary text-white shadow-lg shadow-primary/20" : "hover:bg-white")} onClick={() => toggleAssignment('all')}>
                     <span className="text-xs font-black uppercase">Entire Roster</span>
                     {newDoc.assignedTo.includes('all') && <CheckCircle2 className="h-4 w-4" />}
                   </div>
                   {members.map(m => (
-                    <div key={m.id} className={cn("p-3 rounded-xl flex items-center justify-between cursor-pointer", newDoc.assignedTo.includes(m.id) ? "bg-black text-white" : "hover:bg-white")} onClick={() => toggleAssignment(m.id)}>
+                    <div key={m.id} className={cn("p-3 rounded-xl flex items-center justify-between cursor-pointer transition-all", newDoc.assignedTo.includes(m.id) ? "bg-black text-white shadow-lg" : "hover:bg-white")} onClick={() => toggleAssignment(m.id)}>
                       <span className="text-xs font-bold uppercase truncate">{m.name}</span>
                       {newDoc.assignedTo.includes(m.id) && <CheckCircle2 className="h-4 w-4 text-primary" />}
                     </div>
@@ -783,17 +797,17 @@ export default function CoachesCornerPage() {
                 </div>
               </div>
             </div>
-            <DialogFooter><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleCreateDocument} disabled={isProcessing}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Protocol"}</Button></DialogFooter>
+            <DialogFooter><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCreateDocument} disabled={isProcessing}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Protocol"}</Button></DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isAddScoutingOpen} onOpenChange={setIsAddScoutingOpen}>
-        <DialogContent className="sm:max-w-4xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white max-h-[90vh]">
           <DialogTitle className="sr-only">New Scouting Brief Initialization</DialogTitle>
           <div className="h-2 bg-black w-full" />
-          <div className="flex flex-col lg:flex-row h-full">
-            <div className="w-full lg:w-5/12 bg-primary/5 p-8 lg:p-10 space-y-8 border-r overflow-y-auto custom-scrollbar max-h-[85vh]">
+          <div className="flex flex-col lg:flex-row h-full overflow-hidden">
+            <div className="w-full lg:w-5/12 bg-primary/5 p-8 lg:p-10 space-y-8 border-r overflow-y-auto custom-scrollbar">
               <DialogHeader>
                 <div className="flex items-center gap-4 mb-2">
                   <div className="bg-primary/10 p-3 rounded-2xl text-primary"><BrainCircuit className="h-6 w-6" /></div>
@@ -804,40 +818,40 @@ export default function CoachesCornerPage() {
                 </div>
               </DialogHeader>
               <div className="space-y-6">
-                <div className="bg-white p-6 rounded-[2rem] border-2 border-dashed border-primary/20 space-y-4">
+                <div className="bg-white p-6 rounded-[2rem] border-2 border-dashed border-primary/20 space-y-4 shadow-sm">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Raw Match Observations</Label>
-                  <Textarea placeholder="Paste raw notes or tendencies here..." value={aiObservations} onChange={e => setAiObservations(e.target.value)} className="min-h-[200px] rounded-2xl bg-muted/10 border-none font-medium text-sm" />
-                  <Button className="w-full h-12 rounded-xl font-black uppercase text-xs shadow-lg" onClick={handleAiAnalyze} disabled={isAiGenerating || !aiObservations.trim() || !newScouting.opponentName}>
+                  <Textarea placeholder="Paste raw notes or tendencies here..." value={aiObservations} onChange={e => setAiObservations(e.target.value)} className="min-h-[200px] rounded-2xl bg-muted/10 border-none font-medium text-sm p-4 focus:bg-white transition-all shadow-inner resize-none" />
+                  <Button className="w-full h-12 rounded-xl font-black uppercase text-xs shadow-lg shadow-primary/20 active:scale-95 transition-all" onClick={handleAiAnalyze} disabled={isAiGenerating || !aiObservations.trim() || !newScouting.opponentName}>
                     {isAiGenerating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Wand2 className="h-4 w-4 mr-2" />}
                     Generate AI Brief
                   </Button>
                 </div>
               </div>
             </div>
-            <div className="flex-1 p-8 lg:p-10 space-y-6 bg-white overflow-y-auto custom-scrollbar max-h-[85vh]">
+            <div className="flex-1 p-8 lg:p-10 space-y-6 bg-white overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Opponent Name</Label><Input value={newScouting.opponentName} onChange={e => setNewScouting({...newScouting, opponentName: e.target.value})} className="h-12 rounded-xl border-2" /></div>
-                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Match Date</Label><Input type="date" value={newScouting.date} onChange={e => setNewScouting({...newScouting, date: e.target.value})} className="h-12 rounded-xl border-2" /></div>
+                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Opponent Name</Label><Input value={newScouting.opponentName} onChange={e => setNewScouting({...newScouting, opponentName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all" /></div>
+                <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Match Date</Label><Input type="date" value={newScouting.date} onChange={e => setNewScouting({...newScouting, date: e.target.value})} className="h-12 rounded-xl border-2 font-black focus:border-primary/20 transition-all" /></div>
               </div>
-              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Study Link</Label><Input placeholder="Video or playbook URL..." value={newScouting.videoUrl} onChange={e => setNewScouting({...newScouting, videoUrl: e.target.value})} className="h-12 rounded-xl border-2" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Strengths</Label><Textarea value={newScouting.strengths} onChange={e => setNewScouting({...newScouting, strengths: e.target.value})} className="h-24 rounded-xl border-2 p-4 font-bold text-sm" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase">Weaknesses</Label><Textarea value={newScouting.weaknesses} onChange={e => setNewScouting({...newScouting, weaknesses: e.target.value})} className="h-24 rounded-xl border-2 p-4 font-bold text-sm" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase text-primary">Primary Keys to Victory</Label><Textarea value={newScouting.keysToVictory} onChange={e => setNewScouting({...newScouting, keysToVictory: e.target.value})} className="h-24 rounded-xl border-primary border-2 p-4 font-black text-sm" /></div>
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleAddScouting} disabled={!newScouting.opponentName || !newScouting.date}>Commit Scouting Brief</Button>
+              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Study Link</Label><Input placeholder="Video or playbook URL..." value={newScouting.videoUrl} onChange={e => setNewScouting({...newScouting, videoUrl: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Strengths</Label><Textarea value={newScouting.strengths} onChange={e => setNewScouting({...newScouting, strengths: e.target.value})} className="h-24 rounded-xl border-2 p-4 font-bold text-sm focus:border-primary/20 transition-all resize-none shadow-inner" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Weaknesses</Label><Textarea value={newScouting.weaknesses} onChange={e => setNewScouting({...newScouting, weaknesses: e.target.value})} className="h-24 rounded-xl border-2 p-4 font-bold text-sm focus:border-primary/20 transition-all resize-none shadow-inner" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase text-primary ml-1">Primary Keys to Victory</Label><Textarea value={newScouting.keysToVictory} onChange={e => setNewScouting({...newScouting, keysToVictory: e.target.value})} className="h-24 rounded-xl border-primary border-2 p-4 font-black text-sm focus:bg-primary/5 transition-all resize-none shadow-inner" /></div>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleAddScouting} disabled={!newScouting.opponentName || !newScouting.date}>Commit Scouting Brief</Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={!!selectedDoc} onOpenChange={o => !o && setSelectedDoc(null)}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-xl p-0 overflow-hidden bg-white shadow-2xl border-none">
+        <DialogContent className="rounded-[2.5rem] sm:max-w-xl p-0 overflow-hidden bg-white shadow-2xl border-none max-h-[90vh]">
           <DialogTitle className="sr-only">Document Audit Ledger</DialogTitle>
           <div className="h-2 bg-black w-full" />
-          <div className="p-8 space-y-6">
+          <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
             <DialogHeader>
               <div className="flex justify-between items-start">
                 <div><DialogTitle className="text-2xl font-black uppercase">{selectedDoc?.title}</DialogTitle><DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-primary">Compliance Audit</DialogDescription></div>
-                <Button variant="outline" className="rounded-xl h-9 px-4 font-black uppercase text-[10px]" onClick={() => selectedDoc && exportSignaturesCSV(selectedDoc.id)}><Download className="h-3 w-3 mr-2" /> CSV</Button>
+                <Button variant="outline" className="rounded-xl h-9 px-4 font-black uppercase text-[10px] border-2 transition-all active:scale-95" onClick={() => selectedDoc && exportSignaturesCSV(selectedDoc.id)}><Download className="h-3 w-3 mr-2" /> CSV</Button>
               </div>
             </DialogHeader>
             <div className="space-y-4">

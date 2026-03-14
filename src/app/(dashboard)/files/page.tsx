@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -96,15 +95,16 @@ function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: T
         </Button>
       </DialogTrigger>
       <DialogContent className="rounded-[2.5rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl">
+        <DialogTitle className="sr-only">Execute Verified Signature</DialogTitle>
         <div className="h-2 bg-primary w-full" />
-        <div className="p-8 space-y-8">
+        <div className="p-8 space-y-8 overflow-y-auto max-h-[90vh] custom-scrollbar">
           <DialogHeader>
             <DialogTitle className="text-3xl font-black uppercase tracking-tight">{d.title}</DialogTitle>
             <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Verified Execution Protocol</DialogDescription>
           </DialogHeader>
 
           <div className="p-1 bg-muted rounded-2xl border-2">
-            <ScrollArea className="h-64 p-6 bg-white rounded-xl">
+            <ScrollArea className="h-64 p-6 bg-white rounded-xl shadow-inner">
               <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap text-foreground/80">{d.content}</p>
             </ScrollArea>
           </div>
@@ -113,7 +113,7 @@ function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: T
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Executing Signature For</Label>
               <Select value={targetMemberId} onValueChange={setTargetMemberId}>
-                <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue placeholder="Select roster member..." /></SelectTrigger>
+                <SelectTrigger className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all"><SelectValue placeholder="Select roster member..." /></SelectTrigger>
                 <SelectContent className="rounded-xl">
                   {members.map(m => (
                     <SelectItem key={m.id} value={m.id} className="font-bold">{m.name} ({m.position})</SelectItem>
@@ -122,7 +122,7 @@ function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: T
               </Select>
             </div>
 
-            <div className="flex items-center space-x-3 p-4 bg-primary/5 rounded-2xl border border-primary/10 group cursor-pointer" onClick={() => setAgreed(!agreed)}>
+            <div className="flex items-center space-x-3 p-4 bg-primary/5 rounded-2xl border border-primary/10 group cursor-pointer transition-all hover:bg-primary/10" onClick={() => setAgreed(!agreed)}>
               <div className={cn(
                 "h-6 w-6 rounded-lg border-2 flex items-center justify-center transition-all",
                 agreed ? "bg-primary border-primary text-white" : "border-muted-foreground/30 bg-white"
@@ -140,13 +140,13 @@ function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: T
                 placeholder="Type your name to sign..." 
                 value={signature} 
                 onChange={e => setSignature(e.target.value)} 
-                className="h-14 rounded-2xl border-2 text-xl font-mono italic text-primary text-center" 
+                className="h-14 rounded-2xl border-2 text-xl font-mono italic text-primary text-center focus:border-primary/40 transition-all" 
               />
             </div>
           </div>
 
           <DialogFooter>
-            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleSign} disabled={!agreed || !signature.trim() || !targetMemberId || isProcessing}>
+            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleSign} disabled={!agreed || !signature.trim() || !targetMemberId || isProcessing}>
               {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Confirm & Verify Signatures"}
             </Button>
           </DialogFooter>
@@ -282,40 +282,41 @@ export default function FilesPage() {
   };
 
   return (
-    <div className="space-y-12 pb-32">
+    <div className="space-y-12 pb-32 animate-in fade-in duration-700">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 mb-2">Squad Repository</Badge>
+        <div className="space-y-1">
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest">Squad Repository</Badge>
           <h1 className="text-4xl font-black uppercase tracking-tight">Library & Docs</h1>
-          <p className="text-sm font-bold text-muted-foreground">Official squad repository for waivers and administration.</p>
+          <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest opacity-60">Official administrative repository & verified vault</p>
         </div>
         {isStaff && (
           <div className="flex flex-wrap gap-2">
             <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
             <Dialog>
               <DialogTrigger asChild>
-                <Button className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg shadow-primary/20">
-                  <Upload className="h-4 w-4 mr-2" /> Upload Resource
+                <Button className="rounded-full h-12 px-8 font-black uppercase text-xs shadow-xl shadow-primary/20 active:scale-95 transition-all">
+                  <Upload className="h-4 w-4 mr-2" /> Archive Resource
                 </Button>
               </DialogTrigger>
-              <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
+              <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0 sm:max-w-xl">
+                <DialogTitle className="sr-only">Archive Administrative Resource</DialogTitle>
                 <div className="h-2 bg-primary w-full" />
-                <div className="p-8 space-y-6">
+                <div className="p-8 lg:p-10 space-y-8 overflow-y-auto max-h-[90vh] custom-scrollbar">
                   <DialogHeader>
                     <DialogTitle className="text-2xl font-black uppercase tracking-tight">Archive Resource</DialogTitle>
-                    <DialogDescription className="font-bold text-primary uppercase text-[10px]">Enroll administrative resources</DialogDescription>
+                    <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Enroll administrative resources</DialogDescription>
                   </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest">Type</Label>
+                  <div className="space-y-6">
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Resource Category</Label>
                       <Select value={uploadCategory} onValueChange={setUploadCategory}>
-                        <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
-                        <SelectContent className="rounded-xl"><SelectItem value="Compliance">Compliance & Waivers</SelectItem><SelectItem value="Other">Other Documents</SelectItem></SelectContent>
+                        <SelectTrigger className="h-12 rounded-xl border-2 font-bold focus:border-primary/20"><SelectValue /></SelectTrigger>
+                        <SelectContent className="rounded-xl"><SelectItem value="Compliance" className="font-bold">Compliance & Waivers</SelectItem><SelectItem value="Other" className="font-bold">Other Documents</SelectItem></SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest">Notes</Label><Textarea placeholder="Context for the squad..." value={uploadDescription} onChange={e => setUploadDescription(e.target.value)} className="rounded-xl min-h-[100px] border-2 font-bold resize-none" /></div>
-                    <div className="p-10 border-2 border-dashed rounded-[2rem] bg-muted/20 text-center space-y-4 group cursor-pointer hover:border-primary/20 transition-all" onClick={() => fileInputRef.current?.click()}>
-                      <div className="bg-white w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm group-hover:scale-110 transition-transform"><FileText className="h-8 w-8 text-primary" /></div>
-                      <p className="text-sm font-black uppercase">Select File</p>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tactical Context</Label><Textarea placeholder="Define the purpose of this resource for the squad..." value={uploadDescription} onChange={e => setUploadDescription(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-bold resize-none shadow-inner p-4 focus:bg-white transition-all" /></div>
+                    <div className="p-12 border-2 border-dashed rounded-[2.5rem] bg-muted/20 text-center space-y-4 group cursor-pointer hover:border-primary/20 transition-all" onClick={() => fileInputRef.current?.click()}>
+                      <div className="bg-white w-16 h-16 rounded-[1.5rem] flex items-center justify-center mx-auto shadow-sm group-hover:scale-110 transition-transform"><FileText className="h-8 w-8 text-primary" /></div>
+                      <p className="text-sm font-black uppercase tracking-widest">Select Tactical File</p>
                     </div>
                   </div>
                 </div>
@@ -333,21 +334,21 @@ export default function FilesPage() {
             </div>
             <div>
               <h2 className="text-xl font-black uppercase tracking-tight">Action Required</h2>
-              <p className="text-[10px] font-bold text-red-600 uppercase tracking-widest">Pending Signatures</p>
+              <p className="text-[10px] font-bold text-red-600 uppercase tracking-widest">Pending Institutional Signatures</p>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {pendingDocsForDisplay.map(d => (
-              <Card key={d.id} className="rounded-[2.5rem] border-none shadow-xl ring-2 ring-red-100 bg-white overflow-hidden flex flex-col group">
+              <Card key={d.id} className="rounded-[2.5rem] border-none shadow-xl ring-2 ring-red-100 bg-white overflow-hidden flex flex-col group hover:shadow-2xl transition-all">
                 <CardHeader className="p-8 pb-4">
                   <div className="flex justify-between items-start">
-                    <Badge className="bg-red-600 text-white border-none font-black text-[8px] uppercase px-2 h-5">URGENT</Badge>
-                    <span className="text-[10px] font-black text-muted-foreground uppercase">{d.type}</span>
+                    <Badge className="bg-red-600 text-white border-none font-black text-[8px] uppercase px-2 h-5 shadow-lg shadow-red-600/20">URGENT</Badge>
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">{d.type}</span>
                   </div>
                   <CardTitle className="text-2xl font-black uppercase tracking-tight pt-2">{d.title}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-8 pt-0 flex-1">
-                  <p className="text-xs font-medium text-muted-foreground line-clamp-3 leading-relaxed mb-6 italic">
+                  <p className="text-xs font-medium text-muted-foreground line-clamp-3 leading-relaxed mb-8 italic opacity-80">
                     "{d.content}"
                   </p>
                   <DocumentSigningDialog 
@@ -369,7 +370,7 @@ export default function FilesPage() {
         </section>
       )}
 
-      <section className="space-y-8">
+      <section className="space-y-8 pt-4">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <div className="bg-primary/10 p-2.5 rounded-xl text-primary">
@@ -383,74 +384,74 @@ export default function FilesPage() {
               placeholder="Search archived resources..." 
               value={searchTerm} 
               onChange={e => setSearchTerm(e.target.value)} 
-              className="pl-11 h-12 rounded-2xl bg-muted/50 border-none shadow-inner font-black" 
+              className="pl-11 h-12 rounded-2xl bg-muted/50 border-none shadow-inner font-black text-sm transition-all focus:bg-white" 
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filteredFiles.map(file => {
             const isCertificate = file.category === 'Signed Certificate';
             return (
               <Card key={file.id} className={cn(
-                "group border-none shadow-sm hover:shadow-xl transition-all duration-500 rounded-[2rem] overflow-hidden ring-1 ring-black/5",
+                "group border-none shadow-sm hover:shadow-xl transition-all duration-500 rounded-[2rem] overflow-hidden ring-1 ring-black/5 flex flex-col",
                 isCertificate ? "bg-primary/5 border-primary/20 ring-primary/10" : "bg-white"
               )}>
                 <CardHeader className="p-6 pb-2">
                   <div className="flex justify-between items-start">
                     <div className={cn(
-                      "p-3 rounded-2xl shadow-sm",
+                      "p-3 rounded-2xl shadow-sm transition-transform group-hover:scale-110",
                       isCertificate ? "bg-primary text-white" : "bg-primary/5 text-primary"
                     )}>
                       {isCertificate ? <Shield className="h-6 w-6" /> : <FileText className="h-6 w-6" />}
                     </div>
                     <Badge variant={isCertificate ? "default" : "outline"} className={cn(
-                      "text-[8px] font-black uppercase",
+                      "text-[8px] font-black uppercase tracking-tighter px-2 h-5",
                       !isCertificate && "border-primary/20 text-primary"
                     )}>{file.category}</Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="p-6 pt-2 space-y-3">
+                <CardContent className="p-6 pt-2 flex-1 space-y-3">
                   <div className="space-y-1">
-                    <h3 className="font-black text-sm uppercase tracking-tight truncate">{file.name}</h3>
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase">{file.size || 'N/A'} • {format(new Date(file.date), 'MMM d, yyyy')}</p>
+                    <h3 className="font-black text-sm uppercase tracking-tight truncate group-hover:text-primary transition-colors">{file.name}</h3>
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60">{file.size || 'N/A'} • {format(new Date(file.date), 'MMM d, yyyy')}</p>
                   </div>
                   {file.description && <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 leading-relaxed italic">"{file.description}"</p>}
                 </CardContent>
                 <CardFooter className="p-6 pt-0 flex gap-2">
                   {isCertificate ? (
-                    <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20" onClick={() => handleDownloadCertificate(file)}>
+                    <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-95" onClick={() => handleDownloadCertificate(file)}>
                       <Download className="h-3 w-3 mr-2" /> Download Cert
                     </Button>
                   ) : (
-                    <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20" onClick={() => window.open(file.url, '_blank')}>
+                    <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-95" onClick={() => window.open(file.url, '_blank')}>
                       View Resource
                     </Button>
                   )}
-                  {isStaff && <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => setFileToDelete(file.id)}><Trash2 className="h-4 w-4" /></Button>}
+                  {isStaff && <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5 transition-colors" onClick={() => setFileToDelete(file.id)}><Trash2 className="h-4 w-4" /></Button>}
                 </CardFooter>
               </Card>
             );
           })}
 
           {filteredFiles.length === 0 && pendingDocsForDisplay.length === 0 && (
-            <div className="col-span-full py-24 text-center bg-muted/10 rounded-[3rem] border-2 border-dashed space-y-4 opacity-40">
-              <FolderClosed className="h-12 w-12 mx-auto" />
-              <p className="text-sm font-black uppercase tracking-widest">No Documents Found</p>
+            <div className="col-span-full py-32 text-center bg-muted/10 rounded-[3rem] border-2 border-dashed space-y-4 opacity-40">
+              <FolderClosed className="h-16 w-16 mx-auto mb-2" />
+              <p className="text-sm font-black uppercase tracking-[0.2em]">Repository Clear</p>
             </div>
           )}
         </div>
       </section>
 
       <AlertDialog open={!!fileToDelete} onOpenChange={o => !o && setFileToDelete(null)}>
-        <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-2xl font-black uppercase">Purge Document?</AlertDialogTitle>
-            <AlertDialogDescription className="font-bold text-base pt-2 text-foreground/80">This action is permanent and will remove this resource from the squad repository for all members.</AlertDialogDescription>
+        <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
+          <AlertDialogHeader className="p-8 lg:p-10 pb-4">
+            <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">Purge Document?</AlertDialogTitle>
+            <AlertDialogDescription className="font-bold text-base pt-2 text-foreground/80 leading-relaxed">This action is irreversible and will remove this resource from the squad repository for all members permanently.</AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="mt-6">
-            <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { if(fileToDelete) { deleteFile(fileToDelete); setFileToDelete(null); } }} className="rounded-xl font-black bg-red-600">Purge Permanently</AlertDialogAction>
+          <AlertDialogFooter className="p-8 bg-muted/10 border-t flex flex-col sm:flex-row gap-2">
+            <AlertDialogCancel className="rounded-xl font-bold border-2 h-12">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if(fileToDelete) { deleteFile(fileToDelete); setFileToDelete(null); } }} className="rounded-xl font-black bg-red-600 hover:bg-red-700 h-12 shadow-xl shadow-red-600/20">Purge Permanently</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
