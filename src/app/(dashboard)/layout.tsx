@@ -14,13 +14,13 @@ import { useFirestore } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 
-const DEMO_TIMEOUT_MS = 15 * 60 * 1000; // 15 Minutes
+const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
 const DEMO_START_KEY = 'squad_demo_start_time';
 
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading, isAuthResolved } = useUser();
   const auth = useAuth();
-  const { teams, isTeamsLoading, isSeedingDemo, user: userProfile, setActiveTeam } = useTeam();
+  const { teams, isTeamsLoading, isSeedingDemo, user: userProfile } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   const pathname = usePathname();
@@ -31,50 +31,40 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
-  // --- DEMO INITIALIZATION ---
+  // --- OPTIMIZED ATOMIC DEMO LAUNCH ---
   useEffect(() => {
-    if (!mounted || !user || isDemoInitializing) return;
+    if (!mounted || !user || isDemoInitializing || teams.length > 0) return;
     
     const demoPlanId = searchParams.get('seed_demo');
-    if (demoPlanId && teams.length === 0) {
+    if (demoPlanId) {
       setIsDemoInitializing(true);
       const seed = async () => {
         try {
+          // Perform global and specific seeding in one flow
           await seedSubscriptionData(db);
           await seedGuestDemoTeam(db, user.uid, demoPlanId);
-          // Clean URL and refresh state
-          router.replace('/dashboard');
+          window.location.replace('/dashboard');
         } catch (e) {
-          console.error("Demo seeding failed:", e);
+          console.error("Demo failure:", e);
           setIsDemoInitializing(false);
         }
       };
       seed();
     }
-  }, [mounted, user, teams.length, db, isDemoInitializing, searchParams, router]);
+  }, [mounted, user, teams.length, db, isDemoInitializing, searchParams]);
 
-  // --- GLOBAL AUTH GUARD ---
+  // --- AUTH GUARDS ---
   useEffect(() => {
-    if (!mounted || !isAuthResolved) return;
-    
-    const isLaunchingDemo = searchParams.has('seed_demo');
-
-    // If no user and not currently initializing a demo, go to login
-    if (!user && !isLaunchingDemo && !isDemoInitializing) {
+    if (!mounted || !isAuthResolved || isDemoInitializing) return;
+    if (!user && !searchParams.has('seed_demo')) {
       router.push('/login');
     }
   }, [user, isAuthResolved, router, mounted, searchParams, isDemoInitializing]);
 
-  // --- TEAM SETUP GUARD ---
   useEffect(() => {
-    if (!mounted || isSeedingDemo || isTeamsLoading || !user || isDemoInitializing) return;
-
-    const isLaunchingDemo = searchParams.has('seed_demo');
-    if (isLaunchingDemo) return;
+    if (!mounted || isSeedingDemo || isTeamsLoading || !user || isDemoInitializing || searchParams.has('seed_demo')) return;
 
     const isSetupPage = pathname === '/dashboard' ||
                         pathname === '/teams/new' || 
@@ -87,11 +77,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
                         pathname.startsWith('/register/league/');
     
     if (teams.length === 0 && !isSetupPage) {
-      if (userProfile?.role === 'coach') {
-        router.push('/teams/new');
-      } else {
-        router.push('/teams/join');
-      }
+      if (userProfile?.role === 'coach') router.push('/teams/new');
+      else router.push('/teams/join');
     }
   }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, mounted, isDemoInitializing, searchParams]);
 
@@ -106,40 +93,27 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     }
 
     const checkSession = () => {
-      const start = parseInt(startTime!);
-      const elapsed = Date.now() - start;
+      const elapsed = Date.now() - parseInt(startTime!);
       const remaining = Math.max(0, DEMO_TIMEOUT_MS - elapsed);
       setTimeLeft(remaining);
-
-      if (remaining <= 60000 && remaining > 59000) {
-        toast({ title: "Session Expiring", description: "Guest access ends in 60s.", variant: "destructive" });
-      }
-
-      if (remaining <= 0) {
-        handleEndDemo("Session Expired");
-      }
+      if (remaining <= 0) handleEndDemo();
     };
 
-    const handleEndDemo = async (reason: string) => {
+    const handleEndDemo = async () => {
       if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
       sessionStorage.removeItem(DEMO_START_KEY);
       await signOut(auth);
-      window.location.href = `/login?reason=${encodeURIComponent(reason)}`;
+      window.location.href = `/login?reason=expired`;
     };
 
     checkSession();
     heartbeatInterval.current = setInterval(checkSession, 1000);
-
-    return () => {
-      if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
-    };
+    return () => { if (heartbeatInterval.current) clearInterval(heartbeatInterval.current); };
   }, [mounted, userProfile?.isDemo, user, auth]);
 
   const formatTimeLeft = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${Math.floor(totalSeconds / 60)}:${(totalSeconds % 60).toString().padStart(2, '0')}`;
   };
 
   const showLoading = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing;
