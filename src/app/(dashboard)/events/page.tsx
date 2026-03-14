@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -67,7 +66,6 @@ const formatDateRange = (start: string | Date, end?: string | Date) => {
 function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, children, members }: { event: TeamEvent, updateRSVP: any, isAdmin: boolean, onEdit: any, onDelete: any, children: React.ReactNode, members: Member[] }) {
   const { user, exportAttendanceCSV } = useTeam();
   const myRsvp = event.userRsvps?.[user?.id || ''] || 'no_response';
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
   const handleSyncToCalendar = () => {
     const calendarEvent = {
@@ -98,7 +96,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                   <div className="flex items-center gap-3"><Clock className="h-4 w-4 text-primary" />{event.startTime}</div>
                   <div className="flex items-center gap-3"><MapPin className="h-4 w-4 text-primary" /><span className="truncate">{event.location}</span></div>
                 </div>
-                <Button variant="outline" className="w-full h-10 rounded-xl border-white/20 text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest" onClick={handleSyncToCalendar}>
+                <Button variant="outline" className="w-full h-12 rounded-xl border-white/20 bg-white/5 text-white hover:bg-primary hover:border-transparent font-black uppercase text-[10px] tracking-widest transition-all" onClick={handleSyncToCalendar}>
                   <CalendarIcon className="h-4 w-4 mr-2" /> Add to Calendar
                 </Button>
               </div>
@@ -116,7 +114,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
             </div>
             {isAdmin && (
               <div className="mt-auto pt-8 flex flex-col gap-3 relative z-10">
-                <Button variant="outline" className="w-full h-12 rounded-xl border-white/20 text-white hover:bg-white/10 font-black uppercase text-[10px]" onClick={() => exportAttendanceCSV(event.id)}>
+                <Button variant="outline" className="w-full h-12 rounded-xl border-white/20 bg-white/5 text-white hover:bg-primary hover:border-transparent font-black uppercase text-[10px] transition-all" onClick={() => exportAttendanceCSV(event.id)}>
                   <Download className="h-4 w-4 mr-2 text-white" /> <span className="text-white">Export RSVP Ledger</span>
                 </Button>
                 <div className="flex gap-2">

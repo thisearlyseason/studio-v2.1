@@ -100,11 +100,6 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   }, [db, authUser?.uid]);
 
   const { data: facilities } = useCollection<Facility>(facilitiesQuery);
-  
-  const allFields = useMemo(() => {
-    if (!facilities) return [];
-    return []; // Logic moved to explicit allocation for accuracy
-  }, [facilities]);
 
   const handleGenerate = async () => {
     if (!config.startDate || !config.selectedFields.length || !Object.keys(league.teams || {}).length) {
@@ -177,6 +172,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                     {DAYS_OF_WEEK.map(day => (
                       <button
                         key={day.id}
+                        type="button"
                         onClick={() => toggleDay(day.id)}
                         className={cn(
                           "h-10 px-4 rounded-xl font-black text-[10px] uppercase transition-all border-2",
@@ -194,7 +190,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Double Headers</Label>
                     <div className="flex items-center gap-3 h-12">
-                      <button onClick={() => setConfig({...config, doubleHeaders: !config.doubleHeaders})} className={cn("h-7 w-12 rounded-full transition-all relative", config.doubleHeaders ? "bg-primary" : "bg-muted")}>
+                      <button type="button" onClick={() => setConfig({...config, doubleHeaders: !config.doubleHeaders})} className={cn("h-7 w-12 rounded-full transition-all relative", config.doubleHeaders ? "bg-primary" : "bg-muted")}>
                         <div className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-all", config.doubleHeaders ? "left-6" : "left-1")} />
                       </button>
                       <span className="text-[10px] font-bold uppercase text-muted-foreground">Alt Home/Away</span>
@@ -225,30 +221,28 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Assign Fields/Courts</Label>
                     <div className="bg-muted/20 rounded-2xl p-4 border-2 border-dashed space-y-2 text-center">
                       <p className="text-[9px] font-bold text-muted-foreground uppercase py-4">Selected venues will be used for auto-balancing.</p>
-                      <Button variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px]" onClick={() => setConfig({...config, selectedFields: ['Field 1', 'Field 2', 'Court A']})}>Map Standard Resources</Button>
+                      <Button type="button" variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px]" onClick={() => setConfig({...config, selectedFields: ['Field 1', 'Field 2', 'Court A']})}>Map Standard Resources</Button>
                     </div>
                   </div>
                 )}
               </section>
             </div>
 
-            <aside className="lg:col-span-5 space-y-10">
-              <section className="space-y-6">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Blackout Dates</h3>
-                <div className="bg-white border-2 rounded-[2rem] p-4 shadow-inner flex flex-col items-center">
-                  <div className="w-fit">
-                    <Calendar 
-                      mode="multiple"
-                      selected={config.blackoutDates}
-                      onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})}
-                      className="rounded-xl border-none"
-                    />
-                  </div>
-                  <div className="w-full mt-4 pt-4 border-t">
-                    <p className="text-[9px] font-black uppercase text-muted-foreground px-2">{config.blackoutDates.length} Dates Booked Off</p>
-                  </div>
+            <aside className="lg:col-span-5 space-y-6">
+              <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Blackout Dates</h3>
+              <div className="bg-white border-2 rounded-[2rem] p-4 shadow-inner flex flex-col items-center">
+                <div className="relative w-fit">
+                  <Calendar 
+                    mode="multiple"
+                    selected={config.blackoutDates}
+                    onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})}
+                    className="rounded-xl border-none"
+                  />
                 </div>
-              </section>
+                <div className="w-full mt-4 pt-4 border-t">
+                  <p className="text-[9px] font-black uppercase text-muted-foreground px-2">{config.blackoutDates.length} Dates Booked Off</p>
+                </div>
+              </div>
             </aside>
           </div>
 
@@ -455,7 +449,7 @@ export default function LeaguesPage() {
                           <span>Registration Hub</span>
                         </Link>
                       </Button>
-                      <Button variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase border-white text-white hover:bg-white/10" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Invite Team</Button>
+                      <Button variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase border-white text-white hover:bg-black hover:text-white hover:border-primary transition-all" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Invite Team</Button>
                     </>
                   )}
                   <Button asChild variant="ghost" className="h-12 px-6 rounded-xl font-black text-xs uppercase text-white/60 hover:text-white"><Link href={`/leagues/spectator/${activeLeague.id}`} target="_blank"><ExternalLink className="h-4 w-4 mr-2" /> Public Portal</Link></Button>

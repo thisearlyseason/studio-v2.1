@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -137,7 +136,8 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
     gameLength: '60',
     breakLength: '15',
     selectedFacilityId: '',
-    selectedFields: [] as string[]
+    selectedFields: [] as string[],
+    manualVenue: ''
   });
 
   const facilitiesQuery = useMemoFirebase(() => {
@@ -166,13 +166,14 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
   };
 
   const handleGenerateItinerary = async () => {
-    if (!event.tournamentTeams?.length || !genConfig.selectedFields.length) {
-      toast({ title: "Resource Error", description: "Select teams and fields first.", variant: "destructive" });
+    const finalFields = genConfig.selectedFields.length > 0 ? genConfig.selectedFields : [genConfig.manualVenue || 'TBD'];
+    if (!event.tournamentTeams?.length || finalFields.length === 0) {
+      toast({ title: "Resource Error", description: "Select teams and fields/venue first.", variant: "destructive" });
       return;
     }
     const schedule = generateTournamentSchedule({
       teams: event.tournamentTeams,
-      fields: genConfig.selectedFields,
+      fields: finalFields,
       startDate: event.date,
       endDate: event.endDate,
       startTime: genConfig.startTime,
@@ -210,11 +211,11 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
         <div className="flex items-center gap-3">
           {isOrganizer && (
             <>
-              <Button variant="outline" className="rounded-xl h-10 px-6 border-2 font-black uppercase text-[10px]" onClick={() => setIsGenOpen(true)}><Sparkles className="h-4 w-4 mr-2" /> Auto-Deploy Itinerary</Button>
-              <Button variant="outline" className="rounded-xl h-10 px-6 border-2 font-black uppercase text-[10px]" onClick={() => setIsEditOpen(true)}><Edit3 className="h-4 w-4 mr-2" /> Manage Teams</Button>
+              <Button variant="outline" className="rounded-xl h-10 px-6 border-2 font-black uppercase text-[10px] bg-white text-black hover:bg-primary hover:text-white hover:border-transparent transition-all" onClick={() => setIsGenOpen(true)}><Sparkles className="h-4 w-4 mr-2" /> Auto-Deploy Itinerary</Button>
+              <Button variant="outline" className="rounded-xl h-10 px-6 border-2 font-black uppercase text-[10px] bg-white text-black hover:bg-primary hover:text-white hover:border-transparent transition-all" onClick={() => setIsEditOpen(true)}><Edit3 className="h-4 w-4 mr-2" /> Manage Teams</Button>
             </>
           )}
-          <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><CalendarDaysIcon className="h-4 w-4 mr-2" /> {event.date ? format(new Date(event.date), 'MMM d') : ''} - {event.endDate ? format(new Date(event.endDate), 'MMM d') : ''}</Badge>
+          <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><CalendarDaysIcon className="h-4 w-4 mr-2" /> {event.date ? format(new Date(event.date), 'MMM d') : ''} - {event.endDate ? format(new Date(event.endDate), 'MMM d, yyyy') : ''}</Badge>
         </div>
       </div>
 
@@ -271,7 +272,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                     <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-2">LIVE HUB</Badge>
                     <h4 className="text-xl font-black uppercase tracking-tight">Spectator Portal</h4>
                     <p className="text-[10px] text-white/60 font-medium leading-relaxed italic">Public link for fans to track real-time standings and schedules.</p>
-                    <Button variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px] bg-white/10 border-white/20 text-white">Open Live View <ExternalLink className="ml-2 h-3 w-3" /></Button>
+                    <Button variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px] bg-white/10 border-white/20 text-white hover:bg-primary hover:border-transparent transition-all">Open Live View <ExternalLink className="ml-2 h-3 w-3" /></Button>
                   </Card>
                   <Card className="rounded-[2rem] border-none shadow-md bg-white border-2 p-6 space-y-4 group cursor-pointer" onClick={() => window.open(`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}`, '_blank')}>
                     <Badge className="bg-muted text-muted-foreground border-none font-black text-[8px] h-5 px-2">ADMIN ONLY</Badge>
@@ -283,7 +284,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
               </TabsContent>
               <TabsContent value="compliance" className="mt-0">
                 <div className="space-y-6">
-                  <div className="flex items-center justify-between px-2"><div className="flex items-center gap-3"><FileSignature className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase tracking-tight">Team Agreement Ledger</h3></div><Button variant="outline" className="h-9 px-4 rounded-xl font-black uppercase text-[10px] border-2" onClick={handleCopyWaiverLink}>Copy Portal Link <ExternalLink className="ml-2 h-3 w-3" /></Button></div>
+                  <div className="flex items-center justify-between px-2"><div className="flex items-center gap-3"><FileSignature className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase tracking-tight">Team Agreement Ledger</h3></div><Button variant="outline" className="h-9 px-4 rounded-xl font-black uppercase text-[10px] border-2 bg-white text-black hover:bg-black hover:text-white transition-all" onClick={handleCopyWaiverLink}>Copy Portal Link <ExternalLink className="ml-2 h-3 w-3" /></Button></div>
                   <div className="grid grid-cols-1 gap-3">{event.tournamentTeams?.map(teamName => { const agreement = event.teamAgreements?.[teamName]; return (<Card key={teamName} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white flex items-center justify-between"><div className="flex items-center gap-4"><div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", agreement ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground/30")}>{agreement ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}</div><span className="font-black text-sm uppercase truncate">{teamName}</span></div>{agreement ? (<div className="text-right"><p className="text-[8px] font-black uppercase text-muted-foreground">Signed by {agreement.captainName}</p><p className="text-[7px] font-bold text-muted-foreground opacity-40">{format(new Date(agreement.signedAt), 'MMM d, h:mm a')}</p></div>) : (<Badge variant="outline" className="text-[7px] font-black uppercase border-muted-foreground/20 text-muted-foreground">Pending Execution</Badge>)}</Card>); })}</div>
                 </div>
               </TabsContent>
@@ -351,8 +352,12 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                     </select>
                   </div>
                   <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Or Manual Venue</Label>
+                    <Input placeholder="e.g. Regional Sports Park" value={genConfig.manualVenue} onChange={e => setGenConfig({...genConfig, manualVenue: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                  </div>
+                  <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Resource Pool</Label>
-                    <ScrollArea className="h-48 border-2 rounded-xl p-2 bg-muted/5">
+                    <ScrollArea className="h-40 border-2 rounded-xl p-2 bg-muted/5">
                       <div className="space-y-1 p-1">
                         {fields?.map(f => (
                           <div key={f.id} className={cn("flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all group", genConfig.selectedFields.includes(f.name) ? "bg-primary text-white shadow-md" : "hover:bg-muted/50")} onClick={() => toggleField(f.name)}>
@@ -373,7 +378,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
               </div>
             </div>
             <DialogFooter className="pt-6">
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleGenerateItinerary} disabled={!genConfig.selectedFields.length || !event.tournamentTeams?.length}>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleGenerateItinerary} disabled={(genConfig.selectedFields.length === 0 && !genConfig.manualVenue) || !event.tournamentTeams?.length}>
                 Deploy Balanced Itinerary
               </Button>
             </DialogFooter>

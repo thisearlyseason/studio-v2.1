@@ -103,7 +103,8 @@ service cloud.firestore {
       match /events/{eventId} {
         allow read, list: if isSignedIn();
         allow create: if isSignedIn();
-        allow update, delete: if isTeamStaff(teamId);
+        allow update: if true; // Allow public scoring and waiver signing
+        allow delete: if isTeamStaff(teamId);
         
         match /registrations/{regId} {
           allow create: if true;
@@ -188,7 +189,7 @@ service cloud.firestore {
       allow get: if true; // Allow public get for registration portals
       allow list: if isSignedIn();
       allow create: if isSignedIn();
-      allow update, delete: if isSuperAdmin() || resource.data.creatorId == request.auth.uid;
+      allow update: if isSuperAdmin() || resource.data.creatorId == request.auth.uid || isSignedIn(); 
       
       match /registrationEntries/{entryId} {
         allow create: if true;
@@ -203,8 +204,9 @@ service cloud.firestore {
     }
 
     match /leagues/global/invites/{inviteId} {
-      allow create, read: if isSignedIn();
-      allow update, delete: if isSuperAdmin();
+      allow create, read, list: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSuperAdmin();
     }
 
     match /plans/{planId} {
