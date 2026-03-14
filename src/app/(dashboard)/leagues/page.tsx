@@ -59,6 +59,7 @@ import Link from 'next/link';
 import { generateLeagueSchedule } from '@/lib/scheduler-utils';
 
 function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: League, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
+  const { user: authUser } = useUser();
   const { db, activeTeam, updateLeagueSchedule } = useTeam();
   const [isProcessing, setIsProcessing] = useState(false);
   const [config, setConfig] = useState({
@@ -75,9 +76,19 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     selectedFields: [] as string[]
   });
 
-  const facilitiesQuery = useMemoFirebase(() => (db && activeTeam) ? collection(db, 'facilities') : null, [db, activeTeam]);
+  // CRITICAL FIX: Only show facilities belonging to the league creator
+  const facilitiesQuery = useMemoFirebase(() => {
+    if (!db || !authUser?.uid) return null;
+    return query(collection(db, 'facilities'), where('clubId', '==', authUser.uid));
+  }, [db, authUser?.uid]);
+
   const { data: facilities } = useCollection<Facility>(facilitiesQuery);
-  const fieldsQuery = useMemoFirebase(() => (db && config.selectedFacilityId) ? collection(db, 'facilities', config.selectedFacilityId, 'fields') : null, [db, config.selectedFacilityId]);
+  
+  const fieldsQuery = useMemoFirebase(() => {
+    if (!db || !config.selectedFacilityId) return null;
+    return query(collection(db, 'facilities', config.selectedFacilityId, 'fields'), orderBy('name', 'asc'));
+  }, [db, config.selectedFacilityId]);
+
   const { data: fields } = useCollection<Field>(fieldsQuery);
 
   const toggleDay = (day: number) => {
@@ -85,28 +96,42 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   };
 
   const handleGenerate = async () => {
-    if (!config.startDate || !config.selectedFields.length || !Object.keys(league.teams).length) {
+    if (!config.startDate || !config.selectedFields.length || !Object.keys(league.teams || {}).length) {
       toast({ title: "Configuration Required", description: "Set dates, teams and fields.", variant: "destructive" });
       return;
     }
     setIsProcessing(true);
-    const schedule = generateLeagueSchedule({
-      teams: Object.keys(league.teams),
-      fields: config.selectedFields,
-      startDate: config.startDate,
-      endDate: config.endDate || undefined,
-      startTime: config.startTime,
-      endTime: config.endTime,
-      gameLength: parseInt(config.gameLength),
-      breakLength: parseInt(config.breakLength),
-      playDays: config.playDays,
-      gamesPerTeam: parseInt(config.gamesPerTeam),
-      doubleHeaders: config.doubleHeaders
-    });
-    await updateLeagueSchedule(league.id, schedule);
-    setIsProcessing(false);
-    onOpenChange(false);
-    toast({ title: "Season Deployed", description: `${schedule.length} matches distributed.` });
+    try {
+      const schedule = generateLeagueSchedule({
+        teams: Object.keys(league.teams),
+        fields: config.selectedFields,
+        startDate: config.startDate,
+        endDate: config.endDate || undefined,
+        startTime: config.startTime,
+        endTime: config.endTime,
+        gameLength: parseInt(config.gameLength),
+        breakLength: parseInt(config.breakLength),
+        playDays: config.playDays,
+        gamesPerTeam: parseInt(config.gamesPerTeam),
+        doubleHeaders: config.doubleHeaders
+      });
+      await updateLeagueSchedule(league.id, schedule);
+      onOpenChange(false);
+      toast({ title: "Season Deployed", description: `${schedule.length} matches distributed evenly.` });
+    } catch (e) {
+      toast({ title: "Generation Failed", variant: "destructive" });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const toggleField = (fieldName: string) => {
+    setConfig(p => ({
+      ...p,
+      selectedFields: p.selectedFields.includes(fieldName)
+        ? p.selectedFields.filter(f => f !== fieldName)
+        : [...p.selectedFields, fieldName]
+    }));
   };
 
   return (
@@ -114,49 +139,68 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
       <DialogContent className="sm:max-w-3xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 lg:p-12 space-y-10">
-          <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">Season Architect</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px]">Automated Season Protocol</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle className="text-3xl font-black uppercase tracking-tight">Season Architect</DialogTitle>
+            <DialogDescription className="font-bold text-primary uppercase text-[10px]">Automated Resource Distribution Protocol</DialogDescription>
+          </DialogHeader>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Season Start</Label><Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2" /></div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Games/Team</Label><Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2" /></div>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Season Start</Label><Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Season End (Opt)</Label><Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">Play Days</Label>
-                <div className="flex flex-wrap gap-2">
-                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-                    <button key={i} onClick={() => toggleDay(i)} className={cn("h-10 w-10 rounded-xl font-black text-xs transition-all", config.playDays.includes(i) ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>{d}</button>
-                  ))}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Games/Team</Label><Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase">Double Headers</Label>
+                  <div className="flex items-center h-12">
+                    <button onClick={() => setConfig({...config, doubleHeaders: !config.doubleHeaders})} className={cn("h-6 w-11 rounded-full transition-all relative", config.doubleHeaders ? "bg-primary" : "bg-muted")}>
+                      <div className={cn("absolute top-1 h-4 w-4 rounded-full bg-white transition-all", config.doubleHeaders ? "left-6" : "left-1")} />
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border-2 border-dashed">
-                <div className="flex items-center gap-3"><Zap className="h-5 w-5 text-primary" /><span className="text-[10px] font-black uppercase">Double Headers</span></div>
-                <button onClick={() => setConfig({...config, doubleHeaders: !config.doubleHeaders})} className={cn("h-6 w-11 rounded-full transition-all relative", config.doubleHeaders ? "bg-primary" : "bg-muted")}><div className={cn("absolute top-1 h-4 w-4 rounded-full bg-white transition-all", config.doubleHeaders ? "left-6" : "left-1")} /></button>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase">Recurring Play Days</Label>
+                <div className="flex flex-wrap gap-2">
+                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                    <button key={i} onClick={() => toggleDay(i)} className={cn("h-10 w-10 rounded-xl font-black text-xs transition-all", config.playDays.includes(i) ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>{d}</button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="space-y-6">
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">Facility Mapping</Label>
-                <select className="w-full h-12 rounded-xl border-2 px-3 font-bold bg-muted/10" value={config.selectedFacilityId} onChange={e => setConfig({...config, selectedFacilityId: e.target.value, selectedFields: []})}>
-                  <option value="">Select venue...</option>
+                <Label className="text-[10px] font-black uppercase">Host Facility</Label>
+                <select className="w-full h-12 rounded-xl border-2 px-3 font-bold bg-muted/10 outline-none focus:ring-2 focus:ring-primary/20" value={config.selectedFacilityId} onChange={e => setConfig({...config, selectedFacilityId: e.target.value, selectedFields: []})}>
+                  <option value="">Select organizational venue...</option>
                   {facilities?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                 </select>
               </div>
-              {config.selectedFacilityId && (
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase">Resource Allocation (Select Fields/Courts)</Label>
                 <ScrollArea className="h-40 border-2 rounded-2xl p-2 bg-muted/5">
-                  <div className="space-y-1">
+                  <div className="space-y-1 p-1">
                     {fields?.map(f => (
-                      <div key={f.id} className="flex items-center gap-2 p-3 hover:bg-white rounded-xl cursor-pointer" onClick={() => setConfig(p => ({ ...p, selectedFields: p.selectedFields.includes(f.name) ? p.selectedFields.filter(n => n !== f.name) : [...p.selectedFields, f.name]}))}>
-                        <div className={cn("h-4 w-4 rounded border-2 flex items-center justify-center", config.selectedFields.includes(f.name) ? "bg-primary border-primary text-white" : "border-muted-foreground/30")}>{config.selectedFields.includes(f.name) && <CheckCircle2 className="h-3 w-3" />}</div>
+                      <div key={f.id} className={cn("flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all", config.selectedFields.includes(f.name) ? "bg-primary text-white" : "hover:bg-white")} onClick={() => toggleField(f.name)}>
                         <span className="text-[10px] font-black uppercase">{f.name}</span>
+                        {config.selectedFields.includes(f.name) ? <CheckCircle2 className="h-4 w-4" /> : <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />}
                       </div>
                     ))}
+                    {(!fields || fields.length === 0) && (
+                      <p className="text-[9px] font-bold text-muted-foreground italic text-center py-10">Select a facility to see fields.</p>
+                    )}
                   </div>
                 </ScrollArea>
-              )}
+              </div>
             </div>
           </div>
-          <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleGenerate} disabled={isProcessing}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Authorize & Deploy Season"}</Button></DialogFooter>
+          <DialogFooter>
+            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleGenerate} disabled={isProcessing || !config.startDate || config.selectedFields.length === 0}>
+              {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : <Sparkles className="h-6 w-6 mr-3" />}
+              Deploy Balanced League Itinerary
+            </Button>
+          </DialogFooter>
         </div>
       </DialogContent>
     </Dialog>
@@ -174,7 +218,6 @@ export default function LeaguesPage() {
   const [isSeasonOpen, setIsSeasonOpen] = useState(false);
   const [leagueName, setLeagueName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
-  const [manualTeamName, setManualTeamName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
   const leaguesQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'leagues'), where(`teams.${activeTeam.id}`, '!=', null)) : null, [isAuthResolved, activeTeam?.id, db]);

@@ -31,7 +31,8 @@ import {
   Share2,
   Sparkles,
   Settings,
-  Building
+  Building,
+  CheckCircle2
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -49,13 +50,14 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTeam, TeamEvent, TournamentGame, Member, Facility, Field } from '@/components/providers/team-provider';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { format, isPast, isSameDay } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
 import { generateTournamentSchedule } from '@/lib/scheduler-utils';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
@@ -115,7 +117,8 @@ function BracketVisualizer({ games }: { games: TournamentGame[] }) {
 }
 
 function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () => void }) {
-  const { user, members, isStaff, activeTeam, db, exportTournamentStandingsCSV } = useTeam();
+  const { user: authUser } = useUser();
+  const { members, isStaff, activeTeam, db, exportTournamentStandingsCSV } = useTeam();
   const standings = useMemo(() => calculateTournamentStandings(event.tournamentTeams || [], event.tournamentGames || []), [event.tournamentTeams, event.tournamentGames]);
   const isOrganizer = isStaff && event.teamId === activeTeam?.id;
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
@@ -136,11 +139,19 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
     selectedFields: [] as string[]
   });
 
-  const facilitiesQuery = useMemoFirebase(() => (db && activeTeam) ? collection(db, 'facilities') : null, [db, activeTeam]);
+  // CRITICAL FIX: Only show facilities belonging to the organizer
+  const facilitiesQuery = useMemoFirebase(() => {
+    if (!db || !authUser?.uid) return null;
+    return query(collection(db, 'facilities'), where('clubId', '==', authUser.uid));
+  }, [db, authUser?.uid]);
+
   const { data: facilities } = useCollection<Facility>(facilitiesQuery);
-  const selectedFacility = facilities?.find(f => f.id === genConfig.selectedFacilityId);
   
-  const fieldsQuery = useMemoFirebase(() => (db && genConfig.selectedFacilityId) ? collection(db, 'facilities', genConfig.selectedFacilityId, 'fields') : null, [db, genConfig.selectedFacilityId]);
+  const fieldsQuery = useMemoFirebase(() => {
+    if (!db || !genConfig.selectedFacilityId) return null;
+    return query(collection(db, 'facilities', genConfig.selectedFacilityId, 'fields'), orderBy('name', 'asc'));
+  }, [db, genConfig.selectedFacilityId]);
+
   const { data: fields } = useCollection<Field>(fieldsQuery);
 
   const handleUpdateTeams = async () => {
@@ -171,7 +182,16 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
     });
     await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { tournamentGames: schedule });
     setIsGenOpen(false);
-    toast({ title: "Itinerary Deployed", description: `Auto-generated ${schedule.length} matches.` });
+    toast({ title: "Itinerary Deployed", description: `Auto-generated ${schedule.length} matches distributed evenly.` });
+  };
+
+  const toggleField = (fieldName: string) => {
+    setGenConfig(p => ({
+      ...p,
+      selectedFields: p.selectedFields.includes(fieldName)
+        ? p.selectedFields.filter(f => f !== fieldName)
+        : [...p.selectedFields, fieldName]
+    }));
   };
 
   return (
@@ -261,51 +281,78 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
       </div>
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-8 shadow-2xl border-none overflow-hidden"><DialogTitle className="sr-only">Manage Tournament Roster</DialogTitle><DialogHeader><DialogTitle className="text-2xl font-black uppercase tracking-tight">Expand Competition</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px]">Enroll participating squads</DialogDescription></DialogHeader><div className="space-y-6 py-4"><div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Names (Comma separated)</Label><Input value={editForm.teams} onChange={e => setEditForm({ ...editForm, teams: e.target.value })} className="h-12 rounded-xl border-2 font-bold" placeholder="Tigers, Lions, Warriors..." /></div><div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Email Invites (Optional)</Label><Input value={editForm.invitedEmails} onChange={e => setEditForm({ ...editForm, invitedEmails: e.target.value })} className="h-12 rounded-xl border-2 font-bold" placeholder="coach@tigers.com, coach@lions.com..." /></div></div><DialogFooter><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdateTeams}>Synchronize Roster</Button></DialogFooter></DialogContent>
+        <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-8 shadow-2xl border-none overflow-hidden">
+          <DialogTitle className="sr-only">Manage Tournament Roster</DialogTitle>
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black uppercase tracking-tight">Expand Competition</DialogTitle>
+            <DialogDescription className="font-bold text-primary uppercase text-[10px]">Enroll participating squads</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Names (Comma separated)</Label>
+              <Input value={editForm.teams} onChange={e => setEditForm({ ...editForm, teams: e.target.value })} className="h-12 rounded-xl border-2 font-bold" placeholder="Tigers, Lions, Warriors..." />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Email Invites (Optional)</Label>
+              <Input value={editForm.invitedEmails} onChange={e => setEditForm({ ...editForm, invitedEmails: e.target.value })} className="h-12 rounded-xl border-2 font-bold" placeholder="coach@tigers.com, coach@lions.com..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdateTeams}>Synchronize Roster</Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       <Dialog open={isGenOpen} onOpenChange={setIsGenOpen}>
         <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white">
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-12 space-y-8">
-            <DialogHeader><DialogTitle className="text-3xl font-black uppercase">Schedule Generator</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px]">Automated Resource Mapping</DialogDescription></DialogHeader>
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-black uppercase">Schedule Generator</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px]">Automated Resource Mapping Protocol</DialogDescription>
+            </DialogHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Day Start</Label><Input type="time" value={genConfig.startTime} onChange={e => setGenConfig({...genConfig, startTime: e.target.value})} className="h-12 border-2" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Day End</Label><Input type="time" value={genConfig.endTime} onChange={e => setGenConfig({...genConfig, endTime: e.target.value})} className="h-12 border-2" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Day Start</Label><Input type="time" value={genConfig.startTime} onChange={e => setGenConfig({...genConfig, startTime: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Day End</Label><Input type="time" value={genConfig.endTime} onChange={e => setGenConfig({...genConfig, endTime: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Length (Min)</Label><Input type="number" value={genConfig.gameLength} onChange={e => setGenConfig({...genConfig, gameLength: e.target.value})} className="h-12 border-2" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Break (Min)</Label><Input type="number" value={genConfig.breakLength} onChange={e => setGenConfig({...genConfig, breakLength: e.target.value})} className="h-12 border-2" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Length (Min)</Label><Input type="number" value={genConfig.gameLength} onChange={e => setGenConfig({...genConfig, gameLength: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Break (Min)</Label><Input type="number" value={genConfig.breakLength} onChange={e => setGenConfig({...genConfig, breakLength: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
                 </div>
               </div>
               <div className="space-y-6">
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase">Select Facility</Label>
-                  <select className="w-full h-12 rounded-xl border-2 px-3 font-bold bg-muted/10" value={genConfig.selectedFacilityId} onChange={e => setGenConfig({...genConfig, selectedFacilityId: e.target.value, selectedFields: []})}>
+                  <select className="w-full h-12 rounded-xl border-2 px-3 font-bold bg-muted/10 outline-none focus:ring-2 focus:ring-primary/20" value={genConfig.selectedFacilityId} onChange={e => setGenConfig({...genConfig, selectedFacilityId: e.target.value, selectedFields: []})}>
                     <option value="">Select venue...</option>
                     {facilities?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                   </select>
                 </div>
-                {genConfig.selectedFacilityId && (
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase">Active Fields</Label>
-                    <ScrollArea className="h-32 border-2 rounded-xl p-2">
-                      <div className="space-y-1">
-                        {fields?.map(f => (
-                          <div key={f.id} className="flex items-center gap-2 p-2 hover:bg-muted rounded-lg cursor-pointer" onClick={() => setGenConfig(p => ({ ...p, selectedFields: p.selectedFields.includes(f.name) ? p.selectedFields.filter(name => name !== f.name) : [...p.selectedFields, f.name]}))}>
-                            <div className={cn("h-4 w-4 rounded border-2 flex items-center justify-center", genConfig.selectedFields.includes(f.name) ? "bg-primary border-primary text-white" : "border-muted-foreground/30")}>{genConfig.selectedFields.includes(f.name) && <CheckCircle2 className="h-3 w-3" />}</div>
-                            <span className="text-[10px] font-black uppercase">{f.name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                )}
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase">Field Allocation</Label>
+                  <ScrollArea className="h-32 border-2 rounded-xl p-2 bg-muted/5">
+                    <div className="space-y-1">
+                      {fields?.map(f => (
+                        <div key={f.id} className={cn("flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all", genConfig.selectedFields.includes(f.name) ? "bg-primary text-white" : "hover:bg-muted")} onClick={() => toggleField(f.name)}>
+                          <span className="text-[10px] font-black uppercase">{f.name}</span>
+                          {genConfig.selectedFields.includes(f.name) ? <CheckCircle2 className="h-3 w-3" /> : <div className="h-3 w-3 rounded-full border border-muted-foreground/30" />}
+                        </div>
+                      ))}
+                      {(!fields || fields.length === 0) && (
+                        <p className="text-[9px] font-bold text-muted-foreground italic text-center py-6">Select facility to load fields.</p>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
               </div>
             </div>
-            <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleGenerateItinerary} disabled={!genConfig.selectedFields.length}>Deploy Master Itinerary</Button></DialogFooter>
+            <DialogFooter>
+              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleGenerateItinerary} disabled={!genConfig.selectedFields.length || !event.tournamentTeams?.length}>
+                Deploy Balanced Itinerary
+              </Button>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
