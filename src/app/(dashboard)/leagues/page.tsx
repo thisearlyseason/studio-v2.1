@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { useTeam, League, LeagueInvite, Member } from '@/components/providers/team-provider';
+import { useTeam, League, LeagueInvite, Member, TournamentGame, Facility, Field } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -29,7 +29,12 @@ import {
   ArrowUpRight,
   TrendingUp,
   Activity,
-  BarChart2
+  BarChart2,
+  CalendarDays,
+  Sparkles,
+  MapPin,
+  ExternalLink,
+  ChevronDown
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -44,74 +49,114 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, where, orderBy } from 'firebase/firestore';
+import { collection, query, where, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useRouter } from 'next/navigation';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import Link from 'next/link';
+import { generateLeagueSchedule } from '@/lib/scheduler-utils';
 
-function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: string | null, teamName: string | null, isOpen: boolean, onOpenChange: (open: boolean) => void }) {
-  const db = useFirestore();
-  
-  const rosterQuery = useMemoFirebase(() => {
-    if (!teamId || !db || teamId.startsWith('manual_')) return null;
-    return query(collection(db, 'teams', teamId, 'members'), orderBy('name', 'asc'));
-  }, [teamId, db]);
+function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: League, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
+  const { db, activeTeam, updateLeagueSchedule } = useTeam();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [config, setConfig] = useState({
+    startDate: '',
+    endDate: '',
+    startTime: '18:00',
+    endTime: '22:00',
+    gameLength: '60',
+    breakLength: '15',
+    playDays: [1, 3] as number[], // Mon, Wed
+    gamesPerTeam: '10',
+    doubleHeaders: false,
+    selectedFacilityId: '',
+    selectedFields: [] as string[]
+  });
 
-  const { data: roster, isLoading } = useCollection<Member>(rosterQuery);
+  const facilitiesQuery = useMemoFirebase(() => (db && activeTeam) ? collection(db, 'facilities') : null, [db, activeTeam]);
+  const { data: facilities } = useCollection<Facility>(facilitiesQuery);
+  const fieldsQuery = useMemoFirebase(() => (db && config.selectedFacilityId) ? collection(db, 'facilities', config.selectedFacilityId, 'fields') : null, [db, config.selectedFacilityId]);
+  const { data: fields } = useCollection<Field>(fieldsQuery);
+
+  const toggleDay = (day: number) => {
+    setConfig(p => ({ ...p, playDays: p.playDays.includes(day) ? p.playDays.filter(d => d !== day) : [...p.playDays, day] }));
+  };
+
+  const handleGenerate = async () => {
+    if (!config.startDate || !config.selectedFields.length || !Object.keys(league.teams).length) {
+      toast({ title: "Configuration Required", description: "Set dates, teams and fields.", variant: "destructive" });
+      return;
+    }
+    setIsProcessing(true);
+    const schedule = generateLeagueSchedule({
+      teams: Object.keys(league.teams),
+      fields: config.selectedFields,
+      startDate: config.startDate,
+      endDate: config.endDate || undefined,
+      startTime: config.startTime,
+      endTime: config.endTime,
+      gameLength: parseInt(config.gameLength),
+      breakLength: parseInt(config.breakLength),
+      playDays: config.playDays,
+      gamesPerTeam: parseInt(config.gamesPerTeam),
+      doubleHeaders: config.doubleHeaders
+    });
+    await updateLeagueSchedule(league.id, schedule);
+    setIsProcessing(false);
+    onOpenChange(false);
+    toast({ title: "Season Deployed", description: `${schedule.length} matches distributed.` });
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl overflow-hidden p-0 bg-white">
-        <DialogTitle className="sr-only">{teamName} Roster</DialogTitle>
+      <DialogContent className="sm:max-w-3xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
         <div className="h-2 bg-primary w-full" />
-        <div className="p-8 space-y-6">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black uppercase tracking-tight">{teamName} Roster</DialogTitle>
-            <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">
-              Verified Squad Members
-            </DialogDescription>
-          </DialogHeader>
-          
-          <ScrollArea className="h-[300px] pr-4">
-            {teamId?.startsWith('manual_') ? (
-              <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
-                <Info className="h-10 w-10 text-muted-foreground opacity-30" />
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground max-w-[200px]">Roster scouting unavailable for manually enrolled teams.</p>
+        <div className="p-8 lg:p-12 space-y-10">
+          <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">Season Architect</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px]">Automated Season Protocol</DialogDescription></DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Season Start</Label><Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2" /></div>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Games/Team</Label><Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2" /></div>
               </div>
-            ) : isLoading ? (
-              <div className="flex flex-col items-center justify-center py-10 gap-3">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Scouting Roster...</p>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase">Play Days</Label>
+                <div className="flex flex-wrap gap-2">
+                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                    <button key={i} onClick={() => toggleDay(i)} className={cn("h-10 w-10 rounded-xl font-black text-xs transition-all", config.playDays.includes(i) ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>{d}</button>
+                  ))}
+                </div>
               </div>
-            ) : roster && roster.length > 0 ? (
-              <div className="space-y-3">
-                {roster.map((member) => (
-                  <div key={member.id} className="flex items-center gap-4 p-3 bg-muted/30 rounded-2xl border border-transparent hover:border-primary/10 transition-all">
-                    <Avatar className="h-10 w-10 rounded-xl border shadow-sm shrink-0">
-                      <AvatarImage src={member.avatar} />
-                      <AvatarFallback className="font-black text-xs">{member.name?.[0] || '?'}</AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                      <p className="font-black text-sm truncate">{member.name}</p>
-                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{member.position}</p>
-                    </div>
+              <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border-2 border-dashed">
+                <div className="flex items-center gap-3"><Zap className="h-5 w-5 text-primary" /><span className="text-[10px] font-black uppercase">Double Headers</span></div>
+                <button onClick={() => setConfig({...config, doubleHeaders: !config.doubleHeaders})} className={cn("h-6 w-11 rounded-full transition-all relative", config.doubleHeaders ? "bg-primary" : "bg-muted")}><div className={cn("absolute top-1 h-4 w-4 rounded-full bg-white transition-all", config.doubleHeaders ? "left-6" : "left-1")} /></button>
+              </div>
+            </div>
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase">Facility Mapping</Label>
+                <select className="w-full h-12 rounded-xl border-2 px-3 font-bold bg-muted/10" value={config.selectedFacilityId} onChange={e => setConfig({...config, selectedFacilityId: e.target.value, selectedFields: []})}>
+                  <option value="">Select venue...</option>
+                  {facilities?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+              </div>
+              {config.selectedFacilityId && (
+                <ScrollArea className="h-40 border-2 rounded-2xl p-2 bg-muted/5">
+                  <div className="space-y-1">
+                    {fields?.map(f => (
+                      <div key={f.id} className="flex items-center gap-2 p-3 hover:bg-white rounded-xl cursor-pointer" onClick={() => setConfig(p => ({ ...p, selectedFields: p.selectedFields.includes(f.name) ? p.selectedFields.filter(n => n !== f.name) : [...p.selectedFields, f.name]}))}>
+                        <div className={cn("h-4 w-4 rounded border-2 flex items-center justify-center", config.selectedFields.includes(f.name) ? "bg-primary border-primary text-white" : "border-muted-foreground/30")}>{config.selectedFields.includes(f.name) && <CheckCircle2 className="h-3 w-3" />}</div>
+                        <span className="text-[10px] font-black uppercase">{f.name}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-10 opacity-30">
-                <Users className="h-10 w-10 mx-auto mb-2" />
-                <p className="text-[10px] font-black uppercase tracking-widest">No roster data found.</p>
-              </div>
-            )}
-          </ScrollArea>
-          
-          <DialogFooter>
-            <Button className="w-full h-12 rounded-xl font-black uppercase text-xs tracking-widest" onClick={() => onOpenChange(false)}>Close Scout</Button>
-          </DialogFooter>
+                </ScrollArea>
+              )}
+            </div>
+          </div>
+          <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleGenerate} disabled={isProcessing}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Authorize & Deploy Season"}</Button></DialogFooter>
         </div>
       </DialogContent>
     </Dialog>
@@ -120,51 +165,26 @@ function TeamRosterDialog({ teamId, teamName, isOpen, onOpenChange }: { teamId: 
 
 export default function LeaguesPage() {
   const { user: authUser, isAuthResolved } = useUser();
-  const { activeTeam, createLeague, inviteTeamToLeague, manuallyAddTeamToLeague, acceptLeagueInvite, hasFeature, purchasePro, createChat, isStaff, isPro } = useTeam();
+  const { activeTeam, createLeague, inviteTeamToLeague, manuallyAddTeamToLeague, isStaff, isPro } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [isSeasonOpen, setIsSeasonOpen] = useState(false);
   const [leagueName, setLeagueName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [manualTeamName, setManualTeamName] = useState('');
-  const [manualLogoUrl, setManualLogoUrl] = useState('');
-  const [manualCoachEmail, setManualCoachEmail] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [scoutTeamId, setScoutTeamId] = useState<string | null>(null);
-  const [scoutTeamName, setScoutTeamName] = useState<string | null>(null);
 
-  const leaguesQuery = useMemoFirebase(() => {
-    if (!isAuthResolved || !activeTeam?.id || !db) return null;
-    return query(collection(db, 'leagues'), where(`teams.${activeTeam.id}`, '!=', null));
-  }, [isAuthResolved, activeTeam?.id, db]);
-
+  const leaguesQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'leagues'), where(`teams.${activeTeam.id}`, '!=', null)) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: rawLeagues, isLoading: isLeaguesLoading } = useCollection<League>(leaguesQuery);
-  const leagues = useMemo(() => rawLeagues || [], [rawLeagues]);
-
-  const invitesQuery = useMemoFirebase(() => {
-    if (!isAuthResolved || !authUser?.email || !db || activeTeam?.id?.startsWith('demo_')) return null;
-    return query(
-      collection(db, 'leagues', 'global', 'invites'), 
-      where('invitedEmail', '==', authUser.email.toLowerCase()), 
-      where('status', '==', 'pending')
-    );
-  }, [isAuthResolved, authUser?.email, db, activeTeam?.id]);
-
-  const { data: rawInvites } = useCollection<LeagueInvite>(invitesQuery);
-  const invites = useMemo(() => rawInvites || [], [rawInvites]);
-
-  const activeLeague = useMemo(() => {
-    if (!leagues || leagues.length === 0) return null;
-    return leagues[0];
-  }, [leagues]);
+  const leagues = rawLeagues || [];
+  const activeLeague = leagues[0] || null;
 
   const sortedStandings = useMemo(() => {
     if (!activeLeague || !activeLeague.teams) return [];
-    return Object.entries(activeLeague.teams)
-      .map(([id, stats]) => ({ id, ...stats }))
-      .sort((a, b) => b.wins - a.wins || b.points - a.points);
+    return Object.entries(activeLeague.teams).map(([id, stats]) => ({ id, ...stats })).sort((a, b) => b.points - a.points || b.wins - a.wins);
   }, [activeLeague]);
 
   const handleCreateLeague = async () => {
@@ -172,183 +192,52 @@ export default function LeaguesPage() {
     setIsProcessing(true);
     try {
       await createLeague(leagueName);
-      setIsCreateOpen(false);
-      setLeagueName('');
-      toast({ title: "League Established", description: `${leagueName} is now live.` });
-    } catch (e) {
-      toast({ title: "Creation Failed", variant: "destructive" });
-    } finally {
-      setIsProcessing(false);
-    }
+      setIsCreateOpen(false); setLeagueName('');
+      toast({ title: "League Established" });
+    } finally { setIsProcessing(false); }
   };
 
   const handleSendInvite = async () => {
     if (!inviteEmail.trim() || !activeLeague) return;
     setIsProcessing(true);
     await inviteTeamToLeague(activeLeague.id, activeLeague.name, inviteEmail.toLowerCase());
-    setIsInviteOpen(false);
-    setInviteEmail('');
-    setIsProcessing(false);
+    setIsInviteOpen(false); setInviteEmail(''); setIsProcessing(false);
   };
 
-  const handleManualEnroll = async () => {
-    if (!manualTeamName.trim() || !activeLeague) return;
-    setIsProcessing(true);
-    await manuallyAddTeamToLeague(activeLeague.id, manualTeamName, manualCoachEmail, manualLogoUrl);
-    setIsInviteOpen(false);
-    setManualTeamName('');
-    setManualCoachEmail('');
-    setManualLogoUrl('');
-    setIsProcessing(false);
-  };
-
-  if (isLeaguesLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Opening Standings Hub...</p>
-      </div>
-    );
-  }
+  if (isLeaguesLoading) return <div className="flex flex-col items-center justify-center py-20 animate-pulse"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Standings Hub...</p></div>;
 
   return (
     <div className="space-y-10 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Competitive Ledger</Badge>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Leagues</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Official Leaderboards & Coordination</p>
-        </div>
+        <div className="space-y-1"><Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Competitive Ledger</Badge><h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Leagues</h1></div>
         {!activeLeague && isStaff && (
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 transition-all active:scale-95">
-                <Plus className="h-5 w-5 mr-2" /> Start New League
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
-              <DialogTitle className="sr-only">League Identity Initialization</DialogTitle>
-              <div className="h-2 bg-primary w-full" />
-              <div className="p-8 lg:p-12 space-y-10">
-                <DialogHeader>
-                  <div className="flex items-center gap-4 mb-2">
-                    <div className="bg-primary/10 p-3 rounded-2xl text-primary">
-                      <Shield className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <DialogTitle className="text-3xl font-black uppercase tracking-tight">League Identity</DialogTitle>
-                      <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Establish a new competitive hub</DialogDescription>
-                    </div>
-                  </div>
-                </DialogHeader>
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Official League Name</Label>
-                    <Input placeholder="e.g. Regional Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />
-                  </div>
-                </div>
-                <DialogFooter className="pt-4">
-                  <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleCreateLeague} disabled={isProcessing || !leagueName.trim()}>
-                    {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Deploy Competitive Hub"}
-                  </Button>
-                </DialogFooter>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl" onClick={() => setIsCreateOpen(true)}><Plus className="h-5 w-5 mr-2" /> Start New League</Button>
         )}
       </div>
 
       {activeLeague ? (
         <div className="space-y-8 animate-in fade-in duration-700">
           <Card className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-black text-white relative group">
-            <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
-              <Shield className="h-48 w-48" />
-            </div>
+            <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700"><Shield className="h-48 w-48" /></div>
             <CardContent className="p-10 relative z-10">
               <div className="flex flex-col md:flex-row items-center justify-between gap-8">
                 <div className="flex items-center gap-6">
-                  <div className="bg-primary p-5 rounded-[1.5rem] shadow-xl shadow-primary/20">
-                    <Trophy className="h-10 w-10 text-white" />
-                  </div>
+                  <div className="bg-primary p-5 rounded-[1.5rem] shadow-xl shadow-primary/20"><Trophy className="h-10 w-10 text-white" /></div>
                   <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge className="bg-primary text-white border-none h-5 text-[8px] uppercase tracking-[0.2em] font-black px-3">Premier Hub</Badge>
-                      {isPro && <Badge variant="outline" className="border-white/20 text-white h-5 text-[8px] uppercase font-black px-2">ELITE ACCESS</Badge>}
-                    </div>
+                    <div className="flex items-center gap-2 mb-2"><Badge className="bg-primary text-white border-none h-5 text-[8px] uppercase font-black px-3">Premier Hub</Badge></div>
                     <h2 className="text-4xl font-black tracking-tight leading-none uppercase">{activeLeague.name}</h2>
                     <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-2">{activeLeague.sport} • {Object.keys(activeLeague.teams || {}).length} Squads Enrolled</p>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   {isStaff && activeLeague.creatorId === authUser?.uid && (
-                    <Button asChild variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest border-white/20 text-white bg-white/5 hover:bg-white/10">
-                      <Link href={`/leagues/registration/${activeLeague.id}`}>
-                        <ClipboardList className="h-4 w-4 mr-2" /> Registration Hub
-                      </Link>
-                    </Button>
+                    <>
+                      <Button onClick={() => setIsSeasonOpen(true)} className="h-12 px-8 rounded-xl font-black text-xs uppercase bg-white text-black hover:bg-primary hover:text-white"><CalendarDays className="h-4 w-4 mr-2" /> Season Architect</Button>
+                      <Button asChild variant="outline" className="h-12 px-8 rounded-xl font-black text-xs uppercase border-white/20 text-white hover:bg-white/10"><Link href={`/leagues/registration/${activeLeague.id}`}><ClipboardList className="h-4 w-4 mr-2" /> Registration Hub</Link></Button>
+                      <Button variant="secondary" className="h-12 px-8 rounded-xl font-black text-xs uppercase" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Add/Invite Team</Button>
+                    </>
                   )}
-                  {isStaff && activeLeague.creatorId === authUser?.uid && (
-                    <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
-                      <DialogTrigger asChild>
-                        <Button variant="secondary" className="h-12 px-8 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg">
-                          <UserPlus className="h-4 w-4 mr-2" /> Add/Invite Team
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 overflow-hidden border-none shadow-2xl bg-white">
-                        <DialogTitle className="sr-only">Invite Team to League</DialogTitle>
-                        <Tabs defaultValue="invite" className="w-full">
-                          <div className="bg-primary/5 p-8 border-b">
-                            <DialogHeader>
-                              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Expand Competition</DialogTitle>
-                              <DialogDescription className="font-bold text-primary/60 uppercase text-[10px] tracking-widest">Enroll verified or manual squads</DialogDescription>
-                            </DialogHeader>
-                            <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 p-1 bg-muted/50 border-2 mt-6">
-                              <TabsTrigger value="invite" className="rounded-lg font-black text-[10px] uppercase tracking-widest">Digital Invite</TabsTrigger>
-                              <TabsTrigger value="manual" className="rounded-lg font-black text-[10px] uppercase tracking-widest">Manual Entry</TabsTrigger>
-                            </TabsList>
-                          </div>
-
-                          <div className="p-8">
-                            <TabsContent value="invite" className="mt-0 space-y-6">
-                              <div className="space-y-4">
-                                <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Sending an invite allows a coach to link their verified squad roster and data to the league automatically once accepted.</p>
-                                <div className="space-y-2">
-                                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email</Label>
-                                  <Input placeholder="coach@opposingteam.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
-                                </div>
-                              </div>
-                              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleSendInvite} disabled={isProcessing || !inviteEmail.trim()}>
-                                {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Dispatch Digital Invite"}
-                              </Button>
-                            </TabsContent>
-
-                            <TabsContent value="manual" className="mt-0 space-y-6">
-                              <div className="space-y-4">
-                                <p className="text-xs font-medium text-muted-foreground leading-relaxed italic">Manually enroll a team that doesn't yet have an account. You can update their scores directly in the standings.</p>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                  <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label>
-                                    <Input placeholder="e.g. Southside United" value={manualTeamName} onChange={e => setManualTeamName(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email (Opt)</Label>
-                                    <Input type="email" placeholder="coach@manual.com" value={manualCoachEmail} onChange={e => setManualCoachEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
-                                  </div>
-                                </div>
-                                <div className="space-y-2">
-                                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Logo URL (Optional)</Label>
-                                  <Input placeholder="https://..." value={manualLogoUrl} onChange={e => setManualLogoUrl(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
-                                </div>
-                              </div>
-                              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleManualEnroll} disabled={isProcessing || !manualTeamName.trim()}>
-                                {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Enroll Manual Squad"}
-                              </Button>
-                            </TabsContent>
-                          </div>
-                        </Tabs>
-                      </DialogContent>
-                    </Dialog>
-                  )}
+                  <Button asChild variant="ghost" className="h-12 px-6 rounded-xl font-black text-xs uppercase text-white/60 hover:text-white"><Link href={`/leagues/spectator/${activeLeague.id}`} target="_blank"><ExternalLink className="h-4 w-4 mr-2" /> Public Portal</Link></Button>
                 </div>
               </div>
             </CardContent>
@@ -356,118 +245,47 @@ export default function LeaguesPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-6">
-              <div className="flex items-center justify-between px-2">
-                <div className="flex items-center gap-2">
-                  <TableIcon className="h-4 w-4 text-primary" />
-                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">League Standings</h3>
-                </div>
-                <p className="text-[9px] font-bold text-muted-foreground italic">Click row to scout roster</p>
-              </div>
+              <div className="flex items-center justify-between px-2"><div className="flex items-center gap-2"><TableIcon className="h-4 w-4 text-primary" /><h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">League Standings</h3></div></div>
               <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b">
-                        <tr>
-                          <th className="px-8 py-5">Squad</th>
-                          <th className="px-4 py-5 text-center">W</th>
-                          <th className="px-4 py-5 text-center">L</th>
-                          <th className="px-4 py-5 text-center">T</th>
-                          <th className="px-8 py-5 text-right text-primary">PTS</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-muted/50">
-                        {sortedStandings.map((team, idx) => (
-                          <tr 
-                            key={team.id} 
-                            onClick={() => { setScoutTeamId(team.id); setScoutTeamName(team.teamName || 'Team'); }}
-                            className={cn("hover:bg-primary/5 transition-colors group cursor-pointer", team.id === activeTeam?.id && "bg-primary/5")}
-                          >
-                            <td className="px-8 py-6">
-                              <div className="flex items-center gap-4">
-                                <span className="text-xs font-black text-muted-foreground/40 w-4">{idx + 1}</span>
-                                <div className="flex items-center gap-3">
-                                  <Avatar className="h-10 w-10 rounded-xl border shadow-inner shrink-0">
-                                    <AvatarImage src={team.teamLogoUrl} className="object-cover" />
-                                    <AvatarFallback className="font-black text-xs">{team.teamName?.[0] || 'T'}</AvatarFallback>
-                                  </Avatar>
-                                  <div className="flex flex-col min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-black text-sm uppercase tracking-tight group-hover:text-primary transition-colors truncate max-w-[120px] lg:max-w-[200px]">{team.teamName}</span>
-                                      {team.id.startsWith('manual_') && <Badge className="text-[6px] h-3 bg-muted text-muted-foreground font-black uppercase border-none px-1">MANUAL</Badge>}
-                                    </div>
-                                    {team.id === activeTeam?.id && <Badge className="bg-primary/10 text-primary border-none text-[7px] font-black uppercase h-4 px-1.5 w-fit mt-1">My Squad</Badge>}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-6 text-center font-bold text-sm">{team.wins}</td>
-                            <td className="px-4 py-6 text-center font-bold text-sm text-muted-foreground">{team.losses}</td>
-                            <td className="px-4 py-6 text-center font-bold text-sm text-muted-foreground">{team.ties}</td>
-                            <td className="px-8 py-6 text-right font-black text-lg text-primary">{team.points}</td>
-                          </tr>
-                        ))}
-                      </tbody>
+                      <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b"><tr><th className="px-8 py-5">Squad</th><th className="px-4 py-5 text-center">W</th><th className="px-4 py-5 text-center">L</th><th className="px-4 py-5 text-center">T</th><th className="px-8 py-5 text-right text-primary">PTS</th></tr></thead>
+                      <tbody className="divide-y">{sortedStandings.map((team, idx) => (<tr key={team.id} className={cn("hover:bg-primary/5 transition-colors group", team.id === activeTeam?.id && "bg-primary/5")}><td className="px-8 py-6"><div className="flex items-center gap-4"><span className="text-xs font-black text-muted-foreground/40 w-4">{idx + 1}</span><div className="flex items-center gap-3"><Avatar className="h-10 w-10 rounded-xl border shadow-inner shrink-0"><AvatarImage src={team.teamLogoUrl} className="object-cover" /><AvatarFallback className="font-black text-xs">{team.teamName?.[0] || 'T'}</AvatarFallback></Avatar><div className="flex flex-col min-w-0"><div className="flex items-center gap-2"><span className="font-black text-sm uppercase tracking-tight group-hover:text-primary transition-colors truncate">{team.teamName}</span></div></div></div></div></td><td className="px-4 py-6 text-center font-bold text-sm">{team.wins}</td><td className="px-4 py-6 text-center font-bold text-sm text-muted-foreground">{team.losses}</td><td className="px-4 py-6 text-center font-bold text-sm text-muted-foreground">{team.ties}</td><td className="px-8 py-6 text-right font-black text-lg text-primary">{team.points}</td></tr>))}</tbody>
                     </table>
                   </div>
                 </CardContent>
               </Card>
             </div>
             <aside className="space-y-6">
-              <div className="flex items-center gap-2 px-2">
-                <MessageSquare className="h-4 w-4 text-primary" />
-                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Coach Directory</h3>
-              </div>
+              <div className="flex items-center gap-2 px-2"><CalendarDays className="h-4 w-4 text-primary" /><h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Upcoming Schedule</h3></div>
               <div className="space-y-3">
-                {sortedStandings.filter(t => t.id !== activeTeam?.id).map((team) => (
-                  <Card key={team.id} className="rounded-2xl border-none shadow-md ring-1 ring-black/5 hover:ring-primary/20 transition-all cursor-pointer bg-white group">
-                    <CardContent className="p-4 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-10 w-10 rounded-xl border shadow-inner">
-                          <AvatarImage src={team.teamLogoUrl} />
-                          <AvatarFallback className="font-black text-xs">{team.teamName?.[0] || 'T'}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="text-xs font-black uppercase tracking-tight leading-none mb-1 truncate max-w-[120px]">{team.teamName}</p>
-                          <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">{team.id.startsWith('manual_') ? 'External Contact' : 'Head Coach'}</p>
-                        </div>
-                      </div>
-                      <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10 hover:text-primary">
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </CardContent>
+                {activeLeague.schedule?.filter(g => !g.isCompleted).slice(0, 5).map((game) => (
+                  <Card key={game.id} className="rounded-2xl border-none shadow-md ring-1 ring-black/5 p-4 bg-white group">
+                    <div className="flex flex-col gap-3">
+                      <div className="flex justify-between items-center"><span className="text-[10px] font-black text-primary uppercase tracking-widest">{game.time}</span><span className="text-[10px] font-bold text-muted-foreground">{game.date}</span></div>
+                      <div className="flex items-center justify-center gap-4"><span className="font-black text-xs uppercase truncate max-w-[80px]">{game.team1}</span><span className="opacity-20 text-[10px] font-black">VS</span><span className="font-black text-xs uppercase truncate max-w-[80px] text-right">{game.team2}</span></div>
+                    </div>
                   </Card>
                 ))}
+                {(!activeLeague.schedule || activeLeague.schedule.length === 0) && <div className="text-center py-10 bg-muted/10 rounded-2xl border-2 border-dashed opacity-40 text-[10px] font-black uppercase">Schedule Pending</div>}
               </div>
             </aside>
           </div>
         </div>
       ) : (
-        <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6">
-          <div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl relative">
-            <Shield className="h-10 w-10 text-primary opacity-20" />
-            <Trophy className="absolute -top-2 -right-2 h-8 w-8 text-amber-500 animate-bounce" />
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-2xl font-black uppercase tracking-tight">Competitive Desert</h3>
-            <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto">
-              Your squad hasn't joined a league yet. Start your own or accept a challenge to enter the standings.
-            </p>
-          </div>
-          {isStaff && (
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-              <Button className="h-12 px-8 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>Create Hub League</Button>
-            </div>
-          )}
-        </div>
+        <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6"><div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl relative"><Shield className="h-10 w-10 text-primary opacity-20" /><Trophy className="absolute -top-2 -right-2 h-8 w-8 text-amber-500 animate-bounce" /></div><div className="space-y-2"><h3 className="text-2xl font-black uppercase tracking-tight">Competitive Desert</h3><p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-w-sm mx-auto">Your squad hasn't joined a league yet. Start your own or accept a challenge to enter the standings.</p></div></div>
       )}
 
-      <TeamRosterDialog 
-        teamId={scoutTeamId} 
-        teamName={scoutTeamName} 
-        isOpen={!!scoutTeamId} 
-        onOpenChange={(open) => { if (!open) setScoutTeamId(null); }} 
-      />
+      {activeLeague && <SeasonSchedulerDialog league={activeLeague} isOpen={isSeasonOpen} onOpenChange={setIsSeasonOpen} />}
+      
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white"><div className="h-2 bg-primary w-full" /><div className="p-8 lg:p-12 space-y-10"><DialogHeader><div className="flex items-center gap-4 mb-2"><div className="bg-primary/10 p-3 rounded-2xl text-primary"><Shield className="h-6 w-6" /></div><div><DialogTitle className="text-3xl font-black uppercase tracking-tight">League Identity</DialogTitle><DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Establish a new competitive hub</DialogDescription></div></div></DialogHeader><div className="space-y-6"><div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Official League Name</Label><Input placeholder="e.g. Regional Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl font-bold border-2" /></div></div><DialogFooter className="pt-4"><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleCreateLeague} disabled={isProcessing || !leagueName.trim()}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Competitive Hub"}</Button></DialogFooter></div></DialogContent>
+      </Dialog>
+
+      <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+        <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 border-none shadow-2xl"><div className="bg-primary/5 p-8 border-b"><DialogHeader><DialogTitle className="text-2xl font-black uppercase tracking-tight">Expand Competition</DialogTitle><DialogDescription className="font-bold text-primary/60 uppercase text-[10px] tracking-widest">Enroll verified squads</DialogDescription></DialogHeader></div><div className="p-8 space-y-6"><div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Coach Email</Label><Input placeholder="coach@opposingteam.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSendInvite} disabled={isProcessing || !inviteEmail.trim()}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Dispatch Digital Invite"}</Button></div></DialogContent>
+      </Dialog>
     </div>
   );
 }

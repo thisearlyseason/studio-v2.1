@@ -28,7 +28,10 @@ import {
   Info,
   X,
   Download,
-  Share2
+  Share2,
+  Sparkles,
+  Settings,
+  Building
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -45,25 +48,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useTeam, TeamEvent, TournamentGame, Member } from '@/components/providers/team-provider';
+import { useTeam, TeamEvent, TournamentGame, Member, Facility, Field } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { format, isPast, isSameDay } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
-
-const formatDateRange = (start: string | Date, end?: string | Date) => {
-  const startDate = new Date(start);
-  if (!end) return format(startDate, 'MMM dd');
-  const endDate = new Date(end);
-  if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
-  
-  if (startDate.getMonth() === endDate.getMonth()) {
-    return `${format(startDate, 'MMM d')} - ${format(endDate, 'd')}`;
-  }
-  return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
-};
+import { generateTournamentSchedule } from '@/lib/scheduler-utils';
 
 function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
@@ -84,11 +76,9 @@ function calculateTournamentStandings(teams: string[], games: TournamentGame[]) 
 }
 
 function BracketVisualizer({ games }: { games: TournamentGame[] }) {
-  // Simple simulation of a championship bracket nodes
   return (
     <div className="p-8 bg-muted/10 rounded-[3rem] border-2 border-dashed overflow-x-auto min-h-[400px] flex items-center justify-center">
       <div className="flex gap-12 items-center">
-        {/* Quarter Finals */}
         <div className="flex flex-col gap-8">
           <p className="text-[10px] font-black uppercase text-center text-muted-foreground mb-2">Quarter Finals</p>
           {[1, 2, 3, 4].map(i => (
@@ -98,29 +88,17 @@ function BracketVisualizer({ games }: { games: TournamentGame[] }) {
             </div>
           ))}
         </div>
-        
         <ArrowRight className="h-6 w-6 text-muted-foreground opacity-20" />
-
-        {/* Semi Finals */}
         <div className="flex flex-col gap-24">
           <p className="text-[10px] font-black uppercase text-center text-muted-foreground mb-2">Semi Finals</p>
           {[1, 2].map(i => (
             <div key={i} className="w-48 h-20 bg-white rounded-xl border-2 border-primary/20 flex flex-col justify-center px-4 shadow-md">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-[10px] font-black uppercase">TBD</span>
-                <span className="text-[10px] font-bold opacity-40">0</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-black uppercase">TBD</span>
-                <span className="text-[10px] font-bold opacity-40">0</span>
-              </div>
+              <div className="flex justify-between items-center mb-2"><span className="text-[10px] font-black uppercase">TBD</span><span className="text-[10px] font-bold opacity-40">0</span></div>
+              <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase">TBD</span><span className="text-[10px] font-bold opacity-40">0</span></div>
             </div>
           ))}
         </div>
-
         <ArrowRight className="h-8 w-8 text-primary opacity-40" />
-
-        {/* Grand Final */}
         <div className="flex flex-col">
           <p className="text-[10px] font-black uppercase text-center text-primary mb-4 tracking-widest">Championship Match</p>
           <div className="w-64 h-32 bg-black text-white rounded-[2rem] border-4 border-primary flex flex-col justify-center items-center gap-4 shadow-2xl relative">
@@ -137,32 +115,63 @@ function BracketVisualizer({ games }: { games: TournamentGame[] }) {
 }
 
 function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () => void }) {
-  const { user, members, updateRSVP, isStaff, activeTeam, db, exportTournamentStandingsCSV } = useTeam();
+  const { user, members, isStaff, activeTeam, db, exportTournamentStandingsCSV } = useTeam();
   const standings = useMemo(() => calculateTournamentStandings(event.tournamentTeams || [], event.tournamentGames || []), [event.tournamentTeams, event.tournamentGames]);
   const isOrganizer = isStaff && event.teamId === activeTeam?.id;
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isGenOpen, setIsGenOpen] = useState(false);
   const [editForm, setEditForm] = useState({ 
     teams: event.tournamentTeams?.join(', ') || '', 
     invitedEmails: Object.keys(event.invitedTeamEmails || {}).join(', ') 
   });
+
+  const [genConfig, setGenConfig] = useState({
+    startTime: '08:00',
+    endTime: '20:00',
+    gameLength: '60',
+    breakLength: '15',
+    selectedFacilityId: '',
+    selectedFields: [] as string[]
+  });
+
+  const facilitiesQuery = useMemoFirebase(() => (db && activeTeam) ? collection(db, 'facilities') : null, [db, activeTeam]);
+  const { data: facilities } = useCollection<Facility>(facilitiesQuery);
+  const selectedFacility = facilities?.find(f => f.id === genConfig.selectedFacilityId);
+  
+  const fieldsQuery = useMemoFirebase(() => (db && genConfig.selectedFacilityId) ? collection(db, 'facilities', genConfig.selectedFacilityId, 'fields') : null, [db, genConfig.selectedFacilityId]);
+  const { data: fields } = useCollection<Field>(fieldsQuery);
 
   const handleUpdateTeams = async () => {
     if (!db || !event.id) return;
     const teams = editForm.teams.split(',').map(t => t.trim()).filter(t => t);
     const emails = editForm.invitedEmails.split(',').map(e => e.trim()).filter(e => e);
     const invitedMap: Record<string, string> = {};
-    emails.forEach((email, i) => {
-      invitedMap[email] = teams[i] || `Team ${i+1}`;
-    });
-
-    await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), {
-      tournamentTeams: teams,
-      invitedTeamEmails: invitedMap
-    });
+    emails.forEach((email, i) => { invitedMap[email] = teams[i] || `Team ${i+1}`; });
+    await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { tournamentTeams: teams, invitedTeamEmails: invitedMap });
     setIsEditOpen(false);
     toast({ title: "Tournament Roster Updated" });
+  };
+
+  const handleGenerateItinerary = async () => {
+    if (!event.tournamentTeams?.length || !genConfig.selectedFields.length) {
+      toast({ title: "Resource Error", description: "Select teams and fields first.", variant: "destructive" });
+      return;
+    }
+    const schedule = generateTournamentSchedule({
+      teams: event.tournamentTeams,
+      fields: genConfig.selectedFields,
+      startDate: event.date,
+      endDate: event.endDate,
+      startTime: genConfig.startTime,
+      endTime: genConfig.endTime,
+      gameLength: parseInt(genConfig.gameLength),
+      breakLength: parseInt(genConfig.breakLength)
+    });
+    await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { tournamentGames: schedule });
+    setIsGenOpen(false);
+    toast({ title: "Itinerary Deployed", description: `Auto-generated ${schedule.length} matches.` });
   };
 
   return (
@@ -170,44 +179,25 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full h-12 w-12 border-2 hover:bg-muted"><ChevronLeft className="h-6 w-6" /></Button>
-          <div>
-            <Badge className="bg-primary text-white border-none font-black uppercase text-[10px] h-6 px-3 shadow-lg">Live Series</Badge>
-            <h1 className="text-4xl font-black uppercase tracking-tight mt-1">{event.title}</h1>
-          </div>
+          <div><Badge className="bg-primary text-white border-none font-black uppercase text-[10px] h-6 px-3 shadow-lg">Live Series</Badge><h1 className="text-4xl font-black uppercase tracking-tight mt-1">{event.title}</h1></div>
         </div>
         <div className="flex items-center gap-3">
           {isOrganizer && (
-            <Button variant="outline" className="rounded-xl h-10 px-6 border-2 font-black uppercase text-[10px]" onClick={() => setIsEditOpen(true)}>
-              <Edit3 className="h-4 w-4 mr-2" /> Manage Teams
-            </Button>
+            <>
+              <Button variant="outline" className="rounded-xl h-10 px-6 border-2 font-black uppercase text-[10px]" onClick={() => setIsGenOpen(true)}><Sparkles className="h-4 w-4 mr-2" /> Auto-Deploy Itinerary</Button>
+              <Button variant="outline" className="rounded-xl h-10 px-6 border-2 font-black uppercase text-[10px]" onClick={() => setIsEditOpen(true)}><Edit3 className="h-4 w-4 mr-2" /> Manage Teams</Button>
+            </>
           )}
-          <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><CalendarIcon className="h-4 w-4 mr-2" /> {formatDateRange(event.date, event.endDate)}</Badge>
+          <Badge variant="outline" className="h-10 px-4 rounded-xl border-2 font-black uppercase text-[10px] tracking-widest"><CalendarIcon className="h-4 w-4 mr-2" /> {event.date ? format(new Date(event.date), 'MMM d') : ''} - {event.endDate ? format(new Date(event.endDate), 'd') : ''}</Badge>
         </div>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
         <aside className="w-full lg:w-1/3 flex flex-col text-white bg-black rounded-[3rem] p-8 lg:p-10 space-y-8">
-          <div className="space-y-4">
-            <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Operational Brief</p>
-            <p className="text-sm font-medium text-white/80 leading-relaxed italic">"{event.description || 'Championship coordination itinerary established.'}"</p>
-          </div>
+          <div className="space-y-4"><p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Operational Brief</p><p className="text-sm font-medium text-white/80 leading-relaxed italic">"{event.description || 'Championship coordination itinerary established.'}"</p></div>
           <div className="space-y-4 pt-4 border-t border-white/10">
-            <div className="flex justify-between items-center">
-              <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Leaderboard Pulse</h4>
-              {isOrganizer && (
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-white/10" onClick={() => exportTournamentStandingsCSV(event.id)}>
-                  <Download className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-            <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
-              {standings.map((team) => (
-                <div key={team.name} className="flex justify-between items-center px-5 py-4 border-b border-white/5 last:border-0">
-                  <span className="text-xs font-black uppercase truncate pr-2">{team.name}</span>
-                  <Badge className="bg-primary text-white border-none font-black text-[9px] px-2 h-5">{team.points} PTS</Badge>
-                </div>
-              ))}
-            </div>
+            <div className="flex justify-between items-center"><h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Leaderboard Pulse</h4>{isOrganizer && <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-white/10" onClick={() => exportTournamentStandingsCSV(event.id)}><Download className="h-4 w-4" /></Button>}</div>
+            <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">{standings.map((team) => (<div key={team.name} className="flex justify-between items-center px-5 py-4 border-b border-white/5 last:border-0"><span className="text-xs font-black uppercase truncate pr-2">{team.name}</span><Badge className="bg-primary text-white border-none font-black text-[9px] px-2 h-5">{team.points} PTS</Badge></div>))}</div>
           </div>
         </aside>
 
@@ -217,7 +207,6 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
               <TabsList className="bg-white/50 h-auto p-1.5 rounded-2xl border w-full flex-wrap gap-1">
                 <TabsTrigger value="itinerary" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Matches</TabsTrigger>
                 <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Bracket</TabsTrigger>
-                <TabsTrigger value="attendance" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Squad</TabsTrigger>
                 <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
                 <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Legal</TabsTrigger>
               </TabsList>
@@ -236,42 +225,14 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                           <span className="text-xl font-black text-primary">{game.score2}</span>
                           <span className="font-black text-sm uppercase truncate flex-1">{game.team2}</span>
                         </div>
+                        {game.location && <p className="text-[8px] font-black text-center text-muted-foreground uppercase mt-2 tracking-widest">{game.location}</p>}
                       </div>
                     </div>
                   </Card>
                 ))}
-                {(!event.tournamentGames || event.tournamentGames.length === 0) && (
-                  <div className="text-center py-20 opacity-30">
-                    <Clock className="h-12 w-12 mx-auto mb-4" />
-                    <p className="text-sm font-black uppercase">No matches scheduled.</p>
-                  </div>
-                )}
+                {(!event.tournamentGames || event.tournamentGames.length === 0) && <div className="text-center py-20 opacity-30"><Clock className="h-12 w-12 mx-auto mb-4" /><p className="text-sm font-black uppercase">No matches scheduled.</p></div>}
               </TabsContent>
-
-              <TabsContent value="bracket" className="mt-0">
-                <BracketVisualizer games={event.tournamentGames || []} />
-              </TabsContent>
-              
-              <TabsContent value="attendance" className="mt-0">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {members.map(member => (
-                    <Card key={member.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white">
-                      <div className="flex items-center gap-4">
-                        <Avatar className="h-10 w-10 rounded-xl border">
-                          <AvatarImage src={member.avatar} />
-                          <AvatarFallback className="font-black text-xs">{member.name[0]}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-black text-xs uppercase truncate">{member.name}</p>
-                          <p className="text-[8px] font-bold text-muted-foreground uppercase">{member.position}</p>
-                        </div>
-                        <Badge className="font-black text-[8px] uppercase px-2 h-5">{event.userRsvps?.[member.userId] || 'Pending'}</Badge>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </TabsContent>
-
+              <TabsContent value="bracket" className="mt-0"><BracketVisualizer games={event.tournamentGames || []} /></TabsContent>
               <TabsContent value="portals" className="mt-0 space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Card className="rounded-[2rem] border-none shadow-md bg-black text-white p-6 space-y-4 group cursor-pointer" onClick={() => window.open(`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`, '_blank')}>
@@ -286,47 +247,12 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                     <p className="text-[10px] text-muted-foreground font-medium leading-relaxed italic">Mobile entry hub for field marshals to post verified match results.</p>
                     <Button className="w-full h-10 rounded-xl font-black uppercase text-[10px]">Open Scorer Hub <ExternalLink className="ml-2 h-3 w-3" /></Button>
                   </Card>
-                  <Card className="rounded-[2rem] border-none shadow-md bg-primary/5 border-2 border-dashed border-primary/20 p-6 space-y-4 group cursor-pointer" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`); toast({ title: "Portal Link Copied" }); }}>
-                    <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-2">COMPLIANCE</Badge>
-                    <h4 className="text-xl font-black uppercase tracking-tight">Team Waiver URL</h4>
-                    <p className="text-[10px] text-muted-foreground font-medium leading-relaxed italic">Public signing link for external teams to execute participation waivers.</p>
-                    <Button variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px] border-primary/20 text-primary">Copy Waiver Link <FileSignature className="ml-2 h-3 w-3" /></Button>
-                  </Card>
                 </div>
               </TabsContent>
-
               <TabsContent value="compliance" className="mt-0">
                 <div className="space-y-6">
-                  <div className="flex items-center justify-between px-2">
-                    <div className="flex items-center gap-3">
-                      <FileSignature className="h-5 w-5 text-primary" />
-                      <h3 className="text-xl font-black uppercase tracking-tight">Team Agreement Ledger</h3>
-                    </div>
-                    <Button variant="outline" className="h-9 px-4 rounded-xl font-black uppercase text-[10px] border-2" onClick={() => window.open(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`, '_blank')}>Open Waiver Portal <ExternalLink className="ml-2 h-3 w-3" /></Button>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3">
-                    {event.tournamentTeams?.map(teamName => {
-                      const agreement = event.teamAgreements?.[teamName];
-                      return (
-                        <Card key={teamName} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", agreement ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground/30")}>
-                              {agreement ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
-                            </div>
-                            <span className="font-black text-sm uppercase truncate">{teamName}</span>
-                          </div>
-                          {agreement ? (
-                            <div className="text-right">
-                              <p className="text-[8px] font-black uppercase text-muted-foreground">Signed by {agreement.captainName}</p>
-                              <p className="text-[7px] font-bold text-muted-foreground opacity-40">{format(new Date(agreement.signedAt), 'MMM d, h:mm a')}</p>
-                            </div>
-                          ) : (
-                            <Badge variant="outline" className="text-[7px] font-black uppercase border-muted-foreground/20 text-muted-foreground">Pending Execution</Badge>
-                          )}
-                        </Card>
-                      );
-                    })}
-                  </div>
+                  <div className="flex items-center justify-between px-2"><div className="flex items-center gap-3"><FileSignature className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase tracking-tight">Team Agreement Ledger</h3></div><Button variant="outline" className="h-9 px-4 rounded-xl font-black uppercase text-[10px] border-2" onClick={() => window.open(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`, '_blank')}>Open Waiver Portal <ExternalLink className="ml-2 h-3 w-3" /></Button></div>
+                  <div className="grid grid-cols-1 gap-3">{event.tournamentTeams?.map(teamName => { const agreement = event.teamAgreements?.[teamName]; return (<Card key={teamName} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white flex items-center justify-between"><div className="flex items-center gap-4"><div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", agreement ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground/30")}>{agreement ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}</div><span className="font-black text-sm uppercase truncate">{teamName}</span></div>{agreement ? (<div className="text-right"><p className="text-[8px] font-black uppercase text-muted-foreground">Signed by {agreement.captainName}</p><p className="text-[7px] font-bold text-muted-foreground opacity-40">{format(new Date(agreement.signedAt), 'MMM d, h:mm a')}</p></div>) : (<Badge variant="outline" className="text-[7px] font-black uppercase border-muted-foreground/20 text-muted-foreground">Pending Execution</Badge>)}</Card>); })}</div>
                 </div>
               </TabsContent>
             </div>
@@ -335,25 +261,52 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
       </div>
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-8 shadow-2xl border-none overflow-hidden">
-          <DialogTitle className="sr-only">Manage Tournament Roster</DialogTitle>
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black uppercase tracking-tight">Expand Competition</DialogTitle>
-            <DialogDescription className="font-bold text-primary uppercase text-[10px]">Enroll participating squads</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-6 py-4">
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Names (Comma separated)</Label>
-              <Input value={editForm.teams} onChange={e => setEditForm({ ...editForm, teams: e.target.value })} className="h-12 rounded-xl border-2 font-bold" placeholder="Tigers, Lions, Warriors..." />
+        <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-8 shadow-2xl border-none overflow-hidden"><DialogTitle className="sr-only">Manage Tournament Roster</DialogTitle><DialogHeader><DialogTitle className="text-2xl font-black uppercase tracking-tight">Expand Competition</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px]">Enroll participating squads</DialogDescription></DialogHeader><div className="space-y-6 py-4"><div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Names (Comma separated)</Label><Input value={editForm.teams} onChange={e => setEditForm({ ...editForm, teams: e.target.value })} className="h-12 rounded-xl border-2 font-bold" placeholder="Tigers, Lions, Warriors..." /></div><div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Email Invites (Optional)</Label><Input value={editForm.invitedEmails} onChange={e => setEditForm({ ...editForm, invitedEmails: e.target.value })} className="h-12 rounded-xl border-2 font-bold" placeholder="coach@tigers.com, coach@lions.com..." /></div></div><DialogFooter><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdateTeams}>Synchronize Roster</Button></DialogFooter></DialogContent>
+      </Dialog>
+
+      <Dialog open={isGenOpen} onOpenChange={setIsGenOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 lg:p-12 space-y-8">
+            <DialogHeader><DialogTitle className="text-3xl font-black uppercase">Schedule Generator</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px]">Automated Resource Mapping</DialogDescription></DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Day Start</Label><Input type="time" value={genConfig.startTime} onChange={e => setGenConfig({...genConfig, startTime: e.target.value})} className="h-12 border-2" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Day End</Label><Input type="time" value={genConfig.endTime} onChange={e => setGenConfig({...genConfig, endTime: e.target.value})} className="h-12 border-2" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Length (Min)</Label><Input type="number" value={genConfig.gameLength} onChange={e => setGenConfig({...genConfig, gameLength: e.target.value})} className="h-12 border-2" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Break (Min)</Label><Input type="number" value={genConfig.breakLength} onChange={e => setGenConfig({...genConfig, breakLength: e.target.value})} className="h-12 border-2" /></div>
+                </div>
+              </div>
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase">Select Facility</Label>
+                  <select className="w-full h-12 rounded-xl border-2 px-3 font-bold bg-muted/10" value={genConfig.selectedFacilityId} onChange={e => setGenConfig({...genConfig, selectedFacilityId: e.target.value, selectedFields: []})}>
+                    <option value="">Select venue...</option>
+                    {facilities?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                </div>
+                {genConfig.selectedFacilityId && (
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase">Active Fields</Label>
+                    <ScrollArea className="h-32 border-2 rounded-xl p-2">
+                      <div className="space-y-1">
+                        {fields?.map(f => (
+                          <div key={f.id} className="flex items-center gap-2 p-2 hover:bg-muted rounded-lg cursor-pointer" onClick={() => setGenConfig(p => ({ ...p, selectedFields: p.selectedFields.includes(f.name) ? p.selectedFields.filter(name => name !== f.name) : [...p.selectedFields, f.name]}))}>
+                            <div className={cn("h-4 w-4 rounded border-2 flex items-center justify-center", genConfig.selectedFields.includes(f.name) ? "bg-primary border-primary text-white" : "border-muted-foreground/30")}>{genConfig.selectedFields.includes(f.name) && <CheckCircle2 className="h-3 w-3" />}</div>
+                            <span className="text-[10px] font-black uppercase">{f.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Email Invites (Optional)</Label>
-              <Input value={editForm.invitedEmails} onChange={e => setEditForm({ ...editForm, invitedEmails: e.target.value })} className="h-12 rounded-xl border-2 font-bold" placeholder="coach@tigers.com, coach@lions.com..." />
-            </div>
+            <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleGenerateItinerary} disabled={!genConfig.selectedFields.length}>Deploy Master Itinerary</Button></DialogFooter>
           </div>
-          <DialogFooter>
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdateTeams}>Synchronize Roster</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -421,44 +374,20 @@ export default function TournamentsPage() {
               <div className="p-8 lg:p-12 space-y-10">
                 <DialogHeader>
                   <div className="flex items-center gap-4 mb-2">
-                    <div className="bg-primary/10 p-3 rounded-2xl text-primary">
-                      <Trophy className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <DialogTitle className="text-3xl font-black uppercase tracking-tight">Deploy Tourney</DialogTitle>
-                      <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Initialize a new championship event</DialogDescription>
-                    </div>
+                    <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Trophy className="h-6 w-6" /></div>
+                    <div><DialogTitle className="text-3xl font-black uppercase tracking-tight">Deploy Tourney</DialogTitle><DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Initialize a new championship event</DialogDescription></div>
                   </div>
                 </DialogHeader>
                 <div className="space-y-6">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tournament Title</Label>
-                    <Input placeholder="e.g. Winter Regional Finals" value={newTourney.title} onChange={e => setNewTourney({...newTourney, title: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />
-                  </div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tournament Title</Label><Input placeholder="e.g. Winter Regional Finals" value={newTourney.title} onChange={e => setNewTourney({...newTourney, title: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" /></div>
                   <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Series Start Date</Label>
-                      <Input type="date" value={newTourney.date} onChange={e => setNewTourney({...newTourney, date: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Series End Date</Label>
-                      <Input type="date" value={newTourney.endDate} onChange={e => setNewTourney({...newTourney, endDate: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" />
-                    </div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Series Start Date</Label><Input type="date" value={newTourney.date} onChange={e => setNewTourney({...newTourney, date: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Series End Date</Label><Input type="date" value={newTourney.endDate} onChange={e => setNewTourney({...newTourney, endDate: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all" /></div>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label>
-                    <Input placeholder="Official Venue..." value={newTourney.location} onChange={e => setNewTourney({...newTourney, location: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Operational Brief</Label>
-                    <Textarea placeholder="Define rules, coordination notes, and championship structure..." value={newTourney.description} onChange={e => setNewTourney({...newTourney, description: e.target.value})} className="rounded-[1.5rem] min-h-[120px] border-2 font-medium focus:border-primary/20 transition-all p-4 resize-none" />
-                  </div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Location</Label><Input placeholder="Official Venue..." value={newTourney.location} onChange={e => setNewTourney({...newTourney, location: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Operational Brief</Label><Textarea placeholder="Define rules, coordination notes, and championship structure..." value={newTourney.description} onChange={e => setNewTourney({...newTourney, description: e.target.value})} className="rounded-[1.5rem] min-h-[120px] border-2 font-medium focus:border-primary/20 transition-all p-4 resize-none" /></div>
                 </div>
-                <DialogFooter className="pb-8">
-                  <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleDeployTournament} disabled={isProcessing || !newTourney.title || !newTourney.date}>
-                    {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Deploy Tournament"}
-                  </Button>
-                </DialogFooter>
+                <DialogFooter className="pb-8"><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleDeployTournament} disabled={isProcessing || !newTourney.title || !newTourney.date}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Deploy Tournament"}</Button></DialogFooter>
               </div>
             </DialogContent>
           </Dialog>
@@ -478,7 +407,7 @@ export default function TournamentsPage() {
                   <h3 className="text-4xl font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{tournament.title}</h3>
                   <div className="flex items-center gap-6">
                     <p className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> {tournament.location}</p>
-                    <p className="text-[10px] font-black text-primary uppercase tracking-widest">{formatDateRange(tournament.date, tournament.endDate)}</p>
+                    <p className="text-[10px] font-black text-primary uppercase tracking-widest">{tournament.date ? format(new Date(tournament.date), 'MMM d') : ''} - {tournament.endDate ? format(new Date(tournament.endDate), 'MMM d, yyyy') : ''}</p>
                   </div>
                 </div>
                 <ArrowRight className="h-8 w-8 text-primary opacity-20 group-hover:opacity-100 group-hover:translate-x-2 transition-all" />
@@ -486,12 +415,7 @@ export default function TournamentsPage() {
             </div>
           </Card>
         ))}
-        {tournaments.length === 0 && (
-          <div className="text-center py-24 border-2 border-dashed rounded-[3rem] bg-muted/10 opacity-40">
-            <Trophy className="h-16 w-16 mx-auto mb-4" />
-            <p className="text-sm font-black uppercase tracking-widest">No active championship series.</p>
-          </div>
-        )}
+        {tournaments.length === 0 && <div className="text-center py-24 border-2 border-dashed rounded-[3rem] bg-muted/10 opacity-40"><Trophy className="h-16 w-16 mx-auto mb-4" /><p className="text-sm font-black uppercase tracking-widest">No active championship series.</p></div>}
       </div>
     </div>
   );

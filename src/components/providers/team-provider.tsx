@@ -273,6 +273,15 @@ export type League = {
   }>;
   creatorId: string;
   registrationEnabled?: boolean;
+  schedule?: TournamentGame[];
+};
+
+export type Facility = {
+  id: string;
+  name: string;
+  address: string;
+  clubId: string;
+  notes?: string;
 };
 
 export type Field = {
@@ -339,9 +348,11 @@ export type TournamentGame = {
   isDisputed?: boolean;
   disputeNotes?: string;
   mvp?: string;
+  leagueMatch?: boolean;
 };
 
 interface TeamContextType {
+  db: any;
   user: UserProfile | null;
   activeTeam: Team | null;
   setActiveTeam: (team: Team) => void;
@@ -424,6 +435,7 @@ interface TeamContextType {
   addField: (facilityId: string, name: string) => Promise<void>;
   deleteField: (facilityId: string, fieldId: string) => Promise<void>;
   createLeague: (name: string) => Promise<string>;
+  updateLeagueSchedule: (leagueId: string, schedule: TournamentGame[]) => Promise<void>;
   inviteTeamToLeague: (leagueId: string, leagueName: string, email: string) => Promise<void>;
   acceptLeagueInvite: (inviteId: string, leagueId: string) => Promise<void>;
   manuallyAddTeamToLeague: (leagueId: string, teamName: string, coachEmail?: string, logoUrl?: string) => Promise<void>;
@@ -436,6 +448,7 @@ interface TeamContextType {
   signTeamTournamentWaiver: (teamId: string, eventId: string, tournamentTeamName: string) => Promise<void>;
   signPublicTournamentWaiver: (teamId: string, eventId: string, tournamentTeamName: string, coachName: string) => Promise<boolean>;
   submitMatchScore: (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number) => Promise<void>;
+  submitLeagueMatchScore: (leagueId: string, gameId: string, isTeam1: boolean, score1: number, score2: number) => Promise<void>;
   disputeMatchScore: (teamId: string, eventId: string, gameId: string, notes: string) => Promise<void>;
   manageSubscription: () => Promise<void>;
   resolveQuota: (selectedTeamIds: string[]) => Promise<void>;
@@ -734,6 +747,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [householdEvents]);
 
   const contextValue = useMemo(() => ({
+    db,
     user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading,
     currentMember, isStaff: activeTeam?.role === 'Admin', isPro: activeTeam?.isPro || false, isParent: userProfile?.role === 'parent', isPlayer: userProfile?.role === 'adult_player',
     isSuperAdmin, isClubManager: ['elite_teams', 'elite_league', 'squad_organization'].includes(userProfile?.activePlanId || ''), household, householdEvents, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus,
@@ -795,6 +809,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addField: async (fid: string, n: string) => { await addDoc(collection(db, 'facilities', fid, 'fields'), clean({ name: n, facilityId: fid, createdAt: new Date().toISOString() })); },
     deleteField: async (fid: string, id: string) => { await deleteDoc(doc(db, 'facilities', fid, 'fields', id)); },
     createLeague: async (n: string) => { if (activeTeam?.id && firebaseUser) { const r = doc(collection(db, 'leagues')); await setDoc(r, clean({ id: r.id, name: n, sport: activeTeam.sport, teams: { [activeTeam.id]: { teamName: activeTeam.name, wins: 0, losses: 0, ties: 0, points: 0 } }, creatorId: firebaseUser.uid })); return r.id; } return ''; },
+    updateLeagueSchedule: async (lid: string, s: TournamentGame[]) => { await updateDoc(doc(db, 'leagues', lid), { schedule: s }); },
     inviteTeamToLeague: async (lid: string, ln: string, e: string) => { await addDoc(collection(db, 'leagues', 'global', 'invites'), clean({ leagueId: lid, leagueName: ln, invitedEmail: e, status: 'pending', createdAt: new Date().toISOString() })); },
     acceptLeagueInvite: async (iid: string, lid: string) => { if (activeTeam?.id) { const b = writeBatch(db); b.update(doc(db, 'leagues', 'global', 'invites', iid), { status: 'accepted' }); b.update(doc(db, 'leagues', lid), { [`teams.${activeTeam.id}`]: { teamName: activeTeam.name, wins: 0, losses: 0, ties: 0, points: 0 } }); await b.commit(); } },
     manuallyAddTeamToLeague: async (lid: string, n: string, e?: string, l?: string) => { await updateDoc(doc(db, 'leagues', lid), { [`teams.manual_${Date.now()}`]: { teamName: n, coachEmail: e, teamLogoUrl: l, wins: 0, losses: 0, ties: 0, points: 0 } }); },
@@ -807,6 +822,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     signTeamTournamentWaiver: async (tid: string, eid: string, ttn: string) => { if (userProfile) await updateDoc(doc(db, 'teams', tid, 'events', eid), { [`teamAgreements.${ttn}`]: { agreed: true, signedAt: new Date().toISOString(), captainName: userProfile.name, userId: userProfile.id } }); },
     signPublicTournamentWaiver: async (tid: string, eid: string, ttn: string, cn: string) => { await updateDoc(doc(db, 'teams', tid, 'events', eid), { [`teamAgreements.${ttn}`]: { agreed: true, signedAt: new Date().toISOString(), captainName: cn, userId: 'public' } }); return true; },
     submitMatchScore: async (tid: string, eid: string, gid: string, t1: boolean, s1: number, s2: number) => { const r = doc(db, 'teams', tid, 'events', eid); const s = await getDoc(r); const gs = (s.data()?.tournamentGames || []) as TournamentGame[]; const u = gs.map(g => g.id === gid ? { ...g, score1: s1, score2: s2, isCompleted: true } : g); await updateDoc(r, { tournamentGames: u }); },
+    submitLeagueMatchScore: async (lid: string, gid: string, t1: boolean, s1: number, s2: number) => { const r = doc(db, 'leagues', lid); const s = await getDoc(r); const gs = (s.data()?.schedule || []) as TournamentGame[]; const u = gs.map(g => g.id === gid ? { ...g, score1: s1, score2: s2, isCompleted: true } : g); await updateDoc(r, { schedule: u }); },
     disputeMatchScore: async (tid: string, eid: string, gid: string, n: string) => { const r = doc(db, 'teams', tid, 'events', eid); const s = await getDoc(r); const gs = (s.data()?.tournamentGames || []) as TournamentGame[]; const u = gs.map(g => g.id === gid ? { ...g, isDisputed: true, disputeNotes: n } : g); await updateDoc(r, { tournamentGames: u }); },
     manageSubscription: async () => router.push('/pricing'),
     resolveQuota: async (sids: string[]) => { if (firebaseUser) { const b = writeBatch(db); teams.filter(t => t.ownerUserId === firebaseUser.uid && t.isPro).forEach(t => { const ok = sids.includes(t.id); b.update(doc(db, 'teams', t.id), { isPro: ok, planId: ok ? t.planId : 'starter_squad' }); b.update(doc(db, 'users', firebaseUser.uid, 'teamMemberships', t.id), { isPro: ok, planId: ok ? t.planId : 'starter_squad' }); }); await b.commit(); } },
