@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Switch } from '@/components/ui/switch';
 import { 
   PenTool, 
   FileSignature, 
@@ -53,8 +54,7 @@ import {
   LayoutGrid,
   HeartPulse,
   Plane,
-  GraduationCap,
-  Switch
+  GraduationCap
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -65,16 +65,6 @@ import {
   DialogFooter,
   DialogDescription
 } from '@/components/ui/dialog';
-import { 
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { 
   Select, 
   SelectContent, 
