@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { useTeam, Team, Member } from '@/components/providers/team-provider';
+import { useTeam, Team, Member, TeamDocument, DocumentSignature } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +25,13 @@ import {
   TrendingUp,
   Activity,
   ShieldAlert,
-  BarChart3
+  BarChart3,
+  Trash2,
+  Edit3,
+  FileText,
+  Clock,
+  Download,
+  AlertCircle
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -38,22 +44,37 @@ import {
   DialogDescription, 
   DialogFooter
 } from '@/components/ui/dialog';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collectionGroup, query } from 'firebase/firestore';
+import { collectionGroup, query, where, orderBy } from 'firebase/firestore';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function ClubManagementPage() {
-  const { teams, user, isClubManager, createNewTeam, setActiveTeam } = useTeam();
+  const { teams, user, isClubManager, createNewTeam, setActiveTeam, updateUser, deleteTeam } = useTeam();
   const db = useFirestore();
   const router = useRouter();
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
-  const [initialCoach, setInitialCoach] = useState('');
+  const [isEditClubOpen, setIsEditOpen] = useState(false);
+  const [clubForm, setClubForm] = useState({ name: user?.clubName || '', description: user?.clubDescription || '' });
+  const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
 
   // TACTICAL AUDIT: Identify squads where user has management authority
   const clubTeams = useMemo(() => {
@@ -66,14 +87,25 @@ export default function ClubManagementPage() {
   const membersQuery = useMemoFirebase(() => {
     if (!db || clubTeamIds.length === 0) return null;
     return query(collectionGroup(db, 'members'));
-  }, [db, clubTeamIds]);
+  }, [db, clubTeamIds.length]);
 
-  const { data: allMembersRaw, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
-  
+  const { data: allMembersRaw } = useCollection<Member>(membersQuery);
   const clubMembers = useMemo(() => {
     if (!allMembersRaw) return [];
     return allMembersRaw.filter(m => clubTeamIds.includes(m.teamId));
   }, [allMembersRaw, clubTeamIds]);
+
+  // COMPLIANCE AUDIT: Fetch all documents across club squads
+  const docsQuery = useMemoFirebase(() => {
+    if (!db || clubTeamIds.length === 0) return null;
+    return query(collectionGroup(db, 'documents'));
+  }, [db, clubTeamIds.length]);
+
+  const { data: allDocsRaw } = useCollection<TeamDocument>(docsQuery);
+  const clubDocs = useMemo(() => {
+    if (!allDocsRaw) return [];
+    return allDocsRaw.filter(d => clubTeamIds.includes(d.teamId));
+  }, [allDocsRaw, clubTeamIds]);
 
   const stats = useMemo(() => {
     let owed = 0;
@@ -110,6 +142,12 @@ export default function ClubManagementPage() {
     );
   }
 
+  const handleUpdateClub = async () => {
+    await updateUser({ clubName: clubForm.name, clubDescription: clubForm.description });
+    setIsEditOpen(false);
+    toast({ title: "Club Protocol Synchronized" });
+  };
+
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) return;
     setIsCreating(true);
@@ -117,7 +155,6 @@ export default function ClubManagementPage() {
       await createNewTeam(newTeamName, 'adult', 'Coach', `Official club squad managed by ${user?.name}`, 'squad_pro');
       setIsCreating(false);
       setNewTeamName('');
-      setInitialCoach('');
       toast({ title: "Club Squad Enrolled" });
     } catch (e) {
       setIsCreating(false);
@@ -125,48 +162,55 @@ export default function ClubManagementPage() {
     }
   };
 
+  const handleDeleteTeam = async () => {
+    if (!teamToDelete) return;
+    await deleteTeam(teamToDelete.id);
+    setTeamToDelete(null);
+  };
+
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-700">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Institutional Command</Badge>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Club Hub</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Centralized Organizational Logistics</p>
+          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">{user?.clubName || 'Club Command'}</h1>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Managing {clubTeams.length} Operational Units</p>
         </div>
         
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all">
-              <Plus className="h-5 w-5 mr-2" /> Add Club Team
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl overflow-hidden p-0">
-            <DialogTitle className="sr-only">New Club Squad Enrollment</DialogTitle>
-            <div className="h-2 bg-primary w-full" />
-            <div className="p-8 lg:p-10 space-y-8">
-              <DialogHeader>
-                <DialogTitle className="text-2xl font-black uppercase tracking-tight">New Club Squad</DialogTitle>
-                <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Scale your institutional roster</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Name</Label>
-                  <Input placeholder="e.g. U14 Regional Stars" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-12 rounded-xl font-bold border-2 focus:border-primary/20 transition-all" />
+        <div className="flex gap-2">
+          <Button variant="outline" className="h-14 px-6 rounded-2xl border-2 font-black uppercase text-xs tracking-widest" onClick={() => setIsEditOpen(true)}>
+            <Edit3 className="h-4 w-4 mr-2" /> Edit Club
+          </Button>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all">
+                <Plus className="h-5 w-5 mr-2" /> Add Club Team
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl overflow-hidden p-0">
+              <DialogTitle className="sr-only">New Club Squad Enrollment</DialogTitle>
+              <div className="h-2 bg-primary w-full" />
+              <div className="p-8 lg:p-10 space-y-8">
+                <DialogHeader>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tight">New Club Squad</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Scale your institutional roster</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Name</Label>
+                    <Input placeholder="e.g. U14 Regional Stars" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} className="h-12 rounded-xl font-bold border-2 focus:border-primary/20 transition-all" />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Initial Coach Email (Optional)</Label>
-                  <Input type="email" placeholder="coach@example.com" value={initialCoach} onChange={e => setInitialCoach(e.target.value)} className="h-12 rounded-xl font-bold border-2 focus:border-primary/20 transition-all" />
-                </div>
+                <DialogFooter>
+                  <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleCreateTeam} disabled={isCreating || !newTeamName.trim()}>
+                    {isCreating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <ShieldCheck className="h-5 w-5 mr-2" />}
+                    Enroll Squad
+                  </Button>
+                </DialogFooter>
               </div>
-              <DialogFooter>
-                <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleCreateTeam} disabled={isCreating || !newTeamName.trim()}>
-                  {isCreating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <ShieldCheck className="h-5 w-5 mr-2" />}
-                  Enroll Squad
-                </Button>
-              </DialogFooter>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -218,17 +262,23 @@ export default function ClubManagementPage() {
               <p className="text-sm font-black truncate uppercase">{user?.name}</p>
               <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter">Master Organization Lead</p>
             </div>
-            <Button variant="outline" className="w-full h-8 rounded-lg text-[8px] font-black uppercase border-primary/20 text-primary hover:bg-primary hover:text-white transition-all">Master Settings</Button>
+            <Button variant="outline" className="w-full h-8 rounded-lg text-[8px] font-black uppercase border-primary/20 text-primary hover:bg-primary hover:text-white transition-all" onClick={() => router.push('/settings')}>Master Settings</Button>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-8 space-y-6">
+      <Tabs defaultValue="squads" className="space-y-8">
+        <TabsList className="bg-muted/50 rounded-xl p-1 h-12 inline-flex border-2">
+          <TabsTrigger value="squads" className="rounded-lg font-black text-xs uppercase tracking-widest px-8 data-[state=active]:bg-black data-[state=active]:text-white">Squad Roster</TabsTrigger>
+          <TabsTrigger value="compliance" className="rounded-lg font-black text-xs uppercase tracking-widest px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Global Compliance</TabsTrigger>
+          <TabsTrigger value="fiscal" className="rounded-lg font-black text-xs uppercase tracking-widest px-8 data-[state=active]:bg-black data-[state=active]:text-white">Fiscal Ledger</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="squads" className="space-y-6">
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-2">
               <LayoutGrid className="h-4 w-4 text-primary" />
-              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Organization Roster</h2>
+              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Managed Operational Units</h2>
             </div>
             <div className="relative w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
@@ -260,24 +310,29 @@ export default function ClubManagementPage() {
                         <div className="space-y-1">
                           <h3 className="text-xl font-black tracking-tight leading-tight group-hover:text-primary transition-colors uppercase">{team.name}</h3>
                           <div className="flex items-center gap-4 text-[9px] font-black text-muted-foreground uppercase tracking-widest">
-                            <span className="flex items-center gap-1.5"><ShieldCheck className="h-3 w-3 text-primary" /> {teamMembers.length} Active Roster</span>
-                            <span className="flex items-center gap-1.5"><Activity className="h-3 w-3" /> Elite Status</span>
+                            <span className="flex items-center gap-1.5"><ShieldCheck className="h-3 w-3 text-primary" /> {teamMembers.length} Athletes</span>
+                            <span className="flex items-center gap-1.5"><Activity className="h-3 w-3" /> Status: Elite</span>
                           </div>
                         </div>
                         
                         <div className="flex items-center gap-4">
                           <div className="text-right">
-                            <p className="text-[8px] font-black uppercase text-muted-foreground">Owed</p>
+                            <p className="text-[8px] font-black uppercase text-muted-foreground">Dues Owed</p>
                             <p className="text-sm font-black text-primary">${teamOwed.toLocaleString()}</p>
                           </div>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="rounded-full h-12 w-12 hover:bg-primary hover:text-white shadow-sm ring-1 ring-black/5 transition-all"
-                            onClick={() => { setActiveTeam(team); router.push('/team'); }}
-                          >
-                            <ArrowUpRight className="h-5 w-5" />
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button variant="ghost" size="icon" className="rounded-full h-12 w-12 hover:bg-destructive hover:text-white shadow-sm ring-1 ring-black/5 transition-all" onClick={() => setTeamToDelete(team)}>
+                              <Trash2 className="h-5 w-5" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="rounded-full h-12 w-12 hover:bg-primary hover:text-white shadow-sm ring-1 ring-black/5 transition-all"
+                              onClick={() => { setActiveTeam(team); router.push('/team'); }}
+                            >
+                              <ArrowUpRight className="h-5 w-5" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -285,52 +340,169 @@ export default function ClubManagementPage() {
                 </Card>
               );
             })}
-            {filteredTeams.length === 0 && (
-              <div className="py-20 text-center border-2 border-dashed rounded-[3rem] bg-muted/10 opacity-40">
-                <LayoutGrid className="h-12 w-12 mx-auto mb-4" />
-                <p className="text-sm font-black uppercase tracking-widest">No managed squads identified.</p>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="compliance" className="space-y-8 animate-in fade-in duration-500">
+          <div className="flex items-center gap-3 px-2">
+            <ShieldCheck className="h-5 w-5 text-primary" />
+            <h2 className="text-xl font-black uppercase tracking-tight">Institutional Vault</h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {clubDocs.map(doc => (
+              <Card key={doc.id} className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden flex flex-col group hover:ring-primary/20 transition-all">
+                <CardHeader className="p-8 pb-4">
+                  <div className="flex justify-between items-start">
+                    <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest border-primary/20 text-primary">{doc.type}</Badge>
+                    <div className="bg-primary/5 p-2 rounded-lg text-primary shadow-inner">
+                      <FileText className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <CardTitle className="text-xl font-black uppercase tracking-tight pt-4 leading-none">{doc.title}</CardTitle>
+                  <CardDescription className="text-[9px] font-bold uppercase tracking-widest mt-1">Squad: {clubTeams.find(t => t.id === doc.teamId)?.name}</CardDescription>
+                </CardHeader>
+                <CardContent className="p-8 pt-0 flex-1 space-y-6">
+                  <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground line-clamp-3">"{doc.content}"</p>
+                  <div className="pt-4 border-t space-y-4">
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
+                      <span className="text-muted-foreground">Execution Status</span>
+                      <span className="text-primary">{doc.signatureCount} Verified</span>
+                    </div>
+                    <Progress value={Math.min((doc.signatureCount / 15) * 100, 100)} className="h-1.5" />
+                  </div>
+                </CardContent>
+                <CardFooter className="p-8 pt-0">
+                  <Button variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[9px] tracking-widest border-2" onClick={() => { setActiveTeam(clubTeams.find(t => t.id === doc.teamId)!); router.push('/coaches-corner'); }}>
+                    Audit Ledger
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+            {clubDocs.length === 0 && (
+              <div className="col-span-full py-24 text-center border-2 border-dashed rounded-[3rem] bg-muted/10 opacity-40">
+                <FileText className="h-12 w-12 mx-auto mb-4" />
+                <p className="text-sm font-black uppercase tracking-widest">No institutional protocols established.</p>
               </div>
             )}
           </div>
-        </div>
+        </TabsContent>
 
-        <aside className="lg:col-span-4 space-y-8">
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 px-2 text-primary">
-              <BarChart3 className="h-4 w-4" />
-              <h3 className="text-xs font-black uppercase tracking-[0.2em]">Institutional Analytics</h3>
-            </div>
-            <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white p-8 space-y-6">
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-black uppercase text-white/40 tracking-widest">Organization Roster</p>
-                  <div className="flex justify-between items-end">
-                    <p className="text-3xl font-black">{clubMembers.length}</p>
-                    <Badge className="bg-primary text-white border-none text-[8px] h-5">Verified Athletes</Badge>
-                  </div>
-                  <Progress value={100} className="h-1 bg-white/10" />
+        <TabsContent value="fiscal" className="space-y-8 animate-in fade-in duration-500">
+          <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white">
+            <CardHeader className="bg-black text-white p-10">
+              <div className="flex items-center gap-6">
+                <div className="bg-primary p-4 rounded-2xl shadow-xl shadow-primary/20">
+                  <DollarSign className="h-8 w-8 text-white" />
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-black uppercase text-white/40 tracking-widest">Total Fiscal Pipeline</p>
-                  <p className="text-3xl font-black">${stats.total.toLocaleString()}</p>
-                  <Progress value={stats.rate} className="h-1 bg-white/10" />
+                <div>
+                  <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none">Fiscal Ledger</CardTitle>
+                  <CardDescription className="text-white/60 font-bold uppercase tracking-widest text-[10px] mt-2">Aggregated organization financial audit</CardDescription>
                 </div>
               </div>
-              <Button className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] tracking-widest hover:bg-primary hover:text-white transition-all">Export Org Audit</Button>
-            </Card>
-          </section>
-
-          <Card className="rounded-[2.5rem] border-none shadow-md bg-white p-8 space-y-4 ring-1 ring-black/5">
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Global Management active</h4>
-            </div>
-            <p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">
-              Master organization lead protocols are established. You are currently monitoring {clubTeams.length} elite squads. Fiscal data is aggregated in real-time from active roster ledgers.
-            </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b">
+                    <tr>
+                      <th className="px-10 py-6">Athlete</th>
+                      <th className="px-6 py-6">Squad</th>
+                      <th className="px-6 py-6 text-center">Status</th>
+                      <th className="px-10 py-6 text-right">Owed</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-muted/50">
+                    {clubMembers.map(m => (
+                      <tr key={m.id} className="hover:bg-primary/5 transition-colors group">
+                        <td className="px-10 py-6">
+                          <div className="flex items-center gap-4">
+                            <Avatar className="h-10 w-10 rounded-xl border shadow-sm shrink-0">
+                              <AvatarImage src={m.avatar} />
+                              <AvatarFallback className="font-black text-xs">{m.name[0]}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-black text-sm uppercase tracking-tight">{m.name}</p>
+                              <p className="text-[10px] font-bold text-muted-foreground uppercase">{m.position} • #{m.jersey}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-6">
+                          <p className="text-xs font-black uppercase">{clubTeams.find(t => t.id === m.teamId)?.name}</p>
+                        </td>
+                        <td className="px-6 py-6 text-center">
+                          <Badge className={cn("border-none font-black text-[8px] uppercase px-2 h-5", m.feesPaid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                            {m.feesPaid ? 'CLEARED' : 'PENDING'}
+                          </Badge>
+                        </td>
+                        <td className="px-10 py-6 text-right">
+                          <span className={cn("font-black text-sm", m.amountOwed! > 0 ? "text-primary" : "text-green-600")}>
+                            ${m.amountOwed?.toLocaleString() || 0}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
           </Card>
-        </aside>
-      </div>
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={isEditClubOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-md p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 lg:p-10 space-y-8">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Club Architect</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Define your institutional identity</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Official Club Name</Label>
+                <Input value={clubForm.name} onChange={e => setClubForm({...clubForm, name: e.target.value})} className="h-12 rounded-xl font-bold border-2" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Mission Narrative</Label>
+                <Textarea value={clubForm.description} onChange={e => setClubForm({...clubForm, description: e.target.value})} className="rounded-xl min-h-[120px] border-2 font-medium" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdateClub}>Synchronize Hub</Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!teamToDelete} onOpenChange={(o) => !o && setTeamToDelete(null)}>
+        <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
+          <div className="h-2 bg-red-600 w-full" />
+          <AlertDialogHeader className="p-10 pb-4">
+            <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">Decommission Squad?</AlertDialogTitle>
+            <AlertDialogDescription className="font-bold text-base pt-2 text-foreground/80 leading-relaxed">
+              This will remove <strong>{teamToDelete?.name}</strong> from your club command hub. This action is irreversible and deletes institutional oversight references.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="p-10 pt-4 bg-muted/10 border-t flex flex-col sm:flex-row gap-2">
+            <AlertDialogCancel className="rounded-xl font-bold border-2 h-12">Cancel Protocol</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteTeam} className="rounded-xl font-black bg-red-600 hover:bg-red-700 h-12 shadow-xl shadow-red-600/20">Decommission Permanently</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Card className="rounded-[3rem] border-none shadow-2xl bg-black text-white overflow-hidden relative mt-12">
+        <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none">
+          <ShieldCheck className="h-48 w-48" />
+        </div>
+        <CardContent className="p-12 relative z-10 space-y-6">
+          <Badge className="bg-primary text-white border-none font-black text-[10px] px-4 h-7 uppercase tracking-widest">Institutional Oversight</Badge>
+          <h2 className="text-4xl font-black tracking-tight leading-tight uppercase">Master Organization Control</h2>
+          <p className="text-white/60 font-medium text-lg leading-relaxed max-w-2xl">
+            Club Hub provides a singular point of control for multi-squad managers. Centralize your fiscal ledgers, verify compliance signatures across the entire organization, and manage the lifecycle of your squads from inception to decommissioning.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

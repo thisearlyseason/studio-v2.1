@@ -40,6 +40,9 @@ export type UserProfile = {
   isDemo?: boolean;
   activePlanId?: string | null;
   proTeamLimit?: number | null;
+  clubName?: string;
+  clubLogoUrl?: string;
+  clubDescription?: string;
 };
 
 export type PlayerProfile = {
@@ -387,6 +390,7 @@ interface TeamContextType {
   hasFeature: (id: string) => boolean;
   createNewTeam: (name: string, type: "adult" | "youth", pos: string, description?: string, planId?: string) => Promise<string>;
   joinTeamWithCode: (code: string, playerId: string, position: string) => Promise<boolean>;
+  deleteTeam: (teamId: string) => Promise<void>;
   registerChild: (firstName: string, lastName: string, dob: string) => Promise<string>;
   upgradeChildToLogin: (childId: string) => Promise<void>;
   updateUser: (updates: Partial<UserProfile>) => Promise<void>;
@@ -526,7 +530,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           activePlanId: data.activePlanId,
           proTeamLimit: data.proTeamLimit || 0,
           createdAt: data.createdAt,
-          isDemo: data.isDemo
+          isDemo: data.isDemo,
+          clubName: data.clubName,
+          clubLogoUrl: data.clubLogoUrl,
+          clubDescription: data.clubDescription
         });
       }
     });
@@ -799,6 +806,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     toast({ title: "Quota Provisioned" });
   }, [db, isSuperAdmin]);
 
+  const deleteTeam = useCallback(async (teamId: string) => {
+    if (!firebaseUser) return;
+    const batch = writeBatch(db);
+    
+    // Remove from user's memberships
+    batch.delete(doc(db, 'users', firebaseUser.uid, 'teamMemberships', teamId));
+    
+    // Standard delete doesn't recursive delete subcollections in rules but we initiate it here
+    // for the root doc to satisfy the immediate UI feedback.
+    batch.delete(doc(db, 'teams', teamId));
+    
+    await batch.commit();
+    toast({ title: "Squad Decommissioned", description: "Team data removal protocol initiated." });
+  }, [db, firebaseUser]);
+
   const contextValue = useMemo(() => ({
     db,
     user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading,
@@ -813,6 +835,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     formatTime: (date: string | Date) => { try { return new Date(date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch (e) { return 'TBD'; } },
     createNewTeam: async (name: string, type: any, pos: string, description?: string, planId?: string) => { if (!firebaseUser) return ''; const tid = `team_${Date.now()}`; const code = Math.random().toString(36).substring(2, 8).toUpperCase(); const batch = writeBatch(db); batch.set(doc(db, 'teams', tid), clean({ id: tid, teamName: name, teamCode: code, type, ownerUserId: firebaseUser.uid, createdAt: new Date().toISOString(), isPro: planId !== 'starter_squad', planId: planId || 'starter_squad' })); batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ id: firebaseUser.uid, userId: firebaseUser.uid, teamId: tid, role: 'Admin', position: pos, name: userProfile?.name || 'Coach', joinedAt: new Date().toISOString(), jersey: 'HQ' })); batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ teamId: tid, teamName: name, teamCode: code, role: 'Admin', isPro: planId !== 'starter_squad', planId: planId || 'starter_squad', ownerUserId: firebaseUser.uid })); await batch.commit(); return tid; },
     joinTeamWithCode: async (code: string, pid: string, pos: string) => { if (!firebaseUser) return false; const q = query(collection(db, 'teams'), where('teamCode', '==', code.toUpperCase()), limit(1)); const s = await getDocs(q); if (s.empty) return false; const tid = s.docs[0].id; const t = s.docs[0].data(); const batch = writeBatch(db); batch.update(doc(db, 'players', pid), { joinedTeamIds: arrayUnion(tid) }); batch.set(doc(db, 'teams', tid, 'members', pid), clean({ id: pid, userId: firebaseUser.uid, playerId: pid, teamId: tid, role: 'Member', position: pos, name: pid.startsWith('p_') ? userProfile?.name : 'Child', joinedAt: new Date().toISOString(), jersey: 'TBD' })); batch.set(db, doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ teamId: tid, teamName: t.teamName, teamCode: code.toUpperCase(), role: 'Member', isPro: !!t.isPro, planId: t.planId || 'starter_squad', ownerUserId: t.ownerUserId })); await batch.commit(); return true; },
+    deleteTeam,
     registerChild: async (f: string, l: string, d: string) => { if (!firebaseUser) return ''; const ref = await addDoc(collection(db, 'players'), clean({ firstName: f, lastName: l, dateOfBirth: d, isMinor: true, parentId: firebaseUser.uid, createdAt: new Date().toISOString() })); return ref.id; },
     upgradeChildToLogin: async (cid: string) => { await updateDoc(doc(db, 'players', cid), { hasLogin: true }); },
     updateUser: async (u: any) => { if (firebaseUser) await updateDoc(doc(db, 'users', firebaseUser.uid), clean(u)); },
@@ -884,7 +907,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     exportAttendanceCSV,
     exportTournamentStandingsCSV,
     assignManualPlan
-  }), [userProfile, activeTeam?.id, activeTeam?.isPro, activeTeam?.planId, isStaff, teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading, currentMember, isSuperAdmin, household, householdEvents, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus, isPaywallOpen, firebaseUser?.uid, db, signTeamDocument, createTeamDocument, respondToAssignment, createAlert, deleteAlert, exportSignaturesCSV, exportAttendanceCSV, exportTournamentStandingsCSV, assignManualPlan, router]);
+  }), [userProfile, activeTeam?.id, activeTeam?.isPro, activeTeam?.planId, isStaff, teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading, currentMember, isSuperAdmin, household, householdEvents, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus, isPaywallOpen, firebaseUser?.uid, db, signTeamDocument, createTeamDocument, respondToAssignment, createAlert, deleteAlert, exportSignaturesCSV, exportAttendanceCSV, exportTournamentStandingsCSV, assignManualPlan, deleteTeam, router]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;
 }
