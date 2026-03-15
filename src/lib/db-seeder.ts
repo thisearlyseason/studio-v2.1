@@ -75,7 +75,8 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
 export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string) {
   const isParentDemo = planId === 'parent_demo';
   const isPlayerDemo = planId === 'player_demo';
-  const isEliteDemo = planId === 'elite_teams' || planId === 'elite_league';
+  const isEliteDemo = ['elite_teams', 'elite_league', 'squad_organization'].includes(planId);
+  const isProTier = planId !== 'starter_squad' && !isParentDemo && !isPlayerDemo;
   
   const actualPlanId = (isParentDemo || isPlayerDemo) ? 'squad_pro' : planId;
   const userRole = isParentDemo ? 'parent' : (isPlayerDemo ? 'adult_player' : 'coach');
@@ -88,17 +89,17 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   // 1. Core Profile
   batch.set(doc(db, 'users', userId), clean({
     id: userId, fullName: `Guest ${pos}`, email: `${userRole}@thesquad.pro`,
-    role: userRole, activePlanId: actualPlanId, proTeamLimit: isEliteDemo ? 20 : 1, createdAt: now, isDemo: true
+    role: userRole, activePlanId: actualPlanId, proTeamLimit: isEliteDemo ? 20 : (isProTier ? 1 : 0), createdAt: now, isDemo: true
   }), { merge: true });
 
   // Define team configurations
   const teamConfigs = isEliteDemo 
     ? [
-        { id: `demo_a_${userId.slice(-4)}`, name: 'Metro Elite Alpha', suffix: 'Alpha' },
-        { id: `demo_b_${userId.slice(-4)}`, name: 'Metro Elite Beta', suffix: 'Beta' }
+        { id: `demo_a_${userId.slice(-4)}`, name: 'Metro Elite Alpha', suffix: 'Alpha', isPro: true },
+        { id: `demo_b_${userId.slice(-4)}`, name: 'Metro Elite Beta', suffix: 'Beta', isPro: true }
       ]
     : [
-        { id: `demo_${planId}_${userId.slice(-4)}`, name: 'Elite Demo Squad', suffix: '' }
+        { id: `demo_${planId}_${userId.slice(-4)}`, name: isProTier ? 'Elite Demo Squad' : 'Grassroots Demo', suffix: '', isPro: isProTier }
       ];
 
   // 2. Seed each team
@@ -107,13 +108,13 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     
     batch.set(doc(db, 'teams', tid), clean({
       id: tid, teamName: config.name, teamCode: tid.slice(-6).toUpperCase(),
-      ownerUserId: userId, isPro: true, planId: actualPlanId, sport: 'Multi-Sport', isDemo: true,
+      ownerUserId: userId, isPro: config.isPro, planId: config.isPro ? actualPlanId : 'starter_squad', sport: 'Multi-Sport', isDemo: true,
       parentCommentsEnabled: true, parentChatEnabled: true, createdAt: now, createdBy: userId
     }));
 
     batch.set(doc(db, 'users', userId, 'teamMemberships', tid), clean({
       teamId: tid, teamName: config.name, teamCode: tid.slice(-6).toUpperCase(), role,
-      isPro: true, planId: actualPlanId, isDemo: true, joinedAt: now
+      isPro: config.isPro, planId: config.isPro ? actualPlanId : 'starter_squad', isDemo: true, joinedAt: now
     }));
 
     batch.set(doc(db, 'teams', tid, 'members', userId), clean({
