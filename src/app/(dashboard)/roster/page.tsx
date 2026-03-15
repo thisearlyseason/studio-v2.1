@@ -368,13 +368,10 @@ export default function RosterPage() {
                         <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><ShieldCheck className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em]">Vital Stats</h4></div>
                         <div className="grid grid-cols-1 gap-3">
                           {STANDARD_WAIVERS.map(w => {
-                            // Only show if the protocol is ACTIVE in the team's documents
                             if (!activeProtocolsMap[w.docId]) return null;
-                            
                             const isAdult = selectedMember.birthdate && differenceInYears(new Date(), new Date(selectedMember.birthdate)) >= 18;
                             if (w.minorOnly && isAdult) return null;
                             const isSigned = signedDocIds.includes(w.docId);
-                            
                             return (
                               <div key={w.id} className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
                                 <span className="text-[10px] font-black uppercase opacity-40">{w.label}</span>
@@ -436,7 +433,7 @@ export default function RosterPage() {
                     <div className="space-y-2">
                       <h3 className="text-2xl font-black uppercase tracking-tight">Pro Insights Locked</h3>
                       <p className="text-muted-foreground font-medium text-sm max-w-sm mx-auto leading-relaxed">
-                        Upgrade to **Squad Pro** to unlock recruiting portfolios, automated compliance tracking, and tactical staff evaluations.
+                        Upgrade to <strong>Squad Pro</strong> to unlock recruiting portfolios, automated compliance tracking, and tactical staff evaluations.
                       </p>
                     </div>
                     <Button onClick={purchasePro} className="rounded-full px-10 h-14 font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20 active:scale-95 transition-all">
@@ -482,7 +479,7 @@ export default function RosterPage() {
             </div>
             <DialogFooter>
               <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdatePosition} disabled={isSavingNote}>
-                {isSavingNote ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-6 w-6 mr-2" />}
+                {isSavingNote ? <Loader2 className="h-6 w-6 animate-spin" /> : <Save className="h-6 w-6 mr-2" />}
                 Commit Position Update
               </Button>
             </DialogFooter>

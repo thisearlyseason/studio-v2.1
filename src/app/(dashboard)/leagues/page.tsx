@@ -60,7 +60,8 @@ import {
   DialogTitle, 
   DialogTrigger,
   DialogDescription, 
-  DialogFooter
+  DialogFooter,
+  DialogClose
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -653,11 +654,11 @@ export default function LeaguesPage() {
                       <Button 
                         onClick={() => isPro ? setIsSeasonOpen(true) : null} 
                         className={cn(
-                          "h-12 px-8 rounded-xl font-black text-xs uppercase transition-all flex items-center",
-                          isPro ? "bg-white text-black hover:bg-primary hover:text-white" : "bg-white/50 text-muted-foreground/50 border-2 cursor-not-allowed"
+                          "h-12 px-8 rounded-xl font-black text-xs uppercase transition-all flex items-center hover:bg-primary hover:text-white",
+                          isPro ? "bg-white text-black" : "bg-white/50 text-muted-foreground/50 border-2 cursor-not-allowed"
                         )}
                       >
-                        {!isPro && <Lock className="h-4 w-4 mr-2 text-red-600" />}
+                        {!isPro && <Lock className="h-3 w-3 mr-2 text-red-600" />}
                         <CalendarDays className="h-4 w-4 mr-2" /> Season Architect
                       </Button>
                       
@@ -665,8 +666,8 @@ export default function LeaguesPage() {
                         asChild={isPro} 
                         variant="secondary" 
                         className={cn(
-                          "h-12 px-8 rounded-xl font-black text-xs uppercase transition-all flex items-center",
-                          isPro ? "bg-white text-black hover:bg-primary hover:text-white" : "bg-white/50 text-muted-foreground/50 border-2 cursor-not-allowed"
+                          "h-12 px-8 rounded-xl font-black text-xs uppercase transition-all flex items-center hover:bg-primary hover:text-white",
+                          isPro ? "bg-white text-black" : "bg-white/50 text-muted-foreground/50 border-2 cursor-not-allowed"
                         )}
                       >
                         {isPro ? (
@@ -710,7 +711,6 @@ export default function LeaguesPage() {
           </div>
 
           <Tabs value={activeTab} className="mt-0">
-            {/* ... tabs content stays similar but uses standardized hover ... */}
             <TabsContent value="standings" className="mt-0">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2 space-y-6">
@@ -741,14 +741,171 @@ export default function LeaguesPage() {
                 </aside>
               </div>
             </TabsContent>
-            {/* ... other tab contents ... */}
+            
+            <TabsContent value="command" className="mt-0">
+              <LeagueOverview league={activeLeague} schedule={activeLeague.schedule || []} />
+            </TabsContent>
+
+            <TabsContent value="finances" className="mt-0">
+              <LeagueFinances league={activeLeague} />
+            </TabsContent>
+
+            <TabsContent value="directory" className="mt-0">
+              <SquadDirectory league={activeLeague} />
+            </TabsContent>
           </Tabs>
         </div>
       ) : (
         <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6"><div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl relative"><Shield className="h-10 w-10 text-primary opacity-20" /><Trophy className="absolute -top-2 -right-2 h-8 w-8 text-amber-500 animate-bounce" /></div><div className="space-y-2"><h3 className="text-2xl font-black uppercase tracking-tight">Competitive Desert</h3><p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto">Your squad hasn't joined a league yet. Start your own or accept a challenge to enter the standings.</p></div></div>
       )}
 
-      {/* ... dialogs ... */}
+      {/* CREATE LEAGUE DIALOG */}
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden bg-white">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 lg:p-10 space-y-8">
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight">League Architect</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Initialize Competitive Infrastructure</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">League Name</Label>
+                <Input placeholder="e.g. State Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20 transition-all shadow-inner" />
+              </div>
+              <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 flex items-start gap-4">
+                <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
+                <p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">
+                  As the architect, you will control schedules, standings, and institutional recruitment for every enrolled squad.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleCreateLeague} disabled={isProcessing || !leagueName.trim()}>
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Competitive Hub"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* RECRUITMENT DIALOG */}
+      <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
+            <DialogHeader>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary">
+                  <UserPlus className="h-6 w-6" />
+                </div>
+                <div>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">Recruit Teams</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Multi-Channel Enrollment Suite</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Enrollment Protocol</Label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      { id: 'digital', label: 'Email Invite', icon: Mail },
+                      { id: 'manual', label: 'Manual Entry', icon: Edit3 },
+                      { id: 'code', label: 'Invite Code', icon: Hash },
+                      { id: 'portal', label: 'Public Portal', icon: Globe }
+                    ].map(method => (
+                      <button 
+                        key={method.id}
+                        onClick={() => setInviteMethod(method.id as any)}
+                        className={cn(
+                          "flex items-center gap-3 p-4 rounded-xl border-2 transition-all font-black text-[10px] uppercase",
+                          inviteMethod === method.id ? "bg-primary border-primary text-white shadow-lg" : "bg-muted/30 border-transparent hover:border-muted text-muted-foreground"
+                        )}
+                      >
+                        <method.icon className="h-4 w-4" />
+                        {method.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6 animate-in slide-in-from-right-4">
+                {inviteMethod === 'digital' && (
+                  <div className="space-y-4">
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Coach Email</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@example.com" className="h-12 border-2" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Squad Name (Optional)</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. Metro Elite" className="h-12 border-2" /></div>
+                    <Button className="w-full h-14 rounded-xl font-black uppercase text-xs shadow-lg" onClick={handleRecruitmentAction} disabled={isProcessing || !inviteEmail.trim()}>{isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Dispatch Digital Invite"}</Button>
+                  </div>
+                )}
+                {inviteMethod === 'manual' && (
+                  <div className="space-y-4">
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Squad Name</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. City Tigers" className="h-12 border-2" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Coach Contact (Opt)</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@email.com" className="h-12 border-2" /></div>
+                    <Button className="w-full h-14 rounded-xl font-black uppercase text-xs shadow-lg" onClick={handleRecruitmentAction} disabled={isProcessing || !inviteTeamName.trim()}>{isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Authorize Manual Entry"}</Button>
+                  </div>
+                )}
+                {inviteMethod === 'code' && (
+                  <div className="space-y-6 text-center py-4">
+                    <div className="p-8 bg-muted/20 rounded-[2.5rem] border-2 border-dashed border-muted-foreground/20 group cursor-pointer active:scale-95 transition-all" onClick={copyCode}>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-4">Tactical Join Code</p>
+                      <div className="flex items-center justify-center gap-4">
+                        <span className="text-5xl font-black tracking-widest text-primary">{activeLeague?.inviteCode}</span>
+                        <Copy className="h-6 w-6 text-muted-foreground opacity-20" />
+                      </div>
+                    </div>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase italic leading-relaxed">Share this code with team organizers for direct standings enrollment.</p>
+                  </div>
+                )}
+                {inviteMethod === 'portal' && (
+                  <div className="space-y-6 text-center py-4">
+                    <div className="p-8 bg-muted/20 rounded-[2.5rem] border-2 border-dashed border-muted-foreground/20 group cursor-pointer active:scale-95 transition-all" onClick={copyPortal}>
+                      <Globe className="h-10 w-10 text-primary mx-auto mb-4 opacity-40" />
+                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Public Portal Access</p>
+                      <div className="flex items-center justify-center gap-3 bg-white p-3 rounded-xl shadow-sm border truncate">
+                        <span className="text-[10px] font-bold truncate">/register/league/{activeLeague?.id}</span>
+                        <LinkIcon className="h-4 w-4 text-primary shrink-0" />
+                      </div>
+                    </div>
+                    <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-[10px] border-2" onClick={copyPortal}>Copy Recruitment URL</Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {invites && invites.length > 0 && (
+              <div className="pt-10 border-t space-y-6">
+                <div className="flex items-center gap-3">
+                  <History className="h-5 w-5 text-primary" />
+                  <h4 className="text-xs font-black uppercase tracking-[0.2em]">Pending Diplomatic Status</h4>
+                </div>
+                <div className="space-y-3">
+                  {invites.map(inv => (
+                    <div key={inv.id} className="p-4 bg-muted/20 rounded-2xl border flex items-center justify-between group transition-all hover:bg-white hover:shadow-sm">
+                      <div className="min-w-0">
+                        <p className="font-black text-sm uppercase truncate tracking-tight">{inv.teamName || inv.invitedEmail}</p>
+                        <p className="text-[8px] font-bold text-muted-foreground uppercase">{inv.invitedEmail}</p>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <Badge variant="outline" className={cn(
+                          "font-black text-[8px] uppercase border-none",
+                          inv.status === 'accepted' ? "bg-green-100 text-green-700" : inv.status === 'declined' ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
+                        )}>{inv.status}</Badge>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => deleteLeagueInvite(inv.id)}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <SeasonSchedulerDialog league={activeLeague!} isOpen={isSeasonOpen} onOpenChange={setIsSeasonOpen} />
     </div>
   );
 }

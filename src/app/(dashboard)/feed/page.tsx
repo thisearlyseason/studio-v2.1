@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -152,8 +153,8 @@ export default function FeedPage() {
           <h1 className="text-4xl font-black tracking-tight uppercase">Squad Feed Locked</h1>
           <p className="text-muted-foreground font-bold leading-relaxed text-lg uppercase tracking-wide">
             {isStaff 
-              ? "The Live Broadcast hub is reserved for Pro Elite squads. Upgrade to coordinate updates, polls, and media in real-time."
-              : "Live broadcasts are only available for Pro teams. Contact your team organizer for access."
+              ? <span>The Live Broadcast hub is reserved for <strong>Pro Elite</strong> squads. Upgrade to coordinate updates, polls, and media in real-time.</span>
+              : <span>Live broadcasts are only available for <strong>Pro</strong> teams. Contact your team organizer for access.</span>
             }
           </p>
         </div>
