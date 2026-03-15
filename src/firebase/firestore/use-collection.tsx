@@ -79,7 +79,13 @@ export function useCollection<T = any>(
       (err: FirestoreError) => {
         if (!isMounted.current) return;
         
-        // Suppress transient errors during rapid state transitions
+        // Suppress transient errors during rapid state transitions or lack of auth
+        if (err.code === 'permission-denied' && !path.startsWith('teams/')) {
+           // Allow silent failure for public collections like 'plans' when auth is resolving
+           setIsLoading(false);
+           return;
+        }
+
         if (err.code === 'failed-precondition' || path.includes('undefined')) {
           setIsLoading(false);
           return;
