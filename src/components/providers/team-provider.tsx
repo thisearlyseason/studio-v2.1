@@ -1057,6 +1057,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [db]);
 
+  const verifyVolunteerHours = useCallback(async (oppId: string, userId: string, hours: number) => {
+    if (!activeTeam?.id) return;
+    await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { 
+      [`signups.${userId}.status`]: 'verified',
+      [`signups.${userId}.verifiedHours`]: hours
+    });
+    toast({ title: "Hours Verified", description: `Added ${hours}h to roster record.` });
+  }, [activeTeam?.id, db]);
+
   const confirmVolunteerAttendance = useCallback(async (oppId: string, userId: string, confirmed: boolean) => {
     if (!activeTeam?.id) return;
     await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { 
@@ -1069,6 +1078,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await addDoc(collection(db, 'teams', activeTeam.id, 'fundraising'), clean({ 
       ...data, currentAmount: 0, participants: {}, createdAt: new Date().toISOString() 
     }));
+  }, [activeTeam?.id, db]);
+
+  const signUpForFundraising = useCallback(async (fundId: string) => {
+    if (!activeTeam?.id || !userProfile) return;
+    await updateDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), { 
+      [`participants.${userProfile.id}`]: true 
+    });
+    toast({ title: "Enrolled in Campaign" });
+  }, [activeTeam?.id, userProfile, db]);
+
+  const updateFundraisingAmount = useCallback(async (fundId: string, amount: number) => {
+    if (!activeTeam?.id) return;
+    await updateDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), { 
+      currentAmount: increment(amount)
+    });
   }, [activeTeam?.id, db]);
 
   const submitPublicDonation = useCallback(async (teamId: string, fundId: string, data: any) => {
