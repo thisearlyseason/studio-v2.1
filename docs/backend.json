@@ -19,59 +19,40 @@
       },
       "required": ["id", "fullName", "email", "notificationsEnabled", "createdAt"]
     },
-    "Household": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Household",
+    "PlayerProfile": {
+      "title": "PlayerProfile",
       "type": "object",
-      "description": "Represents a family unit, linking parents/guardians to multiple minor players for unified management.",
+      "description": "Base player data, now extended with recruiting status.",
       "properties": {
         "id": { "type": "string" },
-        "parentIds": { "type": "array", "items": { "type": "string" } },
-        "playerIds": { "type": "array", "items": { "type": "string" } },
-        "billingEmail": { "type": "string", "format": "email" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "parentIds", "playerIds", "createdAt"]
-    },
-    "Team": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Team",
-      "type": "object",
-      "description": "Represents a sports team that users can create, join, and manage.",
-      "properties": {
-        "id": { "type": "string" },
-        "teamName": { "type": "string" },
-        "sport": { "type": "string" },
-        "teamLogoUrl": { "type": "string", "format": "uri" },
-        "teamCode": { "type": "string" },
-        "planId": { "type": "string" },
-        "isPro": { "type": "boolean" },
-        "ownerUserId": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "teamName", "teamCode", "createdAt"]
-    },
-    "Facility": {
-      "title": "Facility",
-      "type": "object",
-      "description": "An athletic venue with multiple fields or courts.",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "address": { "type": "string" },
-        "clubId": { "type": "string" },
-        "notes": { "type": "string" }
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "recruitingProfileEnabled": { "type": "boolean" },
+        "photoURL": { "type": "string" }
       }
     },
-    "League": {
-      "title": "League",
+    "RecruitingProfile": {
+      "title": "RecruitingProfile",
       "type": "object",
-      "description": "A competitive organization hosting multiple teams.",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "creatorId": { "type": "string" },
-        "teams": { "type": "object" }
+        "status": { "type": "string", "enum": ["active", "hidden", "committed"] },
+        "primaryPosition": { "type": "string" },
+        "height": { "type": "string" },
+        "weight": { "type": "string" },
+        "academicGPA": { "type": "number" },
+        "graduationYear": { "type": "number" },
+        "bio": { "type": "string" },
+        "highlightVideo": { "type": "string" }
+      }
+    },
+    "AthleticMetrics": {
+      "title": "AthleticMetrics",
+      "type": "object",
+      "properties": {
+        "fortyYardDash": { "type": "number" },
+        "verticalJump": { "type": "number" },
+        "benchPress": { "type": "number" },
+        "verified": { "type": "boolean" }
       }
     }
   },
@@ -85,68 +66,28 @@
         "definition": { "entityName": "UserProfile", "description": "User profiles." }
       },
       {
-        "path": "/households/{householdId}",
-        "definition": { "entityName": "Household", "description": "Guardian family units." }
-      },
-      {
         "path": "/players/{playerId}",
         "definition": { "entityName": "PlayerProfile", "description": "Athletes (Adult or Minor)." }
       },
       {
-        "path": "/teams/{teamId}",
-        "definition": { "entityName": "Team", "description": "Squad data hub." }
+        "path": "/players/{playerId}/recruitingProfile/profile",
+        "definition": { "entityName": "RecruitingProfile", "description": "Detailed recruiting metadata." }
       },
       {
-        "path": "/teams/{teamId}/members/{memberId}",
-        "definition": { "entityName": "Member", "description": "Roster membership details." }
+        "path": "/players/{playerId}/recruitingProfile/metrics",
+        "definition": { "entityName": "AthleticMetrics", "description": "Physical performance data." }
       },
       {
-        "path": "/teams/{teamId}/members/{memberId}/private/evaluation",
-        "definition": { "entityName": "StaffNote", "description": "Private personnel evaluations." }
+        "path": "/players/{playerId}/recruitingProfile/stats",
+        "definition": { "entityName": "Object", "description": "Seasonal statistics." }
       },
       {
-        "path": "/teams/{teamId}/documents/{docId}",
-        "definition": { "entityName": "TeamDocument", "description": "Compliance protocols." }
+        "path": "/players/{playerId}/evaluations/{evalId}",
+        "definition": { "entityName": "Object", "description": "Coach/Scout ratings." }
       },
       {
-        "path": "/teams/{teamId}/documents/{docId}/signatures/{sigId}",
-        "definition": { "entityName": "DocumentSignature", "description": "Verified legal signatures." }
-      },
-      {
-        "path": "/teams/{teamId}/events/{eventId}",
-        "definition": { "entityName": "TeamEvent", "description": "Match and practice itinerary." }
-      },
-      {
-        "path": "/teams/{teamId}/equipment/{itemId}",
-        "definition": { "entityName": "EquipmentItem", "description": "Inventory vault items." }
-      },
-      {
-        "path": "/teams/{teamId}/volunteers/{oppId}",
-        "definition": { "entityName": "VolunteerOpportunity", "description": "Support assignments." }
-      },
-      {
-        "path": "/teams/{teamId}/fundraising/{fundId}",
-        "definition": { "entityName": "FundraisingOpportunity", "description": "Capital campaigns." }
-      },
-      {
-        "path": "/teams/{teamId}/drills/{drillId}",
-        "definition": { "entityName": "Drill", "description": "Playbook protocols." }
-      },
-      {
-        "path": "/teams/{teamId}/scouting/{reportId}",
-        "definition": { "entityName": "ScoutingReport", "description": "Opponent intelligence." }
-      },
-      {
-        "path": "/teams/{teamId}/feedPosts/{postId}",
-        "definition": { "entityName": "FeedPost", "description": "Tactical broadcasts." }
-      },
-      {
-        "path": "/facilities/{facilityId}",
-        "definition": { "entityName": "Facility", "description": "Venue management." }
-      },
-      {
-        "path": "/leagues/{leagueId}",
-        "definition": { "entityName": "League", "description": "Competitive hubs." }
+        "path": "/players/{playerId}/videos/{videoId}",
+        "definition": { "entityName": "Object", "description": "Recruiting film hub." }
       }
     ]
   }

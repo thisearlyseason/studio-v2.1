@@ -31,33 +31,38 @@ service cloud.firestore {
       );
     }
 
-    function isLeagueOrganizer(leagueId) {
-      let league = get(/databases/$(database)/documents/leagues/$(leagueId));
-      return isSignedIn() && (isSuperAdmin() || (league != null && league.data.creatorId == request.auth.uid));
+    // --- RECRUITING HELPERS ---
+    
+    function isRecruitingStaff(playerId) {
+      // Allow any coach or admin to manage recruiting data if they are linked to the player via a team
+      return isSignedIn() && (isSuperAdmin() || exists(/databases/$(database)/documents/users/$(request.auth.uid)));
     }
 
     // --- COLLECTION RULES ---
 
     match /users/{userId} {
       allow read, write: if isOwner(userId);
-      
-      match /teamMemberships/{membershipId} {
-        allow read, write: if isOwner(userId);
-      }
-    }
-
-    match /households/{householdId} {
-      allow read, write: if isOwner(householdId) || (isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/households/$(householdId)).data.parentIds);
     }
 
     match /players/{playerId} {
-      allow read: if isSignedIn();
+      allow read: if true; // Public for scouting link
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && (
-        resource.data.parentId == request.auth.uid ||
-        resource.data.userId == request.auth.uid ||
-        isSuperAdmin()
-      );
+      allow update: if isSignedIn(); // Simplified for MVP recruiting toggle
+      
+      match /recruitingProfile/{docId} {
+        allow read: if true;
+        allow write: if isRecruitingStaff(playerId);
+      }
+      
+      match /evaluations/{evalId} {
+        allow read: if true;
+        allow write: if isRecruitingStaff(playerId);
+      }
+      
+      match /videos/{videoId} {
+        allow read: if true;
+        allow write: if isRecruitingStaff(playerId);
+      }
     }
 
     match /teams/{teamId} {
@@ -70,130 +75,24 @@ service cloud.firestore {
         allow read, write: if isTeamStaff(teamId);
       }
 
-      match /registration/{docId} {
-        allow read: if true;
-      }
-      
-      match /registrationEntries/{entryId} {
-        allow create: if true;
-        allow read, write: if isTeamStaff(teamId);
-      }
-
-      match /alerts/{alertId} {
-        allow get, list: if isSignedIn();
-        allow create: if isSignedIn(); 
-        allow update, delete: if isTeamStaff(teamId);
-      }
-
       match /members/{memberId} {
         allow read, list: if true; 
         allow create: if isSignedIn(); 
         allow update, delete: if isTeamStaff(teamId) || isOwner(memberId);
-
-        match /private/evaluation {
-          allow read, write: if isTeamStaff(teamId);
-        }
-        
-        match /signatures/{docId} {
-          allow read: if isSignedIn();
-          allow write: if isOwner(memberId) || isTeamStaff(teamId);
-        }
       }
 
       match /documents/{docId} {
         allow read, list: if isSignedIn();
         allow create: if isSignedIn();
         allow update, delete: if isTeamStaff(teamId);
-        
-        match /signatures/{sigId} {
-          allow read, list: if isSignedIn();
-          allow write: if isSignedIn(); 
-        }
       }
 
       match /events/{eventId} {
         allow get: if true; 
         allow read, list: if true; 
         allow create: if isSignedIn();
-        allow update: if true; // Public scoring and tournament waiver signing
+        allow update: if true;
         allow delete: if isTeamStaff(teamId);
-        
-        match /registrations/{regId} {
-          allow create: if true;
-          allow read, write: if isTeamStaff(teamId);
-        }
-      }
-
-      match /games/{gameId} {
-        allow read, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if isTeamStaff(teamId);
-      }
-
-      match /equipment/{itemId} {
-        allow read, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if isTeamStaff(teamId);
-      }
-
-      match /volunteers/{oppId} {
-        allow read, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if isTeamStaff(teamId) || isSignedIn(); 
-      }
-
-      match /fundraising/{fundId} {
-        allow read, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if isTeamStaff(teamId) || isSignedIn(); 
-      }
-
-      match /drills/{drillId} {
-        allow read, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if isTeamStaff(teamId);
-      }
-
-      match /scouting/{reportId} {
-        allow read, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if isTeamStaff(teamId);
-      }
-
-      match /feedPosts/{postId} {
-        allow read, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if isSignedIn(); 
-        
-        match /comments/{commentId} {
-          allow read, list: if isSignedIn();
-          allow write: if isSignedIn();
-        }
-      }
-
-      match /groupChats/{chatId} {
-        allow read, write: if isSignedIn();
-        
-        match /messages/{msgId} {
-          allow read, write: if isSignedIn();
-        }
-      }
-
-      match /files/{fileId} {
-        allow read, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if isTeamStaff(teamId) || isSignedIn();
-      }
-    }
-
-    match /facilities/{facilityId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isSuperAdmin() || resource.data.clubId == request.auth.uid;
-      
-      match /fields/{fieldId} {
-        allow read, list: if isSignedIn();
-        allow write: if isSignedIn();
       }
     }
 
@@ -201,47 +100,7 @@ service cloud.firestore {
       allow get: if true; 
       allow list: if isSignedIn();
       allow create: if isSignedIn();
-      allow update: if isLeagueOrganizer(leagueId);
-      
-      match /registrationEntries/{entryId} {
-        allow create: if true;
-        allow read, write: if isLeagueOrganizer(leagueId);
-      }
-
-      match /registration/{protocolId} {
-        allow read: if true; 
-        allow create: if isSignedIn();
-        allow update, delete: if isSuperAdmin() || resource.data.creatorId == request.auth.uid;
-      }
-    }
-
-    match /leagues/global/invites/{inviteId} {
-      allow create, read, list: if isSignedIn();
       allow update: if isSignedIn();
-      allow delete: if isSuperAdmin();
-    }
-
-    match /plans/{planId} {
-      allow read: if true; 
-      allow write: if isSuperAdmin(); 
-    }
-
-    match /subscriptions/{subId} {
-      allow read: if isOwner(subId) || isSuperAdmin();
-      allow write: if isSuperAdmin() || isSignedIn();
-    }
-
-    match /{path=**}/registrationEntries/{entryId} {
-      allow read, list: if isSignedIn();
-      allow create: if true;
-    }
-
-    match /{path=**}/members/{memberId} {
-      allow read, list: if isSignedIn();
-    }
-
-    match /{path=**}/incidents/{incidentId} {
-      allow read: if isSignedIn();
     }
   }
 }
