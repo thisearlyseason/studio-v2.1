@@ -51,7 +51,9 @@ import {
   AlertCircle,
   Phone,
   Map,
-  Edit3
+  Edit3,
+  ShieldCheck,
+  PenTool
 } from 'lucide-react';
 import { 
   Dialog, 
