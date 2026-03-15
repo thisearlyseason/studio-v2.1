@@ -50,7 +50,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useTeam, TeamEvent, TournamentGame, Member, Facility, Field } from '@/components/providers/team-provider';
+import { useTeam, TeamEvent, TournamentGame, Member, Facility, Field, TeamDocument } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
@@ -61,6 +61,7 @@ import { generateTournamentSchedule, DailyWindow } from '@/lib/scheduler-utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { downloadICS } from '@/lib/calendar-utils';
 import html2canvas from 'html2canvas';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
@@ -476,20 +477,26 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 }
 
 export default function TournamentsPage({ preSelectedTournament, onExit }: { preSelectedTournament?: TeamEvent | null, onExit?: () => void }) {
-  const { isStaff, addEvent, activeTeam, householdEvents } = useTeam();
+  const { isStaff, addEvent, activeTeam, householdEvents, db } = useTeam();
   const [isDeployOpen, setIsDeployOpen] = useState(false);
   const [selectedTournament, setSelectedTournament] = useState<TeamEvent | null>(preSelectedTournament || null);
-  const [newTourney, setNewTourney] = useState({ title: '', date: '', endDate: '', location: '', description: '' });
+  const [newTourney, setNewTourney] = useState({ title: '', date: '', endDate: '', location: '', description: '', selectedWaiverId: '' });
   const [isProcessing, setIsProcessing] = useState(false);
 
   const tournaments = useMemo(() => {
     return householdEvents.filter(e => (e.isTournament || e.eventType === 'tournament') && e.teamId === activeTeam?.id);
   }, [householdEvents, activeTeam?.id]);
 
+  const docsQuery = useMemoFirebase(() => (db && activeTeam?.id) ? query(collection(db, 'teams', activeTeam.id, 'documents'), where('isActive', '==', true)) : null, [db, activeTeam?.id]);
+  const { data: activeDocs } = useCollection<TeamDocument>(docsQuery);
+  const waiverOptions = useMemo(() => activeDocs?.filter(d => d.type === 'waiver' || d.type === 'tournament_waiver') || [], [activeDocs]);
+
   const handleDeployTournament = async () => {
     if (!newTourney.title || !newTourney.date || !activeTeam) return;
     setIsProcessing(true);
     try {
+      const selectedWaiver = waiverOptions.find(w => w.id === newTourney.selectedWaiverId);
+      
       await addEvent({
         title: newTourney.title,
         date: new Date(newTourney.date).toISOString(),
@@ -501,10 +508,11 @@ export default function TournamentsPage({ preSelectedTournament, onExit }: { pre
         tournamentTeams: [activeTeam.name], 
         tournamentGames: [],
         invitedTeamEmails: {},
-        startTime: '08:00'
+        startTime: '08:00',
+        teamWaiverText: selectedWaiver?.content || ''
       });
       setIsDeployOpen(false);
-      setNewTourney({ title: '', date: '', endDate: '', location: '', description: '' });
+      setNewTourney({ title: '', date: '', endDate: '', location: '', description: '', selectedWaiverId: '' });
       toast({ title: "Tournament Initialized", description: "Organizer team automatically enrolled." });
     } catch (e) {
       toast({ title: "Deployment Failed", variant: "destructive" });
@@ -555,6 +563,20 @@ export default function TournamentsPage({ preSelectedTournament, onExit }: { pre
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Series Start Date</Label><Input type="date" value={newTourney.date} onChange={e => setNewTourney({...newTourney, date: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all text-foreground" /></div>
                     <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Series End Date</Label><Input type="date" value={newTourney.endDate} onChange={e => setNewTourney({...newTourney, endDate: e.target.value})} className="h-14 rounded-2xl font-black border-2 focus:border-primary/20 transition-all text-foreground" /></div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Execution Waiver</Label>
+                    <Select value={newTourney.selectedWaiverId} onValueChange={(v) => setNewTourney({...newTourney, selectedWaiverId: v})}>
+                      <SelectTrigger className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all text-foreground">
+                        <SelectValue placeholder="Select from active protocols..." />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        {waiverOptions.map(w => (
+                          <SelectItem key={w.id} value={w.id} className="font-bold">{w.title}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[8px] font-bold text-muted-foreground uppercase px-1">Selected waiver text will be mandatory for participating squads.</p>
                   </div>
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Initial Location</Label><Input placeholder="Official Venue..." value={newTourney.location} onChange={e => setNewTourney({...newTourney, location: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all text-foreground" /></div>
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Operational Brief</Label><Textarea placeholder="Define rules, coordination notes, and championship structure..." value={newTourney.description} onChange={e => setNewTourney({...newTourney, description: e.target.value})} className="rounded-[1.5rem] min-h-[120px] border-2 font-medium focus:border-primary/20 transition-all p-4 resize-none text-foreground" /></div>

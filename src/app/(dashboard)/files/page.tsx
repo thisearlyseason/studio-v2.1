@@ -77,7 +77,8 @@ const DEFAULT_PROTOCOLS = [
   { id: 'default_medical', title: 'Medical Clearance', type: 'waiver' },
   { id: 'default_travel', title: 'Travel Consent', type: 'waiver' },
   { id: 'default_parental', title: 'Parental Waiver', type: 'waiver' },
-  { id: 'default_photography', title: 'Photography Release', type: 'waiver' }
+  { id: 'default_photography', title: 'Photography Release', type: 'waiver' },
+  { id: 'default_tournament', title: 'Tournament Waiver', type: 'tournament_waiver' }
 ];
 
 function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: any, onSign: (id: string, sig: string, mid: string) => Promise<boolean>, members: Member[], onComplete: () => void }) {
@@ -141,7 +142,7 @@ function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: a
                 {agreed && <Check className="h-4 w-4 stroke-[4px]" />}
               </div>
               <Label className="text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight">
-                I verify that I have read and understand all terms within this {d.type}.
+                I verify that I have read and understand all terms within this {d.type?.replace('_', ' ')}.
               </Label>
             </div>
 
@@ -254,17 +255,11 @@ export default function FilesPage() {
     for (const m of signingMembers) {
       const signedIds: string[] = [];
       
-      // Check custom docs
+      // Check all docs in the team's documents collection
       const docsSnap = await getDocs(collection(db, 'teams', activeTeam.id, 'documents'));
       for (const d of docsSnap.docs) {
         const sigSnap = await getDocs(query(collection(db, 'teams', activeTeam.id, 'documents', d.id, 'signatures'), where('memberId', '==', m.id)));
         if (!sigSnap.empty) signedIds.push(d.id);
-      }
-
-      // Check default docs
-      for (const p of DEFAULT_PROTOCOLS) {
-        const sigSnap = await getDocs(query(collection(db, 'teams', activeTeam.id, 'documents', p.id, 'signatures'), where('memberId', '==', m.id)));
-        if (!sigSnap.empty) signedIds.push(p.id);
       }
 
       results[m.id] = signedIds;
@@ -278,19 +273,25 @@ export default function FilesPage() {
   }, [checkSigs, documents]);
 
   const pendingDocsForDisplay = useMemo(() => {
-    const allAvailableDocs = [...(documents || []), ...DEFAULT_PROTOCOLS.map(p => ({ ...p, assignedTo: ['all'], createdAt: new Date().toISOString(), signatureCount: 0, teamId: activeTeam?.id || '' } as any))];
+    if (!documents || !activeTeam) return [];
     
-    return allAvailableDocs.filter(d => {
+    // Only show documents that are marked as isActive: true
+    const activeDocs = documents.filter(d => d.isActive !== false);
+    
+    return activeDocs.filter(d => {
       const isParentalWaiver = d.id === 'default_parental';
       return signingMembers.some(m => {
+        // Eligibility check
         const isAdult = m.birthdate && differenceInYears(new Date(), new Date(m.birthdate)) >= 18;
         if (isParentalWaiver && isAdult) return false;
-        const isAssigned = d.assignedTo.includes('all') || d.assignedTo.includes(m.id);
+        
+        // Assignment check
+        const isAssigned = d.assignedTo?.includes('all') || d.assignedTo?.includes(m.id);
         const alreadySigned = signedDocIds[m.id]?.includes(d.id);
         return isAssigned && !alreadySigned;
       });
     });
-  }, [documents, signedDocIds, signingMembers, activeTeam?.id]);
+  }, [documents, signedDocIds, signingMembers, activeTeam]);
 
   if (!mounted || !activeTeam) return null;
 
@@ -381,7 +382,7 @@ export default function FilesPage() {
                 <CardHeader className="p-8 pb-4">
                   <div className="flex justify-between items-start">
                     <Badge className="bg-red-600 text-white border-none font-black text-[8px] uppercase px-2 h-5 shadow-lg shadow-red-600/20">URGENT</Badge>
-                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">{d.type}</span>
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">{d.type?.replace('_', ' ')}</span>
                   </div>
                   <CardTitle className="text-2xl font-black uppercase tracking-tight pt-2">{d.title}</CardTitle>
                 </CardHeader>
@@ -395,7 +396,7 @@ export default function FilesPage() {
                     members={signingMembers.filter(m => {
                       const isAdult = m.birthdate && differenceInYears(new Date(), new Date(m.birthdate)) >= 18;
                       if (d.id === 'default_parental' && isAdult) return false;
-                      const isAssigned = d.assignedTo.includes('all') || d.assignedTo.includes(m.id);
+                      const isAssigned = d.assignedTo?.includes('all') || d.assignedTo?.includes(m.id);
                       const signed = signedDocIds[m.id]?.includes(d.id);
                       return isAssigned && !signed;
                     })} 

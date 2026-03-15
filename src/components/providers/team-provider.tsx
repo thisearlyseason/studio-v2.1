@@ -146,6 +146,7 @@ export type TeamDocument = {
   signatureCount: number;
   createdAt: string;
   isClubMaster?: boolean;
+  isActive?: boolean;
 };
 
 export type DocumentSignature = {
@@ -255,16 +256,6 @@ export type EquipmentItem = {
     quantity: number;
     assignedAt: string;
   }>;
-};
-
-export type ScoutingReport = {
-  id: string;
-  opponentName: string;
-  date: string;
-  strengths: string;
-  weaknesses: string;
-  keysToVictory: string;
-  videoUrl?: string;
 };
 
 export type TeamFile = {
@@ -479,8 +470,6 @@ interface TeamContextType {
   returnEquipment: (itemId: string, userId: string) => Promise<void>;
   addDrill: (data: any) => Promise<void>;
   deleteDrill: (id: string) => Promise<void>;
-  addScoutingReport: (data: any) => Promise<void>;
-  deleteScoutingReport: (id: string) => Promise<void>;
   addFile: (name: string, type: string, sBytes: number, url: string, category: string, desc?: string) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   markMediaAsViewed: (id: string) => Promise<void>;
@@ -552,7 +541,8 @@ const DEFAULT_PROTOCOLS = [
   { id: 'default_medical', title: 'Medical Clearance', type: 'waiver', content: 'I verify that the athlete is physically cleared for participation in all squad activities. I accept all medical risks and verify current insurance coverage.' },
   { id: 'default_travel', title: 'Travel Consent', type: 'waiver', content: 'Consent for the athlete to travel with the team to sanctioned events, including away games and tournaments. I accept responsibility for coordination of transportation.' },
   { id: 'default_parental', title: 'Parental Waiver', type: 'waiver', content: 'General liability release for minor participation. I agree to hold the organization and its staff harmless from standard athletic risks.' },
-  { id: 'default_photography', title: 'Photography Release', type: 'waiver', content: 'Consent for the team to use images or video of the athlete for internal coordination, training, and recruitment portfolios.' }
+  { id: 'default_photography', title: 'Photography Release', type: 'waiver', content: 'Consent for the team to use images or video of the athlete for internal coordination, training, and recruitment portfolios.' },
+  { id: 'default_tournament', title: 'Tournament Participation', type: 'tournament_waiver', content: 'Official championship series agreement. By signing, the squad verifies understanding of all tournament rules, venue protocols, and safety requirements.' }
 ];
 
 export function TeamProvider({ children }: { children: ReactNode }) {
@@ -796,14 +786,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     
     let docData: any = null;
     const standard = DEFAULT_PROTOCOLS.find(p => p.id === docId);
-    if (standard) {
+    
+    // Check if there is an overridden version in the team's documents collection first
+    const docRef = doc(db, 'teams', activeTeam.id, 'documents', docId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      docData = docSnap.data();
+    } else if (standard) {
       docData = standard;
-    } else {
-      const docRef = doc(db, 'teams', activeTeam.id, 'documents', docId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        docData = docSnap.data();
-      }
     }
 
     if (!docData) return false;
@@ -822,9 +812,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       id: sigId, docId, title: docData.title, signedAt: new Date().toISOString(), signatureText
     }));
     
-    if (!standard) {
-      batch.update(doc(db, 'teams', activeTeam.id, 'documents', docId), { signatureCount: increment(1) });
-    }
+    batch.update(doc(db, 'teams', activeTeam.id, 'documents', docId), { signatureCount: increment(1) });
     
     const certId = `cert_${docId}_${targetMember.id}`;
     batch.set(doc(db, 'teams', activeTeam.id, 'files', certId), clean({
@@ -845,11 +833,27 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const createTeamDocument = useCallback(async (data: any) => {
     if (!activeTeam?.id || !firebaseUser) return;
-    await addDoc(collection(db, 'teams', activeTeam.id, 'documents'), clean({ 
-      ...data, teamId: activeTeam.id, signatureCount: 0, createdAt: new Date().toISOString() 
+    const id = data.id || `doc_${Date.now()}`;
+    await setDoc(doc(db, 'teams', activeTeam.id, 'documents', id), clean({ 
+      ...data, id, teamId: activeTeam.id, signatureCount: 0, createdAt: new Date().toISOString(), isActive: data.isActive ?? true 
     }));
-    await createAlert(`Protocol Required: ${data.title}`, `Strategic compliance document published. Please visit Library to execute.`, 'everyone');
+    if (data.isActive !== false) {
+      await createAlert(`Protocol Required: ${data.title}`, `Strategic compliance document published. Please visit Library to execute.`, 'everyone');
+    }
   }, [activeTeam?.id, firebaseUser, db, createAlert]);
+
+  const updateTeamDocument = useCallback(async (docId: string, data: any) => {
+    if (activeTeam?.id) {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'documents', docId), clean(data));
+      if (data.isActive === true) {
+        await createAlert(`Protocol Alert: ${data.title}`, `An institutional mandate has been updated or activated. Verify status in Library.`, 'everyone');
+      }
+    }
+  }, [activeTeam?.id, db, createAlert]);
+
+  const deleteTeamDocument = useCallback(async (id: string) => {
+    if (activeTeam?.id) await deleteDoc(doc(db, 'teams', activeTeam.id, 'documents', id));
+  }, [activeTeam?.id, db]);
 
   const deployClubProtocol = useCallback(async (data: any, teamIds: string[]) => {
     if (!firebaseUser) return;
@@ -864,7 +868,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         teamId: tid,
         signatureCount: 0,
         createdAt: now,
-        isClubMaster: true
+        isClubMaster: true,
+        isActive: true
       }));
       
       const alertRef = doc(collection(db, 'teams', tid, 'alerts'));
@@ -1025,8 +1030,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     updateTeamDetails: async (u: any) => { if (activeTeam?.id) await updateDoc(doc(db, 'teams', activeTeam.id), clean(u)); },
     updateTeamHero: async (url: string) => { if (activeTeam?.id) await updateDoc(doc(db, 'teams', activeTeam.id), { heroImageUrl: url }); },
     updateTeamPlan: async (tid: string, pid: string) => { await updateDoc(doc(db, 'teams', tid), { planId: pid, isPro: pid !== 'starter_squad' }); },
-    signTeamDocument, createTeamDocument,
-    updateTeamDocument: async (id: string, data: any) => { if (activeTeam?.id) await updateDoc(doc(db, 'teams', activeTeam.id, 'documents', id), clean(data)); },
+    signTeamDocument, createTeamDocument, updateTeamDocument,
     deleteTeamDocument: async (id: string) => { if (activeTeam?.id) await deleteDoc(doc(db, 'teams', activeTeam.id, 'documents', id)); },
     deployClubProtocol,
     updateStaffEvaluation: async (mid: string, note: string) => { if (activeTeam?.id) await setDoc(doc(db, 'teams', activeTeam.id, 'members', mid, 'private', 'evaluation'), { note, updatedAt: new Date().toISOString() }); },
@@ -1056,8 +1060,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     returnEquipment: async (id: string, uid: string) => { if (activeTeam?.id) { const r = doc(db, 'teams', activeTeam.id, 'equipment', id); const s = await getDoc(r); const q = s.data()?.assignments?.[uid]?.quantity || 0; await updateDoc(r, { [`assignments.${uid}`]: deleteField(), availableQuantity: increment(q) }); } },
     addDrill: async (d: any) => { if (activeTeam?.id) await addDoc(collection(db, 'teams', activeTeam.id, 'drills'), clean(d)); },
     deleteDrill: async (id: string) => { if (activeTeam?.id) await deleteDoc(doc(db, 'teams', activeTeam.id, 'drills', id)); },
-    addScoutingReport: async (d: any) => { if (activeTeam?.id) await addDoc(collection(db, 'teams', activeTeam.id, 'scouting'), clean(d)); },
-    deleteScoutingReport: async (id: string) => { if (activeTeam?.id) await deleteDoc(doc(db, 'teams', activeTeam.id, 'scouting', id)); },
     addFile: async (n: string, t: string, s: number, u: string, c: string, d?: string) => { if (activeTeam?.id) await addDoc(collection(db, 'teams', activeTeam.id, 'files'), clean({ name: n, type: t, size: (s / 1048576).toFixed(2) + ' MB', sizeBytes: s, url: u, category: c, description: d, date: new Date().toISOString(), teamId: activeTeam.id, teamName: activeTeam.name })); },
     deleteFile: async (id: string) => { if (activeTeam?.id) await deleteDoc(doc(db, 'teams', activeTeam.id, 'files', id)); },
     markMediaAsViewed: async (id: string) => { if (activeTeam?.id && userProfile) await updateDoc(doc(db, 'teams', activeTeam.id, 'files', id), { [`viewedBy.${userProfile.id}`]: true }); },
@@ -1096,7 +1098,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addLeaguePayment,
     updateLeagueTeamDetails,
     updateLeagueGlobalFees
-  }), [userProfile, activeTeam?.id, activeTeam?.isPro, activeTeam?.planId, isStaff, teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading, currentMember, isSuperAdmin, household, householdEvents, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus, isPaywallOpen, firebaseUser?.uid, db, signTeamDocument, createTeamDocument, deployClubProtocol, respondToAssignment, createAlert, deleteAlert, exportSignaturesCSV, exportAttendanceCSV, exportTournamentStandingsCSV, assignManualPlan, deleteTeam, router, addIncident, deleteIncident, addLeaguePayment, updateLeagueTeamDetails, updateLeagueGlobalFees]);
+  }), [userProfile, activeTeam?.id, activeTeam?.isPro, activeTeam?.planId, isStaff, teams, isTeamsLoading, isSeedingDemo, members, isMembersLoading, currentMember, isSuperAdmin, household, householdEvents, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus, isPaywallOpen, firebaseUser?.uid, db, signTeamDocument, createTeamDocument, deployClubProtocol, respondToAssignment, createAlert, deleteAlert, exportSignaturesCSV, exportAttendanceCSV, exportTournamentStandingsCSV, assignManualPlan, deleteTeam, router, addIncident, deleteIncident, addLeaguePayment, updateLeagueTeamDetails, updateLeagueGlobalFees, updateTeamDocument]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;
 }

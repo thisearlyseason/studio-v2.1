@@ -1,6 +1,7 @@
+
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTeam, PlayerProfile, Team, TeamEvent, TeamDocument, Member } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -60,34 +61,41 @@ export default function FamilyDashboardPage() {
   const [isNoWaiversOpen, setIsNoWaiversOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [newChild, setNewChild] = useState({ firstName: '', lastName: '', dob: '' });
-  const [childrenCompliance, setChildrenCompliance] = useState<Record<string, { pending: number, signed: number }>>({});
+  const [childrenCompliance, setChildrenCompliance] = useState<Record<string, { pending: number, signed: number, pendingList: any[] }>>({});
 
-  useEffect(() => {
+  const fetchCompliance = useCallback(async () => {
     if (!myChildren.length || !db) return;
-
-    const fetchCompliance = async () => {
-      const results: Record<string, { pending: number, signed: number }> = {};
+    const results: Record<string, { pending: number, signed: number, pendingList: any[] }> = {};
+    
+    for (const child of myChildren) {
+      let pending = 0;
+      let signed = 0;
+      const pendingList: any[] = [];
       
-      for (const child of myChildren) {
-        let pending = 0;
-        let signed = 0;
-        
-        // We look across all teams the child joined
-        for (const tid of child.joinedTeamIds || []) {
-          const docsSnap = await getDocs(collection(db, 'teams', tid, 'documents'));
-          for (const d of docsSnap.docs) {
-            const sigSnap = await getDocs(query(collection(db, 'teams', tid, 'documents', d.id, 'signatures'), where('memberId', '==', child.id)));
-            if (sigSnap.empty) pending++;
-            else signed++;
+      const teamIds = child.joinedTeamIds || [];
+      for (const tid of teamIds) {
+        const docsSnap = await getDocs(collection(db, 'teams', tid, 'documents'));
+        for (const d of docsSnap.docs) {
+          const docData = d.data();
+          if (docData.isActive === false) continue; // Skip inactive protocols
+
+          const sigSnap = await getDocs(query(collection(db, 'teams', tid, 'documents', d.id, 'signatures'), where('memberId', '==', child.id)));
+          if (sigSnap.empty) {
+            pending++;
+            pendingList.push({ ...docData, teamId: tid });
+          } else {
+            signed++;
           }
         }
-        results[child.id] = { pending, signed };
       }
-      setChildrenCompliance(results);
-    };
-
-    fetchCompliance();
+      results[child.id] = { pending, signed, pendingList };
+    }
+    setChildrenCompliance(results);
   }, [myChildren, db]);
+
+  useEffect(() => {
+    fetchCompliance();
+  }, [fetchCompliance]);
 
   const upcomingEvents = useMemo(() => {
     return householdEvents.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date))).slice(0, 5);
@@ -117,13 +125,9 @@ export default function FamilyDashboardPage() {
     }
   };
 
-  const handleSignWaiversClick = () => {
-    if (teams.length === 0) {
-      setIsNoWaiversOpen(true);
-    } else {
-      router.push('/files');
-    }
-  };
+  const totalPendingCount = useMemo(() => {
+    return Object.values(childrenCompliance).reduce((sum, c) => sum + c.pending, 0);
+  }, [childrenCompliance]);
 
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-700">
@@ -134,44 +138,51 @@ export default function FamilyDashboardPage() {
           <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Managing {myChildren.length} Minor Players</p>
         </div>
 
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all">
-              <Plus className="h-5 w-5 mr-2" /> Register New Player
+        <div className="flex gap-2">
+          {totalPendingCount > 0 && (
+            <Button variant="outline" className="h-14 px-6 rounded-2xl border-2 border-red-200 bg-red-50 text-red-600 font-black uppercase text-xs animate-pulse" onClick={() => router.push('/files')}>
+              <FileSignature className="h-4 w-4 mr-2" /> {totalPendingCount} Pending Waivers
             </Button>
-          </DialogTrigger>
-          <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-md">
-            <DialogTitle className="sr-only">Minor Player Registration</DialogTitle>
-            <div className="h-2 bg-primary w-full" />
-            <div className="p-8 lg:p-10 space-y-8">
-              <DialogHeader>
-                <DialogTitle className="text-3xl font-black uppercase tracking-tight">Athlete Data</DialogTitle>
-                <DialogDescription className="font-bold text-primary text-[10px] uppercase tracking-widest">Under-18 Enrollment Hub</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">First Name</Label>
-                    <Input value={newChild.firstName} onChange={e => setNewChild({...newChild, firstName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all" />
+          )}
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all">
+                <Plus className="h-5 w-5 mr-2" /> Register Player
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-md">
+              <DialogTitle className="sr-only">Minor Player Registration</DialogTitle>
+              <div className="h-2 bg-primary w-full" />
+              <div className="p-8 lg:p-10 space-y-8">
+                <DialogHeader>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">Athlete Data</DialogTitle>
+                  <DialogDescription className="font-bold text-primary text-[10px] uppercase tracking-widest">Under-18 Enrollment Hub</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">First Name</Label>
+                      <Input value={newChild.firstName} onChange={e => setNewChild({...newChild, firstName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Last Name</Label>
+                      <Input value={newChild.lastName} onChange={e => setNewChild({...newChild, lastName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all" />
+                    </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Last Name</Label>
-                    <Input value={newChild.lastName} onChange={e => setNewChild({...newChild, lastName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth</Label>
+                    <Input type="date" value={newChild.dob} onChange={e => setNewChild({...newChild, dob: e.target.value})} className="h-12 rounded-xl border-2 font-black focus:border-primary/20 transition-all" />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth</Label>
-                  <Input type="date" value={newChild.dob} onChange={e => setNewChild({...newChild, dob: e.target.value})} className="h-12 rounded-xl border-2 font-black focus:border-primary/20 transition-all" />
-                </div>
+                <DialogFooter>
+                  <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddChild} disabled={isProcessing}>
+                    {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Enroll Athlete"}
+                  </Button>
+                </DialogFooter>
               </div>
-              <DialogFooter>
-                <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddChild} disabled={isProcessing}>
-                  {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Enroll Athlete"}
-                </Button>
-              </DialogFooter>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -214,8 +225,8 @@ export default function FamilyDashboardPage() {
               </div>
               <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border border-transparent shadow-inner">
                 <div>
-                  <p className="text-[10px] font-black uppercase opacity-40">Total Signatures</p>
-                  <p className="text-xl font-black">{Object.values(childrenCompliance).reduce((sum, c) => sum + c.signed, 0)}</p>
+                  <p className="text-[10px] font-black uppercase opacity-40">Pending Waivers</p>
+                  <p className={cn("text-xl font-black", totalPendingCount > 0 ? "text-red-600" : "text-green-600")}>{totalPendingCount}</p>
                 </div>
                 <FileSignature className="h-6 w-6 text-primary/40" />
               </div>
@@ -282,7 +293,7 @@ export default function FamilyDashboardPage() {
           {myChildren.map((child) => {
             const age = differenceInYears(new Date(), new Date(child.dateOfBirth));
             const childTeams = teams.filter(t => child.joinedTeamIds?.includes(t.id));
-            const compliance = childrenCompliance[child.id] || { pending: 0, signed: 0 };
+            const compliance = childrenCompliance[child.id] || { pending: 0, signed: 0, pendingList: [] };
 
             return (
               <Card key={child.id} className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group transition-all hover:ring-primary/20">
@@ -315,6 +326,20 @@ export default function FamilyDashboardPage() {
                     </div>
                   </div>
 
+                  {compliance.pending > 0 && (
+                    <div className="space-y-3 bg-red-50 p-4 rounded-2xl border-2 border-dashed border-red-100">
+                      <div className="flex items-center gap-2 text-red-600">
+                        <ShieldAlert className="h-4 w-4" />
+                        <p className="text-[9px] font-black uppercase tracking-widest">Required Protocols</p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {compliance.pendingList.map((p, idx) => (
+                          <Badge key={idx} variant="outline" className="bg-white border-red-200 text-red-600 text-[7px] font-black uppercase px-2">{p.title}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-4 pt-4 border-t">
                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Active Squads</p>
                     <div className="space-y-2">
@@ -339,7 +364,7 @@ export default function FamilyDashboardPage() {
                     <Button variant="outline" className={cn(
                       "rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 group-hover:border-primary transition-all",
                       compliance.pending > 0 && "border-red-200 bg-red-50 text-red-600"
-                    )} onClick={handleSignWaiversClick}>
+                    )} onClick={() => router.push('/files')}>
                       <Signature className="h-4 w-4" />
                       <span>{compliance.pending > 0 ? "Execute Waivers" : "View Vault"}</span>
                     </Button>
@@ -367,33 +392,6 @@ export default function FamilyDashboardPage() {
           })}
         </div>
       </section>
-
-      <Dialog open={isNoWaiversOpen} onOpenChange={setIsNoWaiversOpen}>
-        <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-10 max-w-md text-center overflow-hidden">
-          <DialogTitle className="sr-only">Compliance Verification Complete</DialogTitle>
-          <div className="bg-primary/5 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <FileText className="h-10 w-10 text-primary" />
-          </div>
-          <DialogHeader>
-            <DialogTitle className="text-3xl font-black uppercase tracking-tight">Compliance Verified</DialogTitle>
-            <DialogDescription className="font-bold text-base text-foreground/80 pt-2 leading-relaxed">
-              No waivers pending for your roster at this time.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-6 space-y-4">
-            <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed">
-              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground leading-relaxed">
-                Make sure you sign up for a league by using the special league code shared by your organization lead!
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={() => router.push('/teams/join')}>
-              Go to Recruitment Hub
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Card className="rounded-[3rem] border-none shadow-2xl bg-black text-white overflow-hidden relative">
         <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none">

@@ -48,7 +48,8 @@ const DEFAULT_PROTOCOLS = [
   { id: 'default_medical', title: 'Medical Clearance', type: 'waiver' },
   { id: 'default_travel', title: 'Travel Consent', type: 'waiver' },
   { id: 'default_parental', title: 'Parental Waiver', type: 'waiver' },
-  { id: 'default_photography', title: 'Photography Release', type: 'waiver' }
+  { id: 'default_photography', title: 'Photography Release', type: 'waiver' },
+  { id: 'default_tournament', title: 'Tournament Waiver', type: 'tournament_waiver' }
 ];
 
 function IncidentLog({ teamId }: { teamId: string }) {
@@ -141,13 +142,33 @@ export default function CoachesCornerPage() {
   const [activeTab, setActiveTab] = useState('compliance');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
-  const [newDoc, setNewDoc] = useState({ title: '', content: '', type: 'waiver' as any, assignedTo: ['all'] });
+  const [newDoc, setNewDoc] = useState({ title: '', content: '', type: 'waiver' as any, assignedTo: ['all'], isActive: true });
 
   const docsQuery = useMemoFirebase(() => (activeTeam && db) ? query(collection(db, 'teams', activeTeam.id, 'documents'), orderBy('createdAt', 'desc')) : null, [activeTeam?.id, db]);
   const { data: allDocuments } = useCollection<TeamDocument>(docsQuery);
-  const documents = useMemo(() => allDocuments?.filter(d => !d.id.startsWith('default_')) || [], [allDocuments]);
+  
+  const documents = useMemo(() => allDocuments?.filter(d => !DEFAULT_PROTOCOLS.some(p => p.id === d.id)) || [], [allDocuments]);
+  const teamProtocols = useMemo(() => allDocuments?.filter(d => DEFAULT_PROTOCOLS.some(p => p.id === d.id)) || [], [allDocuments]);
 
   if (!isStaff) return <div className="py-24 text-center opacity-20"><ShieldCheck className="h-16 w-16 mx-auto" /><h1 className="text-2xl font-black mt-4 uppercase tracking-widest">Staff Access Restricted</h1></div>;
+
+  const openEdit = (doc: any) => {
+    setEditingDocId(doc.id);
+    setNewDoc({ title: doc.title, content: doc.content, type: doc.type, assignedTo: doc.assignedTo || ['all'], isActive: doc.isActive ?? true });
+    setIsCreateOpen(true);
+  };
+
+  const handleToggleProtocol = async (proto: any, active: boolean) => {
+    // If it doesn't exist in Firestore yet, create it with the default content
+    const existing = teamProtocols.find(d => d.id === proto.id);
+    if (!existing) {
+      const fullProto = DEFAULT_PROTOCOLS.find(p => p.id === proto.id);
+      await createTeamDocument({ ...fullProto, isActive: active, assignedTo: ['all'] });
+    } else {
+      await updateTeamDocument(proto.id, { isActive: active });
+    }
+    toast({ title: `Protocol ${active ? 'Activated' : 'Deactivated'}` });
+  };
 
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-500">
@@ -171,19 +192,27 @@ export default function CoachesCornerPage() {
               <Shield className="h-5 w-5 text-primary" />
               <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Institutional Protocols</h2>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {DEFAULT_PROTOCOLS.map(proto => (
-                <Card key={proto.id} className="rounded-3xl border-none shadow-sm bg-muted/20 p-6 flex items-center justify-between group">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-white p-3 rounded-2xl shadow-sm border"><CheckCircle2 className="h-5 w-5 text-primary" /></div>
-                    <div>
-                      <p className="font-black text-sm uppercase">{proto.title}</p>
-                      <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Auto-Synchronized System Mandate</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {DEFAULT_PROTOCOLS.map(proto => {
+                const activeDoc = teamProtocols.find(d => d.id === proto.id);
+                const isActive = activeDoc ? (activeDoc.isActive ?? true) : false;
+                
+                return (
+                  <Card key={proto.id} className={cn("rounded-3xl border-none shadow-sm p-6 flex flex-col justify-between group transition-all", isActive ? "bg-white ring-1 ring-black/5" : "bg-muted/20 opacity-60")}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="bg-primary/5 p-3 rounded-2xl shadow-sm border"><CheckCircle2 className={cn("h-5 w-5", isActive ? "text-primary" : "text-muted-foreground/30")} /></div>
+                      <Switch checked={isActive} onCheckedChange={(v) => handleToggleProtocol(proto, v)} />
                     </div>
-                  </div>
-                  <Badge variant="outline" className="text-[7px] font-black uppercase border-primary/20 text-primary">CORE</Badge>
-                </Card>
-              ))}
+                    <div className="space-y-1 mb-4">
+                      <p className="font-black text-sm uppercase">{proto.title}</p>
+                      <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">System Mandate</p>
+                    </div>
+                    <Button variant="ghost" size="sm" className="w-full font-black text-[9px] uppercase tracking-widest border border-muted-foreground/10 hover:bg-primary/5" onClick={() => openEdit(activeDoc || proto)}>
+                      <Edit3 className="h-3 w-3 mr-2" /> Edit Legal Text
+                    </Button>
+                  </Card>
+                );
+              })}
             </div>
           </section>
 
@@ -193,7 +222,7 @@ export default function CoachesCornerPage() {
                 <FileSignature className="h-5 w-5 text-primary" />
                 <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Custom Documents & Waivers</h2>
               </div>
-              <Button onClick={() => { setEditingDocId(null); setNewDoc({ title: '', content: '', type: 'waiver', assignedTo: ['all'] }); setIsCreateOpen(true); }} className="h-11 px-6 rounded-xl font-black shadow-lg shadow-primary/20 transition-all active:scale-95">
+              <Button onClick={() => { setEditingDocId(null); setNewDoc({ title: '', content: '', type: 'waiver', assignedTo: ['all'], isActive: true }); setIsCreateOpen(true); }} className="h-11 px-6 rounded-xl font-black shadow-lg shadow-primary/20 transition-all active:scale-95">
                 <Plus className="h-4 w-4 mr-2" /> New Document
               </Button>
             </div>
@@ -207,7 +236,10 @@ export default function CoachesCornerPage() {
                         <PenTool className="h-6 w-6" />
                       </div>
                       <div>
-                        <h3 className="font-black text-xl uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{doc.title}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-black text-xl uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{doc.title}</h3>
+                          {!doc.isActive && <Badge variant="secondary" className="text-[7px] font-black uppercase">INACTIVE</Badge>}
+                        </div>
                         <div className="flex items-center gap-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2">
                           <span className="flex items-center gap-1.5"><Users className="h-3 w-3" /> {doc.signatureCount} Signed</span>
                           <span className="flex items-center gap-1.5"><Clock className="h-3 w-3" /> {format(new Date(doc.createdAt), 'MMM d, yyyy')}</span>
@@ -215,7 +247,7 @@ export default function CoachesCornerPage() {
                       </div>
                     </div>
                     <div className="flex gap-2 shrink-0">
-                      <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-primary/5" onClick={() => { setEditingDocId(doc.id); setNewDoc({ title: doc.title, content: doc.content, type: doc.type, assignedTo: doc.assignedTo }); setIsCreateOpen(true); }}><Edit3 className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-primary/5" onClick={() => openEdit(doc)}><Edit3 className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => deleteTeamDocument(doc.id)}><Trash2 className="h-4 w-4" /></Button>
                     </div>
                   </CardContent>
@@ -248,11 +280,18 @@ export default function CoachesCornerPage() {
             <div className="space-y-6">
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Document Title</Label>
-                <Input value={newDoc.title} onChange={e => setNewDoc({...newDoc, title: e.target.value})} className="h-14 rounded-xl border-2 font-black text-lg focus:border-primary/20 transition-all" placeholder="e.g. Media Release Waiver" />
+                <Input value={newDoc.title} onChange={e => setNewDoc({...newDoc, title: e.target.value})} className="h-14 rounded-xl border-2 font-black text-lg focus:border-primary/20 transition-all" placeholder="e.g. Media Release Waiver" disabled={editingDocId?.startsWith('default_')} />
               </div>
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Protocol Content</Label>
                 <Textarea value={newDoc.content} onChange={e => setNewDoc({...newDoc, content: e.target.value})} className="min-h-[250px] rounded-2xl border-2 font-medium p-6 bg-muted/10 focus:bg-white transition-all resize-none" placeholder="Define the legal terms or coordination instructions..." />
+              </div>
+              <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border border-primary/10">
+                <div className="space-y-0.5">
+                  <Label className="text-[10px] font-black uppercase">Active Status</Label>
+                  <p className="text-[8px] font-bold text-muted-foreground uppercase">Deactivating hides this from parents/players</p>
+                </div>
+                <Switch checked={newDoc.isActive} onCheckedChange={v => setNewDoc({...newDoc, isActive: v})} />
               </div>
             </div>
             <DialogFooter className="pt-4">
