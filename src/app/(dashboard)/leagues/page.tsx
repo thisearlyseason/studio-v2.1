@@ -825,8 +825,8 @@ export default function LeaguesPage() {
                         key={method.id}
                         onClick={() => setInviteMethod(method.id as any)}
                         className={cn(
-                          "flex items-center gap-3 p-4 rounded-xl border-2 transition-all font-black text-[10px] uppercase",
-                          inviteMethod === method.id ? "bg-primary border-primary text-white shadow-lg" : "bg-muted/30 border-transparent hover:bg-muted text-muted-foreground"
+                          "flex items-center gap-3 p-4 rounded-xl border-2 transition-all font-black text-[10px] uppercase hover:bg-primary hover:text-white hover:border-primary",
+                          inviteMethod === method.id ? "bg-primary border-primary text-white shadow-lg" : "bg-muted/30 border-transparent text-muted-foreground"
                         )}
                       >
                         <method.icon className="h-4 w-4" />
@@ -842,14 +842,14 @@ export default function LeaguesPage() {
                   <div className="space-y-4">
                     <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Coach Email</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@example.com" className="h-12 border-2 text-foreground" /></div>
                     <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Squad Name (Optional)</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. Metro Elite" className="h-12 border-2 text-foreground" /></div>
-                    <Button className="w-full h-14 rounded-xl font-black uppercase text-xs shadow-lg" onClick={handleRecruitmentAction} disabled={isProcessing || !inviteEmail.trim()}>{isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Dispatch Digital Invite"}</Button>
+                    <Button className="w-full h-14 rounded-xl font-black uppercase text-xs shadow-lg hover:bg-primary hover:text-white transition-all" onClick={handleRecruitmentAction} disabled={isProcessing || !inviteEmail.trim()}>{isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Dispatch Digital Invite"}</Button>
                   </div>
                 )}
                 {inviteMethod === 'manual' && (
                   <div className="space-y-4">
                     <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Squad Name</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. City Tigers" className="h-12 border-2 text-foreground" /></div>
                     <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Coach Contact (Opt)</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@email.com" className="h-12 border-2 text-foreground" /></div>
-                    <Button className="w-full h-14 rounded-xl font-black uppercase text-xs shadow-lg" onClick={handleRecruitmentAction} disabled={isProcessing || !inviteTeamName.trim()}>{isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Authorize Manual Entry"}</Button>
+                    <Button className="w-full h-14 rounded-xl font-black uppercase text-xs shadow-lg hover:bg-primary hover:text-white transition-all" onClick={handleRecruitmentAction} disabled={isProcessing || !inviteTeamName.trim()}>{isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Authorize Manual Entry"}</Button>
                   </div>
                 )}
                 {inviteMethod === 'code' && (
@@ -874,7 +874,7 @@ export default function LeaguesPage() {
                         <LinkIcon className="h-4 w-4 text-primary shrink-0" />
                       </div>
                     </div>
-                    <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-[10px] border-2" onClick={copyPortal}>Copy Recruitment URL</Button>
+                    <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-[10px] border-2 hover:bg-primary hover:text-white hover:border-primary transition-all" onClick={copyPortal}>Copy Recruitment URL</Button>
                   </div>
                 )}
               </div>

@@ -137,7 +137,7 @@ export default function FundraisingPage() {
   if (isLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
 
   return (
-    <div className="space-y-10 pb-20 animate-in fade-in duration-500">
+    <div className="space-y-10 pb-20 animate-in fade-in duration-500 text-foreground">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest">Squad Capital</Badge>
@@ -171,7 +171,7 @@ export default function FundraisingPage() {
         <Card className="rounded-[2.5rem] border-none shadow-md bg-white p-8 space-y-4 ring-1 ring-black/5">
           <p className="text-[10px] font-black uppercase text-muted-foreground">Campaign Count</p>
           <div className="flex items-baseline gap-2">
-            <p className="text-4xl font-black">{allCampaigns.length}</p>
+            <p className="text-4xl font-black text-foreground">{allCampaigns.length}</p>
             <span className="text-[10px] font-bold text-muted-foreground uppercase">Strategies</span>
           </div>
         </Card>
@@ -180,7 +180,7 @@ export default function FundraisingPage() {
             <Users className="h-5 w-5 text-primary" />
             <p className="text-[10px] font-black uppercase">Contributor Pulse</p>
           </div>
-          <p className="text-4xl font-black">{stats.donorCount}</p>
+          <p className="text-4xl font-black text-foreground">{stats.donorCount}</p>
         </Card>
       </div>
 
@@ -214,7 +214,7 @@ export default function FundraisingPage() {
                   </div>
                 </div>
                 <div>
-                  <h3 className="text-3xl font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{fund.title}</h3>
+                  <h3 className="text-3xl font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors text-foreground">{fund.title}</h3>
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2">Ends: {format(new Date(fund.deadline), 'MMM d, yyyy')}</p>
                 </div>
                 <div className="space-y-4">
@@ -233,7 +233,7 @@ export default function FundraisingPage() {
                       <DollarSign className="h-4 w-4 mr-2" /> Audit Funds
                     </Button>
                     <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5 transition-colors" onClick={() => deleteFundraisingOpportunity(fund.id)}>
-                      <Trash2 className="h-5 w-5" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 )}

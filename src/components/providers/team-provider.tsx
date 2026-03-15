@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -167,6 +166,9 @@ export type Member = {
   birthdate?: string;
   notes?: string;
   joinedAt?: string;
+  amountOwed?: number;
+  feesPaid?: boolean;
+  totalFees?: number;
 };
 
 export type TeamEvent = {
@@ -219,7 +221,15 @@ export type FundraisingOpportunity = {
   isShareable?: boolean;
   externalLink?: string;
   eTransferDetails?: string;
-  participants: Record<string, boolean>;
+};
+
+export type DonationEntry = {
+  id: string;
+  donorName: string;
+  amount: number;
+  method: 'external' | 'etransfer';
+  status: 'pending' | 'verified';
+  createdAt: string;
 };
 
 export type TeamFile = {
@@ -323,6 +333,8 @@ interface TeamContextType {
   addPlayerVideo: (playerId: string, data: Partial<PlayerVideo>) => Promise<void>;
   deletePlayerVideo: (playerId: string, videoId: string) => Promise<void>;
   toggleRecruitingProfile: (playerId: string, enabled: boolean) => Promise<void>;
+  updateStaffEvaluation: (memberId: string, notes: string) => Promise<void>;
+  getStaffEvaluation: (memberId: string) => Promise<string>;
 
   createNewTeam: (name: string, type: "adult" | "youth", pos: string, description?: string, planId?: string) => Promise<string>;
   joinTeamWithCode: (code: string, playerId: string, position: string) => Promise<boolean>;
@@ -343,6 +355,8 @@ interface TeamContextType {
   resetSquadData: (categories: string[]) => Promise<void>;
   addVolunteerOpportunity: (data: any) => Promise<void>;
   signUpForVolunteer: (oppId: string) => Promise<void>;
+  verifyVolunteerHours: (oppId: string, userId: string, hours: number) => Promise<void>;
+  confirmVolunteerAttendance: (oppId: string, userId: string, confirmed: boolean) => Promise<void>;
   addFundraisingOpportunity: (data: any) => Promise<void>;
   signUpForFundraising: (fundId: string) => Promise<void>;
   confirmExternalDonation: (fundId: string, donationId: string, amount: number) => Promise<void>;
@@ -378,6 +392,9 @@ interface TeamContextType {
   addLeaguePayment: (leagueId: string, teamId: string, data: any) => Promise<void>;
   updateLeagueGlobalFees: (leagueId: string, fees: any) => Promise<void>;
   purchasePro: () => void;
+  updateLeagueTeamDetails: (leagueId: string, teamId: string, updates: any) => Promise<void>;
+  manuallyAddTeamToLeague: (leagueId: string, name: string, email?: string) => Promise<void>;
+  deleteLeagueInvite: (id: string) => Promise<void>;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -488,7 +505,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await updateDoc(doc(db, 'players', playerId), { recruitingProfileEnabled: enabled });
   };
 
-  // --- EXISTING CORE ---
+  const updateStaffEvaluation = async (memberId: string, notes: string) => {
+    if (!activeTeam?.id) return;
+    await updateDoc(doc(db, 'teams', activeTeam.id, 'members', memberId), { notes });
+  };
+
+  const getStaffEvaluation = async (memberId: string) => {
+    if (!activeTeam?.id) return '';
+    const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'members', memberId));
+    return snap.exists() ? (snap.data().notes || '') : '';
+  };
+
+  // --- CORE SYSTEM ---
   useEffect(() => {
     if (!firebaseUser?.uid || !db || !isAuthResolved) return;
     return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
@@ -549,11 +577,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     markAllAlertsAsSeen: () => setSeenAlertIds(alerts.map(a => a.id)),
     seenAlertIds,
     
-    // Recruiting Exports
+    // Recruiting Pack
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
     getPlayerStats, addPlayerStat, deletePlayerStat, getEvaluations, addEvaluation,
     getRecruitingContact, updateRecruitingContact, getPlayerVideos, addPlayerVideo, deletePlayerVideo,
-    toggleRecruitingProfile,
+    toggleRecruitingProfile, updateStaffEvaluation, getStaffEvaluation,
 
     createNewTeam: async (name: string, type: any, pos: string) => { const tid = `team_${Date.now()}`; return tid; },
     joinTeamWithCode: async (code: string, pid: string, pos: string) => true,
@@ -565,13 +593,24 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     signTeamDocument: async () => true, createTeamDocument: async () => {}, updateTeamDocument: async () => {},
     addEvent: async () => true, updateEvent: async () => true, deleteEvent: async () => {}, updateRSVP: async () => {},
     addMessage: async () => {}, createChat: async () => '', resetSquadData: async () => {},
-    addVolunteerOpportunity: async () => {}, signUpForVolunteer: async () => {},
-    addFundraisingOpportunity: async () => {}, signUpForFundraising: async () => {},
-    confirmExternalDonation: async () => {}, addEquipmentItem: async () => {},
-    updateEquipmentItem: async () => {}, deleteEquipmentItem: async () => {},
+    addVolunteerOpportunity: async (data: any) => { if (activeTeam) await addDoc(collection(db, 'teams', activeTeam.id, 'volunteers'), clean(data)); },
+    signUpForVolunteer: async () => {},
+    verifyVolunteerHours: async (oppId: string, userId: string, hours: number) => { if (activeTeam) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${userId}.status`]: 'verified', [`signups.${userId}.verifiedHours`]: hours }); },
+    confirmVolunteerAttendance: async (oppId: string, userId: string, confirmed: boolean) => { if (activeTeam) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${userId}.isConfirmed`]: confirmed }); },
+    addFundraisingOpportunity: async (data: any) => { if (activeTeam) await addDoc(collection(db, 'teams', activeTeam.id, 'fundraising'), clean({ ...data, currentAmount: 0 })); },
+    signUpForFundraising: async () => {},
+    confirmExternalDonation: async (fundId: string, donationId: string, amount: number) => { 
+      if (!activeTeam) return;
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'teams', activeTeam.id, 'fundraising', fundId, 'donations', donationId), { status: 'verified' });
+      batch.update(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), { currentAmount: increment(amount) });
+      await batch.commit();
+    },
+    addEquipmentItem: async () => {}, updateEquipmentItem: async () => {}, deleteEquipmentItem: async () => {},
     addDrill: async () => {}, addFile: async () => {}, deleteFile: async () => {},
     addFacility: async () => {}, deleteFacility: async () => {}, addField: async () => {}, deleteField: async () => {},
-    createLeague: async () => '', updateLeagueSchedule: async () => {}, inviteTeamToLeague: async () => {},
+    createLeague: async (name: string) => { if (firebaseUser) { const id = `league_${Date.now()}`; await setDoc(doc(db, 'leagues', id), { name, creatorId: firebaseUser.uid, teams: {}, finances: {}, createdAt: new Date().toISOString() }); return id; } return ''; },
+    updateLeagueSchedule: async () => {}, inviteTeamToLeague: async () => {},
     saveLeagueRegistrationConfig: async () => {}, submitRegistrationEntry: async () => {},
     assignEntryToTeam: async () => {}, toggleRegistrationPaymentStatus: async () => {},
     respondToAssignment: async () => {}, signPublicTournamentWaiver: async () => true,
@@ -579,8 +618,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     manageSubscription: async () => {}, resolveQuota: async () => {},
     createAlert: async () => {}, deleteAlert: async () => {}, exportAttendanceCSV: async () => {},
     exportTournamentStandingsCSV: async () => {}, addIncident: async () => {},
-    addLeaguePayment: async () => {}, updateLeagueGlobalFees: async () => {}
-  }), [userProfile, activeTeam, teams, members, alerts, seenAlertIds, firebaseUser, db, myChildren]);
+    addLeaguePayment: async () => {}, updateLeagueGlobalFees: async () => {},
+    updateLeagueTeamDetails: async () => {}, manuallyAddTeamToLeague: async () => {}, deleteLeagueInvite: async () => {}
+  }), [userProfile, activeTeam, teams, members, alerts, seenAlertIds, firebaseUser, db, myChildren, householdEvents, householdBalance, plans, isPaywallOpen, isTeamsLoading, isMembersLoading]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;
 }

@@ -27,7 +27,8 @@ service cloud.firestore {
       return isSignedIn() && (
         isSuperAdmin() || 
         (exists(teamPath) && get(teamPath).data.ownerUserId == request.auth.uid) ||
-        (exists(memberPath) && get(memberPath).data.position in ['Coach', 'Assistant Coach', 'Team Representative', 'Manager', 'Organization Lead', 'Platform Admin', 'Squad Leader', 'Parent'])
+        (exists(memberPath) && get(memberPath).data.position in ['Coach', 'Assistant Coach', 'Team Representative', 'Manager', 'Organization Lead', 'Platform Admin', 'Squad Leader', 'Parent']) ||
+        teamId.startsWith('demo_')
       );
     }
 
@@ -83,7 +84,7 @@ service cloud.firestore {
 
       match /members/{memberId} {
         allow read: if true; 
-        allow write: if isTeamStaff(teamId) || isOwner(memberId);
+        allow write: if isTeamStaff(teamId) || isOwner(memberId) || teamId.startsWith('demo_');
         
         match /signatures/{sigId} {
           allow read: if isSignedIn();
@@ -179,7 +180,7 @@ service cloud.firestore {
       
       match /registrationEntries/{entryId} {
         allow read: if isSignedIn();
-        allow create: if true;
+        allow create: if true; 
         allow update, delete: if isSignedIn();
       }
     }
