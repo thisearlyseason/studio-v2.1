@@ -1,7 +1,7 @@
-
 "use client";
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { useTeam, Team, Member, TeamDocument, DocumentSignature } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
