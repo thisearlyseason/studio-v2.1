@@ -1,3 +1,4 @@
+
 'use client';
     
 import { useState, useEffect, useRef } from 'react';
@@ -44,6 +45,7 @@ export function useDoc<T = any>(
     const path = memoizedDocRef.path || '';
     
     // CRITICAL GUARD: Prevent listeners on malformed, empty, root, or uninitialized paths
+    // This prevents the FIRESTORE INTERNAL ASSERTION FAILED error during state transitions.
     if (!path || path === '/' || path === '' || path.includes('undefined') || path.includes('//')) {
       setData(null);
       setIsLoading(false);

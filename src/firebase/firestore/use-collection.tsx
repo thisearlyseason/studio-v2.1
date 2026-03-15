@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -53,6 +54,7 @@ export function useCollection<T = any>(
     }
 
     // CRITICAL GUARD: Do not establish listeners on uninitialized, root, or malformed paths
+    // This prevents the FIRESTORE INTERNAL ASSERTION FAILED error during state transitions.
     if (!path || path === '/' || path === '' || path.includes('undefined') || path.includes('//')) {
       setData(null);
       setIsLoading(false);

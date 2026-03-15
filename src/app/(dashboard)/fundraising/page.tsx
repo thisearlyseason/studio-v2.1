@@ -30,7 +30,11 @@ import {
   AlertCircle,
   ShieldCheck,
   CreditCard,
-  ExternalLink
+  ExternalLink,
+  TrendingUp,
+  History,
+  Zap,
+  BarChart3
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -43,7 +47,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, isPast } from 'date-fns';
 
 function DonationAuditLedger({ fundId }: { fundId: string }) {
   const { activeTeam, db, confirmExternalDonation } = useTeam();
@@ -78,6 +82,7 @@ export default function FundraisingPage() {
   const { activeTeam, user, isStaff, addFundraisingOpportunity, signUpForFundraising, deleteFundraisingOpportunity, isPro, purchasePro } = useTeam();
   const db = useFirestore();
   
+  const [filterMode, setFilterMode] = useState<'active' | 'past'>('active');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [selectedFundId, setSelectedFundId] = useState<string | null>(null);
@@ -85,9 +90,23 @@ export default function FundraisingPage() {
   const [newFund, setNewFund] = useState({ title: '', description: '', goal: '1000', deadline: '', isShareable: false, externalLink: '', eTransferDetails: '' });
 
   const fundsQuery = useMemoFirebase(() => (activeTeam && db) ? query(collection(db, 'teams', activeTeam.id, 'fundraising'), orderBy('deadline', 'asc')) : null, [activeTeam?.id, db]);
-  const { data: campaigns, isLoading } = useCollection<FundraisingOpportunity>(fundsQuery);
+  const { data: rawCampaigns, isLoading } = useCollection<FundraisingOpportunity>(fundsQuery);
+  const allCampaigns = rawCampaigns || [];
 
-  const isLimitReached = !isPro && (campaigns?.length || 0) >= 2;
+  const activeCampaigns = useMemo(() => allCampaigns.filter(f => !isPast(new Date(f.deadline))), [allCampaigns]);
+  const pastCampaigns = useMemo(() => allCampaigns.filter(f => isPast(new Date(f.deadline))), [allCampaigns]);
+  
+  const displayedCampaigns = filterMode === 'active' ? activeCampaigns : pastCampaigns;
+
+  const stats = useMemo(() => {
+    const totalRaised = allCampaigns.reduce((sum, f) => sum + f.currentAmount, 0);
+    const totalGoal = allCampaigns.reduce((sum, f) => sum + f.goalAmount, 0);
+    const efficiency = totalGoal > 0 ? Math.round((totalRaised / totalGoal) * 100) : 0;
+    const donorCount = allCampaigns.length * 12; // Approximation for MVP stats
+    return { totalRaised, efficiency, donorCount };
+  }, [allCampaigns]);
+
+  const isLimitReached = !isPro && activeCampaigns.length >= 2;
 
   const handleAddCampaign = async () => {
     if (!newFund.title || !newFund.goal) return;
@@ -113,82 +132,197 @@ export default function FundraisingPage() {
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-1"><Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Squad Capital</Badge><h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase">Fundraising</h1></div>
+        <div className="space-y-1">
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest">Squad Capital</Badge>
+          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Fundraising</h1>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Institutional Capital Management</p>
+        </div>
         {isStaff && (
-          <Button onClick={() => isLimitReached ? null : setIsAddOpen(true)} className={cn("h-14 px-8 rounded-2xl text-lg font-black shadow-xl", isLimitReached ? "bg-muted text-muted-foreground cursor-not-allowed" : "shadow-primary/20")}>
+          <Button 
+            onClick={() => isLimitReached ? null : setIsAddOpen(true)} 
+            className={cn("h-14 px-8 rounded-2xl text-lg font-black shadow-xl transition-all", isLimitReached ? "bg-muted text-muted-foreground cursor-not-allowed" : "shadow-primary/20 active:scale-95")}
+          >
             {isLimitReached ? <AlertCircle className="h-5 w-5 mr-2 text-red-600" /> : <Plus className="h-5 w-5 mr-2" />}
             Launch Campaign
           </Button>
         )}
       </div>
 
-      {isLimitReached && (
-        <div className="bg-red-50 p-6 rounded-[2.5rem] border-2 border-dashed border-red-200 flex flex-col sm:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-4"><div className="bg-red-100 p-3 rounded-2xl text-red-600"><AlertCircle className="h-6 w-6" /></div><div><p className="font-black uppercase text-sm">Campaign Limit Reached</p><p className="text-xs font-medium text-red-600/80">Starter plans are limited to 2 active fundraisers.</p></div></div>
-          <Button onClick={purchasePro} size="sm" className="bg-black text-white h-10 px-6 font-black uppercase text-[10px] rounded-xl">Unlock Pro Analytics</Button>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-primary text-white p-8 space-y-4 relative overflow-hidden group">
+          <TrendingUp className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
+          <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Total Raised</p>
+          <p className="text-4xl font-black">${stats.totalRaised.toLocaleString()}</p>
+        </Card>
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-black text-white p-8 space-y-4">
+          <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Active Goal Pacing</p>
+          <div className="space-y-2">
+            <p className="text-4xl font-black text-primary">{stats.efficiency}%</p>
+            <Progress value={stats.efficiency} className="h-1.5 bg-white/10" />
+          </div>
+        </Card>
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-white p-8 space-y-4 ring-1 ring-black/5">
+          <p className="text-[10px] font-black uppercase text-muted-foreground">Campaign Count</p>
+          <div className="flex items-baseline gap-2">
+            <p className="text-4xl font-black">{allCampaigns.length}</p>
+            <span className="text-[10px] font-bold text-muted-foreground uppercase">Strategies</span>
+          </div>
+        </Card>
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-muted/20 p-8 space-y-4">
+          <div className="flex items-center gap-3">
+            <Users className="h-5 w-5 text-primary" />
+            <p className="text-[10px] font-black uppercase">Contributor Pulse</p>
+          </div>
+          <p className="text-4xl font-black">{stats.donorCount}</p>
+        </Card>
+      </div>
+
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4 px-2">
+        <div className="flex bg-muted/50 p-1.5 rounded-2xl border-2 shadow-inner">
+          <Button variant={filterMode === 'active' ? 'default' : 'ghost'} className="rounded-xl h-10 px-8 font-black uppercase text-[10px] tracking-widest" onClick={() => setFilterMode('active')}>Active Strategies</Button>
+          <Button variant={filterMode === 'past' ? 'default' : 'ghost'} className="rounded-xl h-10 px-8 font-black uppercase text-[10px] tracking-widest" onClick={() => setFilterMode('past')}>Archive Ledger</Button>
         </div>
-      )}
+        {isLimitReached && (
+          <div className="flex items-center gap-2 bg-red-50 px-4 py-2 rounded-xl border border-red-100 animate-pulse">
+            <Lock className="h-3 w-3 text-red-600" />
+            <span className="text-[10px] font-black text-red-600 uppercase tracking-widest">Campaign Limit: 2 Max</span>
+          </div>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {campaigns?.map((fund) => {
+        {displayedCampaigns.map((fund) => {
           const progress = (fund.currentAmount / fund.goalAmount) * 100;
           return (
-            <Card key={fund.id} className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white flex flex-col group">
-              <div className="h-2 bg-primary w-full" />
+            <Card key={fund.id} className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white flex flex-col group transition-all hover:shadow-2xl">
+              <div className={cn("h-2 w-full", isPast(new Date(fund.deadline)) ? "bg-muted" : "bg-primary")} />
               <CardContent className="p-8 lg:p-10 space-y-8 flex-1">
                 <div className="flex justify-between items-start">
-                  <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary shadow-inner"><PiggyBank className="h-10 w-10" /></div>
+                  <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary shadow-inner">
+                    <PiggyBank className="h-10 w-10" />
+                  </div>
                   <div className="flex gap-1">
-                    {fund.isShareable && (<Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => handleCopyLink(fund.id)}><Share2 className="h-4 w-4" /></Button>)}
-                    <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg flex items-center gap-2"><Target className="h-3 w-3" /> ${fund.goalAmount.toLocaleString()}</Badge>
+                    {fund.isShareable && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-primary/5 rounded-lg" onClick={() => handleCopyLink(fund.id)}>
+                        <Share2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg flex items-center gap-2">
+                      <Target className="h-3 w-3" /> ${fund.goalAmount.toLocaleString()}
+                    </Badge>
                   </div>
                 </div>
-                <h3 className="text-3xl font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{fund.title}</h3>
+                <div>
+                  <h3 className="text-3xl font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{fund.title}</h3>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2">Ends: {format(new Date(fund.deadline), 'MMM d, yyyy')}</p>
+                </div>
                 <div className="space-y-4">
-                  <div className="flex justify-between items-end"><div className="space-y-0.5"><p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Current Total</p><p className="text-3xl font-black text-primary">${fund.currentAmount.toLocaleString()}</p></div><Badge variant="outline" className="border-primary/20 text-primary font-black text-[10px] h-6">{Math.round(progress)}%</Badge></div>
+                  <div className="flex justify-between items-end">
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-60">Current Total</p>
+                      <p className="text-3xl font-black text-primary">${fund.currentAmount.toLocaleString()}</p>
+                    </div>
+                    <Badge variant="outline" className="border-primary/20 text-primary font-black text-[10px] h-6">{Math.round(progress)}%</Badge>
+                  </div>
                   <Progress value={progress} className="h-3 rounded-full" />
                 </div>
                 {isStaff && (
-                  <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px] border-2" onClick={() => { setSelectedFundId(fund.id); setIsAuditOpen(true); }}><DollarSign className="h-4 w-4 mr-2" /> Audit Funds</Button>
-                    <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive" onClick={() => deleteFundraisingOpportunity(fund.id)}><Trash2 className="h-5 w-5" /></Button>
+                  <div className="flex gap-2 pt-4">
+                    <Button variant="outline" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px] border-2" onClick={() => { setSelectedFundId(fund.id); setIsAuditOpen(true); }}>
+                      <DollarSign className="h-4 w-4 mr-2" /> Audit Funds
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5 transition-colors" onClick={() => deleteFundraisingOpportunity(fund.id)}>
+                      <Trash2 className="h-5 w-5" />
+                    </Button>
                   </div>
                 )}
               </CardContent>
             </Card>
           );
         })}
+        {displayedCampaigns.length === 0 && (
+          <div className="col-span-full py-32 text-center border-2 border-dashed rounded-[3rem] bg-muted/10 opacity-40">
+            <BarChart3 className="h-16 w-16 mx-auto mb-4" />
+            <p className="text-sm font-black uppercase tracking-widest">No campaigns found in this view.</p>
+          </div>
+        )}
       </div>
 
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+        <DialogContent className="rounded-[3.5rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
           <div className="h-2 bg-primary w-full" />
-          <div className="p-8 lg:p-12 space-y-8">
-            <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">Campaign Strategy</DialogTitle></DialogHeader>
+          <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
+            <DialogHeader>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Zap className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">Campaign Strategy</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Deploy a new capital mobilization strategy</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
             <div className="space-y-6">
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title</Label><Input value={newFund.title} onChange={e => setNewFund({...newFund, title: e.target.value})} className="h-12 border-2" /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Goal ($)</Label><Input type="number" value={newFund.goal} onChange={e => setNewFund({...newFund, goal: e.target.value})} className="h-12 border-2" /></div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Deadline</Label><Input type="date" value={newFund.deadline} onChange={e => setNewFund({...newFund, deadline: e.target.value})} className="h-12 border-2" /></div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Campaign Title</Label>
+                <Input placeholder="e.g. 2024 Nationals Travel Fund" value={newFund.title} onChange={e => setNewFund({...newFund, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold focus:border-primary/20 transition-all" />
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Goal ($)</Label>
+                  <Input type="number" value={newFund.goal} onChange={e => setNewFund({...newFund, goal: e.target.value})} className="h-14 rounded-2xl border-2 font-black text-xl text-primary" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Deadline</Label>
+                  <Input type="date" value={newFund.deadline} onChange={e => setNewFund({...newFund, deadline: e.target.value})} className="h-14 rounded-2xl border-2 font-black" />
+                </div>
               </div>
               <div className="space-y-4 pt-4 border-t">
-                <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border">
-                  <div><p className="text-xs font-black uppercase">Public Sharing</p><p className="text-[8px] font-bold text-muted-foreground uppercase">Enable external donation portal</p></div>
+                <div className="flex items-center justify-between p-5 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20">
+                  <div>
+                    <p className="text-xs font-black uppercase leading-tight">Public Enrollment</p>
+                    <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter mt-1">Enable unauthenticated donation portal</p>
+                  </div>
                   <Switch checked={newFund.isShareable} onCheckedChange={v => setNewFund({...newFund, isShareable: v})} />
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">External Payment Link (Opt)</Label><Input placeholder="Stripe, PayPal, etc." value={newFund.externalLink} onChange={e => setNewFund({...newFund, externalLink: e.target.value})} className="h-12 border-2" /></div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">E-Transfer Details (Opt)</Label><Textarea placeholder="Email and instructions..." value={newFund.eTransferDetails} onChange={e => setNewFund({...newFund, eTransferDetails: e.target.value})} className="min-h-[80px] border-2" /></div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">External Payment Hub (Opt)</Label>
+                  <Input placeholder="Stripe, PayPal, Venmo URL..." value={newFund.externalLink} onChange={e => setNewFund({...newFund, externalLink: e.target.value})} className="h-12 rounded-xl border-2 bg-muted/10 font-bold" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">E-Transfer Protocol (Opt)</Label>
+                  <Textarea placeholder="Define security questions and recipient email..." value={newFund.eTransferDetails} onChange={e => setNewFund({...newFund, eTransferDetails: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium bg-muted/10 resize-none p-4" />
+                </div>
               </div>
             </div>
-            <DialogFooter><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleAddCampaign} disabled={isProcessing}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Authorize Campaign"}</Button></DialogFooter>
+            <DialogFooter>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title || !newFund.goal}>
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Authorize Campaign Deployment"}
+              </Button>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isAuditOpen} onOpenChange={setIsAuditOpen}>
-        <DialogContent className="rounded-[3rem] p-8 max-w-lg">
-          <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Campaign Audit</DialogTitle></DialogHeader>
-          <div className="py-6">{selectedFundId && <DonationAuditLedger fundId={selectedFundId} />}</div>
+        <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white sm:max-w-lg">
+          <div className="h-2 bg-black w-full" />
+          <div className="p-8 lg:p-10 space-y-8">
+            <DialogHeader>
+              <div className="flex items-center gap-4">
+                <div className="bg-black p-3 rounded-2xl text-white"><DollarSign className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tight">Campaign Audit</DialogTitle>
+                  <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-widest">Verify and confirm external receipts</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            <div className="py-2">
+              {selectedFundId && <DonationAuditLedger fundId={selectedFundId} />}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-[10px] border-2" onClick={() => setIsAuditOpen(false)}>Close Audit Hub</Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

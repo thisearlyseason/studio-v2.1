@@ -824,7 +824,7 @@ export default function LeaguesPage() {
                         onClick={() => setInviteMethod(method.id as any)}
                         className={cn(
                           "flex items-center gap-3 p-4 rounded-xl border-2 transition-all font-black text-[10px] uppercase",
-                          inviteMethod === method.id ? "bg-primary border-primary text-white shadow-lg" : "bg-muted/30 border-transparent hover:border-muted text-muted-foreground"
+                          inviteMethod === method.id ? "bg-primary border-primary text-white shadow-lg" : "bg-muted/30 border-transparent hover:bg-muted text-muted-foreground"
                         )}
                       >
                         <method.icon className="h-4 w-4" />
