@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -42,23 +43,55 @@ import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collectionGroup, query } from 'firebase/firestore';
 
 export default function ClubManagementPage() {
-  const { teams, user, isClubManager, createNewTeam, setActiveTeam, members } = useTeam();
+  const { teams, user, isClubManager, createNewTeam, setActiveTeam } = useTeam();
+  const db = useFirestore();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
   const [initialCoach, setInitialCoach] = useState('');
 
-  // TACTICAL AUDIT: Aggregate organization financials
+  // TACTICAL AUDIT: Identify squads where user has management authority
   const clubTeams = useMemo(() => {
     return teams.filter(t => t.ownerUserId === user?.id && t.isPro);
   }, [teams, user?.id]);
 
-  const totalDuesOwed = clubTeams.length * 1250; 
-  const totalDuesCollected = clubTeams.length * 840;
-  const collectionRate = Math.round((totalDuesCollected / totalDuesOwed) * 100) || 0;
+  const clubTeamIds = useMemo(() => clubTeams.map(t => t.id), [clubTeams]);
+
+  // LIVE ANALYTICS: Fetch all members across all club teams for real-time fiscal auditing
+  const membersQuery = useMemoFirebase(() => {
+    if (!db || clubTeamIds.length === 0) return null;
+    return query(collectionGroup(db, 'members'));
+  }, [db, clubTeamIds]);
+
+  const { data: allMembersRaw, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
+  
+  const clubMembers = useMemo(() => {
+    if (!allMembersRaw) return [];
+    return allMembersRaw.filter(m => clubTeamIds.includes(m.teamId));
+  }, [allMembersRaw, clubTeamIds]);
+
+  const stats = useMemo(() => {
+    let owed = 0;
+    let total = 0;
+    let cleared = 0;
+    
+    clubMembers.forEach(m => {
+      owed += m.amountOwed || 0;
+      total += m.totalFees || 0;
+      if (m.medicalClearance) cleared++;
+    });
+
+    const collected = total - owed;
+    const rate = total > 0 ? Math.round((collected / total) * 100) : 0;
+    const compliance = clubMembers.length > 0 ? Math.round((cleared / clubMembers.length) * 100) : 0;
+
+    return { owed, collected, total, rate, compliance };
+  }, [clubMembers]);
 
   const filteredTeams = useMemo(() => {
     return clubTeams.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -155,14 +188,14 @@ export default function ClubManagementPage() {
           <CardContent className="p-8 space-y-4 relative z-10">
             <div className="space-y-1">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Fiscal Pulse</p>
-              <p className="text-3xl font-black leading-none">${totalDuesCollected.toLocaleString()}</p>
+              <p className="text-3xl font-black leading-none">${stats.collected.toLocaleString()}</p>
             </div>
             <div className="space-y-2">
               <div className="flex justify-between items-center text-[8px] font-black uppercase tracking-widest">
                 <span>Dues Collection</span>
-                <span>{collectionRate}%</span>
+                <span>{stats.rate}%</span>
               </div>
-              <Progress value={collectionRate} className="h-1.5 bg-white/10" />
+              <Progress value={stats.rate} className="h-1.5 bg-white/10" />
             </div>
           </CardContent>
         </Card>
@@ -170,8 +203,8 @@ export default function ClubManagementPage() {
         <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden relative group">
           <CardContent className="p-8 space-y-2 relative z-10">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Compliance Rating</p>
-            <p className="text-5xl font-black leading-none text-primary">98%</p>
-            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground opacity-40">Waivers Verified</p>
+            <p className="text-5xl font-black leading-none text-primary">{stats.compliance}%</p>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground opacity-40">Medical Verified</p>
           </CardContent>
         </Card>
 
@@ -209,48 +242,53 @@ export default function ClubManagementPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-4">
-            {filteredTeams.map((team) => (
-              <Card key={team.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 hover:shadow-xl hover:ring-primary/20 transition-all group overflow-hidden bg-white">
-                <CardContent className="p-0">
-                  <div className="flex flex-col md:flex-row items-stretch">
-                    <div className="w-full md:w-24 bg-muted/30 flex items-center justify-center p-6 border-r group-hover:bg-primary/5 transition-colors shrink-0">
-                      <Avatar className="h-14 w-14 rounded-2xl shadow-lg border-2 border-background ring-2 ring-primary/10 transition-transform group-hover:scale-110">
-                        <AvatarImage src={team.teamLogoUrl} className="object-cover" />
-                        <AvatarFallback className="font-black bg-white text-xs">{team.name[0]}</AvatarFallback>
-                      </Avatar>
-                    </div>
-                    <div className="flex-1 p-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                      <div className="space-y-1">
-                        <h3 className="text-xl font-black tracking-tight leading-tight group-hover:text-primary transition-colors uppercase">{team.name}</h3>
-                        <div className="flex items-center gap-4 text-[9px] font-black text-muted-foreground uppercase tracking-widest">
-                          <span className="flex items-center gap-1.5"><ShieldCheck className="h-3 w-3 text-primary" /> Elite Status</span>
-                          <span className="flex items-center gap-1.5"><Activity className="h-3 w-3" /> PPG: 14.5</span>
+            {filteredTeams.map((team) => {
+              const teamMembers = clubMembers.filter(m => m.teamId === team.id);
+              const teamOwed = teamMembers.reduce((sum, m) => sum + (m.amountOwed || 0), 0);
+              
+              return (
+                <Card key={team.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 hover:shadow-xl hover:ring-primary/20 transition-all group overflow-hidden bg-white">
+                  <CardContent className="p-0">
+                    <div className="flex flex-col md:flex-row items-stretch">
+                      <div className="w-full md:w-24 bg-muted/30 flex items-center justify-center p-6 border-r group-hover:bg-primary/5 transition-colors shrink-0">
+                        <Avatar className="h-14 w-14 rounded-2xl shadow-lg border-2 border-background ring-2 ring-primary/10 transition-transform group-hover:scale-110">
+                          <AvatarImage src={team.teamLogoUrl} className="object-cover" />
+                          <AvatarFallback className="font-black bg-white text-xs">{team.name[0]}</AvatarFallback>
+                        </Avatar>
+                      </div>
+                      <div className="flex-1 p-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="space-y-1">
+                          <h3 className="text-xl font-black tracking-tight leading-tight group-hover:text-primary transition-colors uppercase">{team.name}</h3>
+                          <div className="flex items-center gap-4 text-[9px] font-black text-muted-foreground uppercase tracking-widest">
+                            <span className="flex items-center gap-1.5"><ShieldCheck className="h-3 w-3 text-primary" /> {teamMembers.length} Active Roster</span>
+                            <span className="flex items-center gap-1.5"><Activity className="h-3 w-3" /> Elite Status</span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <p className="text-[8px] font-black uppercase text-muted-foreground">Owed</p>
+                            <p className="text-sm font-black text-primary">${teamOwed.toLocaleString()}</p>
+                          </div>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="rounded-full h-12 w-12 hover:bg-primary hover:text-white shadow-sm ring-1 ring-black/5 transition-all"
+                            onClick={() => { setActiveTeam(team); router.push('/team'); }}
+                          >
+                            <ArrowUpRight className="h-5 w-5" />
+                          </Button>
                         </div>
                       </div>
-                      
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <p className="text-[8px] font-black uppercase text-muted-foreground">Owed</p>
-                          <p className="text-sm font-black">$450</p>
-                        </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="rounded-full h-12 w-12 hover:bg-primary hover:text-white shadow-sm ring-1 ring-black/5 transition-all"
-                          onClick={() => { setActiveTeam(team); router.push('/team'); }}
-                        >
-                          <ArrowUpRight className="h-5 w-5" />
-                        </Button>
-                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
             {filteredTeams.length === 0 && (
               <div className="py-20 text-center border-2 border-dashed rounded-[3rem] bg-muted/10 opacity-40">
                 <LayoutGrid className="h-12 w-12 mx-auto mb-4" />
-                <p className="text-sm font-black uppercase tracking-widest">No active squads found.</p>
+                <p className="text-sm font-black uppercase tracking-widest">No managed squads identified.</p>
               </div>
             )}
           </div>
@@ -265,17 +303,17 @@ export default function ClubManagementPage() {
             <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white p-8 space-y-6">
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-black uppercase text-white/40 tracking-widest">Recruitment Funnel</p>
+                  <p className="text-[10px] font-black uppercase text-white/40 tracking-widest">Organization Roster</p>
                   <div className="flex justify-between items-end">
-                    <p className="text-3xl font-black">124</p>
-                    <Badge className="bg-primary text-white border-none text-[8px] h-5">+12% this week</Badge>
+                    <p className="text-3xl font-black">{clubMembers.length}</p>
+                    <Badge className="bg-primary text-white border-none text-[8px] h-5">Verified Athletes</Badge>
                   </div>
-                  <Progress value={75} className="h-1 bg-white/10" />
+                  <Progress value={100} className="h-1 bg-white/10" />
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-black uppercase text-white/40 tracking-widest">Facility Utilization</p>
-                  <p className="text-3xl font-black">82%</p>
-                  <Progress value={82} className="h-1 bg-white/10" />
+                  <p className="text-[10px] font-black uppercase text-white/40 tracking-widest">Total Fiscal Pipeline</p>
+                  <p className="text-3xl font-black">${stats.total.toLocaleString()}</p>
+                  <Progress value={stats.rate} className="h-1 bg-white/10" />
                 </div>
               </div>
               <Button className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] tracking-widest hover:bg-primary hover:text-white transition-all">Export Org Audit</Button>
@@ -285,10 +323,10 @@ export default function ClubManagementPage() {
           <Card className="rounded-[2.5rem] border-none shadow-md bg-white p-8 space-y-4 ring-1 ring-black/5">
             <div className="flex items-center gap-3">
               <ShieldCheck className="h-5 w-5 text-primary" />
-              <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Global Conflict Audit</h4>
+              <h4 className="text-[10px] font-black uppercase tracking-[0.2em]">Global Management active</h4>
             </div>
             <p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">
-              Master scheduling is active. The system is automatically monitoring all {clubTeams.length} squads for field booking conflicts and staff overlaps.
+              Master organization lead protocols are established. You are currently monitoring {clubTeams.length} elite squads. Fiscal data is aggregated in real-time from active roster ledgers.
             </p>
           </Card>
         </aside>

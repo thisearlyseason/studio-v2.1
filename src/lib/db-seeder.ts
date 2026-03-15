@@ -38,9 +38,9 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
 
   return {
     members: [
-      { id: `m1_${teamId}`, userId: `u1_${teamId}`, name: `Jordan Smith ${teamSuffix}`, role: 'Member', position: 'Forward', jersey: '10', medicalClearance: true, amountOwed: 0, avatar: `https://picsum.photos/seed/m1${teamId}/150/150`, gradYear: '2026', gpa: '3.9', school: 'Metro Academy', highlightUrl: 'https://youtube.com/watch?v=demo1', notes: 'Elite finisher with explosive first step.', skills: ['Scoring', 'Speed', 'Agility'], achievements: ['State MVP', 'All-City First Team'] },
-      { id: `m2_${teamId}`, userId: `u2_${teamId}`, name: `Alex Rivera ${teamSuffix}`, role: 'Member', position: 'Midfield', jersey: '22', medicalClearance: true, amountOwed: 50, avatar: `https://picsum.photos/seed/m2${teamId}/150/150`, gradYear: '2027', gpa: '3.7', school: 'Heights High', highlightUrl: 'https://youtube.com/watch?v=demo2', notes: 'Visionary playmaker with exceptional passing range.', skills: ['Vision', 'Passing', 'Control'], achievements: ['District Champion'] },
-      { id: `m3_${teamId}`, userId: `u3_${teamId}`, name: `Sam Taylor ${teamSuffix}`, role: 'Member', position: 'Defender', jersey: '04', medicalClearance: false, amountOwed: 125, avatar: `https://picsum.photos/seed/m3${teamId}/150/150`, gradYear: '2026', gpa: '3.8', school: 'Metro Academy', highlightUrl: 'https://youtube.com/watch?v=demo3', notes: 'Physical presence with strong aerial capability.', skills: ['Strength', 'Tackling', 'Heading'], achievements: ['Defensive Player of Year'] }
+      { id: `m1_${teamId}`, userId: `u1_${teamId}`, name: `Jordan Smith ${teamSuffix}`, role: 'Member', position: 'Forward', jersey: '10', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, avatar: `https://picsum.photos/seed/m1${teamId}/150/150`, gradYear: '2026', gpa: '3.9', school: 'Metro Academy', highlightUrl: 'https://youtube.com/watch?v=demo1', notes: 'Elite finisher with explosive first step.', skills: ['Scoring', 'Speed', 'Agility'], achievements: ['State MVP', 'All-City First Team'] },
+      { id: `m2_${teamId}`, userId: `u2_${teamId}`, name: `Alex Rivera ${teamSuffix}`, role: 'Member', position: 'Midfield', jersey: '22', medicalClearance: true, amountOwed: 450, feesPaid: false, totalFees: 1250, avatar: `https://picsum.photos/seed/m2${teamId}/150/150`, gradYear: '2027', gpa: '3.7', school: 'Heights High', highlightUrl: 'https://youtube.com/watch?v=demo2', notes: 'Visionary playmaker with exceptional passing range.', skills: ['Vision', 'Passing', 'Control'], achievements: ['District Champion'] },
+      { id: `m3_${teamId}`, userId: `u3_${teamId}`, name: `Sam Taylor ${teamSuffix}`, role: 'Member', position: 'Defender', jersey: '04', medicalClearance: false, amountOwed: 1250, feesPaid: false, totalFees: 1250, avatar: `https://picsum.photos/seed/m3${teamId}/150/150`, gradYear: '2026', gpa: '3.8', school: 'Metro Academy', highlightUrl: 'https://youtube.com/watch?v=demo3', notes: 'Physical presence with strong aerial capability.', skills: ['Strength', 'Tackling', 'Heading'], achievements: ['Defensive Player of Year'] }
     ],
     games: [
       { id: `g1_${teamId}`, opponent: 'Tigers', date: yesterday, myScore: 12, opponentScore: 8, result: 'Win', location: 'City Arena' }
@@ -114,7 +114,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
     batch.set(doc(db, 'users', userId, 'teamMemberships', tid), clean({
       teamId: tid, teamName: config.name, teamCode: tid.slice(-6).toUpperCase(), role,
-      isPro: config.isPro, planId: config.isPro ? actualPlanId : 'starter_squad', isDemo: true, joinedAt: now
+      isPro: config.isPro, planId: config.isPro ? actualPlanId : 'starter_squad', isDemo: true, joinedAt: now,
+      ownerUserId: userId
     }));
 
     batch.set(doc(db, 'teams', tid, 'members', userId), clean({
@@ -137,7 +138,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     if (isParentDemo) {
       const childId = `child_${tid}`;
       batch.set(doc(db, 'players', childId), clean({ id: childId, firstName: 'Junior', lastName: 'Guest', dateOfBirth: '2012-01-01', isMinor: true, parentId: userId, joinedTeamIds: [tid], createdAt: now }));
-      batch.set(doc(db, 'teams', tid, 'members', childId), clean({ id: childId, userId: 'none', playerId: childId, teamId: tid, name: 'Junior Guest', role: 'Member', position: 'Player', jersey: '10', joinedAt: now, isMinor: true, amountOwed: 75, avatar: `https://picsum.photos/seed/junior/150/150`, medicalClearance: true }));
+      batch.set(doc(db, 'teams', tid, 'members', childId), clean({ id: childId, userId: 'none', playerId: childId, teamId: tid, name: 'Junior Guest', role: 'Member', position: 'Player', jersey: '10', joinedAt: now, isMinor: true, amountOwed: 75, feesPaid: false, totalFees: 1250, avatar: `https://picsum.photos/seed/junior/150/150`, medicalClearance: true }));
     }
   });
 
