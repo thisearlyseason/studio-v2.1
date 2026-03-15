@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -24,7 +23,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { Megaphone, Bell, History, Clock, X, Lock, Users, ShieldAlert, GraduationCap, Baby, Trash2, Zap, Shield } from 'lucide-react';
+import { Megaphone, Bell, History, Clock, X, Lock, Users, ShieldAlert, GraduationCap, Baby, Trash2, Zap, Shield, CheckCircle2 } from 'lucide-react';
 import { useTeam, TeamAlert } from '@/components/providers/team-provider';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -318,7 +317,7 @@ export function CreateAlertButton() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Directive Headline</Label>
+              <Label className="text-[10px) font-black uppercase tracking-widest ml-1">Directive Headline</Label>
               <Input placeholder="e.g. Mandatory Venue Update" value={title} onChange={e => setTitle(e.target.value)} className="rounded-2xl h-14 border-2 font-black text-base shadow-inner" />
             </div>
             <div className="space-y-2">
