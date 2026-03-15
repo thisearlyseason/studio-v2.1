@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -231,12 +230,12 @@ export default function RosterPage() {
                     <UserPlus className="h-4 w-4 mr-2" /> Invite
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0 overflow-y-auto">
+                <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0 overflow-y-auto bg-white text-foreground">
                   <DialogTitle className="sr-only">Invite Teammates</DialogTitle>
                   <div className="h-2 bg-primary w-full" />
                   <div className="p-8 space-y-8">
                     <DialogHeader>
-                      <DialogTitle className="text-3xl font-black uppercase tracking-tight">Recruit Hub</DialogTitle>
+                      <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Recruit Hub</DialogTitle>
                       <DialogDescription className="font-bold text-primary uppercase text-[10px]">Enroll new teammates to {activeTeam.name}</DialogDescription>
                     </DialogHeader>
                     
@@ -250,9 +249,9 @@ export default function RosterPage() {
                       </div>
 
                       <div className="space-y-3">
-                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Recruitment Pipeline Link</Label>
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Recruitment Pipeline Link</Label>
                         <div className="flex gap-2">
-                          <Input value={recruitmentUrl} readOnly className="h-12 rounded-xl bg-muted/30 border-none font-bold text-xs truncate" />
+                          <Input value={recruitmentUrl} readOnly className="h-12 rounded-xl bg-muted/30 border-none font-bold text-xs truncate text-foreground" />
                           <Button size="icon" variant="outline" className="rounded-xl h-12 w-12 shrink-0 border-2" onClick={handleCopyRecruitmentUrl}><LinkIcon className="h-4 w-4" /></Button>
                         </div>
                         <p className="text-[9px] font-medium text-muted-foreground italic px-1 leading-relaxed">
@@ -271,13 +270,13 @@ export default function RosterPage() {
         
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search squad roster..." className="pl-11 bg-muted/50 border-none rounded-2xl h-12 shadow-inner font-black text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          <Input placeholder="Search squad roster..." className="pl-11 bg-muted/50 border-none rounded-2xl h-12 shadow-inner font-black text-sm text-foreground" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3">
         {filteredRoster.map((member) => (
-          <Card key={member.id} className="overflow-hidden border-none shadow-sm transition-all duration-300 ring-1 ring-black/5 rounded-[2rem] cursor-pointer group hover:shadow-md" onClick={() => setSelectedMember(member)}>
+          <Card key={member.id} className="overflow-hidden border-none shadow-sm transition-all duration-300 ring-1 ring-black/5 rounded-[2rem] cursor-pointer group hover:shadow-md bg-white" onClick={() => setSelectedMember(member)}>
             <CardContent className="p-4 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <Avatar className="h-14 w-14 rounded-2xl border-2 border-background shadow-md">
@@ -286,7 +285,7 @@ export default function RosterPage() {
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <h3 className="font-black truncate text-lg tracking-tight group-hover:text-primary transition-colors">{member.name}</h3>
+                    <h3 className="font-black truncate text-lg tracking-tight group-hover:text-primary transition-colors text-foreground">{member.name}</h3>
                     {member.jersey !== 'HQ' && <Badge variant="outline" className="text-[9px] h-5 border-primary/20 text-primary font-black uppercase">#{member.jersey}</Badge>}
                   </div>
                   <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest truncate">{member.position}</p>
@@ -299,7 +298,7 @@ export default function RosterPage() {
       </div>
 
       <Dialog open={!!selectedMember} onOpenChange={(open) => !open && setSelectedMember(null)}>
-        <DialogContent className="rounded-[3rem] sm:max-w-5xl border-none shadow-2xl p-0 flex flex-col bg-white overflow-y-auto max-h-[90vh] custom-scrollbar">
+        <DialogContent className="rounded-[3rem] sm:max-w-5xl border-none shadow-2xl p-0 flex flex-col bg-white overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
           <DialogTitle className="sr-only">Player Profile: {selectedMember?.name}</DialogTitle>
           {selectedMember && (
             <div className="flex flex-col lg:flex-row">
@@ -341,7 +340,7 @@ export default function RosterPage() {
                 {isPro ? (
                   <>
                     <div className="space-y-6">
-                      <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Award className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em]">Athlete Narrative</h4></div>
+                      <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Award className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Athlete Narrative</h4></div>
                       <div className="bg-muted/30 p-6 rounded-[2.5rem] border-2 border-dashed">
                         <p className="text-sm font-medium leading-relaxed italic text-foreground/80">
                           {selectedMember.notes || "This athlete has not yet established a squad bio. Visit Settings to update."}
@@ -350,7 +349,7 @@ export default function RosterPage() {
                     </div>
 
                     <div className="space-y-6">
-                      <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Star className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em]">Operational Skills & Achievements</h4></div>
+                      <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Star className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Operational Skills & Achievements</h4></div>
                       <div className="flex flex-wrap gap-2">
                         {(selectedMember.skills || ['Speed', 'Communication', 'Technical Control']).map((skill, idx) => (
                           <Badge key={idx} variant="secondary" className="rounded-xl px-4 py-1.5 font-black text-[10px] uppercase">{skill}</Badge>
@@ -365,7 +364,7 @@ export default function RosterPage() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-10">
                       <div className="space-y-6">
-                        <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><ShieldCheck className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em]">Vital Stats</h4></div>
+                        <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><ShieldCheck className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Vital Stats</h4></div>
                         <div className="grid grid-cols-1 gap-3">
                           {STANDARD_WAIVERS.map(w => {
                             if (!activeProtocolsMap[w.docId]) return null;
@@ -374,32 +373,32 @@ export default function RosterPage() {
                             const isSigned = signedDocIds.includes(w.docId);
                             return (
                               <div key={w.id} className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
-                                <span className="text-[10px] font-black uppercase opacity-40">{w.label}</span>
+                                <span className="text-[10px] font-black uppercase opacity-40 text-foreground">{w.label}</span>
                                 {isSigned ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : <XCircle className="h-5 w-5 text-destructive" />}
                               </div>
                             );
                           })}
                           <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
-                            <span className="text-[10px] font-black uppercase opacity-40">Age Group</span>
-                            <span className="text-sm font-black uppercase">{calculateAgeGroup(selectedMember.birthdate) || 'U18'}</span>
+                            <span className="text-[10px] font-black uppercase opacity-40 text-foreground">Age Group</span>
+                            <span className="text-sm font-black uppercase text-foreground">{calculateAgeGroup(selectedMember.birthdate) || 'U18'}</span>
                           </div>
                           <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
-                            <span className="text-[10px] font-black uppercase opacity-40">Grad Class</span>
-                            <span className="text-sm font-black uppercase">{selectedMember.gradYear || '2028'}</span>
+                            <span className="text-[10px] font-black uppercase opacity-40 text-foreground">Grad Class</span>
+                            <span className="text-sm font-black uppercase text-foreground">{selectedMember.gradYear || '2028'}</span>
                           </div>
                         </div>
                       </div>
 
                       <div className="space-y-6">
-                        <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><GraduationCap className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em]">Institutional Audit</h4></div>
+                        <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><GraduationCap className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Institutional Audit</h4></div>
                         <div className="grid grid-cols-1 gap-3">
                           <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
-                            <span className="text-[10px] font-black uppercase opacity-40">Active Dues</span>
+                            <span className="text-[10px] font-black uppercase opacity-40 text-foreground">Active Dues</span>
                             <span className={cn("text-sm font-black", selectedMember.feesPaid ? "text-green-600" : "text-primary")}>${selectedMember.amountOwed || 0}</span>
                           </div>
                           <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
-                            <span className="text-[10px] font-black uppercase opacity-40">Academic GPA</span>
-                            <span className="text-sm font-black uppercase">{selectedMember.gpa || '3.8'}</span>
+                            <span className="text-[10px] font-black uppercase opacity-40 text-foreground">Academic GPA</span>
+                            <span className="text-sm font-black uppercase text-foreground">{selectedMember.gpa || '3.8'}</span>
                           </div>
                         </div>
                       </div>
@@ -413,7 +412,7 @@ export default function RosterPage() {
                             placeholder="Log tactical performance reviews, coachability notes, or scout observations..." 
                             value={staffNote} 
                             onChange={e => setStaffNote(e.target.value)} 
-                            className="min-h-[150px] bg-white rounded-2xl border-none font-bold p-6 text-base shadow-inner resize-none" 
+                            className="min-h-[150px] bg-white rounded-2xl border-none font-bold p-6 text-base shadow-inner resize-none text-foreground" 
                           />
                           <Button className="w-full h-14 rounded-xl text-xs font-black uppercase shadow-lg shadow-primary/20" onClick={handleSaveNote} disabled={isSavingNote}>
                             {isSavingNote ? <Loader2 className="h-5 w-5 animate-spin" /> : "Commit Evaluation"}
@@ -448,25 +447,25 @@ export default function RosterPage() {
       </Dialog>
 
       <Dialog open={isEditPositionOpen} onOpenChange={setIsEditPositionOpen}>
-        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden">
+        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 space-y-6">
             <DialogHeader>
               <div className="flex items-center gap-3 mb-2">
                 <UserCog className="h-6 w-6 text-primary" />
-                <DialogTitle className="text-2xl font-black uppercase tracking-tight">Provision Role</DialogTitle>
+                <DialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Provision Role</DialogTitle>
               </div>
               <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px]">Modify organizational authority for {selectedMember?.name}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">New Position / Title</Label>
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">New Position / Title</Label>
               <Select value={newPosition} onValueChange={setNewPosition}>
-                <SelectTrigger className="h-14 rounded-2xl border-2 font-bold">
+                <SelectTrigger className="h-14 rounded-2xl border-2 font-bold text-foreground">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
                   {POSITION_OPTIONS.map(opt => (
-                    <SelectItem key={opt} value={opt} className="font-bold">{opt}</SelectItem>
+                    <SelectItem key={opt} value={opt} className="font-bold text-foreground">{opt}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

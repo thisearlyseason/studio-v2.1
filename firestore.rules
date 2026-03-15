@@ -21,16 +21,16 @@ service cloud.firestore {
     }
 
     function isTeamStaff(teamId) {
-      let memberDoc = get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
+      let teamPath = /databases/$(database)/documents/teams/$(teamId);
+      let memberPath = /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid);
+      
       return isSignedIn() && (
         isSuperAdmin() || 
-        (exists(/databases/$(database)/documents/teams/$(teamId)) && get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid) ||
-        (memberDoc != null && memberDoc.data.position in ['Coach', 'Assistant Coach', 'Team Representative', 'Manager', 'Organization Lead', 'Platform Admin', 'Squad Leader', 'Parent'])
+        (exists(teamPath) && get(teamPath).data.ownerUserId == request.auth.uid) ||
+        (exists(memberPath) && get(memberPath).data.position in ['Coach', 'Assistant Coach', 'Team Representative', 'Manager', 'Organization Lead', 'Platform Admin', 'Squad Leader', 'Parent'])
       );
     }
 
-    // --- RECRUITING HELPERS ---
-    
     function isRecruitingStaff(playerId) {
       return isSignedIn() && (isSuperAdmin() || exists(/databases/$(database)/documents/users/$(request.auth.uid)));
     }

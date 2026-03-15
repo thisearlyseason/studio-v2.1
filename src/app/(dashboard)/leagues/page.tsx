@@ -509,7 +509,7 @@ function SquadDirectory({ league }: { league: League }) {
                 <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => { setSelectedTeamId(team.id); setEditForm({ origin: team.origin || '', coachName: team.coachName || '', coachEmail: team.coachEmail || '', coachPhone: team.coachPhone || '', organizerNotes: team.organizerNotes || '' }); setIsEditOpen(true); }}><Edit3 className="h-5 w-5" /></Button>
               </div>
               <CardTitle className="text-2xl font-black uppercase tracking-tight">{team.teamName}</CardTitle>
-              <p className="text-[10px] font-black uppercase text-primary tracking-widest flex items-center gap-2 mt-1"><Map className="h-3 w-3" /> {team.origin || 'Origin Undefined'}</p>
+              <p className="text-[10px] font-black uppercase text-primary tracking-widest flex items-center gap-2 mt-1"><MapPin className="h-3 w-3" /> {team.origin || 'Origin Undefined'}</p>
             </CardHeader>
             <CardContent className="p-8 pt-4 space-y-6">
               <div className="space-y-3 pt-4 border-t">
@@ -763,7 +763,7 @@ export default function LeaguesPage() {
 
       {/* CREATE LEAGUE DIALOG */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden bg-white">
+        <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">League Architect Architect</DialogTitle>
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-10 space-y-8">
@@ -773,8 +773,8 @@ export default function LeaguesPage() {
             </DialogHeader>
             <div className="space-y-6">
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">League Name</Label>
-                <Input placeholder="e.g. State Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20 transition-all shadow-inner" />
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">League Name</Label>
+                <Input placeholder="e.g. State Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20 transition-all shadow-inner text-foreground" />
               </div>
               <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 flex items-start gap-4">
                 <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
@@ -794,7 +794,7 @@ export default function LeaguesPage() {
 
       {/* RECRUITMENT DIALOG */}
       <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
-        <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+        <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Recruit Teams</DialogTitle>
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
@@ -804,7 +804,7 @@ export default function LeaguesPage() {
                   <UserPlus className="h-6 w-6" />
                 </div>
                 <div>
-                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">Recruit Teams</DialogTitle>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Recruit Teams</DialogTitle>
                   <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Multi-Channel Enrollment Suite</DialogDescription>
                 </div>
               </div>
@@ -813,7 +813,7 @@ export default function LeaguesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-6">
                 <div className="space-y-4">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Enrollment Protocol</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Enrollment Protocol</Label>
                   <div className="grid grid-cols-1 gap-2">
                     {[
                       { id: 'digital', label: 'Email Invite', icon: Mail },
@@ -840,15 +840,15 @@ export default function LeaguesPage() {
               <div className="space-y-6 animate-in slide-in-from-right-4">
                 {inviteMethod === 'digital' && (
                   <div className="space-y-4">
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Coach Email</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@example.com" className="h-12 border-2" /></div>
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Squad Name (Optional)</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. Metro Elite" className="h-12 border-2" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Coach Email</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@example.com" className="h-12 border-2 text-foreground" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Squad Name (Optional)</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. Metro Elite" className="h-12 border-2 text-foreground" /></div>
                     <Button className="w-full h-14 rounded-xl font-black uppercase text-xs shadow-lg" onClick={handleRecruitmentAction} disabled={isProcessing || !inviteEmail.trim()}>{isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Dispatch Digital Invite"}</Button>
                   </div>
                 )}
                 {inviteMethod === 'manual' && (
                   <div className="space-y-4">
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Squad Name</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. City Tigers" className="h-12 border-2" /></div>
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Coach Contact (Opt)</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@email.com" className="h-12 border-2" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Squad Name</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. City Tigers" className="h-12 border-2 text-foreground" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Coach Contact (Opt)</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@email.com" className="h-12 border-2 text-foreground" /></div>
                     <Button className="w-full h-14 rounded-xl font-black uppercase text-xs shadow-lg" onClick={handleRecruitmentAction} disabled={isProcessing || !inviteTeamName.trim()}>{isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Authorize Manual Entry"}</Button>
                   </div>
                 )}
@@ -870,7 +870,7 @@ export default function LeaguesPage() {
                       <Globe className="h-10 w-10 text-primary mx-auto mb-4 opacity-40" />
                       <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Public Portal Access</p>
                       <div className="flex items-center justify-center gap-3 bg-white p-3 rounded-xl shadow-sm border truncate">
-                        <span className="text-[10px] font-bold truncate">/register/league/{activeLeague?.id}</span>
+                        <span className="text-[10px] font-bold truncate text-foreground">/register/league/{activeLeague?.id}</span>
                         <LinkIcon className="h-4 w-4 text-primary shrink-0" />
                       </div>
                     </div>
@@ -884,13 +884,13 @@ export default function LeaguesPage() {
               <div className="pt-10 border-t space-y-6">
                 <div className="flex items-center gap-3">
                   <History className="h-5 w-5 text-primary" />
-                  <h4 className="text-xs font-black uppercase tracking-[0.2em]">Pending Diplomatic Status</h4>
+                  <h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Pending Diplomatic Status</h4>
                 </div>
                 <div className="space-y-3">
                   {invites.map(inv => (
                     <div key={inv.id} className="p-4 bg-muted/20 rounded-2xl border flex items-center justify-between group transition-all hover:bg-white hover:shadow-sm">
                       <div className="min-w-0">
-                        <p className="font-black text-sm uppercase truncate tracking-tight">{inv.teamName || inv.invitedEmail}</p>
+                        <p className="font-black text-sm uppercase truncate tracking-tight text-foreground">{inv.teamName || inv.invitedEmail}</p>
                         <p className="text-[8px] font-bold text-muted-foreground uppercase">{inv.invitedEmail}</p>
                       </div>
                       <div className="flex items-center gap-4">
