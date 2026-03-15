@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { 
   PiggyBank, 
   Plus, 
@@ -62,7 +63,7 @@ function DonationAuditLedger({ fundId }: { fundId: string }) {
         <div key={don.id} className="p-4 bg-muted/20 rounded-2xl border flex items-center justify-between group">
           <div className="min-w-0">
             <p className="font-black text-xs uppercase truncate">{don.donorName}</p>
-            <p className="text-[8px] font-bold text-muted-foreground uppercase">{don.method} • {format(new Date(don.createdAt), 'MMM d')}</p>
+            <p className="text-[8px] font-bold text-muted-foreground uppercase">{don.method === 'external' ? 'Digital Hub' : 'E-Transfer/Offline'} • {format(new Date(don.createdAt), 'MMM d')}</p>
           </div>
           <div className="flex items-center gap-4">
             <span className="font-black text-sm text-primary">${don.amount.toLocaleString()}</span>
@@ -87,7 +88,12 @@ export default function FundraisingPage() {
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [selectedFundId, setSelectedFundId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [newFund, setNewFund] = useState({ title: '', description: '', goal: '1000', deadline: '', isShareable: false, externalLink: '', eTransferDetails: '' });
+  
+  const [newFund, setNewFund] = useState({ 
+    title: '', description: '', goal: '1000', deadline: '', 
+    isShareable: false, externalLink: '', eTransferDetails: '' 
+  });
+  const [configMethod, setConfigMethod] = useState<'external' | 'e-transfer'>('external');
 
   const fundsQuery = useMemoFirebase(() => (activeTeam && db) ? query(collection(db, 'teams', activeTeam.id, 'fundraising'), orderBy('deadline', 'asc')) : null, [activeTeam?.id, db]);
   const { data: rawCampaigns, isLoading } = useCollection<FundraisingOpportunity>(fundsQuery);
@@ -102,7 +108,7 @@ export default function FundraisingPage() {
     const totalRaised = allCampaigns.reduce((sum, f) => sum + f.currentAmount, 0);
     const totalGoal = allCampaigns.reduce((sum, f) => sum + f.goalAmount, 0);
     const efficiency = totalGoal > 0 ? Math.round((totalRaised / totalGoal) * 100) : 0;
-    const donorCount = allCampaigns.length * 12; // Approximation for MVP stats
+    const donorCount = allCampaigns.length * 12; // Approximation
     return { totalRaised, efficiency, donorCount };
   }, [allCampaigns]);
 
@@ -113,7 +119,9 @@ export default function FundraisingPage() {
     setIsProcessing(true);
     await addFundraisingOpportunity({
       ...newFund,
-      goalAmount: parseFloat(newFund.goal)
+      goalAmount: parseFloat(newFund.goal),
+      externalLink: configMethod === 'external' ? newFund.externalLink : '',
+      eTransferDetails: configMethod === 'e-transfer' ? newFund.eTransferDetails : ''
     });
     setIsAddOpen(false);
     setIsProcessing(false);
@@ -182,12 +190,6 @@ export default function FundraisingPage() {
           <Button variant={filterMode === 'active' ? 'default' : 'ghost'} className="rounded-xl h-10 px-8 font-black uppercase text-[10px] tracking-widest" onClick={() => setFilterMode('active')}>Active Strategies</Button>
           <Button variant={filterMode === 'past' ? 'default' : 'ghost'} className="rounded-xl h-10 px-8 font-black uppercase text-[10px] tracking-widest" onClick={() => setFilterMode('past')}>Archive Ledger</Button>
         </div>
-        {isLimitReached && (
-          <div className="flex items-center gap-2 bg-red-50 px-4 py-2 rounded-xl border border-red-100 animate-pulse">
-            <Lock className="h-3 w-3 text-red-600" />
-            <span className="text-[10px] font-black text-red-600 uppercase tracking-widest">Campaign Limit: 2 Max</span>
-          </div>
-        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -264,7 +266,7 @@ export default function FundraisingPage() {
             <div className="space-y-6">
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Campaign Title</Label>
-                <Input placeholder="e.g. 2024 Nationals Travel Fund" value={newFund.title} onChange={e => setNewFund({...newFund, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold focus:border-primary/20 transition-all" />
+                <Input placeholder="e.g. 2024 Nationals Travel Fund" value={newFund.title} onChange={e => setNewFund({...newFund, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold focus:border-primary/20 transition-all shadow-inner" />
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -276,27 +278,52 @@ export default function FundraisingPage() {
                   <Input type="date" value={newFund.deadline} onChange={e => setNewFund({...newFund, deadline: e.target.value})} className="h-14 rounded-2xl border-2 font-black" />
                 </div>
               </div>
+              
               <div className="space-y-4 pt-4 border-t">
-                <div className="flex items-center justify-between p-5 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Configure Payment Protocol</Label>
+                <RadioGroup value={configMethod} onValueChange={(v: any) => setConfigMethod(v)} className="grid grid-cols-2 gap-4">
+                  <div className={cn("p-4 rounded-xl border-2 transition-all cursor-pointer", configMethod === 'external' ? "border-primary bg-primary/5 shadow-sm" : "border-muted")} onClick={() => setConfigMethod('external')}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <RadioGroupItem value="external" id="c_ext" />
+                      <Label htmlFor="c_ext" className="font-black text-[10px] uppercase">Digital Hub</Label>
+                    </div>
+                    <p className="text-[8px] font-medium text-muted-foreground uppercase">Redirect to Stripe/PayPal</p>
+                  </div>
+                  <div className={cn("p-4 rounded-xl border-2 transition-all cursor-pointer", configMethod === 'e-transfer' ? "border-primary bg-primary/5 shadow-sm" : "border-muted")} onClick={() => setConfigMethod('e-transfer')}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <RadioGroupItem value="e-transfer" id="c_et" />
+                      <Label htmlFor="c_et" className="font-black text-[10px] uppercase">E-Transfer</Label>
+                    </div>
+                    <p className="text-[8px] font-medium text-muted-foreground uppercase">Direct Instruction Ledger</p>
+                  </div>
+                </RadioGroup>
+
+                {configMethod === 'external' && (
+                  <div className="space-y-2 animate-in slide-in-from-top-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Digital Payment URL</Label>
+                    <Input placeholder="Stripe, PayPal, Venmo URL..." value={newFund.externalLink} onChange={e => setNewFund({...newFund, externalLink: e.target.value})} className="h-12 rounded-xl border-2 bg-muted/10 font-bold" />
+                  </div>
+                )}
+
+                {configMethod === 'e-transfer' && (
+                  <div className="space-y-2 animate-in slide-in-from-top-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">E-Transfer Protocol</Label>
+                    <Textarea placeholder="Define security questions and recipient email..." value={newFund.eTransferDetails} onChange={e => setNewFund({...newFund, eTransferDetails: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium bg-muted/10 resize-none p-4" />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between p-5 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20 mt-4">
                   <div>
                     <p className="text-xs font-black uppercase leading-tight">Public Enrollment</p>
                     <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter mt-1">Enable unauthenticated donation portal</p>
                   </div>
                   <Switch checked={newFund.isShareable} onCheckedChange={v => setNewFund({...newFund, isShareable: v})} />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">External Payment Hub (Opt)</Label>
-                  <Input placeholder="Stripe, PayPal, Venmo URL..." value={newFund.externalLink} onChange={e => setNewFund({...newFund, externalLink: e.target.value})} className="h-12 rounded-xl border-2 bg-muted/10 font-bold" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">E-Transfer Protocol (Opt)</Label>
-                  <Textarea placeholder="Define security questions and recipient email..." value={newFund.eTransferDetails} onChange={e => setNewFund({...newFund, eTransferDetails: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium bg-muted/10 resize-none p-4" />
-                </div>
               </div>
             </div>
             <DialogFooter>
               <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title || !newFund.goal}>
-                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Authorize Campaign Deployment"}
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Authorize Campaign Deployment"}
               </Button>
             </DialogFooter>
           </div>
