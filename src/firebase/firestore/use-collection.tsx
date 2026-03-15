@@ -79,8 +79,7 @@ export function useCollection<T = any>(
         if (!isMounted.current) return;
         
         // Suppress transient errors during rapid state transitions or lack of auth
-        if (err.code === 'permission-denied' && !path.startsWith('teams/')) {
-           // Allow silent failure for public collections like 'plans' when auth is resolving
+        if (err.code === 'permission-denied' && (path === 'plans' || path === 'features')) {
            setIsLoading(false);
            return;
         }

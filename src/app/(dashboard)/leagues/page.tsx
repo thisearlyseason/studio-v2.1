@@ -764,7 +764,7 @@ export default function LeaguesPage() {
       {/* CREATE LEAGUE DIALOG */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden bg-white text-foreground">
-          <DialogTitle className="sr-only">League Architect Architect</DialogTitle>
+          <DialogTitle className="sr-only">League Architect Protocol</DialogTitle>
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-10 space-y-8">
             <DialogHeader>
