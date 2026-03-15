@@ -669,8 +669,8 @@ export default function LeaguesPage() {
                       <Button 
                         asChild={isPro} 
                         className={cn(
-                          "h-12 px-8 rounded-xl font-black text-xs uppercase transition-all flex items-center border-2",
-                          isPro ? "bg-white text-black border-black hover:bg-primary hover:text-white hover:border-primary" : "bg-white/50 text-muted-foreground/50 border-muted cursor-not-allowed"
+                          "h-12 px-8 rounded-xl font-black text-xs uppercase transition-all flex items-center border-2 hover:bg-primary hover:text-white hover:border-primary",
+                          isPro ? "bg-white text-black border-black" : "bg-white/50 text-muted-foreground/50 border-muted cursor-not-allowed"
                         )}
                       >
                         {isPro ? (

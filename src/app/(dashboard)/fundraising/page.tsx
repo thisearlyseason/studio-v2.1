@@ -274,7 +274,7 @@ export default function FundraisingPage() {
                   <Input type="number" value={newFund.goal} onChange={e => setNewFund({...newFund, goal: e.target.value})} className="h-14 rounded-2xl border-2 font-black text-xl text-primary" />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Deadline</Label>
+                  <Label className="text-[10px) font-black uppercase tracking-widest ml-1 text-foreground">Deadline</Label>
                   <Input type="date" value={newFund.deadline} onChange={e => setNewFund({...newFund, deadline: e.target.value})} className="h-14 rounded-2xl border-2 font-black text-foreground" />
                 </div>
               </div>
