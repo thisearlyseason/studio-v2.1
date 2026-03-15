@@ -649,7 +649,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const myAlerts = (alertsData || []).filter(alert => {
       if (alert.audience === 'everyone') return true;
       if (alert.audience === 'coaches' && isStaff) return true;
-      if (alert.audience === 'players' && (userProfile.role === 'adult_player')) return true;
+      if (alert.audience === 'players' && (userProfile.role === 'adult_player' || userProfile.role === 'coach')) return true;
       if (alert.audience === 'parents' && (userProfile.role === 'parent')) return true;
       return false;
     });

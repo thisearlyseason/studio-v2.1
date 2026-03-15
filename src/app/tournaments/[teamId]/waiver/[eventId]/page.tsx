@@ -133,7 +133,7 @@ export default function PublicTournamentWaiverPage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30 flex flex-col items-center justify-center p-6 md:p-12">
+    <div className="min-h-screen bg-muted/30 flex flex-col items-center justify-center p-6 md:p-12 text-foreground">
       <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
       
       <div className="max-w-4xl w-full grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
@@ -198,9 +198,9 @@ export default function PublicTournamentWaiverPage() {
             
             <CardContent className="p-8 lg:p-10 space-y-6">
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Select Your Squad</Label>
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Select Your Squad</Label>
                 <Select value={selectedTeam} onValueChange={setSelectedTeam} required>
-                  <SelectTrigger className="h-12 rounded-xl border-2 bg-muted/30 font-bold focus:bg-white transition-all">
+                  <SelectTrigger className="h-12 rounded-xl border-2 bg-muted/30 font-bold focus:bg-white transition-all text-foreground">
                     <SelectValue placeholder="Select from roster..." />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
@@ -213,22 +213,22 @@ export default function PublicTournamentWaiverPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Representative Name</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Representative Name</Label>
                   <Input 
                     placeholder="Full Legal Name..." 
                     value={coachName}
                     onChange={e => setCoachName(e.target.value)}
-                    className="h-12 rounded-xl border-2 font-bold bg-muted/30 focus:bg-white"
+                    className="h-12 rounded-xl border-2 font-bold bg-muted/30 focus:bg-white text-foreground"
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Current Date</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Current Date</Label>
                   <Input 
                     type="date"
                     value={signDate}
                     onChange={e => setSignDate(e.target.value)}
-                    className="h-12 rounded-xl border-2 font-bold bg-muted/30 focus:bg-white"
+                    className="h-12 rounded-xl border-2 font-bold bg-muted/30 focus:bg-white text-foreground"
                     required
                   />
                 </div>
@@ -241,7 +241,7 @@ export default function PublicTournamentWaiverPage() {
                   onCheckedChange={(v) => setAgreed(!!v)} 
                   className="h-6 w-6 rounded-lg border-2" 
                 />
-                <Label htmlFor="agree" className="text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight">
+                <Label htmlFor="agree" className="text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight text-foreground">
                   I verify that I have authority to sign for this squad and accept all terms.
                 </Label>
               </div>

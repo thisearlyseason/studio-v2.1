@@ -349,7 +349,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </div>
             </header>
             
-            <main className="flex-1 overflow-y-auto p-4 md:p-10 max-w-7xl mx-auto w-full custom-scrollbar pb-32 md:pb-10">
+            <main className="flex-1 overflow-y-auto p-4 md:p-10 max-w-7xl mx-auto w-full custom-scrollbar pb-32 md:pb-10 text-foreground">
               {children}
             </main>
 
@@ -392,10 +392,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 </button>
 
                 <Sheet open={isMoreMenuOpen} onOpenChange={setIsMoreMenuOpen}>
-                  <SheetContent side="bottom" className="rounded-t-[3rem] p-0 border-none shadow-2xl h-[80vh] flex flex-col">
+                  <SheetContent side="bottom" className="rounded-t-[3rem] p-0 border-none shadow-2xl h-[80vh] flex flex-col bg-white">
                     <div className="h-2 bg-primary w-full shrink-0" />
                     <SheetHeader className="p-8 pb-4">
-                      <SheetTitle className="text-2xl font-black uppercase tracking-tight">Tactical Menu</SheetTitle>
+                      <SheetTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Tactical Menu</SheetTitle>
                       <SheetDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">
                         Extended Squad Operations
                       </SheetDescription>
@@ -405,8 +405,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         <div className="space-y-3">
                           <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Operational Hub</p>
                           <div className="grid grid-cols-2 gap-3">
-                            {coordinationTabs.map((tab) => {
-                              if (tab.gate === 'staff_or_parent' && !(isStaff || isParent)) return null;
+                            {filteredCoordTabs.map((tab) => {
                               if (bottomNavItems.find(item => item.href === tab.href)) return null;
                               const isLocked = tab.pro && !isPro && isStaff;
                               
@@ -488,7 +487,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                                   <AvatarFallback className="font-black text-[10px]">{user?.name?.[0]}</AvatarFallback>
                                 </Avatar>
                                 <div className="flex flex-col">
-                                  <span className="text-xs font-black uppercase tracking-widest">Profile & Settings</span>
+                                  <span className="text-xs font-black uppercase tracking-widest text-foreground">Profile & Settings</span>
                                   <span className="text-[8px] font-bold text-muted-foreground uppercase">Managed Global ID</span>
                                 </div>
                               </div>
