@@ -27,7 +27,10 @@ import {
   XCircle,
   Plus,
   DollarSign,
-  Signature
+  Signature,
+  FileSignature,
+  Download,
+  ExternalLink
 } from 'lucide-react';
 import { 
   Select, 
@@ -98,22 +101,42 @@ export default function PublicLeagueRegistrationPage() {
   }
 
   if (isSuccess) {
+    const waiverUrl = `${window.location.origin}/tournaments/${leagueId}/waiver/${config?.id}`;
     return (
       <div className="min-h-screen bg-muted/30 flex flex-col items-center justify-center p-6 text-center">
         <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
-        <Card className="max-w-md w-full p-10 rounded-[3rem] border-none shadow-2xl bg-white animate-in zoom-in-95 duration-500">
+        <Card className="max-w-lg w-full p-10 rounded-[3rem] border-none shadow-2xl bg-white animate-in zoom-in-95 duration-500">
           <div className="bg-green-100 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-8">
             <CheckCircle2 className="h-10 w-10 text-green-600" />
           </div>
           <h2 className="text-3xl font-black uppercase tracking-tighter">Application Dispatched</h2>
           <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] mt-2 mb-8">Submission Successful</p>
-          <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 text-left">
-            <p className="text-[10px] font-black uppercase text-primary">Status</p>
-            <p className="text-sm font-bold mt-1">
-              {config?.confirmation_message || "The squad coordinator has been notified. You will be contacted once your application has been reviewed and assigned."}
-            </p>
+          
+          <div className="space-y-6">
+            <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 text-left">
+              <p className="text-[10px] font-black uppercase text-primary">Confirmation Memo</p>
+              <p className="text-sm font-bold mt-1 leading-relaxed">
+                {config?.confirmation_message || "The squad coordinator has been notified. You will be contacted once your application has been reviewed and assigned."}
+              </p>
+            </div>
+
+            <div className="bg-black text-white p-8 rounded-3xl space-y-4 text-left shadow-xl group">
+              <div className="flex items-center gap-3">
+                <FileSignature className="h-6 w-6 text-primary" />
+                <h4 className="text-lg font-black uppercase tracking-tight">Legal Execution Protocol</h4>
+              </div>
+              <p className="text-xs font-medium text-white/60 leading-relaxed italic">
+                Strategic readiness requires digital execution of all institutional waivers. Please complete this step immediately.
+              </p>
+              <Button asChild className="w-full h-12 rounded-xl bg-white text-black hover:bg-primary hover:text-white transition-all font-black uppercase text-[10px] tracking-widest">
+                <a href={waiverUrl} target="_blank">
+                  Sign Operational Waiver <ExternalLink className="ml-2 h-3 w-3" />
+                </a>
+              </Button>
+            </div>
           </div>
-          <Button variant="ghost" className="mt-8 font-black uppercase text-xs" onClick={() => window.location.reload()}>Submit Another</Button>
+
+          <Button variant="ghost" className="mt-10 font-black uppercase text-xs" onClick={() => window.location.reload()}>Submit Another</Button>
         </Card>
       </div>
     );

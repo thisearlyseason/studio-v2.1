@@ -4,8 +4,14 @@
  * Hardened for balanced distribution and multi-venue resource mapping.
  */
 
-import { addMinutes, format, isBefore, parse, addDays, differenceInDays } from 'date-fns';
+import { addMinutes, format, isBefore, parse, addDays, eachDayOfInterval } from 'date-fns';
 import { TournamentGame } from '@/components/providers/team-provider';
+
+export interface DailyWindow {
+  date: string;
+  startTime: string;
+  endTime: string;
+}
 
 export interface ScheduleConfig {
   teams: string[];
@@ -19,13 +25,14 @@ export interface ScheduleConfig {
   gamesPerTeam?: number;
   doubleHeaders?: boolean;
   blackoutDates?: string[]; // ISO Strings
+  dailyWindows?: DailyWindow[];
 }
 
 /**
  * Generates an automated tournament itinerary.
  */
 export function generateTournamentSchedule(config: ScheduleConfig): TournamentGame[] {
-  const { teams, fields, startDate, endDate, startTime, endTime, gameLength, breakLength } = config;
+  const { teams, fields, startDate, endDate, startTime, endTime, gameLength, breakLength, dailyWindows } = config;
   const games: TournamentGame[] = [];
   
   const startD = new Date(startDate);
@@ -39,27 +46,32 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
   }
 
   const availableSlots: { date: Date; time: Date; field: string }[] = [];
-  let currentDay = new Date(startDate);
-  
-  while (!isBefore(endD, currentDay)) {
-    let currentTime = parse(startTime, 'HH:mm', currentDay);
-    const dayEndTime = parse(endTime, 'HH:mm', currentDay);
+  const dayInterval = eachDayOfInterval({ start: startD, end: endD });
+
+  dayInterval.forEach(day => {
+    const dayStr = format(day, 'yyyy-MM-dd');
+    const window = dailyWindows?.find(w => w.date === dayStr);
+    
+    let currentStartTime = window ? window.startTime : startTime;
+    let currentEndTime = window ? window.endTime : endTime;
+
+    let currentTime = parse(currentStartTime, 'HH:mm', day);
+    const dayEndTime = parse(currentEndTime, 'HH:mm', day);
 
     while (isBefore(currentTime, dayEndTime)) {
       for (const field of fields) {
-        availableSlots.push({ date: new Date(currentDay), time: new Date(currentTime), field });
+        availableSlots.push({ date: new Date(day), time: new Date(currentTime), field });
       }
       currentTime = addMinutes(currentTime, gameLength + breakLength);
     }
-    currentDay = addDays(currentDay, 1);
-  }
+  });
 
   if (availableSlots.length === 0 || matchups.length === 0) return [];
-  const step = Math.max(1, Math.floor(availableSlots.length / matchups.length));
-
-  for (let i = 0; i < matchups.length; i++) {
-    const slotIdx = i * step;
-    if (slotIdx >= availableSlots.length) break;
+  
+  // Distribute matchups across available slots
+  for (let i = 0; i < matchPoolSize(matchups.length, availableSlots.length); i++) {
+    const slotIdx = i;
+    if (slotIdx >= availableSlots.length || i >= matchups.length) break;
     const slot = availableSlots[slotIdx];
     const [t1, t2] = matchups[i];
 
@@ -77,6 +89,10 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
   }
 
   return games;
+}
+
+function matchPoolSize(matchCount: number, slotCount: number) {
+  return Math.min(matchCount, slotCount);
 }
 
 /**
