@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -1096,7 +1095,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeam?.id, db]);
 
   const submitPublicDonation = useCallback(async (teamId: string, fundId: string, data: any) => {
-    const fundRef = doc(db, 'teams', teamId, 'fundraising', fundId);
     const id = `don_${Date.now()}`;
     const entry: DonationEntry = {
       id,
@@ -1105,16 +1103,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       phone: data.phone,
       amount: parseFloat(data.amount),
       method: data.method,
-      status: data.method === 'external' ? 'confirmed' : 'pending',
+      status: 'pending', // ALL donations start as pending for institutional auditing
       createdAt: new Date().toISOString()
     };
     
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'teams', teamId, 'fundraising', fundId, 'donations', id), clean(entry));
-    if (entry.status === 'confirmed') {
-      batch.update(fundRef, { currentAmount: increment(entry.amount) });
-    }
-    await batch.commit();
+    await setDoc(doc(db, 'teams', teamId, 'fundraising', fundId, 'donations', id), clean(entry));
   }, [db]);
 
   const confirmExternalDonation = useCallback(async (fundId: string, donationId: string, amount: number) => {
