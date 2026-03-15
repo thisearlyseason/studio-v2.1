@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -39,7 +40,11 @@ import {
   List,
   LayoutGrid,
   X,
-  ChevronRight
+  ChevronRight,
+  Hash,
+  Copy,
+  Link as LinkIcon,
+  Trash2
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -125,7 +130,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
       });
       await updateLeagueSchedule(league.id, schedule);
       onOpenChange(false);
-      toast({ title: "Season Deployed", description: `${schedule.length} matches distributed."` });
+      toast({ title: "Season Deployed", description: `${schedule.length} matches distributed.` });
     } catch (e) {
       toast({ title: "Generation Failed", variant: "destructive" });
     } finally {
@@ -366,7 +371,10 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
 
 export default function LeaguesPage() {
   const { user: authUser, isAuthResolved } = useUser();
-  const { activeTeam, createLeague, inviteTeamToLeague, manuallyAddTeamToLeague, isStaff, isPro, householdEvents } = useTeam();
+  const { 
+    activeTeam, createLeague, inviteTeamToLeague, manuallyAddTeamToLeague, 
+    isStaff, isPro, deleteLeagueInvite 
+  } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
@@ -375,6 +383,8 @@ export default function LeaguesPage() {
   const [isSeasonOpen, setIsSeasonOpen] = useState(false);
   const [leagueName, setLeagueName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteTeamName, setInviteTeamName] = useState('');
+  const [inviteMethod, setInviteMethod] = useState<'manual' | 'digital' | 'code' | 'portal'>('digital');
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('standings');
 
@@ -382,6 +392,9 @@ export default function LeaguesPage() {
   const { data: rawLeagues, isLoading: isLeaguesLoading } = useCollection<League>(leaguesQuery);
   const leagues = rawLeagues || [];
   const activeLeague = leagues[0] || null;
+
+  const invitesQuery = useMemoFirebase(() => (db && activeLeague) ? query(collection(db, 'leagues', 'global', 'invites'), where('leagueId', '==', activeLeague.id), orderBy('createdAt', 'desc')) : null, [db, activeLeague]);
+  const { data: invites } = useCollection<LeagueInvite>(invitesQuery);
 
   const sortedStandings = useMemo(() => {
     if (!activeLeague || !activeLeague.teams) return [];
@@ -398,17 +411,40 @@ export default function LeaguesPage() {
     } finally { setIsProcessing(false); }
   };
 
-  const handleSendInvite = async () => {
-    if (!inviteEmail.trim() || !activeLeague) return;
+  const handleRecruitmentAction = async () => {
+    if (!activeLeague) return;
     setIsProcessing(true);
     try {
-      await inviteTeamToLeague(activeLeague.id, activeLeague.name, inviteEmail.toLowerCase());
-      setIsInviteOpen(false); setInviteEmail(''); 
-      toast({ title: "Invite Dispatched", description: `Invitation sent to ${inviteEmail}.` });
-    } catch (e) {
-      toast({ title: "Invite Failed", description: "Verification failed. Please try again.", variant: "destructive" });
+      if (inviteMethod === 'manual') {
+        if (!inviteTeamName.trim()) throw new Error("Team name required");
+        await manuallyAddTeamToLeague(activeLeague.id, inviteTeamName, inviteEmail);
+        toast({ title: "Squad Enrolled", description: `${inviteTeamName} added to standings.` });
+      } else if (inviteMethod === 'digital') {
+        if (!inviteEmail.trim()) throw new Error("Email required");
+        await inviteTeamToLeague(activeLeague.id, activeLeague.name, inviteEmail.toLowerCase(), inviteTeamName);
+        toast({ title: "Invite Dispatched", description: `Invitation sent to ${inviteEmail}.` });
+      }
+      setIsInviteOpen(false);
+      setInviteEmail('');
+      setInviteTeamName('');
+    } catch (e: any) {
+      toast({ title: "Action Failed", description: e.message, variant: "destructive" });
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const copyCode = () => {
+    if (activeLeague?.inviteCode) {
+      navigator.clipboard.writeText(activeLeague.inviteCode);
+      toast({ title: "Invite Code Copied" });
+    }
+  };
+
+  const copyPortal = () => {
+    if (activeLeague) {
+      navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.id}`);
+      toast({ title: "Portal Link Copied" });
     }
   };
 
@@ -436,7 +472,7 @@ export default function LeaguesPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-2"><Badge className="bg-primary text-white border-none h-5 text-[8px] uppercase font-black px-3">Premier Hub</Badge></div>
                     <h2 className="text-4xl font-black tracking-tight leading-none uppercase">{activeLeague.name}</h2>
-                    <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-2">{activeLeague.sport} • {Object.keys(activeLeague.teams || {}).length} Squads Enrolled</p>
+                    <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-2">{activeLeague.sport || 'Multi-Sport'} • {Object.keys(activeLeague.teams || {}).length} Squads Enrolled</p>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-center gap-3">
@@ -449,7 +485,7 @@ export default function LeaguesPage() {
                           <span>Registration Hub</span>
                         </Link>
                       </Button>
-                      <Button variant="secondary" className="h-12 px-8 rounded-xl font-black text-xs uppercase bg-white text-black border-2 border-transparent shadow-sm" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Invite Team</Button>
+                      <Button variant="secondary" className="h-12 px-8 rounded-xl font-black text-xs uppercase bg-white text-black border-2 border-transparent shadow-sm" onClick={() => setIsInviteOpen(true)}><UserPlus className="h-4 w-4 mr-2" /> Recruit Teams</Button>
                     </>
                   )}
                   <Button asChild variant="ghost" className="h-12 px-6 rounded-xl font-black text-xs uppercase text-white/60 hover:text-white"><Link href={`/leagues/spectator/${activeLeague.id}`} target="_blank"><ExternalLink className="h-4 w-4 mr-2" /> Public Portal</Link></Button>
@@ -458,12 +494,10 @@ export default function LeaguesPage() {
             </CardContent>
           </Card>
 
-          {isOrganizer && (
-            <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex w-full md:w-auto">
-              <Button variant={activeTab === 'standings' ? 'default' : 'ghost'} className="rounded-xl flex-1 md:flex-none font-black text-[10px] uppercase px-8" onClick={() => setActiveTab('standings')}>Standings</Button>
-              <Button variant={activeTab === 'command' ? 'default' : 'ghost'} className="rounded-xl flex-1 md:flex-none font-black text-[10px] uppercase px-8" onClick={() => setActiveTab('command')}>League Command</Button>
-            </div>
-          )}
+          <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex w-full md:w-auto">
+            <Button variant={activeTab === 'standings' ? 'default' : 'ghost'} className="rounded-xl flex-1 md:flex-none font-black text-[10px] uppercase px-8" onClick={() => setActiveTab('standings')}>Standings</Button>
+            {isOrganizer && <Button variant={activeTab === 'command' ? 'default' : 'ghost'} className="rounded-xl flex-1 md:flex-none font-black text-[10px] uppercase px-8" onClick={() => setActiveTab('command')}>League Command</Button>}
+          </div>
 
           {activeTab === 'standings' ? (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -496,7 +530,81 @@ export default function LeaguesPage() {
               </aside>
             </div>
           ) : (
-            <LeagueOverview league={activeLeague} schedule={activeLeague.schedule || []} />
+            <div className="space-y-10">
+              <LeagueOverview league={activeLeague} schedule={activeLeague.schedule || []} />
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <section className="space-y-6">
+                  <div className="flex items-center gap-3 px-2">
+                    <Mail className="h-5 w-5 text-primary" />
+                    <h3 className="text-xl font-black uppercase tracking-tight">Tactical Invitations</h3>
+                  </div>
+                  <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+                    <CardContent className="p-0">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest text-muted-foreground border-b">
+                            <tr>
+                              <th className="px-8 py-5">Invited Squad</th>
+                              <th className="px-4 py-5">Status</th>
+                              <th className="px-8 py-5 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {invites?.map(invite => (
+                              <tr key={invite.id} className="hover:bg-muted/5 transition-colors">
+                                <td className="px-8 py-6">
+                                  <p className="font-black text-sm uppercase truncate">{invite.teamName || 'Prospective Squad'}</p>
+                                  <p className="text-[10px] font-bold text-muted-foreground">{invite.invitedEmail}</p>
+                                </td>
+                                <td className="px-4 py-6">
+                                  <Badge className={cn(
+                                    "border-none font-black text-[8px] uppercase px-2 h-5",
+                                    invite.status === 'pending' ? "bg-amber-100 text-amber-700" : invite.status === 'accepted' ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                                  )}>
+                                    {invite.status}
+                                  </Badge>
+                                </td>
+                                <td className="px-8 py-6 text-right">
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/5" onClick={() => deleteLeagueInvite(invite.id)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                            {(!invites || invites.length === 0) && (
+                              <tr>
+                                <td colSpan={3} className="py-12 text-center opacity-30 text-[10px] font-black uppercase">No active invitations</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </section>
+
+                <aside className="space-y-6">
+                  <div className="flex items-center gap-3 px-2">
+                    <Zap className="h-5 w-5 text-primary" />
+                    <h3 className="text-xl font-black uppercase tracking-tight">Recruitment Pulse</h3>
+                  </div>
+                  <Card className="rounded-[2.5rem] bg-primary text-white p-8 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform">
+                      <ArrowUpRight className="h-24 w-24" />
+                    </div>
+                    <div className="space-y-4 relative z-10">
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Strategic Tip</p>
+                      <h4 className="text-2xl font-black uppercase tracking-tight leading-tight">Leverage the Portal</h4>
+                      <p className="text-xs font-medium text-white/80 leading-relaxed italic">
+                        "Sharing your public registration portal ensures all squads submit verified rosters and medical releases before match day one."
+                      </p>
+                      <Button variant="secondary" className="w-full bg-white text-primary font-black uppercase text-[10px]" onClick={copyPortal}>Copy Portal URL</Button>
+                    </div>
+                  </Card>
+                </aside>
+              </div>
+            </div>
           )}
         </div>
       ) : (
@@ -512,9 +620,78 @@ export default function LeaguesPage() {
       </Dialog>
 
       <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden">
-          <DialogDescription className="sr-only">Send digital invitations to opposing squad coaches.</DialogDescription>
-          <div className="h-2 bg-primary w-full" /><div className="bg-primary/5 p-8 border-b"><DialogHeader><DialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Expand Competition</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Enroll verified squads</DialogDescription></DialogHeader></div><div className="p-8 space-y-6 bg-white"><div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Coach Email</Label><Input placeholder="coach@opposingteam.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" /></div><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSendInvite} disabled={isProcessing || !inviteEmail.trim()}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Dispatch Digital Invite"}</Button></div></DialogContent>
+        <DialogContent className="rounded-[2.5rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <DialogTitle className="sr-only">Expand Competition Menu</DialogTitle>
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 lg:p-10 space-y-8">
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight">Expand Competition</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Enroll verified squads</DialogDescription>
+            </DialogHeader>
+
+            <div className="flex bg-muted/50 p-1 rounded-xl border mb-2">
+              {(['digital', 'manual', 'code', 'portal'] as const).map(m => (
+                <Button key={m} variant={inviteMethod === m ? 'secondary' : 'ghost'} className="flex-1 rounded-lg font-black text-[9px] uppercase h-9" onClick={() => setInviteMethod(m)}>{m}</Button>
+              ))}
+            </div>
+
+            <div className="space-y-6 min-h-[250px]">
+              {(inviteMethod === 'digital' || inviteMethod === 'manual') && (
+                <div className="space-y-4 animate-in slide-in-from-top-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Name</Label>
+                    <Input placeholder="e.g. Metro Tigers" value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Email</Label>
+                    <Input placeholder="coach@opposingteam.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                  </div>
+                  <div className="bg-primary/5 p-4 rounded-xl border-2 border-dashed border-primary/20 space-y-2">
+                    <p className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-2"><Info className="h-3 w-3" /> Tactical Note</p>
+                    <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">
+                      {inviteMethod === 'manual' ? "Directly adds team to standings." : "Dispatches a digital invitation requiring team confirmation."}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {inviteMethod === 'code' && (
+                <div className="space-y-6 animate-in zoom-in-95 text-center py-10">
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Unique Invite Code</p>
+                  <div className="flex items-center justify-center gap-6" onClick={copyCode}>
+                    <span className="text-6xl font-black tracking-widest text-primary font-mono cursor-pointer hover:scale-105 transition-transform">{activeLeague?.inviteCode}</span>
+                    <Copy className="h-8 w-8 text-primary/20" />
+                  </div>
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-4">Share this code with team organizers to join instantly.</p>
+                </div>
+              )}
+
+              {inviteMethod === 'portal' && (
+                <div className="space-y-6 animate-in zoom-in-95 text-center py-10">
+                  <div className="bg-primary/5 p-8 rounded-[2rem] border-2 border-dashed border-primary/20 space-y-4">
+                    <Globe className="h-12 w-12 text-primary mx-auto opacity-40" />
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Public Portal Access</p>
+                    <div className="bg-white p-3 rounded-xl border font-mono text-xs truncate shadow-inner">
+                      {window.location.origin}/register/league/{activeLeague?.id}
+                    </div>
+                    <Button className="w-full h-12 rounded-xl font-black uppercase text-[10px]" onClick={copyPortal}><LinkIcon className="h-4 w-4 mr-2" /> Copy Link</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              {(inviteMethod === 'digital' || inviteMethod === 'manual') && (
+                <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleRecruitmentAction} disabled={isProcessing || !inviteTeamName.trim()}>
+                  {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : (inviteMethod === 'manual' ? "Enroll Squad Directly" : "Dispatch Digital Invite")}
+                </Button>
+              )}
+              {(inviteMethod === 'code' || inviteMethod === 'portal') && (
+                <Button variant="outline" className="w-full h-14 rounded-2xl font-black uppercase text-[10px] border-2" onClick={() => setIsInviteOpen(false)}>Done</Button>
+              )}
+            </DialogFooter>
+          </div>
+        </DialogContent>
       </Dialog>
     </div>
   );

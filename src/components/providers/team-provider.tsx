@@ -89,7 +89,7 @@ export type Team = {
   createdAt?: string;
   teamName?: string;
   isDemo?: boolean;
-  registrationProtocolId?: string; // Tracks if a specific team registration form exists
+  registrationProtocolId?: string;
 };
 
 export type Member = {
@@ -283,6 +283,7 @@ export type League = {
   creatorId: string;
   registrationEnabled?: boolean;
   schedule?: TournamentGame[];
+  inviteCode?: string;
 };
 
 export type Facility = {
@@ -304,7 +305,9 @@ export type LeagueInvite = {
   leagueId: string;
   leagueName: string;
   invitedEmail: string;
+  teamName?: string;
   status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
 };
 
 export type RegistrationFormField = {
@@ -447,7 +450,8 @@ interface TeamContextType {
   deleteField: (facilityId: string, fieldId: string) => Promise<void>;
   createLeague: (name: string) => Promise<string>;
   updateLeagueSchedule: (leagueId: string, schedule: TournamentGame[]) => Promise<void>;
-  inviteTeamToLeague: (leagueId: string, leagueName: string, email: string) => Promise<void>;
+  inviteTeamToLeague: (leagueId: string, leagueName: string, email: string, teamName?: string) => Promise<void>;
+  deleteLeagueInvite: (inviteId: string) => Promise<void>;
   acceptLeagueInvite: (inviteId: string, leagueId: string) => Promise<void>;
   manuallyAddTeamToLeague: (leagueId: string, teamName: string, coachEmail?: string, logoUrl?: string) => Promise<void>;
   saveLeagueRegistrationConfig: (leagueId: string, updates: Partial<LeagueRegistrationConfig>) => Promise<void>;
@@ -689,15 +693,38 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const entryRef = doc(db, 'leagues', contextId, 'registrationEntries', entryId);
     const entrySnap = await getDoc(entryRef);
     let finalRef = entryRef;
+    let entryData = entrySnap.data();
+    
     if (!entrySnap.exists()) {
       const teamEntryRef = doc(db, 'teams', contextId, 'registrationEntries', entryId);
       const teamEntrySnap = await getDoc(teamEntryRef);
-      if (teamEntrySnap.exists()) finalRef = teamEntryRef;
+      if (teamEntrySnap.exists()) {
+        finalRef = teamEntryRef;
+        entryData = teamEntrySnap.data();
+      }
     }
+
+    if (!entryData) return;
+
     await updateDoc(finalRef, { status });
     
-    if (status === 'accepted' && activeTeam) {
-      await createAlert("Enrollment Confirmed", "A new recruit has been officially approved for the roster.", 'everyone');
+    // If accepted in a league context, add them to the teams map
+    if (status === 'accepted') {
+      const leagueRef = doc(db, 'leagues', contextId);
+      const leagueSnap = await getDoc(leagueRef);
+      if (leagueSnap.exists()) {
+        const teamName = entryData.answers?.['name'] || entryData.answers?.['teamName'] || `Recruit ${entryId.slice(-4)}`;
+        await updateDoc(leagueRef, {
+          [`teams.recruit_${entryId}`]: {
+            teamName,
+            wins: 0, losses: 0, ties: 0, points: 0
+          }
+        });
+      }
+
+      if (activeTeam) {
+        await createAlert("Enrollment Confirmed", `Squad ${entryData.answers?.['name'] || ''} has been officially approved for the league.`, 'everyone');
+      }
     }
     
     toast({ title: status === 'accepted' ? "Recruit Enrolled" : "Application Declined" });
@@ -913,9 +940,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     deleteFacility: async (id: string) => { await deleteDoc(doc(db, 'facilities', id)); },
     addField: async (fid: string, n: string) => { await addDoc(collection(db, 'facilities', fid, 'fields'), clean({ name: n, facilityId: fid, createdAt: new Date().toISOString() })); },
     deleteField: async (fid: string, id: string) => { await deleteDoc(doc(db, 'facilities', fid, 'fields', id)); },
-    createLeague: async (n: string) => { if (activeTeam?.id && firebaseUser) { const r = doc(collection(db, 'leagues')); await setDoc(r, clean({ id: r.id, name: n, sport: activeTeam.sport, teams: { [activeTeam.id]: { teamName: activeTeam.name, wins: 0, losses: 0, ties: 0, points: 0 } }, creatorId: firebaseUser.uid })); return r.id; } return ''; },
+    createLeague: async (n: string) => { if (activeTeam?.id && firebaseUser) { const r = doc(collection(db, 'leagues')); const code = Math.random().toString(36).substring(2, 8).toUpperCase(); await setDoc(r, clean({ id: r.id, name: n, sport: activeTeam.sport, teams: { [activeTeam.id]: { teamName: activeTeam.name, wins: 0, losses: 0, ties: 0, points: 0 } }, creatorId: firebaseUser.uid, inviteCode: code })); return r.id; } return ''; },
     updateLeagueSchedule: async (lid: string, s: TournamentGame[]) => { await updateDoc(doc(db, 'leagues', lid), { schedule: s }); },
-    inviteTeamToLeague: async (lid: string, ln: string, e: string) => { await addDoc(collection(db, 'leagues', 'global', 'invites'), clean({ leagueId: lid, leagueName: ln, invitedEmail: e, status: 'pending', createdAt: new Date().toISOString() })); },
+    inviteTeamToLeague: async (lid: string, ln: string, e: string, tn?: string) => { await addDoc(collection(db, 'leagues', 'global', 'invites'), clean({ leagueId: lid, leagueName: ln, invitedEmail: e, teamName: tn, status: 'pending', createdAt: new Date().toISOString() })); },
+    deleteLeagueInvite: async (id: string) => { await deleteDoc(doc(db, 'leagues', 'global', 'invites', id)); },
     acceptLeagueInvite: async (iid: string, lid: string) => { if (activeTeam?.id) { const b = writeBatch(db); b.update(doc(db, 'leagues', 'global', 'invites', iid), { status: 'accepted' }); b.update(doc(db, 'leagues', lid), { [`teams.${activeTeam.id}`]: { teamName: activeTeam.name, wins: 0, losses: 0, ties: 0, points: 0 } }); await b.commit(); } },
     manuallyAddTeamToLeague: async (lid: string, n: string, e?: string, l?: string) => { await updateDoc(doc(db, 'leagues', lid), { [`teams.manual_${Date.now()}`]: { teamName: n, coachEmail: e, teamLogoUrl: l, wins: 0, losses: 0, ties: 0, points: 0 } }); },
     saveLeagueRegistrationConfig: async (lid: string, u: any) => { const pid = u.id || 'config'; await setDoc(doc(db, 'leagues', lid, 'registration', pid), clean({ ...u, id: pid }), { merge: true }); },
