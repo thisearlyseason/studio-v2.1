@@ -72,11 +72,7 @@ export type RecruitingProfile = {
   graduationYear: number;
   academicGPA: number;
   intendedMajor?: string;
-  highlightVideo?: string;
-  fullGameFilm?: string;
-  skillsVideo?: string;
   bio: string;
-  createdAt: any;
   updatedAt: any;
 };
 
@@ -86,7 +82,6 @@ export type AthleticMetrics = {
   wingspan?: number;
   benchPress?: number;
   squat?: number;
-  enduranceScore?: number;
   verified: boolean;
 };
 
@@ -96,35 +91,18 @@ export type PlayerStat = {
   gamesPlayed: number;
   points: number;
   assists: number;
-  rebounds: number;
-  goals: number;
-  tackles: number;
-  customStats?: Record<string, any>;
 };
 
 export type PlayerEvaluation = {
   id: string;
   evaluatorId: string;
-  evaluatorRole: "coach" | "scout";
-  athleticism: number;
-  skillLevel: number;
-  gameIQ: number;
-  competitiveness: number;
-  coachability: number;
-  leadership: number;
   notes: string;
   createdAt: any;
 };
 
 export type RecruitingContact = {
   playerEmail?: string;
-  playerPhone?: string;
-  parentName?: string;
-  parentPhone?: string;
   parentEmail?: string;
-  coachName?: string;
-  coachEmail?: string;
-  coachPhone?: string;
 };
 
 export type PlayerVideo = {
@@ -132,7 +110,6 @@ export type PlayerVideo = {
   title: string;
   type: "highlight" | "fullGame" | "skills";
   url: string;
-  createdAt: any;
 };
 
 export type Team = {
@@ -169,7 +146,6 @@ export type Member = {
   isMinor?: boolean;
   birthdate?: string;
   notes?: string;
-  joinedAt?: string;
   amountOwed?: number;
   feesPaid?: boolean;
   totalFees?: number;
@@ -178,7 +154,6 @@ export type Member = {
   gradYear?: string;
   gpa?: string;
   school?: string;
-  highlightUrl?: string;
   phone?: string;
   skills?: string[];
   achievements?: string[];
@@ -191,7 +166,6 @@ export type TeamEvent = {
   date: string;
   endDate?: string;
   startTime: string;
-  endTime?: string;
   location: string;
   description: string;
   eventType: string;
@@ -225,7 +199,6 @@ export type TeamIncident = {
   witnesses?: string;
   actionsTaken?: string;
   createdAt: string;
-  reportedBy: string;
 };
 
 export type VolunteerOpportunity = {
@@ -290,7 +263,6 @@ export type League = {
   creatorId: string;
   schedule?: any[];
   inviteCode?: string;
-  teamAgreements?: Record<string, any>;
 };
 
 export type LeagueInvite = {
@@ -507,7 +479,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [householdBalance, setHouseholdBalance] = useState(0);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
-  // --- DATA PIPELINES ---
+  // --- DATA PIPELINES (INITIALIZED FIRST) ---
   const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
@@ -543,35 +515,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const isClubManager = useMemo(() => ['elite_teams', 'elite_league'].includes(userProfile?.activePlanId || ''), [userProfile?.activePlanId]);
   const isSuperAdmin = useMemo(() => userProfile?.email === 'thisearlyseason@gmail.com', [userProfile?.email]);
 
-  // --- SYNC EFFECTS ---
-  useEffect(() => {
-    if (!firebaseUser?.uid || !db || !isAuthResolved) return;
-    return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setUserProfile({
-          id: firebaseUser.uid,
-          name: data.fullName || data.name || '',
-          email: data.email || '',
-          phone: data.phone || '',
-          avatar: data.avatarUrl || data.avatar || '',
-          role: data.role || 'adult_player',
-          activePlanId: data.activePlanId,
-          proTeamLimit: data.proTeamLimit || 0,
-          createdAt: data.createdAt,
-          isDemo: data.isDemo,
-          seenAlertIds: data.seenAlertIds || []
-        });
-      }
-    });
-  }, [firebaseUser?.uid, db, isAuthResolved]);
-
-  useEffect(() => {
-    if (teamsRaw.length > 0 && !activeTeamId) setActiveTeamId(teamsRaw[0].id);
-  }, [teamsRaw, activeTeamId]);
-
   // --- TACTICAL METHODS ---
   const formatTime = useCallback((iso: string) => format(new Date(iso), 'h:mm a'), []);
+
+  const markAlertAsSeen = useCallback(async (alertId: string) => {
+    if (firebaseUser && db) await updateDoc(doc(db, 'users', firebaseUser.uid), { seenAlertIds: arrayUnion(alertId) });
+  }, [db, firebaseUser]);
+
+  const markAllAlertsAsSeen = useCallback(async () => {
+    if (firebaseUser && alertsData && db) await updateDoc(doc(db, 'users', firebaseUser.uid), { seenAlertIds: alertsData.map(a => a.id) });
+  }, [db, firebaseUser, alertsData]);
 
   const getRecruitingProfile = useCallback(async (playerId: string) => {
     if (!playerId || !db) return null;
@@ -641,7 +594,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const addPlayerVideo = useCallback(async (playerId: string, data: Partial<PlayerVideo>) => {
     if (!playerId || !db) return;
-    await addDoc(collection(db, 'players', playerId, 'videos'), clean({ ...data, createdAt: serverTimestamp() }));
+    await addDoc(collection(db, 'players', playerId, 'videos'), clean({ ...data }));
   }, [db]);
 
   const deletePlayerVideo = useCallback(async (playerId: string, videoId: string) => {
@@ -876,14 +829,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const saveLeagueRegistrationConfig = useCallback(async (lId: string, u: any) => { if (db) await setDoc(doc(db, 'leagues', lId, 'registration', 'config'), clean(u), { merge: true }); }, [db]);
   const submitRegistrationEntry = useCallback(async (tId: string, pId: string, a: any, v: number, sig?: string, type?: any) => { if (db) await addDoc(collection(db, type || 'leagues', tId, 'registrationEntries'), clean({ league_id: tId, protocol_id: pId, answers: a, form_version: v, waiver_signed_text: sig, status: 'pending', created_at: new Date().toISOString() })); }, [db]);
-
-  const markAlertAsSeen = useCallback(async (alertId: string) => {
-    if (firebaseUser && db) await updateDoc(doc(db, 'users', firebaseUser.uid), { seenAlertIds: arrayUnion(alertId) });
-  }, [db, firebaseUser]);
-
-  const markAllAlertsAsSeen = useCallback(async () => {
-    if (firebaseUser && alertsData && db) await updateDoc(doc(db, 'users', firebaseUser.uid), { seenAlertIds: alertsData.map(a => a.id) });
-  }, [db, firebaseUser, alertsData]);
 
   const manageSubscription = useCallback(async () => { setIsPaywallOpen(true); }, []);
   const resolveQuota = useCallback(async (selectedTeamIds: string[]) => { toast({ title: "Quota Resolved" }); }, []);

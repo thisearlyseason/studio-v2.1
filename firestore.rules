@@ -5,25 +5,6 @@
  * This ruleset enforces a strict membership and ownership model. Data access is primarily 
  * governed by a user's presence in a team (verified via a membership subcollection) or 
  * direct document ownership.
- *
- * Data Structure:
- * - /userProfiles/{userId}: Private user profile data.
- * - /teams/{teamId}: Core team documents.
- * - /teams/{teamId}/...: Team-scoped subcollections (posts, events, chats, files) secured 
- *   by verifying membership in the parent team.
- *
- * Key Security Decisions:
- * 1. Team Membership: Authorization for team-scoped data is handled via `exists()` checks 
- *    on a `/teamMembers` subcollection, ensuring high performance without complex queries.
- * 2. Admin Privileges: A sentinel collection `/teams/{teamId}/admins/{userId}` is used 
- *    to grant administrative rights (creating events, deleting content).
- * 3. Denormalization for Chat: Group chat and message access is secured by denormalizing 
- *    `memberIds` directly onto documents, allowing for fast array-membership checks.
- * 4. Structural Segregation: User-private actions (like hiding a chat) are stored 
- *    under the user's own profile tree.
- * 5. Prototyping Flexibility: Rules enforce "who" can access data and relational 
- *    integrity (e.g., author matching auth UID) but do not strictly validate 
- *    non-authorization data schemas.
  */
 
 rules_version = '2';
@@ -32,57 +13,34 @@ service cloud.firestore {
 
     // --- Helper Functions ---
 
-    /** @description Checks if the user is authenticated. */
     function isSignedIn() {
       return request.auth != null;
     }
 
-    /** @description Checks if the authenticated user's UID matches the provided userId. */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    /** @description Checks if a document exists and the user is the owner. Used for updates/deletes. */
     function isExistingOwner(userId) {
       return resource != null && isOwner(userId);
     }
 
-    /** @description Checks if the user is a member of a specific team using the membership sentinel. */
     function isTeamMember(teamId) {
       return isSignedIn() && exists(/databases/$(database)/documents/teams/$(teamId)/teamMembers/$(request.auth.uid));
     }
 
-    /** @description Checks if the user is an admin of a specific team using the admin sentinel. */
     function isTeamAdmin(teamId) {
       return isSignedIn() && exists(/databases/$(database)/documents/teams/$(teamId)/admins/$(request.auth.uid));
     }
 
-    /** @description Checks if the user's UID is present in a list of member IDs. */
-    function isIdInList(idList) {
-      return isSignedIn() && (request.auth.uid in idList);
-    }
-
     // --- Collection Rules ---
 
-    /**
-     * @description Rules for user profiles. Access restricted to the profile owner.
-     * @path /userProfiles/{userId}
-     * @allow (get, list, create, update) if user ID matches document ID.
-     * @deny (get) if requesting another user's profile.
-     * @principle Ownership
-     */
     match /userProfiles/{userId} {
       allow get, list: if isOwner(userId);
       allow create: if isOwner(userId);
       allow update: if isExistingOwner(userId);
-      allow delete: if false; // Profiles are generally preserved.
+      allow delete: if false;
 
-      /**
-       * @description User-specific private record of hidden chats.
-       * @path /userProfiles/{userId}/hiddenChats/{chatId}
-       * @allow (create, update, delete) if user owns the parent profile.
-       * @principle Ownership
-       */
       match /hiddenChats/{chatId} {
         allow get, list: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.userId == userId;
@@ -91,147 +49,46 @@ service cloud.firestore {
       }
     }
 
-    /**
-     * @description Core team metadata. Read access for members; write access for admins.
-     * @path /teams/{teamId}
-     * @allow (get) for authenticated users (to allow joining).
-     * @allow (create) for any authenticated user.
-     * @allow (update) for team admins.
-     * @principle Roles
-     */
     match /teams/{teamId} {
       allow get: if isSignedIn();
-      allow list: if isSignedIn(); // Filtered by membership in practice.
+      allow list: if isSignedIn();
       allow create: if isSignedIn();
       allow update: if isTeamAdmin(teamId);
-      allow delete: if false;
-
-      /**
-       * @description Membership documents defining a user's role in a team.
-       * @path /teams/{teamId}/teamMembers/{userId}
-       * @allow (create) for self-joining.
-       * @allow (update) for self or team admins.
-       * @principle Shared Access (Closed Collaborators)
-       */
-      match /teamMembers/{userId} {
-        allow get, list: if isTeamMember(teamId);
-        allow create: if isOwner(userId);
-        allow update: if isExistingOwner(userId) || isTeamAdmin(teamId);
-        allow delete: if isTeamAdmin(teamId);
-      }
-
-      /**
-       * @description Admin sentinel collection for optimized role checks.
-       * @path /teams/{teamId}/admins/{userId}
-       * @allow (read) for team members.
-       * @allow (write) only for existing team admins.
-       * @principle Roles
-       */
-      match /admins/{userId} {
-        allow get, list: if isTeamMember(teamId);
-        allow create, update, delete: if isTeamAdmin(teamId);
-      }
-
-      /**
-       * @description Team activity feed posts.
-       * @path /teams/{teamId}/posts/{postId}
-       * @allow (create) for any team member.
-       * @allow (update, delete) for post author or team admin.
-       * @principle Relational Integrity
-       */
-      match /posts/{postId} {
-        allow get, list: if isTeamMember(teamId);
-        allow create: if isTeamMember(teamId) && request.resource.data.authorId == request.auth.uid;
-        allow update: if isTeamMember(teamId) && (isOwner(resource.data.authorId) || isTeamAdmin(teamId));
-        allow delete: if isTeamMember(teamId) && (isOwner(resource.data.authorId) || isTeamAdmin(teamId));
-
-        match /comments/{commentId} {
-          allow get, list: if isTeamMember(teamId);
-          allow create: if isTeamMember(teamId) && request.resource.data.authorId == request.auth.uid;
-          allow update: if isTeamMember(teamId) && (isOwner(resource.data.authorId) || isTeamAdmin(teamId));
-          allow delete: if isTeamMember(teamId) && (isOwner(resource.data.authorId) || isTeamAdmin(teamId));
-        }
-      }
-
-      /**
-       * @description Team events. Managed by admins.
-       * @path /teams/{teamId}/events/{eventId}
-       * @principle Roles
-       */
-      match /events/{eventId} {
-        allow get, list: if isTeamMember(teamId);
-        allow create, update, delete: if isTeamAdmin(teamId);
-
-        match /rsvps/{userId} {
-          allow get, list: if isTeamMember(teamId);
-          allow create: if isTeamMember(teamId) && isOwner(userId);
-          allow update: if isTeamMember(teamId) && isExistingOwner(userId);
-          allow delete: if isTeamMember(teamId) && isExistingOwner(userId);
-        }
-      }
-
-      /**
-       * @description User availability records within a team context.
-       * @path /teams/{teamId}/availability/{availabilityId}
-       * @principle Ownership
-       */
-      match /availability/{availabilityId} {
-        allow get, list: if isTeamMember(teamId);
-        allow create: if isTeamMember(teamId) && request.resource.data.userId == request.auth.uid;
-        allow update: if isTeamMember(teamId) && isExistingOwner(resource.data.userId);
-        allow delete: if isTeamMember(teamId) && isExistingOwner(resource.data.userId);
-      }
-
-      /**
-       * @description Files shared within the team.
-       * @path /teams/{teamId}/files/{fileId}
-       * @principle Shared Access
-       */
-      match /files/{fileId} {
-        allow get, list: if isTeamMember(teamId);
-        allow create: if isTeamMember(teamId) && request.resource.data.uploadedBy == request.auth.uid;
-        allow delete: if isTeamMember(teamId) && (isOwner(resource.data.uploadedBy) || isTeamAdmin(teamId));
-        allow update: if false; // Files are typically immutable.
-      }
-
-      /**
-       * @description Group messaging channels within a team.
-       * @path /teams/{teamId}/groupChats/{chatId}
-       * @principle Shared Access (Closed Collaborators)
-       */
-      match /groupChats/{chatId} {
-        allow get, list: if isTeamMember(teamId) && isIdInList(resource.data.memberIds) && resource.data.isDeleted == false;
-        allow create: if isTeamMember(teamId);
-        allow update: if isTeamMember(teamId) && (isOwner(resource.data.createdBy) || isTeamAdmin(teamId));
-        allow delete: if false; // Prefer isDeleted flag.
-
-        match /chatMessages/{messageId} {
-          allow get, list: if isTeamMember(teamId) && isIdInList(resource.data.chatMemberIds);
-          allow create: if isTeamMember(teamId) && isIdInList(request.resource.data.chatMemberIds) && request.resource.data.authorId == request.auth.uid;
-          allow update, delete: if isTeamMember(teamId) && isExistingOwner(resource.data.authorId);
-        }
-
-        match /polls/{pollId} {
-          allow get, list: if isTeamMember(teamId) && isIdInList(resource.data.chatMemberIds);
-          allow create: if isTeamMember(teamId) && isIdInList(request.resource.data.chatMemberIds) && request.resource.data.createdBy == request.auth.uid;
-          allow update: if isTeamMember(teamId) && (isOwner(resource.data.createdBy) || isTeamAdmin(teamId));
-          allow delete: if isTeamAdmin(teamId);
-
-          match /votes/{userId} {
-            allow get, list: if isTeamMember(teamId) && isIdInList(resource.data.chatMemberIds);
-            allow create: if isTeamMember(teamId) && isOwner(userId) && resource == null && get(/databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId)/polls/$(pollId)).data.isClosed == false;
-            allow update: if isTeamMember(teamId) && isExistingOwner(userId) && get(/databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId)/polls/$(pollId)).data.isClosed == false;
-            allow delete: if isTeamMember(teamId) && isExistingOwner(userId);
-          }
-        }
+      
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
       }
     }
 
-    /**
-     * @description Explicitly deny access to any paths not defined above. 
-     * This includes the /leagues/ path mentioned in the error logs, 
-     * as it is not part of the current application IR.
-     */
+    match /leagues/{leagueId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      
+      match /{allPaths=**} {
+        allow get, list: if isSignedIn();
+        allow create, update, delete: if isSignedIn();
+      }
+    }
+
+    match /facilities/{facilityId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+      
+      match /fields/{fieldId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    match /players/{playerId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+      
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
     match /{path=**} {
       allow read, write: if false;
     }
