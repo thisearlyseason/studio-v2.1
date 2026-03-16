@@ -53,6 +53,44 @@ service cloud.firestore {
       }
     }
 
+    // Global Catalog Rules
+    match /plans/{planId} {
+      allow read: if isSignedIn();
+      allow write: if request.auth.token.email == 'thisearlyseason@gmail.com';
+    }
+
+    match /features/{featureId} {
+      allow read: if isSignedIn();
+      allow write: if request.auth.token.email == 'thisearlyseason@gmail.com';
+    }
+
+    match /subscriptions/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false; // Managed by backend webhooks
+    }
+
+    // --- Collection Group Rules (for cross-squad/club auditing) ---
+
+    match /{path=**}/signatures/{docId} {
+      allow read: if isSignedIn();
+    }
+
+    match /{path=**}/members/{memberId} {
+      allow read: if isSignedIn();
+    }
+
+    match /{path=**}/documents/{docId} {
+      allow read: if isSignedIn();
+    }
+
+    match /{path=**}/incidents/{incidentId} {
+      allow read: if isSignedIn();
+    }
+
+    match /{path=**}/registrationEntries/{entryId} {
+      allow read: if isSignedIn();
+    }
+
     match /{path=**} {
       allow read, write: if false;
     }
