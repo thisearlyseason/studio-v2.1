@@ -343,6 +343,7 @@ interface TeamContextType {
   myChildren: PlayerProfile[];
   hasFeature: (id: string) => boolean;
   isSeedingDemo: boolean;
+  setIsSeedingDemo: (seeding: boolean) => void;
   
   getRecruitingProfile: (playerId: string) => Promise<RecruitingProfile | null>;
   updateRecruitingProfile: (playerId: string, data: Partial<RecruitingProfile>) => Promise<void>;
@@ -672,7 +673,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     hasFeature: (id: string) => true, alerts, unreadAlertsCount,
     markAlertAsSeen: (id: string) => setSeenAlertIds(p => [...new Set([...p, id])]),
     markAllAlertsAsSeen: () => setSeenAlertIds(alerts.map(a => a.id)),
-    seenAlertIds, isSeedingDemo,
+    seenAlertIds, isSeedingDemo, setIsSeedingDemo,
     
     // Recruiting Pack
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,

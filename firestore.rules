@@ -23,7 +23,6 @@ service cloud.firestore {
     }
 
     // Checks if the user is a member of a specific team using the flat ACL collection.
-    // Demo squads bypass document lookups for instant tactical availability.
     function isMember(tid) {
       return isSignedIn() && (
         isDemo(tid) || 

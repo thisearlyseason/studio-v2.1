@@ -20,7 +20,7 @@ const DEMO_START_KEY = 'squad_demo_start_time';
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading, isAuthResolved } = useUser();
   const auth = useAuth();
-  const { teams, isTeamsLoading, isSeedingDemo, user: userProfile } = useTeam();
+  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   const pathname = usePathname();
@@ -38,10 +38,11 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Only launch if we have a seed param, are authenticated, and not already seeding
     const demoPlanId = searchParams.get('seed_demo');
-    if (!mounted || !user || isDemoInitializing || !demoPlanId || teams.length > 0 || seedingAttempted.current) return;
+    if (!mounted || !user || isDemoInitializing || !demoPlanId || isTeamsLoading || teams.length > 0 || seedingAttempted.current) return;
     
     seedingAttempted.current = true;
     setIsDemoInitializing(true);
+    setIsSeedingDemo(true);
     
     const seed = async () => {
       try {
@@ -56,7 +57,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       } catch (e) {
         console.error("Demo synchronization failure:", e);
         setIsDemoInitializing(false);
-        // Error handling for seeding failures
+        setIsSeedingDemo(false);
         toast({ 
           title: "Synchronization Interrupted", 
           description: "The tactical environment could not be established. Retrying might be required.", 
@@ -65,7 +66,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       }
     };
     seed();
-  }, [mounted, user, teams.length, db, isDemoInitializing, searchParams, auth]);
+  }, [mounted, user, teams.length, isTeamsLoading, db, isDemoInitializing, searchParams, auth, setIsSeedingDemo]);
 
   // --- AUTH GUARDS ---
   useEffect(() => {
