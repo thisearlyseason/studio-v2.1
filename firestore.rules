@@ -21,25 +21,23 @@ service cloud.firestore {
     }
 
     function isTeamStaff(teamId) {
-      if (!isSignedIn()) return false;
-      if (teamId.matches('^demo_.*')) return true;
-      if (isSuperAdmin()) return true;
-      
-      let teamPath = /databases/$(database)/documents/teams/$(teamId);
-      let memberPath = /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid);
-      
-      return (exists(teamPath) && get(teamPath).data.ownerUserId == request.auth.uid) ||
-             (exists(memberPath) && get(memberPath).data.role == 'Admin') ||
-             (exists(memberPath) && get(memberPath).data.position in ['Coach', 'Assistant Coach', 'Manager', 'Team Representative']);
+      return isSignedIn() && (
+        teamId.matches('^demo_.*') ||
+        isSuperAdmin() ||
+        (exists(/databases/$(database)/documents/teams/$(teamId)) && get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid) ||
+        (exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)) && (
+          get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.role == 'Admin' ||
+          get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.position in ['Coach', 'Assistant Coach', 'Manager', 'Team Representative']
+        ))
+      );
     }
 
     function isTeamMember(teamId) {
-      if (!isSignedIn()) return false;
-      if (teamId.matches('^demo_.*')) return true;
-      if (isTeamStaff(teamId)) return true;
-      
-      let memberPath = /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid);
-      return exists(memberPath);
+      return isSignedIn() && (
+        teamId.matches('^demo_.*') ||
+        isTeamStaff(teamId) ||
+        exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid))
+      );
     }
 
     // --- COLLECTION RULES ---

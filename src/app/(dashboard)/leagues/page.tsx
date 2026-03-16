@@ -168,23 +168,23 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
         <DialogTitle className="sr-only">Season Architect Protocol</DialogTitle>
         <DialogDescription className="sr-only">Configure multi-day league schedule distribution</DialogDescription>
         <div className="h-2 bg-primary w-full" />
-        <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
+        <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
           <DialogHeader>
-            <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Season Architect</DialogTitle>
+            <DialogTitle className="text-3xl font-black uppercase tracking-tight">Season Architect</DialogTitle>
             <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-2">Institutional Scheduling Engine</DialogDescription>
           </DialogHeader>
           
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 text-foreground">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
             <div className="lg:col-span-7 space-y-10">
               <section className="space-y-6">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Timeline & Parameters</h3>
                 <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Season Start</Label><Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Season End</Label><Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season Start</Label><Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season End</Label><Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
                 </div>
                 
                 <div className="space-y-4">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Schedule Days</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Schedule Days</Label>
                   <div className="flex flex-wrap gap-2">
                     {DAYS_OF_WEEK.map(day => (
                       <button
@@ -203,9 +203,9 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Games/Team</Label><Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Games/Team</Label><Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Double Headers</Label>
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Double Headers</Label>
                     <div className="flex items-center gap-3 h-12">
                       <button type="button" onClick={() => setConfig({...config, doubleHeaders: !config.doubleHeaders})} className={cn("h-7 w-12 rounded-full transition-all relative", config.doubleHeaders ? "bg-primary" : "bg-muted")}>
                         <div className={cn("absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-all", config.doubleHeaders ? "left-6" : "left-1")} />
@@ -219,7 +219,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
               <section className="space-y-6">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Resource Allocation</h3>
                 <div className="space-y-4">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Select Active Venues</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Select Active Venues</Label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {facilities?.map(f => (
                       <div key={f.id} className={cn("p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between", config.selectedVenues.includes(f.id) ? "border-primary bg-primary/5 shadow-sm" : "border-muted/50 hover:border-muted")} onClick={() => toggleVenue(f.id)}>
@@ -439,20 +439,20 @@ function LeagueFinances({ league }: { league: League }) {
       </Card>
 
       <Dialog open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>
-        <DialogContent className="rounded-3xl border-none shadow-2xl p-8 bg-white">
-          <DialogTitle className="text-2xl font-black uppercase text-foreground">Log Squad Payment</DialogTitle>
+        <DialogContent className="rounded-3xl border-none shadow-2xl p-8 bg-white text-foreground">
+          <DialogTitle className="text-2xl font-black uppercase">Log Squad Payment</DialogTitle>
           <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update institutional fiscal ledger</DialogDescription>
-          <div className="space-y-4 py-4 text-foreground">
+          <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase">Amount ($)</Label>
+              <Label className="text-[10px] font-black uppercase tracking-widest">Amount ($)</Label>
               <Input type="number" value={paymentForm.amount} onChange={e => setPaymentForm({...paymentForm, amount: e.target.value})} className="h-12 text-lg font-black" />
             </div>
             <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase">Fee Type</Label>
+              <Label className="text-[10px] font-black uppercase tracking-widest">Fee Type</Label>
               <Input value={paymentForm.type} onChange={e => setPaymentForm({...paymentForm, type: e.target.value})} className="h-12 font-bold" />
             </div>
             <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase">Memo / Details</Label>
+              <Label className="text-[10px] font-black uppercase tracking-widest">Memo / Details</Label>
               <Textarea value={paymentForm.memo} onChange={e => setPaymentForm({...paymentForm, memo: e.target.value})} className="h-20" />
             </div>
           </div>
@@ -461,12 +461,12 @@ function LeagueFinances({ league }: { league: League }) {
       </Dialog>
 
       <Dialog open={isFeesOpen} onOpenChange={setIsFeesOpen}>
-        <DialogContent className="rounded-3xl border-none shadow-2xl p-8 bg-white">
-          <DialogTitle className="text-2xl font-black uppercase text-foreground">League Fee Architect</DialogTitle>
+        <DialogContent className="rounded-3xl border-none shadow-2xl p-8 bg-white text-foreground">
+          <DialogTitle className="text-2xl font-black uppercase">League Fee Architect</DialogTitle>
           <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Configure global registration costs</DialogDescription>
-          <div className="space-y-4 py-4 text-foreground">
+          <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase">Base Registration Fee ($)</Label>
+              <Label className="text-[10px] font-black uppercase tracking-widest">Base Registration Fee ($)</Label>
               <Input type="number" value={feesForm.registration} onChange={e => setFeesForm({...feesForm, registration: e.target.value})} className="h-12 text-lg font-black" />
             </div>
           </div>
@@ -534,11 +534,11 @@ function SquadDirectory({ league }: { league: League }) {
           <DialogTitle className="text-2xl font-black uppercase">Squad Metadata</DialogTitle>
           <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update coach and location data</DialogDescription>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-6">
-            <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Origin Location</Label><Input value={editForm.origin} onChange={e => setEditForm({...editForm, origin: e.target.value})} className="h-12 border-2" /></div>
-            <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Coach Name</Label><Input value={editForm.coachName} onChange={e => setEditForm({...editForm, coachName: e.target.value})} className="h-12 border-2" /></div>
-            <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Coach Email</Label><Input value={editForm.coachEmail} onChange={e => setEditForm({...editForm, coachEmail: e.target.value})} className="h-12 border-2" /></div>
-            <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Coach Phone</Label><Input value={editForm.coachPhone} onChange={e => setEditForm({...editForm, coachPhone: e.target.value})} className="h-12 border-2" /></div>
-            <div className="space-y-2 col-span-full"><Label className="text-[10px] font-black uppercase">Organizer Notes</Label><Textarea value={editForm.organizerNotes} onChange={e => setEditForm({...editForm, organizerNotes: e.target.value})} className="h-32 border-2" /></div>
+            <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest">Origin Location</Label><Input value={editForm.origin} onChange={e => setEditForm({...editForm, origin: e.target.value})} className="h-12 border-2" /></div>
+            <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest">Coach Name</Label><Input value={editForm.coachName} onChange={e => setEditForm({...editForm, coachName: e.target.value})} className="h-12 border-2" /></div>
+            <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest">Coach Email</Label><Input value={editForm.coachEmail} onChange={e => setEditForm({...editForm, coachEmail: e.target.value})} className="h-12 border-2" /></div>
+            <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest">Coach Phone</Label><Input value={editForm.coachPhone} onChange={e => setEditForm({...editForm, coachPhone: e.target.value})} className="h-12 border-2" /></div>
+            <div className="space-y-2 col-span-full"><Label className="text-[10px] font-black uppercase tracking-widest">Organizer Notes</Label><Textarea value={editForm.organizerNotes} onChange={e => setEditForm({...editForm, organizerNotes: e.target.value})} className="h-32 border-2" /></div>
           </div>
           <DialogFooter><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdate}>Synchronize Records</Button></DialogFooter>
         </DialogContent>
@@ -633,7 +633,7 @@ export default function LeaguesPage() {
   return (
     <div className="space-y-10 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-1"><Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Competitive Ledger</Badge><h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Leagues</h1></div>
+        <div className="space-y-1"><Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest">Competitive Ledger</Badge><h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Leagues</h1></div>
         {!activeLeague && isStaff && (
           <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl hover:bg-primary hover:text-white transition-all" onClick={() => setIsCreateOpen(true)}><Plus className="h-5 w-5 mr-2" /> Start New League</Button>
         )}
@@ -770,13 +770,13 @@ export default function LeaguesPage() {
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-10 space-y-8">
             <DialogHeader>
-              <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">League Architect</DialogTitle>
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight">League Architect</DialogTitle>
               <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Initialize Competitive Infrastructure</DialogDescription>
             </DialogHeader>
             <div className="space-y-6">
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">League Name</Label>
-                <Input placeholder="e.g. State Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20 transition-all shadow-inner text-foreground" />
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">League Name</Label>
+                <Input placeholder="e.g. State Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20 transition-all shadow-inner" />
               </div>
               <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 flex items-start gap-4">
                 <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
@@ -807,7 +807,7 @@ export default function LeaguesPage() {
                   <UserPlus className="h-6 w-6" />
                 </div>
                 <div>
-                  <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Recruit Teams</DialogTitle>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">Recruit Teams</DialogTitle>
                   <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Multi-Channel Enrollment Suite</DialogDescription>
                 </div>
               </div>
@@ -816,7 +816,7 @@ export default function LeaguesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-6">
                 <div className="space-y-4">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Enrollment Protocol</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Enrollment Protocol</Label>
                   <div className="grid grid-cols-1 gap-2">
                     {[
                       { id: 'digital', label: 'Email Invite', icon: Mail },
@@ -843,15 +843,15 @@ export default function LeaguesPage() {
               <div className="space-y-6 animate-in slide-in-from-right-4">
                 {inviteMethod === 'digital' && (
                   <div className="space-y-4">
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Coach Email</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@example.com" className="h-12 border-2 text-foreground" /></div>
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Squad Name (Optional)</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. Metro Elite" className="h-12 border-2 text-foreground" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Coach Email</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@example.com" className="h-12 border-2" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Squad Name (Optional)</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. Metro Elite" className="h-12 border-2" /></div>
                     <Button className="w-full h-14 rounded-xl font-black uppercase text-xs shadow-lg hover:bg-primary hover:text-white transition-all" onClick={handleRecruitmentAction} disabled={isProcessing || !inviteEmail.trim()}>{isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Dispatch Digital Invite"}</Button>
                   </div>
                 )}
                 {inviteMethod === 'manual' && (
                   <div className="space-y-4">
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Squad Name</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. City Tigers" className="h-12 border-2 text-foreground" /></div>
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Coach Contact (Opt)</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@email.com" className="h-12 border-2 text-foreground" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Squad Name</Label><Input value={inviteTeamName} onChange={e => setInviteTeamName(e.target.value)} placeholder="e.g. City Tigers" className="h-12 border-2" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Coach Contact (Opt)</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="coach@email.com" className="h-12 border-2" /></div>
                     <Button className="w-full h-14 rounded-xl font-black uppercase text-xs shadow-lg hover:bg-primary hover:text-white transition-all" onClick={handleRecruitmentAction} disabled={isProcessing || !inviteTeamName.trim()}>{isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Authorize Manual Entry"}</Button>
                   </div>
                 )}
@@ -873,7 +873,7 @@ export default function LeaguesPage() {
                       <Globe className="h-10 w-10 text-primary mx-auto mb-4 opacity-40" />
                       <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Public Portal Access</p>
                       <div className="flex items-center justify-center gap-3 bg-white p-3 rounded-xl shadow-sm border truncate">
-                        <span className="text-[10px] font-bold truncate text-foreground">/register/league/{activeLeague?.id}</span>
+                        <span className="text-[10px] font-bold truncate">/register/league/{activeLeague?.id}</span>
                         <LinkIcon className="h-4 w-4 text-primary shrink-0" />
                       </div>
                     </div>
@@ -887,13 +887,13 @@ export default function LeaguesPage() {
               <div className="pt-10 border-t space-y-6">
                 <div className="flex items-center gap-3">
                   <History className="h-5 w-5 text-primary" />
-                  <h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Pending Diplomatic Status</h4>
+                  <h4 className="text-xs font-black uppercase tracking-[0.2em]">Pending Diplomatic Status</h4>
                 </div>
                 <div className="space-y-3">
                   {invites.map(inv => (
                     <div key={inv.id} className="p-4 bg-muted/20 rounded-2xl border flex items-center justify-between group transition-all hover:bg-white hover:shadow-sm">
                       <div className="min-w-0">
-                        <p className="font-black text-sm uppercase truncate tracking-tight text-foreground">{inv.teamName || inv.invitedEmail}</p>
+                        <p className="font-black text-sm uppercase truncate tracking-tight">{inv.teamName || inv.invitedEmail}</p>
                         <p className="text-[8px] font-bold text-muted-foreground uppercase">{inv.invitedEmail}</p>
                       </div>
                       <div className="flex items-center gap-4">

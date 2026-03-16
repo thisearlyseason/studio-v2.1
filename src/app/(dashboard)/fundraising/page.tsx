@@ -146,7 +146,7 @@ export default function FundraisingPage() {
   );
 
   return (
-    <div className="space-y-10 pb-20 animate-in fade-in duration-500">
+    <div className="space-y-10 pb-20 animate-in fade-in duration-500 text-foreground">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Squad Capital</Badge>
@@ -275,8 +275,9 @@ export default function FundraisingPage() {
       </div>
 
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="rounded-[3.5rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+        <DialogContent className="rounded-[3.5rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Campaign Deployment Strategy</DialogTitle>
+          <DialogDescription className="sr-only">Configure multi-channel payment protocols for fundraising</DialogDescription>
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <DialogHeader>
@@ -356,8 +357,9 @@ export default function FundraisingPage() {
       </Dialog>
 
       <Dialog open={isAuditOpen} onOpenChange={setIsAuditOpen}>
-        <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white sm:max-w-lg">
+        <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white sm:max-w-lg text-foreground">
           <DialogTitle className="sr-only">Donation Audit Ledger</DialogTitle>
+          <DialogDescription className="sr-only">Verify and confirm receipt of manual or digital donations</DialogDescription>
           <div className="h-2 bg-black w-full" />
           <div className="p-8 lg:p-10 space-y-8">
             <DialogHeader>
