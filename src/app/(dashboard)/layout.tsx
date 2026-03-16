@@ -30,6 +30,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const [isDemoInitializing, setIsDemoInitializing] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+  const seedingAttempted = useRef(false);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -37,9 +38,11 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Only launch if we have a seed param, are authenticated, and not already seeding
     const demoPlanId = searchParams.get('seed_demo');
-    if (!mounted || !user || isDemoInitializing || !demoPlanId || teams.length > 0) return;
+    if (!mounted || !user || isDemoInitializing || !demoPlanId || teams.length > 0 || seedingAttempted.current) return;
     
+    seedingAttempted.current = true;
     setIsDemoInitializing(true);
+    
     const seed = async () => {
       try {
         if (auth.currentUser) {
@@ -53,7 +56,12 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       } catch (e) {
         console.error("Demo synchronization failure:", e);
         setIsDemoInitializing(false);
-        toast({ title: "Synchronization Failed", description: "The tactical environment could not be established. Please check your connection.", variant: "destructive" });
+        // Error handling for seeding failures
+        toast({ 
+          title: "Synchronization Interrupted", 
+          description: "The tactical environment could not be established. Retrying might be required.", 
+          variant: "destructive" 
+        });
       }
     };
     seed();
