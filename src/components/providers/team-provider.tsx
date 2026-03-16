@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -209,6 +210,21 @@ export type TeamAlert = {
   audience: 'everyone' | 'coaches' | 'players' | 'parents';
   createdAt: string;
   createdBy: string;
+};
+
+export type TeamIncident = {
+  id: string;
+  teamId: string;
+  teamName: string;
+  title: string;
+  date: string;
+  location: string;
+  description: string;
+  emergencyServicesCalled: boolean;
+  witnesses?: string;
+  actionsTaken?: string;
+  createdAt: string;
+  reportedBy: string;
 };
 
 export type VolunteerOpportunity = {
@@ -729,7 +745,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     submitMatchScore: async () => {}, submitLeagueMatchScore: async () => {}, disputeMatchScore: async () => {},
     manageSubscription: async () => {}, resolveQuota: async () => {},
     createAlert: async () => {}, deleteAlert: async () => {}, exportAttendanceCSV: async () => {},
-    exportTournamentStandingsCSV: async () => {}, addIncident: async () => {},
+    exportTournamentStandingsCSV: async () => {}, 
+    addIncident: async (data: any) => { 
+      if (!activeTeam || !firebaseUser) return;
+      await addDoc(collection(db, 'teams', activeTeam.id, 'incidents'), clean({
+        ...data,
+        teamId: activeTeam.id,
+        teamName: activeTeam.name,
+        reportedBy: firebaseUser.uid,
+        createdAt: new Date().toISOString()
+      }));
+    },
     addLeaguePayment: async () => {}, updateLeagueGlobalFees: async () => {},
     updateLeagueTeamDetails: async () => {}, manuallyAddTeamToLeague: async () => {}, deleteLeagueInvite: async () => {},
     addRegistration: async () => true, deleteChat: async () => {}, hideChatForUser: async () => {}, 
