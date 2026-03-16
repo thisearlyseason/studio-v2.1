@@ -47,8 +47,12 @@ service cloud.firestore {
 
     // --- Institutional Infrastructure ---
 
-    match /leagues/{allPaths=**} {
+    match /leagues/{leagueId} {
       allow read, write: if isSignedIn();
+      
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
+      }
     }
 
     match /players/{id} {
@@ -83,6 +87,9 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
     match /{path=**}/files/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /{path=**}/donations/{id} {
       allow read, write: if isSignedIn();
     }
 

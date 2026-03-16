@@ -2,7 +2,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
-import { useFirebase, useFirestore, useMemoFirebase, useUser, useCollection } from '@/firebase';
+import { useFirestore, useMemoFirebase, useUser, useCollection } from '@/firebase';
 import { 
   collection, 
   query, 
@@ -26,7 +26,7 @@ import {
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { format, differenceInYears } from 'date-fns';
+import { format } from 'date-fns';
 
 // --- TYPE DEFINITIONS ---
 export type UserRole = "parent" | "adult_player" | "coach" | "admin";
@@ -558,6 +558,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const seenAlertIds = useMemo(() => userProfile?.seenAlertIds || [], [userProfile?.seenAlertIds]);
   const unreadAlertsCount = useMemo(() => alerts.filter(a => !seenAlertIds.includes(a.id)).length, [alerts, seenAlertIds]);
 
+  const isStaff = useMemo(() => {
+    if (!activeTeam || !firebaseUser) return false;
+    if (activeTeam.role === 'Admin') return true;
+    const currentMember = members.find(m => m.userId === firebaseUser.uid);
+    return ['Coach', 'Assistant Coach', 'Team Representative', 'Manager'].includes(currentMember?.position || '');
+  }, [activeTeam, firebaseUser, members]);
+
   // --- TACTICAL METHODS ---
 
   const getRecruitingProfile = useCallback(async (playerId: string) => {
@@ -937,7 +944,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db, activeTeam]);
 
   const hideChatForUser = useCallback(async (chatId: string) => {
-    // Logic to hide chat for specific user
+    // Hidden locally
   }, []);
 
   const votePoll = useCallback(async (chatId: string, messageId: string, optionIdx: number) => {
@@ -980,7 +987,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
-    isStaff: activeTeam?.role === 'Admin' || ['Coach', 'Manager'].includes(members.find(m => m.userId === firebaseUser?.uid)?.position || ''),
+    isStaff,
     isPro: activeTeam?.isPro || false, isParent: userProfile?.role === 'parent', isPlayer: userProfile?.role === 'adult_player',
     isSuperAdmin: userProfile?.email === 'thisearlyseason@gmail.com', isClubManager: ['elite_teams', 'elite_league'].includes(userProfile?.activePlanId || ''),
     householdEvents, householdBalance, myChildren, plans, proQuotaStatus: { current: 0, limit: 0, remaining: 0, exceeded: false },
@@ -1013,7 +1020,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     exportTournamentStandingsCSV: async () => {}
   }), [
     userProfile, activeTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser, db, 
-    householdEvents, householdBalance, myChildren, plans, isPaywallOpen, isSeedingDemo, seenAlertIds, alerts, unreadAlertsCount,
+    householdEvents, householdBalance, myChildren, plans, isPaywallOpen, isSeedingDemo, seenAlertIds, alerts, unreadAlertsCount, isStaff,
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
     getPlayerStats, addPlayerStat, deletePlayerStat, getEvaluations, addEvaluation,
     getRecruitingContact, updateRecruitingContact, getPlayerVideos, addPlayerVideo, deletePlayerVideo,
