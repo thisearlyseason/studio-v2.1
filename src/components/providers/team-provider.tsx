@@ -294,6 +294,16 @@ export type League = {
   teamAgreements?: Record<string, any>;
 };
 
+export type LeagueInvite = {
+  id: string;
+  leagueId: string;
+  leagueName: string;
+  invitedEmail: string;
+  teamName?: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+};
+
 export type Facility = {
   id: string;
   name: string;
@@ -603,53 +613,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return snap.exists() ? (snap.data().notes || '') : '';
   }, [db, activeTeamId]);
 
-  // --- CORE SYSTEM ---
-  useEffect(() => {
-    if (!firebaseUser?.uid || !db || !isAuthResolved) return;
-    return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setUserProfile({
-          id: firebaseUser.uid,
-          name: data.fullName || data.name || '',
-          email: data.email || '',
-          phone: data.phone || '',
-          avatar: data.avatarUrl || data.avatar || '',
-          role: data.role || 'adult_player',
-          activePlanId: data.activePlanId,
-          proTeamLimit: data.proTeamLimit || 0,
-          createdAt: data.createdAt,
-          isDemo: data.isDemo
-        });
-      }
-    });
-  }, [firebaseUser?.uid, db, isAuthResolved]);
+  const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined') => {
+    if (!db) return;
+    await updateDoc(doc(db, 'leagues', contextId, 'registrationEntries', entryId), { status });
+  }, [db]);
 
-  const plansQuery = useMemoFirebase(() => (db && isAuthResolved) ? collection(db, 'plans') : null, [db, isAuthResolved]);
-  const { data: plansData } = useCollection(plansQuery);
-  const plans = plansData || [];
+  const assignEntryToTeam = useCallback(async (leagueId: string, entryId: string, teamId: string | null) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { assigned_team_id: teamId, status: teamId ? 'assigned' : 'pending' });
+  }, [db]);
 
-  const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
-  const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
-  const teams = useMemo(() => (teamsData || []).map(m => ({ ...m, id: m.teamId || m.id, name: m.name || m.teamName || 'Squad' })), [teamsData]);
-
-  useEffect(() => {
-    if (teams.length > 0 && !activeTeamId) setActiveTeamId(teams[0].id);
-  }, [teams, activeTeamId]);
-
-  const activeTeam = useMemo(() => teams.find(t => t.id === activeTeamId) || teams[0] || null, [teams, activeTeamId]);
-
-  const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
-  const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
-  const members = useMemo(() => membersData || [], [membersData]);
-
-  const alertsQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10)) : null, [isAuthResolved, activeTeam?.id, db]);
-  const { data: alertsData } = useCollection<TeamAlert>(alertsQuery);
-  const alerts = alertsData || [];
-
-  const unreadAlertsCount = useMemo(() => {
-    return alerts.filter(a => !seenAlertIds.includes(a.id)).length;
-  }, [alerts, seenAlertIds]);
+  const toggleRegistrationPaymentStatus = useCallback(async (leagueId: string, entryId: string, paid: boolean) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { payment_received: paid });
+  }, [db]);
 
   const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string) => {
     if (!firebaseUser || !db) return '';
@@ -712,11 +689,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return true;
   }, [firebaseUser, db, userProfile?.avatar]);
 
-  const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined') => {
-    if (!db) return;
-    await updateDoc(doc(db, 'leagues', contextId, 'registrationEntries', entryId), { status });
-  }, [db]);
-
   const createLeague = useCallback(async (name: string) => {
     if (!firebaseUser || !db || !activeTeam) return '';
     const id = `league_${Date.now()}`;
@@ -771,8 +743,56 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }));
   }, [activeTeam?.id, db]);
 
+  // --- CORE SYSTEM ---
+  useEffect(() => {
+    if (!firebaseUser?.uid || !db || !isAuthResolved) return;
+    return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setUserProfile({
+          id: firebaseUser.uid,
+          name: data.fullName || data.name || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          avatar: data.avatarUrl || data.avatar || '',
+          role: data.role || 'adult_player',
+          activePlanId: data.activePlanId,
+          proTeamLimit: data.proTeamLimit || 0,
+          createdAt: data.createdAt,
+          isDemo: data.isDemo
+        });
+      }
+    });
+  }, [firebaseUser?.uid, db, isAuthResolved]);
+
+  const plansQuery = useMemoFirebase(() => (db && isAuthResolved) ? collection(db, 'plans') : null, [db, isAuthResolved]);
+  const { data: plansData } = useCollection(plansQuery);
+  const plans = plansData || [];
+
+  const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
+  const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
+  const teamsRaw = useMemo(() => (teamsData || []).map(m => ({ ...m, id: m.teamId || m.id, name: m.name || m.teamName || 'Squad' })), [teamsData]);
+
+  useEffect(() => {
+    if (teamsRaw.length > 0 && !activeTeamId) setActiveTeamId(teamsRaw[0].id);
+  }, [teamsRaw, activeTeamId]);
+
+  const activeTeam = useMemo(() => teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null, [teamsRaw, activeTeamId]);
+
+  const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
+  const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
+  const members = useMemo(() => membersData || [], [membersData]);
+
+  const alertsQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10)) : null, [isAuthResolved, activeTeam?.id, db]);
+  const { data: alertsData } = useCollection<TeamAlert>(alertsQuery);
+  const alerts = alertsData || [];
+
+  const unreadAlertsCount = useMemo(() => {
+    return alerts.filter(a => !seenAlertIds.includes(a.id)).length;
+  }, [alerts, seenAlertIds]);
+
   const contextValue = useMemo(() => ({
-    db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams, isTeamsLoading, members, isMembersLoading,
+    db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
     isStaff: activeTeam?.role === 'Admin' || ['Coach', 'Manager'].includes(members.find(m => m.userId === firebaseUser?.uid)?.position || ''),
     isPro: activeTeam?.isPro || false, isParent: userProfile?.role === 'parent', isPlayer: userProfile?.role === 'adult_player',
@@ -875,11 +895,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     deleteField: async (facilityId: string, fieldId: string) => { await deleteDoc(doc(db, 'facilities', facilityId, 'fields', fieldId)); },
     createLeague,
     updateLeagueSchedule: async (lId: string, schedule: any[]) => { await updateDoc(doc(db, 'leagues', lId), { schedule }); },
-    inviteTeamToLeague: async (lId: string, lName: string, email: string, tName?: string) => { await addDoc(collection(db, 'leagues', 'global', 'invites'), { leagueId: lId, leagueName: lName, invitedEmail: email, teamName: tName, status: 'pending', createdAt: new Date().toISOString() }); },
+    inviteTeamToLeague: async (lId: string, lName: string, email: string, tName?: string) => { await addDoc(collection(db, 'leagues', 'global', 'invites'), clean({ leagueId: lId, leagueName: lName, invitedEmail: email, teamName: tName, status: 'pending', createdAt: new Date().toISOString() })); },
     saveLeagueRegistrationConfig: async (lId: string, updates: any) => { await setDoc(doc(db, 'leagues', lId, 'registration', 'config'), clean(updates), { merge: true }); },
     submitRegistrationEntry: async (tId: string, pId: string, answers: any, ver: number, sig?: string, tType?: any) => { await addDoc(collection(db, tType || 'leagues', tId, 'registrationEntries'), clean({ answers, form_version: ver, waiver_signed_text: sig, status: 'pending', payment_received: false, created_at: new Date().toISOString(), league_id: tId })); },
-    assignEntryToTeam: async (lId: string, eId: string, teamId: string | null) => { await updateDoc(doc(db, 'leagues', lId, 'registrationEntries', eId), { assigned_team_id: teamId, status: teamId ? 'assigned' : 'pending' }); },
-    toggleRegistrationPaymentStatus: async (lId: string, eId: string, paid: boolean) => { await updateDoc(doc(db, 'leagues', lId, 'registrationEntries', eId), { payment_received: paid }); },
+    assignEntryToTeam,
+    toggleRegistrationPaymentStatus,
     respondToAssignment,
     signPublicTournamentWaiver: async (tId: string, eId: string, teamName: string, coachName: string) => { await updateDoc(doc(db, 'teams', tId, 'events', eId), { [`teamAgreements.${teamName}`]: { agreed: true, captainName: coachName, signedAt: new Date().toISOString() } }); return true; },
     submitMatchScore: async (tId: string, eId: string, gId: string, isT1: boolean, s1: number, s2: number) => { 
@@ -925,7 +945,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     upgradeChildToLogin: async (cid: string) => { await updateDoc(doc(db, 'players', cid), { hasLogin: true }); },
     registerChild: async (first: string, last: string, dob: string) => { if (firebaseUser) await addDoc(collection(db, 'players'), clean({ firstName: first, lastName: last, dateOfBirth: dob, parentId: firebaseUser.uid, isMinor: true, hasLogin: false, createdAt: new Date().toISOString() })); },
     assignManualPlan: async (uid: string, pid: string, lim: number) => { await updateDoc(doc(db, 'users', uid), { activePlanId: pid, proTeamLimit: lim, planSource: 'manual' }); }
-  }), [userProfile, activeTeamId, activeTeam, teams, members, alerts, seenAlertIds, firebaseUser, db, myChildren, householdEvents, householdBalance, plans, isPaywallOpen, isTeamsLoading, isMembersLoading, isSeedingDemo, getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics, getPlayerStats, addPlayerStat, deletePlayerStat, getEvaluations, addEvaluation, getRecruitingContact, updateRecruitingContact, getPlayerVideos, addPlayerVideo, deletePlayerVideo, toggleRecruitingProfile, updateStaffEvaluation, getStaffEvaluation, createNewTeam, joinTeamWithCode, signUpForVolunteer, addEquipmentItem, createLeague, respondToAssignment]);
+  }), [userProfile, activeTeamId, activeTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser, db, householdEvents, householdBalance, myChildren, plans, isPaywallOpen, isSeedingDemo, getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics, getPlayerStats, addPlayerStat, deletePlayerStat, getEvaluations, addEvaluation, getRecruitingContact, updateRecruitingContact, getPlayerVideos, addPlayerVideo, deletePlayerVideo, toggleRecruitingProfile, updateStaffEvaluation, getStaffEvaluation, createNewTeam, joinTeamWithCode, signUpForVolunteer, addEquipmentItem, createLeague, respondToAssignment, assignEntryToTeam, toggleRegistrationPaymentStatus]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;
 }

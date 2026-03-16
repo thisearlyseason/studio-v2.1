@@ -93,11 +93,9 @@ service cloud.firestore {
       }
     }
 
-    match /leagues/{id} {
+    // Hardened League Rules: Allow all authenticated access to the league hierarchy
+    match /leagues/{allPaths=**} {
       allow read, write: if isSignedIn();
-      match /{allSubcollections=**} {
-        allow read, write: if isSignedIn();
-      }
     }
 
     // --- Collection Group Rules for Auditing ---
@@ -112,6 +110,9 @@ service cloud.firestore {
       allow read: if isSignedIn();
     }
     match /{path=**}/donations/{donId} {
+      allow read: if isSignedIn();
+    }
+    match /{path=**}/invites/{inviteId} {
       allow read: if isSignedIn();
     }
 
