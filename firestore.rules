@@ -17,10 +17,6 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isExistingOwner(userId) {
-      return resource != null && isOwner(userId);
-    }
-
     // Checks if the user is a member of a specific team using the flat ACL collection.
     // Optimized for demo bypass to prevent synchronization loops.
     function isTeamMember(teamId) {
@@ -40,13 +36,13 @@ service cloud.firestore {
 
     // Securely checks membership for chat-related entities using denormalized member lists.
     function isChatMember(data) {
-      return isSignedIn() && request.auth.uid in data.memberIds;
+      return isSignedIn() && (request.auth.uid in data.memberIds);
     }
 
-    // --- Meta Collections ---
+    // --- Meta Collections (Publicly Readable) ---
 
     match /plans/{planId} {
-      allow read: if true; // Publicly readable for pricing and landing pages
+      allow read: if true; 
     }
 
     match /features/{featureId} {
@@ -56,14 +52,13 @@ service cloud.firestore {
     // --- User & Household Data ---
 
     match /users/{userId} {
-      allow read: if isSignedIn(); // Allow reading profiles for roster display
+      allow read: if isSignedIn();
       allow write: if isOwner(userId);
       
       match /profiles/{profileId} {
         allow get, list: if isOwner(userId);
         allow create: if isOwner(userId) && request.resource.data.id == userId;
-        allow update: if isExistingOwner(userId);
-        allow delete: if isExistingOwner(userId);
+        allow update, delete: if isOwner(userId);
       }
 
       match /teamMemberships/{membershipId} {
@@ -84,10 +79,9 @@ service cloud.firestore {
     // --- Team & Roster Hubs ---
 
     match /team_memberships/{membershipId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
+      allow get, list: if isSignedIn();
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn(); // Refined by application logic
+      allow update, delete: if isSignedIn();
     }
 
     match /teams/{teamId} {
@@ -100,12 +94,22 @@ service cloud.firestore {
         allow write: if isTeamAdmin(teamId);
       }
 
+      match /games/{gameId} {
+        allow read: if isTeamMember(teamId);
+        allow write: if isTeamAdmin(teamId);
+      }
+
+      match /drills/{drillId} {
+        allow read: if isTeamMember(teamId);
+        allow write: if isTeamAdmin(teamId);
+      }
+
       match /members/{memberId} {
         allow read: if isTeamMember(teamId);
         allow write: if isTeamAdmin(teamId) || isOwner(resource.data.userId);
       }
 
-      match /posts/{postId} {
+      match /feedPosts/{postId} {
         allow get, list: if isTeamMember(teamId);
         allow create: if isTeamMember(teamId);
         allow update, delete: if isTeamMember(teamId) && (resource.data.authorId == request.auth.uid || isTeamAdmin(teamId));
@@ -150,10 +154,10 @@ service cloud.firestore {
     match /{path=**}/signatures/{sigId} {
       allow read: if isSignedIn();
     }
-    match /{path=**}/donations/{donId} {
+    match /{path=**}/members/{memberId} {
       allow read: if isSignedIn();
     }
-    match /{path=**}/members/{memberId} {
+    match /{path=**}/files/{fileId} {
       allow read: if isSignedIn();
     }
 

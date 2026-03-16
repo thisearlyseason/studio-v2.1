@@ -70,12 +70,17 @@ export function useCollection<T = any>(
       return;
     }
 
-    // Prevent listening on unresolved paths (containing undefined)
-    const rawPath = memoizedTargetRefOrQuery.type === 'collection'
-      ? (memoizedTargetRefOrQuery as CollectionReference).path
-      : (memoizedTargetRefOrQuery as unknown as InternalQuery)._query.path.canonicalString();
+    // Prevent listening on unresolved paths (containing undefined as a string or empty segments)
+    let path = '';
+    try {
+      path = memoizedTargetRefOrQuery.type === 'collection'
+        ? (memoizedTargetRefOrQuery as CollectionReference).path
+        : (memoizedTargetRefOrQuery as unknown as InternalQuery)._query.path.canonicalString();
+    } catch (e) {
+      return;
+    }
     
-    if (rawPath.includes('undefined')) {
+    if (!path || path.includes('undefined') || path.includes('//')) {
       return;
     }
 
@@ -93,15 +98,21 @@ export function useCollection<T = any>(
         setError(null);
         setIsLoading(false);
       },
-      (error: FirestoreError) => {
+      (err: FirestoreError) => {
+        // Suppress errors for meta collections during initial auth resolution
+        if (path === 'plans' || path === 'features') {
+          setIsLoading(false);
+          return;
+        }
+
         const contextualError = new FirestorePermissionError({
           operation: 'list',
-          path: rawPath,
-        })
+          path: path,
+        });
 
-        setError(contextualError)
-        setData(null)
-        setIsLoading(false)
+        setError(contextualError);
+        setData(null);
+        setIsLoading(false);
 
         // trigger global error propagation
         errorEmitter.emit('permission-error', contextualError);
