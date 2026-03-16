@@ -1,4 +1,3 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -29,44 +28,27 @@ service cloud.firestore {
       }
     }
 
-    // --- ACL Hub ---
+    // --- Global Infrastructure ---
+    // Simplified recursive matching for authenticated organizational access
 
-    match /team_memberships/{membershipId} {
+    match /team_memberships/{id} {
       allow read, write: if isSignedIn();
     }
 
-    // --- Team & Roster Hubs ---
-
-    match /teams/{tid} {
+    match /teams/{allPaths=**} {
       allow read, write: if isSignedIn();
-
-      match /{allSubcollections=**} {
-        allow read, write: if isSignedIn();
-      }
     }
 
-    // --- Institutional Infrastructure ---
-
-    match /leagues/{leagueId} {
+    match /leagues/{allPaths=**} {
       allow read, write: if isSignedIn();
-      
-      match /{allPaths=**} {
-        allow read, write: if isSignedIn();
-      }
     }
 
-    match /players/{id} {
+    match /players/{allPaths=**} {
       allow read, write: if isSignedIn();
-      match /{allSubcollections=**} {
-        allow read, write: if isSignedIn();
-      }
     }
 
-    match /facilities/{id} {
+    match /facilities/{allPaths=**} {
       allow read, write: if isSignedIn();
-      match /{allSubcollections=**} {
-        allow read, write: if isSignedIn();
-      }
     }
 
     // --- Collection Group Rules for Auditing & Recruitment ---
