@@ -39,7 +39,7 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
-    match /leagues/{allPaths=**} {
+    match /leagues/{document=**} {
       allow read, write: if isSignedIn();
     }
 
