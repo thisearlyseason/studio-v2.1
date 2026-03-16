@@ -39,8 +39,11 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
-    match /leagues/{document=**} {
+    match /leagues/{leagueId} {
       allow read, write: if isSignedIn();
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
+      }
     }
 
     match /players/{document=**} {
