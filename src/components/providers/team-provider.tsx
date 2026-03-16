@@ -21,7 +21,8 @@ import {
   arrayUnion,
   getDoc,
   collectionGroup,
-  serverTimestamp
+  serverTimestamp,
+  arrayRemove
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -554,7 +555,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: plansData } = useCollection(plansQuery);
   const plans = plansData || [];
 
-  // --- DERIVED STATE ---
   const seenAlertIds = useMemo(() => userProfile?.seenAlertIds || [], [userProfile?.seenAlertIds]);
   const unreadAlertsCount = useMemo(() => alerts.filter(a => !seenAlertIds.includes(a.id)).length, [alerts, seenAlertIds]);
 
@@ -767,7 +767,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         const qty = snap.data().assignments[userId]?.quantity || 0;
         const batch = writeBatch(db);
         batch.update(doc(db, 'teams', activeTeam.id, 'equipment', id), {
-          [`assignments.${userId}`]: deleteDoc as any,
+          [`assignments.${userId}`]: arrayRemove(snap.data().assignments[userId]) as any,
           availableQuantity: increment(qty)
         });
         await batch.commit();
@@ -792,6 +792,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateLeagueGlobalFees = useCallback(async (leagueId: string, fees: any) => { if (db) await updateDoc(doc(db, 'leagues', leagueId), { globalFees: clean(fees) }); }, [db]);
   const addRegistration = useCallback(async (teamId: string, eventId: string, data: any) => { if(db) await addDoc(collection(db, 'teams', teamId, 'events', eventId, 'registrations'), clean({ ...data, createdAt: new Date().toISOString() })); return true; }, [db]);
   const assignManualPlan = useCallback(async (uid: string, pid: string, lim: number) => { if(db) await updateDoc(doc(db, 'users', uid), { activePlanId: pid, proTeamLimit: lim, planSource: 'manual' }); }, [db]);
+
+  const toggleRegistrationPaymentStatus = useCallback(async (leagueId: string, entryId: string, paid: boolean) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { payment_received: paid });
+  }, [db]);
 
   const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined') => {
     if (!db) return;
@@ -913,10 +918,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (firebaseUser && alerts.length > 0 && db) await updateDoc(doc(db, 'users', firebaseUser.uid), { seenAlertIds: alerts.map(a => a.id) });
   }, [db, firebaseUser, alerts]);
 
-  const markMediaAsViewed = useCallback(async (fileId: string) => {
-    // Placeholder implementation
-  }, []);
-
   const upgradeChildToLogin = useCallback(async (childId: string) => {
     if (db) await updateDoc(doc(db, 'players', childId), { hasLogin: true });
   }, [db]);
@@ -936,7 +937,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db, activeTeam]);
 
   const hideChatForUser = useCallback(async (chatId: string) => {
-    // Logic to hide chat for specific user (e.g. update a local user mapping)
+    // Logic to hide chat for specific user
   }, []);
 
   const votePoll = useCallback(async (chatId: string, messageId: string, optionIdx: number) => {
@@ -994,7 +995,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     respondToAssignment, assignEntryToTeam, toggleRegistrationPaymentStatus, updateLeagueSchedule,
     inviteTeamToLeague, manuallyAddTeamToLeague, deleteLeagueInvite, updateLeagueTeamDetails,
     addLeaguePayment, updateLeagueGlobalFees, deleteChat, hideChatForUser, votePoll, updateChat,
-    deployClubProtocol, deleteTeam, markMediaAsViewed, upgradeChildToLogin, registerChild,
+    deployClubProtocol, deleteTeam, markMediaAsViewed: async (fId: string) => {}, upgradeChildToLogin, registerChild,
     updateUser, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
@@ -1020,8 +1021,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     createLeague, signUpForVolunteer, addEquipmentItem, respondToAssignment, assignEntryToTeam, 
     toggleRegistrationPaymentStatus, updateLeagueSchedule, inviteTeamToLeague, manuallyAddTeamToLeague, 
     deleteLeagueInvite, updateLeagueTeamDetails, addLeaguePayment, updateLeagueGlobalFees, deleteChat, 
-    hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, markMediaAsViewed, 
-    upgradeChildToLogin, registerChild, markAlertAsSeen, markAllAlertsAsSeen,
+    hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, upgradeChildToLogin, registerChild, markAlertAsSeen, markAllAlertsAsSeen,
     updateUser, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
