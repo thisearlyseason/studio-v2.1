@@ -231,6 +231,7 @@ export default function RosterPage() {
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0 overflow-y-auto bg-white text-foreground">
                   <DialogTitle className="sr-only">Invite Teammates</DialogTitle>
+                  <DialogDescription className="sr-only">Enroll new teammates via squad code or recruitment link</DialogDescription>
                   <div className="h-2 bg-primary w-full" />
                   <div className="p-8 space-y-8">
                     <DialogHeader>
@@ -299,6 +300,7 @@ export default function RosterPage() {
       <Dialog open={!!selectedMember} onOpenChange={(open) => !open && setSelectedMember(null)}>
         <DialogContent className="rounded-[3rem] sm:max-w-5xl border-none shadow-2xl p-0 flex flex-col bg-white overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
           <DialogTitle className="sr-only">Player Profile: {selectedMember?.name}</DialogTitle>
+          <DialogDescription className="sr-only">Detailed athletic portfolio and personnel evaluation for {selectedMember?.name}</DialogDescription>
           {selectedMember && (
             <div className="flex flex-col lg:flex-row">
               <div className="w-full lg:w-5/12 bg-black text-white p-8 lg:p-12 space-y-8 shrink-0 flex flex-col relative overflow-hidden">
@@ -447,6 +449,8 @@ export default function RosterPage() {
 
       <Dialog open={isEditPositionOpen} onOpenChange={setIsEditPositionOpen}>
         <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+          <DialogTitle className="sr-only">Provision Role</DialogTitle>
+          <DialogDescription className="sr-only">Update organizational authority and team position</DialogDescription>
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 space-y-6">
             <DialogHeader>

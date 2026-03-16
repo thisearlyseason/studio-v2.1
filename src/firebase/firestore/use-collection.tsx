@@ -79,8 +79,9 @@ export function useCollection<T = any>(
         (err: FirestoreError) => {
           if (!isMounted.current) return;
           
-          // Suppress transient errors during rapid state transitions
-          if (err.code === 'permission-denied' && (path === 'plans' || path === 'features')) {
+          // Suppress transient errors during rapid state transitions for public meta collections
+          const isPublicMeta = path === 'plans' || path === 'features' || path.startsWith('leagues/') || path.startsWith('facilities');
+          if (err.code === 'permission-denied' && isPublicMeta) {
              setIsLoading(false);
              return;
           }

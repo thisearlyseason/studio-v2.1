@@ -166,6 +166,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-5xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
         <DialogTitle className="sr-only">Season Architect Protocol</DialogTitle>
+        <DialogDescription className="sr-only">Configure multi-day league schedule distribution</DialogDescription>
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
           <DialogHeader>
@@ -439,8 +440,8 @@ function LeagueFinances({ league }: { league: League }) {
 
       <Dialog open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>
         <DialogContent className="rounded-3xl border-none shadow-2xl p-8 bg-white">
-          <DialogTitle className="sr-only">Log Squad Payment</DialogTitle>
-          <DialogHeader><DialogTitle className="text-2xl font-black uppercase text-foreground">Log Squad Payment</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update institutional fiscal ledger</DialogDescription></DialogHeader>
+          <DialogTitle className="text-2xl font-black uppercase text-foreground">Log Squad Payment</DialogTitle>
+          <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update institutional fiscal ledger</DialogDescription>
           <div className="space-y-4 py-4 text-foreground">
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase">Amount ($)</Label>
@@ -461,8 +462,8 @@ function LeagueFinances({ league }: { league: League }) {
 
       <Dialog open={isFeesOpen} onOpenChange={setIsFeesOpen}>
         <DialogContent className="rounded-3xl border-none shadow-2xl p-8 bg-white">
-          <DialogTitle className="sr-only">League Fee Architect</DialogTitle>
-          <DialogHeader><DialogTitle className="text-2xl font-black uppercase text-foreground">League Fee Architect</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Configure global registration costs</DialogDescription></DialogHeader>
+          <DialogTitle className="text-2xl font-black uppercase text-foreground">League Fee Architect</DialogTitle>
+          <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Configure global registration costs</DialogDescription>
           <div className="space-y-4 py-4 text-foreground">
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase">Base Registration Fee ($)</Label>
@@ -530,8 +531,8 @@ function SquadDirectory({ league }: { league: League }) {
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="rounded-[3rem] p-8 max-w-2xl overflow-y-auto max-h-[90vh] bg-white text-foreground">
-          <DialogTitle className="sr-only">Squad Metadata</DialogTitle>
-          <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Squad Metadata</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update coach and location data</DialogDescription></DialogHeader>
+          <DialogTitle className="text-2xl font-black uppercase">Squad Metadata</DialogTitle>
+          <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update coach and location data</DialogDescription>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-6">
             <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Origin Location</Label><Input value={editForm.origin} onChange={e => setEditForm({...editForm, origin: e.target.value})} className="h-12 border-2" /></div>
             <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Coach Name</Label><Input value={editForm.coachName} onChange={e => setEditForm({...editForm, coachName: e.target.value})} className="h-12 border-2" /></div>
@@ -765,6 +766,7 @@ export default function LeaguesPage() {
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">League Architect Protocol</DialogTitle>
+          <DialogDescription className="sr-only">Initialize new competitive infrastructure</DialogDescription>
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-10 space-y-8">
             <DialogHeader>
@@ -796,6 +798,7 @@ export default function LeaguesPage() {
       <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
         <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Recruit Teams</DialogTitle>
+          <DialogDescription className="sr-only">Multi-channel enrollment suite for league recruitment</DialogDescription>
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <DialogHeader>
