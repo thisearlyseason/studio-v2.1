@@ -21,32 +21,42 @@ const ScoutingOutputSchema = z.object({
   suggestedDrillFocus: z.string().describe('Recommended training priority for this match-up.'),
 });
 
-export async function generateScoutingBrief(input: z.infer<typeof ScoutingInputSchema>) {
-  const flow = ai.defineFlow(
-    {
-      name: 'generateScoutingBriefFlow',
-      inputSchema: ScoutingInputSchema,
-      outputSchema: ScoutingOutputSchema,
-    },
-    async (input) => {
-      const prompt = ai.definePrompt({
-        name: 'scoutingPrompt',
-        input: { schema: ScoutingInputSchema },
-        output: { schema: ScoutingOutputSchema },
-        prompt: `You are an Elite Tactical Analyst for a professional {{{sport}}} team.
-        
-        Analyze the following coach observations for the upcoming match against {{{opponentName}}}:
-        
-        OBSERVATIONS:
-        {{{rawObservations}}}
-        
-        Generate a structured, high-performance scouting report that identifies strategic patterns and exploit points.`,
-      });
+/**
+ * Top-level prompt definition for performance and stability.
+ */
+const scoutingPrompt = ai.definePrompt({
+  name: 'scoutingPrompt',
+  input: { schema: ScoutingInputSchema },
+  output: { schema: ScoutingOutputSchema },
+  prompt: `You are an Elite Tactical Analyst for a professional {{{sport}}} team.
+  
+  Analyze the following coach observations for the upcoming match against {{{opponentName}}}:
+  
+  OBSERVATIONS:
+  {{{rawObservations}}}
+  
+  Generate a structured, high-performance scouting report that identifies strategic patterns and exploit points.
+  Ensure the tone is objective and instruction-focused for the squad.`,
+});
 
-      const { output } = await prompt(input);
-      return output!;
+/**
+ * Top-level flow definition to avoid redundant registration.
+ */
+const generateScoutingBriefFlow = ai.defineFlow(
+  {
+    name: 'generateScoutingBriefFlow',
+    inputSchema: ScoutingInputSchema,
+    outputSchema: ScoutingOutputSchema,
+  },
+  async (input) => {
+    const { output } = await scoutingPrompt(input);
+    if (!output) {
+      throw new Error('Tactical analysis failed to generate output.');
     }
-  );
+    return output;
+  }
+);
 
-  return flow(input);
+export async function generateScoutingBrief(input: z.infer<typeof ScoutingInputSchema>) {
+  return generateScoutingBriefFlow(input);
 }
