@@ -507,7 +507,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [householdBalance, setHouseholdBalance] = useState(0);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
-  // --- DATA QUERIES ---
+  // --- DATA QUERIES (Declared before tactical functions to prevent TDZ errors) ---
   const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
@@ -521,9 +521,29 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: plansData } = useCollection(plansQuery);
 
   const childrenQuery = useMemoFirebase(() => (db && firebaseUser?.uid) ? query(collection(db, 'players'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid]);
-  const { data: myChildren } = useCollection<PlayerProfile>(childrenQuery);
+  const { data: myChildrenRaw } = useCollection<PlayerProfile>(childrenQuery);
 
-  // --- SIDE EFFECTS & DERIVED STATE ---
+  // --- DERIVED STATE ---
+  const teamsRaw = useMemo(() => (teamsData || []).map(m => ({ ...m, id: m.teamId || m.id, name: m.name || m.teamName || 'Squad' })), [teamsData]);
+  const activeTeam = useMemo(() => teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null, [teamsRaw, activeTeamId]);
+  const members = useMemo(() => membersData || [], [membersData]);
+  const alerts = useMemo(() => alertsData || [], [alertsData]);
+  const plans = useMemo(() => plansData || [], [plansData]);
+  const myChildren = useMemo(() => myChildrenRaw || [], [myChildrenRaw]);
+  const seenAlertIds = useMemo(() => userProfile?.seenAlertIds || [], [userProfile?.seenAlertIds]);
+  const unreadAlertsCount = useMemo(() => alerts.filter(a => !seenAlertIds.includes(a.id)).length, [alerts, seenAlertIds]);
+
+  const isStaff = useMemo(() => {
+    if (!activeTeam || !firebaseUser) return false;
+    if (activeTeam.role === 'Admin') return true;
+    const currentMember = members.find(m => m.userId === firebaseUser.uid);
+    return ['Coach', 'Assistant Coach', 'Team Representative', 'Manager'].includes(currentMember?.position || '');
+  }, [activeTeam, firebaseUser, members]);
+
+  const isClubManager = useMemo(() => ['elite_teams', 'elite_league'].includes(userProfile?.activePlanId || ''), [userProfile?.activePlanId]);
+  const isSuperAdmin = useMemo(() => userProfile?.email === 'thisearlyseason@gmail.com', [userProfile?.email]);
+
+  // --- SIDE EFFECTS ---
   useEffect(() => {
     if (!firebaseUser?.uid || !db || !isAuthResolved) return;
     return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
@@ -546,28 +566,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [firebaseUser?.uid, db, isAuthResolved]);
 
-  const teamsRaw = useMemo(() => (teamsData || []).map(m => ({ ...m, id: m.teamId || m.id, name: m.name || m.teamName || 'Squad' })), [teamsData]);
-  
   useEffect(() => {
     if (teamsRaw.length > 0 && !activeTeamId) setActiveTeamId(teamsRaw[0].id);
   }, [teamsRaw, activeTeamId]);
-
-  const activeTeam = useMemo(() => teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null, [teamsRaw, activeTeamId]);
-  const members = useMemo(() => membersData || [], [membersData]);
-  const alerts = useMemo(() => alertsData || [], [alertsData]);
-  const plans = useMemo(() => plansData || [], [plansData]);
-  const seenAlertIds = useMemo(() => userProfile?.seenAlertIds || [], [userProfile?.seenAlertIds]);
-  const unreadAlertsCount = useMemo(() => alerts.filter(a => !seenAlertIds.includes(a.id)).length, [alerts, seenAlertIds]);
-
-  const isStaff = useMemo(() => {
-    if (!activeTeam || !firebaseUser) return false;
-    if (activeTeam.role === 'Admin') return true;
-    const currentMember = members.find(m => m.userId === firebaseUser.uid);
-    return ['Coach', 'Assistant Coach', 'Team Representative', 'Manager'].includes(currentMember?.position || '');
-  }, [activeTeam, firebaseUser, members]);
-
-  const isClubManager = useMemo(() => ['elite_teams', 'elite_league'].includes(userProfile?.activePlanId || ''), [userProfile?.activePlanId]);
-  const isSuperAdmin = useMemo(() => userProfile?.email === 'thisearlyseason@gmail.com', [userProfile?.email]);
 
   // --- TACTICAL METHODS ---
   const formatTime = useCallback((iso: string) => format(new Date(iso), 'h:mm a'), []);
@@ -777,8 +778,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         const assignments = snap.data().assignments || {};
         const qty = assignments[userId]?.quantity || 0;
         const batch = writeBatch(db);
+        const updatedAssignments = { ...assignments };
+        delete updatedAssignments[userId];
         batch.update(doc(db, 'teams', activeTeamId, 'equipment', id), {
-          [`assignments.${userId}`]: delete assignments[userId] && assignments,
+          assignments: updatedAssignments,
           availableQuantity: increment(qty)
         });
         await batch.commit();
@@ -886,7 +889,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const resolveQuota = useCallback(async (selectedTeamIds: string[]) => { toast({ title: "Quota Resolved" }); }, []);
   const exportAttendanceCSV = useCallback(async (eventId: string) => { toast({ title: "Exporting Attendance..." }); }, []);
   const exportTournamentStandingsCSV = useCallback(async (tournamentId: string) => { toast({ title: "Exporting Standings..." }); }, []);
-  const markMediaAsViewed = useCallback(async (fileId: string) => { /* logic */ }, []);
+  const markMediaAsViewed = useCallback(async (fileId: string) => { /* Logic */ }, []);
 
   const updateUser = useCallback(async (u: any) => { if (firebaseUser) await updateDoc(doc(db, 'users', firebaseUser.uid), clean(u)); }, [db, firebaseUser]);
   const updateMember = useCallback(async (mid: string, u: any) => { if (activeTeamId) await updateDoc(doc(db, 'teams', activeTeamId, 'members', mid), clean(u)); }, [db, activeTeamId]);
@@ -946,7 +949,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
     isStaff, isPro: activeTeam?.isPro || false, isParent: userProfile?.role === 'parent', isPlayer: userProfile?.role === 'adult_player',
-    isSuperAdmin, isClubManager, householdEvents, householdBalance, myChildren: myChildren || [], plans, proQuotaStatus: { current: 0, limit: 0, remaining: 0, exceeded: false },
+    isSuperAdmin, isClubManager, householdEvents, householdBalance, myChildren, plans, proQuotaStatus: { current: 0, limit: 0, remaining: 0, exceeded: false },
     isPaywallOpen, setIsPaywallOpen, purchasePro: () => setIsPaywallOpen(true),
     hasFeature: (id: string) => true, alerts, unreadAlertsCount,
     markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isSeedingDemo, setIsSeedingDemo,

@@ -29,21 +29,21 @@ service cloud.firestore {
     }
 
     // --- Global Infrastructure ---
-    // Normalized to recursive matching for consistent authenticated access across the hierarchy
+    // Refactored to recursive matching for consistent authenticated access across the hierarchy
 
-    match /leagues/{document=**} {
+    match /leagues/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    match /teams/{document=**} {
+    match /teams/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    match /players/{document=**} {
+    match /players/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    match /facilities/{document=**} {
+    match /facilities/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
