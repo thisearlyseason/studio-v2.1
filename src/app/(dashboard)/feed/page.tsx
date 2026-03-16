@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -471,6 +470,8 @@ export default function FeedPage() {
 
       <Dialog open={isPollDialogOpen} onOpenChange={setIsPollDialogOpen}>
         <DialogContent className="sm:max-w-4xl rounded-3xl lg:rounded-[2rem] overflow-hidden p-0 max-h-[90vh] flex flex-col border-none shadow-2xl">
+          <DialogTitle className="sr-only">Launch Squad Poll</DialogTitle>
+          <DialogDescription className="sr-only">Create a tactical poll for your squad</DialogDescription>
           <div className="overflow-y-auto flex-1 custom-scrollbar">
             <div className="grid grid-cols-1 lg:grid-cols-2 h-full">
               <div className="p-6 lg:p-8 bg-primary/5 lg:border-r space-y-4 lg:space-y-6">
@@ -524,6 +525,7 @@ export default function FeedPage() {
       <Dialog open={!!lightboxImage} onOpenChange={() => setLightboxImage(null)}>
         <DialogContent className="max-w-[95vw] sm:max-w-3xl p-0 overflow-hidden bg-black/95 border-none rounded-2xl lg:rounded-2xl">
           <DialogTitle className="sr-only">Image Preview</DialogTitle>
+          <DialogDescription className="sr-only">Enlarged view of shared media</DialogDescription>
           {lightboxImage && <img src={lightboxImage} className="w-full h-auto max-h-[85vh] object-contain" alt="Enlarged view" />}
         </DialogContent>
       </Dialog>

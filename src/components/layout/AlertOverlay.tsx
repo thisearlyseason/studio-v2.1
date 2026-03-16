@@ -79,6 +79,8 @@ export function AlertOverlay() {
       if (!open) handleUnderstood();
     }}>
       <DialogContent className="sm:max-w-lg p-0 rounded-[3rem] overflow-hidden border-none shadow-[0_30px_100px_rgba(255,0,0,0.2)] bg-white">
+        <DialogTitle className="sr-only">High Priority Squad Alert</DialogTitle>
+        <DialogDescription className="sr-only">Important directive from squad command</DialogDescription>
         {/* Championship Header */}
         <div className="bg-primary text-white p-8 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none">
@@ -168,6 +170,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
         <DialogTitle className="sr-only">Squad Alert Inbox</DialogTitle>
+        <DialogDescription className="sr-only">History of all broadcasts dispatched to you</DialogDescription>
         <div className="h-2 bg-primary w-full" />
         <DialogHeader className="p-8 pb-2">
           <div className="flex items-center justify-between">
@@ -288,6 +291,8 @@ export function CreateAlertButton() {
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md rounded-[3rem] border-none shadow-2xl overflow-hidden p-0 bg-white">
+        <DialogTitle className="sr-only">Deploy Broadcast</DialogTitle>
+        <DialogDescription className="sr-only">Dispatch high priority directive to the roster</DialogDescription>
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 lg:p-10 space-y-8">
           <DialogHeader>
@@ -317,7 +322,7 @@ export function CreateAlertButton() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-[10px) font-black uppercase tracking-widest ml-1">Directive Headline</Label>
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Directive Headline</Label>
               <Input placeholder="e.g. Mandatory Venue Update" value={title} onChange={e => setTitle(e.target.value)} className="rounded-2xl h-14 border-2 font-black text-base shadow-inner" />
             </div>
             <div className="space-y-2">
