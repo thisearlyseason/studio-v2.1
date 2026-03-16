@@ -29,7 +29,7 @@ service cloud.firestore {
     }
 
     // --- Global Infrastructure ---
-    // Using recursive wildcards to ensure authenticated organizational access to subcollections
+    // Using robust recursive wildcards to ensure authenticated organizational access to all subcollections
 
     match /team_memberships/{id} {
       allow read, write: if isSignedIn();
