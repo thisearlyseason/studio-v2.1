@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -17,12 +18,10 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    // Standardized demo check using regex. Matches 'demo_' prefix.
     function isDemo(id) {
       return id != null && id.matches('^demo_.*');
     }
 
-    // Checks if the user is a member of a specific team using the flat ACL collection.
     function isMember(tid) {
       return isSignedIn() && (
         isDemo(tid) || 
@@ -30,7 +29,6 @@ service cloud.firestore {
       );
     }
 
-    // Checks if the user has the 'Admin' role within a specific team.
     function isAdmin(tid) {
       return isSignedIn() && (
         isDemo(tid) || 
@@ -73,14 +71,17 @@ service cloud.firestore {
       allow create: if isSignedIn(); 
       allow update, delete: if isSignedIn() && (isDemo(tid) || isAdmin(tid));
 
-      // Recursive match for all squad sub-modules (alerts, games, drills, members, feed, etc.)
       match /{allSubcollections=**} {
         allow read: if isSignedIn() && (isDemo(tid) || isMember(tid));
         allow write: if isSignedIn() && (isDemo(tid) || isAdmin(tid));
       }
     }
 
-    // --- Global Infrastructure ---
+    // --- Institutional Infrastructure ---
+
+    match /leagues/{document=**} {
+      allow read, write: if isSignedIn();
+    }
 
     match /players/{id} {
       allow read, write: if isSignedIn();
@@ -93,30 +94,25 @@ service cloud.firestore {
       }
     }
 
-    // Hardened League Rules: Allow all authenticated access to the league hierarchy
-    match /leagues/{allPaths=**} {
+    // --- Collection Group Rules for Auditing & Recruitment ---
+
+    match /{path=**}/invites/{id} {
       allow read, write: if isSignedIn();
     }
-
-    // --- Collection Group Rules for Auditing ---
-
-    match /{path=**}/signatures/{sigId} {
-      allow read: if isSignedIn();
-    }
-    match /{path=**}/members/{memberId} {
-      allow read: if isSignedIn();
-    }
-    match /{path=**}/files/{fileId} {
-      allow read: if isSignedIn();
-    }
-    match /{path=**}/donations/{donId} {
-      allow read: if isSignedIn();
-    }
-    match /{path=**}/invites/{inviteId} {
-      allow read: if isSignedIn();
-    }
-    match /{path=**}/registrationEntries/{entryId} {
+    match /{path=**}/registrationEntries/{id} {
       allow read, write: if isSignedIn();
+    }
+    match /{path=**}/incidents/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /{path=**}/signatures/{id} {
+      allow read: if isSignedIn();
+    }
+    match /{path=**}/members/{id} {
+      allow read: if isSignedIn();
+    }
+    match /{path=**}/files/{id} {
+      allow read: if isSignedIn();
     }
 
   }
