@@ -94,6 +94,7 @@ export function useCollection<T = any>(
         // Suppress errors for meta collections during initial auth resolution or seeding
         // Also suppress errors for demo squads during state transitions
         if (path === 'plans' || path === 'features' || path.includes('demo_')) {
+          setData([]); // Fallback to empty instead of hanging
           setIsLoading(false);
           return;
         }

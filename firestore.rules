@@ -48,7 +48,7 @@ service cloud.firestore {
       allow read: if true;
     }
 
-    // --- User & Household Data ---
+    // --- User Data ---
 
     match /users/{uid} {
       allow read: if isSignedIn();
@@ -69,14 +69,14 @@ service cloud.firestore {
     // --- Team & Roster Hubs ---
 
     match /teams/{tid} {
-      allow get, list: if isMember(tid);
+      allow get, list: if isSignedIn() && (isDemo(tid) || isMember(tid));
       allow create: if isSignedIn(); 
-      allow update, delete: if isAdmin(tid);
+      allow update, delete: if isSignedIn() && (isDemo(tid) || isAdmin(tid));
 
       // Recursive match for all squad sub-modules (alerts, games, drills, members, feed, etc.)
       match /{allSubcollections=**} {
-        allow read: if isMember(tid);
-        allow write: if isAdmin(tid);
+        allow read: if isSignedIn() && (isDemo(tid) || isMember(tid));
+        allow write: if isSignedIn() && (isDemo(tid) || isAdmin(tid));
       }
     }
 
