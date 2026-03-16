@@ -559,7 +559,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: plansData } = useCollection(plansQuery);
   const plans = plansData || [];
 
-  // --- RECRUITING & TACTICAL STABLE METHODS ---
+  // --- STABLE CALLBACKS ---
   const getRecruitingProfile = useCallback(async (playerId: string) => {
     if (!playerId || !db) return null;
     const s = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile'));
@@ -698,7 +698,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!firebaseUser || !db || !activeTeam) return '';
     const id = `league_${Date.now()}`;
     const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const leagueData = { id, name, sport: activeTeam.sport || 'General', creatorId: firebaseUser.uid, inviteCode, memberTeamIds: [activeTeam.id], teams: { [activeTeam.id]: { teamName: activeTeam.name, teamLogoUrl: activeTeam.teamLogoUrl || '', wins: 0, losses: 0, ties: 0, points: 0 } }, finances: { [activeTeam.id]: { totalOwed: 0, totalPaid: 0, status: 'paid', payments: [] } }, globalFees: { registration: 0 }, createdAt: new Date().toISOString() };
+    const leagueData = { 
+      id, name, sport: activeTeam.sport || 'General', creatorId: firebaseUser.uid, 
+      inviteCode, memberTeamIds: [activeTeam.id], 
+      teams: { [activeTeam.id]: { teamName: activeTeam.name, teamLogoUrl: activeTeam.teamLogoUrl || '', wins: 0, losses: 0, ties: 0, points: 0 } }, 
+      finances: { [activeTeam.id]: { totalOwed: 0, totalPaid: 0, status: 'paid', payments: [] } }, 
+      globalFees: { registration: 0 }, createdAt: new Date().toISOString() 
+    };
     await setDoc(doc(db, 'leagues', id), clean(leagueData));
     await updateDoc(doc(db, 'teams', activeTeam.id), { [`leagueIds.${id}`]: true });
     return id;
@@ -749,7 +755,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const verifyVolunteerHours = useCallback(async (oppId: string, userId: string, hours: number) => { if (activeTeam && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${userId}.status`]: 'verified', [`signups.${userId}.verifiedHours`]: hours }); }, [db, activeTeam]);
   const confirmVolunteerAttendance = useCallback(async (oppId: string, userId: string, confirmed: boolean) => { if (activeTeam && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${userId}.isConfirmed`]: confirmed }); }, [db, activeTeam]);
   const addFundraisingOpportunity = useCallback(async (data: any) => { if (activeTeam && db) await addDoc(collection(db, 'teams', activeTeam.id, 'fundraising'), clean({ ...data, currentAmount: 0 })); }, [db, activeTeam]);
-  const signUpForFundraising = useCallback(async (fundId: string) => { if (activeTeam && firebaseUser && db) await addDoc(collection(db, 'teams', activeTeam.id, 'fundraising', fundId, 'donations'), { donorName: firebaseUser.displayName, donorId: firebaseUser.uid, status: 'pending', createdAt: new Date().toISOString() }); }, [db, activeTeam, firebaseUser]);
   const confirmExternalDonation = useCallback(async (fundId: string, donationId: string, amount: number) => { if (!activeTeam || !db) return; const batch = writeBatch(db); batch.update(doc(db, 'teams', activeTeam.id, 'fundraising', fundId, 'donations', donationId), { status: 'verified', amount }); batch.update(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), { currentAmount: increment(amount) }); await batch.commit(); }, [db, activeTeam]);
   const addIncident = useCallback(async (data: any) => { if (activeTeam?.id && firebaseUser && db) await addDoc(collection(db, 'teams', activeTeam.id, 'incidents'), clean({ ...data, teamId: activeTeam.id, teamName: activeTeam.name, reportedBy: firebaseUser.uid, createdAt: new Date().toISOString() })); }, [db, activeTeam, firebaseUser]);
   const saveLeagueRegistrationConfig = useCallback(async (leagueId: string, updates: Partial<LeagueRegistrationConfig>) => { if (db) await setDoc(doc(db, 'leagues', leagueId, 'registration', updates.id || 'config'), clean(updates), { merge: true }); }, [db]);

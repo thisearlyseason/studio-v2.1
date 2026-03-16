@@ -46,7 +46,7 @@ service cloud.firestore {
 
     // --- Institutional Infrastructure ---
 
-    match /leagues/{allPaths=**} {
+    match /leagues/{document=**} {
       allow read, write: if isSignedIn();
     }
 
