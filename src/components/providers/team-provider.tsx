@@ -509,7 +509,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [seenAlertIds, setSeenAlertIds] = useState<string[]>([]);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
-  // --- CORE SYSTEM STATES & QUERIES ---
+  // 1. Base User Profile Listener
   useEffect(() => {
     if (!firebaseUser?.uid || !db || !isAuthResolved) return;
     return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
@@ -533,10 +533,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [firebaseUser?.uid, db, isAuthResolved]);
 
-  const plansQuery = useMemoFirebase(() => (db && isAuthResolved) ? collection(db, 'plans') : null, [db, isAuthResolved]);
-  const { data: plansData } = useCollection(plansQuery);
-  const plans = plansData || [];
-
+  // 2. Derive Team List
   const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   const teamsRaw = useMemo(() => (teamsData || []).map(m => ({ ...m, id: m.teamId || m.id, name: m.name || m.teamName || 'Squad' })), [teamsData]);
@@ -547,6 +544,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const activeTeam = useMemo(() => teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null, [teamsRaw, activeTeamId]);
 
+  // 3. Sub-data for Active Team
   const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
   const members = useMemo(() => membersData || [], [membersData]);
@@ -559,11 +557,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return alerts.filter(a => !seenAlertIds.includes(a.id)).length;
   }, [alerts, seenAlertIds]);
 
+  const plansQuery = useMemoFirebase(() => (db && isAuthResolved) ? collection(db, 'plans') : null, [db, isAuthResolved]);
+  const { data: plansData } = useCollection(plansQuery);
+  const plans = plansData || [];
+
   // --- RECRUITING & PROFILE ACTIONS ---
   const getRecruitingProfile = useCallback(async (playerId: string) => {
     if (!playerId || !db) return null;
-    const s = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile'));
-    return s.exists() ? (s.data() as RecruitingProfile) : null;
+    try {
+      const s = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile'));
+      return s.exists() ? (s.data() as RecruitingProfile) : null;
+    } catch { return null; }
   }, [db]);
 
   const updateRecruitingProfile = useCallback(async (playerId: string, data: Partial<RecruitingProfile>) => {
@@ -577,8 +581,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const getAthleticMetrics = useCallback(async (playerId: string) => {
     if (!playerId || !db) return null;
-    const s = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'metrics'));
-    return s.exists() ? (s.data() as AthleticMetrics) : null;
+    try {
+      const s = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'metrics'));
+      return s.exists() ? (s.data() as AthleticMetrics) : null;
+    } catch { return null; }
   }, [db]);
 
   const updateAthleticMetrics = useCallback(async (playerId: string, data: Partial<AthleticMetrics>) => {
@@ -619,8 +625,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const getRecruitingContact = useCallback(async (playerId: string) => {
     if (!playerId || !db) return null;
-    const s = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'contact'));
-    return s.exists() ? (s.data() as RecruitingContact) : null;
+    try {
+      const s = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'contact'));
+      return s.exists() ? (s.data() as RecruitingContact) : null;
+    } catch { return null; }
   }, [db]);
 
   const updateRecruitingContact = useCallback(async (playerId: string, data: Partial<RecruitingContact>) => {
@@ -938,7 +946,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const assignManualPlan = useCallback(async (uid: string, pid: string, lim: number) => { await updateDoc(doc(db, 'users', uid), { activePlanId: pid, proTeamLimit: lim, planSource: 'manual' }); }, [db]);
   const saveLeagueRegistrationConfig = useCallback(async (leagueId: string, updates: Partial<LeagueRegistrationConfig>) => { if (!db) return; await setDoc(doc(db, 'leagues', leagueId, 'registration', updates.id || 'config'), clean(updates), { merge: true }); }, [db]);
   const submitRegistrationEntry = useCallback(async (targetId: string, protocolId: string, answers: any, version: number, signature?: string, targetType?: 'leagues' | 'teams') => { if (!db) return; await addDoc(collection(db, targetType || 'leagues', targetId, 'registrationEntries'), clean({ answers, form_version: version, status: 'pending', payment_received: false, waiver_signed_text: signature, created_at: new Date().toISOString() })); }, [db]);
-  const createChat = useCallback(async (name: string, mIds: string[]) => { if (!activeTeam?.id || !db || !firebaseUser) return ''; const id = `chat_${Date.now()}`; await setDoc(doc(db, 'teams', activeTeam.id, 'groupChats', id), clean({ id, name, memberIds: [...mIds, firebaseUser.uid], createdAt: new Date().toISOString(), createdBy: firebaseUser.uid })); return id; }, [activeTeam?.id, db, firebaseUser]);
   const signPublicTournamentWaiver = useCallback(async (tId: string, eId: string, teamName: string, cName: string) => { if (!db) return false; await updateDoc(doc(db, 'teams', tId, 'events', eId), { [`teamAgreements.${teamName}`]: { agreed: true, captainName: cName, signedAt: new Date().toISOString() } }); return true; }, [db]);
   const submitMatchScore = useCallback(async (tId: string, eId: string, gId: string, isT1: boolean, s1: number, s2: number) => { if (!db) return; const snap = await getDoc(doc(db, 'teams', tId, 'events', eId)); if (!snap.exists()) return; const games = snap.data().tournamentGames || []; const idx = games.findIndex((g: any) => g.id === gId); if (idx === -1) return; games[idx] = { ...games[idx], score1: s1, score2: s2, isCompleted: true }; await updateDoc(doc(db, 'teams', tId, 'events', eId), { tournamentGames: games }); }, [db]);
   const submitLeagueMatchScore = useCallback(async (lId: string, gId: string, isT1: boolean, s1: number, s2: number) => { if (!db) return; const snap = await getDoc(doc(db, 'leagues', lId)); if (!snap.exists()) return; const games = snap.data().schedule || []; const idx = games.findIndex((g: any) => g.id === gId); if (idx === -1) return; games[idx] = { ...games[idx], score1: s1, score2: s2, isCompleted: true }; await updateDoc(doc(db, 'leagues', lId), { schedule: games }); }, [db]);
@@ -952,8 +959,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const deleteFacility = useCallback(async (id: string) => { await deleteDoc(doc(db, 'facilities', id)); }, [db]);
   const addField = useCallback(async (fid: string, n: string) => { await addDoc(collection(db, 'facilities', fid, 'fields'), { name: n, facilityId: fid }); }, [db]);
   const deleteField = useCallback(async (fid: string, id: string) => { await deleteDoc(doc(db, 'facilities', fid, 'fields', id)); }, [db]);
+  const createChat = useCallback(async (name: string, mIds: string[]) => { if(!activeTeam || !firebaseUser) return ''; const id = `chat_${Date.now()}`; await setDoc(doc(db, 'teams', activeTeam.id, 'groupChats', id), clean({ id, name, memberIds: [...mIds, firebaseUser.uid], createdAt: new Date().toISOString(), createdBy: firebaseUser.uid })); return id; }, [db, activeTeam, firebaseUser]);
 
-  // --- CONTEXT ASSEMBLY ---
+  const leaguesQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'leagues'), where('memberTeamIds', 'array-contains', activeTeam.id)) : null, [isAuthResolved, activeTeam?.id, db]);
+  const { data: rawLeagues } = useCollection<League>(leaguesQuery);
+
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
@@ -965,20 +975,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     hasFeature: (id: string) => true, alerts, unreadAlertsCount,
     markAlertAsSeen: async (id: string) => {
       setSeenAlertIds(p => [...new Set([...p, id])]);
-      if (firebaseUser) {
-        await updateDoc(doc(db, 'users', firebaseUser.uid), {
-          seenAlertIds: arrayUnion(id)
-        });
-      }
+      if (firebaseUser) await updateDoc(doc(db, 'users', firebaseUser.uid), { seenAlertIds: arrayUnion(id) });
     },
     markAllAlertsAsSeen: async () => {
       const ids = alerts.map(a => a.id);
       setSeenAlertIds(ids);
-      if (firebaseUser && ids.length > 0) {
-        await updateDoc(doc(db, 'users', firebaseUser.uid), {
-          seenAlertIds: ids
-        });
-      }
+      if (firebaseUser && ids.length > 0) await updateDoc(doc(db, 'users', firebaseUser.uid), { seenAlertIds: ids });
     },
     seenAlertIds, isSeedingDemo, setIsSeedingDemo,
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
@@ -995,7 +997,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
     confirmVolunteerAttendance, addFundraisingOpportunity, signUpForFundraising,
     confirmExternalDonation, addIncident, addRegistration, assignManualPlan,
-    saveLeagueRegistrationConfig, submitRegistrationEntry, createChat: createChat,
+    saveLeagueRegistrationConfig, submitRegistrationEntry, createChat,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, disputeMatchScore,
     createAlert, deleteAlert, addDrill, addFile, deleteFile, addFacility, deleteFacility,
     addField, deleteField,
