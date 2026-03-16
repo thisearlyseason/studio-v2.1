@@ -29,6 +29,7 @@ export interface FirebaseContextState {
   // User authentication state
   user: User | null;
   isUserLoading: boolean; // True during initial auth check
+  isAuthResolved: boolean; // Explicit flag for auth completion
   userError: Error | null; // Error from auth listener
 }
 
@@ -39,6 +40,7 @@ export interface FirebaseServicesAndUser {
   auth: Auth;
   user: User | null;
   isUserLoading: boolean;
+  isAuthResolved: boolean;
   userError: Error | null;
 }
 
@@ -100,6 +102,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       auth: servicesAvailable ? auth : null,
       user: userAuthState.user,
       isUserLoading: userAuthState.isUserLoading,
+      isAuthResolved: !userAuthState.isUserLoading,
       userError: userAuthState.userError,
     };
   }, [firebaseApp, firestore, auth, userAuthState]);
@@ -133,6 +136,7 @@ export const useFirebase = (): FirebaseServicesAndUser => {
     auth: context.auth,
     user: context.user,
     isUserLoading: context.isUserLoading,
+    isAuthResolved: context.isAuthResolved,
     userError: context.userError,
   };
 };
@@ -179,7 +183,7 @@ export const useUser = (): UserHookResult => {
   return { 
     user: context.user, 
     isUserLoading: context.isUserLoading, 
-    isAuthResolved: !context.isUserLoading, 
+    isAuthResolved: context.isAuthResolved, 
     userError: context.userError 
   };
 };

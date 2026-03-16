@@ -32,11 +32,8 @@ service cloud.firestore {
       }
     }
 
-    match /leagues/{leagueId} {
+    match /leagues/{document=**} {
       allow read, write: if isSignedIn();
-      match /{allPaths=**} {
-        allow read, write: if isSignedIn();
-      }
     }
 
     match /facilities/{facilityId} {
@@ -53,15 +50,15 @@ service cloud.firestore {
       }
     }
 
-    // Global Catalog Rules
+    // Global Catalog Rules - Publicly readable for pricing/marketing
     match /plans/{planId} {
-      allow read: if isSignedIn();
-      allow write: if request.auth.token.email == 'thisearlyseason@gmail.com';
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.token.email == 'thisearlyseason@gmail.com';
     }
 
     match /features/{featureId} {
-      allow read: if isSignedIn();
-      allow write: if request.auth.token.email == 'thisearlyseason@gmail.com';
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.token.email == 'thisearlyseason@gmail.com';
     }
 
     match /subscriptions/{userId} {

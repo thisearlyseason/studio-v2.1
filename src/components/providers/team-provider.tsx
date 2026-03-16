@@ -42,6 +42,8 @@ export type UserProfile = {
   activePlanId?: string | null;
   proTeamLimit?: number | null;
   seenAlertIds?: string[];
+  clubName?: string;
+  clubDescription?: string;
 };
 
 export type PlayerProfile = {
@@ -471,7 +473,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const db = useFirestore();
   const router = useRouter();
   
-  // 1. State
+  // 1. Core State
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
@@ -479,7 +481,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [householdBalance, setHouseholdBalance] = useState(0);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
-  // 2. Data Pipelines (Initialized)
+  // 2. Data Pipelines (hooks at top)
   const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
@@ -508,7 +510,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [firebaseUser, db]);
 
-  // Derived Intelligence
+  // Derived Values (memos at top after state/queries)
   const teamsRaw = useMemo(() => (teamsData || []).map(m => ({ ...m, id: m.teamId || m.id, name: m.name || m.teamName || 'Squad' })), [teamsData]);
   const activeTeam = useMemo(() => teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null, [teamsRaw, activeTeamId]);
   const members = useMemo(() => membersData || [], [membersData]);
@@ -528,7 +530,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const isClubManager = useMemo(() => ['elite_teams', 'elite_league'].includes(userProfile?.activePlanId || ''), [userProfile?.activePlanId]);
   const isSuperAdmin = useMemo(() => userProfile?.email === 'thisearlyseason@gmail.com', [userProfile?.email]);
 
-  // --- TACTICAL METHODS ---
+  // 3. Tactical Methods (useCallback)
   const formatTime = useCallback((iso: string) => format(new Date(iso), 'h:mm a'), []);
 
   const markAlertAsSeen = useCallback(async (alertId: string) => {
@@ -902,7 +904,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const createAlert = useCallback(async (t: string, m: string, a: any) => { if (activeTeamId && firebaseUser && db) await addDoc(collection(db, 'teams', activeTeamId, 'alerts'), clean({ title: t, message: m, audience: a, createdAt: new Date().toISOString(), createdBy: firebaseUser.uid })); }, [activeTeamId, firebaseUser, db]);
   const deleteAlert = useCallback(async (id: string) => { if (activeTeamId && db) await deleteDoc(doc(db, 'teams', activeTeamId, 'alerts', id)); }, [activeTeamId, db]);
 
-  // --- CONTEXT ASSEMBLY ---
+  // 4. Context Memoization
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
@@ -927,7 +929,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, disputeMatchScore,
     createAlert, deleteAlert, addDrill, addFile, deleteFile, addFacility, deleteFacility,
-    addField, deleteField, addVolunteerOpportunity, updateEquipmentItem, deleteEquipmentItem,
+    addField, deleteField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed
   }), [
@@ -944,12 +946,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     updateUser, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
-    confirmVolunteerAttendance, addFundraisingOpportunity, signUpForFundraising,
+    confirmVolunteerAttendance, addVolunteerOpportunity, signUpForFundraising,
     confirmExternalDonation, addIncident, addRegistration, assignManualPlan,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, disputeMatchScore,
     createAlert, deleteAlert, addDrill, addFile, deleteFile, addFacility, deleteFacility,
-    addField, deleteField, addVolunteerOpportunity, updateEquipmentItem, deleteEquipmentItem,
+    addField, deleteField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed
   ]);
