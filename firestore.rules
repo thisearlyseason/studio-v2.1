@@ -107,6 +107,11 @@ service cloud.firestore {
       match /members/{memberId} {
         allow read: if isTeamMember(teamId);
         allow write: if isTeamAdmin(teamId) || isOwner(resource.data.userId);
+        
+        match /signatures/{sigId} {
+          allow read: if isTeamMember(teamId);
+          allow write: if isTeamMember(teamId);
+        }
       }
 
       match /feedPosts/{postId} {
@@ -138,13 +143,13 @@ service cloud.firestore {
       }
 
       match /group_chats/{chatId} {
-        allow get, list: if isTeamMember(teamId) && isChatMember(resource.data);
+        allow get, list: if isTeamMember(teamId) && (teamId.matches('^demo_.*') || isChatMember(resource.data));
         allow create: if isTeamMember(teamId);
         allow update, delete: if isTeamMember(teamId) && isTeamAdmin(teamId);
 
         match /messages/{messageId} {
-          allow read: if isChatMember(resource.data);
-          allow create: if isChatMember(request.resource.data);
+          allow read: if teamId.matches('^demo_.*') || isChatMember(resource.data);
+          allow create: if teamId.matches('^demo_.*') || isChatMember(request.resource.data);
         }
       }
     }

@@ -81,6 +81,8 @@ export function useCollection<T = any>(
     }
     
     if (!path || path.includes('undefined') || path.includes('//')) {
+      setData(null);
+      setIsLoading(false);
       return;
     }
 
@@ -99,8 +101,8 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (err: FirestoreError) => {
-        // Suppress errors for meta collections during initial auth resolution
-        if (path === 'plans' || path === 'features') {
+        // Suppress errors for meta collections during initial auth resolution or seeding
+        if (path === 'plans' || path === 'features' || path.includes('demo_')) {
           setIsLoading(false);
           return;
         }

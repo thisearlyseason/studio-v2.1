@@ -42,23 +42,23 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       setIsDemoInitializing(true);
       const seed = async () => {
         try {
-          // Verify user still signed in before seeding
           if (auth.currentUser) {
             await seedGuestDemoTeam(db, user.uid, demoPlanId);
+            // Force a reload to pick up the new teams and clear the seed param
             window.location.replace('/dashboard');
           }
         } catch (e) {
           console.error("Demo failure:", e);
           setIsDemoInitializing(false);
+          toast({ title: "Synchronization Failed", description: "The tactical environment could not be established. Please try again.", variant: "destructive" });
         }
       };
       seed();
     }
   }, [mounted, user, teams.length, db, isDemoInitializing, searchParams, auth]);
 
-  // --- AUTH GUARDS (Optimized for Mobile Demo stability) ---
+  // --- AUTH GUARDS ---
   useEffect(() => {
-    // CRITICAL: Prevent redirects if a demo is in progress or about to seed
     const demoParam = searchParams.get('seed_demo');
     if (!mounted || !isAuthResolved || isDemoInitializing || demoParam) return;
     
