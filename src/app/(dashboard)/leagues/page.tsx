@@ -237,7 +237,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
 
             <aside className="lg:col-span-5 space-y-6">
               <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Blackout Dates</h3>
-              <div className="bg-white border-2 rounded-[2rem] p-4 shadow-inner flex flex-col items-center">
+              <div className="bg-white border-2 rounded-[2rem] p-4 shadow-inner flex flex-col items-center text-foreground">
                 <Calendar 
                   mode="multiple"
                   selected={config.blackoutDates}
@@ -323,7 +323,7 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          <Card className="lg:col-span-5 rounded-[2.5rem] border-none shadow-xl bg-white p-6 flex flex-col items-center">
+          <Card className="lg:col-span-5 rounded-[2.5rem] border-none shadow-xl bg-white p-6 flex flex-col items-center text-foreground">
             <Calendar 
               mode="single"
               selected={selectedDate}
@@ -771,6 +771,8 @@ export default function LeaguesPage() {
       {/* CREATE LEAGUE DIALOG */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden bg-white text-foreground">
+          <DialogTitle className="sr-only">League Architect Protocol</DialogTitle>
+          <DialogDescription className="sr-only">Initialize a new competitive league hub</DialogDescription>
           <DialogHeader className="p-8 lg:p-10 pb-4">
             <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">League Architect</DialogTitle>
             <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Initialize Competitive Infrastructure</DialogDescription>
@@ -801,6 +803,8 @@ export default function LeaguesPage() {
       {/* RECRUITMENT DIALOG */}
       <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
         <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+          <DialogTitle className="sr-only">Recruitment Pipeline Protocol</DialogTitle>
+          <DialogDescription className="sr-only">Enroll participating teams via multiple channels</DialogDescription>
           <DialogHeader className="p-8 lg:p-12 pb-4">
             <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Recruit Teams</DialogTitle>
             <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Multi-Channel Enrollment Suite</DialogDescription>

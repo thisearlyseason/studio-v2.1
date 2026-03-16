@@ -35,26 +35,28 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 
   // --- OPTIMIZED ATOMIC DEMO LAUNCH ---
   useEffect(() => {
-    if (!mounted || !user || isDemoInitializing || teams.length > 0) return;
-    
+    // Only launch if we have a seed param, are authenticated, and not already seeding
     const demoPlanId = searchParams.get('seed_demo');
-    if (demoPlanId) {
-      setIsDemoInitializing(true);
-      const seed = async () => {
-        try {
-          if (auth.currentUser) {
-            await seedGuestDemoTeam(db, user.uid, demoPlanId);
-            // Force a reload to pick up the new teams and clear the seed param
+    if (!mounted || !user || isDemoInitializing || !demoPlanId || teams.length > 0) return;
+    
+    setIsDemoInitializing(true);
+    const seed = async () => {
+      try {
+        if (auth.currentUser) {
+          console.log("Initializing guest tactical environment...", demoPlanId);
+          await seedGuestDemoTeam(db, user.uid, demoPlanId);
+          // Small delay to allow Firestore propagation before reload
+          setTimeout(() => {
             window.location.replace('/dashboard');
-          }
-        } catch (e) {
-          console.error("Demo failure:", e);
-          setIsDemoInitializing(false);
-          toast({ title: "Synchronization Failed", description: "The tactical environment could not be established. Please try again.", variant: "destructive" });
+          }, 1000);
         }
-      };
-      seed();
-    }
+      } catch (e) {
+        console.error("Demo synchronization failure:", e);
+        setIsDemoInitializing(false);
+        toast({ title: "Synchronization Failed", description: "The tactical environment could not be established. Please check your connection.", variant: "destructive" });
+      }
+    };
+    seed();
   }, [mounted, user, teams.length, db, isDemoInitializing, searchParams, auth]);
 
   // --- AUTH GUARDS ---
@@ -131,7 +133,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           </div>
           <div className="text-center space-y-2">
             <p className="text-lg font-black uppercase tracking-widest text-primary">
-              {isDemoInitializing ? "Synchronizing Demo..." : "Authenticating..."}
+              {isDemoInitializing ? "Synchronizing Hub..." : "Authenticating..."}
             </p>
             <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest opacity-60">
               Establishing Elite Infrastructure
