@@ -30,6 +30,7 @@ export function useDoc<T = any>(
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
   const isMounted = useRef(true);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     isMounted.current = true;
@@ -53,41 +54,51 @@ export function useDoc<T = any>(
     setIsLoading(true);
     setError(null);
 
-    const unsubscribe = onSnapshot(
-      memoizedDocRef,
-      (snapshot: DocumentSnapshot<DocumentData>) => {
-        if (!isMounted.current) return;
-        if (snapshot.exists()) {
-          setData({ ...(snapshot.data() as T), id: snapshot.id });
-        } else {
-          setData(null);
-        }
-        setError(null);
-        setIsLoading(false);
-      },
-      (err: FirestoreError) => {
-        if (!isMounted.current) return;
-        
-        if (!path || path === '/' || path.includes('undefined')) {
+    try {
+      const unsubscribe = onSnapshot(
+        memoizedDocRef,
+        (snapshot: DocumentSnapshot<DocumentData>) => {
+          if (!isMounted.current) return;
+          if (snapshot.exists()) {
+            setData({ ...(snapshot.data() as T), id: snapshot.id });
+          } else {
+            setData(null);
+          }
+          setError(null);
           setIsLoading(false);
-          return;
+        },
+        (err: FirestoreError) => {
+          if (!isMounted.current) return;
+          
+          if (!path || path === '/' || path.includes('undefined')) {
+            setIsLoading(false);
+            return;
+          }
+
+          const contextualError = new FirestorePermissionError({
+            operation: 'get',
+            path: path,
+          });
+
+          setError(contextualError);
+          setData(null);
+          setIsLoading(false);
+          errorEmitter.emit('permission-error', contextualError);
         }
-
-        const contextualError = new FirestorePermissionError({
-          operation: 'get',
-          path: path,
-        });
-
-        setError(contextualError);
-        setData(null);
-        setIsLoading(false);
-        errorEmitter.emit('permission-error', contextualError);
-      }
-    );
+      );
+      unsubscribeRef.current = unsubscribe;
+    } catch (e) {
+      setIsLoading(false);
+    }
 
     return () => {
       isMounted.current = false;
-      unsubscribe();
+      if (unsubscribeRef.current) {
+        try {
+          unsubscribeRef.current();
+        } catch (e) {}
+        unsubscribeRef.current = null;
+      }
     };
   }, [memoizedDocRef]);
 

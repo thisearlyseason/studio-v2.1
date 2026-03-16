@@ -74,12 +74,12 @@ service cloud.firestore {
       
       match /evaluations/{evalId} {
         allow read: if true;
-        allow write: if isSignedIn();
+        allow write: if isTeamStaff(get(/databases/$(database)/documents/players/$(playerId)).data.currentTeamId);
       }
       
       match /videos/{videoId} {
         allow read: if true;
-        allow write: if isSignedIn();
+        allow write: if isOwner(get(/databases/$(database)/documents/players/$(playerId)).data.userId) || isSignedIn();
       }
     }
 
@@ -126,37 +126,37 @@ service cloud.firestore {
 
       match /feedPosts/{postId} {
         allow read: if true;
-        allow create: if isSignedIn();
+        allow create: if isTeamStaff(teamId);
         allow update, delete: if isTeamStaff(teamId);
         
         match /comments/{commentId} {
           allow read: if true;
           allow create: if isSignedIn();
-          allow delete: if isTeamStaff(teamId);
+          allow delete: if isTeamStaff(teamId) || isOwner(request.auth.uid);
         }
       }
 
       match /alerts/{alertId} {
-        allow read: if isSignedIn() || teamId.startsWith('demo_');
+        allow read: if isTeamMember(teamId);
         allow write: if isTeamStaff(teamId);
       }
 
       match /games/{gameId} {
-        allow read: if isSignedIn() || teamId.startsWith('demo_');
+        allow read: if isTeamMember(teamId);
         allow write: if isTeamStaff(teamId);
       }
 
       match /drills/{drillId} {
-        allow read: if isSignedIn() || teamId.startsWith('demo_');
+        allow read: if isTeamMember(teamId);
         allow write: if isTeamStaff(teamId);
       }
 
       match /groupChats/{chatId} {
-        allow read: if isSignedIn() || teamId.startsWith('demo_');
-        allow write: if isSignedIn() || teamId.startsWith('demo_');
+        allow read: if isTeamMember(teamId);
+        allow write: if isTeamMember(teamId);
 
         match /messages/{msgId} {
-          allow read, create: if isSignedIn() || teamId.startsWith('demo_');
+          allow read, create: if isTeamMember(teamId);
         }
       }
 

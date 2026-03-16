@@ -21,7 +21,8 @@ import {
   getDoc,
   deleteField,
   collectionGroup,
-  Timestamp
+  Timestamp,
+  serverTimestamp
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -436,7 +437,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await setDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile'), {
       ...data,
       playerId,
-      updatedAt: Timestamp.now()
+      updatedAt: serverTimestamp()
     }, { merge: true });
   };
 
@@ -471,7 +472,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await addDoc(collection(db, 'players', playerId, 'evaluations'), clean({
       ...data,
       evaluatorId: firebaseUser?.uid,
-      createdAt: Timestamp.now()
+      createdAt: serverTimestamp()
     }));
   };
 
@@ -492,7 +493,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addPlayerVideo = async (playerId: string, data: Partial<PlayerVideo>) => {
     await addDoc(collection(db, 'players', playerId, 'videos'), clean({
       ...data,
-      createdAt: Timestamp.now()
+      createdAt: serverTimestamp()
     }));
   };
 
