@@ -16,11 +16,23 @@ service cloud.firestore {
       // Robust check for anonymous/custom provider status used in development/demos
       return isSignedIn() && (
         request.auth.token.firebase.sign_in_provider == 'anonymous' || 
-        request.auth.token.firebase.sign_in_provider == 'custom'
+        request.auth.token.firebase.sign_in_provider == 'custom' ||
+        request.auth.token.sign_in_provider == 'anonymous' ||
+        request.auth.token.sign_in_provider == 'custom'
       );
     }
 
     // --- User Profiles ---
+    match /userProfiles/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) || isAnonymous();
+      
+      match /{allPaths=**} {
+        allow read: if isSignedIn();
+        allow write: if isOwner(userId) || isAnonymous();
+      }
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn();
       allow write: if isOwner(userId) || isAnonymous();
@@ -32,49 +44,29 @@ service cloud.firestore {
     }
 
     // --- Teams Hierarchy ---
-    match /teams/{teamId} {
+    match /teams/{allPaths=**} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() || isAnonymous();
       allow update, delete: if isSignedIn() || isAnonymous();
-
-      match /{allPaths=**} {
-        allow read: if isSignedIn() || isAnonymous();
-        allow write: if isSignedIn() || isAnonymous();
-      }
     }
 
     // --- Leagues Hierarchy ---
-    match /leagues/{leagueId} {
+    match /leagues/{allPaths=**} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() || isAnonymous();
       allow update, delete: if isSignedIn() || isAnonymous();
-      
-      match /{allPaths=**} {
-        allow read: if isSignedIn() || isAnonymous();
-        allow write: if isSignedIn() || isAnonymous();
-      }
     }
 
     // --- Players Hierarchy ---
-    match /players/{playerId} {
+    match /players/{allPaths=**} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() || isAnonymous();
-      
-      match /{allPaths=**} {
-        allow read: if isSignedIn();
-        allow write: if isSignedIn() || isAnonymous();
-      }
     }
 
     // --- Facilities & Fleet ---
-    match /facilities/{facId} {
+    match /facilities/{allPaths=**} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() || isAnonymous();
-      
-      match /{allPaths=**} {
-        allow read: if isSignedIn();
-        allow write: if isSignedIn() || isAnonymous();
-      }
     }
 
     // --- Global Catalog ---

@@ -493,13 +493,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isAuthResolved } = useUser();
   const db = useFirestore();
   
-  // --- 1. CORE STATE ---
   const [activeTeamId, setManualActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
-  // --- 2. FIRESTORE DATA HOOKS ---
   useEffect(() => {
     if (!firebaseUser || !db) { setUserProfile(null); return; }
     return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
@@ -546,7 +544,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
   const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
 
-  // --- 3. TACTICAL BOOLEANS ---
   const isStaff = useMemo(() => {
     if (!activeTeam || !firebaseUser) return false;
     if (activeTeam.role === 'Admin') return true;
@@ -566,7 +563,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return !!plan?.features?.[featureId];
   }, [activeTeam?.planId, userProfile?.activePlanId, plans, isSuperAdmin]);
 
-  // --- 4. TACTICAL METHODS ---
   const getRecruitingProfile = useCallback(async (playerId: string) => { if (!db) return null; const snap = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile')); return snap.exists() ? (snap.data() as RecruitingProfile) : null; }, [db]);
   const updateRecruitingProfile = useCallback(async (playerId: string, data: Partial<RecruitingProfile>) => { if (!db) return; await setDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile'), { ...clean(data), updatedAt: serverTimestamp() }, { merge: true }); }, [db]);
   const getAthleticMetrics = useCallback(async (playerId: string) => { if (!db) return null; const snap = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'metrics')); return snap.exists() ? (snap.data() as AthleticMetrics) : null; }, [db]);
@@ -725,7 +721,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addLeaguePayment = useCallback(async (leagueId: string, teamId: string, data: any) => { if (!db) return; await addDoc(collection(db, 'leagues', leagueId, 'payments'), clean({ ...data, teamId, createdAt: new Date().toISOString() })); await updateDoc(doc(db, 'leagues', leagueId), { [`finances.${teamId}.totalPaid`]: increment(data.amount) }); }, [db]);
   const updateLeagueGlobalFees = useCallback(async (leagueId: string, fees: any) => { if (db) await updateDoc(doc(db, 'leagues', leagueId), { globalFees: clean(fees) }); }, [db]);
 
-  // --- 5. CONTEXT BINDING ---
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setManualActiveTeamId(t.id), teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
