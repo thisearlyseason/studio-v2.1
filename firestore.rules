@@ -13,7 +13,7 @@ service cloud.firestore {
     }
 
     function isAnonymous() {
-      // Robust check for anonymous/custom provider status
+      // Robust check for anonymous/custom provider status used in development/demos
       return isSignedIn() && (
         request.auth.token.firebase.sign_in_provider == 'anonymous' || 
         request.auth.token.firebase.sign_in_provider == 'custom'
@@ -31,16 +31,6 @@ service cloud.firestore {
       }
     }
 
-    // --- Global Catalog ---
-    match /plans/{planId} {
-      allow read: if true;
-      allow write: if isSignedIn() || isAnonymous(); 
-    }
-    match /features/{featureId} {
-      allow read: if true;
-      allow write: if isSignedIn() || isAnonymous();
-    }
-
     // --- Teams Hierarchy ---
     match /teams/{teamId} {
       allow read: if isSignedIn();
@@ -53,26 +43,9 @@ service cloud.firestore {
       }
     }
 
-    // --- Membership Sentinel ---
-    match /team_memberships/{membershipId} {
-      allow read: if isSignedIn() || isAnonymous();
-      allow write: if isSignedIn() || isAnonymous();
-    }
-
-    // --- Players Hierarchy ---
-    match /players/{playerId} {
-      allow read: if isSignedIn() || isAnonymous();
-      allow write: if isSignedIn() || isAnonymous();
-      
-      match /{allPaths=**} {
-        allow read: if isSignedIn() || isAnonymous();
-        allow write: if isSignedIn() || isAnonymous();
-      }
-    }
-
     // --- Leagues Hierarchy ---
     match /leagues/{leagueId} {
-      allow read: if isSignedIn() || isAnonymous();
+      allow read: if isSignedIn();
       allow create: if isSignedIn() || isAnonymous();
       allow update, delete: if isSignedIn() || isAnonymous();
       
@@ -82,38 +55,67 @@ service cloud.firestore {
       }
     }
 
-    // --- Facilities & Fleet ---
-    match /facilities/{facId} {
-      allow read: if isSignedIn() || isAnonymous();
+    // --- Players Hierarchy ---
+    match /players/{playerId} {
+      allow read: if isSignedIn();
       allow write: if isSignedIn() || isAnonymous();
       
       match /{allPaths=**} {
-        allow read: if isSignedIn() || isAnonymous();
+        allow read: if isSignedIn();
         allow write: if isSignedIn() || isAnonymous();
       }
     }
 
+    // --- Facilities & Fleet ---
+    match /facilities/{facId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() || isAnonymous();
+      
+      match /{allPaths=**} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() || isAnonymous();
+      }
+    }
+
+    // --- Global Catalog ---
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if isSignedIn(); 
+    }
+    match /features/{featureId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // --- Membership Sentinel ---
+    match /team_memberships/{membershipId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() || isAnonymous();
+    }
+
     // --- Collection Groups (For cross-team auditing) ---
     match /{path=**}/events/{eventId} {
-      allow read: if isSignedIn() || isAnonymous();
+      allow read: if isSignedIn();
     }
     match /{path=**}/files/{fileId} {
-      allow read: if isSignedIn() || isAnonymous();
+      allow read: if isSignedIn();
     }
     match /{path=**}/signatures/{sigId} {
-      allow read: if isSignedIn() || isAnonymous();
+      allow read: if isSignedIn();
     }
     match /{path=**}/registrationEntries/{entryId} {
-      allow read: if isSignedIn() || isAnonymous();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() || isAnonymous();
     }
     match /{path=**}/members/{memberId} {
-      allow read: if isSignedIn() || isAnonymous();
+      allow read: if isSignedIn();
     }
     match /{path=**}/feedPosts/{postId} {
-      allow read: if isSignedIn() || isAnonymous();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() || isAnonymous();
     }
     match /{path=**}/incidents/{incId} {
-      allow read: if isSignedIn() || isAnonymous();
+      allow read: if isSignedIn();
     }
 
     // Deny by default
