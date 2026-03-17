@@ -76,7 +76,7 @@ export function useCollection<T = any>(
     // If the path is empty, points to document root, or contains undefined segments, 
     // do not establish a listener. Querying the root /databases/(default)/documents path 
     // is forbidden by security rules and will cause immediate permission errors.
-    const isRootPath = !path || path === '/' || path === '.' || path === '';
+    const isRootPath = !path || path === '/' || path === '.' || path === '' || path === 'databases/(default)/documents';
     const hasUndefinedSegments = path === 'undefined' || path.includes('/undefined/') || path.endsWith('/undefined');
     const isMalformed = path.includes('[object Object]') || path.includes('null');
 

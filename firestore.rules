@@ -24,26 +24,26 @@ service cloud.firestore {
     }
 
     // --- Unified Hierarchies ---
-    // Explicitly using top-level recursive wildcards to ensure subcollection listing (like leagues/global/invites)
+    // Using top-level recursive wildcards to ensure subcollection listing (like leagues/global/invites)
     
     match /leagues/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() || isAnonymous();
+      allow read, write: if isSignedIn();
     }
 
     match /teams/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() || isAnonymous();
+      allow read, write: if isSignedIn();
+    }
+
+    match /users/{allPaths=**} {
+      allow read, write: if isSignedIn();
     }
 
     match /players/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() || isAnonymous();
+      allow read, write: if isSignedIn();
     }
 
     match /facilities/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() || isAnonymous();
+      allow read, write: if isSignedIn();
     }
 
     match /plans/{allPaths=**} {
@@ -51,46 +51,29 @@ service cloud.firestore {
       allow write: if isAnonymous();
     }
 
-    // --- User Profiles ---
-    match /users/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isOwner(userId) || isAnonymous();
-      
-      match /{allPaths=**} {
-        allow read: if isSignedIn();
-        allow write: if isOwner(userId) || isAnonymous();
-      }
-    }
-
-    // --- Membership Sentinel ---
+    // --- Team Memberships (Sentinels) ---
     match /team_memberships/{membershipId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() || isAnonymous();
+      allow read, write: if isSignedIn();
     }
 
-    // --- Collection Groups (Master Calendar & Household Hub) ---
-    match /{path=**}/events/{eventId} {
+    // --- Collection Groups (Master View & Global Aggregation) ---
+    match /{path=**}/events/{id} {
       allow read: if isSignedIn();
     }
-    match /{path=**}/files/{fileId} {
+    match /{path=**}/members/{id} {
       allow read: if isSignedIn();
     }
-    match /{path=**}/signatures/{sigId} {
+    match /{path=**}/signatures/{id} {
       allow read: if isSignedIn();
     }
-    match /{path=**}/registrationEntries/{entryId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() || isAnonymous();
-    }
-    match /{path=**}/members/{memberId} {
+    match /{path=**}/files/{id} {
       allow read: if isSignedIn();
     }
-    match /{path=**}/feedPosts/{postId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() || isAnonymous();
+    match /{path=**}/registrationEntries/{id} {
+      allow read, write: if isSignedIn();
     }
 
-    // Deny by default
+    // Deny by default for any unexpected paths
     match /{path=**} {
       allow read, write: if false;
     }
