@@ -5,7 +5,8 @@ import {
   doc, 
   writeBatch,
   collection,
-  serverTimestamp
+  serverTimestamp,
+  setDoc
 } from 'firebase/firestore';
 
 /**
@@ -77,14 +78,15 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
 export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string) {
   const isParentDemo = planId === 'parent_demo';
   const isPlayerDemo = planId === 'player_demo';
+  const isLeagueDemo = planId === 'elite_league';
   const isEliteDemo = ['elite_teams', 'elite_league', 'squad_organization'].includes(planId);
   const isProTier = planId !== 'starter_squad' && !isParentDemo && !isPlayerDemo;
   
-  const actualPlanId = (isParentDemo || isPlayerDemo) ? 'squad_pro' : planId;
+  const actualPlanId = (isParentDemo || isPlayerDemo) ? 'squad_pro' : (isLeagueDemo ? 'elite_league' : planId);
   const userRole = isParentDemo ? 'parent' : (isPlayerDemo ? 'adult_player' : 'coach');
   const pos = isParentDemo ? 'Parent' : (isPlayerDemo ? 'Player' : 'Coach');
   
-  // CRITICAL: Demos that need Coaches Corner must have 'Admin' role
+  // CRITICAL: Demos that need command access must have 'Admin' role
   const role = (isParentDemo || isPlayerDemo) ? 'Member' : 'Admin';
 
   const batch = writeBatch(db);
@@ -93,7 +95,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   // 1. Core Profile
   batch.set(doc(db, 'users', userId), clean({
     id: userId, fullName: `Guest ${pos}`, email: `${userRole}@thesquad.pro`,
-    role: userRole, activePlanId: actualPlanId, proTeamLimit: isEliteDemo ? 20 : (isProTier ? 1 : 0), createdAt: now, isDemo: true, seenAlertIds: []
+    role: userRole, activePlanId: actualPlanId, proTeamLimit: isEliteDemo ? 20 : (isProTier ? 1 : 0), createdAt: now, isDemo: true, seenAlertIds: [],
+    avatarUrl: `https://picsum.photos/seed/${userId}/150/150`
   }), { merge: true });
 
   // Define team configurations
@@ -113,7 +116,9 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     batch.set(doc(db, 'teams', tid), clean({
       id: tid, teamName: config.name, teamCode: tid.slice(-6).toUpperCase(),
       ownerUserId: userId, isPro: config.isPro, planId: config.isPro ? actualPlanId : 'starter_squad', sport: 'Multi-Sport', isDemo: true,
-      parentCommentsEnabled: true, parentChatEnabled: true, createdAt: now, createdBy: userId
+      parentCommentsEnabled: true, parentChatEnabled: true, createdAt: now, createdBy: userId,
+      heroImageUrl: `https://picsum.photos/seed/${tid}hero/1200/400`,
+      teamLogoUrl: `https://picsum.photos/seed/${tid}logo/200/200`
     }));
 
     // ACL SYNC
@@ -151,6 +156,18 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       batch.set(doc(db, 'teams', tid, 'members', childId), clean({ id: childId, userId: 'none', playerId: childId, teamId: tid, name: 'Junior Guest', role: 'Member', position: 'Player', jersey: '10', joinedAt: now, isMinor: true, amountOwed: 75, feesPaid: false, totalFees: 1250, avatar: `https://picsum.photos/seed/junior/150/150`, medicalClearance: true }));
     }
   });
+
+  // 3. League Admin Specialization
+  if (isLeagueDemo) {
+    const lid = `league_${userId.slice(-4)}`;
+    batch.set(doc(db, 'leagues', lid), clean({
+      id: lid, name: 'Metro Premier League', creatorId: userId, sport: 'Multi-Sport',
+      memberTeamIds: teamConfigs.map(c => c.id),
+      teams: teamConfigs.reduce((acc, c) => ({ ...acc, [c.id]: { teamName: c.name, wins: 2, losses: 1, points: 6 } }), {}),
+      inviteCode: 'LEAGUE1', createdAt: now
+    }));
+    batch.update(doc(db, 'teams', teamConfigs[0].id), { [`leagueIds.${lid}`]: true });
+  }
 
   await batch.commit();
   return teamConfigs[0].id;
