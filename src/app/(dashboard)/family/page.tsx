@@ -40,7 +40,7 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogTrigger,
-  DialogFooter,
+  DialogFooter, 
   DialogDescription
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
@@ -114,7 +114,7 @@ export default function FamilyDashboardPage() {
   };
 
   const upcomingEvents = useMemo(() => {
-    if (!householdEvents) return [];
+    if (!householdEvents || !Array.isArray(householdEvents)) return [];
     return householdEvents.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date))).slice(0, 5);
   }, [householdEvents]);
 
@@ -162,7 +162,7 @@ export default function FamilyDashboardPage() {
                   <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddChild} disabled={isProcessing}>
                     {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Enroll Athlete"}
                   </Button>
-                </DialogFooter>
+                </div>
               </div>
             </DialogContent>
           </Dialog>

@@ -91,7 +91,7 @@ export default function UniversalAccountDashboard() {
   const { data: fundraisers } = useCollection(fundQuery);
 
   const upcomingItinerary = useMemo(() => {
-    if (!householdEvents) return [];
+    if (!householdEvents || !Array.isArray(householdEvents)) return [];
     return householdEvents.filter(e => isFuture(new Date(e.endDate || e.date)) || isToday(new Date(e.endDate || e.date))).slice(0, 3);
   }, [householdEvents]);
 

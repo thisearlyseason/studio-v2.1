@@ -698,7 +698,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addMessage = useCallback(async (chatId: string, author: string, content: string, type: string, img?: string, poll?: any) => { if (activeTeamId && firebaseUser && db) await addDoc(collection(db, 'teams', activeTeamId, 'groupChats', chatId, 'messages'), clean({ author, authorId: firebaseUser.uid, content, type, imageUrl: img, poll, createdAt: new Date().toISOString() })); }, [activeTeamId, firebaseUser, db]);
   const createChat = useCallback(async (name: string, members: string[]) => { if (!activeTeamId || !firebaseUser || !db) return ''; const cid = `chat_${Date.now()}`; await setDoc(doc(db, 'teams', activeTeamId, 'groupChats', cid), clean({ id: cid, name, createdBy: firebaseUser.uid, memberIds: [...members, firebaseUser.uid], createdAt: new Date().toISOString(), isDeleted: false, teamId: activeTeamId })); return cid; }, [activeTeamId, firebaseUser, db]);
   const deleteChat = useCallback(async (chatId: string) => { if (activeTeamId && db) await updateDoc(doc(db, 'teams', activeTeamId, 'groupChats', chatId), { isDeleted: true }); }, [activeTeamId, db]);
-  const hideChatForUser = useCallback(async (chatId: string) => { if (!firebaseUser || !db) return; await setDoc(doc(db, 'userProfiles', firebaseUser.uid, 'hiddenChats', chatId), { id: `${firebaseUser.uid}_${chatId}`, userId: firebaseUser.uid, chatId, hiddenAt: new Date().toISOString() }); }, [firebaseUser, db]);
+  const hideChatForUser = useCallback(async (chatId: string) => { if (!firebaseUser || !db) return; await setDoc(doc(db, 'users', firebaseUser.uid, 'hiddenChats', chatId), { id: `${firebaseUser.uid}_${chatId}`, userId: firebaseUser.uid, chatId, hiddenAt: new Date().toISOString() }); }, [firebaseUser, db]);
   const votePoll = useCallback(async (chatId: string, messageId: string, optionIdx: number) => { if (!activeTeamId || !firebaseUser || !db) return; const msgRef = doc(db, 'teams', activeTeamId, 'groupChats', chatId, 'messages', messageId); const snap = await getDoc(msgRef); if (!snap.exists()) return; const poll = snap.data().poll; if (!poll || poll.isClosed) return; const currentVote = poll.voters?.[firebaseUser.uid]; const updates: any = { [`poll.voters.${firebaseUser.uid}`]: optionIdx }; if (currentVote === undefined) { updates[`poll.options.${optionIdx}.votes`] = increment(1); updates[`poll.totalVotes`] = increment(1); } else if (currentVote !== optionIdx) { updates[`poll.options.${currentVote}.votes`] = increment(-1); updates[`poll.options.${optionIdx}.votes`] = increment(1); } await updateDoc(msgRef, updates); }, [activeTeamId, firebaseUser, db]);
   const updateChat = useCallback(async (chatId: string, data: any) => { if (activeTeamId && db) await updateDoc(doc(db, 'teams', activeTeamId, 'groupChats', chatId), clean(data)); }, [activeTeamId, db]);
 
@@ -852,13 +852,27 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     setIsPaywallOpen(true);
   }, []);
 
+  const addLeaguePayment = useCallback(async (leagueId: string, teamId: string, data: any) => {
+    if (!db) return;
+    await addDoc(collection(db, 'leagues', leagueId, 'payments'), clean({ ...data, teamId }));
+  }, [db]);
+
+  const updateLeagueGlobalFees = useCallback(async (leagueId: string, fees: any) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'leagues', leagueId), { globalFees: clean(fees) });
+  }, [db]);
+
+  const purchasePro = useCallback(() => {
+    setIsPaywallOpen(true);
+  }, []);
+
   // --- CONTEXT ---
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
     isStaff, isPro: activeTeam?.isPro || false, isParent: userProfile?.role === 'parent', isPlayer: userProfile?.role === 'adult_player',
     isSuperAdmin, isClubManager, householdEvents, householdBalance: 0, myChildren, plans, proQuotaStatus: { current: 0, limit: 0, remaining: 0, exceeded: false },
-    isPaywallOpen, setIsPaywallOpen, purchasePro: () => setIsPaywallOpen(true),
+    isPaywallOpen, setIsPaywallOpen, purchasePro,
     hasFeature: (id: string) => true, alerts, unreadAlertsCount,
     markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isSeedingDemo, setIsSeedingDemo,
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
@@ -880,7 +894,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addField, deleteField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
-    isRCInitialized: true, addRegistration
+    isRCInitialized: true, addRegistration, addLeaguePayment, updateLeagueGlobalFees, updateLeagueTeamDetails, manuallyAddTeamToLeague, deleteLeagueInvite
   }), [
     db, userProfile, activeTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser,
     isStaff, householdEvents, myChildren, plans, isPaywallOpen, isSeedingDemo,
@@ -904,7 +918,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addField, deleteField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
-    addRegistration
+    addRegistration, addLeaguePayment, updateLeagueGlobalFees, purchasePro
   ]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;

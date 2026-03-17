@@ -30,31 +30,31 @@ service cloud.firestore {
 
     // --- Core Entity Rules (Recursive Wildcards) ---
 
-    match /userProfiles/{userId}/{document=**} {
+    match /userProfiles/{userId}/{allPaths=**} {
       allow read, write: if isOwner(userId);
     }
 
-    match /users/{userId}/{document=**} {
+    match /users/{userId}/{allPaths=**} {
       allow read, write: if isOwner(userId);
     }
 
-    match /teams/{document=**} {
+    match /teams/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    match /leagues/{document=**} {
+    match /leagues/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    match /players/{document=**} {
+    match /players/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    match /facilities/{document=**} {
+    match /facilities/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    match /team_memberships/{document=**} {
+    match /team_memberships/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
