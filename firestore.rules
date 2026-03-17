@@ -45,6 +45,8 @@ service cloud.firestore {
 
     // --- Unified Hierarchies ---
     // Explicitly using recursive wildcards at the hierarchy root to authorize subcollection listing
+    // match /collection/{allPaths=**} covers list and get for all sub-data
+    
     match /leagues/{allPaths=**} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() || isAnonymous();
@@ -71,7 +73,7 @@ service cloud.firestore {
       allow write: if isSignedIn() || isAnonymous();
     }
 
-    // --- Collection Groups (For cross-team auditing) ---
+    // --- Collection Groups (For Master Calendar & Household Hub) ---
     match /{path=**}/events/{eventId} {
       allow read: if isSignedIn();
     }

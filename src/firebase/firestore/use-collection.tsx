@@ -72,9 +72,15 @@ export function useCollection<T = any>(
       path = 'unknown';
     }
 
-    // CRITICAL: If the path is empty, points to document root, or contains undefined segments, do not establish a listener.
-    // Listing the root /databases/(default)/documents path is forbidden by security rules and will cause errors.
-    if (!path || path === '/' || path === '.' || path === '' || path === 'undefined' || path.includes('/undefined/') || path.endsWith('/undefined')) {
+    // CRITICAL SECURITY GUARD:
+    // If the path is empty, points to document root, or contains undefined segments, 
+    // do not establish a listener. Querying the root /databases/(default)/documents path 
+    // is forbidden by security rules and will cause immediate permission errors.
+    const isRootPath = !path || path === '/' || path === '.' || path === '';
+    const hasUndefinedSegments = path === 'undefined' || path.includes('/undefined/') || path.endsWith('/undefined');
+    const isMalformed = path.includes('[object Object]') || path.includes('null');
+
+    if (isRootPath || hasUndefinedSegments || isMalformed) {
       setData(null);
       setIsLoading(false);
       return;

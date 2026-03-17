@@ -494,7 +494,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isAuthResolved } = useUser();
   const db = useFirestore();
   
-  // 1. Core State declare strictly at the top
+  // 1. Core State declare strictly at the top to prevent lexical errors
   const [activeTeamId, setManualActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
