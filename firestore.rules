@@ -115,6 +115,9 @@ service cloud.firestore {
     match /{path=**}/feedPosts/{postId} {
       allow read: if isSignedIn();
     }
+    match /{path=**}/incidents/{incId} {
+      allow read: if isSignedIn();
+    }
 
     // Explicitly deny root document listing
     match / {

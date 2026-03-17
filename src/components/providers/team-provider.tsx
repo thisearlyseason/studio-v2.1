@@ -644,7 +644,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addFacility = useCallback(async (d: any) => { if (firebaseUser && db) await addDoc(collection(db, 'facilities'), clean({ ...d, clubId: firebaseUser.uid })); }, [db, firebaseUser]);
   const deleteFacility = useCallback(async (id: string) => { if(db) await deleteDoc(doc(db, 'facilities', id)); }, [db]);
   const addField = useCallback(async (fid: string, n: string) => { if(db) await addDoc(collection(db, 'facilities', fid, 'fields'), { name: n, facilityId: fid }); }, [db]);
-  const deleteField = useCallback(async (fid: string, id: string) => { if(db) await deleteDoc(doc(db, 'facilities', fid, 'fields', id)); }, [db]);
+  const deleteField = useCallback(async (fid: string, id: string) => { if(id && db) await deleteDoc(doc(db, 'facilities', fid, 'fields', id)); }, [db]);
 
   const createLeague = useCallback(async (name: string) => { if (!firebaseUser || !db || !activeTeam) return ''; const lid = `league_${Date.now()}`; const batch = writeBatch(db); batch.set(doc(db, 'leagues', lid), clean({ id: lid, name, creatorId: firebaseUser.uid, sport: activeTeam.sport || 'General', teams: { [activeTeam.id]: { teamName: activeTeam.name, wins: 0, losses: 0, ties: 0, points: 0 } }, memberTeamIds: [activeTeam.id], finances: {}, inviteCode: lid.slice(-6).toUpperCase(), createdAt: new Date().toISOString() })); batch.update(doc(db, 'teams', activeTeam.id), { [`leagueIds.${lid}`]: true }); await batch.commit(); return lid; }, [firebaseUser, db, activeTeam]);
   const updateLeagueSchedule = useCallback(async (lId: string, s: any[]) => { if (db) await updateDoc(doc(db, 'leagues', lId), { schedule: clean(s) }); }, [db]);
