@@ -55,13 +55,13 @@ service cloud.firestore {
 
     // --- Membership Sentinel ---
     match /team_memberships/{membershipId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
       allow write: if isSignedIn() || isAnonymous();
     }
 
     // --- Players Hierarchy ---
     match /players/{playerId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
       allow write: if isSignedIn() || isAnonymous();
       
       match /{allPaths=**} {
@@ -72,7 +72,7 @@ service cloud.firestore {
 
     // --- Leagues Hierarchy ---
     match /leagues/{leagueId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
       allow create: if isSignedIn() || isAnonymous();
       allow update, delete: if isSignedIn() || isAnonymous();
       
