@@ -562,10 +562,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const hasFeature = useCallback((featureId: string) => {
     if (isSuperAdmin) return true;
+    // TACTICAL GUARD: Handle loading state to prevent lockouts
+    if (isPlansLoading && (activeTeam?.isPro || userProfile?.activePlanId !== 'starter_squad')) return true;
     const planId = activeTeam?.planId || userProfile?.activePlanId || 'starter_squad';
     const plan = plans.find(p => p.id === planId);
     return !!plan?.features?.[featureId];
-  }, [activeTeam?.planId, userProfile?.activePlanId, plans, isSuperAdmin]);
+  }, [activeTeam?.planId, userProfile?.activePlanId, plans, isSuperAdmin, isPlansLoading]);
 
   // --- 4. Tactical Implementation Methods ---
   const getRecruitingProfile = useCallback(async (playerId: string) => { if (!db) return null; const snap = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile')); return snap.exists() ? (snap.data() as RecruitingProfile) : null; }, [db]);
@@ -667,7 +669,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateLeagueTeamDetails = useCallback(async (leagueId: string, teamId: string, updates: any) => { if (!db) return; await updateDoc(doc(db, 'leagues', leagueId), { [`teams.${teamId}.origin`]: updates.origin, [`teams.${teamId}.coachName`]: updates.coachName, [`teams.${teamId}.coachEmail`]: updates.coachEmail, [`teams.${teamId}.coachPhone`]: updates.coachPhone, [`teams.${teamId}.organizerNotes`]: updates.organizerNotes }); }, [db]);
 
   const upgradeChildToLogin = useCallback(async (childId: string) => { if (db) await updateDoc(doc(db, 'players', childId), { hasLogin: true }); }, [db]);
-  const registerChild = useCallback(async (first: string, last: string, dob: string) => { if (!firebaseUser || !db) return; const cid = `child_${Date.now()}`; await setDoc(doc(db, 'players', cid), clean({ id: cid, firstName: first, lastName: last, dateOfBirth: dob, isMinor: true, parentId: firebaseUser.uid, joinedTeamIds: [], createdAt: now })); }, [db, firebaseUser]);
+  const registerChild = useCallback(async (first: string, last: string, dob: string) => { if (!firebaseUser || !db) return; const cid = `child_${Date.now()}`; await setDoc(doc(db, 'players', cid), clean({ id: cid, firstName: first, lastName: last, dateOfBirth: dob, isMinor: true, parentId: firebaseUser.uid, joinedTeamIds: [], createdAt: new Date().toISOString() })); }, [db, firebaseUser]);
   const assignManualPlan = useCallback(async (uid: string, planId: string, limit: number) => { if (db) await updateDoc(doc(db, 'users', uid), { activePlanId: planId, proTeamLimit: limit, planSource: 'manual' }); }, [db]);
 
   const addIncident = useCallback(async (data: any) => { if (activeTeam?.id && db && firebaseUser) await addDoc(collection(db, 'teams', activeTeam.id, 'incidents'), clean({ ...data, teamId: activeTeam.id, teamName: activeTeam.name, reportedBy: firebaseUser.uid, createdAt: new Date().toISOString() })); }, [db, firebaseUser, activeTeam]);

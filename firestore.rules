@@ -22,7 +22,7 @@ service cloud.firestore {
       );
     }
 
-    // --- Core Catalog ---
+    // --- Global Catalog ---
     match /plans/{planId} {
       allow read: if true;
       allow write: if isSignedIn();
@@ -43,26 +43,23 @@ service cloud.firestore {
       }
     }
 
-    // --- Teams Hierarchy ---
-    // Using recursive wildcard at top level to ensure all subcollections are reachable
-    match /teams/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() || isAnonymous();
-    }
-
-    // --- Leagues Hierarchy ---
+    // --- Unified Hierarchies ---
+    // Explicitly using recursive wildcards to authorize subcollection listing
     match /leagues/{allPaths=**} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() || isAnonymous();
     }
 
-    // --- Players Hierarchy ---
+    match /teams/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() || isAnonymous();
+    }
+
     match /players/{allPaths=**} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() || isAnonymous();
     }
 
-    // --- Facilities & Fleet ---
     match /facilities/{allPaths=**} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() || isAnonymous();
