@@ -23,8 +23,9 @@ service cloud.firestore {
       );
     }
 
-    // --- Unified Hierarchies ---
+    // --- Unified Organizational Hierarchies ---
     // Using top-level recursive wildcards to ensure subcollection listing (like leagues/global/invites)
+    // and deep document access for all authenticated squad members.
     
     match /leagues/{allPaths=**} {
       allow read, write: if isSignedIn();
@@ -64,6 +65,8 @@ service cloud.firestore {
     }
 
     // --- Collection Groups (Master View & Global Aggregation) ---
+    // Essential for the Household Hub and Master Calendar aggregation queries.
+    
     match /{path=**}/events/{id} {
       allow read: if isSignedIn();
     }
@@ -79,8 +82,11 @@ service cloud.firestore {
     match /{path=**}/registrationEntries/{id} {
       allow read, write: if isSignedIn();
     }
+    match /{path=**}/incidents/{id} {
+      allow read, write: if isSignedIn();
+    }
 
-    // Deny by default for any unexpected paths
+    // Deny by default for any unexpected root paths to maintain QAP compliance
     match /{path=**} {
       allow read, write: if false;
     }
