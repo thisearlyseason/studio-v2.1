@@ -473,7 +473,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const db = useFirestore();
   const router = useRouter();
   
-  // 1. Core State
+  // 1. Core State & Data Initialization (Hooks First)
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
@@ -481,7 +481,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [householdBalance, setHouseholdBalance] = useState(0);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
-  // 2. Data Pipelines (hooks at top)
+  // Firestore Data Hooks
   const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
@@ -497,7 +497,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const childrenQuery = useMemoFirebase(() => (db && firebaseUser?.uid) ? query(collection(db, 'players'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid]);
   const { data: myChildrenRaw } = useCollection<PlayerProfile>(childrenQuery);
 
-  // Sync User Profile
+  // Profile Sync
   useEffect(() => {
     if (!firebaseUser || !db) {
       setUserProfile(null);
@@ -510,7 +510,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [firebaseUser, db]);
 
-  // Derived Values (memos at top after state/queries)
+  // Derived Values
   const teamsRaw = useMemo(() => (teamsData || []).map(m => ({ ...m, id: m.teamId || m.id, name: m.name || m.teamName || 'Squad' })), [teamsData]);
   const activeTeam = useMemo(() => teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null, [teamsRaw, activeTeamId]);
   const members = useMemo(() => membersData || [], [membersData]);
@@ -530,7 +530,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const isClubManager = useMemo(() => ['elite_teams', 'elite_league'].includes(userProfile?.activePlanId || ''), [userProfile?.activePlanId]);
   const isSuperAdmin = useMemo(() => userProfile?.email === 'thisearlyseason@gmail.com', [userProfile?.email]);
 
-  // 3. Tactical Methods (useCallback)
+  // 2. Tactical Methods (useCallback)
   const formatTime = useCallback((iso: string) => format(new Date(iso), 'h:mm a'), []);
 
   const markAlertAsSeen = useCallback(async (alertId: string) => {
@@ -904,7 +904,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const createAlert = useCallback(async (t: string, m: string, a: any) => { if (activeTeamId && firebaseUser && db) await addDoc(collection(db, 'teams', activeTeamId, 'alerts'), clean({ title: t, message: m, audience: a, createdAt: new Date().toISOString(), createdBy: firebaseUser.uid })); }, [activeTeamId, firebaseUser, db]);
   const deleteAlert = useCallback(async (id: string) => { if (activeTeamId && db) await deleteDoc(doc(db, 'teams', activeTeamId, 'alerts', id)); }, [activeTeamId, db]);
 
-  // 4. Context Memoization
+  // 3. Context Memoization
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,

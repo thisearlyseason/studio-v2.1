@@ -25,6 +25,11 @@ service cloud.firestore {
       }
     }
 
+    // Top-level memberships collection used for ACL and Seeder
+    match /team_memberships/{membershipId} {
+      allow read, write: if isSignedIn();
+    }
+
     match /teams/{teamId} {
       allow read, write: if isSignedIn();
       match /{allPaths=**} {
@@ -32,8 +37,11 @@ service cloud.firestore {
       }
     }
 
-    match /leagues/{document=**} {
+    match /leagues/{leagueId} {
       allow read, write: if isSignedIn();
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
+      }
     }
 
     match /facilities/{facilityId} {
@@ -66,7 +74,7 @@ service cloud.firestore {
       allow write: if false; // Managed by backend webhooks
     }
 
-    // --- Collection Group Rules (for cross-squad/club auditing) ---
+    // --- Collection Group Rules ---
 
     match /{path=**}/signatures/{docId} {
       allow read: if isSignedIn();
