@@ -27,27 +27,26 @@ service cloud.firestore {
     // Explicit matching for subcollections ensures LIST operations prove successful
     match /leagues/{leagueId} {
       allow read, write: if isSignedIn();
-    }
-    
-    // Explicit subcollection matching for invites, registration, etc.
-    match /leagues/{leagueId}/invites/{inviteId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /leagues/{leagueId}/registration/{configId} {
-      allow read, write: if isSignedIn();
+      
+      match /invites/{inviteId} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /registration/{configId} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /registrationEntries/{entryId} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /payments/{paymentId} {
+        allow read, write: if isSignedIn();
+      }
     }
 
-    match /leagues/{leagueId}/registrationEntries/{entryId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /leagues/{leagueId}/payments/{paymentId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // Recursive fallback for deeply nested league resources
-    match /leagues/{leagueId}/{allPaths=**} {
+    // Explicit matching for global league state (common in recruitment hub)
+    match /leagues/global/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
@@ -118,6 +117,12 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
     match /{path=**}/incidents/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /{path=**}/feedPosts/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /{path=**}/games/{id} {
       allow read, write: if isSignedIn();
     }
 

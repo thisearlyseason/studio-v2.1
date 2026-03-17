@@ -44,11 +44,16 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
     ],
     games: [
       { id: `g1_${teamId}`, opponent: 'Tigers', date: yesterday, myScore: 12, opponentScore: 8, result: 'Win', location: 'City Arena' },
-      { id: `g2_${teamId}`, opponent: 'Hawks', date: now.toISOString(), myScore: 0, opponentScore: 0, result: 'Tie', location: 'Home Field' }
+      { id: `g2_${teamId}`, opponent: 'Hawks', date: now.toISOString(), myScore: 0, opponentScore: 0, result: 'Tie', location: 'Home Field' },
+      { id: `g3_${teamId}`, opponent: 'Wolves', date: yesterday, myScore: 15, opponentScore: 14, result: 'Win', location: 'District Park' }
     ],
     events: [
-      { id: `e1_${teamId}`, teamId, title: `Championship Match ${teamSuffix}`, eventType: 'game', date: tomorrow, startTime: '10:00 AM', location: 'State Stadium', description: 'Final round coordination.' },
-      { id: `e2_${teamId}`, teamId, title: `Tactical Drill Session ${teamSuffix}`, eventType: 'practice', date: later, startTime: '4:00 PM', location: 'Field 2', description: 'Focused on set pieces.' }
+      { id: `e1_${teamId}`, teamId, title: `Championship Finals ${teamSuffix}`, eventType: 'tournament', isTournament: true, date: tomorrow, startTime: '10:00 AM', location: 'State Stadium', description: 'Final round coordination.', tournamentTeams: [`Team ${teamSuffix}`, 'Tigers', 'Hawks', 'Lions'], tournamentGames: [
+        { id: 'tg1', team1: `Team ${teamSuffix}`, team2: 'Tigers', score1: 0, score2: 0, date: tomorrow, time: '10:00 AM', isCompleted: false },
+        { id: 'tg2', team1: 'Hawks', team2: 'Lions', score1: 0, score2: 0, date: tomorrow, time: '11:30 AM', isCompleted: false }
+      ] },
+      { id: `e2_${teamId}`, teamId, title: `Tactical Drill Session ${teamSuffix}`, eventType: 'practice', date: later, startTime: '4:00 PM', location: 'Field 2', description: 'Focused on set pieces.' },
+      { id: `e3_${teamId}`, teamId, title: 'Strategy Briefing', eventType: 'meeting', date: later, startTime: '6:30 PM', location: 'Clubroom', description: 'Match study and tactical adjustment.' }
     ],
     drills: [
       { id: `d1_${teamId}`, title: `Zone Defense Protocol ${teamSuffix}`, description: 'Master the 3-2 alignment.', videoUrl: 'https://www.youtube.com/watch?v=dQw4w9XcQp8' }
