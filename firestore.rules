@@ -20,7 +20,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, write: if isOwner(userId);
-      match /teamMemberships/{tid} {
+      match /{allPaths=**} {
         allow read, write: if isOwner(userId);
       }
     }
@@ -30,32 +30,21 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
-    match /teams/{teamId} {
+    // Broad recursive rules for organizational units to ensure deep nested access
+    match /teams/{allPaths=**} {
       allow read, write: if isSignedIn();
-      match /{allPaths=**} {
-        allow read, write: if isSignedIn();
-      }
     }
 
-    match /leagues/{leagueId} {
+    match /leagues/{allPaths=**} {
       allow read, write: if isSignedIn();
-      match /{allPaths=**} {
-        allow read, write: if isSignedIn();
-      }
     }
 
-    match /facilities/{facilityId} {
+    match /facilities/{allPaths=**} {
       allow read, write: if isSignedIn();
-      match /{allPaths=**} {
-        allow read, write: if isSignedIn();
-      }
     }
 
-    match /players/{playerId} {
+    match /players/{allPaths=**} {
       allow read, write: if isSignedIn();
-      match /{allPaths=**} {
-        allow read, write: if isSignedIn();
-      }
     }
 
     // Global Catalog Rules - Publicly readable for pricing/marketing
@@ -74,7 +63,7 @@ service cloud.firestore {
       allow write: if false; // Managed by backend webhooks
     }
 
-    // --- Collection Group Rules ---
+    // --- Collection Group Rules for Auditing ---
 
     match /{path=**}/signatures/{docId} {
       allow read: if isSignedIn();
@@ -96,6 +85,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
     }
 
+    // Catch-all default
     match /{path=**} {
       allow read, write: if false;
     }
