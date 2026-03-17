@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
@@ -118,6 +117,7 @@ export default function FamilyDashboardPage() {
   };
 
   const upcomingEvents = useMemo(() => {
+    if (!householdEvents) return [];
     return householdEvents.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date))).slice(0, 5);
   }, [householdEvents]);
 

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useMemo } from 'react';
@@ -80,6 +79,7 @@ export default function UniversalAccountDashboard() {
   const { data: fundraisers } = useCollection(fundQuery);
 
   const upcomingItinerary = useMemo(() => {
+    if (!householdEvents) return [];
     return householdEvents.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date))).slice(0, 3);
   }, [householdEvents]);
 
@@ -91,7 +91,7 @@ export default function UniversalAccountDashboard() {
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest">Master Intelligence</Badge>
           <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter leading-none">Command Hub</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Status: Operational • {user.role?.replace('_', ' ')}</p>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Status: Operational • {user.role?.replace(/_/g, ' ')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => router.push('/teams/new')} variant="outline" className="rounded-xl h-12 border-2 font-black uppercase text-[10px] tracking-widest">
@@ -202,7 +202,7 @@ export default function UniversalAccountDashboard() {
               <h3 className="text-xl font-black uppercase tracking-tight">Community Intelligence</h3>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Card className="rounded-[2rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
+              <Card className="rounded-[2rem] border-none shadow-xl bg-white overflow-hidden group">
                 <CardHeader className="bg-primary/5 p-6 border-b flex flex-row items-center justify-between">
                   <CardTitle className="text-[10px] font-black uppercase tracking-widest">Open Volunteer Ops</CardTitle>
                   <HandHelping className="h-4 w-4 text-primary" />
@@ -221,7 +221,7 @@ export default function UniversalAccountDashboard() {
                 </CardContent>
               </Card>
 
-              <Card className="rounded-[2rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden group">
+              <Card className="rounded-[2rem] border-none shadow-xl bg-white overflow-hidden group">
                 <CardHeader className="bg-amber-500/5 p-6 border-b flex flex-row items-center justify-between">
                   <CardTitle className="text-[10px] font-black uppercase tracking-widest text-amber-600">Active Fundraising</CardTitle>
                   <PiggyBank className="h-4 w-4 text-amber-600" />

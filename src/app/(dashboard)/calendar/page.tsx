@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -165,7 +164,11 @@ export default function MasterCalendarPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeDetailedEvent, setActiveDetailedEvent] = useState<TeamEvent | null>(null);
 
-  const discoveryTeamIds = useMemo(() => Array.from(new Set([...teams.map(t => t.id), ...householdEvents.map(e => e.teamId)])), [teams, householdEvents]);
+  const discoveryTeamIds = useMemo(() => {
+    const fromTeams = teams.map(t => t.id);
+    const fromEvents = (householdEvents || []).map(e => e.teamId);
+    return Array.from(new Set([...fromTeams, ...fromEvents]));
+  }, [teams, householdEvents]);
 
   useEffect(() => {
     if (discoveryTeamIds.length > 0 && selectedTeamIds.length === 0) {
@@ -174,9 +177,10 @@ export default function MasterCalendarPage() {
   }, [discoveryTeamIds, selectedTeamIds.length]);
 
   const filteredEvents = useMemo(() => {
+    if (!householdEvents) return [];
     return householdEvents.filter(event => {
       const matchesTeam = selectedTeamIds.includes(event.teamId);
-      const matchesType = selectedEventTypes.includes(event.eventType || 'other');
+      const matchesType = selectedEventTypes.includes(event.eventType as EventType || 'other');
       const matchesSearch = (event.title || '').toLowerCase().includes(searchTerm.toLowerCase());
       return matchesTeam && matchesType && matchesSearch;
     });
@@ -285,7 +289,7 @@ export default function MasterCalendarPage() {
                       </div>
                       <div className="space-y-1">
                         {dayEvents.map(event => (
-                          <div key={event.id} className={cn("w-full h-1.5 rounded-full", EVENT_TYPE_COLORS[event.eventType || 'other'])} />
+                          <div key={event.id} className={cn("w-full h-1.5 rounded-full", EVENT_TYPE_COLORS[event.eventType as EventType || 'other'])} />
                         ))}
                       </div>
                     </div>
