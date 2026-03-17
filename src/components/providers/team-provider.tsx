@@ -494,13 +494,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isAuthResolved } = useUser();
   const db = useFirestore();
   
-  // 1. Core State Hooks
+  // 1. Core State declare strictly at the top
   const [activeTeamId, setManualActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
-  // 2. Auth Profile Listener
+  // 2. Profile Sync
   useEffect(() => {
     if (!firebaseUser || !db) { setUserProfile(null); return; }
     return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
@@ -520,7 +520,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const activeTeam = useMemo(() => teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null, [teamsRaw, activeTeamId]);
 
-  // 4. Data Hooks (Members, Alerts, Plans, etc)
+  // 4. Tactical Data Listeners
   const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
   const members = useMemo(() => membersData || [], [membersData]);
@@ -549,7 +549,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
   const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
 
-  // 5. Role and Entitlement Logic
+  // 5. Entitlement Calculation
   const isStaff = useMemo(() => {
     if (!activeTeam || !firebaseUser) return false;
     if (activeTeam.role === 'Admin') return true;
@@ -574,28 +574,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const hasFeature = useCallback((featureId: string) => {
     if (isSuperAdmin) return true;
-    
     const currentPlanId = activeTeam?.planId || userProfile?.activePlanId || 'starter_squad';
     const plan = plans.find(p => p.id === currentPlanId);
-    
-    // Explicit plan feature check
     if (plan) return !!plan.features?.[featureId];
-    
-    // Entitlement-based fallbacks for demo/seeding/loading states
-    const isProTier = activeTeam?.isPro || currentPlanId !== 'starter_squad';
-    const isEliteTier = ['elite_teams', 'elite_league'].includes(currentPlanId);
-    
-    if (isEliteTier) return true;
-    if (isProTier) {
-      const proFeatures = ['live_feed_read', 'live_feed_post', 'tournament_itinerary', 'film_compliance', 'stats_basic', 'scouting_ai'];
-      return proFeatures.includes(featureId);
-    }
-    
-    // Starter Fallback
     return ['live_feed_read', 'basic_scheduling'].includes(featureId);
   }, [activeTeam, userProfile, plans, isSuperAdmin]);
 
-  // 6. Tactical Methods
+  // 6. Tactical Implementations
   const formatTime = (iso: string) => { try { return format(new Date(iso), 'h:mm a'); } catch (e) { return '--:--'; } };
 
   const getRecruitingProfile = useCallback(async (playerId: string) => { if (!db) return null; const snap = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile')); return snap.exists() ? (snap.data() as RecruitingProfile) : null; }, [db]);

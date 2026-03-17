@@ -53,9 +53,6 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
     drills: [
       { id: `d1_${teamId}`, title: `Zone Defense Protocol ${teamSuffix}`, description: 'Master the 3-2 alignment.', videoUrl: 'https://www.youtube.com/watch?v=dQw4w9XcQp8' }
     ],
-    scouting: [
-      { id: `s1_${teamId}`, opponentName: 'The Jaguars', strengths: 'Fast transitions', weaknesses: 'High defensive line', keysToVictory: 'Exploit long balls.', date: yesterday }
-    ],
     feed: [
       { id: `p1_${teamId}`, type: 'user', content: `Focus for Saturday, ${teamSuffix} squad!`, author: { name: 'Jordan Smith' }, authorId: `u1_${teamId}`, createdAt: yesterday, likes: [userId] },
       { id: `p2_${teamId}`, type: 'poll', content: 'Uniform choice?', author: { name: 'Coach Guest' }, authorId: userId, poll: { question: 'Uniform choice?', options: [{text: 'Home Red', votes: 12}, {text: 'Away White', votes: 5}], totalVotes: 17, voters: {}, isClosed: false }, createdAt: yesterday }
