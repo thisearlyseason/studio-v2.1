@@ -18,12 +18,12 @@ service cloud.firestore {
 
     // --- Global Catalog Rules (Publicly Readable) ---
     
-    match /plans/{document=**} {
+    match /plans/{allPaths=**} {
       allow read: if true;
       allow write: if isPlatformAdmin();
     }
 
-    match /features/{document=**} {
+    match /features/{allPaths=**} {
       allow read: if true;
       allow write: if isPlatformAdmin();
     }
@@ -38,23 +38,19 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
-    match /teams/{document=**} {
+    match /teams/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    match /leagues/{document=**} {
+    match /leagues/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    match /players/{document=**} {
+    match /players/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    match /facilities/{document=**} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /team_memberships/{document=**} {
+    match /facilities/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
@@ -89,7 +85,11 @@ service cloud.firestore {
       allow read: if isSignedIn();
     }
 
-    match /{path=**}/documents/{docId} {
+    match /{path=**}/drills/{drillId} {
+      allow read: if isSignedIn();
+    }
+
+    match /{path=**}/games/{gameId} {
       allow read: if isSignedIn();
     }
 

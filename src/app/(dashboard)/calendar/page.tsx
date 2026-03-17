@@ -89,7 +89,7 @@ function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], 
             <Badge variant="outline" className="text-[7px] font-black uppercase px-1.5 h-4 border-none bg-muted/50">{event.eventType}</Badge>
             <span className="text-[10px] font-bold text-muted-foreground uppercase">{event.startTime}</span>
           </div>
-          <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
+          <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
           <p className="text-[9px] font-medium text-muted-foreground truncate uppercase flex items-center gap-1 mt-1"><MapPin className="h-2 w-2" /> {event.location}</p>
         </div>
       </CardContent>
@@ -105,7 +105,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden">
+      <DialogContent className="sm:max-w-2xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground">
         <DialogTitle className="sr-only">Event Details: {event.title}</DialogTitle>
         <div className="flex flex-col lg:flex-row h-full">
           <div className="w-full lg:w-1/2 flex flex-col text-white bg-black p-8 relative">
@@ -133,10 +133,10 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
             </div>
           </div>
           <div className="flex-1 p-8 bg-white space-y-6">
-            <div className="flex items-center gap-3"><Info className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest">Event Brief</h3></div>
+            <div className="flex items-center gap-3"><Info className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest text-foreground">Event Brief</h3></div>
             <p className="text-sm font-medium text-muted-foreground leading-relaxed italic">"{event.description || 'No specific coordination notes provided.'}"</p>
             <div className="pt-6 border-t space-y-4">
-              <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest">Attendance Pulse</h3></div>
+              <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest text-foreground">Attendance Pulse</h3></div>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(event.userRsvps || {}).map(([uid, status]) => (
                   <Badge key={uid} variant="outline" className={cn(
@@ -165,7 +165,7 @@ export default function MasterCalendarPage() {
   const [activeDetailedEvent, setActiveDetailedEvent] = useState<TeamEvent | null>(null);
 
   const discoveryTeamIds = useMemo(() => {
-    const fromTeams = teams.map(t => t.id);
+    const fromTeams = (teams || []).map(t => t.id);
     const fromEvents = (householdEvents || []).map(e => e.teamId);
     return Array.from(new Set([...fromTeams, ...fromEvents]));
   }, [teams, householdEvents]);
@@ -194,8 +194,8 @@ export default function MasterCalendarPage() {
 
   const eventsByDay = useMemo(() => {
     const map: Record<string, TeamEvent[]> = {};
+    if (!Array.isArray(filteredEvents)) return map;
     
-    // For each day, find events that are active on that day (including ranges)
     calendarDays.forEach(day => {
       const dayKey = format(day, 'yyyy-MM-dd');
       const dayStart = startOfDay(day);
@@ -224,7 +224,7 @@ export default function MasterCalendarPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">{isParent ? "Household Hub" : "Squad Operations"}</Badge>
-          <h1 className="text-4xl font-black uppercase tracking-tight">Master Calendar</h1>
+          <h1 className="text-4xl font-black uppercase tracking-tight text-foreground">Master Calendar</h1>
         </div>
 
         <div className="flex items-center gap-3">
@@ -233,7 +233,7 @@ export default function MasterCalendarPage() {
             <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-4 rounded-lg font-black text-[10px] uppercase"><List className="h-3.5 w-3.5 mr-2" /> Agenda</Button>
           </div>
           <Popover>
-            <PopoverTrigger asChild><Button variant="outline" className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2"><Filter className="h-4 w-4" /> Filters</Button></PopoverTrigger>
+            <PopoverTrigger asChild><Button variant="outline" className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2 text-foreground"><Filter className="h-4 w-4" /> Filters</Button></PopoverTrigger>
             <PopoverContent className="w-80 rounded-2xl shadow-2xl p-6" align="end">
               <div className="space-y-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-primary">Squad Enrollment</p>
@@ -242,7 +242,7 @@ export default function MasterCalendarPage() {
                     {discoveryTeamIds.map(tid => (
                       <div key={tid} className="flex items-center space-x-3 p-2 hover:bg-muted/5 rounded-lg transition-colors cursor-pointer" onClick={() => setSelectedTeamIds(prev => prev.includes(tid) ? prev.filter(id => id !== tid) : [...prev, tid])}>
                         <Checkbox checked={selectedTeamIds.includes(tid)} onCheckedChange={() => {}} />
-                        <Label className="text-xs font-bold truncate uppercase">{teams.find(t => t.id === tid)?.name || `Team ${tid.slice(-4)}`}</Label>
+                        <Label className="text-xs font-bold truncate uppercase text-foreground">{teams.find(t => t.id === tid)?.name || `Team ${tid.slice(-4)}`}</Label>
                       </div>
                     ))}
                   </div>
@@ -298,8 +298,8 @@ export default function MasterCalendarPage() {
               </div>
               <div className="p-8 border-t bg-muted/5 space-y-6">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-black uppercase tracking-tight">{selectedDay ? format(selectedDay, 'EEEE, MMMM do') : 'Select a day'}</h3>
-                  <Badge variant="outline" className="font-black text-[10px] uppercase">{selectedDayEvents.length} Events</Badge>
+                  <h3 className="text-xl font-black uppercase tracking-tight text-foreground">{selectedDay ? format(selectedDay, 'EEEE, MMMM do') : 'Select a day'}</h3>
+                  <Badge variant="outline" className="font-black text-[10px] uppercase text-foreground">{selectedDayEvents.length} Events</Badge>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {selectedDayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => setActiveDetailedEvent(event)} />)}
@@ -314,7 +314,7 @@ export default function MasterCalendarPage() {
                     <div className="flex items-center gap-4">
                       <div className="text-center w-12 shrink-0">
                         <p className="text-[10px] font-black uppercase text-primary leading-none">{format(new Date(dayKey), 'MMM')}</p>
-                        <p className="text-3xl font-black tracking-tighter">{format(new Date(dayKey), 'dd')}</p>
+                        <p className="text-3xl font-black tracking-tighter text-foreground">{format(new Date(dayKey), 'dd')}</p>
                       </div>
                       <div className="h-px bg-muted flex-1" />
                     </div>

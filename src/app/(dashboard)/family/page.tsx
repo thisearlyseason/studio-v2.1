@@ -63,7 +63,7 @@ export default function FamilyDashboardPage() {
   // Real-time signature tracking for all relevant members
   const childMemberIds = useMemo(() => {
     const ids = new Set<string>();
-    myChildren.forEach(c => (c.joinedTeamIds || []).forEach(tid => ids.add(`${tid}_${c.id}`)));
+    (myChildren || []).forEach(c => (c.joinedTeamIds || []).forEach(tid => ids.add(`${tid}_${c.id}`)));
     return Array.from(ids);
   }, [myChildren]);
 
@@ -76,9 +76,11 @@ export default function FamilyDashboardPage() {
 
   const childrenCompliance = useMemo(() => {
     const results: Record<string, { pending: number, signed: number, pendingList: any[] }> = {};
+    const safeChildren = myChildren || [];
+    const safeSigs = signatures || [];
     
-    myChildren.forEach(child => {
-      const mySigs = (signatures || []).filter(s => s.memberId === child.id || s.memberId.endsWith(child.id));
+    safeChildren.forEach(child => {
+      const mySigs = safeSigs.filter(s => s.memberId === child.id || s.memberId.endsWith(child.id));
       results[child.id] = { 
         pending: 0,
         signed: mySigs.length,
@@ -93,9 +95,9 @@ export default function FamilyDashboardPage() {
     return (
       <div className="py-24 text-center space-y-6 max-w-md mx-auto animate-in fade-in duration-500">
         <div className="bg-muted/30 p-10 rounded-[3rem] opacity-20"><Users className="h-20 w-20 mx-auto" /></div>
-        <h1 className="text-3xl font-black uppercase tracking-tight">Guardian Access Only</h1>
-        <p className="text-muted-foreground font-bold text-sm uppercase tracking-widest max-w-xs mx-auto">This dashboard is reserved for parent accounts managing minor player rosters.</p>
-        <Button onClick={() => router.push('/settings')} variant="outline" className="rounded-full px-8">Update Account Role</Button>
+        <h1 className="text-3xl font-black uppercase tracking-tight text-foreground">Guardian Access Only</h1>
+        <p className="text-muted-foreground font-bold text-sm uppercase tracking-widest max-w-xs mx-auto leading-relaxed">This dashboard is reserved for parent accounts managing minor player rosters.</p>
+        <Button onClick={() => router.push('/settings')} variant="outline" className="rounded-full px-8 text-foreground">Update Account Role</Button>
       </div>
     );
   }
@@ -123,8 +125,8 @@ export default function FamilyDashboardPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Household Command</Badge>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Guardianship</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Managing {myChildren.length} Minor Players</p>
+          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none text-foreground">Guardianship</h1>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Managing {myChildren?.length || 0} Minor Players</p>
         </div>
 
         <div className="flex gap-2">
@@ -134,35 +136,35 @@ export default function FamilyDashboardPage() {
                 <Plus className="h-5 w-5 mr-2" /> Register Player
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-md">
+            <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-md bg-white text-foreground">
               <DialogTitle className="sr-only">Minor Player Registration</DialogTitle>
               <div className="h-2 bg-primary w-full" />
               <div className="p-8 lg:p-10 space-y-8">
                 <DialogHeader>
-                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">Athlete Data</DialogTitle>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Athlete Data</DialogTitle>
                   <DialogDescription className="font-bold text-primary text-[10px] uppercase tracking-widest">Under-18 Enrollment Hub</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-6">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">First Name</Label>
-                      <Input value={newChild.firstName} onChange={e => setNewChild({...newChild, firstName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all" />
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">First Name</Label>
+                      <Input value={newChild.firstName} onChange={e => setNewChild({...newChild, firstName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all text-foreground" />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Last Name</Label>
-                      <Input value={newChild.lastName} onChange={e => setNewChild({...newChild, lastName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all" />
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Last Name</Label>
+                      <Input value={newChild.lastName} onChange={e => setNewChild({...newChild, lastName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20 transition-all text-foreground" />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth</Label>
-                    <Input type="date" value={newChild.dob} onChange={e => setNewChild({...newChild, dob: e.target.value})} className="h-12 rounded-xl border-2 font-black focus:border-primary/20 transition-all" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Date of Birth</Label>
+                    <Input type="date" value={newChild.dob} onChange={e => setNewChild({...newChild, dob: e.target.value})} className="h-12 rounded-xl border-2 font-black focus:border-primary/20 transition-all text-foreground" />
                   </div>
                 </div>
                 <DialogFooter>
                   <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddChild} disabled={isProcessing}>
                     {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Enroll Athlete"}
                   </Button>
-                </div>
+                </DialogFooter>
               </div>
             </DialogContent>
           </Dialog>
@@ -181,7 +183,7 @@ export default function FamilyDashboardPage() {
               </div>
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.2em] opacity-60 mb-1">Household Balance</p>
-                <p className="text-5xl font-black tracking-tighter">${householdBalance.toLocaleString()}</p>
+                <p className="text-5xl font-black tracking-tighter">${householdBalance?.toLocaleString() || '0'}</p>
               </div>
               <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-relaxed">
                 Aggregated dues across all registered players.
@@ -196,20 +198,20 @@ export default function FamilyDashboardPage() {
             <CardHeader className="bg-muted/30 border-b p-6">
               <div className="flex items-center gap-3">
                 <Activity className="h-5 w-5 text-primary" />
-                <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">Operational Pulse</CardTitle>
+                <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Operational Pulse</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
               <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border border-transparent shadow-inner">
                 <div>
-                  <p className="text-[10px] font-black uppercase opacity-40">Active Squads</p>
-                  <p className="text-xl font-black">{Array.from(new Set(myChildren.flatMap(c => c.joinedTeamIds || []))).length}</p>
+                  <p className="text-[10px] font-black uppercase opacity-40 text-foreground">Active Squads</p>
+                  <p className="text-xl font-black text-foreground">{Array.from(new Set((myChildren || []).flatMap(c => c.joinedTeamIds || []))).length}</p>
                 </div>
                 <Users className="h-6 w-6 text-primary/40" />
               </div>
               <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border border-transparent shadow-inner">
                 <div>
-                  <p className="text-[10px] font-black uppercase opacity-40">Verified Docs</p>
+                  <p className="text-[10px] font-black uppercase opacity-40 text-foreground">Verified Docs</p>
                   <p className="text-xl font-black text-green-600">{signatures?.length || 0}</p>
                 </div>
                 <FileSignature className="h-6 w-6 text-primary/40" />
@@ -222,23 +224,23 @@ export default function FamilyDashboardPage() {
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-3">
               <CalendarDays className="h-5 w-5 text-primary" />
-              <h2 className="text-xl font-black uppercase tracking-tight">Household Itinerary</h2>
+              <h2 className="text-xl font-black uppercase tracking-tight text-foreground">Household Itinerary</h2>
             </div>
-            <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest hover:bg-primary/5 hover:text-primary transition-all" onClick={() => router.push('/calendar')}>
+            <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest hover:bg-primary/5 hover:text-primary transition-all text-foreground" onClick={() => router.push('/calendar')}>
               Master View <ChevronRight className="ml-1 h-3.5 w-3.5" />
             </Button>
           </div>
 
           <div className="space-y-4">
             {upcomingEvents.length > 0 ? upcomingEvents.map((event) => {
-              const team = teams.find(t => t.id === event.teamId);
+              const team = (teams || []).find(t => t.id === event.teamId);
               return (
                 <Card key={event.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white">
                   <CardContent className="p-0">
                     <div className="flex items-stretch h-24">
                       <div className="w-20 bg-muted/30 flex flex-col items-center justify-center border-r shrink-0 group-hover:bg-primary/5 transition-colors">
-                        <span className="text-[8px] font-black uppercase opacity-40">{format(new Date(event.date), 'MMM')}</span>
-                        <span className="text-2xl font-black">{format(new Date(event.date), 'dd')}</span>
+                        <span className="text-[8px] font-black uppercase opacity-40 text-foreground">{format(new Date(event.date), 'MMM')}</span>
+                        <span className="text-2xl font-black text-foreground">{format(new Date(event.date), 'dd')}</span>
                       </div>
                       <div className="flex-1 p-5 flex flex-col justify-center min-w-0">
                         <div className="flex items-center justify-between mb-1">
@@ -248,7 +250,7 @@ export default function FamilyDashboardPage() {
                           </div>
                           <span className="text-[10px] font-bold text-muted-foreground">{event.startTime}</span>
                         </div>
-                        <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
+                        <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
                         <div className="flex items-center gap-3 mt-1">
                           <p className="text-[9px] font-medium text-muted-foreground uppercase flex items-center gap-1"><MapPin className="h-2 w-2" /> {event.location}</p>
                         </div>
@@ -259,8 +261,8 @@ export default function FamilyDashboardPage() {
               );
             }) : (
               <div className="text-center py-20 bg-muted/10 rounded-[3rem] border-2 border-dashed opacity-40">
-                <Calendar className="h-12 w-12 mx-auto mb-4" />
-                <p className="text-sm font-black uppercase tracking-widest">Clear Schedule</p>
+                <Calendar className="h-12 w-12 mx-auto mb-4 text-foreground" />
+                <p className="text-sm font-black uppercase tracking-widest text-foreground">Clear Schedule</p>
               </div>
             )}
           </div>
@@ -270,13 +272,13 @@ export default function FamilyDashboardPage() {
       <section className="space-y-6 pt-10 border-t">
         <div className="flex items-center gap-3 px-2">
           <Baby className="h-6 w-6 text-primary" />
-          <h2 className="text-2xl font-black uppercase tracking-tight">Athlete Roster</h2>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-foreground">Athlete Roster</h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {myChildren.map((child) => {
+          {(myChildren || []).map((child) => {
             const age = differenceInYears(new Date(), new Date(child.dateOfBirth));
-            const childTeams = teams.filter(t => child.joinedTeamIds?.includes(t.id));
+            const childTeams = (teams || []).filter(t => child.joinedTeamIds?.includes(t.id));
             const compliance = childrenCompliance[child.id] || { pending: 0, signed: 0, pendingList: [] };
 
             return (
@@ -291,13 +293,13 @@ export default function FamilyDashboardPage() {
                   </div>
                   
                   <div className="space-y-1">
-                    <h3 className="text-3xl font-black uppercase tracking-tight group-hover:text-primary transition-colors">{child.firstName} {child.lastName}</h3>
+                    <h3 className="text-3xl font-black uppercase tracking-tight group-hover:text-primary transition-colors text-foreground">{child.firstName} {child.lastName}</h3>
                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none">Minor Player Hub • Guardian ID: {user?.id.slice(-4)}</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-muted/30 p-4 rounded-2xl space-y-1 border shadow-inner">
-                      <p className="text-[8px] font-black uppercase opacity-40">Compliance</p>
+                      <p className="text-[8px] font-black uppercase opacity-40 text-foreground">Compliance</p>
                       <div className="flex items-center gap-2">
                         <span className="text-xl font-black text-primary">
                           {compliance.signed} EXECUTED
@@ -305,7 +307,7 @@ export default function FamilyDashboardPage() {
                       </div>
                     </div>
                     <div className="bg-muted/30 p-4 rounded-2xl space-y-1 border shadow-inner">
-                      <p className="text-[8px] font-black uppercase opacity-40">Enrolled Squads</p>
+                      <p className="text-[8px] font-black uppercase opacity-40 text-foreground">Enrolled Squads</p>
                       <p className="text-xl font-black text-primary">{childTeams.length}</p>
                     </div>
                   </div>
@@ -317,9 +319,9 @@ export default function FamilyDashboardPage() {
                         <div key={t.id} className="flex items-center justify-between p-3 bg-muted/20 rounded-2xl border transition-all hover:bg-white hover:shadow-sm">
                           <div className="flex items-center gap-3">
                             <Users className="h-4 w-4 text-primary" />
-                            <span className="text-xs font-black uppercase tracking-tight truncate">{t.name}</span>
+                            <span className="text-xs font-black uppercase tracking-tight truncate text-foreground">{t.name}</span>
                           </div>
-                          <ChevronRight className="h-4 w-4 opacity-20" />
+                          <ChevronRight className="h-4 w-4 opacity-20 text-foreground" />
                         </div>
                       ))}
                       {childTeams.length === 0 && (
@@ -331,13 +333,13 @@ export default function FamilyDashboardPage() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 pt-4">
-                    <Button variant="outline" className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 group-hover:border-primary transition-all" onClick={() => router.push('/files')}>
+                    <Button variant="outline" className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 group-hover:border-primary transition-all text-foreground" onClick={() => router.push('/files')}>
                       <Signature className="h-4 w-4" />
                       <span>Execute Waivers</span>
                     </Button>
                     <Button 
                       variant="outline" 
-                      className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 transition-all hover:border-primary active:scale-95" 
+                      className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 transition-all hover:border-primary active:scale-95 text-foreground" 
                       onClick={() => {
                         upgradeChildToLogin(child.id);
                         toast({ title: "Account Initialized", description: `A linked player account for ${child.firstName} has been created and attached to your dashboard.` });
@@ -350,8 +352,8 @@ export default function FamilyDashboardPage() {
                   </div>
                 </CardContent>
                 <CardFooter className="px-8 lg:p-10 pb-8 pt-0">
-                  <Button className="w-full h-14 rounded-2xl bg-black text-white font-black uppercase text-xs tracking-widest shadow-xl group-hover:bg-primary transition-colors active:scale-95" onClick={() => router.push('/teams/join')}>
-                    Enroll in New League <ArrowRight className="ml-2 h-4 w-4" />
+                  <Button className="w-full h-14 rounded-2xl bg-black text-white font-black uppercase text-xs tracking-widest shadow-xl group-hover:bg-primary transition-colors active:scale-95 border-none" onClick={() => router.push('/teams/join')}>
+                    Enroll in New League <ArrowRight className="ml-2 h-5 w-5" />
                   </Button>
                 </CardFooter>
               </Card>
