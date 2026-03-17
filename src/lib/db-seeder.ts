@@ -93,7 +93,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   // 1. Core Profile
   batch.set(doc(db, 'users', userId), clean({
     id: userId, fullName: `Guest ${pos}`, email: `${userRole}@thesquad.pro`,
-    role: userRole, activePlanId: actualPlanId, proTeamLimit: isEliteDemo ? 20 : (isProTier ? 1 : 0), createdAt: now, isDemo: true
+    role: userRole, activePlanId: actualPlanId, proTeamLimit: isEliteDemo ? 20 : (isProTier ? 1 : 0), createdAt: now, isDemo: true, seenAlertIds: []
   }), { merge: true });
 
   // Define team configurations
