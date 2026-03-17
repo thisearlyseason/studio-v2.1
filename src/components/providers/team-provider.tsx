@@ -615,7 +615,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const updates: any = { [`poll.voters.${firebaseUser.uid}`]: optionIdx }; 
     if (currentVote === undefined) { 
       updates[`poll.options.${optionIdx}.votes`] = increment(1); 
-      updates[`poll.totalVotes`] = increment(1); 
+      updates['poll.totalVotes'] = increment(1); 
     } else if (currentVote !== optionIdx) { 
       updates[`poll.options.${currentVote}.votes`] = increment(-1); 
       updates[`poll.options.${optionIdx}.votes`] = increment(1); 
