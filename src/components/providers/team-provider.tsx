@@ -492,15 +492,14 @@ const clean = (obj: any): any => {
 export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isAuthResolved } = useUser();
   const db = useFirestore();
-  const router = useRouter();
   
-  // --- 1. STATE & CORE INITIALIZATION ---
+  // --- 1. CORE STATE ---
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
-  // Sync user profile from Firestore
+  // --- 2. FIRESTORE DATA HOOKS ---
   useEffect(() => {
     if (!firebaseUser || !db) { setUserProfile(null); return; }
     return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
@@ -508,7 +507,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [firebaseUser, db]);
 
-  // Unified teams query
   const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
@@ -518,22 +516,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     name: m.name || m.teamName || 'Squad' 
   })), [teamsData]);
 
-  // Derived active team
   const activeTeam = useMemo(() => teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null, [teamsRaw, activeTeamId]);
 
-  // Ensure activeTeamId is set once teams load
-  useEffect(() => {
-    if (!activeTeamId && teamsRaw.length > 0) {
-      setActiveTeamId(teamsRaw[0].id);
-    }
-  }, [teamsRaw, activeTeamId]);
-
-  // Unified members query for the active team
   const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
   const members = useMemo(() => membersData || [], [membersData]);
 
-  // Global alerts/broadcasts query
   const alertsQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10)) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: alertsData } = useCollection<TeamAlert>(alertsQuery);
   const alerts = useMemo(() => alertsData || [], [alertsData]);
@@ -558,7 +546,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
   const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
 
-  // --- 2. DERIVED TACTICAL BOOLEANS ---
+  // --- 3. TACTICAL BOOLEANS ---
   const isStaff = useMemo(() => {
     if (!activeTeam || !firebaseUser) return false;
     if (activeTeam.role === 'Admin') return true;
@@ -571,7 +559,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const formatTime = (iso: string) => { try { return format(new Date(iso), 'h:mm a'); } catch (e) { return '--:--'; } };
 
-  // --- 3. IMPLEMENTED TACTICAL METHODS ---
+  // --- 4. TACTICAL METHODS ---
   const getRecruitingProfile = useCallback(async (playerId: string) => { if (!db) return null; const snap = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile')); return snap.exists() ? (snap.data() as RecruitingProfile) : null; }, [db]);
   const updateRecruitingProfile = useCallback(async (playerId: string, data: Partial<RecruitingProfile>) => { if (!db) return; await setDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile'), { ...clean(data), updatedAt: serverTimestamp() }, { merge: true }); }, [db]);
   const getAthleticMetrics = useCallback(async (playerId: string) => { if (!db) return null; const snap = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'metrics')); return snap.exists() ? (snap.data() as AthleticMetrics) : null; }, [db]);
@@ -590,8 +578,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateStaffEvaluation = useCallback(async (memberId: string, notes: string) => { if (!activeTeamId || !db) return; await setDoc(doc(db, 'teams', activeTeamId, 'members', memberId, 'staffEvaluation', 'current'), { notes, updatedAt: new Date().toISOString() }); }, [activeTeamId, db]);
   const getStaffEvaluation = useCallback(async (memberId: string) => { if (!activeTeamId || !db) return ''; const snap = await getDoc(doc(db, 'teams', activeTeamId, 'members', memberId, 'staffEvaluation', 'current')); return snap.exists() ? (snap.data()?.notes || '') : ''; }, [activeTeamId, db]);
 
-  const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string) => { if (!firebaseUser || !db) return ''; const tid = `team_${Date.now()}`; const batch = writeBatch(db); batch.set(doc(db, 'teams', tid), clean({ id: tid, teamName: name, teamCode: tid.slice(-6).toUpperCase(), type, sport: 'General', description, createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, planId: planId || 'starter_squad', isPro: planId !== 'starter_squad', createdAt: new Date().toISOString() })); batch.set(doc(db, 'team_memberships', `${tid}_${firebaseUser.uid}`), clean({ id: `${tid}_${firebaseUser.uid}`, teamId: tid, userId: firebaseUser.uid, role: 'Admin', joinedAt: new Date().toISOString() })); batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ teamId: tid, name, role: 'Admin', joinedAt: new Date().toISOString() })); batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ id: firebaseUser.uid, userId: firebaseUser.uid, playerId: `p_${firebaseUser.uid}`, name: firebaseUser.displayName, role: 'Admin', position: pos, joinedAt: new Date().toISOString(), avatar: userProfile?.avatar || '' })); await batch.commit(); return tid; }, [firebaseUser, db, userProfile]);
-  const joinTeamWithCode = useCallback(async (code: string, playerId: string, position: string) => { if (!firebaseUser || !db) return false; const q = query(collection(db, 'teams'), where('teamCode', '==', code), limit(1)); const snap = await getDocs(q); if (snap.empty) return false; const teamDoc = snap.docs[0]; const tid = teamDoc.id; const batch = writeBatch(db); batch.set(doc(db, 'team_memberships', `${tid}_${firebaseUser.uid}`), clean({ id: `${tid}_${firebaseUser.uid}`, teamId: tid, userId: firebaseUser.uid, role: 'Member', joinedAt: new Date().toISOString() })); batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ teamId: tid, name: teamDoc.data().teamName, role: 'Member', joinedAt: new Date().toISOString() })); batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ id: firebaseUser.uid, userId: firebaseUser.uid, playerId, name: firebaseUser.displayName, role: 'Member', position, joinedAt: new Date().toISOString(), avatar: userProfile?.avatar || '' })); await batch.commit(); return true; }, [firebaseUser, db, userProfile]);
+  const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string) => { if (!firebaseUser || !db || !userProfile) return ''; const tid = `team_${Date.now()}`; const batch = writeBatch(db); batch.set(doc(db, 'teams', tid), clean({ id: tid, teamName: name, teamCode: tid.slice(-6).toUpperCase(), type, sport: 'General', description, createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, planId: planId || 'starter_squad', isPro: planId !== 'starter_squad', createdAt: new Date().toISOString() })); batch.set(doc(db, 'team_memberships', `${tid}_${firebaseUser.uid}`), clean({ id: `${tid}_${firebaseUser.uid}`, teamId: tid, userId: firebaseUser.uid, role: 'Admin', joinedAt: new Date().toISOString() })); batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ teamId: tid, name, role: 'Admin', joinedAt: new Date().toISOString() })); batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ id: firebaseUser.uid, userId: firebaseUser.uid, playerId: `p_${firebaseUser.uid}`, name: firebaseUser.displayName, role: 'Admin', position: pos, joinedAt: new Date().toISOString(), avatar: userProfile?.avatar || '' })); await batch.commit(); return tid; }, [firebaseUser, db, userProfile]);
+  const joinTeamWithCode = useCallback(async (code: string, playerId: string, position: string) => { if (!firebaseUser || !db || !userProfile) return false; const q = query(collection(db, 'teams'), where('teamCode', '==', code), limit(1)); const snap = await getDocs(q); if (snap.empty) return false; const teamDoc = snap.docs[0]; const tid = teamDoc.id; const batch = writeBatch(db); batch.set(doc(db, 'team_memberships', `${tid}_${firebaseUser.uid}`), clean({ id: `${tid}_${firebaseUser.uid}`, teamId: tid, userId: firebaseUser.uid, role: 'Member', joinedAt: new Date().toISOString() })); batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ teamId: tid, name: teamDoc.data().teamName, role: 'Member', joinedAt: new Date().toISOString() })); batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ id: firebaseUser.uid, userId: firebaseUser.uid, playerId, name: firebaseUser.displayName, role: 'Member', position, joinedAt: new Date().toISOString(), avatar: userProfile?.avatar || '' })); await batch.commit(); return true; }, [firebaseUser, db, userProfile]);
 
   const updateUser = useCallback(async (u: any) => { if (firebaseUser) await updateDoc(doc(db, 'users', firebaseUser.uid), clean(u)); }, [db, firebaseUser]);
   const updateMember = useCallback(async (mid: string, u: any) => { if (activeTeamId) await updateDoc(doc(db, 'teams', activeTeamId, 'members', mid), clean(u)); }, [db, activeTeamId]);
@@ -610,22 +598,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const addMessage = useCallback(async (chatId: string, author: string, content: string, type: string, img?: string, poll?: any) => { if (activeTeamId && firebaseUser && db) await addDoc(collection(db, 'teams', activeTeamId, 'groupChats', chatId, 'messages'), clean({ author, authorId: firebaseUser.uid, content, type, imageUrl: img, poll, createdAt: new Date().toISOString() })); }, [activeTeamId, firebaseUser, db]);
   const createChat = useCallback(async (name: string, members: string[]) => { if (!activeTeamId || !firebaseUser || !db) return ''; const cid = `chat_${Date.now()}`; await setDoc(doc(db, 'teams', activeTeamId, 'groupChats', cid), clean({ id: cid, name, createdBy: firebaseUser.uid, memberIds: [...members, firebaseUser.uid], createdAt: new Date().toISOString(), isDeleted: false, teamId: activeTeamId })); return cid; }, [activeTeamId, firebaseUser, db]);
-  
-  const deleteChat = useCallback(async (chatId: string) => { 
-    if (activeTeamId && db) {
-      await updateDoc(doc(db, 'teams', activeTeamId, 'groupChats', chatId), { isDeleted: true });
-    }
-  }, [activeTeamId, db]);
-
-  const hideChatForUser = useCallback(async (chatId: string) => { 
-    if (!firebaseUser || !db) return; 
-    await setDoc(doc(db, 'users', firebaseUser.uid, 'hiddenChats', chatId), { 
-      id: `${firebaseUser.uid}_${chatId}`, 
-      userId: firebaseUser.uid, 
-      chatId, 
-      hiddenAt: new Date().toISOString() 
-    }); 
-  }, [firebaseUser, db]);
+  const deleteChat = useCallback(async (chatId: string) => { if (activeTeamId && db) await updateDoc(doc(db, 'teams', activeTeamId, 'groupChats', chatId), { isDeleted: true }); }, [activeTeamId, db]);
+  const hideChatForUser = useCallback(async (chatId: string) => { if (!firebaseUser || !db) return; await setDoc(doc(db, 'users', firebaseUser.uid, 'hiddenChats', chatId), { id: `${firebaseUser.uid}_${chatId}`, userId: firebaseUser.uid, chatId, hiddenAt: new Date().toISOString() }); }, [firebaseUser, db]);
   
   const votePoll = useCallback(async (chatId: string, messageId: string, optionIdx: number) => { 
     if (!activeTeamId || !firebaseUser || !db) return; 
@@ -646,11 +620,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await updateDoc(msgRef, updates); 
   }, [activeTeamId, firebaseUser, db]);
 
-  const updateChat = useCallback(async (chatId: string, data: any) => { 
-    if (activeTeamId && db) {
-      await updateDoc(doc(db, 'teams', activeTeamId, 'groupChats', chatId), clean(data)); 
-    }
-  }, [activeTeamId, db]);
+  const updateChat = useCallback(async (chatId: string, data: any) => { if (activeTeamId && db) await updateDoc(doc(db, 'teams', activeTeamId, 'groupChats', chatId), clean(data)); }, [activeTeamId, db]);
 
   const addVolunteerOpportunity = useCallback(async (data: any) => { if (activeTeamId && db) await addDoc(collection(db, 'teams', activeTeamId, 'volunteers'), clean({ ...data, signups: {} })); }, [activeTeamId, db]);
   const signUpForVolunteer = useCallback(async (oppId: string) => { if (activeTeamId && firebaseUser && db) await updateDoc(doc(db, 'teams', activeTeamId, 'volunteers', oppId), { [`signups.${firebaseUser.uid}`]: { userId: firebaseUser.uid, userName: userProfile?.name, email: firebaseUser.email, isConfirmed: false, status: 'pending', createdAt: new Date().toISOString() } }); }, [activeTeamId, firebaseUser, db, userProfile]);
@@ -726,11 +696,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await batch.commit(); 
   }, [db]);
 
-  const deleteTeam = useCallback(async (tid: string) => { 
-    if(db) {
-      await deleteDoc(doc(db, 'teams', tid)); 
-    }
-  }, [db]);
+  const deleteTeam = useCallback(async (tid: string) => { if(db) await deleteDoc(doc(db, 'teams', tid)); }, [db]);
 
   const markAlertAsSeen = useCallback(async (id: string) => { if (firebaseUser && db) await updateDoc(doc(db, 'users', firebaseUser.uid), { seenAlertIds: arrayUnion(id) }); }, [firebaseUser, db]);
   const markAllAlertsAsSeen = useCallback(async () => { if (firebaseUser && db && alerts.length > 0) await updateDoc(doc(db, 'users', firebaseUser.uid), { seenAlertIds: alerts.map(a => a.id) }); }, [firebaseUser, db, alerts]);
@@ -752,7 +718,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addLeaguePayment = useCallback(async (leagueId: string, teamId: string, data: any) => { if (!db) return; await addDoc(collection(db, 'leagues', leagueId, 'payments'), clean({ ...data, teamId, createdAt: new Date().toISOString() })); await updateDoc(doc(db, 'leagues', leagueId), { [`finances.${teamId}.totalPaid`]: increment(data.amount) }); }, [db]);
   const updateLeagueGlobalFees = useCallback(async (leagueId: string, fees: any) => { if (db) await updateDoc(doc(db, 'leagues', leagueId), { globalFees: clean(fees) }); }, [db]);
 
-  // --- 4. CONTEXT VALUE MEMOIZATION ---
+  // --- 5. CONTEXT BINDING ---
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,

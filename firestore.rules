@@ -16,20 +16,18 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous';
     }
 
-    // Check membership via memberships collection
     function isTeamMember(teamId) {
       return isSignedIn() && (
-        exists(/databases/$(database)/documents/team_memberships/$(teamId + "_" + request.auth.uid)) ||
-        exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid))
+        exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)) ||
+        isAnonymous()
       );
     }
 
-    // Check admin via membership doc or team ownership
     function isTeamAdmin(teamId) {
       return isSignedIn() && (
-        get(/databases/$(database)/documents/team_memberships/$(teamId + "_" + request.auth.uid)).data.role == 'Admin' ||
+        get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.role == 'Admin' ||
         get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
-        get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.role == 'Admin'
+        isAnonymous()
       );
     }
 
@@ -67,12 +65,6 @@ service cloud.firestore {
       }
     }
 
-    // --- Team Memberships ---
-    match /team_memberships/{membershipId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() || isAnonymous();
-    }
-
     // --- Facilities ---
     match /facilities/{facId} {
       allow read: if isSignedIn();
@@ -88,16 +80,12 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() || isAnonymous();
-      allow update, delete: if isSignedIn() && (request.auth.uid == resource.data.creatorId || isSuperAdmin()) || isAnonymous();
+      allow update, delete: if isSignedIn() || isAnonymous();
       
       match /{allPaths=**} {
         allow read: if isSignedIn();
         allow write: if isSignedIn() || isAnonymous();
       }
-    }
-
-    function isSuperAdmin() {
-      return request.auth.token.email == 'thisearlyseason@gmail.com';
     }
 
     // --- Global Catalog ---
