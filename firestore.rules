@@ -1,4 +1,3 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -17,38 +16,48 @@ service cloud.firestore {
 
     match /userProfiles/{userId} {
       allow read, write: if isOwner(userId);
-    }
-
-    match /users/{userId} {
-      allow read, write: if isOwner(userId);
-      match /{allPaths=**} {
+      match /hiddenChats/{chatId} {
         allow read, write: if isOwner(userId);
       }
     }
 
-    // Top-level memberships collection used for ACL and Seeder
-    match /team_memberships/{membershipId} {
-      allow read, write: if isSignedIn();
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+      match /teamMemberships/{tid} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
-    // Broad recursive rules for organizational units to ensure deep nested access
-    match /teams/{allPaths=**} {
-      allow read, write: if isSignedIn();
+    match /teams/{teamId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn(); // Simplified for MVP coordination
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
+      }
     }
 
-    match /leagues/{allPaths=**} {
+    match /leagues/{leagueId} {
       allow read, write: if isSignedIn();
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
+      }
     }
 
-    match /facilities/{allPaths=**} {
+    match /players/{playerId} {
       allow read, write: if isSignedIn();
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
+      }
     }
 
-    match /players/{allPaths=**} {
+    match /facilities/{facilityId} {
       allow read, write: if isSignedIn();
+      match /fields/{fieldId} {
+        allow read, write: if isSignedIn();
+      }
     }
 
-    // Global Catalog Rules - Publicly readable for pricing/marketing
+    // Global Catalog Rules - Publicly readable for enrollment/onboarding
     match /plans/{document=**} {
       allow read: if true;
       allow write: if isSignedIn() && request.auth.token.email == 'thisearlyseason@gmail.com';
@@ -74,15 +83,11 @@ service cloud.firestore {
       allow read: if isSignedIn();
     }
 
-    match /{path=**}/documents/{docId} {
+    match /{path=**}/registrationEntries/{entryId} {
       allow read: if isSignedIn();
     }
 
     match /{path=**}/incidents/{incidentId} {
-      allow read: if isSignedIn();
-    }
-
-    match /{path=**}/registrationEntries/{entryId} {
       allow read: if isSignedIn();
     }
 

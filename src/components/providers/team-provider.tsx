@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -157,7 +156,7 @@ export type Member = {
   gradYear?: string;
   gpa?: string;
   school?: string;
-phone?: string;
+  phone?: string;
   skills?: string[];
   achievements?: string[];
 };
@@ -623,13 +622,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await updateDoc(msgRef, updates);
   }, [activeTeamId, firebaseUser, db]);
 
-  const signUpForFundraising = useCallback(async (fundId: string) => {
-    if (!activeTeamId || !firebaseUser || !db) return;
-    await updateDoc(doc(db, 'teams', activeTeamId, 'fundraising', fundId), {
-      [`finances.${firebaseUser.uid}`]: { userId: firebaseUser.uid, userName: firebaseUser.displayName || userProfile?.name || 'Teammate', status: 'joined', contributed: 0, createdAt: new Date().toISOString() }
-    });
-  }, [activeTeamId, firebaseUser, db, userProfile]);
-
   const addVolunteerOpportunity = useCallback(async (data: any) => {
     if (activeTeamId && db) await addDoc(collection(db, 'teams', activeTeamId, 'volunteers'), clean({ ...data, signups: {} }));
   }, [activeTeamId, db]);
@@ -640,126 +632,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [activeTeamId, db, firebaseUser, activeTeam?.name]);
 
-  const addRegistration = useCallback(async (teamId: string, eventId: string, data: any) => {
-    if (db) {
-      await addDoc(collection(db, 'teams', teamId, 'events', eventId, 'registrations'), clean({ ...data, createdAt: new Date().toISOString() }));
-      return true;
-    }
-    return false;
-  }, [db]);
-
-  const assignManualPlan = useCallback(async (uid: string, planId: string, limit: number) => { 
-    if (db) await updateDoc(doc(db, 'users', uid), { activePlanId: planId, proTeamLimit: limit, planSource: 'manual' }); 
-  }, [db]);
-
-  const updateStaffEvaluation = useCallback(async (memberId: string, notes: string) => {
-    if (!activeTeamId || !db) return;
-    await updateDoc(doc(db, 'teams', activeTeamId, 'members', memberId), { notes });
-  }, [db, activeTeamId]);
-
-  const getStaffEvaluation = useCallback(async (memberId: string) => {
-    if (!activeTeamId || !db) return '';
-    const snap = await getDoc(doc(db, 'teams', activeTeamId, 'members', memberId));
-    return snap.exists() ? (snap.data().notes || '') : '';
-  }, [db, activeTeamId]);
-
-  const getRecruitingProfile = useCallback(async (playerId: string) => {
-    if (!playerId || !db) return null;
-    const s = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile'));
-    return s.exists() ? (s.data() as RecruitingProfile) : null;
-  }, [db]);
-
-  const updateRecruitingProfile = useCallback(async (playerId: string, data: Partial<RecruitingProfile>) => {
-    if (!playerId || !db) return;
-    await setDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile'), clean({ ...data, playerId, updatedAt: serverTimestamp() }), { merge: true });
-  }, [db]);
-
-  const getAthleticMetrics = useCallback(async (playerId: string) => {
-    if (!playerId || !db) return null;
-    const s = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'metrics'));
-    return s.exists() ? (s.data() as AthleticMetrics) : null;
-  }, [db]);
-
-  const updateAthleticMetrics = useCallback(async (playerId: string, data: Partial<AthleticMetrics>) => {
-    if (!playerId || !db) return;
-    await setDoc(doc(db, 'players', playerId, 'recruitingProfile', 'metrics'), clean(data), { merge: true });
-  }, [db]);
-
-  const getPlayerStats = useCallback(async (playerId: string) => {
-    if (!playerId || !db) return [];
-    const s = await getDocs(collection(db, 'players', playerId, 'recruitingProfile', 'stats'));
-    return s.docs.map(d => ({ id: d.id, ...d.data() } as PlayerStat));
-  }, [db]);
-
-  const addPlayerStat = useCallback(async (playerId: string, data: Partial<PlayerStat>) => {
-    if (!playerId || !db) return;
-    await addDoc(collection(db, 'players', playerId, 'recruitingProfile', 'stats'), clean(data));
-  }, [db]);
-
-  const deletePlayerStat = useCallback(async (playerId: string, statId: string) => {
-    if (!playerId || !db) return;
-    await deleteDoc(doc(db, 'players', playerId, 'recruitingProfile', 'stats', statId));
-  }, [db]);
-
-  const getEvaluations = useCallback(async (playerId: string) => {
-    if (!playerId || !db) return [];
-    const s = await getDocs(collection(db, 'players', playerId, 'evaluations'));
-    return s.docs.map(d => ({ id: d.id, ...d.data() } as PlayerEvaluation));
-  }, [db]);
-
-  const addEvaluation = useCallback(async (playerId: string, data: Partial<PlayerEvaluation>) => {
-    if (!playerId || !db) return;
-    await addDoc(collection(db, 'players', playerId, 'evaluations'), clean({
-      ...data,
-      evaluatorId: firebaseUser?.uid,
-      createdAt: serverTimestamp()
-    }));
-  }, [db, firebaseUser]);
-
-  const getRecruitingContact = useCallback(async (playerId: string) => {
-    if (!playerId || !db) return null;
-    const s = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'contact'));
-    return s.exists() ? (s.data() as RecruitingContact) : null;
-  }, [db]);
-
-  const updateRecruitingContact = useCallback(async (playerId: string, data: Partial<RecruitingContact>) => {
-    if (!playerId || !db) return;
-    await setDoc(doc(db, 'players', playerId, 'recruitingProfile', 'contact'), clean(data), { merge: true });
-  }, [db]);
-
-  const getPlayerVideos = useCallback(async (playerId: string) => {
-    if (!playerId || !db) return [];
-    const s = await getDocs(collection(db, 'players', playerId, 'videos'));
-    return s.docs.map(d => ({ id: d.id, ...d.data() } as PlayerVideo));
-  }, [db]);
-
-  const addPlayerVideo = useCallback(async (playerId: string, data: Partial<PlayerVideo>) => {
-    if (!playerId || !db) return;
-    await addDoc(collection(db, 'players', playerId, 'videos'), clean({ ...data }));
-  }, [db]);
-
-  const deletePlayerVideo = useCallback(async (playerId: string, videoId: string) => {
-    if (!playerId || !db) return;
-    await deleteDoc(doc(db, 'players', playerId, 'videos', videoId));
-  }, [db]);
-
-  const toggleRecruitingProfile = useCallback(async (playerId: string, enabled: boolean) => {
-    if (!playerId || !db) return;
-    await updateDoc(doc(db, 'players', playerId), { recruitingProfileEnabled: enabled });
-  }, [db]);
-
-  const signUpForVolunteer = useCallback(async (oppId: string) => {
+  const signUpForFundraising = useCallback(async (fundId: string) => {
     if (!activeTeamId || !firebaseUser || !db) return;
-    await updateDoc(doc(db, 'teams', activeTeamId, 'volunteers', oppId), { [`signups.${firebaseUser.uid}`]: { userId: firebaseUser.uid, userName: firebaseUser.displayName, email: firebaseUser.email, status: 'pending', createdAt: new Date().toISOString() } });
-  }, [activeTeamId, firebaseUser, db]);
-
-  const verifyVolunteerHours = useCallback(async (oppId: string, userId: string, hours: number) => {
-    if (activeTeamId && db) await updateDoc(doc(db, 'teams', activeTeamId, 'volunteers', oppId), { [`signups.${userId}.status`]: 'verified', [`signups.${userId}.verifiedHours`]: hours });
-  }, [activeTeamId, db]);
-
-  const confirmVolunteerAttendance = useCallback(async (oppId: string, userId: string, confirmed: boolean) => {
-    if (activeTeamId && db) await updateDoc(doc(db, 'teams', activeTeamId, 'volunteers', oppId), { [`signups.${userId}.isConfirmed`]: confirmed });
-  }, [activeTeamId, db]);
+    await updateDoc(doc(db, 'teams', activeTeamId, 'fundraising', fundId), {
+      [`finances.${firebaseUser.uid}`]: { userId: firebaseUser.uid, userName: firebaseUser.displayName || userProfile?.name || 'Teammate', status: 'joined', contributed: 0, createdAt: new Date().toISOString() }
+    });
+  }, [activeTeamId, firebaseUser, db, userProfile]);
 
   const confirmExternalDonation = useCallback(async (fundId: string, donationId: string, amount: number) => {
     if (!activeTeamId || !db) return;
@@ -846,7 +724,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
 
   const saveLeagueRegistrationConfig = useCallback(async (lId: string, u: any) => { if (db) await setDoc(doc(db, 'leagues', lId, 'registration', 'config'), clean(u), { merge: true }); }, [db]);
-  const submitRegistrationEntry = useCallback(async (tId: string, pId: string, a: any, v: number, sig?: string, type?: any) => { if (db) await addDoc(collection(db, type || 'leagues', tId, 'registrationEntries'), clean({ league_id: tId, protocol_id: pId, answers: a, form_version: v, waiver_signed_text: sig, status: 'pending', created_at: new Date().toISOString() })); }, [db]);
+  const submitRegistrationEntry = useCallback(async (tId: string, pId: string, a: any, v: number, sig?: string, targetType?: any) => { if (db) await addDoc(collection(db, targetType || 'leagues', tId, 'registrationEntries'), clean({ league_id: tId, protocol_id: pId, answers: a, form_version: v, waiver_signed_text: sig, status: 'pending', created_at: new Date().toISOString() })); }, [db]);
 
   const signPublicTournamentWaiver = useCallback(async (tId: string, eId: string, tn: string, cn: string) => { if (db) { await updateDoc(doc(db, 'teams', tId, 'events', eId), { [`teamAgreements.${tn}`]: { agreed: true, captainName: cn, signedAt: new Date().toISOString() } }); return true; } return false; }, [db]);
   const submitMatchScore = useCallback(async (tId: string, eId: string, gId: string, isT1: boolean, s1: number, s2: number) => { if (!db) return; const snap = await getDoc(doc(db, 'teams', tId, 'events', eId)); if (!snap.exists()) return; const games = snap.data().tournamentGames || []; const idx = games.findIndex((g: any) => g.id === gId); if (idx === -1) return; games[idx] = { ...games[idx], score1: s1, score2: s2, isCompleted: true }; await updateDoc(doc(db, 'teams', tId, 'events', eId), { tournamentGames: games }); }, [db]);
@@ -920,10 +798,31 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [activeTeamId, firebaseUser, db]);
 
+  const addEvaluation = useCallback(async (playerId: string, data: Partial<PlayerEvaluation>) => {
+    if (!playerId || !db) return;
+    await addDoc(collection(db, 'players', playerId, 'evaluations'), clean({
+      ...data,
+      evaluatorId: firebaseUser?.uid,
+      createdAt: serverTimestamp()
+    }));
+  }, [db, firebaseUser]);
+
   const manageSubscription = useCallback(async () => { setIsPaywallOpen(true); }, []);
   const resolveQuota = useCallback(async (selectedTeamIds: string[]) => { toast({ title: "Quota Resolved" }); }, []);
   const exportAttendanceCSV = useCallback(async (eventId: string) => { toast({ title: "Exporting Attendance..." }); }, []);
   const exportTournamentStandingsCSV = useCallback(async (tournamentId: string) => { toast({ title: "Exporting Standings..." }); }, []);
+
+  const addRegistration = useCallback(async (teamId: string, eventId: string, data: any) => {
+    if (db) {
+      await addDoc(collection(db, 'teams', teamId, 'events', eventId, 'registrations'), clean({ ...data, createdAt: new Date().toISOString() }));
+      return true;
+    }
+    return false;
+  }, [db]);
+
+  const assignManualPlan = useCallback(async (uid: string, planId: string, limit: number) => { 
+    if (db) await updateDoc(doc(db, 'users', uid), { activePlanId: planId, proTeamLimit: limit, planSource: 'manual' }); 
+  }, [db]);
 
   // --- 5. CONTEXT MEMO ---
   const contextValue = useMemo(() => ({
