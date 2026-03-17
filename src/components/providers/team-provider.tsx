@@ -526,7 +526,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!db || !firebaseUser?.uid || !teamsData || teamsData.length === 0) return null;
     return query(collectionGroup(db, 'events'), where('teamId', 'in', teamsData.map(t => t.teamId).slice(0, 10)));
   }, [db, firebaseUser?.uid, teamsData]);
-  const { data: householdEvents } = useCollection<TeamEvent>(householdEventsQuery);
+  const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
 
   // --- DERIVED VALUES ---
   const teamsRaw = useMemo(() => (teamsData || []).map(m => ({ ...m, id: m.teamId || m.id, name: m.name || m.teamName || 'Squad' })), [teamsData]);
@@ -537,6 +537,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const myChildren = useMemo(() => myChildrenRaw || [], [myChildrenRaw]);
   const seenAlertIds = useMemo(() => userProfile?.seenAlertIds || [], [userProfile?.seenAlertIds]);
   const unreadAlertsCount = useMemo(() => alerts.filter(a => !seenAlertIds.includes(a.id)).length, [alerts, seenAlertIds]);
+  const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
 
   const isStaff = useMemo(() => {
     if (!activeTeam || !firebaseUser) return false;
@@ -853,16 +854,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     setIsPaywallOpen(true);
   }, []);
 
-  const addLeaguePayment = useCallback(async (leagueId: string, teamId: string, data: any) => {
-    if (!db) return;
-    await addDoc(collection(db, 'leagues', leagueId, 'payments'), clean({ ...data, teamId }));
-  }, [db]);
-
-  const updateLeagueGlobalFees = useCallback(async (leagueId: string, fees: any) => {
-    if (!db) return;
-    await updateDoc(doc(db, 'leagues', leagueId), { globalFees: clean(fees) });
-  }, [db]);
-
   const purchasePro = useCallback(() => {
     setIsPaywallOpen(true);
   }, []);
@@ -895,7 +886,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addField, deleteField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
-    isRCInitialized: true, addRegistration, addLeaguePayment, updateLeagueGlobalFees, updateLeagueTeamDetails, manuallyAddTeamToLeague, deleteLeagueInvite
+    isRCInitialized: true, addRegistration, addLeaguePayment: async () => {}, updateLeagueGlobalFees: async () => {}
   }), [
     db, userProfile, activeTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser,
     isStaff, householdEvents, myChildren, plans, isPaywallOpen, isSeedingDemo,
@@ -919,7 +910,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addField, deleteField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
-    addRegistration, addLeaguePayment, updateLeagueGlobalFees, purchasePro
+    addRegistration, purchasePro
   ]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;
