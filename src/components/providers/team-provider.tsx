@@ -157,7 +157,7 @@ export type Member = {
   gradYear?: string;
   gpa?: string;
   school?: string;
-  phone?: string;
+phone?: string;
   skills?: string[];
   achievements?: string[];
 };
@@ -577,6 +577,52 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return true;
   }, [firebaseUser, db, userProfile?.avatar]);
 
+  const deleteChat = useCallback(async (chatId: string) => {
+    if (!activeTeamId || !db) return;
+    await updateDoc(doc(db, 'teams', activeTeamId, 'groupChats', chatId), { isDeleted: true });
+  }, [activeTeamId, db]);
+
+  const hideChatForUser = useCallback(async (chatId: string) => {
+    if (!firebaseUser || !db) return;
+    await setDoc(doc(db, 'userProfiles', firebaseUser.uid, 'hiddenChats', chatId), {
+      id: `${firebaseUser.uid}_${chatId}`,
+      userId: firebaseUser.uid,
+      chatId,
+      hiddenAt: new Date().toISOString()
+    });
+  }, [firebaseUser, db]);
+
+  const updateChat = useCallback(async (chatId: string, data: any) => {
+    if (!activeTeamId || !db) return;
+    await updateDoc(doc(db, 'teams', activeTeamId, 'groupChats', chatId), clean(data));
+  }, [activeTeamId, db]);
+
+  const votePoll = useCallback(async (chatId: string, messageId: string, optionIdx: number) => {
+    if (!activeTeamId || !firebaseUser || !db) return;
+    const msgRef = doc(db, 'teams', activeTeamId, 'groupChats', chatId, 'messages', messageId);
+    const snap = await getDoc(msgRef);
+    if (!snap.exists()) return;
+    
+    const msgData = snap.data();
+    const poll = msgData.poll;
+    if (!poll || poll.isClosed) return;
+
+    const currentVote = poll.voters?.[firebaseUser.uid];
+    const updates: any = { [`poll.voters.${firebaseUser.uid}`]: optionIdx };
+
+    if (currentVote === undefined) {
+      updates[`poll.options.${optionIdx}.votes`] = increment(1);
+      updates[`poll.totalVotes`] = increment(1);
+    } else if (currentVote !== optionIdx) {
+      updates[`poll.options.${currentVote}.votes`] = increment(-1);
+      updates[`poll.options.${optionIdx}.votes`] = increment(1);
+    } else {
+      return;
+    }
+
+    await updateDoc(msgRef, updates);
+  }, [activeTeamId, firebaseUser, db]);
+
   const signUpForFundraising = useCallback(async (fundId: string) => {
     if (!activeTeamId || !firebaseUser || !db) return;
     await updateDoc(doc(db, 'teams', activeTeamId, 'fundraising', fundId), {
@@ -866,11 +912,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await batch.commit();
   }, [db]);
 
+  const markMediaAsViewed = useCallback(async (fileId: string) => {
+    if (!firebaseUser || !activeTeamId || !db) return;
+    await setDoc(doc(db, 'teams', activeTeamId, 'members', firebaseUser.uid, 'mediaViews', fileId), {
+      fileId,
+      viewedAt: new Date().toISOString()
+    });
+  }, [activeTeamId, firebaseUser, db]);
+
   const manageSubscription = useCallback(async () => { setIsPaywallOpen(true); }, []);
   const resolveQuota = useCallback(async (selectedTeamIds: string[]) => { toast({ title: "Quota Resolved" }); }, []);
   const exportAttendanceCSV = useCallback(async (eventId: string) => { toast({ title: "Exporting Attendance..." }); }, []);
   const exportTournamentStandingsCSV = useCallback(async (tournamentId: string) => { toast({ title: "Exporting Standings..." }); }, []);
-  const markMediaAsViewed = useCallback(async (fileId: string) => { /* Logic Placeholder */ }, []);
 
   // --- 5. CONTEXT MEMO ---
   const contextValue = useMemo(() => ({
