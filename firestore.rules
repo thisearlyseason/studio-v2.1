@@ -19,13 +19,15 @@ service cloud.firestore {
 
     // Helper to check if a user is an admin of a team
     function isTeamAdmin(teamId) {
-      let member = get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
-      return isSignedIn() && member.data.role == 'Admin';
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.role == 'Admin' ||
+        get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid
+      );
     }
 
     // --- User Profiles ---
     match /userProfiles/{userId} {
-      allow read: if isSignedIn(); // Allow reading other members for rosters
+      allow read: if isSignedIn();
       allow write: if isOwner(userId);
     }
 
@@ -43,15 +45,38 @@ service cloud.firestore {
       }
     }
 
+    // --- Players ---
+    match /players/{playerId} {
+      allow read: if isSignedIn();
+      // Allow creation during signup or parent registration
+      allow create: if isSignedIn(); 
+      allow update: if isSignedIn() && (request.auth.uid == resource.data.parentId || request.auth.uid == resource.data.userId);
+      
+      match /recruitingProfile/{allPaths=**} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+      
+      match /evaluations/{allPaths=**} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+      
+      match /videos/{allPaths=**} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+    }
+
     // --- Teams ---
     match /teams/{teamId} {
-      allow read: if isSignedIn(); // Allow code validation
+      allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if isTeamAdmin(teamId);
 
       match /members/{memberId} {
-        allow read: if isTeamMember(teamId);
-        // Admins can edit anyone, members only themselves
+        allow read: if isSignedIn();
+        // Allow users to add themselves or admins to add others
         allow create: if isSignedIn(); 
         allow update: if isTeamAdmin(teamId) || isOwner(memberId);
         allow delete: if isTeamAdmin(teamId);
@@ -61,9 +86,9 @@ service cloud.firestore {
         allow read: if isTeamMember(teamId);
         allow write: if isTeamAdmin(teamId);
         
-        match /registrations/{regId} {
+        match /registrations/{allPaths=**} {
           allow read: if isTeamAdmin(teamId);
-          allow create: if true; // Public registration
+          allow create: if true; 
         }
       }
 
@@ -87,8 +112,7 @@ service cloud.firestore {
         allow delete: if isTeamAdmin(teamId);
 
         match /messages/{messageId} {
-          allow read: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId)).data.memberIds;
-          allow create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId)).data.memberIds;
+          allow read, create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId)).data.memberIds;
           allow update, delete: if isSignedIn() && request.auth.uid == resource.data.authorId;
         }
       }
@@ -99,67 +123,50 @@ service cloud.firestore {
         allow delete: if isTeamAdmin(teamId) || (isSignedIn() && request.auth.uid == resource.data.uploadedBy);
       }
 
-      match /drills/{drillId} {
+      match /drills/{allPaths=**} {
         allow read: if isTeamMember(teamId);
         allow write: if isTeamAdmin(teamId);
       }
 
-      match /games/{gameId} {
+      match /games/{allPaths=**} {
         allow read: if isTeamMember(teamId);
         allow write: if isTeamAdmin(teamId);
       }
 
-      match /volunteers/{oppId} {
-        allow read: if isTeamMember(teamId);
-        allow write: if isTeamAdmin(teamId) || isTeamMember(teamId); // Signups are writes
-      }
-
-      match /fundraising/{fundId} {
+      match /volunteers/{allPaths=**} {
         allow read: if isTeamMember(teamId);
         allow write: if isTeamAdmin(teamId) || isTeamMember(teamId);
-        
-        match /donations/{donId} {
-          allow read: if isTeamAdmin(teamId);
-          allow create: if true; // Public donations
-          allow update: if isTeamAdmin(teamId);
-        }
       }
 
-      match /equipment/{eqId} {
+      match /fundraising/{allPaths=**} {
+        allow read: if isTeamMember(teamId);
+        allow write: if isTeamAdmin(teamId) || isTeamMember(teamId);
+      }
+
+      match /equipment/{allPaths=**} {
         allow read: if isTeamMember(teamId);
         allow write: if isTeamAdmin(teamId);
       }
 
-      match /incidents/{incId} {
+      match /incidents/{allPaths=**} {
         allow read, write: if isTeamAdmin(teamId);
       }
       
-      match /alerts/{alertId} {
+      match /alerts/{allPaths=**} {
+        allow read: if isTeamMember(teamId);
+        allow write: if isTeamAdmin(teamId);
+      }
+      
+      match /documents/{allPaths=**} {
         allow read: if isTeamMember(teamId);
         allow write: if isTeamAdmin(teamId);
       }
     }
 
-    // --- Players ---
-    match /players/{playerId} {
+    // --- Team Memberships (Global) ---
+    match /team_memberships/{membershipId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && (request.auth.uid == resource.data.parentId || request.auth.uid == resource.data.userId);
-      
-      match /recruitingProfile/{docId} {
-        allow read: if true; // Public scouting
-        allow write: if isSignedIn();
-      }
-      
-      match /evaluations/{evalId} {
-        allow read: if isSignedIn();
-        allow write: if isSignedIn();
-      }
-      
-      match /videos/{videoId} {
-        allow read: if true;
-        allow write: if isSignedIn();
-      }
+      allow write: if isSignedIn();
     }
 
     // --- Facilities ---
@@ -177,20 +184,20 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
-      allow update: if isSignedIn() && request.auth.uid == resource.data.creatorId;
+      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.creatorId;
       
-      match /registration/{docId} {
-        allow read: if true;
+      match /registration/{allPaths=**} {
+        allow read: if true; 
         allow write: if isSignedIn();
       }
       
-      match /registrationEntries/{entryId} {
+      match /registrationEntries/{allPaths=**} {
         allow read: if isSignedIn();
         allow create: if true;
         allow update: if isSignedIn();
       }
       
-      match /payments/{payId} {
+      match /payments/{allPaths=**} {
         allow read, write: if isSignedIn();
       }
     }

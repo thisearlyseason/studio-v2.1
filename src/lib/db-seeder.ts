@@ -4,7 +4,8 @@ import {
   Firestore, 
   doc, 
   writeBatch,
-  collection
+  collection,
+  serverTimestamp
 } from 'firebase/firestore';
 
 /**
@@ -45,8 +46,8 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
       { id: `g1_${teamId}`, opponent: 'Tigers', date: yesterday, myScore: 12, opponentScore: 8, result: 'Win', location: 'City Arena' }
     ],
     events: [
-      { id: `e1_${teamId}`, title: `Championship Match ${teamSuffix}`, eventType: 'game', date: tomorrow, startTime: '10:00 AM', location: 'State Stadium', description: 'Final round coordination.' },
-      { id: `e2_${teamId}`, title: `Tactical Drill Session ${teamSuffix}`, eventType: 'practice', date: later, startTime: '4:00 PM', location: 'Field 2', description: 'Focused on set pieces.' }
+      { id: `e1_${teamId}`, teamId, title: `Championship Match ${teamSuffix}`, eventType: 'game', date: tomorrow, startTime: '10:00 AM', location: 'State Stadium', description: 'Final round coordination.' },
+      { id: `e2_${teamId}`, teamId, title: `Tactical Drill Session ${teamSuffix}`, eventType: 'practice', date: later, startTime: '4:00 PM', location: 'Field 2', description: 'Focused on set pieces.' }
     ],
     drills: [
       { id: `d1_${teamId}`, title: `Zone Defense Protocol ${teamSuffix}`, description: 'Master the 3-2 alignment.', videoUrl: 'https://www.youtube.com/watch?v=dQw4w9XcQp8' }
@@ -72,7 +73,6 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
 
 /**
  * HIGH-SPEED ATOMIC SEEDER
- * Merges all initialization tasks into a single batch commit for near-instant preparation.
  */
 export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string) {
   const isParentDemo = planId === 'parent_demo';
@@ -83,6 +83,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const actualPlanId = (isParentDemo || isPlayerDemo) ? 'squad_pro' : planId;
   const userRole = isParentDemo ? 'parent' : (isPlayerDemo ? 'adult_player' : 'coach');
   const pos = isParentDemo ? 'Parent' : (isPlayerDemo ? 'Player' : 'Coach');
+  
+  // CRITICAL: Demos that need Coaches Corner must have 'Admin' role
   const role = (isParentDemo || isPlayerDemo) ? 'Member' : 'Admin';
 
   const batch = writeBatch(db);
@@ -114,13 +116,13 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       parentCommentsEnabled: true, parentChatEnabled: true, createdAt: now, createdBy: userId
     }));
 
-    // SECURITY ACL SYNC
+    // ACL SYNC
     batch.set(doc(db, 'team_memberships', `${tid}_${userId}`), clean({
-      teamId: tid, userId, teamName: config.name, role, isPro: config.isPro, joinedAt: now
+      id: `${tid}_${userId}`, teamId: tid, userId, teamName: config.name, role, isPro: config.isPro, joinedAt: now
     }));
 
     batch.set(doc(db, 'users', userId, 'teamMemberships', tid), clean({
-      teamId: tid, teamName: config.name, teamCode: tid.slice(-6).toUpperCase(), role,
+      teamId: tid, name: config.name, teamCode: tid.slice(-6).toUpperCase(), role,
       isPro: config.isPro, planId: config.isPro ? actualPlanId : 'starter_squad', isDemo: true, joinedAt: now,
       ownerUserId: userId
     }));
