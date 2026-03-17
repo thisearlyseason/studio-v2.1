@@ -330,6 +330,21 @@ export type EquipmentItem = {
   assignments: Record<string, { userId: string; userName: string; quantity: number; date: string }>;
 };
 
+export type TournamentGame = {
+  id: string;
+  team1: string;
+  team2: string;
+  score1: number;
+  score2: number;
+  date: string;
+  time: string;
+  location?: string;
+  isCompleted: boolean;
+  isDisputed?: boolean;
+  disputeNotes?: string;
+  updatedAt?: string;
+};
+
 interface TeamContextType {
   db: any;
   user: UserProfile | null;
@@ -361,6 +376,7 @@ interface TeamContextType {
   hasFeature: (id: string) => boolean;
   isSeedingDemo: boolean;
   setIsSeedingDemo: (seeding: boolean) => void;
+  isRCInitialized: boolean;
   
   getRecruitingProfile: (playerId: string) => Promise<RecruitingProfile | null>;
   updateRecruitingProfile: (playerId: string, data: Partial<RecruitingProfile>) => Promise<void>;
@@ -480,8 +496,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
-  const [householdEvents, setHouseholdEvents] = useState<TeamEvent[]>([]);
-  const [householdBalance, setHouseholdBalance] = useState(0);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
   // --- QUERIES ---
@@ -511,11 +525,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!db || !firebaseUser?.uid || !teamsData || teamsData.length === 0) return null;
     return query(collectionGroup(db, 'events'), where('teamId', 'in', teamsData.map(t => t.teamId).slice(0, 10)));
   }, [db, firebaseUser?.uid, teamsData]);
-  const { data: householdEventsRaw } = useCollection<TeamEvent>(householdEventsQuery);
-
-  useEffect(() => {
-    if (householdEventsRaw) setHouseholdEvents(householdEventsRaw);
-  }, [householdEventsRaw]);
+  const { data: householdEvents } = useCollection<TeamEvent>(householdEventsQuery);
 
   // --- DERIVED ---
   const teamsRaw = useMemo(() => (teamsData || []).map(m => ({ ...m, id: m.teamId || m.id, name: m.name || m.teamName || 'Squad' })), [teamsData]);
@@ -705,7 +715,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateEquipmentItem = useCallback(async (id: string, updates: any) => { if (activeTeamId && db) await updateDoc(doc(db, 'teams', activeTeamId, 'equipment', id), clean(updates)); }, [activeTeamId, db]);
   const deleteEquipmentItem = useCallback(async (id: string) => { if (activeTeamId && db) await deleteDoc(doc(db, 'teams', activeTeamId, 'equipment', id)); }, [activeTeamId, db]);
   const assignEquipment = useCallback(async (id: string, uid: string, uname: string, q: number) => { if (activeTeamId && db) await updateDoc(doc(db, 'teams', activeTeamId, 'equipment', id), { [`assignments.${uid}`]: { userId: uid, userName: uname, quantity: q, date: new Date().toISOString() }, availableQuantity: increment(-q) }); }, [activeTeamId, db]);
-  const returnEquipment = useCallback(async (id: string, uid: string) => { if (activeTeamId && db) { const snap = await getDoc(doc(db, 'teams', activeTeamId, 'equipment', id)); if(snap.exists()) { const qty = snap.data().assignments[uid]?.quantity || 0; await updateDoc(doc(db, 'teams', activeTeamId, 'equipment', id), { [`assignments.${uid}`]: arrayRemove(snap.data().assignments[uid]), availableQuantity: increment(qty) }); } } }, [activeTeamId, db]);
+  const returnEquipment = useCallback(async (id: string, uid: string) => { if (activeTeamId && db) { const snap = await getDoc(doc(db, 'teams', activeTeamId, 'equipment', id)); if(snap.exists()) { const data = snap.data(); const assignment = data.assignments?.[uid]; if (assignment) { await updateDoc(doc(db, 'teams', activeTeamId, 'equipment', id), { [`assignments.${uid}`]: deleteField(), availableQuantity: increment(assignment.quantity) }); } } } }, [activeTeamId, db]);
 
   const addDrill = useCallback(async (d: any) => { if (activeTeamId && db) await addDoc(collection(db, 'teams', activeTeamId, 'drills'), clean(d)); }, [activeTeamId, db]);
   const addFile = useCallback(async (n: string, t: string, sb: number, u: string, c: string, d?: string) => { if (activeTeamId && db) await addDoc(collection(db, 'teams', activeTeamId, 'files'), clean({ name: n, type: t, sizeBytes: sb, size: `${Math.round(sb/1024)}KB`, url: u, category: c, description: d, date: new Date().toISOString() })); }, [activeTeamId, db]);
@@ -784,10 +794,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await updateDoc(doc(db, 'teams', teamId, 'events', eventId), { tournamentGames: games });
   }, [db]);
 
-  const manageSubscription = useCallback(async () => {
-    setIsPaywallOpen(true);
-  }, []);
-
   const resolveQuota = useCallback(async (selectedTeamIds: string[]) => {
     if (!db || !userProfile?.id) return;
     const batch = writeBatch(db);
@@ -834,12 +840,24 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     document.body.removeChild(link);
   }, [db, activeTeamId]);
 
+  const addRegistration = useCallback(async (teamId: string, eventId: string, data: any) => {
+    if (db) {
+      await addDoc(collection(db, 'teams', teamId, 'events', eventId, 'registrations'), clean(data));
+      return true;
+    }
+    return false;
+  }, [db]);
+
+  const manageSubscription = useCallback(async () => {
+    setIsPaywallOpen(true);
+  }, []);
+
   // --- CONTEXT ---
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setActiveTeamId(t.id), teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
     isStaff, isPro: activeTeam?.isPro || false, isParent: userProfile?.role === 'parent', isPlayer: userProfile?.role === 'adult_player',
-    isSuperAdmin, isClubManager, householdEvents, householdBalance, myChildren, plans, proQuotaStatus: { current: 0, limit: 0, remaining: 0, exceeded: false },
+    isSuperAdmin, isClubManager, householdEvents, householdBalance: 0, myChildren, plans, proQuotaStatus: { current: 0, limit: 0, remaining: 0, exceeded: false },
     isPaywallOpen, setIsPaywallOpen, purchasePro: () => setIsPaywallOpen(true),
     hasFeature: (id: string) => true, alerts, unreadAlertsCount,
     markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isSeedingDemo, setIsSeedingDemo,
@@ -849,23 +867,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     toggleRecruitingProfile, updateStaffEvaluation, getStaffEvaluation, createNewTeam, joinTeamWithCode,
     createLeague, signUpForVolunteer, addEquipmentItem, respondToAssignment, assignEntryToTeam, 
     toggleRegistrationPaymentStatus, updateLeagueSchedule, inviteTeamToLeague, manuallyAddTeamToLeague, 
-    deleteLeagueInvite, updateLeagueTeamDetails, addLeaguePayment: async () => {}, updateLeagueGlobalFees: async () => {}, deleteChat, 
+    deleteLeagueInvite, updateLeagueTeamDetails, deleteChat, 
     hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, upgradeChildToLogin, registerChild,
     updateUser, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
     confirmVolunteerAttendance, addVolunteerOpportunity, signUpForFundraising,
-    confirmExternalDonation, addIncident, addRegistration: async (tid: string, eid: string, data: any) => { if (db) { await addDoc(collection(db, 'teams', tid, 'events', eid, 'registrations'), clean(data)); return true; } return false; },
-    assignManualPlan,
+    confirmExternalDonation, addIncident, assignManualPlan,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, disputeMatchScore,
     createAlert, deleteAlert, addDrill, addFile, deleteFile, addFacility, deleteFacility,
     addField, deleteField, 
     assignEquipment, returnEquipment,
-    formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed
+    formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
+    isRCInitialized: true, addRegistration
   }), [
     db, userProfile, activeTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser,
-    isStaff, householdEvents, householdBalance, myChildren, plans, isPaywallOpen, isSeedingDemo,
+    isStaff, householdEvents, myChildren, plans, isPaywallOpen, isSeedingDemo,
     seenAlertIds, alerts, unreadAlertsCount, isSuperAdmin, isClubManager,
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
     getPlayerStats, addPlayerStat, deletePlayerStat, getEvaluations, addEvaluation,
@@ -885,7 +903,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     createAlert, deleteAlert, addDrill, addFile, deleteFile, addFacility, deleteFacility,
     addField, deleteField, 
     assignEquipment, returnEquipment,
-    formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed
+    formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
+    addRegistration
   ]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;
