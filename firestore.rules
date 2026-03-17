@@ -28,14 +28,25 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       allow read, write: if isSignedIn();
       
+      // Explicitly authorize LIST and document access for invites
+      match /invites {
+        allow list: if isSignedIn();
+      }
       match /invites/{inviteId} {
-        allow read, write: if isSignedIn();
+        allow get, create, update, delete: if isSignedIn();
       }
       
+      // Explicitly authorize registration and entries
+      match /registration {
+        allow list: if isSignedIn();
+      }
       match /registration/{configId} {
         allow read, write: if isSignedIn();
       }
 
+      match /registrationEntries {
+        allow list: if isSignedIn();
+      }
       match /registrationEntries/{entryId} {
         allow read, write: if isSignedIn();
       }
@@ -46,6 +57,7 @@ service cloud.firestore {
     }
 
     // Explicit matching for global league state (common in recruitment hub)
+    // Authorizes paths like /leagues/global/invites
     match /leagues/global/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
