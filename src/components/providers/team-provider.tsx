@@ -493,7 +493,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const db = useFirestore();
   const router = useRouter();
   
-  // --- 1. STATE & HOOKS ---
+  // --- 1. STATE & HOOKS (Declared first) ---
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
@@ -529,7 +529,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db, firebaseUser?.uid, teamsData]);
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
 
-  // --- 2. DERIVED STATE ---
+  // --- 2. DERIVED VALUES ---
   const teamsRaw = useMemo(() => (teamsData || []).map(m => ({ ...m, id: m.teamId || m.id, name: m.name || m.teamName || 'Squad' })), [teamsData]);
   const activeTeam = useMemo(() => teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null, [teamsRaw, activeTeamId]);
   const members = useMemo(() => membersData || [], [membersData]);
@@ -556,7 +556,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const getRecruitingProfile = useCallback(async (playerId: string) => { if (!db) return null; const snap = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile')); return snap.exists() ? (snap.data() as RecruitingProfile) : null; }, [db]);
   const updateRecruitingProfile = useCallback(async (playerId: string, data: Partial<RecruitingProfile>) => { if (!db) return; await setDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile'), { ...clean(data), updatedAt: serverTimestamp() }, { merge: true }); }, [db]);
   const getAthleticMetrics = useCallback(async (playerId: string) => { if (!db) return null; const snap = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'metrics')); return snap.exists() ? (snap.data() as AthleticMetrics) : null; }, [db]);
-  const updateAthleticMetrics = useCallback(async (playerId: string, data: Partial<Metric>) => { if (!db) return; await setDoc(doc(db, 'players', playerId, 'recruitingProfile', 'metrics'), clean(data), { merge: true }); }, [db]);
+  const updateAthleticMetrics = useCallback(async (playerId: string, data: Partial<any>) => { if (!db) return; await setDoc(doc(db, 'players', playerId, 'recruitingProfile', 'metrics'), clean(data), { merge: true }); }, [db]);
   const getPlayerStats = useCallback(async (playerId: string) => { if (!db) return []; const snap = await getDocs(collection(db, 'players', playerId, 'recruitingProfile', 'stats')); return snap.docs.map(d => ({ ...d.data(), id: d.id } as PlayerStat)); }, [db]);
   const addPlayerStat = useCallback(async (playerId: string, data: Partial<PlayerStat>) => { if (!db) return; await addDoc(collection(db, 'players', playerId, 'recruitingProfile', 'stats'), clean(data)); }, [db]);
   const deletePlayerStat = useCallback(async (playerId: string, statId: string) => { if (!db) return; await deleteDoc(doc(db, 'players', playerId, 'recruitingProfile', 'stats', statId)); }, [db]);

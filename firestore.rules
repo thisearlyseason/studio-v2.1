@@ -38,11 +38,11 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
-    match /teams/{allPaths=**} {
+    match /leagues/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    match /leagues/{allPaths=**} {
+    match /teams/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
