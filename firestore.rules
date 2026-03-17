@@ -109,6 +109,10 @@ service cloud.firestore {
       allow read: if isSignedIn();
     }
 
+    match /{path=**}/documents/{docId} {
+      allow read: if isSignedIn();
+    }
+
     // Catch-all default
     match /{path=**} {
       allow read, write: if false;
