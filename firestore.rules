@@ -18,34 +18,13 @@ service cloud.firestore {
         request.auth.token.firebase.sign_in_provider == 'anonymous' || 
         request.auth.token.firebase.sign_in_provider == 'custom' ||
         request.auth.token.sign_in_provider == 'anonymous' ||
-        request.auth.token.sign_in_provider == 'custom'
+        request.auth.token.sign_in_provider == 'custom' ||
+        request.auth.token.firebase.sign_in_provider == 'none'
       );
     }
 
-    // --- Global Catalog ---
-    match /plans/{planId} {
-      allow read: if true;
-      allow write: if isSignedIn() || isAnonymous();
-    }
-    match /features/{featureId} {
-      allow read: if true;
-      allow write: if isSignedIn() || isAnonymous();
-    }
-
-    // --- User Profiles ---
-    match /users/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isOwner(userId) || isAnonymous();
-      
-      match /{allPaths=**} {
-        allow read: if isSignedIn();
-        allow write: if isOwner(userId) || isAnonymous();
-      }
-    }
-
     // --- Unified Hierarchies ---
-    // Explicitly using recursive wildcards at the hierarchy root to authorize subcollection listing
-    // match /collection/{allPaths=**} covers list and get for all sub-data
+    // Explicitly using top-level recursive wildcards to ensure subcollection listing (like leagues/global/invites)
     
     match /leagues/{allPaths=**} {
       allow read: if isSignedIn();
@@ -67,13 +46,29 @@ service cloud.firestore {
       allow write: if isSignedIn() || isAnonymous();
     }
 
+    match /plans/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAnonymous();
+    }
+
+    // --- User Profiles ---
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) || isAnonymous();
+      
+      match /{allPaths=**} {
+        allow read: if isSignedIn();
+        allow write: if isOwner(userId) || isAnonymous();
+      }
+    }
+
     // --- Membership Sentinel ---
     match /team_memberships/{membershipId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() || isAnonymous();
     }
 
-    // --- Collection Groups (For Master Calendar & Household Hub) ---
+    // --- Collection Groups (Master Calendar & Household Hub) ---
     match /{path=**}/events/{eventId} {
       allow read: if isSignedIn();
     }
@@ -93,9 +88,6 @@ service cloud.firestore {
     match /{path=**}/feedPosts/{postId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() || isAnonymous();
-    }
-    match /{path=**}/incidents/{incId} {
-      allow read: if isSignedIn();
     }
 
     // Deny by default
