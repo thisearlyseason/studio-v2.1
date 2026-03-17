@@ -72,7 +72,7 @@ service cloud.firestore {
 
     // --- Leagues Hierarchy ---
     match /leagues/{leagueId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
       allow create: if isSignedIn() || isAnonymous();
       allow update, delete: if isSignedIn() || isAnonymous();
       
@@ -84,7 +84,7 @@ service cloud.firestore {
 
     // --- Facilities & Fleet ---
     match /facilities/{facId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
       allow write: if isSignedIn() || isAnonymous();
       
       match /{allPaths=**} {
@@ -95,25 +95,25 @@ service cloud.firestore {
 
     // --- Collection Groups (For cross-team auditing) ---
     match /{path=**}/events/{eventId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
     }
     match /{path=**}/files/{fileId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
     }
     match /{path=**}/signatures/{sigId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
     }
     match /{path=**}/registrationEntries/{entryId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
     }
     match /{path=**}/members/{memberId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
     }
     match /{path=**}/feedPosts/{postId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
     }
     match /{path=**}/incidents/{incId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() || isAnonymous();
     }
 
     // Deny by default

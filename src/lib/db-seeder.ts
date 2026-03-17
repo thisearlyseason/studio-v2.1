@@ -57,8 +57,8 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
       { id: `s1_${teamId}`, opponentName: 'The Jaguars', strengths: 'Fast transitions', weaknesses: 'High defensive line', keysToVictory: 'Exploit long balls.', date: yesterday }
     ],
     feed: [
-      { id: `p1_${teamId}`, type: 'user', content: `Focus for Saturday, ${teamSuffix} squad!`, author: { name: 'Jordan Smith' }, createdAt: yesterday, likes: [userId] },
-      { id: `p2_${teamId}`, type: 'poll', content: 'Uniform choice?', poll: { question: 'Uniform choice?', options: [{text: 'Home Red', votes: 12}, {text: 'Away White', votes: 5}], totalVotes: 17, voters: {}, isClosed: false }, createdAt: yesterday }
+      { id: `p1_${teamId}`, type: 'user', content: `Focus for Saturday, ${teamSuffix} squad!`, author: { name: 'Jordan Smith' }, authorId: `u1_${teamId}`, createdAt: yesterday, likes: [userId] },
+      { id: `p2_${teamId}`, type: 'poll', content: 'Uniform choice?', author: { name: 'Coach Guest' }, authorId: userId, poll: { question: 'Uniform choice?', options: [{text: 'Home Red', votes: 12}, {text: 'Away White', votes: 5}], totalVotes: 17, voters: {}, isClosed: false }, createdAt: yesterday }
     ],
     documents: [
       { id: 'default_medical', teamId, title: 'Medical Clearance', content: 'Standard medical waiver.', type: 'waiver', isActive: true, assignedTo: ['all'], signatureCount: 0, createdAt: now.toISOString() },
