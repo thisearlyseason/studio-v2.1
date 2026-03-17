@@ -60,7 +60,6 @@ export function useCollection<T = any>(
     }
 
     // TACTICAL GUARD: Prevent root-level scans.
-    // Extracts the path from either a collection reference or a query object.
     let path: string = '';
     try {
       path = memoizedTargetRefOrQuery.type === 'collection'
@@ -71,7 +70,7 @@ export function useCollection<T = any>(
     }
 
     // CRITICAL: If the path is empty or points to the document root, do not establish a listener.
-    // This resolves the "Missing or insufficient permissions" at the root path.
+    // This resolves the "Missing or insufficient permissions" at the root path during initial auth resolution.
     if (!path || path === '/' || path === '.' || path === '') {
       setData(null);
       setIsLoading(false);
@@ -102,7 +101,7 @@ export function useCollection<T = any>(
         setData(null);
         setIsLoading(false);
 
-        // trigger global error propagation
+        // Trigger global error propagation for agentive fixing
         errorEmitter.emit('permission-error', contextualError);
       }
     );
@@ -111,7 +110,7 @@ export function useCollection<T = any>(
   }, [memoizedTargetRefOrQuery]); 
   
   if(memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
-    // console.warn('useCollection: reference not properly memoized');
+    // Optional: console.warn('useCollection: reference not properly memoized');
   }
   return { data, isLoading, error };
 }
