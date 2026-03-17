@@ -473,7 +473,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const db = useFirestore();
   const router = useRouter();
   
-  // 1. Core State & Data Hooks (Strict Initialization Order)
+  // 1. Core State & Data Hooks (Declared first to avoid ReferenceErrors)
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
@@ -530,7 +530,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const isClubManager = useMemo(() => ['elite_teams', 'elite_league'].includes(userProfile?.activePlanId || ''), [userProfile?.activePlanId]);
   const isSuperAdmin = useMemo(() => userProfile?.email === 'thisearlyseason@gmail.com', [userProfile?.email]);
 
-  // 2. Tactical Methods (useCallback Definitions)
+  // 2. Tactical Methods (useCallback Definitions defined before useMemo)
   const formatTime = useCallback((iso: string) => {
     try { return format(new Date(iso), 'h:mm a'); } catch (e) { return 'TBD'; }
   }, []);
@@ -560,7 +560,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return s.exists() ? (s.data() as AthleticMetrics) : null;
   }, [db]);
 
-  const updateAthleticMetrics = useCallback(async (playerId: string, data: Partial<AthleticMetrics>) => {
+  const updateAthleticMetrics = useCallback(async (playerId: string, data: Partial<Metric>) => {
     if (!playerId || !db) return;
     await setDoc(doc(db, 'players', playerId, 'recruitingProfile', 'metrics'), clean(data), { merge: true });
   }, [db]);
