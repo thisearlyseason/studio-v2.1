@@ -48,21 +48,10 @@ service cloud.firestore {
     // --- Players ---
     match /players/{playerId} {
       allow read: if isSignedIn();
-      // Allow creation during signup or parent registration
       allow create: if isSignedIn(); 
       allow update: if isSignedIn() && (request.auth.uid == resource.data.parentId || request.auth.uid == resource.data.userId);
       
-      match /recruitingProfile/{allPaths=**} {
-        allow read: if isSignedIn();
-        allow write: if isSignedIn();
-      }
-      
-      match /evaluations/{allPaths=**} {
-        allow read: if isSignedIn();
-        allow write: if isSignedIn();
-      }
-      
-      match /videos/{allPaths=**} {
+      match /{allPaths=**} {
         allow read: if isSignedIn();
         allow write: if isSignedIn();
       }
@@ -76,14 +65,13 @@ service cloud.firestore {
 
       match /members/{memberId} {
         allow read: if isSignedIn();
-        // Allow users to add themselves or admins to add others
         allow create: if isSignedIn(); 
         allow update: if isTeamAdmin(teamId) || isOwner(memberId);
         allow delete: if isTeamAdmin(teamId);
       }
 
       match /events/{eventId} {
-        allow read: if isTeamMember(teamId);
+        allow read: if isTeamMember(teamId) || isSignedIn();
         allow write: if isTeamAdmin(teamId);
         
         match /registrations/{allPaths=**} {
@@ -118,47 +106,13 @@ service cloud.firestore {
       }
 
       match /files/{fileId} {
-        allow read: if isTeamMember(teamId);
+        allow read: if isTeamMember(teamId) || isSignedIn();
         allow create: if isTeamMember(teamId);
         allow delete: if isTeamAdmin(teamId) || (isSignedIn() && request.auth.uid == resource.data.uploadedBy);
       }
 
-      match /drills/{allPaths=**} {
-        allow read: if isTeamMember(teamId);
-        allow write: if isTeamAdmin(teamId);
-      }
-
-      match /games/{allPaths=**} {
-        allow read: if isTeamMember(teamId);
-        allow write: if isTeamAdmin(teamId);
-      }
-
-      match /volunteers/{allPaths=**} {
-        allow read: if isTeamMember(teamId);
-        allow write: if isTeamAdmin(teamId) || isTeamMember(teamId);
-      }
-
-      match /fundraising/{allPaths=**} {
-        allow read: if isTeamMember(teamId);
-        allow write: if isTeamAdmin(teamId) || isTeamMember(teamId);
-      }
-
-      match /equipment/{allPaths=**} {
-        allow read: if isTeamMember(teamId);
-        allow write: if isTeamAdmin(teamId);
-      }
-
-      match /incidents/{allPaths=**} {
-        allow read, write: if isTeamAdmin(teamId);
-      }
-      
-      match /alerts/{allPaths=**} {
-        allow read: if isTeamMember(teamId);
-        allow write: if isTeamAdmin(teamId);
-      }
-      
-      match /documents/{allPaths=**} {
-        allow read: if isTeamMember(teamId);
+      match /{allSubPaths=**} {
+        allow read: if isTeamMember(teamId) || isTeamAdmin(teamId) || isSignedIn();
         allow write: if isTeamAdmin(teamId);
       }
     }

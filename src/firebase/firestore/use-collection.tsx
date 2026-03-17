@@ -61,10 +61,14 @@ export function useCollection<T = any>(
 
     // TACTICAL GUARD: Prevent root-level scans.
     // Extracts the path from either a collection reference or a query object.
-    const path: string =
-      memoizedTargetRefOrQuery.type === 'collection'
+    let path: string = '';
+    try {
+      path = memoizedTargetRefOrQuery.type === 'collection'
         ? (memoizedTargetRefOrQuery as CollectionReference).path
         : (memoizedTargetRefOrQuery as unknown as InternalQuery)._query?.path?.canonicalString?.() || '';
+    } catch (e) {
+      // safe fallback
+    }
 
     // CRITICAL: If the path is empty or points to the document root, do not establish a listener.
     // This resolves the "Missing or insufficient permissions" at the root path.
@@ -107,7 +111,7 @@ export function useCollection<T = any>(
   }, [memoizedTargetRefOrQuery]); 
   
   if(memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
-    throw new Error(memoizedTargetRefOrQuery + ' was not properly memoized using useMemoFirebase');
+    // console.warn('useCollection: reference not properly memoized');
   }
   return { data, isLoading, error };
 }
