@@ -4,17 +4,14 @@ service cloud.firestore {
 
     // --- TACTICAL HELPERS ---
 
-    // Basic authentication check
     function isSignedIn() {
       return request.auth != null && request.auth.uid != null;
     }
 
-    // Ownership check for private profiles
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Hardened check for demo/guest sessions (custom providers)
     function isAnonymous() {
       return isSignedIn() && (
         request.auth.token.firebase.sign_in_provider == 'anonymous' || 
@@ -26,16 +23,16 @@ service cloud.firestore {
 
     // --- INSTITUTIONAL HIERARCHY: LEAGUES ---
     
-    // Explicit list permission for the root collection to satisfy 'List Proving'
     match /leagues {
       allow list: if isSignedIn();
+      allow create: if isSignedIn();
     }
 
     match /leagues/{leagueId} {
       allow get: if isSignedIn();
       allow write: if isSignedIn();
       
-      // Explicit matches for subcollections frequently queried
+      // Explicit subcollection matching for 'List Proving'
       match /invites { allow list: if isSignedIn(); }
       match /invites/{id} { allow read, write: if isSignedIn(); }
       
@@ -48,7 +45,6 @@ service cloud.firestore {
       match /payments { allow list: if isSignedIn(); }
       match /payments/{id} { allow read, write: if isSignedIn(); }
 
-      // Recursive safety for all nested data
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
@@ -58,13 +54,13 @@ service cloud.firestore {
     
     match /teams {
       allow list: if isSignedIn();
+      allow create: if isSignedIn();
     }
 
     match /teams/{teamId} {
       allow get: if isSignedIn();
       allow write: if isSignedIn();
       
-      // Explicit matches for subcollections frequently queried
       match /members { allow list: if isSignedIn(); }
       match /members/{id} { allow read, write: if isSignedIn(); }
       
@@ -101,7 +97,6 @@ service cloud.firestore {
       match /groupChats { allow list: if isSignedIn(); }
       match /groupChats/{id} { allow read, write: if isSignedIn(); }
       
-      // Recursive safety for nested squad data (messages, comments, etc.)
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
@@ -119,7 +114,6 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if isOwner(userId);
       
-      // Team membership listings under user doc
       match /teamMemberships { allow list: if isOwner(userId); }
       match /teamMemberships/{tid} { allow read, write: if isOwner(userId); }
       
@@ -131,39 +125,32 @@ service cloud.firestore {
       }
     }
 
-    // --- GLOBAL ATHLETE REPOSITORY ---
+    // --- GLOBAL REPOSITORIES ---
     
     match /players {
       allow list: if isSignedIn();
     }
 
     match /players/{playerId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read, write: if isSignedIn();
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
     }
 
-    // --- PHYSICAL INFRASTRUCTURE: FACILITIES ---
-    
     match /facilities {
       allow list: if isSignedIn();
     }
 
     match /facilities/{facilityId} {
       allow read, write: if isSignedIn();
-      
       match /fields { allow list: if isSignedIn(); }
       match /fields/{id} { allow read, write: if isSignedIn(); }
-
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
     }
 
-    // --- GLOBAL ECONOMY: BILLING PLANS ---
-    
     match /plans {
       allow list: if true;
     }
@@ -174,7 +161,6 @@ service cloud.firestore {
     }
 
     // --- CROSS-SQUAD AGGREGATION (COLLECTION GROUPS) ---
-    // Necessary for 'Master Intelligence' household/club aggregate views
     
     match /{path=**}/invites/{id} { allow read: if isSignedIn(); }
     match /{path=**}/registrationEntries/{id} { allow read: if isSignedIn(); }

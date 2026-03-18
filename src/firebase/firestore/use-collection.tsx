@@ -35,8 +35,7 @@ export interface InternalQuery extends Query<DocumentData> {
 
 /**
  * React hook to subscribe to a Firestore collection or query in real-time.
- * Refactored to wait explicitly for Firebase Auth state to be fully resolved
- * before dispatching any queries, preventing root-level permission errors.
+ * Strictly waits for Firebase Auth resolution before dispatching queries.
  */
 export function useCollection<T = any>(
   memoizedTargetRefOrQuery: ((CollectionReference<DocumentData> | Query<DocumentData>) & { __memo?: boolean }) | null | undefined,
@@ -49,7 +48,6 @@ export function useCollection<T = any>(
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
-    // 1. Guard against null references
     if (!memoizedTargetRefOrQuery) {
       setData(null);
       setIsLoading(false);
@@ -58,20 +56,17 @@ export function useCollection<T = any>(
     }
 
     const auth = getAuth();
-
     let unsubscribeSnapshot: (() => void) | null = null;
 
-    // 2. Wait for auth state to fully resolve before establishing listener
+    // Wait for explicit auth state resolution
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      // TACTICAL GUARD: Never execute queries without a valid auth token
+      // TACTICAL GUARD: Never execute queries without a resolved identity
       if (!user || !auth.currentUser) {
         setData(null);
         setIsLoading(false);
-        setError(null);
         return;
       }
 
-      // Extract path for error reporting and validation
       let path: string = '';
       try {
         if ((memoizedTargetRefOrQuery as any).type === 'collection') {
@@ -84,12 +79,11 @@ export function useCollection<T = any>(
         path = 'unknown';
       }
 
-      // 3. Prevent invalid root-level or malformed paths
+      // Prevent unauthorized root-level or malformed queries
       const isRootPath = !path || path === '/' || path === '.' || path === 'databases/(default)/documents';
-      const hasUndefinedSegments = path === 'undefined' || path.includes('/undefined/') || path.endsWith('/undefined');
-      const isMalformed = path.includes('[object Object]') || path.includes('null');
-
-      if (isRootPath || hasUndefinedSegments || isMalformed) {
+      const hasUndefined = path === 'undefined' || path.includes('/undefined/') || path.endsWith('/undefined');
+      
+      if (isRootPath || hasUndefined) {
         console.warn(`useCollection: Blocked unauthorized or malformed query to [${path}]`);
         setData(null);
         setIsLoading(false);
@@ -99,7 +93,6 @@ export function useCollection<T = any>(
       setIsLoading(true);
       setError(null);
 
-      // 4. Subscribe to Firestore query with explicit error handling
       unsubscribeSnapshot = onSnapshot(
         memoizedTargetRefOrQuery,
         (snapshot: QuerySnapshot<DocumentData>) => {
@@ -112,7 +105,6 @@ export function useCollection<T = any>(
           setIsLoading(false);
         },
         (err: FirestoreError) => {
-          // Create the rich, contextual error asynchronously.
           const permissionError = new FirestorePermissionError({
             path: path || 'unknown',
             operation: 'list',
@@ -126,7 +118,6 @@ export function useCollection<T = any>(
       );
     });
 
-    // Cleanup both auth and Firestore subscriptions
     return () => {
       unsubscribeAuth();
       if (unsubscribeSnapshot) unsubscribeSnapshot();

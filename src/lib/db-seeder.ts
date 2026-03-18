@@ -157,16 +157,15 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const userRole = isParentDemo ? 'parent' : (isPlayerDemo ? 'adult_player' : 'coach');
   const pos = isParentDemo ? 'Parent' : (isPlayerDemo ? 'Player' : 'Coach');
   
-  // Administrators for Coach/Org/League demos
   const role = (isParentDemo || isPlayerDemo) ? 'Member' : 'Admin';
 
   const batch = writeBatch(db);
   const now = new Date().toISOString();
 
-  // Seed Plans first so hasFeature works
+  // 1. Seed Global Infrastructure
   SEED_CATALOG(batch, db);
 
-  // 1. Core Profile
+  // 2. Core Profile
   batch.set(doc(db, 'users', userId), clean({
     id: userId, fullName: `Guest ${pos}`, email: `${userRole}@thesquad.pro`,
     role: userRole, activePlanId: actualPlanId, proTeamLimit: isEliteDemo ? 20 : (isProTier ? 1 : 0), createdAt: now, isDemo: true, seenAlertIds: [],
@@ -182,7 +181,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         { id: `demo_${planId}_${userId.slice(-4)}`, name: isProTier ? 'Elite Demo Squad' : 'Grassroots Demo', suffix: '', isPro: isProTier, plan: actualPlanId }
       ];
 
-  // 2. Seed each team
+  // 3. Seed each team
   teamConfigs.forEach(config => {
     const tid = config.id;
     
@@ -194,7 +193,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       teamLogoUrl: `https://picsum.photos/seed/${tid}logo/200/200`
     }));
 
-    // ACL SYNC
     batch.set(doc(db, 'team_memberships', `${tid}_${userId}`), clean({
       id: `${tid}_${userId}`, teamId: tid, userId, teamName: config.name, role, isPro: config.isPro, joinedAt: now
     }));
@@ -211,7 +209,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       notes: 'Primary tactical coordinator for the demo squad.'
     }));
 
-    // Static Blueprint Injection
     const data = GET_DEMO_DATA(tid, userId, config.suffix);
     data.members.forEach(m => batch.set(doc(db, 'teams', tid, 'members', m.id), clean({ ...m, teamId: tid, joinedAt: now })));
     data.games.forEach(g => batch.set(doc(db, 'teams', tid, 'games', g.id), clean(g)));
@@ -230,7 +227,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     }
   });
 
-  // 3. League Admin Specialization
   if (isLeagueDemo) {
     const lid = `league_${userId.slice(-4)}`;
     batch.set(doc(db, 'leagues', lid), clean({
@@ -240,7 +236,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       inviteCode: 'LEAGUE1', createdAt: now
     }));
     
-    // Explicit Invite Seeding for League Portal
     const inviteId = `invite_${userId.slice(-4)}`;
     batch.set(doc(db, 'leagues', 'global', 'invites', inviteId), {
       id: inviteId,
@@ -251,7 +246,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       createdAt: now
     });
     
-    // Initialize global reference
     batch.set(doc(db, 'leagues', 'global'), { initialized: true }, { merge: true });
   }
 
