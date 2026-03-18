@@ -58,7 +58,7 @@ export function useCollection<T = any>(
     const auth = getAuth();
     let unsubscribeSnapshot: (() => void) | null = null;
 
-    // TACTICAL GUARD: Handle initial mount where user might not be set yet
+    // TACTICAL GUARD: Wait for authentication identity resolution before querying
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       // Cleanup existing listener if any
       if (unsubscribeSnapshot) {
@@ -66,6 +66,7 @@ export function useCollection<T = any>(
         unsubscribeSnapshot = null;
       }
 
+      // Explicitly block queries if the user identity is not yet established
       if (!user || !auth.currentUser) {
         setData(null);
         setIsLoading(false);
@@ -84,7 +85,7 @@ export function useCollection<T = any>(
         path = 'unknown';
       }
 
-      // Prevent unauthorized root-level or malformed queries
+      // Prevent unauthorized root-level scans or malformed paths
       const isRootPath = !path || path === '/' || path === '.' || path === 'databases/(default)/documents';
       const hasUndefined = path === 'undefined' || path.includes('/undefined/') || path.endsWith('/undefined');
       
@@ -109,6 +110,7 @@ export function useCollection<T = any>(
           setIsLoading(false);
         },
         (err: FirestoreError) => {
+          // Construct rich contextual error for the overlay
           const permissionError = new FirestorePermissionError({
             path: path || 'unknown',
             operation: 'list',
