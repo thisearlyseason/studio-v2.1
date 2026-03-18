@@ -59,16 +59,17 @@ export function useCollection<T = any>(
 
     let unsubscribeSnapshot: (() => void) | null = null;
 
-    // Wait for auth state to fully resolve
+    // Wait for auth state to fully resolve before establishing listener
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (!user) {
+      // TACTICAL GUARD: Never execute queries without a valid auth token
+      if (!user || !auth.currentUser) {
         setData(null);
         setIsLoading(false);
         setError(null);
         return;
       }
 
-      // Extract path for error reporting
+      // Extract path for error reporting and validation
       let path: string = '';
       try {
         if ((memoizedTargetRefOrQuery as any).type === 'collection') {
@@ -95,7 +96,7 @@ export function useCollection<T = any>(
       setIsLoading(true);
       setError(null);
 
-      // Subscribe to Firestore query
+      // Subscribe to Firestore query with explicit error handling
       unsubscribeSnapshot = onSnapshot(
         memoizedTargetRefOrQuery,
         (snapshot: QuerySnapshot<DocumentData>) => {
@@ -108,10 +109,12 @@ export function useCollection<T = any>(
           setIsLoading(false);
         },
         (err: FirestoreError) => {
+          // Create the rich, contextual error asynchronously.
           const permissionError = new FirestorePermissionError({
             path: path || 'unknown',
             operation: 'list',
           });
+          
           errorEmitter.emit('permission-error', permissionError);
           setError(permissionError);
           setData(null);

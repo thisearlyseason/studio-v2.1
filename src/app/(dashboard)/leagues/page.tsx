@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -555,12 +554,12 @@ function SquadDirectory({ league }: { league: League }) {
 }
 
 export default function LeaguesPage() {
-  const { user: authUser, isAuthResolved } = useUser();
   const { 
     activeTeam, createLeague, inviteTeamToLeague, manuallyAddTeamToLeague, 
-    isStaff, isPro, deleteLeagueInvite, purchasePro, isTeamsLoading
+    isStaff, isPro, deleteLeagueInvite, purchasePro
   } = useTeam();
   const db = useFirestore();
+  const { user: authUser, isAuthResolved } = useUser();
   const router = useRouter();
   
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -573,7 +572,15 @@ export default function LeaguesPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('standings');
 
-  const leaguesQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'leagues'), where('memberTeamIds', 'array-contains', activeTeam.id)) : null, [isAuthResolved, activeTeam?.id, db]);
+  // Hardened query targeting the specific squad membership
+  const leaguesQuery = useMemoFirebase(() => {
+    if (!isAuthResolved || !activeTeam?.id || !db || !authUser?.uid) return null;
+    return query(
+      collection(db, 'leagues'), 
+      where('memberTeamIds', 'array-contains', activeTeam.id)
+    );
+  }, [isAuthResolved, activeTeam?.id, db, authUser?.uid]);
+
   const { data: rawLeagues, isLoading: isLeaguesLoading } = useCollection<League>(leaguesQuery);
   const leagues = rawLeagues || [];
   const activeLeague = leagues[0] || null;
@@ -597,24 +604,37 @@ export default function LeaguesPage() {
   };
 
   const copyToClipboard = (text: string, successMsg: string) => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(() => {
-        toast({ title: successMsg });
-      }).catch((err) => {
-        console.warn('Clipboard access denied:', err);
+    if (typeof window === 'undefined') return;
+    
+    const performCopy = async () => {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          toast({ title: successMsg });
+        } else {
+          throw new Error('Clipboard restricted');
+        }
+      } catch (err) {
+        // Fallback for non-secure contexts or restrictive permission policies
         const textArea = document.createElement("textarea");
         textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
         document.body.appendChild(textArea);
+        textArea.focus();
         textArea.select();
         try {
           document.execCommand('copy');
           toast({ title: successMsg });
         } catch (copyErr) {
-          console.error('Fallback copy failed:', copyErr);
+          console.error('Final fallback copy failed:', copyErr);
         }
         document.body.removeChild(textArea);
-      });
-    }
+      }
+    };
+
+    performCopy();
   };
 
   const handleRecruitmentAction = async () => {
@@ -642,17 +662,20 @@ export default function LeaguesPage() {
 
   const isOrganizer = activeLeague?.creatorId === authUser?.uid;
 
-  if (isLeaguesLoading || isTeamsLoading) return (
-    <div className="flex flex-col items-center justify-center py-32 text-center animate-in fade-in duration-700">
-      <div className="bg-primary/10 p-8 rounded-[3rem] shadow-xl mb-6">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+  // Visual synchronization loader
+  if (isLeaguesLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 text-center animate-in fade-in duration-700">
+        <div className="bg-primary/10 p-8 rounded-[3rem] shadow-xl mb-6">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        </div>
+        <div className="space-y-2">
+          <p className="text-xl font-black uppercase tracking-tight text-foreground">Syncing Standings Hub</p>
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.3em]">Institutional Data Verification</p>
+        </div>
       </div>
-      <div className="space-y-2">
-        <p className="text-xl font-black uppercase tracking-tight text-foreground">Syncing Standings Hub</p>
-        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.3em]">Institutional Data Verification</p>
-      </div>
-    </div>
-  );
+    );
+  }
 
   return (
     <div className="space-y-10 pb-20 text-foreground">

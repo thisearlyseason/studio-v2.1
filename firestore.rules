@@ -26,64 +26,39 @@ service cloud.firestore {
 
     // --- INSTITUTIONAL HIERARCHY: LEAGUES ---
     
+    // Explicit list permission for the root collection to satisfy 'List Proving'
     match /leagues {
-      // Explicitly allow listing the root collection for authenticated users
       allow list: if isSignedIn();
-      
-      match /{leagueId} {
-        // Individual document access
-        allow get: if isSignedIn();
-        // League architects can manage metadata
-        allow write: if isSignedIn();
-        
-        // Nested Recruitment Hub: Invites
-        match /invites/{inviteId} {
-          allow read, write: if isSignedIn();
-        }
-        
-        // Nested Recruitment Hub: Registration
-        match /registration/{protocolId} {
-          allow read, write: if isSignedIn();
-        }
-        
-        // Nested Recruitment Hub: Applicant Pool
-        match /registrationEntries/{entryId} {
-          allow read, write: if isSignedIn();
-        }
+    }
 
-        // Recursive safety for all other nested league data
-        match /{allPaths=**} {
-          allow read, write: if isSignedIn();
-        }
+    match /leagues/{leagueId} {
+      allow get: if isSignedIn();
+      allow write: if isSignedIn();
+      
+      // Recursive safety for all nested league data (invites, registration, etc.)
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
       }
     }
 
     // --- TACTICAL HIERARCHY: TEAMS ---
     
     match /teams {
-      // Allow discovery for joining squads via code
       allow list: if isSignedIn();
-      
-      match /{teamId} {
-        allow get: if isSignedIn();
-        // Squad leads can manage their hub
-        allow write: if isSignedIn();
-        
-        // Explicit match for roster to support recruitment reviews
-        match /members/{memberId} {
-          allow read, write: if isSignedIn();
-        }
+    }
 
-        // Recursive safety for nested squad data (feed, schedule, chats, etc.)
-        match /{allPaths=**} {
-          allow read, write: if isSignedIn();
-        }
+    match /teams/{teamId} {
+      allow get: if isSignedIn();
+      allow write: if isSignedIn();
+      
+      // Recursive safety for nested squad data (roster, feed, schedule, etc.)
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
       }
     }
 
     // --- PERSONAL INFRASTRUCTURE: USER PROFILES ---
     
-    // SquadForge uses both userProfiles and users collections for identity
     match /userProfiles/{userId} {
       allow read, write: if isOwner(userId);
       match /{allPaths=**} {
@@ -93,12 +68,6 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, write: if isOwner(userId);
-      
-      // Support for team membership listeners within the user profile
-      match /teamMemberships/{membershipId} {
-        allow read, write: if isOwner(userId);
-      }
-      
       match /{allPaths=**} {
         allow read, write: if isOwner(userId);
       }
@@ -107,11 +76,8 @@ service cloud.firestore {
     // --- GLOBAL ATHLETE REPOSITORY ---
     
     match /players/{playerId} {
-      // Scouting profiles are visible to the authenticated community
       allow read: if isSignedIn();
-      // Only the player or their guardian can manage the portfolio
       allow write: if isSignedIn();
-      
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
@@ -121,58 +87,36 @@ service cloud.firestore {
     
     match /facilities {
       allow list: if isSignedIn();
-      match /{facilityId} {
+    }
+
+    match /facilities/{facilityId} {
+      allow read, write: if isSignedIn();
+      match /{allPaths=**} {
         allow read, write: if isSignedIn();
-        match /{allPaths=**} {
-          allow read, write: if isSignedIn();
-        }
       }
     }
 
     // --- GLOBAL ECONOMY: BILLING PLANS ---
     
     match /plans/{planId} {
-      // Plans are public for pricing visibility
       allow read: if true;
-      allow write: if false; // System defined
+      allow write: if false;
     }
 
     // --- CROSS-SQUAD AGGREGATION (COLLECTION GROUPS) ---
+    // Necessary for 'Master Intelligence' household/club aggregate views
     
-    // Essential for the "Master Intelligence" aggregate views
-    
-    match /{path=**}/invites/{id} {
-      allow read: if isSignedIn();
-    }
-    
-    match /{path=**}/registrationEntries/{id} {
-      allow read: if isSignedIn();
-    }
-    
-    match /{path=**}/members/{id} {
-      allow read: if isSignedIn();
-    }
-    
-    match /{path=**}/events/{id} {
-      allow read: if isSignedIn();
-    }
-    
-    match /{path=**}/files/{id} {
-      allow read: if isSignedIn();
-    }
-    
-    match /{path=**}/signatures/{id} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /{path=**}/incidents/{id} {
-      allow read, write: if isSignedIn();
-    }
+    match /{path=**}/invites/{id} { allow read: if isSignedIn(); }
+    match /{path=**}/registrationEntries/{id} { allow read: if isSignedIn(); }
+    match /{path=**}/members/{id} { allow read: if isSignedIn(); }
+    match /{path=**}/events/{id} { allow read: if isSignedIn(); }
+    match /{path=**}/files/{id} { allow read: if isSignedIn(); }
+    match /{path=**}/signatures/{id} { allow read, write: if isSignedIn(); }
+    match /{path=**}/incidents/{id} { allow read, write: if isSignedIn(); }
 
     // --- GLOBAL DEFAULT DENY ---
     
     match /{path=**} {
-      // Explicitly deny any unmapped or malformed paths
       allow read, write: if false;
     }
   }
