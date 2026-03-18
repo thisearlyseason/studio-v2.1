@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -25,46 +26,19 @@ service cloud.firestore {
 
     // --- Institutional Hierarchy: Leagues ---
     
-    match /leagues {
-      allow list: if isSignedIn();
-    }
-
     match /leagues/{leagueId} {
-      allow get, write: if isSignedIn();
-    }
-
-    match /leagues/{leagueId}/invites {
-      allow list: if isSignedIn();
-    }
-
-    match /leagues/{leagueId}/invites/{id} {
-      allow get, create, update, delete: if isSignedIn();
-    }
-    
-    match /leagues/{leagueId}/registration {
-      allow list: if isSignedIn();
-    }
-    
-    match /leagues/{leagueId}/registration/{id} {
-      allow get, create, update, delete: if isSignedIn();
-    }
-    
-    match /leagues/{leagueId}/registrationEntries {
-      allow list: if isSignedIn();
-    }
-    
-    match /leagues/{leagueId}/registrationEntries/{id} {
-      allow get, create, update, delete: if isSignedIn();
+      allow read, write: if isSignedIn();
+      
+      // Explicit coverage for subcollections ensures the List query engine can prove safety
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
+      }
     }
 
     // --- Tactical Hierarchy: Teams ---
     
-    match /teams {
-      allow list: if isSignedIn();
-    }
-
     match /teams/{teamId} {
-      allow get, write: if isSignedIn();
+      allow read, write: if isSignedIn();
       
       // Recursive safety for all nested squad data
       match /{allPaths=**} {
@@ -99,12 +73,8 @@ service cloud.firestore {
 
     // --- Physical Infrastructure: Facilities ---
     
-    match /facilities {
-      allow list: if isSignedIn();
-    }
-
     match /facilities/{facilityId} {
-      allow get, write: if isSignedIn();
+      allow read, write: if isSignedIn();
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }

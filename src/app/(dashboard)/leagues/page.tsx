@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -789,7 +790,7 @@ export default function LeaguesPage() {
             <div className="space-y-6">
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">League Name</Label>
-                <Input placeholder="e.g. State Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20 transition-all shadow-inner text-foreground" />
+                <Input placeholder="e.g. State Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl font-black text-lg focus:border-primary/20 transition-all shadow-inner text-foreground" />
               </div>
               <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 flex items-start gap-4">
                 <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
