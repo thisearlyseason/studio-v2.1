@@ -25,31 +25,18 @@ service cloud.firestore {
 
     // --- Institutional Hierarchy: Leagues ---
     
-    match /leagues {
-      allow list: if isSignedIn();
-    }
-
     match /leagues/{leagueId} {
       allow read, write: if isSignedIn();
       
       // Explicit matching for subcollections to satisfy LIST Proving requirements
-      match /invites {
-        allow list: if isSignedIn();
-      }
-      match /invites/{inviteId} {
+      match /invites/{id} {
         allow read, write: if isSignedIn();
       }
       
-      match /registration {
-        allow list: if isSignedIn();
-      }
       match /registration/{id} {
         allow read, write: if isSignedIn();
       }
       
-      match /registrationEntries {
-        allow list: if isSignedIn();
-      }
       match /registrationEntries/{id} {
         allow read, write: if isSignedIn();
       }
@@ -61,10 +48,6 @@ service cloud.firestore {
 
     // --- Tactical Hierarchy: Teams ---
     
-    match /teams {
-      allow list: if isSignedIn();
-    }
-
     match /teams/{teamId} {
       allow read, write: if isSignedIn();
       
@@ -91,10 +74,6 @@ service cloud.firestore {
 
     // --- Global Athlete Repository ---
     
-    match /players {
-      allow list: if isSignedIn();
-    }
-
     match /players/{playerId} {
       allow read, write: if isSignedIn() || isAnonymous();
       match /{allPaths=**} {
@@ -104,10 +83,6 @@ service cloud.firestore {
 
     // --- Physical Infrastructure: Facilities ---
     
-    match /facilities {
-      allow list: if isSignedIn();
-    }
-
     match /facilities/{facilityId} {
       allow read, write: if isSignedIn();
       match /{allPaths=**} {

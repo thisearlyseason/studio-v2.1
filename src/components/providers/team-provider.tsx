@@ -21,7 +21,8 @@ import {
   getDoc,
   collectionGroup,
   serverTimestamp,
-  deleteField
+  deleteField,
+  arrayRemove
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -346,6 +347,24 @@ export type TournamentGame = {
   updatedAt?: string;
 };
 
+export type Message = {
+  id: string;
+  author: string;
+  authorId: string;
+  content: string;
+  type: 'text' | 'image' | 'poll';
+  imageUrl?: string;
+  poll?: {
+    id: string;
+    question: string;
+    options: Array<{ text: string; votes: number }>;
+    totalVotes: number;
+    voters: Record<string, number>;
+    isClosed: boolean;
+  };
+  createdAt: string;
+};
+
 interface TeamContextType {
   db: any;
   user: UserProfile | null;
@@ -649,7 +668,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const addEquipmentItem = useCallback(async (data: any) => { if (activeTeam?.id && db) await addDoc(collection(db, 'teams', activeTeam.id, 'equipment'), clean({ ...data, assignments: {}, status: 'Active', availableQuantity: parseInt(data.totalQuantity), totalQuantity: parseInt(data.totalQuantity) })); }, [activeTeam, db]);
   const updateEquipmentItem = useCallback(async (id: string, updates: any) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'equipment', id), clean(updates)); }, [activeTeam, db]);
-  const deleteEquipmentItem = useCallback(async (id: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'equipment', id)); }, [activeTeam, db]);
+  const deleteEquipmentItem = useCallback(async (id: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'equipment', id)); }, [db, activeTeam]);
   const assignEquipment = useCallback(async (id: string, uid: string, uname: string, q: number) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'equipment', id), { [`assignments.${uid}`]: { userId: uid, userName: uname, quantity: q, date: new Date().toISOString() }, availableQuantity: increment(-q) }); }, [activeTeam, db]);
   const returnEquipment = useCallback(async (id: string, uid: string) => { if (activeTeam?.id && db) { const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'equipment', id)); if(snap.exists()) { const data = snap.data(); const assignment = data.assignments?.[uid]; if (assignment) { await updateDoc(doc(db, 'teams', activeTeam.id, 'equipment', id), { [`assignments.${uid}`]: deleteField(), availableQuantity: increment(assignment.quantity) }); } } } }, [activeTeam, db]);
 
@@ -726,7 +745,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const resolveQuota = useCallback(async (selectedTeamIds: string[]) => { if (!db || !userProfile?.id) return; const batch = writeBatch(db); const ownedProTeams = teamsRaw.filter(t => t.ownerUserId === userProfile.id && t.isPro); ownedProTeams.forEach(t => { if (!selectedTeamIds.includes(t.id)) { batch.update(doc(db, 'teams', t.id), { isPro: false, planId: 'starter_squad' }); } }); await batch.commit(); }, [db, userProfile, teamsRaw]);
   const exportAttendanceCSV = useCallback(async (eventId: string) => { if (!db || !activeTeam?.id) return; const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'events', eventId)); if (!snap.exists()) return; const rsvps = snap.data().userRsvps || {}; const rows = [["Name", "Status"]]; members.forEach(m => { rows.push([m.name, rsvps[m.userId] || 'no_response']); }); const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n"); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `attendance_${eventId}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); }, [db, activeTeam, members]);
-  const exportTournamentStandingsCSV = useCallback(async (tournamentId: string) => { if (!db || !activeTeam?.id) return; const rows = [["Team", "Wins", "Losses", "Ties", "Points"]]; const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n"); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `standings_${tournamentId}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); }, [db, activeTeam]);
+  const exportTournamentStandingsCSV = useCallback(async (tournamentId: string) => { if (!db || !activeTeam?.id) return; const rows = [["Team", "Wins", "Losses", "Ties", "Points"]]; const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n"); const encodedUri = encodeURI(csvContent); link.setAttribute("href", encodedUri); link.setAttribute("download", `standings_${tournamentId}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); }, [db, activeTeam]);
 
   const addRegistration = useCallback(async (teamId: string, eventId: string, data: any) => { if (db) { await addDoc(collection(db, 'teams', teamId, 'events', eventId, 'registrations'), clean(data)); return true; } return false; }, [db]);
   const manageSubscription = useCallback(async () => { setIsPaywallOpen(true); }, []);
