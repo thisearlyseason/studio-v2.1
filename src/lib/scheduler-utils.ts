@@ -4,7 +4,7 @@
  * Hardened for balanced distribution and multi-venue resource mapping.
  */
 
-import { addMinutes, format, isBefore, parse, addDays, eachDayOfInterval } from 'date-fns';
+import { addMinutes, format, isBefore, parse, addDays, eachDayOfInterval, isAfter } from 'date-fns';
 import { TournamentGame } from '@/components/providers/team-provider';
 
 export interface DailyWindow {
@@ -69,10 +69,8 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
   if (availableSlots.length === 0 || matchups.length === 0) return [];
   
   // Distribute matchups across available slots
-  for (let i = 0; i < matchPoolSize(matchups.length, availableSlots.length); i++) {
-    const slotIdx = i;
-    if (slotIdx >= availableSlots.length || i >= matchups.length) break;
-    const slot = availableSlots[slotIdx];
+  for (let i = 0; i < Math.min(matchups.length, availableSlots.length); i++) {
+    const slot = availableSlots[i];
     const [t1, t2] = matchups[i];
 
     games.push({
@@ -91,24 +89,33 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
   return games;
 }
 
-function matchPoolSize(matchCount: number, slotCount: number) {
-  return Math.min(matchCount, slotCount);
-}
-
 /**
  * Generates a full League Season schedule with multi-venue and blackout support.
+ * Hardened for balanced distribution and regularity.
  */
 export function generateLeagueSchedule(config: ScheduleConfig & { playDays: number[] }): TournamentGame[] {
-  const { teams, fields, startDate, endDate, startTime, endTime, gameLength, breakLength, playDays, gamesPerTeam = 10, doubleHeaders = false, blackoutDates = [] } = config;
+  const { 
+    teams, 
+    fields, 
+    startDate, 
+    endDate, 
+    startTime, 
+    endTime, 
+    gameLength, 
+    breakLength, 
+    playDays, 
+    gamesPerTeam = 10, 
+    doubleHeaders = false, 
+    blackoutDates = [] 
+  } = config;
+
+  if (teams.length < 2 || fields.length === 0) return [];
+
   const games: TournamentGame[] = [];
-  
   const startD = new Date(startDate);
-  const endD = endDate ? new Date(endDate) : addDays(startD, 90);
+  const endD = endDate ? new Date(endDate) : addDays(startD, 120); // Default 4 month window if not provided
   
-  const matchPool: [string, string][] = [];
-  const totalRequiredMatches = Math.floor((teams.length * gamesPerTeam) / 2);
-  
-  let rrIndex = 0;
+  // 1. Generate Match Pool (Balanced Round-Robin)
   const roundRobin: [string, string][] = [];
   for (let i = 0; i < teams.length; i++) {
     for (let j = i + 1; j < teams.length; j++) {
@@ -116,21 +123,30 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
     }
   }
 
+  const totalRequiredMatches = Math.floor((teams.length * gamesPerTeam) / 2);
+  const matchPool: [string, string][] = [];
+  
+  let rrIdx = 0;
   while (matchPool.length < totalRequiredMatches) {
-    const [t1, t2] = roundRobin[rrIndex % roundRobin.length];
-    if (Math.floor(rrIndex / roundRobin.length) % 2 === 1 || doubleHeaders) {
-      matchPool.push([t2, t1]);
+    const baseMatch = roundRobin[rrIdx % roundRobin.length];
+    const isReverseMatch = Math.floor(rrIdx / roundRobin.length) % 2 === 1;
+    
+    // Switch home/visitor logic
+    if (doubleHeaders || isReverseMatch) {
+      matchPool.push([baseMatch[1], baseMatch[0]]);
     } else {
-      matchPool.push([t1, t2]);
+      matchPool.push([baseMatch[0], baseMatch[1]]);
     }
-    rrIndex++;
+    rrIdx++;
   }
 
+  // 2. Identify Available Time Slots (Respecting regularity and fields)
   const availableSlots: { date: Date; time: Date; field: string }[] = [];
-  let currentDay = new Date(startDate);
+  let currentDay = new Date(startD);
   
-  while (!isBefore(endD, currentDay)) {
-    const isBlackout = blackoutDates.some(d => format(new Date(d), 'yyyy-MM-dd') === format(currentDay, 'yyyy-MM-dd'));
+  while (!isAfter(currentDay, endD)) {
+    const dayKey = format(currentDay, 'yyyy-MM-dd');
+    const isBlackout = blackoutDates.some(d => format(new Date(d), 'yyyy-MM-dd') === dayKey);
     
     if (playDays.includes(currentDay.getDay()) && !isBlackout) {
       let currentTime = parse(startTime, 'HH:mm', currentDay);
@@ -138,7 +154,11 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
 
       while (isBefore(currentTime, dayEndTime)) {
         for (const field of fields) {
-          availableSlots.push({ date: new Date(currentDay), time: new Date(currentTime), field });
+          availableSlots.push({ 
+            date: new Date(currentDay), 
+            time: new Date(currentTime), 
+            field 
+          });
         }
         currentTime = addMinutes(currentTime, gameLength + breakLength);
       }
@@ -147,6 +167,9 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
   }
 
   if (availableSlots.length === 0 || matchPool.length === 0) return [];
+
+  // 3. Distribution Strategy (Spreading games regularly across the season)
+  // We use a step to ensure we don't bunch all games at the start of the season
   const step = Math.max(1, Math.floor(availableSlots.length / matchPool.length));
 
   for (let i = 0; i < matchPool.length; i++) {
@@ -166,9 +189,14 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
       time: format(slot.time, 'h:mm a'),
       location: slot.field,
       isCompleted: false,
-      leagueMatch: true
+      updatedAt: new Date().toISOString()
     });
   }
 
-  return games;
+  // Final Sort by Date/Time
+  return games.sort((a, b) => {
+    const dateComp = a.date.localeCompare(b.date);
+    if (dateComp !== 0) return dateComp;
+    return a.time.localeCompare(b.time);
+  });
 }

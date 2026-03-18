@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -46,7 +47,9 @@ import {
   Phone,
   Edit3,
   ShieldCheck,
-  PenTool
+  PenTool,
+  Calendar as CalendarIcon,
+  ArrowRight
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -72,6 +75,7 @@ import { generateLeagueSchedule } from '@/lib/scheduler-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { useTeam, League, TournamentGame, Member, Facility, Field, TeamDocument, LeagueInvite } from '@/components/providers/team-provider';
+import { Switch } from '@/components/ui/switch';
 
 const DAYS_OF_WEEK = [
   { id: 1, label: 'Mon' },
@@ -98,7 +102,6 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     playDays: [1, 3] as number[],
     gamesPerTeam: '10',
     doubleHeaders: false,
-    selectedVenues: [] as string[],
     selectedFields: [] as string[],
     blackoutDates: [] as Date[]
   });
@@ -141,17 +144,19 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     }
   };
 
-  const toggleVenue = (vid: string) => {
-    setConfig(p => ({
-      ...p,
-      selectedVenues: p.selectedVenues.includes(vid) ? p.selectedVenues.filter(v => v !== vid) : [...p.selectedVenues, vid]
-    }));
-  };
-
   const toggleDay = (dayId: number) => {
     setConfig(p => ({
       ...p,
       playDays: p.playDays.includes(dayId) ? p.playDays.filter(d => d !== dayId) : [...p.playDays, dayId]
+    }));
+  };
+
+  const toggleField = (fieldName: string) => {
+    setConfig(p => ({
+      ...p,
+      selectedFields: p.selectedFields.includes(fieldName) 
+        ? p.selectedFields.filter(f => f !== fieldName) 
+        : [...p.selectedFields, fieldName]
     }));
   };
 
@@ -163,19 +168,32 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
         <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
           <DialogHeader>
             <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Season Architect</DialogTitle>
-            <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-2">Institutional Scheduling Engine</DialogDescription>
+            <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-2">Elite Round-Robin Engine</DialogDescription>
           </DialogHeader>
           
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 text-foreground">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
             <div className="lg:col-span-7 space-y-10">
               <section className="space-y-6">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Timeline & Parameters</h3>
                 <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season Start</Label><Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season End</Label><Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 rounded-xl" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season Start</Label><Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season End</Label><Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Matches Per Team</Label>
+                    <Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2 rounded-xl font-black" />
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border-2 border-dashed">
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-foreground">Double Headers</p>
+                      <p className="text-[8px] font-bold text-muted-foreground uppercase">Reverse H/V switching</p>
+                    </div>
+                    <Switch checked={config.doubleHeaders} onCheckedChange={v => setConfig({...config, doubleHeaders: v})} />
+                  </div>
                 </div>
                 <div className="space-y-4">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Schedule Days</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Operational Days</Label>
                   <div className="flex flex-wrap gap-2">
                     {DAYS_OF_WEEK.map(day => (
                       <button key={day.id} onClick={() => toggleDay(day.id)} className={cn("h-10 px-4 rounded-xl font-black text-[10px] uppercase transition-all border-2", config.playDays.includes(day.id) ? "bg-primary border-primary text-white" : "bg-white text-muted-foreground hover:border-primary/20")}>{day.label}</button>
@@ -183,29 +201,94 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                   </div>
                 </div>
               </section>
+
               <section className="space-y-6">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Resource Allocation</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {facilities?.map(f => (
-                    <div key={f.id} className={cn("p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between", config.selectedVenues.includes(f.id) ? "border-primary bg-primary/5" : "border-muted/50")} onClick={() => toggleVenue(f.id)}>
-                      <div className="flex items-center gap-3"><Building className={cn("h-4 w-4", config.selectedVenues.includes(f.id) ? "text-primary" : "text-muted-foreground")} /><span className="text-xs font-black uppercase">{f.name}</span></div>
-                      {config.selectedVenues.includes(f.id) && <CheckCircle2 className="h-4 w-4 text-primary" />}
-                    </div>
-                  ))}
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Time Distribution</h3>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Day Start</Label><Input type="time" value={config.startTime} onChange={e => setConfig({...config, startTime: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Day End</Label><Input type="time" value={config.endTime} onChange={e => setConfig({...config, endTime: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Match Length (Min)</Label><Input type="number" value={config.gameLength} onChange={e => setConfig({...config, gameLength: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Break (Min)</Label><Input type="number" value={config.breakLength} onChange={e => setConfig({...config, breakLength: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
                 </div>
               </section>
+
+              <section className="space-y-6">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Facility Resource Pool</h3>
+                <ScrollArea className="h-64 border-2 rounded-[2rem] bg-muted/5 p-4">
+                  <div className="space-y-6">
+                    {facilities?.map(f => (
+                      <div key={f.id} className="space-y-3">
+                        <div className="flex items-center gap-3 px-2">
+                          <Building className="h-4 w-4 text-primary" />
+                          <span className="text-xs font-black uppercase tracking-tight">{f.name}</span>
+                        </div>
+                        <FacilityFieldLoader facilityId={f.id} selectedFields={config.selectedFields} onToggleField={toggleField} />
+                      </div>
+                    ))}
+                    {(!facilities || facilities.length === 0) && (
+                      <div className="text-center py-12 opacity-30">
+                        <MapPin className="h-8 w-8 mx-auto mb-2" />
+                        <p className="text-[10px] font-black uppercase">No facilities enrolled.</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </section>
             </div>
+
             <aside className="lg:col-span-5">
-              <div className="p-4 bg-muted/20 rounded-[2rem] border-2 border-dashed">
-                <p className="text-[10px] font-black uppercase text-primary mb-4 text-center">Blackout Dates</p>
-                <Calendar mode="multiple" selected={config.blackoutDates} onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})} />
+              <div className="p-6 bg-muted/20 rounded-[2.5rem] border-2 border-dashed h-full">
+                <div className="flex items-center justify-center gap-3 mb-6">
+                  <CalendarIcon className="h-5 w-5 text-primary" />
+                  <p className="text-[10px] font-black uppercase text-primary tracking-widest">Season Blackout Dates</p>
+                </div>
+                <Calendar 
+                  mode="multiple" 
+                  selected={config.blackoutDates} 
+                  onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})} 
+                  className="mx-auto"
+                />
+                <p className="text-[9px] font-bold text-muted-foreground uppercase text-center mt-6 italic">Selected dates will be excluded from scheduling.</p>
               </div>
             </aside>
           </div>
-          <DialogFooter className="pt-10"><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20" onClick={handleGenerate} disabled={isProcessing || !config.startDate}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <Sparkles className="h-6 w-6 mr-3" />}Deploy Seasonal Pipeline</Button></DialogFooter>
+
+          <DialogFooter className="pt-10">
+            <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleGenerate} disabled={isProcessing || !config.startDate}>
+              {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <Sparkles className="h-6 w-6 mr-3" />}
+              Deploy Seasonal Pipeline
+            </Button>
+          </DialogFooter>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { facilityId: string, selectedFields: string[], onToggleField: (name: string) => void }) {
+  const db = useFirestore();
+  const q = useMemoFirebase(() => db ? query(collection(db, 'facilities', facilityId, 'fields'), orderBy('name', 'asc')) : null, [db, facilityId]);
+  const { data: fields } = useCollection<Field>(q);
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-6">
+      {fields?.map(field => (
+        <div 
+          key={field.id} 
+          className={cn(
+            "p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between group",
+            selectedFields.includes(`${field.name}`) ? "border-primary bg-primary/5 shadow-sm" : "border-muted hover:border-muted-foreground/20"
+          )}
+          onClick={() => onToggleField(`${field.name}`)}
+        >
+          <span className="text-[10px] font-black uppercase tracking-widest truncate">{field.name}</span>
+          {selectedFields.includes(`${field.name}`) ? <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> : <div className="h-3.5 w-3.5 rounded-full border-2 border-muted group-hover:border-muted-foreground/30" />}
+        </div>
+      ))}
+      {(!fields || fields.length === 0) && <p className="text-[8px] font-bold text-muted-foreground uppercase italic p-2">No fields established.</p>}
+    </div>
   );
 }
 
@@ -217,10 +300,10 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between px-2">
-        <div className="flex items-center gap-3"><Activity className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase tracking-tight text-foreground">League Overview</h3></div>
-        <div className="bg-muted/50 p-1 rounded-xl border flex items-center shadow-inner">
-          <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-8 px-4 rounded-lg font-black text-[10px] uppercase">List</Button>
-          <Button variant={viewMode === 'calendar' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('calendar')} className="h-8 px-4 rounded-lg font-black text-[10px] uppercase">Calendar</Button>
+        <div className="flex items-center gap-3"><Activity className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase tracking-tight text-foreground">Season Itinerary</h3></div>
+        <div className="bg-muted/50 p-1.5 rounded-2xl border-2 flex items-center shadow-inner">
+          <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-6 rounded-xl font-black text-[10px] uppercase">Ledger</Button>
+          <Button variant={viewMode === 'calendar' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('calendar')} className="h-9 px-6 rounded-xl font-black text-[10px] uppercase">Calendar</Button>
         </div>
       </div>
       {viewMode === 'list' ? (
