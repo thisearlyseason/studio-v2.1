@@ -632,7 +632,17 @@ export default function LeaguesPage() {
     }
   };
 
-  if (isLeaguesLoading) return <div className="flex flex-col items-center justify-center py-20 animate-pulse"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Standings Hub...</p></div>;
+  if (isLeaguesLoading) return (
+    <div className="flex flex-col items-center justify-center py-32 text-center animate-in fade-in duration-700">
+      <div className="bg-primary/10 p-8 rounded-[3rem] shadow-xl mb-6">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+      <div className="space-y-2">
+        <p className="text-xl font-black uppercase tracking-tight text-foreground">Syncing Standings Hub</p>
+        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.3em]">Institutional Data Verification</p>
+      </div>
+    </div>
+  );
 
   const isOrganizer = activeLeague?.creatorId === authUser?.uid;
 
