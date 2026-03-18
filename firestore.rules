@@ -32,33 +32,10 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       allow read, write: if isSignedIn();
       
-      // Explicit subcollection matching for List Proving
-      match /invites {
-        allow list: if isSignedIn();
-      }
-      match /invites/{inviteId} {
-        allow get, create, update, delete: if isSignedIn();
-      }
-      
-      match /registration {
-        allow list: if isSignedIn();
-      }
-      match /registration/{configId} {
-        allow get, write: if isSignedIn();
-      }
-
-      match /registrationEntries {
-        allow list: if isSignedIn();
-      }
-      match /registrationEntries/{entryId} {
-        allow get, write: if isSignedIn();
-      }
-
-      match /payments {
-        allow list: if isSignedIn();
-      }
-      match /payments/{paymentId} {
-        allow get, write: if isSignedIn();
+      // Explicit recursive wildcard for sub-collections (invites, registration, etc)
+      // This is critical for Firestore "List Proving" safety
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
       }
     }
 
