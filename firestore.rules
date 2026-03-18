@@ -26,12 +26,18 @@ service cloud.firestore {
 
     // --- Institutional Hierarchy: Leagues ---
     
-    match /leagues/{leagueId} {
-      allow read, write: if isSignedIn();
+    match /leagues {
+      // Allow listing the leagues collection for authenticated users.
+      // Most queries are filtered by memberTeamIds.
+      allow list: if isSignedIn();
       
-      // Explicit coverage for subcollections ensures the List query engine can prove safety
-      match /{allPaths=**} {
-        allow read, write: if isSignedIn();
+      match /{leagueId} {
+        allow get, write: if isSignedIn();
+        
+        // Recursive safety for all nested league data (invites, registration, registrationEntries)
+        match /{allPaths=**} {
+          allow read, write: if isSignedIn();
+        }
       }
     }
 

@@ -558,9 +558,10 @@ export default function LeaguesPage() {
   const { user: authUser, isAuthResolved } = useUser();
   const { 
     activeTeam, createLeague, inviteTeamToLeague, manuallyAddTeamToLeague, 
-    isStaff, isPro, deleteLeagueInvite, purchasePro
+    isStaff, isPro, deleteLeagueInvite, purchasePro, isTeamsLoading
   } = useTeam();
   const db = useFirestore();
+  const router = useRouter();
   
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
@@ -639,7 +640,9 @@ export default function LeaguesPage() {
     }
   };
 
-  if (isLeaguesLoading) return (
+  const isOrganizer = activeLeague?.creatorId === authUser?.uid;
+
+  if (isLeaguesLoading || isTeamsLoading) return (
     <div className="flex flex-col items-center justify-center py-32 text-center animate-in fade-in duration-700">
       <div className="bg-primary/10 p-8 rounded-[3rem] shadow-xl mb-6">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -650,8 +653,6 @@ export default function LeaguesPage() {
       </div>
     </div>
   );
-
-  const isOrganizer = activeLeague?.creatorId === authUser?.uid;
 
   return (
     <div className="space-y-10 pb-20 text-foreground">
