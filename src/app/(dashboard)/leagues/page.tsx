@@ -78,6 +78,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { generateLeagueSchedule } from '@/lib/scheduler-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
+import { useTeam, League, TournamentGame, Member, Facility, Field, TeamDocument, LeagueInvite } from '@/components/providers/team-provider';
 
 const DAYS_OF_WEEK = [
   { id: 1, label: 'Mon' },
@@ -593,6 +594,27 @@ export default function LeaguesPage() {
     } finally { setIsProcessing(false); }
   };
 
+  const copyToClipboard = (text: string, successMsg: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        toast({ title: successMsg });
+      }).catch((err) => {
+        console.warn('Clipboard access denied:', err);
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          toast({ title: successMsg });
+        } catch (copyErr) {
+          console.error('Fallback copy failed:', copyErr);
+        }
+        document.body.removeChild(textArea);
+      });
+    }
+  };
+
   const handleRecruitmentAction = async () => {
     if (!activeLeague) return;
     setIsProcessing(true);
@@ -613,28 +635,6 @@ export default function LeaguesPage() {
       toast({ title: "Action Failed", description: e.message, variant: "destructive" });
     } finally {
       setIsProcessing(false);
-    }
-  };
-
-  const copyToClipboard = (text: string, successMsg: string) => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(() => {
-        toast({ title: successMsg });
-      }).catch((err) => {
-        console.warn('Clipboard access denied:', err);
-        // Fallback for restricted environments
-        const textArea = document.createElement("textarea");
-        textArea.value = text;
-        document.body.appendChild(textArea);
-        textArea.select();
-        try {
-          document.execCommand('copy');
-          toast({ title: successMsg });
-        } catch (copyErr) {
-          console.error('Fallback copy failed:', copyErr);
-        }
-        document.body.removeChild(textArea);
-      });
     }
   };
 
