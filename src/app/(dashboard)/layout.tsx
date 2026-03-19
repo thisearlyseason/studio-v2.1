@@ -1,3 +1,4 @@
+
 "use client";
 
 import Shell from '@/components/layout/Shell';
@@ -137,20 +138,23 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   /**
    * TACTICAL HYDRATION GUARD: 
    * Use invariant loading text to prevent hydration mismatch.
+   * Component should render identical static loading shell on server and first client pass.
    */
   const showLoading = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile;
 
   if (showLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background">
-        <DemoSeedWrapper 
-          user={user} 
-          isTeamsLoading={isTeamsLoading} 
-          teamsCount={teams.length} 
-          isDemoInitializing={isDemoInitializing}
-          setIsDemoInitializing={setIsDemoInitializing}
-          setIsSeedingDemo={setIsSeedingDemo}
-        />
+        {mounted && (
+          <DemoSeedWrapper 
+            user={user} 
+            isTeamsLoading={isTeamsLoading} 
+            teamsCount={teams.length} 
+            isDemoInitializing={isDemoInitializing}
+            setIsDemoInitializing={setIsDemoInitializing}
+            setIsSeedingDemo={setIsSeedingDemo}
+          />
+        )}
         <div className="flex flex-col items-center gap-6 animate-in fade-in duration-500">
           <div className="bg-primary/10 p-6 rounded-[2.5rem] shadow-xl">
             <Loader2 className="h-10 w-10 animate-spin text-primary" />
