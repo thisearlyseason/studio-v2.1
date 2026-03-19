@@ -14,35 +14,93 @@ service cloud.firestore {
 
     // --- INSTITUTIONAL HIERARCHY ---
     
-    // Explicit root and recursive matches satisfy "List Proving" for all sub-data
-    
+    // leagues and their nested coordination data
     match /leagues/{leagueId} {
       allow read, write: if isSignedIn();
+      
+      match /registrationEntries/{id} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /registration/{id} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /invites/{id} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /events/{id} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /members/{id} {
+        allow read, write: if isSignedIn();
+      }
+
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
     }
 
+    // teams and their nested operational data
     match /teams/{teamId} {
       allow read, write: if isSignedIn();
+      
+      match /members/{id} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /events/{id} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /feedPosts/{id} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /groupChats/{id} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /drills/{id} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /games/{id} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /files/{id} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /documents/{id} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /incidents/{id} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /equipment/{id} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /volunteers/{id} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /fundraising/{id} {
+        allow read, write: if isSignedIn();
+      }
+
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
     }
 
-    match /players/{playerId} {
-      allow read, write: if isSignedIn();
-      match /{allPaths=**} {
-        allow read, write: if isSignedIn();
-      }
-    }
-
-    match /facilities/{facilityId} {
-      allow read, write: if isSignedIn();
-      match /{allPaths=**} {
-        allow read, write: if isSignedIn();
-      }
-    }
+    // --- GLOBAL REPOSITORIES ---
 
     match /plans/{planId} {
       allow read: if true;
@@ -50,6 +108,18 @@ service cloud.firestore {
       match /{allPaths=**} {
         allow read: if true;
         allow write: if isSignedIn();
+      }
+    }
+
+    match /features/{featureId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /facilities/{facilityId} {
+      allow read, write: if isSignedIn();
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
       }
     }
 
@@ -73,7 +143,14 @@ service cloud.firestore {
       }
     }
 
-    // --- GLOBAL REPOSITORIES & CROSS-SQUAD AGGREGATION ---
+    match /players/{playerId} {
+      allow read, write: if isSignedIn();
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    // --- COLLECTION GROUPS ---
     
     match /{path=**}/signatures/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/registrationEntries/{id} { allow read, write: if isSignedIn(); }
