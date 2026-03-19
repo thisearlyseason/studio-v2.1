@@ -23,7 +23,10 @@ import {
   Building,
   ShieldCheck,
   Sparkles,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Trash2,
+  Info,
+  ArrowRight
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -301,18 +304,20 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
 }
 
 export default function LeaguesPage() {
-  const { activeTeam, createLeague, isStaff, isPro, purchasePro, teams } = useTeam();
+  const { activeTeam, createLeague, isStaff, isPro, purchasePro, teams, removeTeamFromLeague, updateLeagueTeamDetails } = useTeam();
   const db = useFirestore();
   const { user: authUser, isAuthResolved } = useUser();
   const router = useRouter();
   
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isSeasonOpen, setIsSeasonOpen] = useState(false);
   const [leagueName, setLeagueName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('standings');
   const [mounted, setMounted] = useState(false);
+
+  const [editingTeam, setEditingTeam] = useState<any>(null);
+  const [editTeamForm, setEditTeamForm] = useState({ teamName: '', coachName: '', coachEmail: '' });
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -341,6 +346,22 @@ export default function LeaguesPage() {
     } finally { setIsProcessing(false); }
   };
 
+  const handleEditTeam = (team: any) => {
+    setEditingTeam(team);
+    setEditTeamForm({
+      teamName: team.teamName,
+      coachName: team.coachName || '',
+      coachEmail: team.coachEmail || ''
+    });
+  };
+
+  const handleSaveTeamUpdate = async () => {
+    if (!activeLeague || !editingTeam) return;
+    await updateLeagueTeamDetails(activeLeague.id, editingTeam.id, editTeamForm);
+    setEditingTeam(null);
+    toast({ title: "Standings Synchronized" });
+  };
+
   if (showLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-32 text-center animate-in fade-in duration-700">
@@ -366,6 +387,17 @@ export default function LeaguesPage() {
 
       {activeLeague ? (
         <div className="space-y-8 animate-in fade-in duration-700">
+          {/* Tactical Tip */}
+          <div className="bg-amber-50 border-2 border-dashed border-amber-200 p-6 rounded-[2.5rem] flex items-start gap-6 shadow-sm group">
+            <div className="bg-amber-100 p-3 rounded-2xl text-amber-600 shadow-inner group-hover:scale-110 transition-transform"><Sparkles className="h-6 w-6" /></div>
+            <div className="space-y-1">
+              <p className="text-sm font-black uppercase tracking-tight">Pro Deployment Tip</p>
+              <p className="text-xs font-medium text-amber-800 leading-relaxed italic">
+                Before building your season, ensure you visit the <Link href={`/leagues/registration/${activeLeague.id}`} className="text-primary font-black underline hover:text-black transition-colors">Recruit Pool</Link> to enroll teams or players via the <strong>Protocol Architect</strong>. This ensures a balanced roster for the scheduling engine.
+              </p>
+            </div>
+          </div>
+
           <Card className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-black text-white p-10 relative group">
             <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700"><ShieldCheck className="h-48 w-48" /></div>
             <div className="flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
@@ -397,8 +429,37 @@ export default function LeaguesPage() {
               <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-6">Squad Rank</th><th className="px-4 py-6 text-center">Wins</th><th className="px-4 py-6 text-center">Losses</th><th className="px-10 py-6 text-right text-primary">PTS</th></tr></thead>
-                    <tbody className="divide-y">{sortedStandings.map((team, idx) => (<tr key={team.id} className="hover:bg-primary/5 transition-colors group"><td className="px-10 py-6"><div className="flex items-center gap-4"><span className="text-xs font-black text-muted-foreground/40 w-6">{idx + 1}</span><div className="font-black text-sm uppercase truncate text-foreground">{team.teamName}</div></div></td><td className="px-4 py-6 text-center font-bold text-sm">{team.wins}</td><td className="px-4 py-6 text-center font-bold text-sm">{team.losses}</td><td className="px-10 py-6 text-right font-black text-lg text-primary">{team.points}</td></tr>))}</tbody>
+                    <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Squad Rank</th><th className="px-4 py-5 text-center">Wins</th><th className="px-4 py-5 text-center">Losses</th><th className="px-10 py-5 text-right text-primary">Actions & PTS</th></tr></thead>
+                    <tbody className="divide-y">{sortedStandings.map((team, idx) => (
+                      <tr key={team.id} className="hover:bg-primary/5 transition-colors group">
+                        <td className="px-10 py-6">
+                          <div className="flex items-center gap-4">
+                            <span className="text-xs font-black text-muted-foreground/40 w-6">{idx + 1}</span>
+                            <div>
+                              <div className="font-black text-sm uppercase truncate text-foreground">{team.teamName}</div>
+                              <p className="text-[8px] font-bold text-muted-foreground uppercase opacity-60">{team.coachName || 'Staff Managed'}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-6 text-center font-bold text-sm">{team.wins}</td>
+                        <td className="px-4 py-6 text-center font-bold text-sm">{team.losses}</td>
+                        <td className="px-10 py-6 text-right">
+                          <div className="flex items-center justify-end gap-4">
+                            {isStaff && activeLeague.creatorId === authUser?.uid && (
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => handleEditTeam(team)}>
+                                  <Edit3 className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-destructive/10 text-destructive" onClick={() => removeTeamFromLeague(activeLeague.id, team.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            )}
+                            <span className="font-black text-lg text-primary w-12">{team.points}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}</tbody>
                   </table>
                 </div>
               </Card>
@@ -429,6 +490,41 @@ export default function LeaguesPage() {
               <Input placeholder="e.g. State Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl border-2 font-black" />
             </div>
             <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreateLeague} disabled={isProcessing}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Hub"}</Button></DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Team Dialog */}
+      <Dialog open={!!editingTeam} onOpenChange={(o) => !o && setEditingTeam(null)}>
+        <DialogContent className="rounded-[2.5rem] sm:max-w-md p-0 overflow-hidden bg-white text-foreground">
+          <div className="h-2 bg-black w-full" />
+          <div className="p-8 lg:p-10 space-y-8">
+            <DialogHeader>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="bg-primary/5 p-3 rounded-2xl text-primary"><ShieldCheck className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tight leading-none">Sync Squad Info</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] mt-1">Standings Metadata Sync</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Standings Team Name</Label>
+                <Input value={editTeamForm.teamName} onChange={e => setEditTeamForm({...editTeamForm, teamName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Primary Coach</Label>
+                <Input value={editTeamForm.coachName} onChange={e => setEditTeamForm({...editTeamForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label>
+                <Input type="email" value={editTeamForm.coachEmail} onChange={e => setEditTeamForm({...editTeamForm, coachEmail: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSaveTeamUpdate}>Commit Standings Update</Button>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>

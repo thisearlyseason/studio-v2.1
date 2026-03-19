@@ -465,6 +465,7 @@ interface TeamContextType {
   deleteField: (facilityId: string, fieldId: string) => Promise<void>;
   createLeague: (name: string) => Promise<string>;
   updateLeagueSchedule: (leagueId: string, schedule: any[]) => Promise<void>;
+  removeTeamFromLeague: (leagueId: string, teamId: string) => Promise<void>;
   inviteTeamToLeague: (leagueId: string, leagueName: string, email: string, teamName?: string) => Promise<void>;
   saveLeagueRegistrationConfig: (leagueId: string, protocolId: string, updates: Partial<LeagueRegistrationConfig>) => Promise<void>;
   submitRegistrationEntry: (targetId: string, protocolId: string, answers: any, version: number, signature?: string, targetType?: 'leagues' | 'teams') => Promise<void>;
@@ -572,11 +573,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
   const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
 
-  /**
-   * HARDENED STAFF VERIFICATION:
-   * Explicitly uses userProfile.role as an authority fallback to ensure
-   * demo coaches see their administrative tools immediately.
-   */
   const isStaff = useMemo(() => {
     if (!activeTeam || !firebaseUser) return false;
     if (userProfile?.role === 'coach') return true; 
@@ -740,6 +736,22 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await batch.commit();
   }, [db]);
 
+  const removeTeamFromLeague = useCallback(async (lId: string, tId: string) => {
+    if (!db) return;
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'leagues', lId), {
+      [`teams.${tId}`]: deleteField(),
+      memberTeamIds: arrayRemove(tId)
+    });
+    if (!tId.startsWith('manual_') && !tId.startsWith('recruit_')) {
+      batch.update(doc(db, 'teams', tId), {
+        [`leagueIds.${lId}`]: deleteField()
+      });
+    }
+    await batch.commit();
+    toast({ title: "Squad Excised", description: "Team removed from league standalone standings." });
+  }, [db]);
+
   const inviteTeamToLeague = useCallback(async (lId: string, lN: string, e: string, tN?: string) => { if (db) await addDoc(collection(db, 'leagues', 'global', 'invites'), clean({ leagueId: lId, leagueName: lN, invitedEmail: e, teamName: tN, status: 'pending', createdAt: new Date().toISOString() })); }, [db]);
   const manuallyAddTeamToLeague = useCallback(async (lId: string, n: string, e?: string) => { if (db) await updateDoc(doc(db, 'leagues', lId), { [`teams.manual_${Date.now()}`]: { teamName: n, coachEmail: e, wins: 0, losses: 0, ties: 0, points: 0, status: 'accepted' } }); }, [db]);
   const deleteLeagueInvite = useCallback(async (id: string) => { if (db) await deleteDoc(doc(db, 'leagues', 'global', 'invites', id)); }, [db]);
@@ -787,7 +799,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const assignEntryToTeam = useCallback(async (leagueId: string, entryId: string, teamId: string | null) => { if (!db) return; await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { assigned_team_id: teamId, status: teamId ? 'assigned' : 'pending' }); }, [db]);
   const toggleRegistrationPaymentStatus = useCallback(async (leagueId: string, entryId: string, paid: boolean) => { if (!db) return; await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { payment_received: paid }); }, [db]);
   const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined') => { if (!db) return; await updateDoc(doc(db, 'leagues', contextId, 'registrationEntries', entryId), { status }); }, [db]);
-  const updateLeagueTeamDetails = useCallback(async (leagueId: string, teamId: string, updates: any) => { if (!db) return; await updateDoc(doc(db, 'leagues', leagueId), { [`teams.${teamId}.origin`]: updates.origin, [`teams.${teamId}.coachName`]: updates.coachName, [`teams.${teamId}.coachEmail`]: updates.coachEmail, [`teams.${teamId}.coachPhone`]: updates.coachPhone, [`teams.${teamId}.organizerNotes`]: updates.organizerNotes }); }, [db]);
+  const updateLeagueTeamDetails = useCallback(async (leagueId: string, teamId: string, updates: any) => { if (!db) return; await updateDoc(doc(db, 'leagues', leagueId), { [`teams.${teamId}.origin`]: updates.origin, [`teams.${teamId}.coachName`]: updates.coachName, [`teams.${teamId}.coachEmail`]: updates.coachEmail, [`teams.${teamId}.coachPhone`]: updates.coachPhone, [`teams.${teamId}.organizerNotes`]: updates.organizerNotes, [`teams.${teamId}.teamName`]: updates.teamName }); }, [db]);
 
   const upgradeChildToLogin = useCallback(async (childId: string) => { if (db) await updateDoc(doc(db, 'players', childId), { hasLogin: true }); }, [db]);
   const registerChild = useCallback(async (first: string, last: string, dob: string) => { if (!firebaseUser || !db) return; const cid = `child_${Date.now()}`; await setDoc(doc(db, 'players', cid), clean({ id: cid, firstName: first, lastName: last, dateOfBirth: dob, isMinor: true, parentId: firebaseUser.uid, joinedTeamIds: [], createdAt: new Date().toISOString() })); }, [db, firebaseUser]);
@@ -869,7 +881,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
     confirmVolunteerAttendance, addVolunteerOpportunity, signUpForFundraising,
-    confirmExternalDonation, addIncident, assignManualPlan,
+    confirmExternalDonation, addIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, disputeMatchScore, disputeLeagueMatchScore,
     createAlert, deleteAlert, addDrill, addFile, deleteFile, addFacility, deleteFacility,
@@ -893,7 +905,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
     confirmVolunteerAttendance, addVolunteerOpportunity, signUpForFundraising,
-    confirmExternalDonation, addIncident, assignManualPlan,
+    confirmExternalDonation, addIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, disputeMatchScore, disputeLeagueMatchScore,
     createAlert, deleteAlert, addDrill, addFile, deleteFile, addFacility, deleteFacility,
