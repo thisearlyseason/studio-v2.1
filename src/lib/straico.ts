@@ -8,7 +8,7 @@ export async function straicoGenerate(prompt: string) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-5",
+      model: "anthropic/claude-sonnet-4.5",
       messages: [{ role: "user", content: prompt }],
     }),
   });
