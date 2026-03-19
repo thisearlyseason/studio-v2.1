@@ -1,4 +1,3 @@
-
 "use client";
 
 import Shell from '@/components/layout/Shell';
@@ -137,8 +136,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 
   /**
    * TACTICAL HYDRATION GUARD: 
-   * Use invariant loading text to prevent hydration mismatch.
-   * Component should render identical static loading shell on server and first client pass.
+   * Use a mounted state to ensure identical server/client initial render.
    */
   const showLoading = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile;
 
@@ -161,7 +159,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           </div>
           <div className="text-center space-y-2">
             <p className="text-lg font-black uppercase tracking-widest text-primary">
-              Authenticating Hub...
+              {mounted && isDemoInitializing ? "Synchronizing Hub..." : "Authenticating..."}
             </p>
           </div>
         </div>

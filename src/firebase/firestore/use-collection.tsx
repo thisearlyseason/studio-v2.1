@@ -87,7 +87,7 @@ export function useCollection<T = any>(
         path = 'unknown';
       }
 
-      // 4. Defensive Guard: Prevent malformed paths
+      // 4. Defensive Guard: Prevent malformed paths or unauthorized root access
       const isRootPath = !path || path === '/' || path === '.' || path === 'databases/(default)/documents';
       const hasUndefined = path === 'unknown' || path.includes('undefined') || path.includes('/null/');
       
