@@ -13,6 +13,7 @@ service cloud.firestore {
     }
 
     // --- INSTITUTIONAL HIERARCHY: LEAGUES ---
+    // Using recursive wildcards to satisfy "List Proving" for all subcollections
     
     match /leagues {
       allow list, get, create: if isSignedIn();
@@ -21,14 +22,7 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       allow read, write: if isSignedIn();
       
-      // Explicitly matching subcollections for robust list proving
-      match /registrationEntries/{id} { allow read, write: if isSignedIn(); }
-      match /invites/{id} { allow read, write: if isSignedIn(); }
-      match /events/{id} { allow read, write: if isSignedIn(); }
-      match /members/{id} { allow read, write: if isSignedIn(); }
-      match /registration/{id} { allow read, write: if isSignedIn(); }
-      
-      // Fallback for any other nested data
+      // Authorize all sub-data (registrationEntries, invites, events, members, etc.)
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
@@ -43,17 +37,7 @@ service cloud.firestore {
     match /teams/{teamId} {
       allow read, write: if isSignedIn();
       
-      match /members/{id} { allow read, write: if isSignedIn(); }
-      match /events/{id} { allow read, write: if isSignedIn(); }
-      match /games/{id} { allow read, write: if isSignedIn(); }
-      match /drills/{id} { allow read, write: if isSignedIn(); }
-      match /files/{id} { allow read, write: if isSignedIn(); }
-      match /alerts/{id} { allow read, write: if isSignedIn(); }
-      match /groupChats/{id} { allow read, write: if isSignedIn(); }
-      match /incidents/{id} { allow read, write: if isSignedIn(); }
-      match /volunteers/{id} { allow read, write: if isSignedIn(); }
-      match /fundraising/{id} { allow read, write: if isSignedIn(); }
-      
+      // Authorize all sub-data (members, events, games, drills, files, etc.)
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
@@ -79,10 +63,6 @@ service cloud.firestore {
     
     match /players {
       allow list, get, create: if isSignedIn();
-    }
-
-    match /players/{playerId} {
-      allow read, write: if isSignedIn();
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
@@ -90,10 +70,6 @@ service cloud.firestore {
 
     match /facilities {
       allow list, get, create: if isSignedIn();
-    }
-
-    match /facilities/{facilityId} {
-      allow read, write: if isSignedIn();
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
@@ -118,7 +94,7 @@ service cloud.firestore {
     }
 
     // --- CROSS-SQUAD AGGREGATION (COLLECTION GROUPS) ---
-    // These allow the app to query across all documents in a subcollection
+    // Explicitly matched for Master Intelligence features
     
     match /{path=**}/invites/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/registrationEntries/{id} { allow read, write: if isSignedIn(); }
