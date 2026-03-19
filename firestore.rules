@@ -16,33 +16,16 @@ service cloud.firestore {
     
     // Leagues and their nested coordination data
     match /leagues/{leagueId} {
+      // Allow access to the league document itself
       allow read, write: if isSignedIn();
       
-      // Explicit matches for provable list operations
-      match /registrationEntries/{id} { 
-        allow list, read, write: if isSignedIn(); 
-      }
-      
-      match /invites/{id} { 
-        allow list, read, write: if isSignedIn(); 
-      }
-
-      match /events/{id} { 
-        allow list, read, write: if isSignedIn(); 
-      }
-      
-      match /members/{id} { 
-        allow list, read, write: if isSignedIn(); 
-      }
-      
-      match /payments/{id} { 
-        allow list, read, write: if isSignedIn(); 
-      }
-
-      match /registration/{configId} {
+      // Explicitly authorize subcollections for listing (List Proving)
+      // This covers registrationEntries, invites, events, members, etc.
+      match /{collectionName}/{docId} {
         allow read, write: if isSignedIn();
       }
-
+      
+      // Fallback for any deeper nesting
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
@@ -50,40 +33,40 @@ service cloud.firestore {
 
     // Teams and their nested operational data
     match /teams/{teamId} {
+      // Allow access to the team document itself
       allow read, write: if isSignedIn();
       
-      // Explicit matches for provable list operations
-      match /members/{id} { allow list, read, write: if isSignedIn(); }
-      match /events/{id} { allow list, read, write: if isSignedIn(); }
-      match /files/{id} { allow list, read, write: if isSignedIn(); }
-      match /equipment/{id} { allow list, read, write: if isSignedIn(); }
-      match /volunteers/{id} { allow list, read, write: if isSignedIn(); }
-      match /drills/{id} { allow list, read, write: if isSignedIn(); }
-      match /incidents/{id} { allow list, read, write: if isSignedIn(); }
-      match /games/{id} { allow list, read, write: if isSignedIn(); }
-      match /registrationEntries/{id} { allow list, read, write: if isSignedIn(); }
-      
-      match /feedPosts/{id} { 
-        allow list, read, write: if isSignedIn(); 
-        match /comments/{commentId} { allow list, read, write: if isSignedIn(); }
+      // Explicitly authorize subcollections for listing (List Proving)
+      // This covers members, events, files, games, feedPosts, etc.
+      match /{collectionName}/{docId} {
+        allow read, write: if isSignedIn();
       }
       
-      match /groupChats/{id} { 
-        allow list, read, write: if isSignedIn(); 
-        match /messages/{msgId} { allow list, read, write: if isSignedIn(); }
+      // Fallback for any deeper nesting
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
       }
-      
-      match /fundraising/{id} { 
-        allow list, read, write: if isSignedIn(); 
-        match /donations/{donId} { allow list, read, write: if isSignedIn(); }
-      }
+    }
 
-      match /documents/{id} {
-        allow list, read, write: if isSignedIn();
+    // --- PERSONAL INFRASTRUCTURE ---
+    
+    match /userProfiles/{userId} {
+      allow read, write: if isOwner(userId);
+      match /{allPaths=**} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+      
+      // Explicitly allow listing personal subcollections (memberships, hiddenChats)
+      match /{collectionName}/{docId} {
+        allow read, write: if isOwner(userId);
       }
 
       match /{allPaths=**} {
-        allow read, write: if isSignedIn();
+        allow read, write: if isOwner(userId);
       }
     }
 
@@ -101,34 +84,8 @@ service cloud.firestore {
 
     match /facilities/{facilityId} {
       allow read, write: if isSignedIn();
-      match /fields/{fieldId} { allow list, read, write: if isSignedIn(); }
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
-      }
-    }
-
-    match /team_memberships/{membershipId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // --- PERSONAL INFRASTRUCTURE ---
-    
-    match /userProfiles/{userId} {
-      allow read, write: if isOwner(userId);
-      match /{allPaths=**} {
-        allow read, write: if isOwner(userId);
-      }
-    }
-
-    match /users/{userId} {
-      allow read, write: if isOwner(userId);
-      
-      // Explicit matches for provable list operations
-      match /teamMemberships/{id} { allow list, read, write: if isOwner(userId); }
-      match /hiddenChats/{id} { allow list, read, write: if isOwner(userId); }
-
-      match /{allPaths=**} {
-        allow read, write: if isOwner(userId);
       }
     }
 
@@ -139,21 +96,22 @@ service cloud.firestore {
       }
     }
 
+    match /team_memberships/{membershipId} {
+      allow read, write: if isSignedIn();
+    }
+
     // --- COLLECTION GROUPS ---
+    // Critical for cross-squad queries and organizational audits
     
     match /{path=**}/signatures/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/registrationEntries/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/members/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/events/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/files/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/incidents/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/feedPosts/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/groupChats/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/volunteers/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/fundraising/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/drills/{id} { allow read, write: if isSignedIn(); }
+    match /{path=**}/incidents/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/games/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/equipment/{id} { allow read, write: if isSignedIn(); }
 
     // --- GLOBAL DEFAULT DENY ---
     match /{path=**} {
