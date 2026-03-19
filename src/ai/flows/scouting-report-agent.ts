@@ -1,6 +1,6 @@
 'use server';
 /**
- * @fileOverview A Genkit flow that generates professional scouting reports.
+ * @fileOverview A Genkit flow that generates professional scouting reports using Straico.
  * 
  * - generateScoutingBrief - Analysis engine for opponent tactics.
  */
@@ -22,10 +22,11 @@ const ScoutingOutputSchema = z.object({
 });
 
 /**
- * Top-level prompt definition for performance and stability.
+ * Top-level prompt definition using the custom Straico model.
  */
 const scoutingPrompt = ai.definePrompt({
   name: 'scoutingPrompt',
+  model: 'straico/default',
   input: { schema: ScoutingInputSchema },
   output: { schema: ScoutingOutputSchema },
   prompt: `You are an Elite Tactical Analyst for a professional {{{sport}}} team.

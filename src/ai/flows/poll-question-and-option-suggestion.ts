@@ -1,7 +1,7 @@
 'use server';
 /**
  * @fileOverview This file implements a Genkit flow that suggests poll questions and options
- * based on a given context or prompt, to assist users in creating engaging polls.
+ * based on a given context or prompt, using the Straico LLM provider.
  *
  * - suggestPollQuestionAndOptions - A function that handles the poll suggestion process.
  * - SuggestPollInput - The input type for the suggestPollQuestionAndOptions function.
@@ -29,6 +29,7 @@ export async function suggestPollQuestionAndOptions(input: SuggestPollInput): Pr
 
 const pollPrompt = ai.definePrompt({
   name: 'pollQuestionAndOptionPrompt',
+  model: 'straico/default',
   input: { schema: SuggestPollInputSchema },
   output: { schema: SuggestPollOutputSchema },
   prompt: `You are an AI assistant specialized in generating engaging poll questions and relevant options.

@@ -1,4 +1,38 @@
+import { genkit } from 'genkit';
 import { straicoGenerate } from "@/lib/straico";
 
-const result = await straicoGenerate(prompt);
-console.log(result);
+/**
+ * Genkit instance for the application.
+ * Configured without the Google AI plugin to use a custom Straico model instead.
+ */
+export const ai = genkit({
+  plugins: [],
+});
+
+/**
+ * Defines a custom Straico model within Genkit.
+ * This allows the application to use the Straico API via the existing helper function
+ * while still benefiting from Genkit's prompt management and structured output.
+ */
+ai.defineModel(
+  {
+    name: 'straico/default',
+    label: 'Straico Claude Model',
+  },
+  async (request) => {
+    // Construct a single prompt string from the message history
+    const prompt = request.messages
+      .map((m) => `${m.role.toUpperCase()}: ${m.content.map((c) => c.text).join('')}`)
+      .join('\n\n');
+
+    // Call the Straico generation helper
+    const responseText = await straicoGenerate(prompt);
+
+    return {
+      message: {
+        role: 'model',
+        content: [{ text: responseText }],
+      },
+    };
+  }
+);
