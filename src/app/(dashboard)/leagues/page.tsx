@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Sparkles,
   Calendar as CalendarIcon,
+  CalendarDays,
   Trash2,
   Info,
   ArrowRight,
@@ -157,7 +158,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
+      <DialogContent className="sm:max-w-5xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
         <DialogTitle className="sr-only">Season Architect</DialogTitle>
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
@@ -315,7 +316,7 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
             <div className="overflow-x-auto">
               <table className="w-full text-left text-foreground">
                 <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-8 py-5">Date/Time</th><th className="px-4 py-5">Matchup</th><th className="px-8 py-5 text-right">Status</th></tr></thead>
-                <tbody className="divide-y">{(schedule || []).map(game => (
+                <tbody className="divide-y">{schedule.map(game => (
                   <tr key={game.id} className="hover:bg-muted/5 transition-colors group">
                     <td className="px-8 py-6"><p className="font-black text-xs uppercase">{game.date}</p><p className="text-[10px] font-bold text-muted-foreground">{game.time}</p></td>
                     <td className="px-4 py-6">
@@ -467,7 +468,6 @@ export default function LeaguesPage() {
 
       {activeLeague ? (
         <div className="space-y-8 animate-in fade-in duration-700">
-          {/* Tactical Tip */}
           <div className="bg-amber-50 border-2 border-dashed border-amber-200 p-6 rounded-[2.5rem] flex items-start gap-6 shadow-sm group">
             <div className="bg-amber-100 p-3 rounded-2xl text-amber-600 shadow-inner group-hover:scale-110 transition-transform"><Sparkles className="h-6 w-6" /></div>
             <div className="space-y-1">
@@ -574,7 +574,6 @@ export default function LeaguesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Team Dialog */}
       <Dialog open={!!editingTeam} onOpenChange={(o) => !o && setEditingTeam(null)}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-md p-0 overflow-hidden bg-white text-foreground">
           <div className="h-2 bg-black w-full" />
