@@ -53,6 +53,7 @@ import { format, isSameDay } from 'date-fns';
 import { useTeam, League, TournamentGame, Field, Facility } from '@/components/providers/team-provider';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const DAYS_OF_WEEK = [
   { id: 1, label: 'Mon' },
@@ -101,7 +102,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     breakLength: '15',
     playDays: [1, 3] as number[],
     gamesPerTeam: '10',
-    doubleHeaders: false,
+    doubleHeaderOption: 'none' as 'none' | 'sameTeam' | 'differentTeams',
     selectedFields: [] as string[],
     blackoutDates: [] as Date[]
   });
@@ -115,15 +116,14 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
 
   const leagueTeams = useMemo(() => {
     if (!league?.teams) return [];
-    return Object.values(league.teams).map((t: any) => t.teamName);
+    return Object.values(league.teams).filter(t => t.status === 'accepted').map((t: any) => t.teamName);
   }, [league?.teams]);
 
   const handleGenerate = async () => {
-    // TACTICAL CHECK: Ensure at least 2 squads for Round Robin
     if (!config.startDate || !config.selectedFields.length || leagueTeams.length < 2) {
       toast({ 
         title: "Config Required", 
-        description: leagueTeams.length < 2 ? "Minimum 2 squads required for match play." : "Define timeline and select fields.", 
+        description: leagueTeams.length < 2 ? "Minimum 2 accepted squads required." : "Define timeline and select fields.", 
         variant: "destructive" 
       });
       return;
@@ -141,7 +141,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
         breakLength: parseInt(config.breakLength),
         playDays: config.playDays,
         gamesPerTeam: parseInt(config.gamesPerTeam),
-        doubleHeaders: config.doubleHeaders,
+        doubleHeaderOption: config.doubleHeaderOption,
         blackoutDates: config.blackoutDates.map(d => d.toISOString())
       });
       await updateLeagueSchedule(league.id, schedule);
@@ -238,16 +238,25 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                     <Label className="text-[10px] font-black uppercase ml-1">Games/Team</Label>
                     <Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2 font-black text-primary" />
                   </div>
-                  <div className="flex flex-col justify-center gap-2 pt-4">
+                  <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase ml-1">Double Headers</Label>
-                    <Switch checked={config.doubleHeaders} onCheckedChange={v => setConfig({...config, doubleHeaders: v})} />
+                    <Select value={config.doubleHeaderOption} onValueChange={(v: any) => setConfig({...config, doubleHeaderOption: v})}>
+                      <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="none" className="font-bold">None</SelectItem>
+                        <SelectItem value="sameTeam" className="font-bold">Same Opponent (Swap)</SelectItem>
+                        <SelectItem value="differentTeams" className="font-bold">Different Opponents</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </section>
 
               <section className="space-y-6">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Venue Allocation</h3>
-                <ScrollArea className="h-64 border-2 rounded-[2.5rem] bg-muted/5 p-6 shadow-inner">
+                <ScrollArea className="h-64 border-2 rounded-[2.5rem] bg-muted/5 p-6 shadow-inner text-foreground">
                   {facilities?.length ? facilities.map(f => (
                     <div key={f.id} className="space-y-4 mb-8 last:mb-0">
                       <div className="flex items-center gap-3 px-2">
@@ -266,23 +275,25 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
             <aside className="lg:col-span-5 space-y-8">
               <div className="bg-black text-white rounded-[2.5rem] p-8 space-y-6 relative overflow-hidden group">
                 <CalendarDays className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12" />
-                <div className="relative z-10 space-y-4 text-black">
+                <div className="relative z-10 space-y-4">
                   <div className="flex items-center gap-3">
                     <div className="bg-primary p-2 rounded-xl"><CalendarIcon className="h-4 w-4 text-white" /></div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-primary">Blackout Calendar</p>
                   </div>
                   <p className="text-[10px] font-medium text-white/60 leading-relaxed italic">Select dates where no league matches should be scheduled.</p>
-                  <Calendar 
-                    mode="multiple" 
-                    selected={config.blackoutDates} 
-                    onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})} 
-                    className="text-black"
-                  />
+                  <div className="bg-white rounded-2xl p-2 text-black">
+                    <Calendar 
+                      mode="multiple" 
+                      selected={config.blackoutDates} 
+                      onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})} 
+                      className="text-black"
+                    />
+                  </div>
                 </div>
               </div>
 
               <div className="bg-primary/5 p-6 rounded-3xl border-2 border-dashed border-primary/20 space-y-4">
-                <div className="flex items-center gap-3 text-primary"><Info className="h-4 w-4" /><h4 className="text-[10px] font-black uppercase tracking-widest">Enrollment Status</h4></div>
+                <div className="flex items-center gap-2 text-primary"><Info className="h-4 w-4" /><h4 className="text-[10px] font-black uppercase tracking-widest">Enrollment Status</h4></div>
                 <p className="text-[11px] font-bold text-muted-foreground uppercase">{leagueTeams.length} squads detected in active roster.</p>
               </div>
             </aside>
@@ -339,9 +350,9 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
       
       {viewMode === 'list' ? (
         <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
-          <CardContent className="p-0">
+          <CardContent className="p-0 text-foreground">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-foreground">
+              <table className="w-full text-left">
                 <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b">
                   <tr>
                     <th className="px-8 py-5">Date/Time</th>
@@ -350,7 +361,7 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
                     <th className="px-8 py-5 text-right">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody className="divide-y divide-muted/50">
                   {schedule.map(game => (
                     <tr key={game.id} className="hover:bg-muted/5 transition-colors group">
                       <td className="px-8 py-6"><p className="font-black text-xs uppercase">{game.date}</p><p className="text-[10px] font-bold text-muted-foreground">{game.time}</p></td>
@@ -584,7 +595,7 @@ export default function LeaguesPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                     <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Squad Rank</th><th className="px-4 py-5 text-center">Wins</th><th className="px-4 py-5 text-center">Losses</th><th className="px-10 py-5 text-right text-primary">Actions & PTS</th></tr></thead>
-                    <tbody className="divide-y">{sortedStandings.map((team, idx) => (
+                    <tbody className="divide-y divide-muted/50">{sortedStandings.map((team, idx) => (
                       <tr key={team.id} className="hover:bg-primary/5 transition-colors group">
                         <td className="px-10 py-6">
                           <div className="flex items-center gap-4">
