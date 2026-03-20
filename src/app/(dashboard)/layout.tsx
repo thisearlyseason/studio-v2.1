@@ -136,7 +136,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 
   /**
    * TACTICAL HYDRATION GUARD: 
-   * Use a mounted state to ensure identical server/client initial render.
+   * Use a static text during the initial client-side hydrate to ensure 
+   * it matches the server-rendered HTML.
    */
   const showLoading = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile;
 
