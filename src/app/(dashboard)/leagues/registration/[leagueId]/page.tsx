@@ -77,6 +77,8 @@ export default function LeagueRegistrationAdminPage() {
 
   const configId = pipelineType === 'player' ? 'player_config' : 'team_config';
   
+  // TACTICAL MEMO: Explicitly wait for identity resolution before dispatching queries
+  // to satisfy provable matching in security rules.
   const configRef = useMemoFirebase(() => {
     if (!db || !leagueId || !isAuthResolved) return null;
     return doc(db, 'leagues', leagueId as string, 'registration', configId);
@@ -196,7 +198,7 @@ export default function LeagueRegistrationAdminPage() {
           </div>
         </div>
         <div className="text-center max-w-md space-y-4">
-          <h1 className="text-4xl font-black tracking-tight uppercase text-foreground">Registration Hub Locked</h1>
+          <h1 className="text-4xl font-black uppercase tracking-tight text-foreground">Registration Hub Locked</h1>
           <p className="text-muted-foreground font-bold leading-relaxed text-lg uppercase tracking-wide">
             Automated enrollment pipelines are reserved for <strong>Elite Pro</strong> squads.
           </p>
@@ -270,15 +272,15 @@ export default function LeagueRegistrationAdminPage() {
                       </DialogHeader>
                       <div className="space-y-5">
                         <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label>
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Team Name</Label>
                           <Input placeholder="e.g. Metro Tigers" value={manualForm.teamName} onChange={e => setManualForm({...manualForm, teamName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Name</Label>
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Coach Name</Label>
                           <Input placeholder="John Smith" value={manualForm.coachName} onChange={e => setManualForm({...manualForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label>
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Contact Email</Label>
                           <Input type="email" placeholder="coach@team.com" value={manualForm.email} onChange={e => setManualForm({...manualForm, email: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
                         </div>
                       </div>
@@ -363,7 +365,7 @@ export default function LeagueRegistrationAdminPage() {
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-6">
                                     <div className="space-y-4">
                                       <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest px-1">Detailed Specs</p>
-                                      <ScrollArea className="h-[300px] pr-4 border-2 rounded-2xl p-4 bg-muted/10">
+                                      <ScrollArea className="h-[300px] pr-4 border-2 rounded-2xl p-4 bg-muted/10 text-foreground">
                                         <div className="space-y-4">
                                           {Object.entries(entry.answers || {}).map(([key, val]) => (
                                             <div key={key} className="space-y-1">
@@ -376,15 +378,15 @@ export default function LeagueRegistrationAdminPage() {
                                     </div>
                                     <div className="space-y-6">
                                       <div className="space-y-2">
-                                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Dispatch to Squad</Label>
+                                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Dispatch to Squad</Label>
                                         <Select 
                                           value={entry.assigned_team_id || 'unassigned'} 
                                           onValueChange={(tid) => assignEntryToTeam(leagueId as string, entry.id, tid === 'unassigned' ? null : tid)}
                                         >
-                                          <SelectTrigger className="h-14 rounded-xl border-2 font-black">
+                                          <SelectTrigger className="h-14 rounded-xl border-2 font-black text-foreground">
                                             <SelectValue placeholder="Select team..." />
                                           </SelectTrigger>
-                                          <SelectContent className="rounded-xl">
+                                          <SelectContent className="rounded-xl text-foreground">
                                             <SelectItem value="unassigned">Unassigned Pool</SelectItem>
                                             {activeTeam?.leagueIds && Object.keys(activeTeam.leagueIds).map(id => (
                                               <SelectItem key={id} value={id}>Squad {id.slice(-6)}</SelectItem>
@@ -416,7 +418,7 @@ export default function LeagueRegistrationAdminPage() {
                       ))}
                       {filteredEntries.length === 0 && !isEntriesLoading && (
                         <tr>
-                          <td colSpan={pipelineType === 'player' ? 4 : 3} className="py-20 text-center opacity-30 italic text-xs uppercase font-black">
+                          <td colSpan={pipelineType === 'player' ? 4 : 3} className="py-20 text-center opacity-30 italic text-xs uppercase font-black text-foreground">
                             No active applicants in this sector.
                           </td>
                         </tr>
@@ -430,13 +432,13 @@ export default function LeagueRegistrationAdminPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-8">
+          <div className="lg:col-span-2 space-y-8 text-foreground">
             <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
               <CardHeader className="bg-primary/5 border-b p-8 flex flex-row items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="bg-primary p-3 rounded-2xl text-white shadow-lg"><Globe className="h-6 w-6" /></div>
                   <div>
-                    <CardTitle className="text-2xl font-black uppercase tracking-tight text-foreground">{localConfig?.title || 'Pipeline Protocol'}</CardTitle>
+                    <CardTitle className="text-2xl font-black uppercase tracking-tight">{localConfig?.title || 'Pipeline Protocol'}</CardTitle>
                     <CardDescription className="font-bold text-primary text-[10px] uppercase tracking-widest">Protocol Version {localConfig?.form_version || 1}</CardDescription>
                   </div>
                 </div>
@@ -445,16 +447,16 @@ export default function LeagueRegistrationAdminPage() {
               <CardContent className="p-8 space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Protocol Title</Label>
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Protocol Title</Label>
                     <Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20" />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Enrollment Fee ($)</Label>
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Enrollment Fee ($)</Label>
                     <Input type="number" value={localConfig?.registration_cost || '0'} onChange={e => handleUpdateConfig({ registration_cost: e.target.value })} className="h-12 rounded-xl font-black border-2" />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Operational Brief</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Operational Brief</Label>
                   <Textarea value={localConfig?.description || ''} onChange={e => handleUpdateConfig({ description: e.target.value })} className="rounded-xl min-h-[100px] border-2 font-medium" placeholder="Define the recruitment scope..." />
                 </div>
               </CardContent>
@@ -480,8 +482,8 @@ export default function LeagueRegistrationAdminPage() {
                       <div className="space-y-2">
                         <Label className="text-[10px] uppercase font-black ml-1">Input Protocol</Label>
                         <Select value={editingField?.type} onValueChange={(v: any) => setEditingField({ ...editingField, type: v })}>
-                          <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
-                          <SelectContent className="rounded-xl">
+                          <SelectTrigger className="h-12 rounded-xl border-2 font-bold text-foreground"><SelectValue /></SelectTrigger>
+                          <SelectContent className="rounded-xl text-foreground">
                             <SelectItem value="short_text" className="font-bold">Short Text</SelectItem>
                             <SelectItem value="long_text" className="font-bold">Long Text</SelectItem>
                             <SelectItem value="dropdown" className="font-bold">Dropdown</SelectItem>
@@ -500,7 +502,7 @@ export default function LeagueRegistrationAdminPage() {
                     <div className="flex items-center gap-4">
                       <div className="text-[10px] font-black text-muted-foreground w-6 opacity-40">{i + 1}</div>
                       <div>
-                        <p className="font-black text-sm uppercase text-foreground">{field.label}</p>
+                        <p className="font-black text-sm uppercase">{field.label}</p>
                         <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60 tracking-widest">{field.type.replace('_', ' ')}</p>
                       </div>
                     </div>
