@@ -137,11 +137,13 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 
   /**
    * TACTICAL HYDRATION GUARD: 
-   * loading UI text remains strictly invariant during the initial hydration frame to prevent Next.js failures.
+   * The server will always render the loading state because 'mounted' is false.
+   * The client will also render the loading state during the initial pass for the same reason.
+   * This ensures text and DOM parity during the hydration frame.
    */
-  const showLoading = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile;
+  const isLoadingState = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile;
 
-  if (showLoading) {
+  if (isLoadingState) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background">
         {mounted && (
