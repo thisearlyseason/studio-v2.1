@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -29,7 +30,10 @@ import {
   Info,
   ArrowRight,
   Settings,
-  Timer
+  Timer,
+  Globe,
+  LayoutGrid,
+  ExternalLink
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -147,7 +151,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
       });
       
       if (schedule.length === 0) {
-        toast({ title: "Distribution Failure", description: "Could not satisfy scheduling constraints. Try increasing time windows or play days.", variant: "destructive" });
+        toast({ title: "Distribution Failure", description: "Could not satisfy scheduling constraints.", variant: "destructive" });
         return;
       }
 
@@ -175,12 +179,12 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+      <DialogContent className="sm:max-w-5xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground text-black">
         <DialogTitle className="sr-only">Season Architect</DialogTitle>
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
           <DialogHeader>
-            <div className="flex items-center gap-4 mb-2">
+            <div className="flex items-center gap-4 mb-2 text-black">
               <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Settings className="h-6 w-6" /></div>
               <div>
                 <DialogTitle className="text-3xl font-black uppercase tracking-tight">Season Architect</DialogTitle>
@@ -189,7 +193,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
             </div>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 text-black">
             <div className="lg:col-span-7 space-y-10">
               <section className="space-y-6">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Timeline & Availability</h3>
@@ -288,7 +292,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                     <p className="text-[10px] font-black uppercase tracking-widest text-primary">Blackout Calendar</p>
                   </div>
                   <p className="text-[10px] font-medium text-white/60 leading-relaxed italic">Select dates where no league matches should be scheduled.</p>
-                  <div className="bg-white rounded-2xl p-2 text-black">
+                  <div className="bg-white rounded-2xl p-2 text-black [&_button:hover]:text-black">
                     <Calendar 
                       mode="multiple" 
                       selected={config.blackoutDates} 
@@ -307,7 +311,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
           </div>
 
           <DialogFooter className="pt-6 border-t">
-            <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleGenerate} disabled={isProcessing}>
+            <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-0.98 transition-all" onClick={handleGenerate} disabled={isProcessing}>
               {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : <Sparkles className="h-6 w-6 mr-3" />}
               Deploy Seasonal Pipeline
             </Button>
@@ -345,17 +349,11 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
     toast({ title: "Result Persisted" });
   };
 
-  /**
-   * Helper to detect if a specific game is part of a double header for a specific team on its day.
-   */
   const getDoubleHeaderLabel = (game: TournamentGame) => {
     const gamesOnDay = gamesByDay[game.date] || [];
     const t1Games = gamesOnDay.filter(g => g.team1 === game.team1 || g.team2 === game.team1);
     const t2Games = gamesOnDay.filter(g => g.team1 === game.team2 || g.team2 === game.team2);
-    
-    if (t1Games.length > 1 || t2Games.length > 1) {
-      return "DOUBLE HEADER";
-    }
+    if (t1Games.length > 1 || t2Games.length > 1) return "DOUBLE HEADER";
     return null;
   };
 
@@ -378,44 +376,41 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
                   <tr>
                     <th className="px-8 py-5">Date/Time</th>
                     <th className="px-4 py-5">Location</th>
-                    <th className="px-4 py-5">Matchup</th>
+                    <th className="px-4 py-5">Matchup (HOME VS GUEST)</th>
                     <th className="px-8 py-5 text-right">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-muted/50">
-                  {schedule.map(game => {
-                    const dhLabel = getDoubleHeaderLabel(game);
-                    return (
-                      <tr key={game.id} className="hover:bg-muted/5 transition-colors group">
-                        <td className="px-8 py-6">
-                          <p className="font-black text-xs uppercase">{game.date}</p>
-                          <div className="flex items-center gap-2">
-                            <p className="text-[10px] font-bold text-muted-foreground">{game.time}</p>
-                            {dhLabel && <Badge className="bg-primary/10 text-primary border-none text-[7px] h-4 font-black">{dhLabel}</Badge>}
-                          </div>
-                        </td>
-                        <td className="px-4 py-6 font-bold text-xs uppercase text-muted-foreground">{game.location || 'TBD'}</td>
-                        <td className="px-4 py-6">
-                          <div className="flex items-center gap-4">
-                            <span className="font-black text-xs uppercase truncate max-w-[120px]">{game.team1}</span>
-                            {game.isCompleted ? (
-                              <div className="flex items-center gap-2 bg-muted/50 px-2 py-1 rounded-lg">
-                                <span className="font-black text-xs text-primary">{game.score1} - {game.score2}</span>
-                              </div>
-                            ) : <span className="opacity-20 text-[10px] font-black">VS</span>}
-                            <span className="font-black text-xs uppercase truncate max-w-[120px]">{game.team2}</span>
-                          </div>
-                        </td>
-                        <td className="px-8 py-6 text-right">
-                          {isStaff && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100" onClick={() => { setEditingGame(game); setScoreForm({ s1: game.score1.toString(), s2: game.score2.toString() }); }}>
-                              <Edit3 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {schedule.map(game => (
+                    <tr key={game.id} className="hover:bg-muted/5 transition-colors group">
+                      <td className="px-8 py-6">
+                        <p className="font-black text-xs uppercase">{game.date}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-[10px] font-bold text-muted-foreground">{game.time}</p>
+                          {getDoubleHeaderLabel(game) && <Badge className="bg-primary/10 text-primary border-none text-[7px] h-4 font-black">DOUBLE HEADER</Badge>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-6 font-bold text-xs uppercase text-muted-foreground">{game.location || 'TBD'}</td>
+                      <td className="px-4 py-6">
+                        <div className="flex items-center gap-4">
+                          <span className="font-black text-xs uppercase truncate max-w-[120px] text-primary">{game.team1}</span>
+                          {game.isCompleted ? (
+                            <div className="flex items-center gap-2 bg-muted/50 px-2 py-1 rounded-lg">
+                              <span className="font-black text-xs">{game.score1} - {game.score2}</span>
+                            </div>
+                          ) : <span className="opacity-20 text-[10px] font-black">VS</span>}
+                          <span className="font-black text-xs uppercase truncate max-w-[120px]">{game.team2}</span>
+                        </div>
+                      </td>
+                      <td className="px-8 py-6 text-right">
+                        {isStaff && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100" onClick={() => { setEditingGame(game); setScoreForm({ s1: game.score1.toString(), s2: game.score2.toString() }); }}>
+                            <Edit3 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -430,9 +425,9 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
               onSelect={(d) => d && setSelectedDate(d)}
               modifiers={{ hasGame: gameDays }}
               modifiersClassNames={{
-                hasGame: "after:content-[''] after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:h-1 after:w-1 after:bg-primary after:rounded-full after:z-20"
+                hasGame: "after:content-[''] after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:h-1 after:w-1 after:bg-primary after:rounded-full after:z-20",
               }}
-              className="w-full max-w-4xl text-black"
+              className="w-full max-w-4xl text-black [&_button:hover]:text-black"
             />
           </div>
           
@@ -452,7 +447,7 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-3">
-                        <p className="font-black text-lg uppercase truncate text-foreground">{game.team1} vs {game.team2}</p>
+                        <p className="font-black text-lg uppercase truncate text-foreground"><span className="text-primary">{game.team1}</span> vs {game.team2}</p>
                         {getDoubleHeaderLabel(game) && <Badge className="bg-primary text-white border-none text-[8px] h-5 font-black uppercase">Double Header</Badge>}
                       </div>
                       <div className="flex items-center gap-3 mt-1">
@@ -484,12 +479,12 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
             </DialogHeader>
             <div className="grid grid-cols-2 gap-8">
               <div className="space-y-2">
-                <Label className="text-[8px] font-black uppercase opacity-40 ml-1">{editingGame?.team1}</Label>
-                <Input type="number" value={scoreForm.s1} onChange={e => setScoreForm({...scoreForm, s1: e.target.value})} className="h-16 text-center text-3xl font-black rounded-2xl" />
+                <Label className="text-[8px] font-black uppercase opacity-40 ml-1">HOME: {editingGame?.team1}</Label>
+                <Input type="number" value={score1} onChange={e => setScore1(e.target.value)} className="h-16 text-center text-3xl font-black rounded-2xl" />
               </div>
               <div className="space-y-2">
-                <Label className="text-[8px] font-black uppercase opacity-40 ml-1">{editingGame?.team2}</Label>
-                <Input type="number" value={scoreForm.s2} onChange={e => setScoreForm({...scoreForm, s2: e.target.value})} className="h-16 text-center text-3xl font-black rounded-2xl" />
+                <Label className="text-[8px] font-black uppercase opacity-40 ml-1">GUEST: {editingGame?.team2}</Label>
+                <Input type="number" value={score2} onChange={e => setScore2(e.target.value)} className="h-16 text-center text-3xl font-black rounded-2xl" />
               </div>
             </div>
             <DialogFooter>
@@ -586,16 +581,6 @@ export default function LeaguesPage() {
 
       {activeLeague ? (
         <div className="space-y-8 animate-in fade-in duration-700">
-          <div className="bg-amber-50 border-2 border-dashed border-amber-200 p-6 rounded-[2.5rem] flex items-start gap-6 shadow-sm group">
-            <div className="bg-amber-100 p-3 rounded-2xl text-amber-600 shadow-inner group-hover:scale-110 transition-transform"><Sparkles className="h-6 w-6" /></div>
-            <div className="space-y-1">
-              <p className="text-sm font-black uppercase tracking-tight">Pro Deployment Tip</p>
-              <p className="text-xs font-medium text-amber-800 leading-relaxed italic">
-                Before building your season, ensure you visit the <Link href={`/leagues/registration/${activeLeague.id}`} className="text-primary font-black underline hover:text-black transition-colors">Recruit Pool</Link> to enroll teams or players via the <strong>Protocol Architect</strong>. This ensures a balanced roster for the scheduling engine.
-              </p>
-            </div>
-          </div>
-
           <Card className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-black text-white p-10 relative group">
             <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700"><ShieldCheck className="h-48 w-48" /></div>
             <div className="flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
@@ -617,9 +602,26 @@ export default function LeaguesPage() {
             </div>
           </Card>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card className="rounded-[2rem] border-none shadow-md bg-muted/20 p-6 flex items-center justify-between group">
+              <div className="flex items-center gap-4">
+                <div className="bg-white p-3 rounded-2xl shadow-sm text-primary group-hover:bg-primary group-hover:text-white transition-all"><ExternalLink className="h-5 w-5" /></div>
+                <div><p className="text-[10px] font-black uppercase tracking-widest opacity-60">Spectator Portal</p><p className="font-black text-sm uppercase">Live Standings Hub</p></div>
+              </div>
+              <Button variant="outline" size="sm" className="rounded-xl font-black uppercase text-[9px]" onClick={() => window.open(`/leagues/spectator/${activeLeague.id}`, '_blank')}>Public View</Button>
+            </Card>
+            <Card className="rounded-[2rem] border-none shadow-md bg-muted/20 p-6 flex items-center justify-between group">
+              <div className="flex items-center gap-4">
+                <div className="bg-white p-3 rounded-2xl shadow-sm text-primary group-hover:bg-primary group-hover:text-white transition-all"><ShieldAlert className="h-5 w-5" /></div>
+                <div><p className="text-[10px] font-black uppercase tracking-widest opacity-60">Scorekeeper Portal</p><p className="font-black text-sm uppercase">Direct Result Entry</p></div>
+              </div>
+              <Button variant="outline" size="sm" className="rounded-xl font-black uppercase text-[9px]" onClick={() => window.open(`/leagues/scorekeeper/${activeLeague.id}`, '_blank')}>Result Entry</Button>
+            </Card>
+          </div>
+
           <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex shadow-inner">
             <Button variant={activeTab === 'standings' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('standings')}>Standings</Button>
-            <Button variant={activeTab === 'command' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('command')}>Match Command</Button>
+            {isStaff && <Button variant={activeTab === 'command' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('command')}>Match Command</Button>}
           </div>
 
           <Tabs value={activeTab} className="mt-0">

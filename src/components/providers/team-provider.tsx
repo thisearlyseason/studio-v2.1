@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -571,15 +572,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: myChildrenRaw } = useCollection<PlayerProfile>(childrenQuery);
   const myChildren = useMemo(() => myChildrenRaw || [], [myChildrenRaw]);
 
-  /**
-   * TACTICAL FIX: Expanded householdEvents query limit to ensure high-volume squad members
-   * see all their league fixtures across their roster.
-   */
   const householdEventsQuery = useMemoFirebase(() => {
     if (!db || !firebaseUser?.uid || !teamsData || teamsData.length === 0) return null;
     const teamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
     if (teamIds.length === 0) return null;
-    // Increased slice to 30 teams to support larger org roles
     return query(collectionGroup(db, 'events'), where('teamId', 'in', teamIds.slice(0, 30)));
   }, [db, firebaseUser?.uid, teamsData]);
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
@@ -742,10 +738,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return lid; 
   }, [firebaseUser, db, activeTeam]);
   
-  /**
-   * TACTICAL FIX: Refactored individual team synchronization to correctly map league schedule to team calendars.
-   * Ensures every discrete match in a season is injected as a verifiable event for both squads.
-   */
   const updateLeagueSchedule = useCallback(async (lId: string, s: any[]) => { 
     if (!db) return; 
     const batch = writeBatch(db);
@@ -755,11 +747,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const leagueData = leagueSnap.data();
     if (!leagueData) return;
 
-    // Mapping ALL games in the schedule to BOTH participating team subcollections
     s.forEach(game => {
       const createEvent = (tid: string, myName: string, oppName: string) => {
         if (!tid) return;
-        // Unique Event ID per team ensures double headers aren't overwritten
         const eid = `lg_${lId}_${game.id}`;
         batch.set(doc(db, 'teams', tid, 'events', eid), clean({ 
           id: eid, 
@@ -832,10 +822,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const assignEntryToTeam = useCallback(async (leagueId: string, entryId: string, teamId: string | null) => { if (!db) return; await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { assigned_team_id: teamId, status: teamId ? 'assigned' : 'pending' }); }, [db]);
   const toggleRegistrationPaymentStatus = useCallback(async (leagueId: string, entryId: string, paid: boolean) => { if (!db) return; await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { payment_received: paid }); }, [db]);
   
-  /**
-   * TACTICAL FIX: Ensures that when a team is accepted into a league, its real squad ID is mapped 
-   * to the standings ledger, enabling correct schedule synchronization.
-   */
   const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined') => { 
     if (!db || !activeTeam?.id) return; 
     const batch = writeBatch(db);
@@ -845,7 +831,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
     batch.update(entryRef, { status }); 
     
-    // If it was a recruit_... placeholder, transition it to the REAL team ID
     const leagueRef = doc(db, 'leagues', contextId);
     const leagueSnap = await getDoc(leagueRef);
     const leagueData = leagueSnap.data();
@@ -897,11 +882,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const schedule = data.schedule || []; 
     const idx = schedule.findIndex((g: any) => g.id === gameId); 
     if (idx === -1) return; 
-    schedule[idx] = { ...schedule[idx], score1, score2, isCompleted: true, isDisputed: false, updatedAt: new Date().toISOString() }; 
+    
+    const game = schedule[idx];
+    schedule[idx] = { ...game, score1, score2, isCompleted: true, isDisputed: false, updatedAt: new Date().toISOString() }; 
+    
     const teams = data.teams || {};
     Object.keys(teams).forEach(id => { teams[id] = { ...teams[id], wins: 0, losses: 0, ties: 0, points: 0 }; });
+    
     const teamNamesToIds: Record<string, string> = {};
     Object.entries(teams).forEach(([id, t]: [string, any]) => { teamNamesToIds[t.teamName] = id; });
+    
     schedule.forEach((g: any) => {
       if (!g.isCompleted) return;
       const t1Id = teamNamesToIds[g.team1];
@@ -911,7 +901,33 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       else if (g.score2 > g.score1) { teams[t2Id].wins++; teams[t2Id].points += 3; teams[t1Id].losses++; }
       else { teams[t1Id].ties++; teams[t1Id].points += 1; teams[t2Id].ties++; teams[t2Id].points += 1; }
     });
-    await updateDoc(doc(db, 'leagues', leagueId), { schedule, teams }); 
+
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'leagues', leagueId), { schedule, teams }); 
+
+    // OMNI-SYNC: Inject into individual team 'games' hubs for result visibility
+    const syncToTeamHub = (tid: string, myScore: number, oppScore: number, opponentName: string) => {
+      if (!tid || tid.startsWith('manual_') || tid.startsWith('recruit_')) return;
+      const result = myScore > oppScore ? 'Win' : myScore < oppScore ? 'Loss' : 'Tie';
+      const gameRecord = clean({
+        opponent: opponentName,
+        date: game.date,
+        myScore,
+        opponentScore: oppScore,
+        result,
+        location: game.location || 'League Venue',
+        notes: `Official result from ${data.name}`,
+        leagueId,
+        leagueGameId: gameId,
+        createdAt: new Date().toISOString()
+      });
+      batch.set(doc(db, 'teams', tid, 'games', `lg_${gameId}`), gameRecord);
+    };
+
+    if (game.team1Id) syncToTeamHub(game.team1Id, score1, score2, game.team2);
+    if (game.team2Id) syncToTeamHub(game.team2Id, score2, score1, game.team1);
+
+    await batch.commit();
   }, [db]);
 
   const disputeMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, notes: string) => { if (!db) return; const snap = await getDoc(doc(db, 'teams', teamId, 'events', eventId)); if (!snap.exists()) return; const games = snap.data().tournamentGames || []; const idx = games.findIndex((g: any) => g.id === gameId); if (idx === -1) return; games[idx] = { ...games[idx], isDisputed: true, disputeNotes: notes }; await updateDoc(doc(db, 'teams', teamId, 'events', eventId), { tournamentGames: games }); }, [db]);
