@@ -1,4 +1,3 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -20,12 +19,25 @@ service cloud.firestore {
         request.auth.uid == 'wnvOuvwmoUhS5U4kdaBrZz7tGbF3' ||
         request.auth.uid == 'PtT54iDDtUML1wslbZzxjDgbrFp1' ||
         request.auth.uid == 'zGh7D5JfrFOkxhVJr79gtbzHPVC3' ||
-        request.auth.uid == 'E4EqTVTsEdfLI4rLEkMPHjeyxeJ2'
+        request.auth.uid == 'E4EqTVTsEdfLI4rLEkMPHjeyxeJ2' ||
+        request.auth.uid == 'sa2XpULy2SZxq7qn0CUqDyhH4vh1'
       );
     }
 
+    // --- PLATFORM ECONOMY ---
+    // Explicit public read for initialization stability
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    match /features/{featureId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
     // --- COLLECTION GROUP SUPPORT ---
-    // Explicit matches for "list proving" across hierarchies
+    // Firestore requires explicit match patterns to statically verify 'list' operations
     
     match /{allPaths=**}/registrationEntries/{entryId} {
       allow read, write: if isSignedIn() || isSuperAdmin();
@@ -43,7 +55,11 @@ service cloud.firestore {
       allow read, write: if isSignedIn() || isSuperAdmin();
     }
 
-    // --- TOP LEVEL COLLECTIONS ---
+    match /{allPaths=**}/files/{fileId} {
+      allow read, write: if isSignedIn() || isSuperAdmin();
+    }
+
+    // --- TOP LEVEL HIERARCHIES ---
 
     match /users/{userId} {
       allow read, write: if isOwner(userId) || isSuperAdmin();
@@ -78,16 +94,6 @@ service cloud.firestore {
       match /{allPaths=**} {
         allow read, write: if isSignedIn() || isSuperAdmin();
       }
-    }
-
-    match /plans/{planId} {
-      allow read: if true;
-      allow write: if isSuperAdmin();
-    }
-
-    match /features/{featureId} {
-      allow read: if true;
-      allow write: if isSuperAdmin();
     }
 
     match /subscriptions/{userId} {

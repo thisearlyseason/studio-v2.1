@@ -27,6 +27,7 @@ import { Megaphone, Bell, History, Clock, X, Lock, Users, ShieldAlert, Graduatio
 import { useTeam, TeamAlert } from '@/components/providers/team-provider';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
 
 /**
  * Handles the automatic one-time popup for high priority alerts

@@ -1,4 +1,3 @@
-
 "use client";
 
 import Shell from '@/components/layout/Shell';
@@ -50,7 +49,6 @@ function DemoSeedWrapper({
       try {
         if (auth.currentUser) {
           await seedGuestDemoTeam(db, user.uid, demoPlanId);
-          // Small delay to allow Firestore cache to settle
           setTimeout(() => {
             window.location.replace('/dashboard');
           }, 1500);
@@ -80,9 +78,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => { 
-    setMounted(true); 
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (!mounted || !isAuthResolved || isDemoInitializing) return;
@@ -135,11 +131,6 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     return `${Math.floor(totalSeconds / 60)}:${(totalSeconds % 60).toString().padStart(2, '0')}`;
   };
 
-  /**
-   * TACTICAL HYDRATION GUARD: 
-   * We implement a strictly invariant loading message during the initial hydration phase.
-   * Discrepancies between server and client rendered text cause Next.js to regenerate the tree.
-   */
   const isLoadingState = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile;
 
   if (isLoadingState) {
