@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -581,7 +580,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
   const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
 
-  const isSuperAdmin = useMemo(() => userProfile?.email === 'thisearlyseason@gmail.com', [userProfile?.email]);
+  /**
+   * AUTHORITATIVE SUPER ADMIN RESOLUTION:
+   * Maps specific hardcoded UIDs to master command privileges.
+   */
+  const isSuperAdmin = useMemo(() => {
+    if (!firebaseUser?.uid) return false;
+    const superAdminUids = [
+      '3Dybqi6vkHNUQQM66jiEZWfmwsW2',
+      'wnvOuvwmoUhS5U4kdaBrZz7tGbF3',
+      'PtT54iDDtUML1wslbZzxjDgbrFp1',
+      'zGh7D5JfrFOkxhVJr79gtbzHPVC3'
+    ];
+    return userProfile?.email === 'thisearlyseason@gmail.com' || superAdminUids.includes(firebaseUser.uid);
+  }, [userProfile?.email, firebaseUser?.uid]);
 
   const isStaff = useMemo(() => {
     if (!firebaseUser) return false;
@@ -862,6 +874,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const manageSubscription = useCallback(async () => { setIsPaywallOpen(true); }, []);
   const purchasePro = useCallback(() => { setIsPaywallOpen(true); }, []);
   const addLeaguePayment = useCallback(async (leagueId: string, teamId: string, data: any) => { if (!db) return; await addDoc(collection(db, 'leagues', leagueId, 'payments'), clean({ ...data, teamId, createdAt: new Date().toISOString() })); await updateDoc(doc(db, 'leagues', leagueId), { [`finances.${teamId}.totalPaid`]: increment(data.amount) }); }, [db]);
+  const useTeamData = useCallback(() => { return activeTeam; }, [activeTeam]);
   const updateLeagueGlobalFees = useCallback(async (leagueId: string, fees: any) => { if (db) await updateDoc(doc(db, 'leagues', leagueId), { globalFees: clean(fees) }); }, [db]);
 
   const contextValue = useMemo(() => ({

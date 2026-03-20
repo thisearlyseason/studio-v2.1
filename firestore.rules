@@ -23,19 +23,20 @@ service cloud.firestore {
     }
 
     // --- GLOBAL CATALOG ---
-    // Public read for economic initialization
-    match /plans/{id} {
+    // Public read for economic initialization and provable list operations
+    match /plans/{allPaths=**} {
       allow read: if true;
       allow write: if isSuperAdmin();
     }
     
-    match /features/{id} {
+    match /features/{allPaths=**} {
       allow read: if true;
       allow write: if isSuperAdmin();
     }
 
     // --- PROVABLE HIERARCHIES ---
     // Recursive wildcard patterns satisfy Firestore "List Proving" requirements
+    // for both top-level and subcollection queries.
     
     match /leagues/{leagueId}/{allPaths=**} {
       allow read, write: if isSignedIn();
@@ -58,7 +59,7 @@ service cloud.firestore {
     }
 
     // --- COLLECTION GROUP ACCESS ---
-    // Satisfies aggregated queries for Club Hub and Family Hub
+    // Satisfies aggregated queries across different organizational units
     match /{path=**}/registrationEntries/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/members/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/events/{id} { allow read, write: if isSignedIn(); }
