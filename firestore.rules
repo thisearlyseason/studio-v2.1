@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -21,7 +22,7 @@ service cloud.firestore {
     }
 
     // --- GLOBAL CATALOG ---
-    // Publicly readable for pricing and feature selection
+    // Explicitly allow list/get for pricing and feature logic
     match /plans/{planId} {
       allow read: if true;
       allow write: if isSuperAdmin();
@@ -33,9 +34,22 @@ service cloud.firestore {
     }
 
     // --- LEAGUES HIERARCHY ---
+    // Provable flattening for list operations
     match /leagues/{leagueId} {
       allow read, write: if isSignedIn(); 
       
+      match /registrationEntries/{entryId} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /registration/{configId} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /payments/{paymentId} {
+        allow read, write: if isSignedIn();
+      }
+
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
@@ -45,6 +59,28 @@ service cloud.firestore {
     match /teams/{teamId} {
       allow read, write: if isSignedIn(); 
       
+      match /members/{userId} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /alerts/{alertId} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /feedPosts/{postId} {
+        allow read, write: if isSignedIn();
+        match /comments/{commentId} {
+          allow read, write: if isSignedIn();
+        }
+      }
+
+      match /events/{eventId} {
+        allow read, write: if isSignedIn();
+        match /registrations/{regId} {
+          allow read, write: if isSignedIn();
+        }
+      }
+
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
@@ -54,6 +90,10 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if isOwner(userId) || isSuperAdmin();
       
+      match /teamMemberships/{teamId} {
+        allow read, write: if isOwner(userId) || isSuperAdmin();
+      }
+
       match /{allPaths=**} {
         allow read, write: if isOwner(userId) || isSuperAdmin();
       }
@@ -75,6 +115,9 @@ service cloud.firestore {
     // --- FACILITIES ---
     match /facilities/{facilityId} {
       allow read, write: if isSignedIn();
+      match /fields/{fieldId} {
+        allow read, write: if isSignedIn();
+      }
       match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
@@ -87,7 +130,7 @@ service cloud.firestore {
     }
 
     // --- COLLECTION GROUP ACCESS ---
-    // Required for cross-squad aggregation in Dashboard and Club hubs
+    // Provable wildcard matches for cross-squad aggregation
     match /{path=**}/registrationEntries/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/members/{id} { allow read, write: if isSignedIn(); }
     match /{path=**}/events/{id} { allow read, write: if isSignedIn(); }

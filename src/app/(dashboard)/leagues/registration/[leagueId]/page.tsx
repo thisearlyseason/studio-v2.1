@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
@@ -81,7 +82,6 @@ export default function LeagueRegistrationAdminPage() {
 
   const entriesQuery = useMemoFirebase(() => {
     if (!db || !leagueId || !isAuthResolved) return null;
-    // TACTICAL GUARD: Explicit collection query for high-performance listing
     return query(
       collection(db, 'leagues', leagueId as string, 'registrationEntries'), 
       where('protocol_id', '==', configId),
