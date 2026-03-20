@@ -137,7 +137,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   /**
    * TACTICAL HYDRATION GUARD: 
    * Ensure that the initial server-rendered HTML matches the client-side hydration.
-   * Dynamic loading text is only shown after the component has mounted.
+   * Loading text is invariant until component has successfully mounted on client.
    */
   const showLoading = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile;
 
@@ -160,7 +160,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           </div>
           <div className="text-center space-y-2">
             <p className="text-lg font-black uppercase tracking-widest text-primary">
-              {!mounted ? "Initializing..." : (isDemoInitializing ? "Synchronizing Hub..." : "Authenticating...")}
+              {mounted ? (isDemoInitializing ? "Synchronizing Hub..." : "Authenticating Hub...") : "Initializing..."}
             </p>
           </div>
         </div>

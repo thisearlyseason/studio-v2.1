@@ -25,7 +25,7 @@ ai.defineModel(
       .map((m) => `${m.role.toUpperCase()}: ${m.content.map((c) => c.text).join('')}`)
       .join('\n\n');
 
-    // Call the Straico generation helper
+    // Call the Straico generation helper using anthropic/claude-sonnet-4.5
     const responseText = await straicoGenerate(prompt);
 
     return {
