@@ -1,4 +1,3 @@
-
 'use client';
 
 import { 
@@ -101,6 +100,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     teamLogoUrl: `https://picsum.photos/seed/${teamId}logo/200/200`
   }));
 
+  // Synchronize team memberships under the user's explicit subcollection
   batch.set(doc(db, 'users', userId, 'teamMemberships', teamId), clean({
     teamId, name: isProTier ? 'Elite Demo Squad' : 'Grassroots Demo', role, isPro: isProTier, planId: actualPlanId, isDemo: true, joinedAt: now
   }));
@@ -108,11 +108,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   batch.set(doc(db, 'teams', teamId, 'members', userId), clean({
     id: userId, userId, teamId, playerId: `p_${userId}`, name: `Guest ${pos}`, role, position: pos, jersey: '22',
     joinedAt: now, isDemo: true, avatar: `https://picsum.photos/seed/${userId}/150/150`
-  }));
-
-  // Explicitly allow team memberships at root for rules satisfaction
-  batch.set(doc(db, 'team_memberships', `${teamId}_${userId}`), clean({
-    id: `${teamId}_${userId}`, teamId, userId, role, joinedAt: now
   }));
 
   const data = GET_DEMO_DATA(teamId, userId);
