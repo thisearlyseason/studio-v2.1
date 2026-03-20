@@ -26,7 +26,9 @@ import {
   Calendar as CalendarIcon,
   Trash2,
   Info,
-  ArrowRight
+  ArrowRight,
+  Settings,
+  Timer
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -112,7 +114,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
 
   const handleGenerate = async () => {
     if (!config.startDate || !config.selectedFields.length || !Object.keys(league.teams || {}).length) {
-      toast({ title: "Config Required", variant: "destructive" });
+      toast({ title: "Config Required", description: "Define timeline, fields, and teams first.", variant: "destructive" });
       return;
     }
     setIsProcessing(true);
@@ -133,7 +135,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
       });
       await updateLeagueSchedule(league.id, schedule);
       onOpenChange(false);
-      toast({ title: "Season Deployed" });
+      toast({ title: "Season Deployed", description: `Synchronized ${schedule.length} matches to squad calendars.` });
     } finally {
       setIsProcessing(false);
     }
@@ -158,47 +160,122 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
       <DialogContent className="sm:max-w-5xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
         <DialogTitle className="sr-only">Season Architect</DialogTitle>
         <div className="h-2 bg-primary w-full" />
-        <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
+        <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
+          <DialogHeader>
+            <div className="flex items-center gap-4 mb-2">
+              <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Settings className="h-6 w-6" /></div>
+              <div>
+                <DialogTitle className="text-3xl font-black uppercase tracking-tight">Season Architect</DialogTitle>
+                <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Precision League Deployment Engine</DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
             <div className="lg:col-span-7 space-y-10">
               <section className="space-y-6">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Timeline</h3>
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Timeline & Availability</h3>
                 <div className="grid grid-cols-2 gap-6">
-                  <Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2" />
-                  <Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2" />
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Season Start</Label>
+                    <Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 font-black" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Season End</Label>
+                    <Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 font-black" />
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {DAYS_OF_WEEK.map(day => (
-                    <button key={day.id} onClick={() => toggleDay(day.id)} className={cn("h-10 px-4 rounded-xl font-black text-[10px] uppercase border-2", config.playDays.includes(day.id) ? "bg-primary text-white" : "bg-white text-muted-foreground")}>{day.label}</button>
-                  ))}
+                <div className="space-y-3">
+                  <Label className="text-[10px] font-black uppercase ml-1">Active Play Days</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS_OF_WEEK.map(day => (
+                      <button 
+                        key={day.id} 
+                        onClick={() => toggleDay(day.id)} 
+                        className={cn(
+                          "h-10 px-4 rounded-xl font-black text-[10px] uppercase border-2 transition-all", 
+                          config.playDays.includes(day.id) ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" : "bg-white text-muted-foreground hover:border-primary/20"
+                        )}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </section>
+
               <section className="space-y-6">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Venue Pool</h3>
-                <ScrollArea className="h-64 border-2 rounded-[2rem] bg-muted/5 p-4">
-                  {facilities?.map(f => (
-                    <div key={f.id} className="space-y-3 mb-6">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Execution Parameters</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Daily Start</Label>
+                    <Input type="time" value={config.startTime} onChange={e => setConfig({...config, startTime: e.target.value})} className="h-12 border-2 font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Daily End</Label>
+                    <Input type="time" value={config.endTime} onChange={e => setConfig({...config, endTime: e.target.value})} className="h-12 border-2 font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Break (Min)</Label>
+                    <Input type="number" value={config.breakLength} onChange={e => setConfig({...config, breakLength: e.target.value})} className="h-12 border-2 font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Match Length</Label>
+                    <Input type="number" value={config.gameLength} onChange={e => setConfig({...config, gameLength: e.target.value})} className="h-12 border-2 font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Games/Team</Label>
+                    <Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2 font-black text-primary" />
+                  </div>
+                  <div className="flex flex-col justify-center gap-2 pt-4">
+                    <Label className="text-[10px] font-black uppercase ml-1">Double Headers</Label>
+                    <Switch checked={config.doubleHeaders} onCheckedChange={v => setConfig({...config, doubleHeaders: v})} />
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-6">
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Venue Allocation</h3>
+                <ScrollArea className="h-64 border-2 rounded-[2.5rem] bg-muted/5 p-6 shadow-inner">
+                  {facilities?.length ? facilities.map(f => (
+                    <div key={f.id} className="space-y-4 mb-8 last:mb-0">
                       <div className="flex items-center gap-3 px-2">
                         <Building className="h-4 w-4 text-primary" />
                         <span className="text-xs font-black uppercase">{f.name}</span>
                       </div>
                       <FacilityFieldLoader facilityId={f.id} selectedFields={config.selectedFields} onToggleField={toggleField} />
                     </div>
-                  ))}
+                  )) : (
+                    <div className="py-12 text-center opacity-30 italic text-xs uppercase font-black">No organization facilities found.</div>
+                  )}
                 </ScrollArea>
               </section>
             </div>
-            <aside className="lg:col-span-5 bg-muted/20 rounded-[2.5rem] p-6">
-              <div className="flex items-center justify-center gap-3 mb-6">
-                <CalendarIcon className="h-5 w-5 text-primary" />
-                <p className="text-[10px] font-black uppercase text-primary">Blackout Dates</p>
+
+            <aside className="lg:col-span-5 space-y-8">
+              <div className="bg-black text-white rounded-[2.5rem] p-8 space-y-6 relative overflow-hidden group">
+                <CalendarDays className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12" />
+                <div className="relative z-10 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-primary p-2 rounded-xl"><CalendarIcon className="h-4 w-4" /></div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-primary">Blackout Calendar</p>
+                  </div>
+                  <p className="text-[10px] font-medium text-white/60 leading-relaxed italic">Select dates where no league matches should be scheduled (holidays, venue maintenance).</p>
+                  <Calendar mode="multiple" selected={config.blackoutDates} onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})} />
+                </div>
               </div>
-              <Calendar mode="multiple" selected={config.blackoutDates} onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})} />
+
+              <div className="bg-primary/5 p-6 rounded-3xl border-2 border-dashed border-primary/20 space-y-4">
+                <div className="flex items-center gap-3 text-primary"><Info className="h-4 w-4" /><h4 className="text-[10px] font-black uppercase tracking-widest">Balanced Distribution</h4></div>
+                <p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">The architect uses a Round-Robin algorithm to ensure every squad plays an equal amount of home/guest matches regularly across the season timeline.</p>
+              </div>
             </aside>
           </div>
-          <DialogFooter>
-            <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleGenerate} disabled={isProcessing}>
-              {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Seasonal Pipeline"}
+
+          <DialogFooter className="pt-6 border-t">
+            <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleGenerate} disabled={isProcessing}>
+              {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : <Sparkles className="h-6 w-6 mr-3" />}
+              Deploy Seasonal Pipeline
             </Button>
           </DialogFooter>
         </div>
@@ -236,7 +313,7 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
         <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-left">
+              <table className="w-full text-left text-foreground">
                 <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-8 py-5">Date/Time</th><th className="px-4 py-5">Matchup</th><th className="px-8 py-5 text-right">Status</th></tr></thead>
                 <tbody className="divide-y">{(schedule || []).map(game => (
                   <tr key={game.id} className="hover:bg-muted/5 transition-colors group">
@@ -270,7 +347,7 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
           <Card className="lg:col-span-5 rounded-[2.5rem] border-none shadow-xl bg-white p-6"><Calendar mode="single" selected={selectedDate} onSelect={(d) => d && setSelectedDate(d)} /></Card>
           <div className="lg:col-span-7 space-y-4">
             {gamesOnSelectedDate.map(game => (
-              <Card key={game.id} className="rounded-2xl border-none shadow-sm p-5 flex items-center justify-between bg-white" onClick={() => isStaff && setEditingGame(game)}>
+              <Card key={game.id} className="rounded-2xl border-none shadow-sm p-5 flex items-center justify-between bg-white text-foreground" onClick={() => isStaff && setEditingGame(game)}>
                 <div className="flex items-center gap-6">
                   <div className="w-12 h-12 rounded-xl bg-primary/5 flex flex-col items-center justify-center border shrink-0">
                     <Clock className="h-4 w-4 text-primary" /><span className="text-[8px] font-black uppercase text-primary">{game.time}</span>
@@ -283,11 +360,14 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
                 <ChevronRight className="h-4 w-4 opacity-20" />
               </Card>
             ))}
+            {gamesOnSelectedDate.length === 0 && (
+              <div className="py-20 text-center opacity-20 italic font-black uppercase text-xs text-foreground">Clear Schedule</div>
+            )}
           </div>
         </div>
       )}
       <Dialog open={!!editingGame} onOpenChange={(o) => !o && setEditingGame(null)}>
-        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white text-foreground">
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 space-y-8">
             <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Result Verification</DialogTitle></DialogHeader>
@@ -468,10 +548,10 @@ export default function LeaguesPage() {
           </Tabs>
         </div>
       ) : (
-        <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6">
+        <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6 text-foreground">
           <div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl"><Shield className="h-10 w-10 text-primary opacity-20" /></div>
           <div className="space-y-2">
-            <h3 className="text-2xl font-black uppercase text-foreground">No Competitive Enrollment</h3>
+            <h3 className="text-2xl font-black uppercase">No Competitive Enrollment</h3>
             <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-w-sm mx-auto leading-relaxed">Initialize your own league architect to begin the competitive season.</p>
           </div>
           {isStaff && (
@@ -481,7 +561,7 @@ export default function LeaguesPage() {
       )}
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-md p-0 overflow-hidden bg-white">
+        <DialogContent className="rounded-[2.5rem] sm:max-w-md p-0 overflow-hidden bg-white text-foreground">
           <div className="h-2 bg-primary w-full" />
           <div className="p-10 space-y-8">
             <DialogHeader><DialogTitle className="text-3xl font-black uppercase">League Architect</DialogTitle></DialogHeader>
@@ -500,7 +580,7 @@ export default function LeaguesPage() {
           <div className="h-2 bg-black w-full" />
           <div className="p-8 lg:p-10 space-y-8">
             <DialogHeader>
-              <div className="flex items-center gap-4 mb-2">
+              <div className="flex items-center gap-3 mb-2">
                 <div className="bg-primary/5 p-3 rounded-2xl text-primary"><ShieldCheck className="h-6 w-6" /></div>
                 <div>
                   <DialogTitle className="text-2xl font-black uppercase tracking-tight leading-none">Sync Squad Info</DialogTitle>

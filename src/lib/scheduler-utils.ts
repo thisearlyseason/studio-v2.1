@@ -1,4 +1,3 @@
-
 /**
  * @fileOverview Core logic for the Elite Scheduling Engine.
  * Hardened for balanced distribution and multi-venue resource mapping.
@@ -113,7 +112,7 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
 
   const games: TournamentGame[] = [];
   const startD = new Date(startDate);
-  const endD = endDate ? new Date(endDate) : addDays(startD, 120); // Default 4 month window if not provided
+  const endD = endDate ? new Date(endDate) : addDays(startD, 120); // Default 4 month window
   
   // 1. Generate Match Pool (Balanced Round-Robin)
   const roundRobin: [string, string][] = [];
@@ -123,20 +122,25 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
     }
   }
 
-  const totalRequiredMatches = Math.floor((teams.length * gamesPerTeam) / 2);
+  // If double headers are on, we need to ensure each team plays each other in pairs (Home/Guest)
+  const totalRequiredMatchesPerTeam = gamesPerTeam;
+  const totalRequiredMatches = Math.floor((teams.length * totalRequiredMatchesPerTeam) / 2);
   const matchPool: [string, string][] = [];
   
   let rrIdx = 0;
   while (matchPool.length < totalRequiredMatches) {
     const baseMatch = roundRobin[rrIdx % roundRobin.length];
-    const isReverseMatch = Math.floor(rrIdx / roundRobin.length) % 2 === 1;
+    const cycle = Math.floor(rrIdx / roundRobin.length);
+    const isReverse = cycle % 2 === 1;
     
-    // Switch home/visitor logic
-    if (doubleHeaders || isReverseMatch) {
+    // If doubleHeaders is true, we want to alternate roles frequently
+    // If not, we still alternate roles each time we go through the round robin
+    if (isReverse) {
       matchPool.push([baseMatch[1], baseMatch[0]]);
     } else {
       matchPool.push([baseMatch[0], baseMatch[1]]);
     }
+    
     rrIdx++;
   }
 
@@ -169,7 +173,7 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
   if (availableSlots.length === 0 || matchPool.length === 0) return [];
 
   // 3. Distribution Strategy (Spreading games regularly across the season)
-  // We use a step to ensure we don't bunch all games at the start of the season
+  // Step ensures games are distributed across the available time window evenly
   const step = Math.max(1, Math.floor(availableSlots.length / matchPool.length));
 
   for (let i = 0; i < matchPool.length; i++) {
