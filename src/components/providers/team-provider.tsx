@@ -582,7 +582,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   /**
    * AUTHORITATIVE SUPER ADMIN RESOLUTION:
-   * Hardened to identify master command privileges even before full profile sync.
+   * Tactical identification of master command privileges.
    */
   const isSuperAdmin = useMemo(() => {
     if (!firebaseUser?.uid) return false;

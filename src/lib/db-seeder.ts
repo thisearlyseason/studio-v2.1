@@ -67,6 +67,7 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
 
 /**
  * HIGH-SPEED ATOMIC SEEDER
+ * Corrected to avoid unauthorized global collection writes.
  */
 export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string) {
   const isParentDemo = planId === 'parent_demo';

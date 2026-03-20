@@ -136,7 +136,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 
   /**
    * TACTICAL HYDRATION GUARD: 
-   * loading UI text remains static during the initial hydration frame to prevent Next.js failures.
+   * loading UI text remains strictly invariant during the initial hydration frame to prevent Next.js failures.
    */
   const showLoading = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile;
 

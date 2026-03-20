@@ -15,15 +15,17 @@ service cloud.firestore {
     function isSuperAdmin() {
       return isSignedIn() && (
         request.auth.token.email == 'thisearlyseason@gmail.com' || 
-        request.auth.uid == '3Dybqi6vkHNUQQM66jiEZWfmwsW2' ||
-        request.auth.uid == 'wnvOuvwmoUhS5U4kdaBrZz7tGbF3' ||
-        request.auth.uid == 'PtT54iDDtUML1wslbZzxjDgbrFp1' ||
-        request.auth.uid == 'zGh7D5JfrFOkxhVJr79gtbzHPVC3'
+        request.auth.uid in [
+          '3Dybqi6vkHNUQQM66jiEZWfmwsW2',
+          'wnvOuvwmoUhS5U4kdaBrZz7tGbF3',
+          'PtT54iDDtUML1wslbZzxjDgbrFp1',
+          'zGh7D5JfrFOkxhVJr79gtbzHPVC3'
+        ]
       );
     }
 
     // --- GLOBAL CATALOG ---
-    // Public read enabled for economic initialization and provable list operations
+    // Public read enabled for immediate platform initialization
     match /plans/{planId} {
       allow read: if true;
       allow write: if isSuperAdmin();
@@ -35,89 +37,42 @@ service cloud.firestore {
     }
 
     // --- PROVABLE HIERARCHIES ---
-    // Explicit matches for subcollections satisfy Firestore "List Proving" requirements
+    // Using flattened, recursive wildcard matches to satisfy "List Proving" requirements
     
     match /leagues/{leagueId} {
       allow read, write: if isSignedIn();
-      
-      match /registrationEntries/{entryId} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /registration/{configId} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /payments/{paymentId} {
+      match /{allPaths=**} {
         allow read, write: if isSignedIn();
       }
     }
     
     match /teams/{teamId} {
       allow read, write: if isSignedIn();
-      
-      // Explicit subcollection matching for provable list operations
-      match /members/{memberId} { allow read, write: if isSignedIn(); }
-      match /events/{eventId} { allow read, write: if isSignedIn(); }
-      match /games/{gameId} { allow read, write: if isSignedIn(); }
-      match /drills/{drillId} { allow read, write: if isSignedIn(); }
-      match /files/{fileId} { allow read, write: if isSignedIn(); }
-      match /incidents/{incidentId} { allow read, write: if isSignedIn(); }
-      match /feedPosts/{postId} { 
-        allow read, write: if isSignedIn(); 
-        match /comments/{commentId} { allow read, write: if isSignedIn(); }
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
       }
-      match /groupChats/{chatId} { 
-        allow read, write: if isSignedIn(); 
-        match /messages/{messageId} { allow read, write: if isSignedIn(); }
-      }
-      match /alerts/{alertId} { allow read, write: if isSignedIn(); }
-      match /volunteers/{oppId} { allow read, write: if isSignedIn(); }
-      match /fundraising/{fundId} { 
-        allow read, write: if isSignedIn(); 
-        match /donations/{donId} { allow read, write: if isSignedIn(); }
-      }
-      match /equipment/{itemId} { allow read, write: if isSignedIn(); }
     }
     
     match /users/{userId} {
       allow read, write: if isOwner(userId) || isSuperAdmin();
-      
-      match /teamMemberships/{membershipId} {
+      match /{allPaths=**} {
         allow read, write: if isOwner(userId) || isSuperAdmin();
-      }
-      
-      match /hiddenChats/{chatId} {
-        allow read, write: if isOwner(userId);
       }
     }
     
     match /players/{playerId} {
       allow read, write: if isSignedIn();
-      
-      match /recruitingProfile/{docId} { allow read, write: if isSignedIn(); }
-      match /evaluations/{evalId} { allow read, write: if isSignedIn(); }
-      match /videos/{videoId} { allow read, write: if isSignedIn(); }
-      match /recruitingContact/{docId} { allow read, write: if isSignedIn(); }
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
+      }
     }
 
     match /facilities/{facilityId} {
       allow read, write: if isSignedIn();
-      match /fields/{fieldId} { allow read, write: if isSignedIn(); }
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn();
+      }
     }
-
-    // --- COLLECTION GROUP ACCESS ---
-    // Authorized for aggregated coordination views
-    match /{path=**}/registrationEntries/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/members/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/events/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/signatures/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/files/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/incidents/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/feedPosts/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/teamMemberships/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/groupChats/{id} { allow read, write: if isSignedIn(); }
-    match /{path=**}/alerts/{id} { allow read, write: if isSignedIn(); }
 
     // --- GLOBAL DEFAULT DENY ---
     match /{path=**} {
