@@ -27,7 +27,7 @@ import { Megaphone, Bell, History, Clock, X, Lock, Users, ShieldAlert, Graduatio
 import { useTeam, TeamAlert } from '@/components/providers/team-provider';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 
 /**
  * Handles the automatic one-time popup for high priority alerts
@@ -257,6 +257,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
 
 export function CreateAlertButton() {
   const { createAlert, activeTeam, isSuperAdmin, purchasePro } = useTeam();
+  const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
@@ -316,7 +317,7 @@ export function CreateAlertButton() {
                 <SelectTrigger className="h-14 rounded-2xl border-2 font-black shadow-inner focus:ring-primary/20">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="rounded-2xl border-2">
+                <SelectContent className="rounded-xl border-2">
                   <SelectItem value="everyone" className="font-black uppercase text-[10px] py-3"><div className="flex items-center gap-3 text-foreground"><Users className="h-4 w-4 text-primary" /> Global Roster</div></SelectItem>
                   <SelectItem value="coaches" className="font-black uppercase text-[10px] py-3"><div className="flex items-center gap-3 text-foreground"><Shield className="h-4 w-4 text-primary" /> Command Staff Only</div></SelectItem>
                   <SelectItem value="players" className="font-black uppercase text-[10px] py-3"><div className="flex items-center gap-3 text-foreground"><GraduationCap className="h-4 w-4 text-primary" /> Athletes Only</div></SelectItem>

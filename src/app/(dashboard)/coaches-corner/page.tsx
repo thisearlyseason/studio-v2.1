@@ -42,7 +42,8 @@ import {
   AlertCircle,
   Activity,
   History,
-  ClipboardList
+  ClipboardList,
+  X
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -288,10 +289,83 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   );
 }
 
+function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incident: TeamIncident | null, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
+  if (!incident) return null;
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-[3.5rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-2xl bg-white text-foreground">
+        <DialogTitle className="sr-only">Incident Audit: {incident.title}</DialogTitle>
+        <div className="h-2 bg-primary w-full" />
+        <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
+          <DialogHeader>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><ShieldAlert className="h-6 w-6" /></div>
+                <div className="min-w-0">
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight truncate">{incident.title}</DialogTitle>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{incident.date} • {incident.location}</p>
+                </div>
+              </div>
+              <Badge className={cn(
+                "border-none font-black text-[10px] uppercase px-4 h-7 shrink-0",
+                incident.emergencyServicesCalled ? "bg-red-600 text-white shadow-lg shadow-red-600/20" : "bg-muted text-muted-foreground"
+              )}>
+                {incident.emergencyServicesCalled ? 'Critical Alert' : 'Routine Log'}
+              </Badge>
+            </div>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+            <div className="space-y-8">
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary ml-1">Factual Narrative</h4>
+                <div className="bg-muted/30 p-6 rounded-[2rem] border-2 border-dashed">
+                  <p className="text-sm font-medium leading-relaxed italic text-foreground/80 leading-relaxed">"{incident.description}"</p>
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary ml-1">Witness Roster</h4>
+                <div className="p-5 bg-white rounded-2xl border-2 font-bold text-xs leading-relaxed text-foreground">
+                  {incident.witnesses || 'No witnesses recorded in the official log.'}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-8">
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary ml-1">Tactical Actions Taken</h4>
+                <div className="bg-primary/5 p-6 rounded-2xl border-2 border-primary/10 shadow-inner">
+                  <p className="text-sm font-bold leading-relaxed text-foreground/80">{incident.actionsTaken || 'Standard safety protocols applied.'}</p>
+                </div>
+              </div>
+
+              <div className="p-6 bg-black text-white rounded-[2.5rem] space-y-3 relative overflow-hidden group">
+                <ShieldCheck className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
+                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Compliance Status</p>
+                <p className="text-[11px] font-medium leading-relaxed italic text-white/60 relative z-10">
+                  This report is permanently archived in the institutional vault for organizational safety auditing and insurance verification purposes.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-4">
+            <Button variant="outline" className="w-full h-14 rounded-2xl border-2 font-black uppercase text-xs tracking-widest transition-all hover:bg-muted" onClick={() => onOpenChange(false)}>
+              Close Audit Detail
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function SafetyHub() {
   const { activeTeam, isStaff, addIncident, db } = useTeam();
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [viewingIncident, setViewingIncident] = useState<TeamIncident | null>(null);
   
   const [form, setForm] = useState({
     title: '',
@@ -399,7 +473,11 @@ function SafetyHub() {
             </thead>
             <tbody className="divide-y">
               {incidents?.map((inc) => (
-                <tr key={inc.id} className="hover:bg-primary/5 transition-colors group cursor-pointer">
+                <tr 
+                  key={inc.id} 
+                  className="hover:bg-primary/5 transition-colors group cursor-pointer"
+                  onClick={() => setViewingIncident(inc)}
+                >
                   <td className="px-8 py-6">
                     <p className="font-black text-sm uppercase tracking-tight text-foreground">{inc.title}</p>
                     <p className="text-[9px] font-bold text-muted-foreground uppercase mt-0.5 line-clamp-1 italic">"{inc.description}"</p>
@@ -484,6 +562,8 @@ function SafetyHub() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <IncidentDetailDialog incident={viewingIncident} isOpen={!!viewingIncident} onOpenChange={(o) => !o && setViewingIncident(null)} />
     </div>
   );
 }
