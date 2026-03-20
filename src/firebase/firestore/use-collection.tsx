@@ -60,6 +60,7 @@ export function useCollection<T = any>(
     let unsubscribeSnapshot: (() => void) | null = null;
 
     // TACTICAL GUARD: Explicitly wait for authentication identity resolution.
+    // This ensures that request.auth is populated in the rules engine.
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       // 1. Cleanup existing listener if any
       if (unsubscribeSnapshot) {

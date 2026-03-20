@@ -14,127 +14,41 @@ service cloud.firestore {
 
     // --- INSTITUTIONAL HIERARCHY ---
     
-    // Leagues Hub - Explicit matching for List Proving
-    match /leagues/{leagueId} {
+    // Leagues Hub - Simplified for Provable Listing
+    match /leagues/{allPaths=**} {
       allow read, write: if isSignedIn();
-      
-      match /registrationEntries/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /registration/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /members/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /events/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /payments/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /fundraising/{id} {
-        allow read, write: if isSignedIn();
-      }
     }
 
-    // Teams Hub - Explicit matching for List Proving
-    match /teams/{teamId} {
+    // Teams Hub - Simplified for Provable Listing
+    match /teams/{allPaths=**} {
       allow read, write: if isSignedIn();
-      
-      match /members/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /events/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /feedPosts/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /groupChats/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /incidents/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /files/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /drills/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /equipment/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /volunteers/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /fundraising/{id} {
-        allow read, write: if isSignedIn();
-      }
-      
-      match /documents/{id} {
-        allow read, write: if isSignedIn();
-      }
     }
-
-    // Recursive fallback for nested structures
-    match /leagues/{leagueId}/{allPaths=**} { allow read, write: if isSignedIn(); }
-    match /teams/{teamId}/{allPaths=**} { allow read, write: if isSignedIn(); }
 
     // --- PERSONAL INFRASTRUCTURE ---
     
     match /userProfiles/{userId} {
       allow read, write: if isOwner(userId);
-      match /{allPaths=**} {
-        allow read, write: if isOwner(userId);
-      }
+    }
+    match /userProfiles/{userId}/{allPaths=**} {
+      allow read, write: if isOwner(userId);
     }
 
     match /users/{userId} {
       allow read, write: if isOwner(userId);
-      
-      match /teamMemberships/{id} {
-        allow read, write: if isOwner(userId);
-      }
-      
-      match /hiddenChats/{id} {
-        allow read, write: if isOwner(userId);
-      }
-      
-      match /{allPaths=**} {
-        allow read, write: if isOwner(userId);
-      }
+    }
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if isOwner(userId);
     }
 
     // --- GLOBAL REPOSITORIES ---
 
-    match /plans/{planId} { allow read: if true; allow write: if isSignedIn(); }
-    match /features/{featureId} { allow read: if true; allow write: if isSignedIn(); }
-    match /facilities/{facilityId} { 
-      allow read, write: if isSignedIn(); 
-      match /{allPaths=**} { allow read, write: if isSignedIn(); }
-    }
-    match /players/{playerId} { 
-      allow read, write: if isSignedIn(); 
-      match /{allPaths=**} { allow read, write: if isSignedIn(); }
-    }
-    match /team_memberships/{membershipId} { allow read, write: if isSignedIn(); }
-    match /subscriptions/{subId} { allow read, write: if isSignedIn(); }
+    match /plans/{allPaths=**} { allow read: if true; allow write: if isSignedIn(); }
+    match /features/{allPaths=**} { allow read: if true; allow write: if isSignedIn(); }
+    match /facilities/{allPaths=**} { allow read, write: if isSignedIn(); }
+    match /players/{allPaths=**} { allow read, write: if isSignedIn(); }
+    
+    match /team_memberships/{allPaths=**} { allow read, write: if isSignedIn(); }
+    match /subscriptions/{allPaths=**} { allow read, write: if isSignedIn(); }
 
     // --- COLLECTION GROUPS ---
     match /{path=**}/registrationEntries/{id} { allow read, write: if isSignedIn(); }

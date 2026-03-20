@@ -530,7 +530,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!firebaseUser || !db) { setUserProfile(null); return; }
     return onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
-      if (snap.exists()) setUserProfile({ ...snap.data(), id: snap.id } as UserProfile);
+      if (snap.exists()) {
+        const data = snap.data();
+        setUserProfile({ 
+          ...data, 
+          id: snap.id,
+          name: data.fullName || data.name || 'User',
+          avatar: data.avatarUrl || data.avatar || `https://picsum.photos/seed/${snap.id}/150/150`
+        } as UserProfile);
+      }
     });
   }, [firebaseUser, db]);
 
