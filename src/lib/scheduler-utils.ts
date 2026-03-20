@@ -124,7 +124,6 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
   const matchPool: [string, string][] = [];
   let rrIdx = 0;
   
-  // If Double Headers are active, we schedule in pairs (A-B and B-A)
   if (doubleHeaders) {
     const totalPairsPerTeam = Math.floor(gamesPerTeam / 2);
     const totalPairsNeeded = Math.floor((teams.length * totalPairsPerTeam) / 2);
@@ -146,7 +145,7 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
     }
   }
 
-  // 2. Slot Mapping
+  // 2. Slot Mapping - TACTICAL FIX: Field loop outside time loop for consecutive field slots
   const availableSlots: { date: Date; time: Date; field: string }[] = [];
   let currentDay = new Date(startD);
   
@@ -155,18 +154,18 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
     const isBlackout = blackoutDates.some(d => format(new Date(d), 'yyyy-MM-dd') === dayKey);
     
     if (playDays.includes(currentDay.getDay()) && !isBlackout) {
-      let currentTime = parse(startTime, 'HH:mm', currentDay);
-      const dayEndTime = parse(endTime, 'HH:mm', currentDay);
+      for (const field of fields) {
+        let currentTime = parse(startTime, 'HH:mm', currentDay);
+        const dayEndTime = parse(endTime, 'HH:mm', currentDay);
 
-      while (isBefore(currentTime, dayEndTime)) {
-        for (const field of fields) {
+        while (isBefore(currentTime, dayEndTime)) {
           availableSlots.push({ 
             date: new Date(currentDay), 
             time: new Date(currentTime), 
             field 
           });
+          currentTime = addMinutes(currentTime, gameLength + breakLength);
         }
-        currentTime = addMinutes(currentTime, gameLength + breakLength);
       }
     }
     currentDay = addDays(currentDay, 1);
@@ -177,7 +176,6 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
   const finalGames: TournamentGame[] = [];
   
   if (doubleHeaders) {
-    // Allocation for Back-to-Back pairs
     let slotIdx = 0;
     for (let i = 0; i < matchPool.length; i += 2) {
       if (slotIdx + 1 >= availableSlots.length) break;
@@ -185,7 +183,7 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
       const s1 = availableSlots[slotIdx];
       const s2 = availableSlots[slotIdx + 1];
       
-      // Verification: same location, same day
+      // Verified consecutive slots at same field
       if (s1.field === s2.field && format(s1.date, 'yyyy-MM-dd') === format(s2.date, 'yyyy-MM-dd')) {
         const matchup1 = matchPool[i];
         const matchup2 = matchPool[i+1];
@@ -206,13 +204,11 @@ export function generateLeagueSchedule(config: ScheduleConfig & { playDays: numb
         
         slotIdx += 2;
       } else {
-        // Skip current slot to find a pair
         slotIdx++;
-        i -= 2; // Retry matchup
+        i -= 2; // Retry
       }
     }
   } else {
-    // Regular balanced distribution
     const step = Math.max(1, Math.floor(availableSlots.length / matchPool.length));
     for (let i = 0; i < matchPool.length; i++) {
       const slotIdx = i * step;

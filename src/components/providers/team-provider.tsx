@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
@@ -534,7 +533,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         } as UserProfile);
       }
     }, (error) => {
-      // Propagate permission error to the listener
       const permissionError = new FirestorePermissionError({
         path: `users/${firebaseUser.uid}`,
         operation: 'get'
@@ -577,7 +575,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!db || !firebaseUser?.uid || !teamsData || teamsData.length === 0) return null;
     const teamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
     if (teamIds.length === 0) return null;
-    // TACTICAL LIMIT: CollectionGroup with 'in' is restricted to 10 items.
     return query(collectionGroup(db, 'events'), where('teamId', 'in', teamIds.slice(0, 10)));
   }, [db, firebaseUser?.uid, teamsData]);
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
@@ -812,7 +809,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const assignEntryToTeam = useCallback(async (leagueId: string, entryId: string, teamId: string | null) => { if (!db) return; await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { assigned_team_id: teamId, status: teamId ? 'assigned' : 'pending' }); }, [db]);
   const toggleRegistrationPaymentStatus = useCallback(async (leagueId: string, entryId: string, paid: boolean) => { if (!db) return; await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { payment_received: paid }); }, [db]);
-  const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined') => { if (!db) return; await updateDoc(doc(db, 'leagues', contextId, 'registrationEntries', entryId), { status }); }, [db]);
+  
+  const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined') => { 
+    if (!db) return; 
+    const batch = writeBatch(db);
+    // TACTICAL SYNC: Update entry status and league standings map simultaneously
+    batch.update(doc(db, 'leagues', contextId, 'registrationEntries', entryId), { status }); 
+    batch.update(doc(db, 'leagues', contextId), { [`teams.recruit_${entryId}.status`]: status });
+    await batch.commit();
+  }, [db]);
+
   const updateLeagueTeamDetails = useCallback(async (leagueId: string, teamId: string, updates: any) => { if (!db) return; await updateDoc(doc(db, 'leagues', leagueId), { [`teams.${teamId}.origin`]: updates.origin, [`teams.${teamId}.coachName`]: updates.coachName, [`teams.${teamId}.coachEmail`]: updates.coachEmail, [`teams.${teamId}.coachPhone`]: updates.coachPhone, [`teams.${teamId}.organizerNotes`]: updates.organizerNotes, [`teams.${teamId}.teamName`]: updates.teamName }); }, [db]);
 
   const upgradeChildToLogin = useCallback(async (childId: string) => { if (db) await updateDoc(doc(db, 'players', childId), { hasLogin: true }); }, [db]);

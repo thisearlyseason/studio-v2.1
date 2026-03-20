@@ -47,7 +47,7 @@ import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebas
 import { collection, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
-import { generateLeagueSchedule } from '@/lib/scheduler-utils';
+import { generateLeagueSchedule, DailyWindow } from '@/lib/scheduler-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format, isSameDay } from 'date-fns';
 import { useTeam, League, TournamentGame, Field, Facility } from '@/components/providers/team-provider';
@@ -119,8 +119,13 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   }, [league?.teams]);
 
   const handleGenerate = async () => {
-    if (!config.startDate || !config.selectedFields.length || !leagueTeams.length) {
-      toast({ title: "Config Required", description: "Define timeline, fields, and ensure squads are enrolled.", variant: "destructive" });
+    // TACTICAL CHECK: Ensure at least 2 squads for Round Robin
+    if (!config.startDate || !config.selectedFields.length || leagueTeams.length < 2) {
+      toast({ 
+        title: "Config Required", 
+        description: leagueTeams.length < 2 ? "Minimum 2 squads required for match play." : "Define timeline and select fields.", 
+        variant: "destructive" 
+      });
       return;
     }
     setIsProcessing(true);
@@ -261,13 +266,18 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
             <aside className="lg:col-span-5 space-y-8">
               <div className="bg-black text-white rounded-[2.5rem] p-8 space-y-6 relative overflow-hidden group">
                 <CalendarDays className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12" />
-                <div className="relative z-10 space-y-4">
+                <div className="relative z-10 space-y-4 text-black">
                   <div className="flex items-center gap-3">
-                    <div className="bg-primary p-2 rounded-xl"><CalendarIcon className="h-4 w-4" /></div>
+                    <div className="bg-primary p-2 rounded-xl"><CalendarIcon className="h-4 w-4 text-white" /></div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-primary">Blackout Calendar</p>
                   </div>
                   <p className="text-[10px] font-medium text-white/60 leading-relaxed italic">Select dates where no league matches should be scheduled.</p>
-                  <Calendar mode="multiple" selected={config.blackoutDates} onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})} />
+                  <Calendar 
+                    mode="multiple" 
+                    selected={config.blackoutDates} 
+                    onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})} 
+                    className="text-black"
+                  />
                 </div>
               </div>
 
@@ -307,7 +317,7 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
     return map;
   }, [schedule]);
 
-  const gameDays = useMemo(() => Object.keys(gamesByDay).map(d => new Date(d)), [gamesByDay]);
+  const gameDays = useMemo(() => Object.keys(gamesByDay).map(d => new Date(d + 'T12:00:00')), [gamesByDay]);
   const gamesOnSelectedDate = useMemo(() => gamesByDay[format(selectedDate, 'yyyy-MM-dd')] || [], [gamesByDay, selectedDate]);
 
   const handleUpdateScore = async () => {
@@ -379,9 +389,9 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
               onSelect={(d) => d && setSelectedDate(d)}
               modifiers={{ hasGame: gameDays }}
               modifiersClassNames={{
-                hasGame: "after:content-[''] after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:h-1 after:w-1 after:bg-primary after:rounded-full"
+                hasGame: "after:content-[''] after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:h-1 after:w-1 after:bg-primary after:rounded-full after:z-20"
               }}
-              className="w-full max-w-4xl"
+              className="w-full max-w-4xl text-black"
             />
           </div>
           
