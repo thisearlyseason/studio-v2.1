@@ -30,7 +30,9 @@ import {
   Activity,
   ImageIcon,
   Plus,
-  MessageCircle
+  MessageCircle,
+  LineChart as ChartIcon,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -241,8 +243,56 @@ export default function FeedPage() {
   };
 
   return (
-    <div className="flex flex-col h-full lg:flex-row gap-6 lg:gap-8 pb-12">
-      <div className="flex-1 min-w-0 space-y-6 lg:space-y-8">
+    <div className="space-y-10 pb-20">
+      {/* Tactical Widgets Top Row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
+        <Card className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden bg-white">
+          <CardHeader className="bg-primary/5 border-b pb-4 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-primary/10 p-2 rounded-xl text-primary"><CalendarIcon className="h-4 w-4" /></div>
+              <CardTitle className="text-[10px] font-black uppercase tracking-widest text-primary">Upcoming Schedule</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="p-6 space-y-4">
+            {events?.map((event: any) => (
+              <div key={event.id} className="flex gap-4 group cursor-pointer" onClick={() => router.push('/events')}>
+                <div className="h-12 w-12 rounded-2xl bg-muted flex flex-col items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+                  <span className="text-[8px] font-black uppercase text-muted-foreground group-hover:text-primary leading-none">{format(new Date(event.date), 'MMM')}</span>
+                  <span className="text-lg font-black tracking-tighter">{format(new Date(event.date), 'dd')}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-black truncate">{event.title}</p>
+                  <p className="text-[10px] font-bold text-muted-foreground mt-1">{event.startTime}</p>
+                </div>
+              </div>
+            ))}
+            <Button variant="ghost" className="w-full text-[10px] font-black uppercase tracking-widest h-10 mt-2" onClick={() => router.push('/events')}>Full Schedule <ChevronRight className="h-3 w-3 ml-2" /></Button>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden bg-primary text-primary-foreground">
+          <CardContent className="p-8 space-y-4 h-full flex flex-col justify-between">
+            <div className="space-y-4">
+              <Trophy className="h-8 w-8 text-white/40" />
+              <h3 className="text-xl font-black tracking-tight leading-tight">Season Progress</h3>
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div className="bg-white/10 p-3 rounded-2xl text-center">
+                  <p className="text-[8px] font-black uppercase text-white/60 mb-1">Wins</p>
+                  <p className="text-2xl font-black">{games?.filter((g: any) => g.result === 'Win').length || 0}</p>
+                </div>
+                <div className="bg-white/10 p-3 rounded-2xl text-center">
+                  <p className="text-[8px] font-black uppercase text-white/60 mb-1">Losses</p>
+                  <p className="text-2xl font-black">{games?.filter((g: any) => g.result === 'Loss').length || 0}</p>
+                </div>
+              </div>
+            </div>
+            <Button variant="secondary" className="w-full h-11 rounded-xl font-black text-[10px] uppercase tracking-widest bg-white text-primary hover:bg-white/90" onClick={() => router.push('/games')}>Scoreboard</Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="space-y-6 lg:space-y-8 max-w-4xl mx-auto w-full">
+        {/* Team Hero Section */}
         <section className="relative h-48 sm:h-64 lg:h-80 rounded-3xl lg:rounded-[2.5rem] overflow-hidden shadow-xl lg:shadow-2xl group ring-1 ring-black/5">
           <img src={activeTeam.heroImageUrl || "https://picsum.photos/seed/squadhero/1200/400"} alt="Team Hero" className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
@@ -273,6 +323,7 @@ export default function FeedPage() {
           </div>
         </section>
 
+        {/* Post Composition */}
         {canPost && (
           <Card className="rounded-3xl lg:rounded-[3rem] border-none shadow-lg lg:shadow-xl ring-1 ring-black/5 overflow-hidden">
             <CardContent className="p-6 lg:p-8 lg:pb-10">
@@ -294,6 +345,7 @@ export default function FeedPage() {
           </Card>
         )}
 
+        {/* Feed Posts */}
         <div className="space-y-6 lg:space-y-8">
           {posts?.map((post) => (
             <Card key={post.id} className={cn("rounded-3xl lg:rounded-2xl border-none shadow-md overflow-hidden ring-1 ring-black/5 group", post.type === 'system' ? 'bg-muted/30 ring-primary/10' : '')}>
@@ -374,99 +426,6 @@ export default function FeedPage() {
           ))}
         </div>
       </div>
-
-      <aside className="hidden lg:flex flex-col w-80 shrink-0 space-y-8">
-        {isStaff && (
-          <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden relative group">
-            <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
-              <ShieldAlert className="h-24 w-24" />
-            </div>
-            <CardHeader className="relative z-10 border-b border-white/10 pb-4">
-              <div className="flex items-center gap-3">
-                <Terminal className="h-4 w-4 text-primary" />
-                <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Admin Quick Actions</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="p-6 relative z-10 space-y-3">
-              <Button asChild variant="ghost" className="w-full justify-between h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
-                <Link href="/coaches-corner" className="flex items-center w-full justify-between">
-                  <div className="flex items-center gap-3">
-                    <PenTool className="h-4 w-4 text-primary" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Coaches Corner</span>
-                  </div>
-                  <ChevronRight className="h-3 w-3 opacity-40" />
-                </Link>
-              </Button>
-              <Button asChild variant="ghost" className="w-full justify-between h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
-                <Link href="/leagues" className="flex items-center w-full justify-between">
-                  <div className="flex items-center gap-3">
-                    <Shield className="h-4 w-4 text-primary" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Leagues Hub</span>
-                  </div>
-                  <ChevronRight className="h-3 w-3 opacity-40" />
-                </Link>
-              </Button>
-              <Button asChild variant="ghost" className="w-full justify-between h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
-                <Link href="/facilities" className="flex items-center w-full justify-between">
-                  <div className="flex items-center gap-3">
-                    <MapPin className="h-4 w-4 text-primary" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Facilities</span>
-                  </div>
-                  <ChevronRight className="h-3 w-3 opacity-40" />
-                </Link>
-              </Button>
-              <Button asChild variant="ghost" className="w-full justify-between h-12 rounded-xl text-white hover:bg-white/10 px-4 border border-white/5 transition-all">
-                <Link href="/equipment" className="flex items-center w-full justify-between">
-                  <div className="flex items-center gap-3">
-                    <Package className="h-4 w-4 text-primary" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Equipment</span>
-                  </div>
-                  <ChevronRight className="h-3 w-3 opacity-40" />
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        <Card className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
-          <CardHeader className="bg-primary/5 border-b pb-4">
-            <CardTitle className="text-[10px] font-black uppercase tracking-widest text-primary">Upcoming Schedule</CardTitle>
-          </CardHeader>
-          <CardContent className="p-6 space-y-4">
-            {events?.map((event: any) => (
-              <div key={event.id} className="flex gap-4 group cursor-pointer" onClick={() => router.push('/events')}>
-                <div className="h-12 w-12 rounded-2xl bg-muted flex flex-col items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
-                  <span className="text-[8px] font-black uppercase text-muted-foreground group-hover:text-primary leading-none">{format(new Date(event.date), 'MMM')}</span>
-                  <span className="text-lg font-black tracking-tighter">{format(new Date(event.date), 'dd')}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-black truncate">{event.title}</p>
-                  <p className="text-[10px] font-bold text-muted-foreground mt-1">{event.startTime}</p>
-                </div>
-              </div>
-            ))}
-            <Button variant="ghost" className="w-full text-[10px] font-black uppercase tracking-widest h-10 mt-2" onClick={() => router.push('/events')}>Full Schedule <ChevronRight className="h-3 w-3 ml-2" /></Button>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden bg-primary text-primary-foreground">
-          <CardContent className="p-8 space-y-4">
-            <Trophy className="h-8 w-8 text-white/40" />
-            <h3 className="text-xl font-black tracking-tight leading-tight">Season Progress</h3>
-            <div className="grid grid-cols-2 gap-4 pt-2">
-              <div className="bg-white/10 p-3 rounded-2xl text-center">
-                <p className="text-[8px] font-black uppercase text-white/60 mb-1">Wins</p>
-                <p className="text-2xl font-black">{games?.filter((g: any) => g.result === 'Win').length || 0}</p>
-              </div>
-              <div className="bg-white/10 p-3 rounded-2xl text-center">
-                <p className="text-[8px] font-black uppercase text-white/60 mb-1">Losses</p>
-                <p className="text-2xl font-black">{games?.filter((g: any) => g.result === 'Loss').length || 0}</p>
-              </div>
-            </div>
-            <Button variant="secondary" className="w-full h-11 rounded-xl font-black text-[10px] uppercase tracking-widest bg-white text-primary hover:bg-white/90" onClick={() => router.push('/games')}>Scoreboard</Button>
-          </CardContent>
-        </Card>
-      </aside>
 
       <Dialog open={isPollDialogOpen} onOpenChange={setIsPollDialogOpen}>
         <DialogContent className="sm:max-w-4xl rounded-3xl lg:rounded-[2rem] overflow-hidden p-0 max-h-[90vh] flex flex-col border-none shadow-2xl">
