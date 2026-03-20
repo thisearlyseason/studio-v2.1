@@ -534,6 +534,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         } as UserProfile);
       }
     }, (error) => {
+      // Propagate permission error to the listener
       const permissionError = new FirestorePermissionError({
         path: `users/${firebaseUser.uid}`,
         operation: 'get'
@@ -576,6 +577,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!db || !firebaseUser?.uid || !teamsData || teamsData.length === 0) return null;
     const teamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
     if (teamIds.length === 0) return null;
+    // TACTICAL LIMIT: CollectionGroup with 'in' is restricted to 10 items.
     return query(collectionGroup(db, 'events'), where('teamId', 'in', teamIds.slice(0, 10)));
   }, [db, firebaseUser?.uid, teamsData]);
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);

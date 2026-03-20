@@ -3,12 +3,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if a user is signed in.
+    // --- CORE HELPERS ---
+    
     function isSignedIn() {
       return request.auth != null && request.auth.uid != null;
     }
 
-    // Helper to check if the user is accessing their own data.
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
@@ -58,15 +58,7 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       allow read, write: if isSignedIn() || isSuperAdmin();
       
-      // Explicit subcollection matching for collection-level queries
-      match /registrationEntries/{entryId} {
-        allow read, write: if isSignedIn() || isSuperAdmin();
-      }
-      
-      match /registration/{configId} {
-        allow read, write: if isSignedIn() || isSuperAdmin();
-      }
-
+      // Recursive wildcard satisfies "list proving" for all sub-ledgers
       match /{allPaths=**} {
         allow read, write: if isSignedIn() || isSuperAdmin();
       }
@@ -75,14 +67,6 @@ service cloud.firestore {
     match /teams/{teamId} {
       allow read, write: if isSignedIn() || isSuperAdmin();
       
-      match /members/{memberId} {
-        allow read, write: if isSignedIn() || isSuperAdmin();
-      }
-      
-      match /events/{eventId} {
-        allow read, write: if isSignedIn() || isSuperAdmin();
-      }
-
       match /{allPaths=**} {
         allow read, write: if isSignedIn() || isSuperAdmin();
       }

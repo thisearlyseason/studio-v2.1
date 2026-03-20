@@ -137,9 +137,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 
   /**
    * TACTICAL HYDRATION GUARD: 
-   * The server will always render the loading state because 'mounted' is false.
-   * The client will also render the loading state during the initial pass for the same reason.
-   * This ensures text and DOM parity during the hydration frame.
+   * We implement a strictly invariant loading message during the initial hydration phase.
+   * Discrepancies between server and client rendered text cause Next.js to regenerate the tree.
    */
   const isLoadingState = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile;
 
