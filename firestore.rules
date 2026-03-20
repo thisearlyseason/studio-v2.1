@@ -1,4 +1,3 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -17,12 +16,14 @@ service cloud.firestore {
       return isSignedIn() && (
         request.auth.token.email == 'thisearlyseason@gmail.com' || 
         request.auth.uid == '3Dybqi6vkHNUQQM66jiEZWfmwsW2' ||
-        request.auth.uid == 'wnvOuvwmoUhS5U4kdaBrZz7tGbF3'
+        request.auth.uid == 'wnvOuvwmoUhS5U4kdaBrZz7tGbF3' ||
+        request.auth.uid == 'PtT54iDDtUML1wslbZzxjDgbrFp1' ||
+        request.auth.uid == 'zGh7D5JfrFOkxhVJr79gtbzHPVC3'
       );
     }
 
     // --- GLOBAL CATALOG ---
-    // Provable flattening: Allow all to read pricing and features
+    // Public read for economic initialization
     match /plans/{id} {
       allow read: if true;
       allow write: if isSuperAdmin();
@@ -33,113 +34,26 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // --- LEAGUES HIERARCHY ---
-    // Explicit subcollection matching for list proving
-    match /leagues/{leagueId} {
+    // --- PROVABLE HIERARCHIES ---
+    // Recursive wildcard patterns satisfy Firestore "List Proving" requirements
+    
+    match /leagues/{leagueId}/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
     
-    match /leagues/{leagueId}/registrationEntries/{entryId} {
+    match /teams/{teamId}/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
     
-    match /leagues/{leagueId}/registration/{configId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /leagues/{leagueId}/payments/{paymentId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // --- TEAMS HIERARCHY ---
-    match /teams/{teamId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /teams/{teamId}/members/{userId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /teams/{teamId}/alerts/{alertId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /teams/{teamId}/feedPosts/{postId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /teams/{teamId}/feedPosts/{postId}/comments/{commentId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /teams/{teamId}/events/{eventId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /teams/{teamId}/events/{eventId}/registrations/{regId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /teams/{teamId}/incidents/{id} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /teams/{teamId}/files/{id} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /teams/{teamId}/equipment/{id} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /teams/{teamId}/volunteers/{id} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /teams/{teamId}/fundraising/{id} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /teams/{teamId}/groupChats/{id} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /teams/{teamId}/drills/{id} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /teams/{teamId}/games/{id} {
-      allow read, write: if isSignedIn();
-    }
-
-    // --- USERS HIERARCHY ---
-    match /users/{userId} {
+    match /users/{userId}/{allPaths=**} {
       allow read, write: if isOwner(userId) || isSuperAdmin();
-    }
-    
-    match /users/{userId}/teamMemberships/{teamId} {
-      allow read, write: if isOwner(userId) || isSuperAdmin();
-    }
-    
-    match /users/{userId}/hiddenChats/{chatId} {
-      allow read, write: if isOwner(userId) || isSuperAdmin();
-    }
-
-    // --- PLAYERS HIERARCHY ---
-    match /players/{playerId} {
-      allow read, write: if isSignedIn();
     }
     
     match /players/{playerId}/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
-    // --- FACILITIES ---
-    match /facilities/{facilityId} {
-      allow read, write: if isSignedIn();
-    }
-    
-    match /facilities/{facilityId}/fields/{fieldId} {
+    match /facilities/{facilityId}/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
 
