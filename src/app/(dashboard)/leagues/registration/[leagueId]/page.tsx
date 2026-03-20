@@ -58,7 +58,7 @@ import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 export default function LeagueRegistrationAdminPage() {
   const { leagueId } = useParams();
   const router = useRouter();
-  const { user: authUser, isAuthResolved } = useUser();
+  const { isAuthResolved } = useUser();
   const { 
     saveLeagueRegistrationConfig, 
     assignEntryToTeam, 
@@ -77,8 +77,7 @@ export default function LeagueRegistrationAdminPage() {
 
   const configId = pipelineType === 'player' ? 'player_config' : 'team_config';
   
-  // TACTICAL MEMO: Explicitly wait for identity resolution before dispatching queries
-  // to satisfy provable matching in security rules.
+  // TACTICAL MEMO: We use explicit identity resolution to prevent 403 ghost queries.
   const configRef = useMemoFirebase(() => {
     if (!db || !leagueId || !isAuthResolved) return null;
     return doc(db, 'leagues', leagueId as string, 'registration', configId);
@@ -88,6 +87,7 @@ export default function LeagueRegistrationAdminPage() {
 
   const entriesQuery = useMemoFirebase(() => {
     if (!db || !leagueId || !isAuthResolved) return null;
+    // We use a flat query structure to satisfy Firestore List Proving
     return query(
       collection(db, 'leagues', leagueId as string, 'registrationEntries'), 
       where('protocol_id', '==', configId),
@@ -245,7 +245,7 @@ export default function LeagueRegistrationAdminPage() {
               </div>
               <div>
                 <h3 className="text-xl font-black uppercase tracking-tight text-foreground">{pipelineType === 'player' ? 'Roster Pool' : 'Squad Pool'}</h3>
-                <p className="text-[9px] font-bold text-muted-foreground uppercase">{filteredEntries.length} Verified Applicants</p>
+                <p className="text-[9px] font-bold text-muted-foreground uppercase">{(entries || []).length} Verified Applicants</p>
               </div>
             </div>
             

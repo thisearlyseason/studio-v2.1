@@ -581,6 +581,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
   const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
 
+  // TACTICAL MEMO: Refined staff authority detection logic
   const isStaff = useMemo(() => {
     if (!activeTeam || !firebaseUser) return false;
     if (userProfile?.role === 'coach') return true; 
