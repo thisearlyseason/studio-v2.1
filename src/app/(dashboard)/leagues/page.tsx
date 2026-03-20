@@ -23,6 +23,7 @@ import {
   Edit3,
   Building,
   ShieldCheck,
+  ShieldAlert,
   Sparkles,
   Calendar as CalendarIcon,
   CalendarDays,
@@ -480,11 +481,11 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
             <div className="grid grid-cols-2 gap-8">
               <div className="space-y-2">
                 <Label className="text-[8px] font-black uppercase opacity-40 ml-1">HOME: {editingGame?.team1}</Label>
-                <Input type="number" value={score1} onChange={e => setScore1(e.target.value)} className="h-16 text-center text-3xl font-black rounded-2xl" />
+                <Input type="number" value={scoreForm.s1} onChange={e => setScoreForm({...scoreForm, s1: e.target.value})} className="h-16 text-center text-3xl font-black rounded-2xl" />
               </div>
               <div className="space-y-2">
                 <Label className="text-[8px] font-black uppercase opacity-40 ml-1">GUEST: {editingGame?.team2}</Label>
-                <Input type="number" value={score2} onChange={e => setScore2(e.target.value)} className="h-16 text-center text-3xl font-black rounded-2xl" />
+                <Input type="number" value={scoreForm.s2} onChange={e => setScoreForm({...scoreForm, s2: e.target.value})} className="h-16 text-center text-3xl font-black rounded-2xl" />
               </div>
             </div>
             <DialogFooter>
