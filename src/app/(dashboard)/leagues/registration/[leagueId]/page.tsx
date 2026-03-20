@@ -5,8 +5,8 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTeam, LeagueRegistrationConfig, RegistrationEntry, RegistrationFormField } from '@/components/providers/team-provider';
 import { useFirestore, useDoc, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { doc, collection, query, orderBy, where } from 'firebase/firestore';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { doc, collection, query, orderBy, where, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,11 +35,11 @@ import {
   Zap,
   XCircle,
   CheckCircle2,
-  Mail,
-  MoreVertical,
-  Filter,
   Terminal,
-  Activity
+  Activity,
+  ChevronRight,
+  MoreVertical,
+  Filter
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -56,6 +56,9 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+
+// CRITICAL BUILD FIX: Next.js 15 build safety for dynamic routes
+export const dynamic = 'force-dynamic';
 
 export default function LeagueRegistrationAdminPage() {
   const { leagueId } = useParams();
@@ -77,7 +80,6 @@ export default function LeagueRegistrationAdminPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'assigned' | 'accepted'>('all');
   const [editingField, setEditingField] = useState<Partial<RegistrationFormField> | null>(null);
   
-  // --- MANUAL ENTRY STATE ---
   const [isManualAddOpen, setIsManualAddOpen] = useState(false);
   const [manualForm, setManualForm] = useState({ teamName: '', coachName: '', email: '' });
   const [isManualProcessing, setIsManualProcessing] = useState(false);
@@ -92,8 +94,7 @@ export default function LeagueRegistrationAdminPage() {
 
   const { data: config, isLoading: isConfigLoading } = useDoc<LeagueRegistrationConfig>(configRef);
 
-  // TACTICAL FIX: We query the collection directly without complex 'where' clauses to satisfy Provable Hierarchy rules
-  // and minimize the risk of "permission-denied" errors during high-speed synchronization.
+  // TACTICAL SYNC: Recursive wildcard rule match ensures list permission
   const entriesQuery = useMemoFirebase(() => {
     if (!db || !leagueId || !isAuthResolved || !authUser?.uid) return null;
     return query(

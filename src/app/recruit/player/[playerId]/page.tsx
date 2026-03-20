@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc, collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { doc, collection, getDocs, orderBy, query, getDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +39,9 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+// CRITICAL BUILD FIX: Next.js 15 build safety for dynamic routes
+export const dynamic = 'force-dynamic';
+
 export default function PublicScoutPortalPage() {
   const { playerId } = useParams();
   const db = useFirestore();
@@ -53,24 +56,29 @@ export default function PublicScoutPortalPage() {
 
   useEffect(() => {
     async function loadScoutData() {
-      if (!playerId) return;
+      if (!playerId || !db) return;
       setLoading(true);
-      const [playerSnap, pSnap, mSnap, sSnap, eSnap, vSnap] = await Promise.all([
-        getDoc(doc(db, 'players', playerId as string)),
-        getDoc(doc(db, 'players', playerId as string, 'recruitingProfile', 'profile')),
-        getDoc(doc(db, 'players', playerId as string, 'recruitingProfile', 'metrics')),
-        getDocs(query(collection(db, 'players', playerId as string, 'recruitingProfile', 'stats'))),
-        getDocs(query(collection(db, 'players', playerId as string, 'evaluations'), orderBy('createdAt', 'desc'))),
-        getDocs(query(collection(db, 'players', playerId as string, 'videos'), orderBy('createdAt', 'desc')))
-      ]);
+      try {
+        const [playerSnap, pSnap, mSnap, sSnap, eSnap, vSnap] = await Promise.all([
+          getDoc(doc(db, 'players', playerId as string)),
+          getDoc(doc(db, 'players', playerId as string, 'recruitingProfile', 'profile')),
+          getDoc(doc(db, 'players', playerId as string, 'recruitingProfile', 'metrics')),
+          getDocs(query(collection(db, 'players', playerId as string, 'recruitingProfile', 'stats'))),
+          getDocs(query(collection(db, 'players', playerId as string, 'evaluations'), orderBy('createdAt', 'desc'))),
+          getDocs(query(collection(db, 'players', playerId as string, 'videos'), orderBy('createdAt', 'desc')))
+        ]);
 
-      if (playerSnap.exists()) setPlayer(playerSnap.data());
-      if (pSnap.exists()) setProfile(pSnap.data());
-      if (mSnap.exists()) setMetrics(mSnap.data());
-      setStats(sSnap.docs.map(d => d.data()));
-      setEvaluations(eSnap.docs.map(d => d.data()));
-      setVideos(vSnap.docs.map(d => d.data()));
-      setLoading(false);
+        if (playerSnap.exists()) setPlayer(playerSnap.data());
+        if (pSnap.exists()) setProfile(pSnap.data());
+        if (mSnap.exists()) setMetrics(mSnap.data());
+        setStats(sSnap.docs.map(d => d.data()));
+        setEvaluations(eSnap.docs.map(d => d.data()));
+        setVideos(vSnap.docs.map(d => d.data()));
+      } catch (e) {
+        console.error("Scout Pack Load Failure:", e);
+      } finally {
+        setLoading(false);
+      }
     }
     loadScoutData();
   }, [playerId, db]);
@@ -103,7 +111,7 @@ export default function PublicScoutPortalPage() {
   if (!player || player.recruitingProfileEnabled === false) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10">
-        <Card className="max-w-md text-center p-12 rounded-[3rem] border-none shadow-2xl bg-white">
+        <Card className="max-w-md w-full text-center p-12 rounded-[3rem] border-none shadow-2xl bg-white">
           <Lock className="h-16 w-16 text-primary mx-auto mb-6 opacity-20" />
           <h2 className="text-2xl font-black uppercase tracking-tight">Profile Locked</h2>
           <p className="text-muted-foreground font-medium mt-2">This athlete's institutional recruiting pack is currently private or inactive.</p>
@@ -125,7 +133,7 @@ export default function PublicScoutPortalPage() {
           <div className="flex flex-col lg:flex-row items-center gap-12 p-10 lg:p-16 relative z-10">
             <div className="relative group shrink-0">
               <div className="h-48 w-48 lg:h-64 lg:w-64 rounded-[3rem] border-4 border-white/10 shadow-2xl overflow-hidden bg-white/5 flex items-center justify-center">
-                {player.photoURL ? <img src={player.photoURL} className="w-full h-full object-cover" /> : <User className="h-24 w-24 opacity-20" />}
+                {player.photoURL ? <img src={player.photoURL} className="w-full h-full object-cover" alt="Athlete" /> : <User className="h-24 w-24 opacity-20" />}
               </div>
               <Badge className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-primary text-white border-none font-black text-[10px] h-8 px-6 shadow-xl whitespace-nowrap">CLASS OF {profile?.graduationYear || '20XX'}</Badge>
             </div>

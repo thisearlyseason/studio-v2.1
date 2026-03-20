@@ -25,18 +25,22 @@ service cloud.firestore {
     }
 
     // --- COLLECTION GROUP SUPPORT ---
-    // Essential for provable hierarchy listing across organization sectors
+    // Explicit matches for "list proving" across hierarchies
     
     match /{allPaths=**}/registrationEntries/{entryId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isSignedIn() || isSuperAdmin();
     }
     
     match /{allPaths=**}/members/{memberId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isSignedIn() || isSuperAdmin();
     }
 
     match /{allPaths=**}/events/{eventId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isSignedIn() || isSuperAdmin();
+    }
+
+    match /{allPaths=**}/alerts/{alertId} {
+      allow read, write: if isSignedIn() || isSuperAdmin();
     }
 
     // --- TOP LEVEL COLLECTIONS ---
@@ -49,16 +53,14 @@ service cloud.firestore {
     }
 
     match /players/{playerId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isSignedIn() || isSuperAdmin();
       match /{allPaths=**} {
-        allow read, write: if isSignedIn();
+        allow read, write: if isSignedIn() || isSuperAdmin();
       }
     }
 
     match /leagues/{leagueId} {
       allow read, write: if isSignedIn() || isSuperAdmin();
-      
-      // Recursive wildcard satisfies "list proving" for all sub-ledgers
       match /{allPaths=**} {
         allow read, write: if isSignedIn() || isSuperAdmin();
       }
@@ -66,7 +68,6 @@ service cloud.firestore {
 
     match /teams/{teamId} {
       allow read, write: if isSignedIn() || isSuperAdmin();
-      
       match /{allPaths=**} {
         allow read, write: if isSignedIn() || isSuperAdmin();
       }
