@@ -37,7 +37,8 @@ import {
   Signature,
   FileText,
   Play,
-  Database
+  Database,
+  UserPlus
 } from 'lucide-react';
 import { 
   Dialog, 

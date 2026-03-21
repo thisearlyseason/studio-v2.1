@@ -242,7 +242,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label className="text-[10px] font-black uppercase ml-1">Pipeline Status</Label>
-                      <Select value={profile.status} onValueChange={(v: any) => setProfile({...profile, status: v})}>
+                      <Select value={profile.status ?? ''} onValueChange={(v: any) => setProfile({...profile, status: v})}>
                         <SelectTrigger className="h-12 border-2 rounded-xl font-bold"><SelectValue /></SelectTrigger>
                         <SelectContent className="rounded-xl">
                           <SelectItem value="active" className="font-bold">Active Prospect</SelectItem>
@@ -586,9 +586,9 @@ export default function CoachesCornerPage() {
   const handleSaveProtocolUpdate = async () => {
     if (!editingWaiver || !activeTeam) return;
     await updateTeamDocument(editingWaiver.id, { 
-      title: editingWaiver.title,
-      content: editingWaiver.content,
-      type: editingWaiver.type
+      title: editingWaiver.title ?? '',
+      content: editingWaiver.content ?? '',
+      type: editingWaiver.type ?? 'waiver'
     });
     setEditingWaiver(null);
     toast({ title: "Protocol Synchronized", description: "Legal terms updated globally for the squad." });
