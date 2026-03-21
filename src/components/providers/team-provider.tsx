@@ -381,6 +381,7 @@ interface TeamContextType {
   isSuperAdmin: boolean;
   isClubManager: boolean;
   householdEvents: TeamEvent[];
+  activeTeamEvents: TeamEvent[];
   householdBalance: number;
   alerts: TeamAlert[];
   unreadAlertsCount: number;
@@ -557,6 +558,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
   const members = useMemo(() => membersData || [], [membersData]);
 
+  // NEW: Dedicated listener for active team events to ensure perfect synchronization
+  const activeEventsQuery = useMemoFirebase(() => {
+    if (!db || !activeTeam?.id) return null;
+    return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc'));
+  }, [db, activeTeam?.id]);
+  const { data: activeEventsData } = useCollection<TeamEvent>(activeEventsQuery);
+  const activeTeamEvents = useMemo(() => activeEventsData || [], [activeEventsData]);
+
   const alertsQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc'), limit(10)) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: alertsData } = useCollection<TeamAlert>(alertsQuery);
   const alerts = useMemo(() => alertsData || [], [alertsData]);
@@ -699,7 +708,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const createTeamDocument = useCallback(async (data: any) => { if (activeTeam?.id && db) await setDoc(doc(db, 'teams', activeTeam.id, 'documents', data.id), clean({ ...data, createdAt: new Date().toISOString() })); }, [db, activeTeam]);
   const updateTeamDocument = useCallback(async (docId: string, data: any) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'documents', docId), clean(data)); }, [db, activeTeam]);
 
-  const addEvent = useCallback(async (data: any) => { if (activeTeam?.id && db) { await addDoc(collection(db, 'teams', activeTeam.id, 'events'), clean(data)); return true; } return false; }, [db, activeTeam]);
+  const addEvent = useCallback(async (data: any) => { if (activeTeam?.id && db) { await addDoc(collection(db, 'teams', activeTeam.id, 'events'), clean({ ...data, teamId: activeTeam.id })); return true; } return false; }, [db, activeTeam]);
   const updateEvent = useCallback(async (id: string, data: any) => { if (activeTeam?.id && db) { await updateDoc(doc(db, 'teams', activeTeam.id, 'events', id), clean(data)); return true; } return false; }, [db, activeTeam]);
   const deleteEvent = useCallback(async (id: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'events', id)); }, [db, activeTeam]);
   const updateRSVP = useCallback(async (eventId: string, status: string) => { if (activeTeam?.id && firebaseUser && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'events', eventId), { [`userRsvps.${firebaseUser.uid}`]: status }); }, [db, activeTeam, firebaseUser]);
@@ -1031,7 +1040,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     db, user: userProfile, activeTeam, setActiveTeam: (t: Team) => setManualActiveTeamId(t.id), teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
     isStaff, isPro, isParent: userProfile?.role === 'parent', isPlayer: userProfile?.role === 'adult_player',
-    isSuperAdmin, isClubManager, householdEvents: householdEvents || [], householdBalance: 0, myChildren, plans, isPlansLoading, proQuotaStatus,
+    isSuperAdmin, isClubManager, householdEvents: householdEvents || [], activeTeamEvents, householdBalance: 0, myChildren, plans, isPlansLoading, proQuotaStatus,
     isPaywallOpen, setIsPaywallOpen, purchasePro,
     hasFeature, alerts, unreadAlertsCount,
     markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isSeedingDemo, setIsSeedingDemo,
@@ -1057,7 +1066,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     isRCInitialized: true, addRegistration, addLeaguePayment, updateLeagueGlobalFees
   }), [
     db, userProfile, activeTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser,
-    isStaff, isPro, householdEvents, myChildren, plans, isPlansLoading, isPaywallOpen, isSeedingDemo,
+    isStaff, isPro, householdEvents, activeTeamEvents, myChildren, plans, isPlansLoading, isPaywallOpen, isSeedingDemo,
     seenAlertIds, alerts, unreadAlertsCount, isSuperAdmin, isClubManager, hasFeature, proQuotaStatus,
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
     getPlayerStats, addPlayerStat, deletePlayerStat, getEvaluations, addEvaluation,

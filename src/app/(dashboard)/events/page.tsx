@@ -183,7 +183,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
 }
 
 export default function EventsPage() {
-  const { householdEvents, updateRSVP, isSuperAdmin, isStaff, addEvent, updateEvent, deleteEvent, members, activeTeam } = useTeam();
+  const { activeTeamEvents, updateRSVP, isSuperAdmin, isStaff, addEvent, updateEvent, deleteEvent, members, activeTeam } = useTeam();
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<TeamEvent | null>(null);
@@ -199,10 +199,10 @@ export default function EventsPage() {
 
   const filteredEvents = useMemo(() => { 
     const now = new Date(); 
-    const list = householdEvents.filter(e => e.teamId === activeTeam?.id) || []; 
+    const list = activeTeamEvents || []; 
     if (filterMode === 'live') return list.filter(e => !isPast(new Date(e.endDate || e.date)) || isSameDay(new Date(e.endDate || e.date), now)); 
     return list.filter(e => isPast(new Date(e.endDate || e.date)) && !isSameDay(new Date(e.endDate || e.date), now)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); 
-  }, [householdEvents, filterMode, activeTeam?.id]);
+  }, [activeTeamEvents, filterMode]);
 
   const handleCreateEvent = async () => { 
     if (!newTitle || !newDate || !newTime) return;

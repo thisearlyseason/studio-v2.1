@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useMemo, useEffect, useState } from 'react';
@@ -33,7 +34,7 @@ import { collection, query, orderBy, limit, where, collectionGroup } from 'fireb
 
 export default function UniversalAccountDashboard() {
   const { 
-    user, activeTeam, teams, householdEvents, 
+    user, activeTeam, teams, activeTeamEvents, 
     myChildren, householdBalance, isStaff, isParent, 
     isPro, purchasePro, hasFeature 
   } = useTeam();
@@ -81,9 +82,9 @@ export default function UniversalAccountDashboard() {
   const { data: fundraisers } = useCollection(fundQuery);
 
   const upcomingItinerary = useMemo(() => {
-    if (!householdEvents || !Array.isArray(householdEvents)) return [];
-    return householdEvents.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date))).slice(0, 3);
-  }, [householdEvents]);
+    const list = activeTeamEvents || [];
+    return list.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date))).slice(0, 3);
+  }, [activeTeamEvents]);
 
   if (!mounted || !user) return (
     <div className="flex flex-col items-center justify-center py-20 animate-pulse">
@@ -175,7 +176,7 @@ export default function UniversalAccountDashboard() {
             </div>
             <div className="grid grid-cols-1 gap-4">
               {upcomingItinerary.length > 0 ? upcomingItinerary.map((event) => (
-                <Card key={event.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white cursor-pointer" onClick={() => router.push('/calendar')}>
+                <Card key={event.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white cursor-pointer" onClick={() => router.push('/events')}>
                   <CardContent className="p-0">
                     <div className="flex items-stretch h-24">
                       <div className="w-20 bg-muted/30 flex flex-col items-center justify-center border-r shrink-0">
@@ -278,8 +279,8 @@ export default function UniversalAccountDashboard() {
                 Audit Ledger
               </Button>
             </CardContent>
-          </aside>
-        </div>
+          </Card>
+        </aside>
       </div>
     </div>
   );
