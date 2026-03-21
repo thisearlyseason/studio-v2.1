@@ -476,15 +476,15 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 }
 
 export default function TournamentsPage({ preSelectedTournament, onExit }: { preSelectedTournament?: TeamEvent | null, onExit?: () => void }) {
-  const { isStaff, addEvent, activeTeam, householdEvents, db } = useTeam();
+  const { isStaff, addEvent, activeTeam, activeTeamEvents, db } = useTeam();
   const [isDeployOpen, setIsDeployOpen] = useState(false);
   const [selectedTournament, setSelectedTournament] = useState<TeamEvent | null>(preSelectedTournament || null);
   const [newTourney, setNewTourney] = useState({ title: '', date: '', endDate: '', location: '', description: '', selectedWaiverId: '' });
   const [isProcessing, setIsProcessing] = useState(false);
 
   const tournaments = useMemo(() => {
-    return householdEvents.filter(e => (e.isTournament || e.eventType === 'tournament') && e.teamId === activeTeam?.id);
-  }, [householdEvents, activeTeam?.id]);
+    return activeTeamEvents.filter(e => (e.isTournament || e.eventType === 'tournament'));
+  }, [activeTeamEvents]);
 
   const docsQuery = useMemoFirebase(() => (db && activeTeam?.id) ? query(collection(db, 'teams', activeTeam.id, 'documents'), where('isActive', '==', true)) : null, [db, activeTeam?.id]);
   const { data: activeDocs } = useCollection<TeamDocument>(docsQuery);
