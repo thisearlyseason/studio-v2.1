@@ -45,7 +45,7 @@ function parseTime(timeStr: string, referenceDate: Date): Date {
     const d = parse(timeStr, f, referenceDate);
     if (!isNaN(d.getTime())) return d;
   }
-  // Fallback: simple split if standard parse fails
+  // Fallback: manual regex if standard parse fails
   const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
   if (match) {
     let [_, hours, mins, ampm] = match;
@@ -63,11 +63,12 @@ function parseTime(timeStr: string, referenceDate: Date): Date {
  * Shuffles an array in place.
  */
 function shuffle<T>(array: T[]): T[] {
-  for (let i = array.length - 1; i > 0; i--) {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
   }
-  return array;
+  return newArray;
 }
 
 /**
@@ -108,8 +109,8 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
 
   while (matchPool.length < requiredGames) {
     const round = Math.floor(matchPool.length / basePairs.length);
-    shuffle(basePairs);
-    for (const pair of basePairs) {
+    const roundPairs = shuffle([...basePairs]);
+    for (const pair of roundPairs) {
       if (round % 2 === 0) {
         matchPool.push({ t1: pair.t1, t2: pair.t2 });
       } else {
@@ -238,9 +239,10 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
       }
     }
   } else {
-    // Basic elimination seeding (first round)
-    for (let i = 0; i < Math.floor(teamList.length / 2); i++) {
-      matchups.push([teamList[i], teamList[teamList.length - 1 - i]]);
+    // Elimination logic (seeding first round)
+    const shuffledTeams = shuffle([...teamList]);
+    for (let i = 0; i < Math.floor(shuffledTeams.length / 2); i++) {
+      matchups.push([shuffledTeams[i], shuffledTeams[shuffledTeams.length - 1 - i]]);
     }
   }
   
@@ -254,16 +256,19 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
     let currentTime = parseTime(window?.startTime || startTime, day);
     const dayEndTime = parseTime(window?.endTime || endTime, day);
     
-    while (isBefore(currentTime, dayEndTime)) {
-      for (const f of fields) {
-        slots.push({ date: new Date(day), time: new Date(currentTime), field: f });
+    if (!isNaN(currentTime.getTime()) && !isNaN(dayEndTime.getTime())) {
+      while (isBefore(currentTime, dayEndTime)) {
+        for (const f of fields) {
+          slots.push({ date: new Date(day), time: new Date(currentTime), field: f });
+        }
+        currentTime = addMinutes(currentTime, gameLength + breakLength);
       }
-      currentTime = addMinutes(currentTime, gameLength + breakLength);
     }
   });
 
-  // Assign matchups to available slots across all selected venues
-  for (let i = 0; i < Math.min(matchups.length, slots.length); i++) {
+  // Balanced match assignment
+  const totalMatches = Math.min(matchups.length, slots.length);
+  for (let i = 0; i < totalMatches; i++) {
     games.push({
       id: `tg_${Date.now()}_${i}`,
       team1: matchups[i][0].name,

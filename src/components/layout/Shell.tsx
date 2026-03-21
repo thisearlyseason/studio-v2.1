@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, memo, useMemo } from 'react';
@@ -85,7 +84,7 @@ const coordinationTabs = [
   { name: 'Feed', href: '/feed', icon: LayoutDashboard, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Leagues', href: '/leagues', icon: Shield, pro: false },
-  { name: 'Tournaments', href: '/tournaments', icon: TableIcon, pro: true },
+  { name: 'Tournaments', href: '/manage-tournaments', icon: TableIcon, pro: true },
   { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: false },
   { name: 'Calendar', href: '/calendar', icon: CalendarIcon, pro: false },
   { name: 'Playbook', icon: Dumbbell, href: '/drills', pro: false },
