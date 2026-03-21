@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { 
   MapPin, 
   Plus, 
@@ -21,7 +22,8 @@ import {
   ChevronRight,
   LayoutGrid,
   Building,
-  AlertCircle
+  AlertCircle,
+  Zap
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -29,7 +31,7 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogTrigger,
-  DialogFooter,
+  DialogFooter, 
   DialogDescription
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
@@ -163,12 +165,13 @@ export default function FacilityManagementPage() {
                   </div>
                 </DialogHeader>
                 <div className="space-y-6">
-                  <div className="bg-amber-50 p-6 rounded-[2rem] border-2 border-dashed border-amber-200 flex items-start gap-4">
-                    <AlertCircle className="h-6 w-6 text-amber-600 shrink-0" />
-                    <p className="text-[11px] font-bold text-amber-800 uppercase leading-relaxed">
-                      Note: Once a facility is enrolled, you MUST add active fields, courts, or rooms to its profile to make it available for tournament scheduling.
-                    </p>
-                  </div>
+                  <Alert variant="destructive" className="bg-amber-50 border-amber-200 text-amber-800">
+                    <Zap className="h-4 w-4 text-amber-600" />
+                    <AlertTitle className="font-black uppercase text-[10px] tracking-widest">Protocol Notice</AlertTitle>
+                    <AlertDescription className="text-[11px] font-bold">
+                      After enrolling a facility, you MUST add active fields, courts, or rooms to its profile to make it available for seasonal match scheduling.
+                    </AlertDescription>
+                  </Alert>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Venue Name</Label>
                     <Input placeholder="e.g. Metro Sports Complex" value={newFac.name} onChange={e => setNewFac({...newFac, name: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />

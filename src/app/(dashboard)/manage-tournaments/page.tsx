@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
@@ -15,7 +16,6 @@ import {
   ArrowRight,
   Loader2,
   CalendarDays,
-  Table as TableIcon,
   Zap,
   Target,
   List,
@@ -37,7 +37,10 @@ import {
   Mail,
   User,
   Trash2,
-  Signature
+  Signature,
+  FileText,
+  Play,
+  Table as TableIcon
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -66,6 +69,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { downloadICS } from '@/lib/calendar-utils';
 import html2canvas from 'html2canvas';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface TournamentTeam extends TeamIdentity {
   coach?: string;
@@ -153,6 +157,30 @@ function BracketVisualizer({ games }: { games: TournamentGame[] }) {
   );
 }
 
+function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { facilityId: string, selectedFields: string[], onToggleField: (name: string) => void }) {
+  const db = useFirestore();
+  const q = useMemoFirebase(() => db ? query(collection(db, 'facilities', facilityId, 'fields'), orderBy('name', 'asc')) : null, [db, facilityId]);
+  const { data: fields } = useCollection<Field>(q);
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pl-6">
+      {fields?.map(field => (
+        <div 
+          key={field.id} 
+          className={cn(
+            "p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between group",
+            selectedFields.includes(`${field.name}`) || selectedFields.some(sf => sf.endsWith(`: ${field.name}`)) ? "border-primary bg-primary/5 shadow-sm" : "border-muted hover:border-muted-foreground/20"
+          )}
+          onClick={() => onToggleField(`${field.name}`)}
+        >
+          <span className="text-[10px] font-black uppercase tracking-widest truncate">{field.name}</span>
+          {selectedFields.some(sf => sf.endsWith(`: ${field.name}`)) ? <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> : <div className="h-3.5 w-3.5 rounded-full border-2 border-muted group-hover:border-muted-foreground/30" />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () => void }) {
   const { user: authUser } = useUser();
   const { members, isStaff, activeTeam, db, exportTournamentStandingsCSV, exportAttendanceCSV } = useTeam();
@@ -204,13 +232,11 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 
   const initGenModal = () => {
     const days = eachDayOfInterval({ start: new Date(event.date), end: new Date(event.endDate || event.date) });
-    let normalizedStartTime = '08:00';
-    
     setGenConfig(p => ({
       ...p,
       dailyWindows: days.map(d => ({
         date: format(d, 'yyyy-MM-dd'),
-        startTime: normalizedStartTime,
+        startTime: '08:00',
         endTime: '20:00'
       }))
     }));
@@ -511,23 +537,6 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { facilityId: string, selectedFields: string[], onToggleField: (name: string) => void }) {
-  const db = useFirestore();
-  const q = useMemoFirebase(() => db ? query(collection(db, 'facilities', facilityId, 'fields'), orderBy('name', 'asc')) : null, [db, facilityId]);
-  const { data: fields } = useCollection<Field>(q);
-
-  return (
-    <>
-      {fields?.map(field => (
-        <div key={field.id} className={cn("p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between group", selectedFields.some(sf => sf.includes(field.name)) ? "border-primary bg-primary/5 shadow-sm" : "border-muted hover:border-muted-foreground/20")} onClick={() => onToggleField(field.name)}>
-          <span className="text-[10px] font-black uppercase tracking-widest truncate">{field.name}</span>
-          {selectedFields.some(sf => sf.includes(field.name)) ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <div className="h-4 w-4 rounded-lg border-2 border-muted" />}
-        </div>
-      ))}
-    </>
   );
 }
 

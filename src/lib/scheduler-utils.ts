@@ -1,3 +1,4 @@
+
 /**
  * @fileOverview Core logic for the Elite Scheduling Engine.
  * Hardened for balanced distribution, multi-venue resource mapping, and intelligent double-headers.
@@ -37,16 +38,18 @@ export interface ScheduleConfig {
 }
 
 /**
- * Robust time parser handling 12h and 24h formats.
+ * Robust time parser handling 12h and 24h formats with regex fallbacks.
  */
 function parseTime(timeStr: string, referenceDate: Date): Date {
+  if (!timeStr) return new Date(NaN);
+  
   const formats = ['HH:mm', 'h:mm a', 'h:mm A', 'HH:mm:ss'];
   for (const f of formats) {
     const d = parse(timeStr, f, referenceDate);
     if (!isNaN(d.getTime())) return d;
   }
   
-  // Robust regex fallback for non-standard inputs
+  // Robust regex fallback for non-standard inputs (e.g., "8:30" or "14:00")
   const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
   if (match) {
     let [_, hours, mins, ampm] = match;
@@ -270,6 +273,8 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
       }
     }
   });
+
+  if (slots.length === 0) return [];
 
   // Balanced match assignment
   const totalMatches = Math.min(matchups.length, slots.length);
