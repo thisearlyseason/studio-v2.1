@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
@@ -43,7 +44,8 @@ import {
   Activity,
   History,
   ClipboardList,
-  X
+  X,
+  Save
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -572,6 +574,7 @@ export default function CoachesCornerPage() {
   const { activeTeam, isStaff, createTeamDocument, updateTeamDocument, deleteTeamDocument, db, members } = useTeam();
   const [activeTab, setActiveTab] = useState('recruiting');
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [editingWaiver, setEditingWaiver] = useState<TeamDocument | null>(null);
 
   const docsQuery = useMemoFirebase(() => (activeTeam && db) ? query(collection(db, 'teams', activeTeam.id, 'documents'), orderBy('createdAt', 'desc')) : null, [activeTeam?.id, db]);
   const { data: allDocuments } = useCollection<TeamDocument>(docsQuery);
@@ -579,6 +582,17 @@ export default function CoachesCornerPage() {
   const teamProtocols = useMemo(() => allDocuments?.filter(d => DEFAULT_PROTOCOLS.some(p => p.id === d.id)) || [], [allDocuments]);
 
   const selectedMember = useMemo(() => members.find(m => m.id === selectedMemberId), [members, selectedMemberId]);
+
+  const handleSaveProtocolUpdate = async () => {
+    if (!editingWaiver || !activeTeam) return;
+    await updateTeamDocument(editingWaiver.id, { 
+      title: editingWaiver.title,
+      content: editingWaiver.content,
+      type: editingWaiver.type
+    });
+    setEditingWaiver(null);
+    toast({ title: "Protocol Synchronized", description: "Legal terms updated globally for the squad." });
+  };
 
   if (!isStaff) return <div className="py-24 text-center opacity-20"><ShieldCheck className="h-16 w-16 mx-auto" /><h1 className="text-2xl font-black mt-4 uppercase tracking-widest text-foreground">Staff Access Restricted</h1></div>;
 
@@ -644,12 +658,17 @@ export default function CoachesCornerPage() {
                   <Card key={proto.id} className={cn("rounded-3xl border-none shadow-sm p-6 flex flex-col justify-between group transition-all", isActive ? "bg-white ring-1 ring-black/5" : "bg-muted/20 opacity-60")}>
                     <div className="flex items-center justify-between mb-4">
                       <div className="bg-primary/5 p-3 rounded-2xl shadow-sm border"><CheckCircle2 className={cn("h-5 w-5", isActive ? "text-primary" : "text-muted-foreground/30")} /></div>
-                      <Switch checked={isActive} onCheckedChange={async (v) => {
-                        const existing = teamProtocols.find(d => d.id === proto.id);
-                        if (!existing) await createTeamDocument({ ...proto, isActive: v, assignedTo: ['all'] });
-                        else await updateTeamDocument(proto.id, { isActive: v });
-                        toast({ title: `Protocol ${v ? 'Activated' : 'Deactivated'}` });
-                      }} />
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => setEditingWaiver(activeDoc || { ...proto, content: 'Enter legal text here...', isActive: true, assignedTo: ['all'] } as TeamDocument)}>
+                          <Edit3 className="h-4 w-4" />
+                        </Button>
+                        <Switch checked={isActive} onCheckedChange={async (v) => {
+                          const existing = teamProtocols.find(d => d.id === proto.id);
+                          if (!existing) await createTeamDocument({ ...proto, isActive: v, assignedTo: ['all'], content: 'Enter legal text here...' });
+                          else await updateTeamDocument(proto.id, { isActive: v });
+                          toast({ title: `Protocol ${v ? 'Activated' : 'Deactivated'}` });
+                        }} />
+                      </div>
                     </div>
                     <div className="space-y-1 mb-4"><p className="font-black text-sm uppercase text-foreground">{proto.title}</p><p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">System Mandate</p></div>
                   </Card>
@@ -663,6 +682,47 @@ export default function CoachesCornerPage() {
           <SafetyHub />
         </TabsContent>
       </Tabs>
+
+      <Dialog open={!!editingWaiver} onOpenChange={(o) => !o && setEditingWaiver(null)}>
+        <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl bg-white text-foreground">
+          <DialogTitle className="sr-only">Protocol Architect</DialogTitle>
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 lg:p-12 space-y-8 overflow-y-auto max-h-[90vh] custom-scrollbar">
+            <DialogHeader>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><FileText className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">Protocol Architect</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update Institutional Mandate & Legal Terms</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Mandate Title</Label>
+                <Input value={editingWaiver?.title} onChange={e => setEditingWaiver(p => p ? { ...p, title: e.target.value } : null)} className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Legal Execution Text</Label>
+                <Textarea value={editingWaiver?.content} onChange={e => setEditingWaiver(p => p ? { ...p, content: e.target.value } : null)} className="min-h-[300px] rounded-2xl border-2 font-medium p-6 bg-muted/5 focus:bg-white transition-all resize-none" placeholder="Define the official terms and conditions..." />
+              </div>
+              <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 flex items-start gap-4">
+                <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
+                <p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">
+                  Changes to this protocol will affect all future signatures. Teammates who have already signed may need to re-verify if the terms change significantly.
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleSaveProtocolUpdate}>
+                <Save className="h-6 w-6 mr-3" /> Commit Protocol Sync
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

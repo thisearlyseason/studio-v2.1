@@ -36,7 +36,8 @@ import {
   Trash2,
   Signature,
   FileText,
-  Play
+  Play,
+  Database
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -53,9 +54,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useTeam, TeamEvent, TournamentGame, Member, Facility, Field, TeamDocument } from '@/components/providers/team-provider';
+import { useTeam, TeamEvent, TournamentGame, Member, Facility, Field, TeamDocument, League, RegistrationEntry } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, where, doc, updateDoc, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, where, doc, updateDoc, getDocs, collectionGroup } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { format, isPast, isSameDay, eachDayOfInterval } from 'date-fns';
 import { useRouter } from 'next/navigation';
@@ -160,19 +161,23 @@ function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { fa
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pl-6">
-      {fields?.map(field => (
-        <div 
-          key={field.id} 
-          className={cn(
-            "p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between group",
-            selectedFields.includes(`${field.name}`) || selectedFields.some(sf => sf.endsWith(`: ${field.name}`)) ? "border-primary bg-primary/5 shadow-sm" : "border-muted hover:border-muted-foreground/20"
-          )}
-          onClick={() => onToggleField(`${field.name}`)}
-        >
-          <span className="text-[10px] font-black uppercase tracking-widest truncate">{field.name}</span>
-          {selectedFields.some(sf => sf.endsWith(`: ${field.name}`)) ? <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> : <div className="h-3.5 w-3.5 rounded-full border-2 border-muted group-hover:border-muted-foreground/30" />}
-        </div>
-      ))}
+      {fields?.map(field => {
+        const fieldIdentifier = `${facilityId}:${field.name}`;
+        const isSelected = selectedFields.includes(fieldIdentifier);
+        return (
+          <div 
+            key={field.id} 
+            className={cn(
+              "p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between group",
+              isSelected ? "border-primary bg-primary/5 shadow-sm" : "border-muted hover:border-muted-foreground/20"
+            )}
+            onClick={() => onToggleField(fieldIdentifier)}
+          >
+            <span className="text-[10px] font-black uppercase tracking-widest truncate">{field.name}</span>
+            {isSelected ? <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> : <div className="h-3.5 w-3.5 rounded-full border-2 border-muted group-hover:border-muted-foreground/30" />}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -192,6 +197,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
     tournamentType: 'round_robin' as 'round_robin' | 'single_elimination' | 'double_elimination',
     gameLength: '60',
     breakLength: '15',
+    gamesPerTeam: '3',
     dailyWindows: [] as DailyWindow[],
     selectedFields: [] as string[],
     manualVenue: '',
@@ -199,6 +205,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
     teams: [] as TournamentTeam[]
   });
 
+  // --- External Data Fetching ---
   const facilitiesQuery = useMemoFirebase(() => {
     if (!db || !authUser?.uid) return null;
     return query(collection(db, 'facilities'), where('clubId', '==', authUser.uid));
@@ -210,6 +217,18 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
     return collection(db, 'teams', activeTeam.id, 'documents');
   }, [db, activeTeam?.id]);
   const { data: documents } = useCollection<TeamDocument>(docsQuery);
+
+  const leaguesQuery = useMemoFirebase(() => {
+    if (!db || !authUser?.uid) return null;
+    return query(collection(db, 'leagues'), where('creatorId', '==', authUser.uid));
+  }, [db, authUser?.uid]);
+  const { data: leagues } = useCollection<League>(leaguesQuery);
+
+  const pipelineEntriesQuery = useMemoFirebase(() => {
+    if (!db || !authUser?.uid) return null;
+    return query(collectionGroup(db, 'registrationEntries'), where('status', 'in', ['accepted', 'assigned']));
+  }, [db, authUser?.uid]);
+  const { data: pipelineEntries } = useCollection<RegistrationEntry>(pipelineEntriesQuery);
 
   const initDailyWindows = () => {
     if (!form.startDate || !form.endDate) return;
@@ -229,6 +248,33 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
     setStep(step + 1);
   };
 
+  const importLeagueTeams = (leagueId: string) => {
+    const league = leagues?.find(l => l.id === leagueId);
+    if (!league?.teams) return;
+    const teamsToImport = Object.entries(league.teams).map(([id, t]) => ({
+      id: `l_${id}`,
+      name: t.teamName,
+      coach: t.coachName || 'League Coach',
+      email: t.coachEmail || '',
+      source: 'league' as const
+    }));
+    setForm(p => ({ ...p, teams: [...p.teams, ...teamsToImport] }));
+    toast({ title: "Teams Imported", description: `Added ${teamsToImport.length} squads from ${league.name}.` });
+  };
+
+  const importPipelineEntries = () => {
+    if (!pipelineEntries) return;
+    const teamsToImport = pipelineEntries.filter(e => e.protocol_id === 'team_config').map(e => ({
+      id: `p_${e.id}`,
+      name: e.answers.teamName || e.answers.name,
+      coach: e.answers.name || 'Pipeline Coach',
+      email: e.answers.email || '',
+      source: 'pipeline' as const
+    }));
+    setForm(p => ({ ...p, teams: [...p.teams, ...teamsToImport] }));
+    toast({ title: "Pipelines Imported", description: `Added ${teamsToImport.length} verified applicants.` });
+  };
+
   const handleDeploy = async () => {
     if (!form.title || form.teams.length < 2) return;
     setIsProcessing(true);
@@ -243,7 +289,8 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
       gameLength: parseInt(form.gameLength),
       breakLength: parseInt(form.breakLength),
       dailyWindows: form.dailyWindows,
-      tournamentType: form.tournamentType
+      tournamentType: form.tournamentType,
+      gamesPerTeam: parseInt(form.gamesPerTeam)
     });
 
     const success = await addEvent({
@@ -315,9 +362,15 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                           <Input type="date" value={form.endDate} onChange={e => setForm({...form, endDate: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-[10px] font-black uppercase ml-1">Primary Hub Venue</Label>
-                        <Input placeholder="Stadium or City..." value={form.location} onChange={e => setForm({...form, location: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase ml-1">Primary Hub Venue</Label>
+                          <Input placeholder="Stadium or City..." value={form.location} onChange={e => setForm({...form, location: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase ml-1">Games/Team (Min)</Label>
+                          <Input type="number" value={form.gamesPerTeam} onChange={e => setForm({...form, gamesPerTeam: e.target.value})} className="h-12 border-2 rounded-xl font-black text-primary" />
+                        </div>
                       </div>
                     </div>
                   </section>
@@ -327,9 +380,21 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
               {step === 2 && (
                 <div className="space-y-8 animate-in slide-in-from-right-4">
                   <section className="space-y-6">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                       <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Squad Roster Enrollment</h3>
-                      <Button variant="ghost" size="sm" className="text-[10px] font-black uppercase tracking-widest" onClick={() => setForm({...form, teams: [...form.teams, { id: `m_${Date.now()}`, name: '', coach: '', email: '', source: 'manual' }]})}>+ Add Line</Button>
+                      <div className="flex flex-wrap gap-2">
+                        {leagues?.map(l => (
+                          <Button key={l.id} variant="outline" size="sm" className="text-[8px] font-black uppercase h-8 border-primary/20 hover:bg-primary/5" onClick={() => importLeagueTeams(l.id)}>
+                            <Database className="h-3 w-3 mr-1" /> From {l.name}
+                          </Button>
+                        ))}
+                        <Button variant="outline" size="sm" className="text-[8px] font-black uppercase h-8 border-primary/20 hover:bg-primary/5" onClick={importPipelineEntries}>
+                          <UserPlus className="h-3 w-3 mr-1" /> From Pipelines
+                        </Button>
+                        <Button variant="ghost" size="sm" className="text-[8px] font-black uppercase h-8" onClick={() => setForm({...form, teams: [...form.teams, { id: `m_${Date.now()}`, name: '', coach: '', email: '', source: 'manual' }]})}>
+                          <Plus className="h-3 w-3 mr-1" /> Add Line
+                        </Button>
+                      </div>
                     </div>
                     <div className="space-y-3">
                       {form.teams.map((team, idx) => (
@@ -344,7 +409,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                       {form.teams.length === 0 && (
                         <div className="p-12 text-center border-2 border-dashed rounded-[2.5rem] bg-muted/10 opacity-40">
                           <Users className="h-10 w-10 mx-auto mb-4" />
-                          <p className="text-xs font-black uppercase">No squads enrolled. Initialize roster above.</p>
+                          <p className="text-xs font-black uppercase">No squads enrolled. Import or add manually.</p>
                         </div>
                       )}
                     </div>
@@ -372,15 +437,31 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                   <section className="space-y-6 pt-6 border-t">
                     <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Resource Mapping</h3>
                     <div className="space-y-8">
-                      {facilities?.map(f => (
+                      {facilities?.length ? facilities.map(f => (
                         <div key={f.id} className="space-y-4">
-                          <div className="flex items-center gap-3"><Building className="h-5 w-5 text-primary" /><span className="text-sm font-black uppercase">{f.name}</span></div>
-                          <FacilityFieldLoader facilityId={f.id} selectedFields={form.selectedFields} onToggleField={(name) => {
-                            const fullName = `${f.name}: ${name}`;
-                            setForm(p => ({ ...p, selectedFields: p.selectedFields.includes(fullName) ? p.selectedFields.filter(sf => sf !== fullName) : [...p.selectedFields, fullName] }));
-                          }} />
+                          <div className="flex items-center gap-3 px-2">
+                            <Building className="h-5 w-5 text-primary" />
+                            <span className="text-sm font-black uppercase">{f.name}</span>
+                          </div>
+                          <FacilityFieldLoader 
+                            facilityId={f.id} 
+                            selectedFields={form.selectedFields} 
+                            onToggleField={(fieldIdentifier) => {
+                              setForm(p => ({ 
+                                ...p, 
+                                selectedFields: p.selectedFields.includes(fieldIdentifier) 
+                                  ? p.selectedFields.filter(sf => sf !== fieldIdentifier) 
+                                  : [...p.selectedFields, fieldIdentifier] 
+                              }));
+                            }} 
+                          />
                         </div>
-                      ))}
+                      )) : (
+                        <div className="py-12 text-center border-2 border-dashed rounded-[2.5rem] bg-muted/10 opacity-40">
+                          <Info className="h-10 w-10 mx-auto mb-4" />
+                          <p className="text-xs font-black uppercase">No saved facilities found.</p>
+                        </div>
+                      )}
                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Manual Venue Override</Label><Input placeholder="External Venue Name..." value={form.manualVenue} onChange={e => setForm({...form, manualVenue: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
                     </div>
                   </section>
@@ -407,11 +488,14 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                         <div className="space-y-2">
                           <Label className="text-[10px] font-black uppercase ml-1">Compliance Waiver</Label>
                           <Select value={form.waiverId} onValueChange={(v) => setForm({...form, waiverId: v})}>
-                            <SelectTrigger className="h-14 rounded-2xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="h-14 rounded-2xl border-2 font-black"><SelectValue placeholder="Select Institutional Protocol..." /></SelectTrigger>
                             <SelectContent className="rounded-xl">
                               {documents?.map(doc => (
                                 <SelectItem key={doc.id} value={doc.id} className="font-bold">{doc.title}</SelectItem>
                               ))}
+                              {(!documents || documents.length === 0) && (
+                                <SelectItem value="default_tournament" className="font-bold">Standard Tournament Waiver</SelectItem>
+                              )}
                             </SelectContent>
                           </Select>
                         </div>
@@ -424,7 +508,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                           <div className="space-y-3 font-bold text-sm uppercase tracking-widest text-white/60">
                             <div className="flex justify-between border-b border-white/5 pb-2"><span>Squads</span><span className="text-primary">{form.teams.length}</span></div>
                             <div className="flex justify-between border-b border-white/5 pb-2"><span>Timeline</span><span>{form.startDate} &rarr; {form.endDate}</span></div>
-                            <div className="flex justify-between border-b border-white/5 pb-2"><span>Fields Map</span><span className="text-primary">{form.selectedFields.length || 'Manual'}</span></div>
+                            <div className="flex justify-between border-b border-white/5 pb-2"><span>Resources</span><span className="text-primary">{form.selectedFields.length || 'Manual'} Fields</span></div>
                           </div>
                         </div>
                       </div>
@@ -508,10 +592,13 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-4 justify-center">
                           <span className="font-black text-sm uppercase truncate text-right flex-1">{game.team1}</span>
-                          <span className="text-xl font-black text-primary">{game.score1}</span>
+                          <span className={cn("text-xl font-black", game.score1 > game.score2 ? "text-primary" : "text-foreground")}>{game.score1}</span>
                           <span className="opacity-20 text-[10px] font-black">VS</span>
-                          <span className="text-xl font-black text-primary">{game.score2}</span>
+                          <span className={cn("text-xl font-black", game.score2 > game.score1 ? "text-primary" : "text-foreground")}>{game.score2}</span>
                           <span className="font-black text-sm uppercase truncate flex-1">{game.team2}</span>
+                        </div>
+                        <div className="text-center mt-2">
+                          <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em]">{game.location}</span>
                         </div>
                       </div>
                     </div>
