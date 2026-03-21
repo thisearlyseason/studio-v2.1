@@ -252,8 +252,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       </Select>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Height</Label><Input value={profile.height} onChange={e => setProfile({...profile, height: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Weight (lbs)</Label><Input value={profile.weight} onChange={e => setProfile({...profile, weight: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Height</Label><Input value={profile.height ?? ''} onChange={e => setProfile({...profile, height: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Weight (lbs)</Label><Input value={profile.weight ?? ''} onChange={e => setProfile({...profile, weight: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
                     </div>
                   </div>
                 </section>
@@ -261,8 +261,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                 <section className="space-y-6">
                   <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Athletic Pulse (Verified)</h3>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">40yd Dash (s)</Label><Input type="number" value={metrics.fortyYardDash} onChange={e => setMetrics({...metrics, fortyYardDash: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Vertical Jump (in)</Label><Input type="number" value={metrics.verticalJump} onChange={e => setMetrics({...metrics, verticalJump: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">40yd Dash (s)</Label><Input type="number" value={metrics.fortyYardDash ?? ''} onChange={e => setMetrics({...metrics, fortyYardDash: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Vertical Jump (in)</Label><Input type="number" value={metrics.verticalJump ?? ''} onChange={e => setMetrics({...metrics, verticalJump: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
                   </div>
                 </section>
               </div>
@@ -271,10 +271,10 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                 <section className="space-y-6">
                   <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Narrative & Academics</h3>
                   <div className="space-y-4">
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Academic GPA</Label><Input type="number" step="0.01" value={profile.academicGPA} onChange={e => setProfile({...profile, academicGPA: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Academic GPA</Label><Input type="number" step="0.01" value={profile.academicGPA ?? ''} onChange={e => setProfile({...profile, academicGPA: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
                     <div className="space-y-2">
                       <Label className="text-[10px] font-black uppercase ml-1">Athletic Narrative</Label>
-                      <Textarea value={profile.bio} onChange={e => setProfile({...profile, bio: e.target.value})} className="min-h-[150px] border-2 rounded-2xl font-medium p-4 resize-none" placeholder="Recruiting summary..." />
+                      <Textarea value={profile.bio ?? ''} onChange={e => setProfile({...profile, bio: e.target.value})} className="min-h-[150px] border-2 rounded-2xl font-medium p-4 resize-none" placeholder="Recruiting summary..." />
                     </div>
                   </div>
                 </section>
@@ -524,12 +524,12 @@ function SafetyHub() {
             <div className="space-y-6">
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase ml-1">Incident Headline</Label>
-                <Input placeholder="e.g. Field Collision, Heat Exhaustion..." value={form.title} onChange={e => setForm({...form, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold" />
+                <Input placeholder="e.g. Field Collision, Heat Exhaustion..." value={form.title ?? ''} onChange={e => setForm({...form, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold" />
               </div>
               
               <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Date</Label><Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Location</Label><Input placeholder="Which field/court?" value={form.location} onChange={e => setForm({...form, location: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Date</Label><Input type="date" value={form.date ?? ''} onChange={e => setForm({...form, date: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Location</Label><Input placeholder="Which field/court?" value={form.location ?? ''} onChange={e => setForm({...form, location: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
               </div>
 
               <div className="flex items-center justify-between p-6 bg-red-50 rounded-[2rem] border-2 border-dashed border-red-200">
@@ -542,17 +542,17 @@ function SafetyHub() {
 
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase ml-1">Factual Narrative</Label>
-                <Textarea placeholder="What occurred? Be descriptive and objective..." value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="min-h-[120px] rounded-2xl border-2 font-medium" />
+                <Textarea placeholder="What occurred? Be descriptive and objective..." value={form.description ?? ''} onChange={e => setForm({...form, description: e.target.value})} className="min-h-[120px] rounded-2xl border-2 font-medium" />
               </div>
 
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase ml-1">Witnesses</Label>
-                <Input placeholder="Teammates, parents, or staff present..." value={form.witnesses} onChange={e => setForm({...form, witnesses: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
+                <Input placeholder="Teammates, parents, or staff present..." value={form.witnesses ?? ''} onChange={e => setForm({...form, witnesses: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
               </div>
 
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase ml-1">Immediate Actions Taken</Label>
-                <Textarea placeholder="First aid applied, return-to-play status, etc..." value={form.actionsTaken} onChange={e => setForm({...form, actionsTaken: e.target.value})} className="min-h-[100px] rounded-2xl border-2 font-medium" />
+                <Textarea placeholder="First aid applied, return-to-play status, etc..." value={form.actionsTaken ?? ''} onChange={e => setForm({...form, actionsTaken: e.target.value})} className="min-h-[100px] rounded-2xl border-2 font-medium" />
               </div>
             </div>
 
@@ -701,11 +701,11 @@ export default function CoachesCornerPage() {
             <div className="space-y-6">
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Mandate Title</Label>
-                <Input value={editingWaiver?.title} onChange={e => setEditingWaiver(p => p ? { ...p, title: e.target.value } : null)} className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20" />
+                <Input value={editingWaiver?.title ?? ''} onChange={e => setEditingWaiver(p => p ? { ...p, title: e.target.value } : null)} className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20" />
               </div>
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Legal Execution Text</Label>
-                <Textarea value={editingWaiver?.content} onChange={e => setEditingWaiver(p => p ? { ...p, content: e.target.value } : null)} className="min-h-[300px] rounded-2xl border-2 font-medium p-6 bg-muted/5 focus:bg-white transition-all resize-none" placeholder="Define the official terms and conditions..." />
+                <Textarea value={editingWaiver?.content ?? ''} onChange={e => setEditingWaiver(p => p ? { ...p, content: e.target.value } : null)} className="min-h-[300px] rounded-2xl border-2 font-medium p-6 bg-muted/5 focus:bg-white transition-all resize-none" placeholder="Define the official terms and conditions..." />
               </div>
               <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 flex items-start gap-4">
                 <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
