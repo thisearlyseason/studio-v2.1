@@ -49,9 +49,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useTeam, TeamEvent, TournamentGame, Member, Facility, Field, TeamDocument } from '@/components/providers/team-provider';
+import { useTeam, TeamEvent, TournamentGame, Member, Facility, Field, TeamDocument, League, RegistrationEntry } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, where, doc, updateDoc, collectionGroup } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { format, isPast, isSameDay, eachDayOfInterval } from 'date-fns';
 import { useRouter } from 'next/navigation';
@@ -145,13 +145,15 @@ function BracketVisualizer({ games }: { games: TournamentGame[] }) {
 
 function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () => void }) {
   const { user: authUser } = useUser();
-  const { members, isStaff, activeTeam, db, exportTournamentStandingsCSV, exportAttendanceCSV, updateRSVP } = useTeam();
+  const { members, isStaff, activeTeam, db, exportTournamentStandingsCSV, exportAttendanceCSV } = useTeam();
   const standings = useMemo(() => calculateTournamentStandings(event.tournamentTeams || [], event.tournamentGames || []), [event.tournamentTeams, event.tournamentGames]);
   const isOrganizer = isStaff && event.teamId === activeTeam?.id;
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isGenOpen, setIsGenOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('itinerary');
+  
   const [editForm, setEditForm] = useState({ 
     teams: event.tournamentTeams?.join(', ') || '', 
     invitedEmails: Object.keys(event.invitedTeamEmails || {}).join(', ') 
@@ -172,6 +174,13 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
     selectedFields: [],
     manualVenue: event.location || ''
   });
+
+  // --- External Data Fetching for Imports ---
+  const leaguesQuery = useMemoFirebase(() => (db && isOrganizer) ? query(collection(db, 'leagues'), where('creatorId', '==', authUser?.uid)) : null, [db, isOrganizer, authUser?.uid]);
+  const { data: myLeagues } = useCollection<League>(leaguesQuery);
+
+  const pipelineQuery = useMemoFirebase(() => (db && isOrganizer) ? query(collectionGroup(db, 'registrationEntries'), where('status', '==', 'accepted')) : null, [db, isOrganizer]);
+  const { data: pipelineEntries } = useCollection<RegistrationEntry>(pipelineQuery);
 
   const initGenModal = () => {
     const days = eachDayOfInterval({ start: new Date(event.date), end: new Date(event.endDate || event.date) });
@@ -211,6 +220,22 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
     toast({ title: "Tournament Roster Updated" });
   };
 
+  const importFromLeague = (league: League) => {
+    const leagueTeams = Object.values(league.teams || {}).map(t => t.teamName);
+    const current = editForm.teams ? editForm.teams.split(',').map(t => t.trim()) : [];
+    const combined = Array.from(new Set([...current, ...leagueTeams])).filter(t => t);
+    setEditForm(p => ({ ...p, teams: combined.join(', ') }));
+    toast({ title: "League Roster Imported", description: `Added ${leagueTeams.length} squads.` });
+  };
+
+  const importFromPipeline = () => {
+    const entries = (pipelineEntries || []).map(e => e.answers['teamName'] || e.answers['name']).filter(Boolean);
+    const current = editForm.teams ? editForm.teams.split(',').map(t => t.trim()) : [];
+    const combined = Array.from(new Set([...current, ...entries])).filter(t => t);
+    setEditForm(p => ({ ...p, teams: combined.join(', ') }));
+    toast({ title: "Pipeline Imported", description: `Added ${entries.length} applicants.` });
+  };
+
   const handleGenerateItinerary = async () => {
     const finalFields = genConfig.selectedFields.length > 0 ? genConfig.selectedFields : [genConfig.manualVenue || 'TBD'];
     if (!event.tournamentTeams?.length || finalFields.length === 0) {
@@ -228,7 +253,10 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
       breakLength: parseInt(genConfig.breakLength),
       dailyWindows: genConfig.dailyWindows
     });
-    await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { tournamentGames: schedule, location: genConfig.manualVenue || facilities?.find(f => f.id === genConfig.selectedFacilityId)?.name });
+    await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { 
+      tournamentGames: schedule, 
+      location: genConfig.manualVenue || facilities?.find(f => f.id === genConfig.selectedFacilityId)?.name 
+    });
     setIsGenOpen(false);
     toast({ title: "Itinerary Deployed", description: `Auto-generated ${schedule.length} matches.` });
   };
@@ -240,16 +268,6 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
         ? p.selectedFields.filter(f => f !== fieldName)
         : [...p.selectedFields, fieldName]
     }));
-  };
-
-  const handleAddCalendar = () => {
-    downloadICS([{
-      title: event.title,
-      start: new Date(event.date),
-      end: event.endDate ? new Date(event.endDate) : undefined,
-      location: event.location,
-      description: event.description
-    }], `${event.title.replace(/\s+/g, '_')}.ics`);
   };
 
   return (
@@ -281,7 +299,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
           <div className="space-y-4"><p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Operational Brief</p><p className="text-sm font-medium text-white/80 leading-relaxed italic">"{event.description || 'Championship coordination itinerary established.'}"</p></div>
           
           <div className="grid grid-cols-1 gap-3">
-            <Button variant="outline" className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] border-none hover:bg-primary hover:text-white transition-all shadow-xl" onClick={handleAddCalendar}>
+            <Button variant="outline" className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] border-none hover:bg-primary hover:text-white transition-all shadow-xl" onClick={() => downloadICS([{ title: event.title, start: new Date(event.date), end: event.endDate ? new Date(event.endDate) : undefined, location: event.location, description: event.description }], `${event.title.replace(/\s+/g, '_')}.ics`)}>
               <CalendarIcon className="h-4 w-4 mr-2 text-black" /> <span className="text-black">Add to Calendar</span>
             </Button>
             {isOrganizer && (
@@ -293,18 +311,25 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 
           <div className="space-y-4 pt-4 border-t border-white/10">
             <div className="flex justify-between items-center"><h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Leaderboard Pulse</h4>{isOrganizer && <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-white/10" onClick={() => exportTournamentStandingsCSV(event.id)}><Download className="h-4 w-4" /></Button>}</div>
-            <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">{standings.map((team) => (<div key={team.name} className="flex justify-between items-center px-5 py-4 border-b border-white/5 last:border-0"><span className="text-xs font-black uppercase truncate pr-2">{team.name}</span><Badge className="bg-primary text-white border-none font-black text-[9px] px-2 h-5">{team.points} PTS</Badge></div>))}</div>
+            <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
+              {standings.length > 0 ? standings.map((team) => (
+                <div key={team.name} className="flex justify-between items-center px-5 py-4 border-b border-white/5 last:border-0">
+                  <span className="text-xs font-black uppercase truncate pr-2">{team.name}</span>
+                  <Badge className="bg-primary text-white border-none font-black text-[9px] px-2 h-5">{team.points} PTS</Badge>
+                </div>
+              )) : <div className="p-8 text-center opacity-20 text-[10px] font-black uppercase">No standing data.</div>}
+            </div>
           </div>
         </aside>
 
         <div className="flex-1 min-w-0 bg-white rounded-[3rem] border-2 shadow-sm overflow-hidden">
-          <Tabs defaultValue="itinerary" className="w-full h-full flex flex-col">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col">
             <div className="bg-muted/30 p-6 border-b">
               <TabsList className="bg-white/50 h-auto p-1.5 rounded-2xl border w-full flex-wrap gap-1">
                 <TabsTrigger value="itinerary" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Matches</TabsTrigger>
                 <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Bracket</TabsTrigger>
                 <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
-                <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Legal</TabsTrigger>
+                <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>
               </TabsList>
             </div>
             <div className="flex-1 p-8 lg:p-10">
@@ -343,6 +368,12 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                     <p className="text-[10px] text-muted-foreground font-medium leading-relaxed italic">Mobile entry hub for field marshals to post verified match results.</p>
                     <Button className="w-full h-10 rounded-xl font-black uppercase text-[10px]">Open Scorer Hub <ExternalLink className="ml-2 h-3 w-3" /></Button>
                   </Card>
+                  <Card className="rounded-[2rem] border-none shadow-md bg-primary text-white p-6 space-y-4 group cursor-pointer hover:ring-2 hover:ring-black transition-all" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`); toast({ title: "Waiver Link Copied" }); }}>
+                    <Badge className="bg-black text-white border-none font-black text-[8px] h-5 px-2">SQUAD ACCESS</Badge>
+                    <h4 className="text-xl font-black uppercase tracking-tight">Team Waiver Portal</h4>
+                    <p className="text-[10px] text-white/80 font-medium leading-relaxed italic">Direct link for external captains to sign participation agreements.</p>
+                    <Button variant="secondary" className="w-full h-10 rounded-xl font-black uppercase text-[10px] bg-white text-primary">Copy Signature Link <Share2 className="ml-2 h-3 w-3" /></Button>
+                  </Card>
                 </div>
               </TabsContent>
               <TabsContent value="compliance" className="mt-0">
@@ -357,26 +388,48 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
       </div>
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 overflow-hidden border-none shadow-2xl">
+        <DialogContent className="rounded-[2.5rem] sm:max-w-3xl p-0 overflow-hidden border-none shadow-2xl bg-white">
           <DialogTitle className="sr-only">Roster Management Hub</DialogTitle>
-          <div className="bg-primary/5 p-8 border-b">
+          <div className="bg-primary/5 p-8 border-b space-y-2">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Expand Competition</DialogTitle>
-              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Enroll participating squads</DialogDescription>
+              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Championship Roster</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Enroll participating squads & pipeline sources</DialogDescription>
             </DialogHeader>
           </div>
-          <div className="space-y-6 p-8 overflow-y-auto max-h-[70vh] custom-scrollbar">
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Squad Names (Comma separated)</Label>
-              <Input value={editForm.teams} onChange={e => setEditForm({ ...editForm, teams: e.target.value })} className="h-12 rounded-xl border-2 font-bold text-foreground" placeholder="Tigers, Lions, Warriors..." />
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-0">
+            <div className="md:col-span-7 p-8 space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Enrolled Squad Names (Comma separated)</Label>
+                <Textarea value={editForm.teams} onChange={e => setEditForm({ ...editForm, teams: e.target.value })} className="min-h-[150px] rounded-2xl border-2 font-bold text-foreground resize-none" placeholder="Tigers, Lions, Warriors..." />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Team Representative Invites (Optional)</Label>
+                <Input value={editForm.invitedEmails} onChange={e => setEditForm({ ...editForm, invitedEmails: e.target.value })} className="h-12 rounded-xl border-2 font-bold text-foreground" placeholder="coach@tigers.com, coach@lions.com..." />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Team Email Invites (Optional)</Label>
-              <Input value={editForm.invitedEmails} onChange={e => setEditForm({ ...editForm, invitedEmails: e.target.value })} className="h-12 rounded-xl border-2 font-bold text-foreground" placeholder="coach@tigers.com, coach@lions.com..." />
+            <div className="md:col-span-5 bg-muted/20 p-8 border-l border-muted">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-4">Import Channels</p>
+              <div className="space-y-3">
+                {myLeagues?.map(l => (
+                  <Button key={l.id} variant="outline" className="w-full justify-between h-auto py-3 px-4 rounded-xl bg-white text-[10px] font-black uppercase border-2" onClick={() => importFromLeague(l)}>
+                    <div className="flex items-center gap-2"><Trophy className="h-3 w-3" /><span className="truncate max-w-[120px]">{l.name}</span></div>
+                    <ArrowRight className="h-3 w-3" />
+                  </Button>
+                ))}
+                <Button variant="outline" className="w-full justify-between h-auto py-3 px-4 rounded-xl bg-white text-[10px] font-black uppercase border-2" onClick={importFromPipeline}>
+                  <div className="flex items-center gap-2"><Target className="h-3 w-3" />Recruit Pipeline</div>
+                  <Badge className="h-4 px-1 text-[7px]">{pipelineEntries?.length || 0}</Badge>
+                </Button>
+              </div>
+              <div className="mt-8 bg-primary/5 p-4 rounded-2xl border border-primary/10">
+                <p className="text-[9px] font-bold text-primary uppercase leading-relaxed italic">
+                  <strong>PRO TIP:</strong> Finalize your full roster before generating the itinerary to ensure balanced round-robin brackets.
+                </p>
+              </div>
             </div>
           </div>
           <div className="p-8 bg-muted/10 border-t">
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdateTeams}>Synchronize Roster</Button>
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdateTeams}>Synchronize Championship Roster</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -385,7 +438,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
         <DialogContent className="rounded-[3rem] sm:max-w-3xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Tournament Itinerary Architect</DialogTitle>
           <div className="h-2 bg-primary w-full" />
-          <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
+          <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
             <DialogHeader>
               <DialogTitle className="text-3xl font-black uppercase tracking-tight leading-none">Itinerary Architect</DialogTitle>
               <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-2">Precision Multi-Day Resource Mapping</DialogDescription>
@@ -431,15 +484,15 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                 <div className="space-y-6">
                   <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Facility Allocation</h3>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Host Venue</Label>
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Host Venue (Saved)</Label>
                     <select className="w-full h-12 rounded-xl border-2 px-3 font-bold bg-muted/10 outline-none focus:ring-2 focus:ring-primary/20 transition-all text-foreground" value={genConfig.selectedFacilityId} onChange={e => setGenConfig({...genConfig, selectedFacilityId: e.target.value, selectedFields: []})}>
-                      <option value="">Select venue...</option>
+                      <option value="">Select facility...</option>
                       {facilities?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Or Manual Venue</Label>
-                    <Input placeholder="e.g. Regional Sports Park" value={genConfig.manualVenue} onChange={e => setGenConfig({...genConfig, manualVenue: e.target.value})} className="h-12 rounded-xl border-2 font-bold text-foreground" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Or Manual Venue Address</Label>
+                    <Input placeholder="e.g. Regional Sports Park Diamond 4" value={genConfig.manualVenue} onChange={e => setGenConfig({...genConfig, manualVenue: e.target.value})} className="h-12 rounded-xl border-2 font-bold text-foreground" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Resource Pool</Label>
@@ -454,7 +507,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                         {(!fields || fields.length === 0) && (
                           <div className="flex flex-col items-center justify-center py-12 text-center opacity-30 text-foreground">
                             <Building className="h-8 w-8 mb-2" />
-                            <p className="text-[9px] font-bold uppercase tracking-widest max-w-[150px]">Select a facility to allocate field resources.</p>
+                            <p className="text-[9px] font-bold uppercase tracking-widest max-w-[150px]">Select a facility to allocate resources.</p>
                           </div>
                         )}
                       </div>
@@ -545,7 +598,7 @@ export default function TournamentsPage({ preSelectedTournament, onExit }: { pre
             <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
               <DialogTitle className="sr-only">Tournament Deployment wizard</DialogTitle>
               <div className="h-2 bg-primary w-full" />
-              <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
+              <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
                 <DialogHeader>
                   <div className="flex items-center gap-4 mb-2">
                     <div className="bg-primary/10 p-3 rounded-2xl text-primary">

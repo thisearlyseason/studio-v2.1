@@ -18,7 +18,7 @@ export interface TeamIdentity {
 }
 
 export interface ScheduleConfig {
-  teams: TeamIdentity[]; // Changed from string[] to TeamIdentity[] for robust mapping
+  teams: TeamIdentity[] | string[];
   fields: string[];
   startDate: string;
   endDate?: string;
@@ -30,7 +30,7 @@ export interface ScheduleConfig {
   doubleHeaderOption?: 'none' | 'sameTeam' | 'differentTeams';
   blackoutDates?: string[]; // ISO Strings
   dailyWindows?: DailyWindow[];
-  playDays: number[];
+  playDays?: number[];
 }
 
 /**
@@ -46,7 +46,6 @@ function shuffle<T>(array: T[]): T[] {
 
 /**
  * Generates a full League Season schedule.
- * TACTICAL FIX: Refactored to Field-First slot iteration to ensure consecutive matches on the same diamond.
  */
 export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[] {
   const {
@@ -58,33 +57,33 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
     endTime,
     gameLength,
     breakLength,
-    playDays,
+    playDays = [1, 2, 3, 4, 5, 6, 0],
     gamesPerTeam = 10,
     doubleHeaderOption = 'none',
     blackoutDates = [],
   } = config;
 
-  if (teams.length < 2 || fields.length === 0) return [];
+  const teamIdentities = teams.map((t, idx) => typeof t === 'string' ? { id: `t_${idx}`, name: t } : t);
+
+  if (teamIdentities.length < 2 || fields.length === 0) return [];
 
   const startD = new Date(startDate);
   const endD = endDate ? new Date(endDate) : addDays(startD, 120);
 
-  // 1. Generate balanced round-robin match pool with ID mapping
   const basePairs: { t1: TeamIdentity; t2: TeamIdentity }[] = [];
-  for (let i = 0; i < teams.length; i++) {
-    for (let j = i + 1; j < teams.length; j++) {
-      basePairs.push({ t1: teams[i], t2: teams[j] });
+  for (let i = 0; i < teamIdentities.length; i++) {
+    for (let j = i + 1; j < teamIdentities.length; j++) {
+      basePairs.push({ t1: teamIdentities[i], t2: teamIdentities[j] });
     }
   }
 
   let matchPool: { t1: TeamIdentity; t2: TeamIdentity }[] = [];
-  const requiredGames = Math.ceil((teams.length * gamesPerTeam) / 2);
+  const requiredGames = Math.ceil((teamIdentities.length * gamesPerTeam) / 2);
 
   while (matchPool.length < requiredGames) {
     const round = Math.floor(matchPool.length / basePairs.length);
     shuffle(basePairs);
     for (const pair of basePairs) {
-      // Rotate Home/Visitor
       if (round % 2 === 0) {
         matchPool.push({ t1: pair.t1, t2: pair.t2 });
       } else {
@@ -95,8 +94,6 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
   }
   shuffle(matchPool);
 
-  // 2. Generate Available Slots: Time -> Field order to allow concurrent games
-  // TACTICAL CHANGE: We iterate days, then times, then fields.
   const availableSlots: { date: Date; time: Date; field: string }[] = [];
   let currentDay = new Date(startD);
 
@@ -122,9 +119,8 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
     currentDay = addDays(currentDay, 1);
   }
 
-  // 3. Intelligent Assignment
   const finalGames: TournamentGame[] = [];
-  const teamGameCounts = new Map<string, number>(teams.map(t => [t.id, 0]));
+  const teamGameCounts = new Map<string, number>(teamIdentities.map(t => [t.id, 0]));
   const dailyTeamUsage = new Map<string, { teamId: string; field: string; opponentId: string; time: string }[]>();
 
   for (const slot of availableSlots) {
@@ -139,33 +135,26 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
     for (let i = 0; i < matchPool.length; i++) {
       const { t1, t2 } = matchPool[i];
 
-      // Busy right now?
       const isT1BusyNow = todaysGames.some(g => g.teamId === t1.id && g.time === timeKey);
       const isT2BusyNow = todaysGames.some(g => g.teamId === t2.id && g.time === timeKey);
       if (isT1BusyNow || isT2BusyNow) continue;
 
-      // Quota reached?
       if ((teamGameCounts.get(t1.id) || 0) >= gamesPerTeam || (teamGameCounts.get(t2.id) || 0) >= gamesPerTeam) continue;
 
       const t1PrevGames = todaysGames.filter(g => g.teamId === t1.id);
       const t2PrevGames = todaysGames.filter(g => g.teamId === t2.id);
 
-      // Double Header Strategy
       if (doubleHeaderOption === 'none') {
         if (t1PrevGames.length > 0 || t2PrevGames.length > 0) continue;
       } else {
         if (t1PrevGames.length >= 2 || t2PrevGames.length >= 2) continue;
-
-        // Same field constraint
         if (t1PrevGames.length === 1 && t1PrevGames[0].field !== slot.field) continue;
         if (t2PrevGames.length === 1 && t2PrevGames[0].field !== slot.field) continue;
 
         if (doubleHeaderOption === 'sameTeam') {
-          // If T1 already played today, the current matchup MUST be T2 vs T1 (reverse)
           if (t1PrevGames.length === 1 && t1PrevGames[0].opponentId !== t2.id) continue;
           if (t2PrevGames.length === 1 && t2PrevGames[0].opponentId !== t1.id) continue;
         } else if (doubleHeaderOption === 'differentTeams') {
-          // If T1 already played today, ensure this game is NOT against the same opponent
           if (t1PrevGames.length === 1 && t1PrevGames[0].opponentId === t2.id) continue;
           if (t2PrevGames.length === 1 && t2PrevGames[0].opponentId === t1.id) continue;
         }
@@ -177,7 +166,6 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
 
     if (foundMatchupIndex !== -1) {
       const { t1, t2 } = matchPool.splice(foundMatchupIndex, 1)[0];
-      // TACTICAL ID ENHANCEMENT: Use index and random component to ensure unique EIDs for calendar sync
       const gameIdSuffix = `${Math.random().toString(36).substring(2, 7)}_${finalGames.length}`;
       
       finalGames.push({
@@ -206,31 +194,40 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
 }
 
 /**
- * Tournament simple schedule
+ * Tournament specific schedule supporting Round Robin and basic Elim Initial Seeds
  */
-export function generateTournamentSchedule(config: Omit<ScheduleConfig, 'playDays' | 'teams'> & { teams: string[] }): TournamentGame[] {
+export function generateTournamentSchedule(config: Omit<ScheduleConfig, 'playDays'> & { teams: string[] }): TournamentGame[] {
   const { teams, fields, startDate, endDate, startTime, endTime, gameLength, breakLength, dailyWindows } = config;
   const games: TournamentGame[] = [];
   const startD = new Date(startDate);
   const endD = endDate ? new Date(endDate) : startD;
+  
   const matchups: [string, string][] = [];
   for (let i = 0; i < teams.length; i++) {
     for (let j = i + 1; j < teams.length; j++) {
       matchups.push([teams[i], teams[j]]);
     }
   }
+  
   const dayInterval = eachDayOfInterval({ start: startD, end: endD });
   const slots: { date: Date; time: Date; field: string }[] = [];
+  
   dayInterval.forEach(day => {
     const dayStr = format(day, 'yyyy-MM-dd');
     const window = dailyWindows?.find(w => w.date === dayStr);
+    
     let currentTime = parse(window?.startTime || startTime, 'HH:mm', day);
     const dayEndTime = parse(window?.endTime || endTime, 'HH:mm', day);
+    
     while (isBefore(currentTime, dayEndTime)) {
-      for (const f of fields) slots.push({ date: new Date(day), time: new Date(currentTime), field: f });
+      for (const f of fields) {
+        slots.push({ date: new Date(day), time: new Date(currentTime), field: f });
+      }
       currentTime = addMinutes(currentTime, gameLength + breakLength);
     }
   });
+
+  // Assign matchups to slots
   for (let i = 0; i < Math.min(matchups.length, slots.length); i++) {
     games.push({
       id: `tg_${Date.now()}_${i}`,
@@ -244,5 +241,6 @@ export function generateTournamentSchedule(config: Omit<ScheduleConfig, 'playDay
       isCompleted: false
     });
   }
+  
   return games;
 }
