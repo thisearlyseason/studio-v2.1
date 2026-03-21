@@ -20,7 +20,8 @@ import {
   Info,
   ChevronRight,
   LayoutGrid,
-  Building
+  Building,
+  AlertCircle
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -73,17 +74,24 @@ function FacilityFieldManager({ facility }: { facility: Facility }) {
             )}
           </div>
         ))}
-        {(!fields || fields.length === 0) && <p className="text-[9px] font-bold text-muted-foreground italic text-center py-2">No fields established.</p>}
+        {(!fields || fields.length === 0) && (
+          <div className="bg-amber-50 p-4 rounded-xl border-2 border-dashed border-amber-200 flex flex-col items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-amber-600" />
+            <p className="text-[9px] font-bold text-amber-700 uppercase text-center leading-tight">
+              Action Required: Establish active fields/courts below to enable scheduling.
+            </p>
+          </div>
+        )}
       </div>
       <div className="flex gap-2 pt-2">
         <Input 
-          placeholder="New field name..." 
+          placeholder="e.g. Field A, Court 1..." 
           value={newFieldName} 
           onChange={e => setNewFieldName(e.target.value)} 
-          className="h-9 rounded-xl text-xs font-bold"
+          className="h-10 rounded-xl text-xs font-bold"
         />
-        <Button size="sm" onClick={handleAddField} disabled={isProcessing || !newFieldName.trim()} className="h-9 rounded-xl px-4 font-black uppercase text-[10px]">
-          Add
+        <Button size="sm" onClick={handleAddField} disabled={isProcessing || !newFieldName.trim()} className="h-10 rounded-xl px-4 font-black uppercase text-[10px]">
+          Add Resource
         </Button>
       </div>
     </div>
@@ -127,7 +135,7 @@ export default function FacilityManagementPage() {
     <div className="space-y-10 pb-20 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Master Infrastructure</Badge>
+          <Badge className="bg-primary/10 text-primary border-none font-black tracking-widest text-[9px] h-6 px-3">Master Infrastructure</Badge>
           <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Facilities</h1>
           <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Asset Scheduling & Venue Coordination</p>
         </div>
@@ -155,6 +163,12 @@ export default function FacilityManagementPage() {
                   </div>
                 </DialogHeader>
                 <div className="space-y-6">
+                  <div className="bg-amber-50 p-6 rounded-[2rem] border-2 border-dashed border-amber-200 flex items-start gap-4">
+                    <AlertCircle className="h-6 w-6 text-amber-600 shrink-0" />
+                    <p className="text-[11px] font-bold text-amber-800 uppercase leading-relaxed">
+                      Note: Once a facility is enrolled, you MUST add active fields, courts, or rooms to its profile to make it available for tournament scheduling.
+                    </p>
+                  </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Venue Name</Label>
                     <Input placeholder="e.g. Metro Sports Complex" value={newFac.name} onChange={e => setNewFac({...newFac, name: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all" />

@@ -1,3 +1,4 @@
+
 /**
  * @fileOverview Core logic for the Elite Scheduling Engine.
  * Hardened for balanced distribution, multi-venue resource mapping, and intelligent double-headers.
@@ -15,6 +16,8 @@ export interface DailyWindow {
 export interface TeamIdentity {
   id: string;
   name: string;
+  coach?: string;
+  email?: string;
 }
 
 export interface ScheduleConfig {
@@ -31,6 +34,7 @@ export interface ScheduleConfig {
   blackoutDates?: string[]; // ISO Strings
   dailyWindows?: DailyWindow[];
   playDays?: number[];
+  tournamentType?: 'round_robin' | 'single_elimination' | 'double_elimination';
 }
 
 /**
@@ -194,18 +198,27 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
 }
 
 /**
- * Tournament specific schedule supporting Round Robin and basic Elim Initial Seeds
+ * Tournament specific schedule supporting Round Robin and Multi-Venue Resource Mapping
  */
-export function generateTournamentSchedule(config: Omit<ScheduleConfig, 'playDays'> & { teams: string[] }): TournamentGame[] {
-  const { teams, fields, startDate, endDate, startTime, endTime, gameLength, breakLength, dailyWindows } = config;
+export function generateTournamentSchedule(config: ScheduleConfig): TournamentGame[] {
+  const { teams, fields, startDate, endDate, startTime, endTime, gameLength, breakLength, dailyWindows, tournamentType = 'round_robin' } = config;
+  
+  const teamList = teams.map((t, i) => typeof t === 'string' ? { id: `t_${i}`, name: t } : t);
   const games: TournamentGame[] = [];
   const startD = new Date(startDate);
   const endD = endDate ? new Date(endDate) : startD;
   
-  const matchups: [string, string][] = [];
-  for (let i = 0; i < teams.length; i++) {
-    for (let j = i + 1; j < teams.length; j++) {
-      matchups.push([teams[i], teams[j]]);
+  const matchups: [TeamIdentity, TeamIdentity][] = [];
+  if (tournamentType === 'round_robin') {
+    for (let i = 0; i < teamList.length; i++) {
+      for (let j = i + 1; j < teamList.length; j++) {
+        matchups.push([teamList[i], teamList[j]]);
+      }
+    }
+  } else {
+    // Basic elimination seeding (first round)
+    for (let i = 0; i < Math.floor(teamList.length / 2); i++) {
+      matchups.push([teamList[i], teamList[teamList.length - 1 - i]]);
     }
   }
   
@@ -227,18 +240,21 @@ export function generateTournamentSchedule(config: Omit<ScheduleConfig, 'playDay
     }
   });
 
-  // Assign matchups to slots
+  // Assign matchups to available slots across all selected venues
   for (let i = 0; i < Math.min(matchups.length, slots.length); i++) {
     games.push({
       id: `tg_${Date.now()}_${i}`,
-      team1: matchups[i][0],
-      team2: matchups[i][1],
+      team1: matchups[i][0].name,
+      team2: matchups[i][1].name,
+      team1Id: matchups[i][0].id,
+      team2Id: matchups[i][1].id,
       score1: 0,
       score2: 0,
       date: format(slots[i].date, 'yyyy-MM-dd'),
       time: format(slots[i].time, 'h:mm a'),
       location: slots[i].field,
-      isCompleted: false
+      isCompleted: false,
+      updatedAt: new Date().toISOString()
     });
   }
   

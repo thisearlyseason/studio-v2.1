@@ -1,6 +1,7 @@
+
 "use client";
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,7 +33,11 @@ import {
   Settings,
   Building,
   CheckCircle2,
-  Calendar as CalendarDaysIcon
+  Calendar as CalendarDaysIcon,
+  Save,
+  Mail,
+  User,
+  Trash2
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -51,20 +56,25 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTeam, TeamEvent, TournamentGame, Member, Facility, Field, TeamDocument, League, RegistrationEntry } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, where, doc, updateDoc, collectionGroup } from 'firebase/firestore';
+import { collection, query, orderBy, where, doc, updateDoc, collectionGroup, getDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { format, isPast, isSameDay, eachDayOfInterval } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
-import { generateTournamentSchedule, DailyWindow } from '@/lib/scheduler-utils';
+import { generateTournamentSchedule, DailyWindow, TeamIdentity } from '@/lib/scheduler-utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { downloadICS } from '@/lib/calendar-utils';
 import html2canvas from 'html2canvas';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-function calculateTournamentStandings(teams: string[], games: TournamentGame[]) {
+interface TournamentTeam extends TeamIdentity {
+  coach?: string;
+  email?: string;
+}
+
+function calculateTournamentStandings(teams: TournamentTeam[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
-    acc[team] = { name: team, wins: 0, losses: 0, ties: 0, points: 0 };
+    acc[team.name] = { name: team.name, wins: 0, losses: 0, ties: 0, points: 0 };
     return acc;
   }, {} as Record<string, any>);
   
@@ -146,7 +156,9 @@ function BracketVisualizer({ games }: { games: TournamentGame[] }) {
 function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () => void }) {
   const { user: authUser } = useUser();
   const { members, isStaff, activeTeam, db, exportTournamentStandingsCSV, exportAttendanceCSV } = useTeam();
-  const standings = useMemo(() => calculateTournamentStandings(event.tournamentTeams || [], event.tournamentGames || []), [event.tournamentTeams, event.tournamentGames]);
+  
+  const [tournamentTeams, setTournamentTeams] = useState<TournamentTeam[]>([]);
+  const standings = useMemo(() => calculateTournamentStandings(tournamentTeams, event.tournamentGames || []), [tournamentTeams, event.tournamentGames]);
   const isOrganizer = isStaff && event.teamId === activeTeam?.id;
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
@@ -154,26 +166,36 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
   const [isGenOpen, setIsGenOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('itinerary');
   
-  const [editForm, setEditForm] = useState({ 
-    teams: event.tournamentTeams?.join(', ') || '', 
-    invitedEmails: Object.keys(event.invitedTeamEmails || {}).join(', ') 
-  });
+  const [teamRows, setTeamRows] = useState<TournamentTeam[]>([]);
 
   const [genConfig, setGenConfig] = useState<{
     dailyWindows: DailyWindow[];
     gameLength: string;
     breakLength: string;
-    selectedFacilityId: string;
     selectedFields: string[];
     manualVenue: string;
+    tournamentType: 'round_robin' | 'single_elimination' | 'double_elimination';
   }>({
     dailyWindows: [],
     gameLength: '60',
     breakLength: '15',
-    selectedFacilityId: '',
     selectedFields: [],
-    manualVenue: event.location || ''
+    manualVenue: event.location || '',
+    tournamentType: 'round_robin'
   });
+
+  // Sync teams from document
+  useEffect(() => {
+    if (event.tournamentTeamsData) {
+      setTournamentTeams(event.tournamentTeamsData);
+      setTeamRows(event.tournamentTeamsData);
+    } else if (event.tournamentTeams) {
+      // Migration/Fallback
+      const legacy = event.tournamentTeams.map((name, i) => ({ id: `t_${i}`, name }));
+      setTournamentTeams(legacy);
+      setTeamRows(legacy);
+    }
+  }, [event.tournamentTeamsData, event.tournamentTeams]);
 
   // --- External Data Fetching for Imports ---
   const leaguesQuery = useMemoFirebase(() => (db && isOrganizer) ? query(collection(db, 'leagues'), where('creatorId', '==', authUser?.uid)) : null, [db, isOrganizer, authUser?.uid]);
@@ -181,6 +203,12 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 
   const pipelineQuery = useMemoFirebase(() => (db && isOrganizer) ? query(collectionGroup(db, 'registrationEntries'), where('status', '==', 'accepted')) : null, [db, isOrganizer]);
   const { data: pipelineEntries } = useCollection<RegistrationEntry>(pipelineQuery);
+
+  const facilitiesQuery = useMemoFirebase(() => {
+    if (!db || !authUser?.uid) return null;
+    return query(collection(db, 'facilities'), where('clubId', '==', authUser.uid));
+  }, [db, authUser?.uid]);
+  const { data: facilities } = useCollection<Facility>(facilitiesQuery);
 
   const initGenModal = () => {
     const days = eachDayOfInterval({ start: new Date(event.date), end: new Date(event.endDate || event.date) });
@@ -195,79 +223,61 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
     setIsGenOpen(true);
   };
 
-  const facilitiesQuery = useMemoFirebase(() => {
-    if (!db || !authUser?.uid) return null;
-    return query(collection(db, 'facilities'), where('clubId', '==', authUser.uid));
-  }, [db, authUser?.uid]);
-
-  const { data: facilities } = useCollection<Facility>(facilitiesQuery);
-  
-  const fieldsQuery = useMemoFirebase(() => {
-    if (!db || !genConfig.selectedFacilityId) return null;
-    return query(collection(db, 'facilities', genConfig.selectedFacilityId, 'fields'), orderBy('name', 'asc'));
-  }, [db, genConfig.selectedFacilityId]);
-
-  const { data: fields } = useCollection<Field>(fieldsQuery);
-
   const handleUpdateTeams = async () => {
     if (!db || !event.id) return;
-    const teams = editForm.teams.split(',').map(t => t.trim()).filter(t => t);
-    const emails = editForm.invitedEmails.split(',').map(e => e.trim()).filter(e => e);
+    const validTeams = teamRows.filter(t => t.name.trim());
     const invitedMap: Record<string, string> = {};
-    emails.forEach((email, i) => { invitedMap[email] = teams[i] || `Team ${i+1}`; });
-    await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { tournamentTeams: teams, invitedTeamEmails: invitedMap });
+    validTeams.forEach((t) => { if (t.email) invitedMap[t.email] = t.name; });
+    
+    await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { 
+      tournamentTeams: validTeams.map(t => t.name),
+      tournamentTeamsData: validTeams,
+      invitedTeamEmails: invitedMap 
+    });
     setIsEditOpen(false);
     toast({ title: "Tournament Roster Updated" });
   };
 
-  const importFromLeague = (league: League) => {
-    const leagueTeams = Object.values(league.teams || {}).map(t => t.teamName);
-    const current = editForm.teams ? editForm.teams.split(',').map(t => t.trim()) : [];
-    const combined = Array.from(new Set([...current, ...leagueTeams])).filter(t => t);
-    setEditForm(p => ({ ...p, teams: combined.join(', ') }));
-    toast({ title: "League Roster Imported", description: `Added ${leagueTeams.length} squads.` });
-  };
-
-  const importFromPipeline = () => {
-    const entries = (pipelineEntries || []).map(e => e.answers['teamName'] || e.answers['name']).filter(Boolean);
-    const current = editForm.teams ? editForm.teams.split(',').map(t => t.trim()) : [];
-    const combined = Array.from(new Set([...current, ...entries])).filter(t => t);
-    setEditForm(p => ({ ...p, teams: combined.join(', ') }));
-    toast({ title: "Pipeline Imported", description: `Added ${entries.length} applicants.` });
-  };
-
   const handleGenerateItinerary = async () => {
-    const finalFields = genConfig.selectedFields.length > 0 ? genConfig.selectedFields : [genConfig.manualVenue || 'TBD'];
-    if (!event.tournamentTeams?.length || finalFields.length === 0) {
-      toast({ title: "Resource Error", description: "Select teams and fields/venue first.", variant: "destructive" });
+    if (!tournamentTeams.length || (genConfig.selectedFields.length === 0 && !genConfig.manualVenue)) {
+      toast({ title: "Configuration Required", description: "Enroll squads and select venues first.", variant: "destructive" });
       return;
     }
+
     const schedule = generateTournamentSchedule({
-      teams: event.tournamentTeams,
-      fields: finalFields,
+      teams: tournamentTeams,
+      fields: genConfig.selectedFields.length > 0 ? genConfig.selectedFields : [genConfig.manualVenue],
       startDate: event.date,
       endDate: event.endDate,
       startTime: genConfig.dailyWindows[0]?.startTime || '08:00',
       endTime: genConfig.dailyWindows[0]?.endTime || '20:00',
       gameLength: parseInt(genConfig.gameLength),
       breakLength: parseInt(genConfig.breakLength),
-      dailyWindows: genConfig.dailyWindows
+      dailyWindows: genConfig.dailyWindows,
+      tournamentType: genConfig.tournamentType
     });
+
     await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { 
-      tournamentGames: schedule, 
-      location: genConfig.manualVenue || facilities?.find(f => f.id === genConfig.selectedFacilityId)?.name 
+      tournamentGames: schedule,
+      updatedAt: new Date().toISOString()
     });
     setIsGenOpen(false);
-    toast({ title: "Itinerary Deployed", description: `Auto-generated ${schedule.length} matches.` });
+    toast({ title: "Itinerary Synchronized", description: `Deployed ${schedule.length} matches across selected resources.` });
   };
 
-  const toggleField = (fieldName: string) => {
-    setGenConfig(p => ({
-      ...p,
-      selectedFields: p.selectedFields.includes(fieldName)
-        ? p.selectedFields.filter(f => f !== fieldName)
-        : [...p.selectedFields, fieldName]
+  const importFromLeague = (league: League) => {
+    const leagueTeams = Object.values(league.teams || {}).map((t: any) => ({
+      id: `l_${Date.now()}_${Math.random()}`,
+      name: t.teamName,
+      coach: t.coachName || '',
+      email: t.coachEmail || ''
     }));
+    setTeamRows(prev => [...prev, ...leagueTeams]);
+    toast({ title: "Import Successful", description: `Added ${leagueTeams.length} squads from ${league.name}.` });
+  };
+
+  const addTeamRow = () => {
+    setTeamRows([...teamRows, { id: `manual_${Date.now()}`, name: '', coach: '', email: '' }]);
   };
 
   return (
@@ -368,18 +378,12 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                     <p className="text-[10px] text-muted-foreground font-medium leading-relaxed italic">Mobile entry hub for field marshals to post verified match results.</p>
                     <Button className="w-full h-10 rounded-xl font-black uppercase text-[10px]">Open Scorer Hub <ExternalLink className="ml-2 h-3 w-3" /></Button>
                   </Card>
-                  <Card className="rounded-[2rem] border-none shadow-md bg-primary text-white p-6 space-y-4 group cursor-pointer hover:ring-2 hover:ring-black transition-all" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`); toast({ title: "Waiver Link Copied" }); }}>
-                    <Badge className="bg-black text-white border-none font-black text-[8px] h-5 px-2">SQUAD ACCESS</Badge>
-                    <h4 className="text-xl font-black uppercase tracking-tight">Team Waiver Portal</h4>
-                    <p className="text-[10px] text-white/80 font-medium leading-relaxed italic">Direct link for external captains to sign participation agreements.</p>
-                    <Button variant="secondary" className="w-full h-10 rounded-xl font-black uppercase text-[10px] bg-white text-primary">Copy Signature Link <Share2 className="ml-2 h-3 w-3" /></Button>
-                  </Card>
                 </div>
               </TabsContent>
               <TabsContent value="compliance" className="mt-0">
                 <div className="space-y-6">
                   <div className="flex items-center justify-between px-2"><div className="flex items-center gap-3"><FileSignature className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase tracking-tight">Team Agreement Ledger</h3></div></div>
-                  <div className="grid grid-cols-1 gap-3">{event.tournamentTeams?.map(teamName => { const agreement = event.teamAgreements?.[teamName]; return (<Card key={teamName} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white flex items-center justify-between"><div className="flex items-center gap-4"><div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", agreement ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground/30")}>{agreement ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}</div><span className="font-black text-sm uppercase truncate">{teamName}</span></div>{agreement ? (<div className="text-right"><p className="text-[8px] font-black uppercase text-muted-foreground">Signed by {agreement.captainName}</p><p className="text-[7px] font-bold text-muted-foreground opacity-40">{format(new Date(agreement.signedAt), 'MMM d, h:mm a')}</p></div>) : (<Badge variant="outline" className="text-[7px] font-black uppercase border-muted-foreground/20 text-muted-foreground">Pending Execution</Badge>)}</Card>); })}</div>
+                  <div className="grid grid-cols-1 gap-3">{tournamentTeams.map(t => { const agreement = event.teamAgreements?.[t.name]; return (<Card key={t.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white flex items-center justify-between"><div className="flex items-center gap-4"><div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", agreement ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground/30")}>{agreement ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}</div><span className="font-black text-sm uppercase truncate">{t.name}</span></div>{agreement ? (<div className="text-right"><p className="text-[8px] font-black uppercase text-muted-foreground">Signed by {agreement.captainName}</p><p className="text-[7px] font-bold text-muted-foreground opacity-40">{format(new Date(agreement.signedAt), 'MMM d, h:mm a')}</p></div>) : (<Badge variant="outline" className="text-[7px] font-black uppercase border-muted-foreground/20 text-muted-foreground">Pending Execution</Badge>)}</Card>); })}</div>
                 </div>
               </TabsContent>
             </div>
@@ -388,142 +392,243 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
       </div>
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-3xl p-0 overflow-hidden border-none shadow-2xl bg-white">
-          <DialogTitle className="sr-only">Roster Management Hub</DialogTitle>
-          <div className="bg-primary/5 p-8 border-b space-y-2">
+        <DialogContent className="rounded-[2.5rem] sm:max-w-5xl p-0 overflow-hidden border-none shadow-2xl bg-white">
+          <div className="bg-primary/5 p-8 border-b">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Championship Roster</DialogTitle>
-              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Enroll participating squads & pipeline sources</DialogDescription>
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight">Tournament Roster Architect</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Enroll participating squads & manage personnel metadata</DialogDescription>
             </DialogHeader>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-0">
-            <div className="md:col-span-7 p-8 space-y-6">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Enrolled Squad Names (Comma separated)</Label>
-                <Textarea value={editForm.teams} onChange={e => setEditForm({ ...editForm, teams: e.target.value })} className="min-h-[150px] rounded-2xl border-2 font-bold text-foreground resize-none" placeholder="Tigers, Lions, Warriors..." />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Team Representative Invites (Optional)</Label>
-                <Input value={editForm.invitedEmails} onChange={e => setEditForm({ ...editForm, invitedEmails: e.target.value })} className="h-12 rounded-xl border-2 font-bold text-foreground" placeholder="coach@tigers.com, coach@lions.com..." />
-              </div>
-            </div>
-            <div className="md:col-span-5 bg-muted/20 p-8 border-l border-muted">
-              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-4">Import Channels</p>
-              <div className="space-y-3">
-                {myLeagues?.map(l => (
-                  <Button key={l.id} variant="outline" className="w-full justify-between h-auto py-3 px-4 rounded-xl bg-white text-[10px] font-black uppercase border-2" onClick={() => importFromLeague(l)}>
-                    <div className="flex items-center gap-2"><Trophy className="h-3 w-3" /><span className="truncate max-w-[120px]">{l.name}</span></div>
-                    <ArrowRight className="h-3 w-3" />
-                  </Button>
-                ))}
-                <Button variant="outline" className="w-full justify-between h-auto py-3 px-4 rounded-xl bg-white text-[10px] font-black uppercase border-2" onClick={importFromPipeline}>
-                  <div className="flex items-center gap-2"><Target className="h-3 w-3" />Recruit Pipeline</div>
-                  <Badge className="h-4 px-1 text-[7px]">{pipelineEntries?.length || 0}</Badge>
+          <div className="grid grid-cols-1 lg:grid-cols-12 h-[600px]">
+            <div className="lg:col-span-8 flex flex-col overflow-hidden">
+              <div className="p-6 bg-muted/30 border-b flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Squad Entries ({teamRows.length})</p>
+                <Button variant="ghost" size="sm" className="h-8 text-[10px] font-black uppercase text-primary" onClick={addTeamRow}>
+                  <Plus className="h-3 w-3 mr-1" /> Add Squad
                 </Button>
               </div>
-              <div className="mt-8 bg-primary/5 p-4 rounded-2xl border border-primary/10">
-                <p className="text-[9px] font-bold text-primary uppercase leading-relaxed italic">
-                  <strong>PRO TIP:</strong> Finalize your full roster before generating the itinerary to ensure balanced round-robin brackets.
+              <ScrollArea className="flex-1 p-6">
+                <div className="space-y-4">
+                  {teamRows.map((team, idx) => (
+                    <div key={team.id} className="grid grid-cols-12 gap-3 items-center animate-in fade-in slide-in-from-left-2 transition-all">
+                      <div className="col-span-1 text-[10px] font-black opacity-20 text-center">{idx + 1}</div>
+                      <div className="col-span-4"><Input placeholder="Squad Name" value={team.name} onChange={e => { const n = [...teamRows]; n[idx].name = e.target.value; setTeamRows(n); }} className="h-10 rounded-xl font-bold border-2" /></div>
+                      <div className="col-span-3"><Input placeholder="Coach Name" value={team.coach} onChange={e => { const n = [...teamRows]; n[idx].coach = e.target.value; setTeamRows(n); }} className="h-10 rounded-xl font-medium border-2" /></div>
+                      <div className="col-span-3"><Input placeholder="Coach Email" type="email" value={team.email} onChange={e => { const n = [...teamRows]; n[idx].email = e.target.value; setTeamRows(n); }} className="h-10 rounded-xl font-medium border-2" /></div>
+                      <div className="col-span-1 flex justify-end">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-40 hover:opacity-100" onClick={() => setTeamRows(teamRows.filter(t => t.id !== team.id))}>
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  {teamRows.length === 0 && (
+                    <div className="py-20 text-center opacity-30 italic">
+                      <Users className="h-12 w-12 mx-auto mb-2" />
+                      <p className="text-sm font-black uppercase">Ledger Empty</p>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+            <div className="lg:col-span-4 bg-black text-white p-8 space-y-8 border-l border-white/5">
+              <section className="space-y-4">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Import Channels</h4>
+                <div className="space-y-2">
+                  {myLeagues?.map(l => (
+                    <button key={l.id} className="w-full p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all flex items-center justify-between text-left group" onClick={() => importFromLeague(l)}>
+                      <div className="min-w-0">
+                        <p className="text-xs font-black uppercase truncate">{l.name}</p>
+                        <p className="text-[8px] font-bold text-white/40 uppercase">Import Standings</p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100" />
+                    </button>
+                  ))}
+                  <button className="w-full p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all flex items-center justify-between text-left group" onClick={() => {
+                    const pipelineTeams = (pipelineEntries || []).map(e => ({
+                      id: `p_${e.id}`,
+                      name: e.answers['teamName'] || e.answers['name'] || 'New Squad',
+                      coach: e.answers['name'] || '',
+                      email: e.answers['email'] || ''
+                    }));
+                    setTeamRows(prev => [...prev, ...pipelineTeams]);
+                    toast({ title: "Import Successful", description: `Added ${pipelineTeams.length} squads from registration pool.` });
+                  }}>
+                    <div className="min-w-0">
+                      <p className="text-xs font-black uppercase truncate">Recruitment Pool</p>
+                      <p className="text-[8px] font-bold text-white/40 uppercase">Import Accepted Applicants</p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100" />
+                  </button>
+                </div>
+              </section>
+              <div className="bg-primary/10 p-6 rounded-[2rem] border-2 border-dashed border-primary/20 space-y-3">
+                <div className="flex items-center gap-2"><Info className="h-4 w-4 text-primary" /><span className="text-[10px] font-black uppercase">Elite Strategy</span></div>
+                <p className="text-[10px] font-medium leading-relaxed italic text-white/60">
+                  Ensure the full roster is finalized before initiating the Itinerary Architect. This ensures balanced matchups and optimized resource allocation.
                 </p>
               </div>
             </div>
           </div>
           <div className="p-8 bg-muted/10 border-t">
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdateTeams}>Synchronize Championship Roster</Button>
+            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdateTeams}>
+              Commit Roster Synchronization
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isGenOpen} onOpenChange={setIsGenOpen}>
-        <DialogContent className="rounded-[3rem] sm:max-w-3xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
-          <DialogTitle className="sr-only">Tournament Itinerary Architect</DialogTitle>
+        <DialogContent className="rounded-[3rem] sm:max-w-5xl p-0 border-none shadow-2xl overflow-hidden bg-white">
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
             <DialogHeader>
-              <DialogTitle className="text-3xl font-black uppercase tracking-tight leading-none">Itinerary Architect</DialogTitle>
-              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-2">Precision Multi-Day Resource Mapping</DialogDescription>
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight">Tournament Itinerary Architect</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Multi-Venue Resource Allocation & Match Distribution</DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 text-foreground">
-              <div className="space-y-8">
-                <div className="space-y-6">
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Day Distribution</h3>
-                  <ScrollArea className="h-[250px] border-2 rounded-2xl p-4 bg-muted/5">
-                    <div className="space-y-6">
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+              <div className="lg:col-span-7 space-y-10">
+                <section className="space-y-6">
+                  <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Competition Protocol</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {(['round_robin', 'single_elimination', 'double_elimination'] as const).map(type => (
+                      <button 
+                        key={type} 
+                        onClick={() => setGenConfig({...genConfig, tournamentType: type})}
+                        className={cn(
+                          "p-4 rounded-2xl border-2 transition-all text-left space-y-1",
+                          genConfig.tournamentType === type ? "border-primary bg-primary/5 shadow-sm" : "border-muted hover:border-muted-foreground/20"
+                        )}
+                      >
+                        <p className="text-[10px] font-black uppercase tracking-tighter">{type.replace('_', ' ')}</p>
+                        <p className="text-[8px] font-bold text-muted-foreground uppercase opacity-60">
+                          {type === 'round_robin' ? 'Everyone plays everyone' : 'Bracket Progression'}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="space-y-6">
+                  <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Window Parameters</h3>
+                  <ScrollArea className="h-48 border-2 rounded-[2rem] p-4 bg-muted/5">
+                    <div className="space-y-4">
                       {genConfig.dailyWindows.map((win, idx) => (
-                        <div key={win.date} className="space-y-3 pb-4 border-b last:border-0">
-                          <p className="text-[9px] font-black uppercase text-muted-foreground">{format(new Date(win.date), 'EEEE, MMM do')}</p>
-                          <div className="grid grid-cols-2 gap-2">
+                        <div key={win.date} className="flex items-center justify-between pb-4 border-b last:border-0">
+                          <p className="text-[10px] font-black uppercase text-muted-foreground w-32">{format(new Date(win.date), 'EEE, MMM d')}</p>
+                          <div className="flex gap-4">
                             <div className="space-y-1">
-                              <Label className="text-[8px] font-black uppercase text-foreground">Start</Label>
+                              <Label className="text-[8px] font-black uppercase">Start</Label>
                               <Input type="time" value={win.startTime} onChange={e => {
-                                const n = [...genConfig.dailyWindows];
-                                n[idx].startTime = e.target.value;
-                                setGenConfig({...genConfig, dailyWindows: n});
-                              }} className="h-9 text-xs text-foreground" />
+                                const n = [...genConfig.dailyWindows]; n[idx].startTime = e.target.value; setGenConfig({...genConfig, dailyWindows: n});
+                              }} className="h-9 text-xs" />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[8px] font-black uppercase text-foreground">End</Label>
+                              <Label className="text-[8px] font-black uppercase">End</Label>
                               <Input type="time" value={win.endTime} onChange={e => {
-                                const n = [...genConfig.dailyWindows];
-                                n[idx].endTime = e.target.value;
-                                setGenConfig({...genConfig, dailyWindows: n});
-                              }} className="h-9 text-xs text-foreground" />
+                                const n = [...genConfig.dailyWindows]; n[idx].endTime = e.target.value; setGenConfig({...genConfig, dailyWindows: n});
+                              }} className="h-9 text-xs" />
                             </div>
                           </div>
                         </div>
                       ))}
                     </div>
                   </ScrollArea>
-                </div>
-                <div className="grid grid-cols-2 gap-4 pt-2">
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1 text-foreground">Length (Min)</Label><Input type="number" value={genConfig.gameLength} onChange={e => setGenConfig({...genConfig, gameLength: e.target.value})} className="h-12 border-2 rounded-xl text-foreground" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1 text-foreground">Break (Min)</Label><Input type="number" value={genConfig.breakLength} onChange={e => setGenConfig({...genConfig, breakLength: e.target.value})} className="h-12 border-2 rounded-xl text-foreground" /></div>
+                </section>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Match Length (Min)</Label>
+                    <Input type="number" value={genConfig.gameLength} onChange={e => setGenConfig({...genConfig, gameLength: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Turnaround (Min)</Label>
+                    <Input type="number" value={genConfig.breakLength} onChange={e => setGenConfig({...genConfig, breakLength: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
+                  </div>
                 </div>
               </div>
-              <div className="space-y-8">
-                <div className="space-y-6">
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Facility Allocation</h3>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Host Venue (Saved)</Label>
-                    <select className="w-full h-12 rounded-xl border-2 px-3 font-bold bg-muted/10 outline-none focus:ring-2 focus:ring-primary/20 transition-all text-foreground" value={genConfig.selectedFacilityId} onChange={e => setGenConfig({...genConfig, selectedFacilityId: e.target.value, selectedFields: []})}>
-                      <option value="">Select facility...</option>
-                      {facilities?.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Or Manual Venue Address</Label>
-                    <Input placeholder="e.g. Regional Sports Park Diamond 4" value={genConfig.manualVenue} onChange={e => setGenConfig({...genConfig, manualVenue: e.target.value})} className="h-12 rounded-xl border-2 font-bold text-foreground" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Resource Pool</Label>
-                    <ScrollArea className="h-40 border-2 rounded-xl p-2 bg-muted/5">
-                      <div className="space-y-1 p-1">
-                        {fields?.map(f => (
-                          <div key={f.id} className={cn("flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all group", genConfig.selectedFields.includes(f.name) ? "bg-primary text-white shadow-md" : "hover:bg-muted/50 text-foreground")} onClick={() => toggleField(f.name)}>
-                            <span className="text-[10px] font-black uppercase tracking-widest">{f.name}</span>
-                            {genConfig.selectedFields.includes(f.name) ? <CheckCircle2 className="h-4 w-4" /> : <div className="h-4 w-4 rounded-full border border-muted-foreground/30" />}
+
+              <aside className="lg:col-span-5 space-y-8">
+                <section className="space-y-6">
+                  <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Venue Allocation</h3>
+                  <ScrollArea className="h-64 border-2 rounded-[2.5rem] bg-muted/5 p-6 shadow-inner">
+                    <div className="space-y-8">
+                      {facilities?.map(f => (
+                        <div key={f.id} className="space-y-4">
+                          <div className="flex items-center gap-3">
+                            <Building className="h-4 w-4 text-primary" />
+                            <span className="text-xs font-black uppercase tracking-widest">{f.name}</span>
                           </div>
-                        ))}
-                        {(!fields || fields.length === 0) && (
-                          <div className="flex flex-col items-center justify-center py-12 text-center opacity-30 text-foreground">
-                            <Building className="h-8 w-8 mb-2" />
-                            <p className="text-[9px] font-bold uppercase tracking-widest max-w-[150px]">Select a facility to allocate resources.</p>
+                          <div className="grid grid-cols-1 gap-2 pl-6">
+                            <FacilityFieldLoader 
+                              facilityId={f.id} 
+                              selectedFields={genConfig.selectedFields} 
+                              onToggleField={(name) => {
+                                const fullName = `${f.name}: ${name}`;
+                                setGenConfig(p => ({
+                                  ...p,
+                                  selectedFields: p.selectedFields.includes(fullName) ? p.selectedFields.filter(sf => sf !== fullName) : [...p.selectedFields, fullName]
+                                }));
+                              }} 
+                            />
                           </div>
-                        )}
+                        </div>
+                      ))}
+                      <div className="space-y-4 pt-4 border-t border-muted">
+                        <Label className="text-[10px] font-black uppercase ml-1">Manual Location Overflow</Label>
+                        <Input placeholder="e.g. Regional Field 4 (Remote)" value={genConfig.manualVenue} onChange={e => setGenConfig({...genConfig, manualVenue: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
                       </div>
-                    </ScrollArea>
+                    </div>
+                  </ScrollArea>
+                </section>
+
+                <div className="p-6 bg-black text-white rounded-[2.5rem] space-y-4 relative overflow-hidden">
+                  <Zap className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12" />
+                  <div className="relative z-10 space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-primary">Roster Status</p>
+                    <p className="text-2xl font-black">{tournamentTeams.length} SQUADS</p>
+                    <p className="text-[10px] font-medium text-white/40 leading-relaxed uppercase">
+                      The engine will auto-balance {Math.ceil((tournamentTeams.length * (tournamentTeams.length - 1)) / 2)} match variations.
+                    </p>
                   </div>
                 </div>
-              </div>
+              </aside>
             </div>
-            <DialogFooter className="pt-6">
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleGenerateItinerary} disabled={(genConfig.selectedFields.length === 0 && !genConfig.manualVenue) || !event.tournamentTeams?.length}>
-                Deploy Balanced Itinerary
+
+            <DialogFooter className="pt-6 border-t">
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleGenerateItinerary}>
+                Deploy Elite Tournament Itinerary
               </Button>
             </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { facilityId: string, selectedFields: string[], onToggleField: (name: string) => void }) {
+  const db = useFirestore();
+  const q = useMemoFirebase(() => db ? query(collection(db, 'facilities', facilityId, 'fields'), orderBy('name', 'asc')) : null, [db, facilityId]);
+  const { data: fields } = useCollection<Field>(q);
+
+  return (
+    <div className="space-y-2">
+      {fields?.map(field => (
+        <div 
+          key={field.id} 
+          className={cn(
+            "p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between group",
+            selectedFields.some(sf => sf.includes(field.name)) ? "border-primary bg-primary/5 shadow-sm" : "border-muted hover:border-muted-foreground/20"
+          )}
+          onClick={() => onToggleField(field.name)}
+        >
+          <span className="text-[10px] font-black uppercase tracking-widest truncate">{field.name}</span>
+          {selectedFields.some(sf => sf.includes(field.name)) ? <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> : <div className="h-3.5 w-3.5 rounded-full border-2 border-muted group-hover:border-muted-foreground/30" />}
+        </div>
+      ))}
+      {(!fields || fields.length === 0) && <p className="text-[8px] font-bold text-muted-foreground italic uppercase">No active fields established.</p>}
     </div>
   );
 }
@@ -558,6 +663,7 @@ export default function TournamentsPage({ preSelectedTournament, onExit }: { pre
         isTournament: true,
         eventType: 'tournament',
         tournamentTeams: [activeTeam.name], 
+        tournamentTeamsData: [{ id: `t_${Date.now()}`, name: activeTeam.name, coach: activeTeam.role === 'Admin' ? 'Admin' : 'Coach', email: '' }],
         tournamentGames: [],
         invitedTeamEmails: {},
         startTime: '08:00',
