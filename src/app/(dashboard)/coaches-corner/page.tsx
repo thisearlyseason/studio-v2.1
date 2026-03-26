@@ -1,9 +1,55 @@
-
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { useTeam, TeamDocument, Member, PlayerProfile, RecruitingProfile, AthleticMetrics, PlayerStat, PlayerEvaluation, RecruitingContact, PlayerVideo, TeamIncident } from '@/components/providers/team-provider';
+import { useTeam, TeamDocument, Member, PlayerProfile, RecruitingProfile, AthleticMetrics, PlayerStat, PlayerEvaluation, RecruitingContact, PlayerVideo, VideoComment, TeamIncident } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { 
+  Plus, 
+  Trash2, 
+  Target, 
+  ChevronLeft, 
+  ChevronRight, 
+  Edit3, 
+  Download, 
+  Search, 
+  Play, 
+  Share2, 
+  Clock, 
+  Building, 
+  CheckCircle2, 
+  Settings, 
+  Sparkles, 
+  UserPlus, 
+  Database,
+  ArrowRight,
+  ShieldCheck,
+  FileText,
+  Bookmark,
+  Signature,
+  Users,
+  MessageSquare,
+  AlertTriangle,
+  PenTool, 
+  FileSignature,
+  Loader2,
+  ShieldAlert,
+  Info,
+  Shield,
+  Trophy,
+  Video,
+  ExternalLink,
+  BarChart2,
+  Star,
+  ArrowUpRight,
+  AlertCircle,
+  Activity,
+  History,
+  ClipboardList,
+  X,
+  Save,
+  Link as LinkIcon
+} from 'lucide-react';
+import jsPDF from 'jspdf';
 import { collection, query, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,41 +58,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { 
-  PenTool, 
-  FileSignature, 
-  Users, 
-  Plus, 
-  Trash2, 
-  CheckCircle2, 
-  Clock, 
-  Search, 
-  ShieldCheck,
-  Loader2,
-  FileText,
-  ShieldAlert,
-  Edit3,
-  Settings,
-  Info,
-  Shield,
-  Target,
-  Trophy,
-  Video,
-  ExternalLink,
-  BarChart2,
-  Star,
-  UserPlus,
-  ArrowUpRight,
-  Download,
-  Share2,
-  Play,
-  AlertCircle,
-  Activity,
-  History,
-  ClipboardList,
-  X,
-  Save
-} from 'lucide-react';
+
+
 import { 
   Dialog, 
   DialogContent, 
@@ -78,8 +91,9 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, 
     updateAthleticMetrics, getPlayerStats, addPlayerStat, deletePlayerStat,
     getEvaluations, addEvaluation, getRecruitingContact, updateRecruitingContact,
-    getPlayerVideos, addPlayerVideo, deletePlayerVideo, toggleRecruitingProfile
+    getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo, toggleRecruitingProfile
   } = useTeam();
+  const { user } = useTeam();
 
   const [profile, setProfile] = useState<Partial<RecruitingProfile>>({});
   const [metrics, setMetrics] = useState<Partial<AthleticMetrics>>({});
@@ -89,6 +103,13 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const [videos, setVideos] = useState<PlayerVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [isAddFilmOpen, setIsAddFilmOpen] = useState(false);
+  const [filmTitle, setFilmTitle] = useState('');
+  const [filmUrl, setFilmUrl] = useState('');
+  const [filmType, setFilmType] = useState('Highlight');
+  const [selectedVideo, setSelectedVideo] = useState<PlayerVideo | null>(null);
+  const [newComment, setNewComment] = useState('');
+  const [commentTimestamp, setCommentTimestamp] = useState('');
 
   const loadData = useCallback(async () => {
     if (!member.playerId) {
@@ -125,8 +146,22 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     await updateRecruitingProfile(member.playerId, profile);
     await updateAthleticMetrics(member.playerId, metrics);
     await updateRecruitingContact(member.playerId, contact);
+    // Sync the portal gate with the pipeline status:
+    // "active" or "committed" => enable the public scout portal
+    // "hidden" (or unset)     => disable it
+    const isEnabled = profile.status === 'active' || profile.status === 'committed';
+    await toggleRecruitingProfile(member.playerId, isEnabled);
     setIsEditing(false);
     toast({ title: "Recruiting Pack Synchronized" });
+  };
+
+  const handleAddFilm = async () => {
+    if (!member.playerId || !filmUrl) return;
+    await addPlayerVideo(member.playerId, { title: filmTitle || 'Untitled', url: filmUrl, type: filmType, comments: [] });
+    setFilmTitle(''); setFilmUrl(''); setFilmType('Highlight');
+    setIsAddFilmOpen(false);
+    await loadData();
+    toast({ title: "Film Archived", description: `${filmTitle || 'Clip'} added to highlight reel.` });
   };
 
   if (loading) return <div className="p-12 text-center animate-pulse"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /><p className="text-[10px] font-black uppercase mt-4">Opening Tactical Folder...</p></div>;
@@ -144,6 +179,86 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       </div>
     );
   }
+
+  const activeSport = profile.typeOfSport || 'Baseball';
+  const customStats = metrics.customStats || [];
+
+  const onChangeMetric = (key: string, v: string) => setMetrics({ ...metrics, [key]: parseFloat(v) || 0 });
+  const onChangeTextMetric = (key: string, v: string) => setMetrics({ ...metrics, [key]: v });
+  
+  const addCustomStat = () => setMetrics({...metrics, customStats: [...customStats, { label: '', value: '' }]});
+  const updateCustomStat = (index: number, field: 'label' | 'value', val: string) => {
+    const newStats = [...customStats];
+    newStats[index][field] = val;
+    setMetrics({...metrics, customStats: newStats});
+  };
+  const removeCustomStat = (index: number) => {
+    const newStats = [...customStats];
+    newStats.splice(index, 1);
+    setMetrics({...metrics, customStats: newStats});
+  };
+
+  const getSportFields = () => {
+    switch (activeSport) {
+      case 'Baseball': return [
+        { key: 'sixtyYardDash', label: '60yd Dash (s)', type: 'number' }, { key: 'exitVelo', label: 'Exit Velo (mph)', type: 'number' },
+        { key: 'throwingVelo', label: 'Throw Velo (mph)', type: 'number' }, { key: 'popTime', label: 'Pop Time (s)', type: 'number' },
+        { key: 'pitchVelo', label: 'Pitch Velo (mph)', type: 'number' }, { key: 'infieldVelo', label: 'Infield Velo', type: 'number' },
+        { key: 'batSpeed', label: 'Bat Speed (mph)', type: 'number' }, { key: 'launchAngle', label: 'Launch Angle (°)', type: 'number' },
+        { key: 'sprintHome', label: 'Home to 1st (s)', type: 'number' }, { key: 'verticalJump', label: 'Vertical Jump (in)', type: 'number' }
+      ];
+      case 'Slowpitch': return [
+        { key: 'exitVelo', label: 'Exit Velo (mph)', type: 'number' }, { key: 'batSpeed', label: 'Bat Speed (mph)', type: 'number' },
+        { key: 'sixtyYardDash', label: '60yd Dash (s)', type: 'number' }, { key: 'throwingVelo', label: 'Throw Velo (mph)', type: 'number' },
+        { key: 'launchAngle', label: 'Launch Angle (°)', type: 'number' }, { key: 'sprintHome', label: 'Home to 1st (s)', type: 'number' },
+        { key: 'fieldingRange', label: 'Fielding Range', type: 'number' }, { key: 'armStrength', label: 'Arm Strength', type: 'number' },
+        { key: 'verticalJump', label: 'Vertical Jump (in)', type: 'number' }, { key: 'reactionTime', label: 'Reaction (ms)', type: 'number' }
+      ];
+      case 'Football': return [
+        { key: 'fortyYardDash', label: '40yd Dash (s)', type: 'number' }, { key: 'verticalJump', label: 'Vertical Jump (in)', type: 'number' },
+        { key: 'benchPress', label: 'Bench Press (reps)', type: 'number' }, { key: 'broadJump', label: 'Broad Jump (in)', type: 'number' },
+        { key: 'threeConeDrill', label: '3-Cone Drill (s)', type: 'number' }, { key: 'twentyYardShuttle', label: '20yd Shuttle (s)', type: 'number' },
+        { key: 'squat', label: 'Squat (lbs)', type: 'number' }, { key: 'powerClean', label: 'Power Clean (lbs)', type: 'number' },
+        { key: 'throwingVelo', label: 'Throw Velo (mph)', type: 'number' }, { key: 'wingspan', label: 'Wingspan (in)', type: 'number' }
+      ];
+      case 'Soccer': return [
+        { key: 'shuttleRun', label: 'Shuttle Run (s)', type: 'number' }, { key: 'beepTest', label: 'Beep Test Level', type: 'number' },
+        { key: 'verticalJump', label: 'Vertical Jump (in)', type: 'number' }, { key: 'fortyYardDash', label: '40yd Dash (s)', type: 'number' },
+        { key: 'sprintSpeed', label: 'Sprint Speed (mph)', type: 'number' }, { key: 'vo2Max', label: 'VO2 Max', type: 'number' },
+        { key: 'passingAcc', label: 'Passing Acc (%)', type: 'number' }, { key: 'shotPower', label: 'Shot Power (mph)', type: 'number' },
+        { key: 'dribbleSpeed', label: 'Dribble Speed', type: 'number' }, { key: 'reactionTime', label: 'Reaction (ms)', type: 'number' }
+      ];
+      case 'Tennis': return [
+        { key: 'serveVelo', label: 'Serve Velo (mph)', type: 'number' }, { key: 'forehandVelo', label: 'Forehand (mph)', type: 'number' },
+        { key: 'backhandVelo', label: 'Backhand (mph)', type: 'number' }, { key: 'footworkDrill', label: 'Footwork (s)', type: 'number' },
+        { key: 'reactionTime', label: 'Reaction (ms)', type: 'number' }, { key: 'sprintSpeed', label: 'Sprint Speed (mph)', type: 'number' },
+        { key: 'agility', label: 'Agility Rating', type: 'number' }, { key: 'firstServePerc', label: '1st Serve %', type: 'number' },
+        { key: 'rallyConsist', label: 'Rally Consist.', type: 'number' }, { key: 'verticalJump', label: 'Vertical Jump (in)', type: 'number' }
+      ];
+      case 'Pickleball': return [
+        { key: 'serveVelo', label: 'Serve Velo (mph)', type: 'number' }, { key: 'forehandVelo', label: 'Forehand (mph)', type: 'number' },
+        { key: 'footworkDrill', label: 'Footwork (s)', type: 'number' }, { key: 'reactionTime', label: 'Reaction (ms)', type: 'number' },
+        { key: 'dinkAccuracy', label: 'Dink Acc (%)', type: 'number' }, { key: 'driveSpeed', label: 'Drive Speed (mph)', type: 'number' },
+        { key: 'agility', label: 'Agility Rating', type: 'number' }, { key: 'sprintSpeed', label: 'Sprint Speed (mph)', type: 'number' },
+        { key: 'verticalJump', label: 'Vertical Jump (in)', type: 'number' }, { key: 'handSpeed', label: 'Hand Speed', type: 'number' }
+      ];
+      case 'Golf': return [
+        { key: 'clubSpeed', label: 'Club Speed (mph)', type: 'number' }, { key: 'ballSpeed', label: 'Ball Speed (mph)', type: 'number' },
+        { key: 'smashFactor', label: 'Smash Factor', type: 'number' }, { key: 'spinRate', label: 'Spin Rate (rpm)', type: 'number' },
+        { key: 'carryDistance', label: 'Carry Dist (yds)', type: 'number' }, { key: 'launchAngle', label: 'Launch Angle (°)', type: 'number' },
+        { key: 'attackAngle', label: 'Attack Angle (°)', type: 'number' }, { key: 'clubPath', label: 'Club Path (°)', type: 'number' },
+        { key: 'faceAngle', label: 'Face Angle (°)', type: 'number' }, { key: 'dynamicLoft', label: 'Dynamic Loft (°)', type: 'number' }
+      ];
+      case 'Custom':
+      default: return [
+        { key: 'agility', label: 'Agility (1-10)', type: 'number' }, { key: 'strength', label: 'Strength (1-10)', type: 'number' },
+        { key: 'sprint', label: 'Sprint (s)', type: 'number' }, { key: 'verticalJump', label: 'Vertical Jump (in)', type: 'number' },
+        { key: 'reactionTime', label: 'Reaction (ms)', type: 'number' }, { key: 'endurance', label: 'Endurance (1-10)', type: 'number' },
+        { key: 'flexibility', label: 'Flexibility (1-10)', type: 'number' }, { key: 'explosiveness', label: 'Explosiveness', type: 'number' },
+        { key: 'coordination', label: 'Coordination', type: 'number' }, { key: 'balance', label: 'Balance (1-10)', type: 'number' }
+      ];
+    }
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -172,32 +287,43 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             <CardHeader className="bg-muted/30 p-6 border-b"><CardTitle className="text-xs font-black uppercase tracking-widest">Athletic Pulse</CardTitle></CardHeader>
             <CardContent className="p-6 grid grid-cols-2 sm:grid-cols-3 gap-4">
               <div className="bg-muted/20 p-4 rounded-2xl text-center space-y-1">
-                <p className="text-[8px] font-black uppercase opacity-40">40yd Dash</p>
-                <p className="text-xl font-black text-primary">{metrics.fortyYardDash || '--'}s</p>
-              </div>
-              <div className="bg-muted/20 p-4 rounded-2xl text-center space-y-1">
-                <p className="text-[8px] font-black uppercase opacity-40">Vertical</p>
-                <p className="text-xl font-black text-primary">{metrics.verticalJump || '--'}"</p>
-              </div>
-              <div className="bg-muted/20 p-4 rounded-2xl text-center space-y-1">
                 <p className="text-[8px] font-black uppercase opacity-40">GPA</p>
                 <p className="text-xl font-black text-primary">{profile.academicGPA || '--'}</p>
               </div>
+              {getSportFields().map(f => (
+                <div key={f.key} className="bg-muted/20 p-4 rounded-2xl text-center space-y-1">
+                  <p className="text-[8px] font-black uppercase opacity-40">{f.label}</p>
+                  <p className="text-xl font-black text-primary">{metrics[f.key] || '--'}</p>
+                </div>
+              ))}
+              {customStats.map((cs: any, i: number) => (
+                <div key={`cs-${i}`} className="bg-muted/20 p-4 rounded-2xl text-center space-y-1">
+                  <p className="text-[8px] font-black uppercase opacity-40">{cs.label || 'Custom'}</p>
+                  <p className="text-xl font-black text-primary">{cs.value || '--'}</p>
+                </div>
+              ))}
             </CardContent>
           </Card>
 
           <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white">
             <CardHeader className="bg-muted/30 p-6 border-b flex flex-row items-center justify-between">
               <CardTitle className="text-xs font-black uppercase tracking-widest">Highlight Reel</CardTitle>
-              <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase" onClick={() => toast({ title: "Film Room Restricted" })}><Plus className="h-3 w-3 mr-1" /> Add Film</Button>
+              <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase" onClick={() => setIsAddFilmOpen(true)}><Plus className="h-3 w-3 mr-1" /> Add Film</Button>
             </CardHeader>
             <CardContent className="p-6">
               {videos.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-3">
                   {videos.map(v => (
-                    <div key={v.id} className="aspect-video bg-black rounded-xl relative overflow-hidden group">
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"><Play className="h-8 w-8 text-white fill-current" /></div>
-                      <Badge className="absolute top-2 left-2 bg-primary text-white border-none text-[7px] font-black uppercase">{v.type}</Badge>
+                    <div key={v.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/30 cursor-pointer group" onClick={() => setSelectedVideo(v)}>
+                      <div className="h-16 w-24 bg-black rounded-xl shrink-0 flex items-center justify-center relative overflow-hidden">
+                        <Play className="h-6 w-6 text-white fill-current opacity-60" />
+                        <Badge className="absolute top-1 left-1 bg-primary text-white border-none text-[6px] font-black uppercase px-1.5 h-4">{v.type}</Badge>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-black text-xs uppercase truncate">{v.title}</p>
+                        <p className="text-[9px] text-muted-foreground font-bold uppercase mt-0.5">{(v.comments?.length || 0)} coach mark{(v.comments?.length || 0) !== 1 ? 's' : ''}</p>
+                      </div>
+                      <MessageSquare className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                     </div>
                   ))}
                 </div>
@@ -213,8 +339,21 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none"><Target className="h-24 w-24" /></div>
             <div className="relative z-10 space-y-4">
               <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-3">PIPELINE STATUS</Badge>
-              <h4 className="text-xl font-black uppercase">{profile.status || 'PROSPECTING'}</h4>
-              <p className="text-[10px] font-bold text-white/40 leading-relaxed">This status controls visibility within collegiate scout search filters.</p>
+              <div className="flex items-center gap-3">
+                <div className={`h-3 w-3 rounded-full shrink-0 ${
+                  profile.status === 'active' ? 'bg-green-400 shadow-lg shadow-green-400/50' :
+                  profile.status === 'committed' ? 'bg-primary shadow-lg shadow-primary/50' :
+                  'bg-white/20'
+                }`} />
+                <h4 className="text-xl font-black uppercase">
+                  {profile.status === 'active' ? 'Active Prospect' :
+                   profile.status === 'committed' ? 'Committed' :
+                   profile.status === 'hidden' ? 'Inactive / Private' : 'Not Set'}
+                </h4>
+              </div>
+              <p className="text-[10px] font-bold text-white/40 leading-relaxed">
+                {profile.status === 'hidden' ? 'Scout portal is private. Set to Active to enable.' : 'Scout portal is visible to verified recruiters.'}
+              </p>
             </div>
           </Card>
 
@@ -240,16 +379,34 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                 <section className="space-y-6">
                   <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Identity & Status</h3>
                   <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase ml-1">Pipeline Status</Label>
-                      <Select value={profile.status ?? ''} onValueChange={(v: any) => setProfile({...profile, status: v})}>
-                        <SelectTrigger className="h-12 border-2 rounded-xl font-bold"><SelectValue /></SelectTrigger>
-                        <SelectContent className="rounded-xl">
-                          <SelectItem value="active" className="font-bold">Active Prospect</SelectItem>
-                          <SelectItem value="hidden" className="font-bold">Inactive/Private</SelectItem>
-                          <SelectItem value="committed" className="font-bold">Committed</SelectItem>
-                        </SelectContent>
-                      </Select>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase ml-1">Type of Sport</Label>
+                        <Select value={activeSport} onValueChange={(v: any) => setProfile({...profile, typeOfSport: v})}>
+                          <SelectTrigger className="h-12 border-2 rounded-xl font-bold"><SelectValue /></SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            <SelectItem value="Baseball" className="font-bold">Baseball</SelectItem>
+                            <SelectItem value="Slowpitch" className="font-bold">Slowpitch</SelectItem>
+                            <SelectItem value="Soccer" className="font-bold">Soccer</SelectItem>
+                            <SelectItem value="Football" className="font-bold">Football</SelectItem>
+                            <SelectItem value="Tennis" className="font-bold">Tennis</SelectItem>
+                            <SelectItem value="Pickleball" className="font-bold">Pickleball</SelectItem>
+                            <SelectItem value="Golf" className="font-bold">Golf</SelectItem>
+                            <SelectItem value="Custom" className="font-bold">Custom</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase ml-1">Pipeline Status</Label>
+                        <Select value={profile.status ?? ''} onValueChange={(v: any) => setProfile({...profile, status: v})}>
+                          <SelectTrigger className="h-12 border-2 rounded-xl font-bold"><SelectValue /></SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            <SelectItem value="active" className="font-bold">Active Prospect</SelectItem>
+                            <SelectItem value="hidden" className="font-bold">Inactive/Private</SelectItem>
+                            <SelectItem value="committed" className="font-bold">Committed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Height</Label><Input value={profile.height ?? ''} onChange={e => setProfile({...profile, height: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
@@ -259,11 +416,32 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                 </section>
 
                 <section className="space-y-6">
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Athletic Pulse (Verified)</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">40yd Dash (s)</Label><Input type="number" value={metrics.fortyYardDash ?? ''} onChange={e => setMetrics({...metrics, fortyYardDash: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Vertical Jump (in)</Label><Input type="number" value={metrics.verticalJump ?? ''} onChange={e => setMetrics({...metrics, verticalJump: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                  <div className="flex items-center justify-between ml-1 mb-2">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Athletic Pulse ({activeSport})</h3>
+                    <Button size="sm" variant="outline" className="h-6 text-[8px] font-black uppercase rounded-lg" onClick={addCustomStat}><Plus className="h-3 w-3 mr-1" /> Add Custom Stat</Button>
                   </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {getSportFields().map(f => (
+                      <div key={f.key} className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase ml-1">{f.label}</Label>
+                        <Input type={f.type} value={metrics[f.key] ?? ''} onChange={e => onChangeMetric(f.key, e.target.value)} className="h-12 border-2 rounded-xl font-bold" />
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {customStats.length > 0 && (
+                    <div className="space-y-3 mt-4">
+                      {customStats.map((cs: any, i: number) => (
+                        <div key={`cs-${i}`} className="flex items-center gap-2">
+                          <Input placeholder="Stat Name" value={cs.label} onChange={e => updateCustomStat(i, 'label', e.target.value)} className="h-10 border-2 rounded-xl font-bold flex-1" />
+                          <Input placeholder="Value" value={cs.value} onChange={e => updateCustomStat(i, 'value', e.target.value)} className="h-10 border-2 rounded-xl font-bold flex-1" />
+                          <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 text-red-500 rounded-xl hover:bg-red-50" onClick={() => removeCustomStat(i)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </section>
               </div>
 
@@ -287,12 +465,282 @@ function RecruitingProfileManager({ member }: { member: Member }) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── ADD FILM DIALOG ── */}
+      <Dialog open={isAddFilmOpen} onOpenChange={setIsAddFilmOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <div className="bg-black text-white p-8 space-y-2">
+            <DialogTitle className="font-black text-xl uppercase tracking-tight">Archive Film</DialogTitle>
+            <DialogDescription className="text-white/40 text-[10px] font-black uppercase tracking-widest">Add a highlight clip to this athlete&apos;s reel.</DialogDescription>
+          </div>
+          <div className="p-8 space-y-5">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest">Clip Title</Label>
+              <Input placeholder="e.g. Spring Showcase – Pitching" className="h-12 rounded-2xl border-2 font-bold" value={filmTitle} onChange={e => setFilmTitle(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest">Video URL</Label>
+              <Input placeholder="https://youtu.be/..." className="h-12 rounded-2xl border-2 font-bold" value={filmUrl} onChange={e => setFilmUrl(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest">Category</Label>
+              <Select value={filmType} onValueChange={setFilmType}>
+                <SelectTrigger className="h-12 rounded-2xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Highlight">Highlight</SelectItem>
+                  <SelectItem value="fullGame">Full Game</SelectItem>
+                  <SelectItem value="skills">Skills / Drills</SelectItem>
+                  <SelectItem value="practice">Practice</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="p-8 pt-0 gap-2">
+            <Button variant="ghost" onClick={() => setIsAddFilmOpen(false)} className="rounded-2xl font-black uppercase text-[10px]">Cancel</Button>
+            <Button onClick={handleAddFilm} disabled={!filmUrl} className="rounded-2xl font-black uppercase text-[10px] px-8 shadow-lg shadow-primary/20">Archive Film</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── VIDEO VIEWER + COMMENT DIALOG ── */}
+      <Dialog open={!!selectedVideo} onOpenChange={() => setSelectedVideo(null)}>
+        <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          {selectedVideo && (
+            <>
+              <div className="bg-black aspect-video relative flex items-center justify-center">
+                {selectedVideo.url ? (
+                  <iframe
+                    src={selectedVideo.url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
+                    className="absolute inset-0 w-full h-full"
+                    allow="autoplay; fullscreen"
+                    allowFullScreen
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-3 opacity-30">
+                    <Video className="h-16 w-16 text-white" />
+                    <p className="text-white text-xs font-black uppercase">No URL provided</p>
+                  </div>
+                )}
+                <div className="absolute top-4 left-4">
+                  <Badge className="bg-primary text-white border-none font-black text-[8px] uppercase">{selectedVideo.type}</Badge>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x max-h-[60vh]">
+                <div className="md:col-span-3 p-8 space-y-4 overflow-y-auto">
+                  <h3 className="font-black text-lg uppercase">{selectedVideo.title}</h3>
+                  <div className="space-y-3">
+                    {(selectedVideo.comments || []).length === 0 && (
+                      <p className="text-xs font-black uppercase opacity-30 py-6 text-center">No coach marks yet.</p>
+                    )}
+                    {(selectedVideo.comments || []).map((c: VideoComment, i: number) => (
+                      <div key={i} className="flex gap-3 p-4 bg-muted/20 rounded-2xl">
+                        <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                          <MessageSquare className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {c.timestamp != null && (
+                            <span className="text-[8px] font-black uppercase bg-primary/10 text-primary px-2 py-0.5 rounded-full mr-2">
+                              {Math.floor(c.timestamp / 60)}:{String(c.timestamp % 60).padStart(2, '0')}
+                            </span>
+                          )}
+                          <p className="text-xs font-bold mt-1">{c.text}</p>
+                          <p className="text-[9px] text-muted-foreground font-black uppercase mt-1">{c.authorName}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="md:col-span-2 p-8 space-y-4 bg-muted/10">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-primary">Add Coach Mark</p>
+                  <div className="space-y-3">
+                    <Input
+                      placeholder="Timestamp (e.g. 1:24)"
+                      className="h-10 rounded-xl border-2 font-bold text-xs"
+                      value={commentTimestamp}
+                      onChange={e => setCommentTimestamp(e.target.value)}
+                    />
+                    <Textarea
+                      placeholder="e.g. Great hip rotation on this swing..."
+                      className="rounded-xl border-2 font-medium text-xs min-h-[100px] resize-none"
+                      value={newComment}
+                      onChange={e => setNewComment(e.target.value)}
+                    />
+                    <Button
+                      className="w-full rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20"
+                      onClick={async () => {
+                        if (!newComment || !selectedVideo?.id || !member.playerId) return;
+                        const parts = commentTimestamp.split(':');
+                        const secs = parts.length === 2 ? parseInt(parts[0]) * 60 + parseInt(parts[1]) : undefined;
+                        const newC: VideoComment = {
+                          id: `c_${Date.now()}`,
+                          text: newComment,
+                          timestamp: secs,
+                          authorName: user?.name || 'Coach',
+                          createdAt: new Date().toISOString()
+                        };
+                        const updated = { ...selectedVideo, comments: [...(selectedVideo.comments || []), newC] };
+                        await updatePlayerVideo(member.playerId, selectedVideo.id, updated);
+                        setSelectedVideo(updated);
+                        setVideos((prev: PlayerVideo[]) => prev.map((v: PlayerVideo) => v.id === selectedVideo.id ? updated : v));
+                        setNewComment('');
+                        setCommentTimestamp('');
+                        toast({ title: "Mark Saved" });
+                      }}
+                      disabled={!newComment}
+                    >
+                      <Bookmark className="h-3 w-3 mr-2" /> Save Mark
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incident: TeamIncident | null, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
+  const { activeTeam } = useTeam();
   if (!incident) return null;
+
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // --- Header / Brand ---
+    doc.setFillColor(0, 0, 0);
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.text("SQUAD SAFETY REPORT", 20, 25);
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text("INSTITUTIONAL ARCHIVE RECORD", 20, 32);
+    
+    // Severity Label (Moved to header area to avoid overlap)
+    const severity = incident.severity || 'routine';
+    const sevColors: Record<string, [number, number, number]> = {
+      'critical': [220, 38, 38],
+      'severe': [234, 88, 12],
+      'moderate': [202, 138, 4],
+      'minor': [22, 163, 74],
+      'routine': [100, 100, 100]
+    };
+    const [r, g, b] = sevColors[severity.toLowerCase()] || [100, 100, 100];
+    
+    doc.setFillColor(r, g, b);
+    doc.roundedRect(pageWidth - 60, 18, 40, 10, 1, 1, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(8);
+    doc.text(severity.toUpperCase(), pageWidth - 40, 24.5, { align: 'center' });
+
+    // --- Content Section: Case Summary ---
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text("CASE SUMMARY: " + incident.title.toUpperCase(), 20, 55);
+    
+    doc.setDrawColor(230, 230, 230);
+    doc.line(20, 58, pageWidth - 20, 58);
+    
+    // --- Metadata Grid ---
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text("REPORT DATE", 20, 68);
+    doc.text("INCIDENT DATE", 75, 68);
+    doc.text("LOCATION", 130, 68);
+    
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(new Date().toLocaleDateString(), 20, 73);
+    doc.text(`${incident.date} ${incident.time || ''}`, 75, 73);
+    doc.text(incident.location || 'TBD', 130, 73);
+
+    // --- Technical Specs ---
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text("ENVIRONMENT", 20, 80);
+    doc.text("APPARATUS / EQUIPMENT", 75, 80);
+    doc.text("REPORTED TO", 130, 80);
+    
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'normal');
+    doc.text(incident.weatherConditions || 'Recorded Environment', 20, 84);
+    doc.text(incident.equipmentInvolved || 'N/A', 75, 84);
+    doc.text(incident.reportedTo || 'Staff Registry', 130, 84);
+
+    
+    // --- Primary Narrative ---
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text("FACTUAL NARRATIVE", 20, 90);
+    
+    doc.setFont('helvetica', 'normal');
+    const descLines = doc.splitTextToSize(incident.description, pageWidth - 40);
+    doc.text(descLines, 20, 98);
+    
+    let currentY = 98 + (descLines.length * 6);
+    
+    // Involved Personnel
+    if (incident.involvedPeople) {
+      currentY += 10;
+      doc.setFont('helvetica', 'bold');
+      doc.text("INVOLVED PERSONNEL", 20, currentY);
+      currentY += 8;
+      doc.setFont('helvetica', 'normal');
+      doc.text(incident.involvedPeople, 20, currentY);
+    }
+    
+    // Immediate Treatment
+    if (incident.treatmentProvided) {
+      currentY += 15;
+      doc.setFont('helvetica', 'bold');
+      doc.text("TREATMENT & IMMEDIATE PROTOCOL", 20, currentY);
+      currentY += 8;
+      doc.setFont('helvetica', 'normal');
+      const treatmentLines = doc.splitTextToSize(incident.treatmentProvided, pageWidth - 40);
+      doc.text(treatmentLines, 20, currentY);
+      currentY += (treatmentLines.length * 6);
+    }
+    
+    // Witnesses
+    currentY += 15;
+    doc.setFont('helvetica', 'bold');
+    doc.text("WITNESSES", 20, currentY);
+    currentY += 8;
+    doc.setFont('helvetica', 'normal');
+    doc.text(incident.witnesses || 'None recorded', 20, currentY);
+    
+    // Tactical Actions
+    currentY += 15;
+    doc.setFont('helvetica', 'bold');
+    doc.text("FOLLOW-UP ACTIONS TAKEN", 20, currentY);
+    currentY += 8;
+    doc.setFont('helvetica', 'normal');
+    const actionLines = doc.splitTextToSize(incident.actionsTaken || 'Standard safety protocols applied.', pageWidth - 40);
+    doc.text(actionLines, 20, currentY);
+    currentY += (actionLines.length * 6);
+    
+    // --- Footer Authentication ---
+    currentY = doc.internal.pageSize.getHeight() - 40;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(20, currentY, pageWidth - 20, currentY);
+    
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Official Document of ${activeTeam?.name || 'The Squad Hub'}`, 20, currentY + 10);
+    doc.text(`Verification ID: ${incident.id}`, 20, currentY + 15);
+    doc.text("CONFIDENTIAL | FOR AUTHORIZED PERSONNEL ONLY", pageWidth - 20, currentY + 10, { align: 'right' });
+    
+    doc.save(`INCIDENT_REPORT_${incident.date}_${incident.title.replace(/\s+/g, '_')}.pdf`);
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="rounded-[3.5rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-2xl bg-white text-foreground">
@@ -300,20 +748,22 @@ function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incident: Te
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
           <DialogHeader>
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <div className="bg-primary/10 p-3 rounded-2xl text-primary"><ShieldAlert className="h-6 w-6" /></div>
                 <div className="min-w-0">
                   <DialogTitle className="text-3xl font-black uppercase tracking-tight truncate">{incident.title}</DialogTitle>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{incident.date} • {incident.location}</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{incident.date} {incident.time} • {incident.location}</p>
                 </div>
               </div>
-              <Badge className={cn(
-                "border-none font-black text-[10px] uppercase px-4 h-7 shrink-0",
-                incident.emergencyServicesCalled ? "bg-red-600 text-white shadow-lg shadow-red-600/20" : "bg-muted text-muted-foreground"
-              )}>
-                {incident.emergencyServicesCalled ? 'Critical Alert' : 'Routine Log'}
-              </Badge>
+              <div className="flex gap-2">
+                <Badge className={cn(
+                  "border-none font-black text-[10px] uppercase px-4 h-7 shrink-0",
+                  incident.emergencyServicesCalled ? "bg-red-600 text-white shadow-lg shadow-red-600/20" : "bg-muted text-muted-foreground"
+                )}>
+                  {incident.emergencyServicesCalled ? 'Critical Alert' : 'Routine Log'}
+                </Badge>
+              </div>
             </div>
           </DialogHeader>
 
@@ -327,34 +777,47 @@ function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incident: Te
               </div>
               
               <div className="space-y-3">
-                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary ml-1">Witness Roster</h4>
-                <div className="p-5 bg-white rounded-2xl border-2 font-bold text-xs leading-relaxed text-foreground">
-                  {incident.witnesses || 'No witnesses recorded in the official log.'}
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary ml-1">Environmental Context</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-4 bg-muted/20 rounded-xl border-2 space-y-1">
+                    <p className="text-[7px] font-black uppercase text-muted-foreground">Conditions</p>
+                    <p className="text-[10px] font-bold uppercase">{incident.weatherConditions || 'Archived'}</p>
+                  </div>
+                  <div className="p-4 bg-muted/20 rounded-xl border-2 space-y-1">
+                    <p className="text-[7px] font-black uppercase text-muted-foreground">Apparatus</p>
+                    <p className="text-[10px] font-bold uppercase truncate">{incident.equipmentInvolved || 'N/A'}</p>
+                  </div>
                 </div>
               </div>
             </div>
 
             <div className="space-y-8">
               <div className="space-y-3">
-                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary ml-1">Tactical Actions Taken</h4>
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary ml-1">Treatment Records</h4>
                 <div className="bg-primary/5 p-6 rounded-2xl border-2 border-primary/10 shadow-inner">
-                  <p className="text-sm font-bold leading-relaxed text-foreground/80">{incident.actionsTaken || 'Standard safety protocols applied.'}</p>
+                  <p className="text-sm font-bold leading-relaxed text-foreground/80">{incident.treatmentProvided || 'Standard site protocols followed.'}</p>
                 </div>
               </div>
 
-              <div className="p-6 bg-black text-white rounded-[2.5rem] space-y-3 relative overflow-hidden group">
+              <Card className="bg-black text-white rounded-[2.5rem] p-6 space-y-4 relative overflow-hidden group border-none">
                 <ShieldCheck className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
-                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Compliance Status</p>
-                <p className="text-[11px] font-medium leading-relaxed italic text-white/60 relative z-10">
-                  This report is permanently archived in the institutional vault for organizational safety auditing and insurance verification purposes.
-                </p>
-              </div>
+                <div className="space-y-2 relative z-10">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-primary">Severity Classification</p>
+                  <p className="text-xl font-black uppercase">{incident.severity || 'Minor'}</p>
+                </div>
+                {incident.followUpRequired && (
+                  <Badge className="bg-amber-400 text-black border-none font-black text-[8px] uppercase px-3 h-5">Action Items Pending</Badge>
+                )}
+              </Card>
             </div>
           </div>
 
-          <DialogFooter className="pt-4">
-            <Button variant="outline" className="w-full h-14 rounded-2xl border-2 font-black uppercase text-xs tracking-widest transition-all hover:bg-muted" onClick={() => onOpenChange(false)}>
-              Close Audit Detail
+          <DialogFooter className="pt-4 flex flex-col sm:flex-row gap-2">
+            <Button variant="outline" className="flex-1 h-14 rounded-2xl border-2 font-black uppercase text-xs tracking-widest transition-all hover:bg-muted" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+            <Button className="flex-1 h-14 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20" onClick={handleDownloadPDF}>
+              <Download className="h-4 w-4 mr-2" /> Download Institutional PDF
             </Button>
           </DialogFooter>
         </div>
@@ -362,6 +825,7 @@ function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incident: Te
     </Dialog>
   );
 }
+
 
 function SafetyHub() {
   const { activeTeam, isStaff, addIncident, db } = useTeam();
@@ -372,12 +836,21 @@ function SafetyHub() {
   const [form, setForm] = useState({
     title: '',
     date: format(new Date(), 'yyyy-MM-dd'),
+    time: format(new Date(), 'HH:mm'),
     location: '',
     description: '',
     emergencyServicesCalled: false,
+    severity: 'minor',
     witnesses: '',
-    actionsTaken: ''
+    involvedPeople: '',
+    treatmentProvided: '',
+    followUpRequired: false,
+    actionsTaken: '',
+    reportedTo: '',
+    equipmentInvolved: '',
+    weatherConditions: 'Clear/Indoor'
   });
+
 
   const incidentsQuery = useMemoFirebase(() => (activeTeam && db) ? query(collection(db, 'teams', activeTeam.id, 'incidents'), orderBy('date', 'desc')) : null, [activeTeam?.id, db]);
   const { data: incidents, isLoading } = useCollection<TeamIncident>(incidentsQuery);
@@ -391,14 +864,23 @@ function SafetyHub() {
     setForm({
       title: '',
       date: format(new Date(), 'yyyy-MM-dd'),
+      time: format(new Date(), 'HH:mm'),
       location: '',
       description: '',
       emergencyServicesCalled: false,
+      severity: 'minor',
       witnesses: '',
-      actionsTaken: ''
+      involvedPeople: '',
+      treatmentProvided: '',
+      followUpRequired: false,
+      actionsTaken: '',
+      reportedTo: '',
+      equipmentInvolved: '',
+      weatherConditions: 'Clear/Indoor'
     });
     toast({ title: "Incident Logged", description: "Strategic safety report archived." });
   };
+
 
   const exportLedger = useCallback(() => {
     if (!incidents || incidents.length === 0) return;
@@ -529,31 +1011,77 @@ function SafetyHub() {
               
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Date</Label><Input type="date" value={form.date ?? ''} onChange={e => setForm({...form, date: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Location</Label><Input placeholder="Which field/court?" value={form.location ?? ''} onChange={e => setForm({...form, location: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Time</Label><Input type="time" value={form.time ?? ''} onChange={e => setForm({...form, time: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
               </div>
 
-              <div className="flex items-center justify-between p-6 bg-red-50 rounded-[2rem] border-2 border-dashed border-red-200">
-                <div>
-                  <p className="text-sm font-black uppercase leading-tight text-red-700">Emergency Services Call</p>
-                  <p className="text-[10px] font-bold text-red-600/60 uppercase">Were 911 or first responders dispatched?</p>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Location</Label><Input placeholder="Field/Court" value={form.location ?? ''} onChange={e => setForm({...form, location: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase ml-1">Severity</Label>
+                  <Select value={form.severity} onValueChange={(v: any) => setForm({...form, severity: v})}>
+                    <SelectTrigger className="h-12 border-2 rounded-xl font-bold"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="minor" className="font-bold">Minor (Bruises, Scrapes)</SelectItem>
+                      <SelectItem value="moderate" className="font-bold">Moderate (Assessment Required)</SelectItem>
+                      <SelectItem value="severe" className="font-bold">Severe (Possible ER)</SelectItem>
+                      <SelectItem value="critical" className="font-bold">Critical (Immediate Response)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Switch checked={form.emergencyServicesCalled} onCheckedChange={v => setForm({...form, emergencyServicesCalled: v})} className="data-[state=checked]:bg-red-600" />
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1 flex items-center justify-between p-6 bg-red-50 rounded-2xl border-2 border-dashed border-red-200">
+                  <p className="text-[10px] font-black uppercase text-red-700">Emergency Call</p>
+                  <Switch checked={form.emergencyServicesCalled} onCheckedChange={v => setForm({...form, emergencyServicesCalled: v})} />
+                </div>
+                <div className="flex-1 flex items-center justify-between p-6 bg-amber-50 rounded-2xl border-2 border-dashed border-amber-200">
+                  <p className="text-[10px] font-black uppercase text-amber-700">Follow-Up Needed</p>
+                  <Switch checked={form.followUpRequired} onCheckedChange={v => setForm({...form, followUpRequired: v})} />
+                </div>
               </div>
 
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase ml-1">Factual Narrative</Label>
-                <Textarea placeholder="What occurred? Be descriptive and objective..." value={form.description ?? ''} onChange={e => setForm({...form, description: e.target.value})} className="min-h-[120px] rounded-2xl border-2 font-medium" />
+                <Textarea placeholder="What occurred? Be descriptive and objective..." value={form.description ?? ''} onChange={e => setForm({...form, description: e.target.value})} className="min-h-[100px] rounded-2xl border-2 font-medium" />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase ml-1">Personnel Involved</Label>
+                  <Input placeholder="Names of affected players/staff..." value={form.involvedPeople ?? ''} onChange={e => setForm({...form, involvedPeople: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase ml-1">Witnesses</Label>
+                  <Input placeholder="Others present..." value={form.witnesses ?? ''} onChange={e => setForm({...form, witnesses: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase ml-1">Reported To</Label>
+                  <Input placeholder="Director X, Coach Y..." value={form.reportedTo ?? ''} onChange={e => setForm({...form, reportedTo: e.target.value})} className="h-12 border-2 rounded-xl font-bold text-[10px]" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase ml-1">Equipment</Label>
+                  <Input placeholder="Cleats, Goal, Ball..." value={form.equipmentInvolved ?? ''} onChange={e => setForm({...form, equipmentInvolved: e.target.value})} className="h-12 border-2 rounded-xl font-bold text-[10px]" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase ml-1">Environment</Label>
+                  <Input placeholder="Rain, Turf, Grass..." value={form.weatherConditions ?? ''} onChange={e => setForm({...form, weatherConditions: e.target.value})} className="h-12 border-2 rounded-xl font-bold text-[10px]" />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase ml-1">Witnesses</Label>
-                <Input placeholder="Teammates, parents, or staff present..." value={form.witnesses ?? ''} onChange={e => setForm({...form, witnesses: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
+                <Label className="text-[10px] font-black uppercase ml-1">Immediate Treatment Narrative</Label>
+                <Textarea placeholder="First aid applied, ice, trainers consulted..." value={form.treatmentProvided ?? ''} onChange={e => setForm({...form, treatmentProvided: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium" />
               </div>
 
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase ml-1">Immediate Actions Taken</Label>
-                <Textarea placeholder="First aid applied, return-to-play status, etc..." value={form.actionsTaken ?? ''} onChange={e => setForm({...form, actionsTaken: e.target.value})} className="min-h-[100px] rounded-2xl border-2 font-medium" />
+                <Label className="text-[10px] font-black uppercase ml-1">Institutional Actions Taken</Label>
+                <Textarea placeholder="Coach notifications, return-to-play status..." value={form.actionsTaken ?? ''} onChange={e => setForm({...form, actionsTaken: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium" />
               </div>
+
             </div>
 
             <DialogFooter>
@@ -571,7 +1099,7 @@ function SafetyHub() {
 }
 
 export default function CoachesCornerPage() {
-  const { activeTeam, isStaff, createTeamDocument, updateTeamDocument, deleteTeamDocument, db, members } = useTeam();
+  const { activeTeam, isStaff, createTeamDocument, updateTeamDocument, db, members, createAlert } = useTeam();
   const [activeTab, setActiveTab] = useState('recruiting');
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [editingWaiver, setEditingWaiver] = useState<TeamDocument | null>(null);
@@ -580,18 +1108,36 @@ export default function CoachesCornerPage() {
   const { data: allDocuments } = useCollection<TeamDocument>(docsQuery);
   
   const teamProtocols = useMemo(() => allDocuments?.filter(d => DEFAULT_PROTOCOLS.some(p => p.id === d.id)) || [], [allDocuments]);
+  const defaultDocIds = useMemo(() => DEFAULT_PROTOCOLS.map(p => p.id), []);
+  const customProtocols = useMemo(() => allDocuments?.filter(d => !defaultDocIds.includes(d.id) && d.type === 'waiver') || [], [allDocuments, defaultDocIds]);
 
   const selectedMember = useMemo(() => members.find(m => m.id === selectedMemberId), [members, selectedMemberId]);
 
   const handleSaveProtocolUpdate = async () => {
     if (!editingWaiver || !activeTeam) return;
-    await updateTeamDocument(editingWaiver.id, { 
-      title: editingWaiver.title ?? '',
-      content: editingWaiver.content ?? '',
-      type: editingWaiver.type ?? 'waiver'
-    });
+    
+    // Check if it's a new custom waiver (no id prefix of 'default_')
+    const isNew = !editingWaiver.id;
+    
+    if (isNew) {
+      await createTeamDocument({
+        title: editingWaiver.title ?? 'Custom Protocol',
+        content: editingWaiver.content ?? '',
+        type: 'waiver',
+        isActive: true,
+        assignedTo: editingWaiver.assignedTo ?? ['all']
+      });
+      toast({ title: "Custom Protocol Deployed", description: "Your custom waiver is now active for the squad." });
+    } else {
+      await updateTeamDocument(editingWaiver.id, { 
+        title: editingWaiver.title ?? '',
+        content: editingWaiver.content ?? '',
+        type: editingWaiver.type ?? 'waiver'
+      });
+      toast({ title: "Protocol Synchronized", description: "Legal terms updated globally for the squad." });
+    }
+    
     setEditingWaiver(null);
-    toast({ title: "Protocol Synchronized", description: "Legal terms updated globally for the squad." });
   };
 
   if (!isStaff) return <div className="py-24 text-center opacity-20"><ShieldCheck className="h-16 w-16 mx-auto" /><h1 className="text-2xl font-black mt-4 uppercase tracking-widest text-foreground">Staff Access Restricted</h1></div>;
@@ -607,6 +1153,7 @@ export default function CoachesCornerPage() {
           <TabsList className="bg-muted/50 rounded-xl h-auto p-1 border-2 w-full md:w-auto flex-wrap gap-1 shadow-sm">
             <TabsTrigger value="recruiting" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Recruiting Hub</TabsTrigger>
             <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Compliance</TabsTrigger>
+            <TabsTrigger value="archives" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Waiver Library</TabsTrigger>
             <TabsTrigger value="safety" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">Safety Hub</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -646,9 +1193,14 @@ export default function CoachesCornerPage() {
 
         <TabsContent value="compliance" className="space-y-10 mt-0">
           <section className="space-y-6 pt-4">
-            <div className="flex items-center gap-3 px-2">
-              <Shield className="h-5 w-5 text-primary" />
-              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Institutional Protocols</h2>
+            <div className="flex items-center justify-between px-2">
+              <div className="flex items-center gap-3">
+                <Shield className="h-5 w-5 text-primary" />
+                <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Institutional Protocols</h2>
+              </div>
+              <Button size="sm" onClick={() => setEditingWaiver({ title: '', content: '', type: 'waiver', isActive: true, assignedTo: ['all'] } as any)} className="h-9 px-4 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-primary/20">
+                <Plus className="h-3 w-3 mr-1.5" /> Deploy Custom Protocol
+              </Button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {DEFAULT_PROTOCOLS.map(proto => {
@@ -666,6 +1218,14 @@ export default function CoachesCornerPage() {
                           const existing = teamProtocols.find(d => d.id === proto.id);
                           if (!existing) await createTeamDocument({ ...proto, isActive: v, assignedTo: ['all'], content: 'Enter legal text here...' });
                           else await updateTeamDocument(proto.id, { isActive: v });
+                          
+                          if (v) {
+                            await createAlert(
+                              `Action Required: Sign ${proto.title}`, 
+                              `A new institutional protocol has been activated. Please review and sign the ${proto.title} in the Library & Docs section.`, 
+                              'everyone'
+                            );
+                          }
                           toast({ title: `Protocol ${v ? 'Activated' : 'Deactivated'}` });
                         }} />
                       </div>
@@ -674,8 +1234,45 @@ export default function CoachesCornerPage() {
                   </Card>
                 );
               })}
+              
+              {customProtocols.map(proto => {
+                const isActive = proto.isActive ?? true;
+                return (
+                  <Card key={proto.id} className={cn("rounded-3xl border-none shadow-sm p-6 flex flex-col justify-between group transition-all", isActive ? "bg-white ring-1 ring-black/5 border-l-4 border-l-primary" : "bg-muted/20 opacity-60")}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="bg-primary/5 p-3 rounded-2xl shadow-sm border"><CheckCircle2 className={cn("h-5 w-5", isActive ? "text-primary" : "text-muted-foreground/30")} /></div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => setEditingWaiver(proto)}>
+                          <Edit3 className="h-4 w-4" />
+                        </Button>
+                        <Switch checked={isActive} onCheckedChange={async (v) => {
+                          await updateTeamDocument(proto.id, { isActive: v });
+                          if (v) {
+                            await createAlert(
+                              `Action Required: Sign ${proto.title}`, 
+                              `A new institutional protocol has been activated. Please review and sign the ${proto.title} in the Library & Docs section.`, 
+                              'everyone'
+                            );
+                          }
+                          toast({ title: `Protocol ${v ? 'Activated' : 'Deactivated'}` });
+                        }} />
+                      </div>
+                    </div>
+                    <div className="space-y-1 mb-4"><p className="font-black text-sm uppercase text-foreground truncate">{proto.title}</p><p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Custom Mandate</p></div>
+                  </Card>
+                );
+              })}
             </div>
           </section>
+        </TabsContent>
+
+        <TabsContent value="archives" className="mt-0 space-y-8 animate-in fade-in duration-500">
+           <div className="space-y-2">
+             <Badge className="bg-primary/5 text-primary border-none font-black uppercase text-[8px] h-5 px-2 tracking-widest">Global Library</Badge>
+             <h2 className="text-3xl font-black uppercase tracking-tight">Vault Archives</h2>
+             <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Auditable Log of Digital Signatures & Executed Agrements</p>
+           </div>
+           <WaiverArchive />
         </TabsContent>
 
         <TabsContent value="safety" className="mt-0">
@@ -726,3 +1323,98 @@ export default function CoachesCornerPage() {
     </div>
   );
 }
+
+function WaiverArchive() {
+  const { db, activeTeam } = useTeam();
+  const archRef = useMemoFirebase(() => db && activeTeam?.id ? query(collection(db, 'teams', activeTeam.id, 'archived_waivers'), orderBy('signedAt', 'desc')) : null, [db, activeTeam?.id]);
+  const { data: archivedWaivers, isLoading } = useCollection(archRef);
+
+  if (isLoading) return <div className="flex justify-center p-20"><Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" /></div>;
+
+  return (
+    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {archivedWaivers?.map(w => (
+          <Card key={w.id} className="rounded-[2.5rem] border-none shadow-xl bg-white p-8 space-y-4 group hover:shadow-2xl transition-all border-b-4 border-primary/20">
+            <div className="flex justify-between items-start">
+              <div className="bg-primary/10 p-3 rounded-2xl text-primary"><FileText className="h-6 w-6" /></div>
+              <Badge variant="outline" className="text-[7px] font-black uppercase text-primary border-primary/20 shrink-0">{w.type}</Badge>
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-lg font-black uppercase tracking-tight truncate leading-none">{w.title}</h4>
+              <p className="text-[7px] font-bold text-muted-foreground uppercase tracking-[0.2em] mt-1">Legally Verified Vault Entry</p>
+            </div>
+            <div className="bg-muted/30 p-4 rounded-2xl space-y-2 border">
+              <div className="flex justify-between items-center"><span className="text-[8px] font-black uppercase opacity-40">Signatory</span><span className="text-[9px] font-black uppercase truncate ml-2">{w.signer}</span></div>
+              <div className="flex justify-between items-center"><span className="text-[8px] font-black uppercase opacity-40">Executed</span><span className="text-[9px] font-bold opacity-60 ml-2">{w.signedAt ? format(new Date(w.signedAt), 'MMM d, p') : 'TBD'}</span></div>
+              <div className="flex justify-between items-center">
+                <span className="text-[8px] font-black uppercase opacity-40">Status</span>
+                <Badge className="bg-green-100/50 text-green-700 hover:bg-green-100/50 border-none h-4 px-1.5 text-[6px] font-black">LEGALLY BINDING</Badge>
+              </div>
+            </div>
+            <Button variant="outline" className="w-full h-11 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-sm" onClick={() => {
+               const doc = new jsPDF();
+               
+               // PDF Branded Header
+               doc.setFillColor(30, 30, 30);
+               doc.rect(0, 0, 210, 40, 'F');
+               doc.setTextColor(255, 255, 255);
+               doc.setFont("helvetica", "bold");
+               doc.setFontSize(20);
+               doc.text("WAIVER COMPLIANCE RECEIPT", 20, 25);
+               doc.setFontSize(8);
+               doc.text("OFFICIAL INSTITUTIONAL ARCHIVE RECORD", 20, 32);
+
+               // Main Info
+               doc.setTextColor(0, 0, 0);
+               doc.setFontSize(14);
+               doc.text("Protocol Metadata", 20, 55);
+               
+               doc.setFontSize(10);
+               doc.text(`Title: ${w.title}`, 20, 65);
+               doc.text(`Waiver Type: ${w.type}`, 20, 72);
+               doc.text(`Signer: ${w.signer}`, 20, 79);
+               doc.text(`Timestamp: ${w.signedAt ? format(new Date(w.signedAt), 'PPP p') : 'TBD'}`, 20, 86);
+               
+               doc.setDrawColor(200, 200, 200);
+               doc.line(20, 95, 190, 95);
+
+               // Answers Section
+               doc.setFontSize(12);
+               doc.text("Execution Responses", 20, 105);
+               doc.setFontSize(9);
+               
+               let yPos = 115;
+               Object.entries(w.answers || {}).forEach(([k, v]) => {
+                 const label = `${k}:`;
+                 const val = String(v);
+                 doc.setFont("helvetica", "bold");
+                 doc.text(label, 20, yPos);
+                 doc.setFont("helvetica", "normal");
+                 doc.text(val, 60, yPos);
+                 yPos += 7;
+                 if (yPos > 270) { doc.addPage(); yPos = 20; }
+               });
+
+               // Footer
+               doc.setFontSize(7);
+               doc.setTextColor(150, 150, 150);
+               doc.text("This document serves as a legally binding verification of digital execution. Produced by Studio Vault Systems.", 20, 285);
+
+               doc.save(`waiver_archive_${w.id}.pdf`);
+               toast({ title: "Audit Log Exported" });
+            }}>Download PDF Audit <Download className="ml-2 h-3 w-3" /></Button>
+          </Card>
+        ))}
+      </div>
+      {(!archivedWaivers || archivedWaivers.length === 0) && (
+        <div className="text-center py-32 opacity-20 space-y-4">
+           <Database className="h-16 w-16 mx-auto" />
+           <p className="text-sm font-black uppercase tracking-widest leading-none">The Vault is empty.</p>
+           <p className="text-[9px] font-bold uppercase tracking-[0.2em]">Executed agreements will appear here automatically.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+

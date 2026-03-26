@@ -1,8 +1,7 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,16 +12,12 @@ import {
   Play, 
   Trash2, 
   Dumbbell, 
-  ChevronRight,
   Loader2,
   Video,
-  Filter,
-  CheckCircle2,
-  Upload,
-  Edit3,
   Info,
   Package,
-  HardDrive,
+  Bookmark,
+  Upload,
   Lock
 } from 'lucide-react';
 import { 
@@ -30,20 +25,26 @@ import {
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogTrigger,
   DialogDescription, 
   DialogFooter
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { useTeam, TeamFile } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, doc, limit } from 'firebase/firestore';
+import { collection, query, orderBy, doc, limit, updateDoc } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
+const getYoutubeThumbnail = (url: string) => {
+  if (!url) return null;
+  const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?\s*v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? `https://img.youtube.com/vi/${match[2]}/maxresdefault.jpg` : null;
+};
+
 export default function PlaybookAndGamePlayPage() {
-  const { activeTeam, addDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro, markMediaAsViewed } = useTeam();
+  const { activeTeam, addDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro } = useTeam();
   const db = useFirestore();
 
   const [viewMode, setViewMode] = useState<'drills' | 'gameplay'>('drills');
@@ -71,30 +72,102 @@ export default function PlaybookAndGamePlayPage() {
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newUrl, setNewUrl] = useState('');
+  const [newMediaUrls, setNewMediaUrls] = useState<string[]>([]);
+  const [expandedDrillIds, setExpandedDrillIds] = useState<Set<string>>(new Set());
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const filteredDrills = useMemo(() => drills.filter(d => d.title.toLowerCase().includes(searchTerm.toLowerCase())), [drills, searchTerm]);
   const filteredFiles = useMemo(() => teamFiles.filter(f => ['Game Tape', 'Practice Session', 'Highlights'].includes(f.category) && f.name.toLowerCase().includes(searchTerm.toLowerCase())), [teamFiles, searchTerm]);
 
+  const toggleExpand = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setExpandedDrillIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const handleAddDrill = async () => {
     if (!newTitle || !newDesc) return;
-    addDrill({ title: newTitle, description: newDesc, videoUrl: newUrl, createdAt: new Date().toISOString() });
+    await addDrill({ 
+      title: newTitle, 
+      description: newDesc, 
+      videoUrl: newUrl, 
+      additionalMedia: newMediaUrls.filter(Boolean),
+      createdAt: new Date().toISOString(), 
+      comments: [] 
+    });
     setIsAddDrillOpen(false);
-    setNewTitle(''); setNewDesc(''); setNewUrl('');
-    toast({ title: "Drill Published" });
+    setNewTitle(''); setNewDesc(''); setNewUrl(''); setNewMediaUrls([]);
+    toast({ title: "Drill Published", description: "Strategic execution protocol active." });
+  };
+
+  const handleAddFilm = async () => {
+    if (!newTitle || !newUrl) return;
+    await addFile(newTitle, 'video_link', 0, newUrl, uploadCat, newDesc);
+    setIsUploadOpen(false);
+    setNewTitle(''); setNewUrl(''); setNewDesc('');
+    toast({ title: "Film Archived", description: "Institutional tape secured in vault." });
   };
 
   const handleUploadFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       const reader = new FileReader();
-      reader.onload = (ev) => {
-        addFile(file.name, file.name.split('.').pop() || 'file', file.size, ev.target?.result as string, uploadCat, newDesc);
+      reader.onload = async (ev) => {
+        await addFile(file.name, file.name.split('.').pop() || 'file', file.size, ev.target?.result as string, uploadCat, newDesc);
         setIsUploadOpen(false);
         setNewDesc('');
+        toast({ title: "File Uploaded", description: "Strategic asset archived." });
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const [commentText, setCommentText] = useState('');
+  const [commentTime, setCommentTime] = useState('');
+
+  const handleAddComment = async (id: string, currentComments: any[], type: 'drills' | 'files') => {
+    if (!commentText || !activeTeam || !db) return;
+    const parts = commentTime.split(':');
+    const secs = parts.length === 2 ? parseInt(parts[0]) * 60 + parseInt(parts[1]) : undefined;
+    const newC = {
+      id: `c_${Date.now()}`,
+      text: commentText,
+      timestamp: secs ?? null,
+      authorName: user?.name || 'Staff',
+      createdAt: new Date().toISOString()
+    };
+    const updated = [...(currentComments || []), newC];
+    if (type === 'drills') {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'drills', id), { comments: updated });
+      setSelectedDrill((prev: any) => ({ ...prev, comments: updated }));
+    } else {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'files', id), { comments: updated });
+      setSelectedFile((prev: any) => ({ ...prev, comments: updated }));
+    }
+    setCommentText(''); setCommentTime('');
+    toast({ title: "Mark Saved" });
+  };
+
+  const seekTo = (seconds: number | undefined) => {
+    if (seconds == null || !iframeRef.current) return;
+    const isYt = iframeRef.current.src.includes('youtube.com');
+    if (isYt) {
+      iframeRef.current.contentWindow?.postMessage(JSON.stringify({
+        event: 'command',
+        func: 'seekTo',
+        args: [seconds, true]
+      }), '*');
+      iframeRef.current.contentWindow?.postMessage(JSON.stringify({
+        event: 'command',
+        func: 'playVideo',
+        args: []
+      }), '*');
     }
   };
 
@@ -104,16 +177,16 @@ export default function PlaybookAndGamePlayPage() {
     <div className="space-y-8 pb-20 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
-          <h1 className="text-3xl font-black tracking-tight uppercase">Playbook Hub</h1>
-          <p className="text-muted-foreground text-sm font-bold">Execution protocols and match study archives.</p>
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest mb-1">Execution Hub</Badge>
+          <h1 className="text-4xl font-black tracking-tight uppercase text-foreground leading-none">Playbook Hub</h1>
         </div>
-        <div className="flex bg-muted/50 p-1.5 rounded-2xl border-2 shadow-inner">
-          <button onClick={() => setViewMode('drills')} className={cn("px-8 h-11 rounded-xl font-black text-xs uppercase tracking-widest transition-all", viewMode === 'drills' ? "bg-white text-primary shadow-md" : "text-muted-foreground")}>Drills</button>
+        <div className="flex bg-muted/30 p-1.5 rounded-2xl border-2 shadow-inner">
+          <button onClick={() => setViewMode('drills')} className={cn("px-8 h-11 rounded-xl font-black text-xs uppercase tracking-widest transition-all", viewMode === 'drills' ? "bg-black text-white shadow-xl" : "text-muted-foreground hover:text-black")}>Drills</button>
           <button 
             onClick={() => isPro ? setViewMode('gameplay') : purchasePro()} 
             className={cn(
               "px-8 h-11 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2", 
-              viewMode === 'gameplay' ? "bg-white text-primary shadow-md" : "text-muted-foreground"
+              viewMode === 'gameplay' ? "bg-black text-white shadow-xl" : "text-muted-foreground hover:text-black"
             )}
           >
             {!isPro && <Lock className="h-3 w-3 text-red-600" />}
@@ -123,61 +196,289 @@ export default function PlaybookAndGamePlayPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* ... sidebar ... */}
         <aside className="space-y-6">
           <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 p-8 bg-black text-white relative group overflow-hidden">
             <Package className="absolute -right-4 -bottom-4 h-32 w-32 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
             <div className="relative z-10 space-y-4">
-              <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-2">SQUAD READY</Badge>
-              <h3 className="text-xl font-black uppercase leading-tight">Master Execution</h3>
-              <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Verify squad comprehension via study audits.</p>
+              <Badge className="bg-white/10 text-white border-none font-black text-[8px] h-5 px-3">SQUAD READY</Badge>
+              <h3 className="text-2xl font-black uppercase leading-tight tracking-tighter">Master Execution</h3>
+              <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-relaxed">Study institutional protocols and game tape to maintain strategic advantage.</p>
             </div>
           </Card>
+          
+          <div className="bg-muted/30 p-6 rounded-[2.5rem] border-2 border-dashed space-y-4">
+            <div className="flex items-center gap-2"><Info className="h-4 w-4 text-primary" /><span className="text-[10px] font-black uppercase">Staff Tip</span></div>
+            <p className="text-[10px] font-medium text-muted-foreground leading-relaxed italic">
+              Use "Coach Marks" to highlight specific moments in game tape or drills. Teammates can click these marks to jump to the relevant tactical coaching moment.
+            </p>
+          </div>
         </aside>
 
-        <div className="lg:col-span-3 space-y-6">
-          {/* ... filters and content ... */}
+        <div className="lg:col-span-3 space-y-8">
           <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
             <div className="relative flex-1 w-full">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder={`Search ${viewMode}...`} className="pl-11 h-14 rounded-2xl bg-muted/50 border-none shadow-inner font-black" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <Input placeholder={`Search ${viewMode}...`} className="pl-11 h-14 rounded-2xl bg-muted/50 border-none shadow-inner font-black text-sm text-foreground" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             {isStaff && (
-              <Button onClick={() => viewMode === 'drills' ? setIsAddDrillOpen(true) : setIsUploadOpen(true)} className="rounded-full h-12 px-8 font-black uppercase text-xs shadow-lg shadow-primary/20 shrink-0">
-                <Plus className="h-4 w-4 mr-2" /> Add {viewMode === 'drills' ? 'Drill' : 'Film'}
+              <Button onClick={() => {
+                setNewTitle(''); setNewUrl(''); setNewDesc('');
+                viewMode === 'drills' ? setIsAddDrillOpen(true) : setIsUploadOpen(true);
+              }} className="rounded-full h-14 px-8 font-black uppercase text-xs shadow-xl shadow-primary/20 shrink-0">
+                <Plus className="h-5 w-5 mr-2" /> Publish {viewMode === 'drills' ? 'Drill' : 'Film'}
               </Button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
             {viewMode === 'drills' ? filteredDrills.map(drill => (
-              <Card key={drill.id} className="rounded-[2rem] overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedDrill(drill)}>
-                <div className="aspect-video bg-muted relative">
-                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                    <Play className="h-10 w-10 text-white fill-current opacity-0 group-hover:opacity-100 transition-all scale-50 group-hover:scale-100" />
-                  </div>
+              <Card key={drill.id} className="rounded-[2.5rem] overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedDrill(drill)}>
+                <div className="aspect-video bg-black relative overflow-hidden">
+                  {drill.videoUrl && getYoutubeThumbnail(drill.videoUrl) ? (
+                    <img src={getYoutubeThumbnail(drill.videoUrl)!} alt={drill.title} className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity" />
+                  ) : null}
+                  {drill.videoUrl ? (
+                     <div className="absolute inset-0 flex items-center justify-center">
+                        <Play className="h-12 w-12 text-white fill-current opacity-40 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100" />
+                     </div>
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center opacity-10">
+                      <Dumbbell className="h-16 w-16 text-white" />
+                    </div>
+                  )}
+                  <Badge className="absolute top-4 left-4 bg-primary text-white border-none font-black text-[8px] uppercase">Drill Protocol</Badge>
                 </div>
                 <CardContent className="p-6 space-y-2">
-                  <h3 className="font-black text-sm uppercase truncate">{drill.title}</h3>
-                  <p className="text-[10px] font-medium text-muted-foreground line-clamp-2">{drill.description}</p>
+                  <div className="flex justify-between items-start gap-4">
+                    <h3 className="font-black text-lg uppercase truncate tracking-tight text-foreground">{drill.title}</h3>
+                    <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase shrink-0">{(drill.comments?.length || 0)} MARKS</Badge>
+                  </div>
+                  <p className={cn(
+                    "text-xs font-medium text-muted-foreground leading-relaxed transition-all",
+                    !expandedDrillIds.has(drill.id) && "line-clamp-3"
+                  )}>
+                    {drill.description}
+                  </p>
+                  {drill.description.length > 120 && (
+                    <button 
+                      onClick={(e) => toggleExpand(e, drill.id)}
+                      className="text-[9px] font-black text-primary uppercase tracking-widest hover:underline pt-1"
+                    >
+                      {expandedDrillIds.has(drill.id) ? "Minimize Protocol" : "Read Full Protocol"}
+                    </button>
+                  )}
                 </CardContent>
               </Card>
             )) : filteredFiles.map(file => (
-              <Card key={file.id} className="rounded-[2rem] overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedFile(file)}>
-                <div className="aspect-video bg-black/90 flex items-center justify-center relative">
-                  <Play className="h-10 w-10 text-white fill-current opacity-40 group-hover:opacity-100 transition-all" />
+              <Card key={file.id} className="rounded-[2.5rem] overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedFile(file)}>
+                <div className="aspect-video bg-black flex items-center justify-center relative">
+                  <Play className="h-12 w-12 text-white fill-current opacity-40 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100" />
                   <Badge className="absolute top-4 left-4 bg-black/50 border-none font-black text-[8px] uppercase">{file.category}</Badge>
                 </div>
                 <CardContent className="p-6 space-y-2">
-                  <h3 className="font-black text-sm uppercase truncate">{file.name}</h3>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">{file.size} • {new Date(file.date).toLocaleDateString()}</p>
+                  <div className="flex justify-between items-start gap-4">
+                    <h3 className="font-black text-lg uppercase truncate tracking-tight text-foreground">{file.name}</h3>
+                    <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase shrink-0">{(file.comments?.length || 0)} MARKS</Badge>
+                  </div>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{file.size} • {new Date(file.date).toLocaleDateString()}</p>
                 </CardContent>
               </Card>
             ))}
           </div>
         </div>
       </div>
-      {/* ... dialogs ... */}
+
+      <Dialog open={isAddDrillOpen} onOpenChange={setIsAddDrillOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+          <div className="bg-black text-white p-8 lg:p-10 space-y-2">
+            <DialogTitle className="font-black text-2xl uppercase tracking-tighter">Publish Drill</DialogTitle>
+            <DialogDescription className="text-white/40 text-[10px] font-black uppercase tracking-widest">Enroll a new execution protocol into the playbook.</DialogDescription>
+          </div>
+          <div className="p-8 space-y-6">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Drill Title</Label>
+              <Input placeholder="e.g. 5-4-3 Double Play Rotation" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Strategic Instructions</Label>
+              <Textarea placeholder="Describe the drill setup, reps, and coaching cues..." className="rounded-2xl border-2 font-medium min-h-[120px] p-4 resize-none" value={newDesc} onChange={e => setNewDesc(e.target.value)} />
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Additional Media (Images/Videos)</Label>
+                <Button variant="ghost" size="sm" className="h-7 text-[8px] font-black uppercase" onClick={() => setNewMediaUrls([...newMediaUrls, ''])}>
+                  <Plus className="h-3 w-3 mr-1" /> Add Slot
+                </Button>
+              </div>
+              <div className="space-y-3">
+                <Input placeholder="Primary Video URL (YouTube/Vimeo)" className="h-12 rounded-xl border-2 font-bold" value={newUrl} onChange={e => setNewUrl(e.target.value)} />
+                {newMediaUrls.map((url, i) => (
+                  <div key={i} className="flex gap-2">
+                    <Input placeholder="Additional Image/Video URL" className="h-10 rounded-xl border font-bold text-xs" value={url} onChange={e => {
+                      const next = [...newMediaUrls];
+                      next[i] = e.target.value;
+                      setNewMediaUrls(next);
+                    }} />
+                    <Button variant="ghost" size="icon" className="h-10 w-10 text-red-500" onClick={() => setNewMediaUrls(newMediaUrls.filter((_, idx) => idx !== i))}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="p-8 pt-0 flex flex-col sm:flex-row gap-3">
+            <Button variant="ghost" onClick={() => setIsAddDrillOpen(false)} className="rounded-2xl h-14 font-black uppercase text-[10px] flex-1">Abort</Button>
+            <Button onClick={handleAddDrill} disabled={!newTitle || !newDesc} className="rounded-2xl h-14 font-black uppercase text-[10px] flex-1 shadow-xl shadow-primary/20">Commit to Playbook</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+          <div className="bg-primary text-white p-8 lg:p-10 space-y-2">
+            <DialogTitle className="font-black text-2xl uppercase tracking-tighter">Archive Film</DialogTitle>
+            <DialogDescription className="text-white/60 text-[10px] font-black uppercase tracking-widest">Enshrine game tape or tournament footage in the vault.</DialogDescription>
+          </div>
+          <div className="p-8 space-y-6">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Tape Title</Label>
+              <Input placeholder="e.g. Regional Finals vs Lancers" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-[0.1em] ml-1">Archive Category</Label>
+              <Select value={uploadCat} onValueChange={setUploadCat}>
+                <SelectTrigger className="h-14 rounded-2xl border-2 font-black uppercase text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent className="rounded-2xl">
+                  <SelectItem value="Game Tape" className="font-black uppercase text-[10px]">Game Tape</SelectItem>
+                  <SelectItem value="Practice Session" className="font-black uppercase text-[10px]">Practice Session</SelectItem>
+                  <SelectItem value="Highlights" className="font-black uppercase text-[10px]">Highlights</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Video Source (URL)</Label>
+              <Input placeholder="https://youtu.be/..." className="h-12 rounded-xl border-2 font-bold" value={newUrl} onChange={e => setNewUrl(e.target.value)} />
+              <div className="relative py-4 text-center">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t"></div></div>
+                <span className="relative bg-white px-4 text-[9px] font-black text-muted-foreground uppercase">OR UPLOAD RAW FILE</span>
+              </div>
+              <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={handleUploadFile} />
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="w-full h-14 rounded-2xl border-2 font-black uppercase text-[10px] border-dashed">
+                <Upload className="h-4 w-4 mr-2" /> Upload MP4/MOV
+              </Button>
+            </div>
+          </div>
+          <DialogFooter className="p-8 pt-0">
+            <Button onClick={handleAddFilm} disabled={!newTitle || (!newUrl && !fileInputRef.current?.files?.length)} className="w-full h-16 rounded-[2rem] font-black uppercase text-xs shadow-xl shadow-primary/20">Enshrine in Vault</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
+        <DialogContent className="rounded-[4rem] sm:max-w-6xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+          <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
+          {(selectedDrill || selectedFile) && (() => {
+            const data = selectedDrill || selectedFile;
+            const url = selectedDrill ? selectedDrill.videoUrl : selectedFile!.url;
+            const type = selectedDrill ? 'drills' : 'files';
+            
+            return (
+              <div className="flex flex-col lg:flex-row h-full max-h-[90vh]"> {/* Forced Sync */}
+                <div className="flex-1 bg-black relative flex items-center justify-center min-h-[400px]">
+                  {url && url !== '#' ? (
+                    <iframe
+                      ref={iframeRef}
+                      src={`${url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/').split('&')[0]}?enablejsapi=1`}
+                      className="absolute inset-0 w-full h-full"
+                      allow="autoplay; fullscreen"
+                      allowFullScreen
+                    />
+                  ) : (
+                    <div className="text-center opacity-30 text-white space-y-4">
+                      <Video className="h-20 w-20 mx-auto" />
+                      <p className="font-black uppercase tracking-widest text-sm">Visual Archive Not Linked</p>
+                    </div>
+                  )}
+                  {selectedDrill && selectedDrill.additionalMedia?.length > 0 && (
+                    <div className="absolute bottom-6 left-6 right-6 flex gap-4 overflow-x-auto pb-2 custom-scrollbar no-scrollbar">
+                      {selectedDrill.additionalMedia.map((mediaUrl: string, idx: number) => (
+                        <div key={idx} className="h-20 aspect-video rounded-xl overflow-hidden bg-white/10 border border-white/20 shrink-0 group/media cursor-pointer hover:border-primary transition-all">
+                          <img src={mediaUrl} className="w-full h-full object-cover opacity-60 group-hover/media:opacity-100" />
+                        </div>
+                      ))}
+                    </div>
+                   )}
+                  <div className="absolute top-6 left-6">
+                    <Badge className="bg-primary text-white border-none font-black text-[10px] uppercase h-7 px-4 shadow-lg">{selectedDrill ? 'Tactical Drill' : data.category}</Badge>
+                  </div>
+                </div>
+
+                <div className="w-full lg:w-[400px] flex flex-col bg-white border-l divide-y">
+                  <div className="p-8 space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div className="min-w-0">
+                        <h3 className="font-black text-2xl tracking-tighter uppercase leading-none truncate">{data.title || data.name}</h3>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2">{new Date(data.createdAt || data.date).toLocaleDateString()}</p>
+                      </div>
+                      {isStaff && (
+                        <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50 rounded-xl shrink-0" onClick={() => { 
+                          selectedDrill ? deleteDrill(data.id) : deleteFile(data.id); 
+                          setSelectedDrill(null); setSelectedFile(null);
+                        }}>
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-xs font-medium text-muted-foreground leading-relaxed">
+                      {selectedDrill ? data.description : (data.description || 'No institutional notes archived.')}
+                    </p>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-muted/5">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Coach Marks</h4>
+                      <Badge variant="outline" className="h-5 text-[8px] font-black uppercase border-primary/20 text-primary">{(data.comments || []).length} Points</Badge>
+                    </div>
+
+                    <div className="space-y-4">
+                      {(data.comments || []).length === 0 ? (
+                        <div className="text-center py-10 opacity-30 italic text-xs font-black uppercase">No tactical marks archived.</div>
+                      ) : (
+                        (data.comments || []).map((c: any) => (
+                          <div key={c.id} className={cn("bg-white p-4 rounded-2xl shadow-sm border space-y-2 hover:ring-1 hover:ring-primary transition-all", c.timestamp != null && "cursor-pointer hover:bg-primary/5")} onClick={() => seekTo(c.timestamp)}>
+                            <div className="flex justify-between items-center">
+                              {c.timestamp != null && (
+                                <Badge className="bg-primary/5 text-primary border-none text-[8px] font-black uppercase h-5">
+                                  {Math.floor(c.timestamp / 60)}:{String(c.timestamp % 60).padStart(2, '0')}
+                                </Badge>
+                              )}
+                              <span className="text-[8px] font-black uppercase text-muted-foreground">{c.authorName}</span>
+                            </div>
+                            <p className="text-xs font-bold leading-tight">{c.text}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {isStaff && (
+                    <div className="p-8 space-y-4 bg-white">
+                      <div className="flex gap-2">
+                        <Input placeholder="Time (1:24)" className="w-24 h-12 rounded-xl border-2 font-bold text-xs text-center" value={commentTime} onChange={e => setCommentTime(e.target.value)} />
+                        <Input placeholder="Tactical note..." className="flex-1 h-12 rounded-xl border-2 font-bold text-xs" value={commentText} onChange={e => setCommentText(e.target.value)} />
+                      </div>
+                      <Button className="w-full h-12 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={() => handleAddComment(data.id, data.comments, type)} disabled={!commentText}>
+                        <Bookmark className="h-4 w-4 mr-2" /> Commit Tactical Mark
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

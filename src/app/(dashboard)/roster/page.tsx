@@ -32,7 +32,13 @@ import {
   UserCog,
   ExternalLink,
   Link as LinkIcon,
-  Lock
+  Lock,
+  Play,
+  Video,
+  Plus,
+  Bookmark,
+  MessageSquare,
+  Shield
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTeam, Member, TeamDocument } from '@/components/providers/team-provider';
@@ -58,7 +64,7 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, where } from 'firebase/firestore';
+import { collection, query, orderBy, where, onSnapshot } from 'firebase/firestore';
 import { format, differenceInYears } from 'date-fns';
 
 const STANDARD_WAIVERS = [
@@ -113,6 +119,21 @@ export default function RosterPage() {
   }, [db, activeTeam?.id, selectedMember?.id]);
   const { data: memberSigs } = useCollection(memberSigsQuery);
   const signedDocIds = useMemo(() => (memberSigs || []).map(s => s.docId), [memberSigs]);
+
+  const [videos, setVideos] = useState<any[]>([]);
+  const [activeVideo, setActiveVideo] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!db || !selectedMember?.playerId) {
+      setVideos([]);
+      return;
+    }
+    const q = query(collection(db, 'players', selectedMember.playerId, 'videos'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setVideos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, [db, selectedMember?.playerId]);
 
   useEffect(() => {
     setMounted(true);
@@ -178,7 +199,7 @@ export default function RosterPage() {
       selectedMember.gpa || 'N/A',
       selectedMember.medicalClearance ? 'CLEARED' : 'PENDING',
       selectedMember.school || 'N/A',
-      selectedMember.highlightUrl || 'N/A',
+      videos.find(v => v.type === 'Highlight')?.url || 'N/A',
       selectedMember.phone || selectedMember.parentEmail || 'N/A',
       staffNote.replace(/,/g, ';').replace(/\n/g, ' ')
     ];
@@ -367,15 +388,39 @@ export default function RosterPage() {
                       <div className="space-y-6">
                         <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><ShieldCheck className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Vital Stats</h4></div>
                         <div className="grid grid-cols-1 gap-3">
-                          {STANDARD_WAIVERS.map(w => {
-                            if (!activeProtocolsMap[w.docId]) return null;
+                          {(teamDocs || []).filter(d => d.isActive !== false).map(w => {
+                            const isParentalWaiver = w.id === 'default_parental';
                             const isAdult = selectedMember.birthdate && differenceInYears(new Date(), new Date(selectedMember.birthdate)) >= 18;
-                            if (w.minorOnly && isAdult) return null;
-                            const isSigned = signedDocIds.includes(w.docId);
+                            if (isParentalWaiver && isAdult) return null;
+                            
+                            const signatureRecord = (memberSigs || []).find(s => s.docId === w.id);
+                            const isSigned = !!signatureRecord;
+                            
+                            // Check if assigned to this member
+                            const isAssigned = w.assignedTo?.includes('all') || w.assignedTo?.includes(selectedMember.id);
+                            if (!isAssigned) return null;
+
                             return (
-                              <div key={w.id} className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
-                                <span className="text-[10px] font-black uppercase opacity-40 text-foreground">{w.label}</span>
-                                {isSigned ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : <XCircle className="h-5 w-5 text-destructive" />}
+                              <div key={w.id} className="bg-muted/30 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between border border-transparent gap-2">
+                                <div>
+                                  <span className="text-[10px] font-black uppercase text-foreground relative top-0.5">{w.title || 'Custom Waiver'}</span>
+                                  {isSigned && signatureRecord.signedAt && (
+                                    <p className="text-[9px] font-bold text-muted-foreground uppercase mt-1 tracking-wider">
+                                      {format(new Date(signatureRecord.signedAt), 'MMM d, yyyy h:mm a')}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="shrink-0 flex items-center">
+                                  {isSigned ? (
+                                    <Badge className="bg-green-100 text-green-700 border-none rounded-xl px-3 py-1 font-black text-[9px] uppercase flex items-center gap-1 shadow-sm">
+                                      <CheckCircle2 className="h-3 w-3" /> Signed
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-red-100 text-red-700 border-none rounded-xl px-3 py-1 font-black text-[9px] uppercase flex items-center gap-1 shadow-sm">
+                                      <XCircle className="h-3 w-3" /> Pending
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}
@@ -391,7 +436,10 @@ export default function RosterPage() {
                       </div>
 
                       <div className="space-y-6">
-                        <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><GraduationCap className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Institutional Audit</h4></div>
+                        <div className="flex items-center gap-3">
+                          <div className="bg-primary/10 p-2 rounded-xl text-primary"><GraduationCap className="h-5 w-5" /></div>
+                          <h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Institutional Audit</h4>
+                        </div>
                         <div className="grid grid-cols-1 gap-3">
                           <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
                             <span className="text-[10px] font-black uppercase opacity-40 text-foreground">Active Dues</span>
@@ -402,6 +450,28 @@ export default function RosterPage() {
                             <span className="text-sm font-black uppercase text-foreground">{selectedMember.gpa || '3.8'}</span>
                           </div>
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-6 pt-6 border-t">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-primary/10 p-2 rounded-xl text-primary"><Video className="h-5 w-5" /></div>
+                        <h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Highlight Reel</h4>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {videos.length > 0 ? (
+                          videos.map(v => (
+                            <Card key={v.id} className="rounded-2xl border bg-muted/20 p-4 space-y-3 group hover:ring-1 hover:ring-primary cursor-pointer transition-all" onClick={() => setActiveVideo(v)}>
+                              <div className="bg-black aspect-video rounded-xl flex items-center justify-center relative overflow-hidden">
+                                <Play className="h-8 w-8 text-white fill-current opacity-60" />
+                                <Badge className="absolute top-2 left-2 bg-primary/80 border-none font-black text-[7px] uppercase h-4">{v.type}</Badge>
+                              </div>
+                              <p className="text-[10px] font-black uppercase truncate">{v.title}</p>
+                            </Card>
+                          ))
+                        ) : (
+                          <div className="col-span-full py-10 text-center opacity-30 italic text-xs uppercase font-black">No reel archived.</div>
+                        )}
                       </div>
                     </div>
 
@@ -486,6 +556,21 @@ export default function RosterPage() {
               </Button>
             </DialogFooter>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!activeVideo} onOpenChange={() => setActiveVideo(null)}>
+        <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          {activeVideo && (
+            <div className="bg-black aspect-video relative flex items-center justify-center">
+                <iframe
+                  src={activeVideo.url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/').split('&')[0]}
+                  className="absolute inset-0 w-full h-full"
+                  allow="autoplay; fullscreen"
+                  allowFullScreen
+                />
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

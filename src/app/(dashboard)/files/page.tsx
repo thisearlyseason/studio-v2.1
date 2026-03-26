@@ -37,11 +37,13 @@ import {
   Loader2,
   ChevronDown,
   FolderOpen,
+  Users,
   Signature
 } from 'lucide-react';
 import { format, differenceInYears } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { useTeam, TeamFile, TeamDocument, DocumentSignature, Member, Team } from '@/components/providers/team-provider';
+import { useTeam, TeamFile, TeamDocument, Member, Team } from '@/components/providers/team-provider';
+import { usePendingWaivers } from '@/hooks/use-pending-waivers';
 import { 
   Dialog, 
   DialogContent, 
@@ -180,56 +182,7 @@ export default function FilesPage() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. Refine signingMembers based on ROLE requirements
-  const signingMembers = useMemo(() => {
-    if (!user || !members) return [];
-    
-    // Players only see themselves
-    if (user.role === 'adult_player') {
-      return members.filter(m => m.userId === user.id);
-    }
-    
-    // Parents see their children AND themselves if they are on the roster
-    if (user.role === 'parent') {
-      return members.filter(m => m.userId === user.id || m.parentEmail === user.email);
-    }
-
-    // Staff/Admin can see all for auditing, but the dialog logic will handle the specific signers
-    if (isStaff || isSuperAdmin) return members;
-
-    return [];
-  }, [members, user, isStaff, isSuperAdmin]);
-
-  // 2. Global query for institutional files (real-time certificates)
-  const institutionalFilesQuery = useMemoFirebase(() => {
-    if (!db || !user?.id) return null;
-    return query(collectionGroup(db, 'files'), where('category', '==', 'Signed Certificate'));
-  }, [db, user?.id]);
-
-  const { data: allSignedFilesRaw } = useCollection<TeamFile>(institutionalFilesQuery);
-
-  // 3. Filter signed files based on permissions
-  const visibleSignedFiles = useMemo(() => {
-    const raw = allSignedFilesRaw || [];
-    return raw.filter(f => {
-      if (isClubManager || isSuperAdmin) return true;
-      if (isStaff && f.teamId === activeTeam?.id) return true;
-      const myMemberIds = signingMembers.map(m => m.id);
-      return f.memberId && myMemberIds.includes(f.memberId);
-    });
-  }, [allSignedFilesRaw, isClubManager, isSuperAdmin, isStaff, activeTeam?.id, signingMembers]);
-
-  // 4. Derive signed status in REAL-TIME from the visible certificates
-  const realTimeSignedDocIds = useMemo(() => {
-    const map: Record<string, string[]> = {};
-    signingMembers.forEach(m => map[m.id] = []);
-    visibleSignedFiles.forEach(f => {
-      if (f.memberId && f.documentId && map[f.memberId]) {
-        map[f.memberId].push(f.documentId);
-      }
-    });
-    return map;
-  }, [visibleSignedFiles, signingMembers]);
+  const { pendingDocs: pendingDocsForDisplay, signingMembers, visibleSignedFiles, realTimeSignedDocIds, documents } = usePendingWaivers();
 
   // Group ALL visible signed files by Team > Type
   const waiverFolders = useMemo(() => {
@@ -263,33 +216,6 @@ export default function FilesPage() {
       file.category.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [resourceFiles, searchTerm]);
-
-  const docsQuery = useMemoFirebase(() => {
-    if (!activeTeam || !db) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'documents'), orderBy('createdAt', 'desc'));
-  }, [activeTeam?.id, db]);
-
-  const { data: documents } = useCollection<TeamDocument>(docsQuery);
-
-  const pendingDocsForDisplay = useMemo(() => {
-    if (!documents || !activeTeam || signingMembers.length === 0) return [];
-    
-    const activeDocs = documents.filter(d => d.isActive !== false);
-    
-    return activeDocs.filter(d => {
-      const isParentalWaiver = d.id === 'default_parental';
-      return signingMembers.some(m => {
-        // Eligibility check
-        const isAdult = m.birthdate && differenceInYears(new Date(), new Date(m.birthdate)) >= 18;
-        if (isParentalWaiver && isAdult) return false;
-        
-        // Assignment check
-        const isAssigned = d.assignedTo?.includes('all') || d.assignedTo?.includes(m.id);
-        const alreadySigned = realTimeSignedDocIds[m.id]?.includes(d.id);
-        return isAssigned && !alreadySigned;
-      });
-    });
-  }, [documents, realTimeSignedDocIds, signingMembers, activeTeam]);
 
   useEffect(() => {
     setMounted(true);
@@ -417,18 +343,18 @@ export default function FilesPage() {
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-xl font-black uppercase tracking-tight">Institutional Vault</h2>
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Verified Tactical Folders</p>
+              <h2 className="text-xl font-black uppercase tracking-tight">Archived & Verified Signatures</h2>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Permanent institutional records vault</p>
             </div>
           </div>
           
           <div className="bg-muted/30 p-6 rounded-[3rem] border-2 border-dashed space-y-6">
             <div className="flex items-center gap-2 px-4">
               <FolderOpen className="h-4 w-4 text-primary" />
-              <span className="text-xs font-black uppercase tracking-widest">Waivers</span>
+              <span className="text-xs font-black uppercase tracking-widest">Strategic Records</span>
             </div>
             
-            <Accordion type="multiple" className="space-y-4">
+            <Accordion type="multiple" defaultValue={[Object.keys(waiverFolders)[0]]} className="space-y-4">
               {Object.entries(waiverFolders).map(([teamName, types]) => (
                 <AccordionItem key={teamName} value={teamName} className="border-none">
                   <AccordionTrigger className="bg-white p-6 rounded-[2rem] shadow-sm hover:no-underline ring-1 ring-black/5 [&[data-state=open]]:rounded-b-none transition-all">
@@ -439,7 +365,7 @@ export default function FilesPage() {
                       <div className="text-left">
                         <p className="text-lg font-black uppercase tracking-tight leading-none">{teamName}</p>
                         <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-1.5">
-                          {Object.values(types).flat().length} Executed Files
+                          {Object.values(types).flat().length} Executed Artifacts
                         </p>
                       </div>
                     </div>
@@ -457,15 +383,18 @@ export default function FilesPage() {
                           </AccordionTrigger>
                           <AccordionContent className="pt-2 pl-8 pr-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                              {files.map(file => (
-                                <Card key={file.id} className="rounded-2xl border bg-muted/20 p-4 space-y-4 group hover:ring-1 hover:ring-primary transition-all">
+                              {files.map((file: any) => (
+                                <Card key={file.id} className="rounded-2xl border bg-muted/20 p-4 space-y-3 group hover:ring-1 hover:ring-primary transition-all">
                                   <div className="flex justify-between items-start">
                                     <div className="bg-white p-2 rounded-lg text-primary shadow-sm"><FileSignature className="h-4 w-4" /></div>
                                     <Badge className="bg-green-100 text-green-700 border-none font-black text-[7px] uppercase h-4">VERIFIED</Badge>
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="text-xs font-black uppercase truncate">{file.name.split('-').pop()?.trim() || file.name}</p>
-                                    <p className="text-[8px] font-bold text-muted-foreground uppercase opacity-60 mt-1">{format(new Date(file.date), 'MMM d, yyyy')}</p>
+                                    <p className="text-[10px] font-black uppercase text-primary tracking-tight truncate">{file.resolvedDocTitle || docType}</p>
+                                    <p className="text-xs font-black uppercase truncate mt-0.5">{file.resolvedMemberName}</p>
+                                    <p className="text-[8px] font-bold text-muted-foreground uppercase opacity-80 mt-1 flex items-center gap-1">
+                                      <Clock className="h-2 w-2" /> {format(new Date(file.date), 'MMM d, yyyy h:mm a')}
+                                    </p>
                                   </div>
                                   <Button className="w-full h-9 rounded-xl font-black text-[9px] uppercase bg-black text-white hover:bg-primary transition-all" onClick={() => handleDownloadCertificate(file)}>
                                     <Download className="h-3 w-3 mr-2" /> Download Cert

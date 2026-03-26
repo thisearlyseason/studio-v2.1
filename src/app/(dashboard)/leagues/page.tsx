@@ -33,7 +33,8 @@ import {
   Timer,
   Globe,
   LayoutGrid,
-  ExternalLink
+  ExternalLink,
+  Users
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -621,49 +622,102 @@ export default function LeaguesPage() {
           <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex shadow-inner">
             <Button variant={activeTab === 'standings' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('standings')}>Standings</Button>
             {isStaff && <Button variant={activeTab === 'command' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('command')}>Match Command</Button>}
+            {isStaff && <Button variant={activeTab === 'personnel' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('personnel')}>Personnel (Recruits)</Button>}
           </div>
 
           <Tabs value={activeTab} className="mt-0">
             <TabsContent value="standings" className="mt-0 animate-in fade-in duration-500">
               <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Squad Rank</th><th className="px-4 py-5 text-center">Wins</th><th className="px-4 py-5 text-center">Losses</th><th className="px-10 py-5 text-right text-primary">Actions & PTS</th></tr></thead>
-                    <tbody className="divide-y divide-muted/50">{sortedStandings.map((team, idx) => (
-                      <tr key={team.id} className="hover:bg-primary/5 transition-colors group">
-                        <td className="px-10 py-6">
-                          <div className="flex items-center gap-4">
-                            <span className="text-xs font-black text-muted-foreground/40 w-6">{idx + 1}</span>
-                            <div>
-                              <div className="font-black text-sm uppercase truncate text-foreground">{team.teamName}</div>
-                              <p className="text-[8px] font-bold text-muted-foreground uppercase opacity-60">{team.coachName || 'Staff Managed'}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-6 text-center font-bold text-sm">{team.wins}</td>
-                        <td className="px-4 py-6 text-center font-bold text-sm">{team.losses}</td>
-                        <td className="px-10 py-6 text-right">
-                          <div className="flex items-center justify-end gap-4">
-                            {isStaff && activeLeague.creatorId === authUser?.uid && (
-                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => handleEditTeam(team)}>
-                                  <Edit3 className="h-4 w-4" />
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-destructive/10 text-destructive" onClick={() => removeTeamFromLeague(activeLeague.id, team.id)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                    <table className="w-full text-left">
+                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Squad Rank</th><th className="px-4 py-5 text-center">Wins</th><th className="px-4 py-5 text-center">Losses</th><th className="px-4 py-5 text-center">Waiver</th><th className="px-10 py-5 text-right text-primary">Actions & PTS</th></tr></thead>
+                      <tbody className="divide-y divide-muted/50">{sortedStandings.map((team, idx) => (
+                        <tr key={team.id} className="hover:bg-primary/5 transition-colors group">
+                          <td className="px-10 py-6">
+                            <div className="flex items-center gap-4">
+                              <span className="text-xs font-black text-muted-foreground/40 w-6">{idx + 1}</span>
+                              <div>
+                                <div className="font-black text-sm uppercase truncate text-foreground">{team.teamName}</div>
+                                <p className="text-[8px] font-bold text-muted-foreground uppercase opacity-60">{team.coachName || 'Staff Managed'}</p>
                               </div>
-                            )}
-                            <span className="font-black text-lg text-primary w-12">{team.points}</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
+                            </div>
+                          </td>
+                          <td className="px-4 py-6 text-center font-bold text-sm">{team.wins}</td>
+                          <td className="px-4 py-6 text-center font-bold text-sm">{team.losses}</td>
+                          <td className="px-4 py-6 text-center">
+                            {team.signedAt ? (
+                              <div className="space-y-0.5">
+                                <Badge className="bg-green-100 text-green-700 border-none font-black text-[7px] h-4">SIGNED</Badge>
+                                <p className="text-[6px] font-bold text-muted-foreground uppercase">{format(new Date(team.signedAt), 'MMM d, p')}</p>
+                              </div>
+                            ) : <Badge variant="outline" className="text-[7px] font-black opacity-30 uppercase">PENDING</Badge>}
+                          </td>
+                          <td className="px-10 py-6 text-right">
+                            <div className="flex items-center justify-end gap-4">
+                              {isStaff && activeLeague.creatorId === authUser?.uid && (
+                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => handleEditTeam(team)}>
+                                    <Edit3 className="h-4 w-4" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-destructive/10 text-destructive" onClick={() => removeTeamFromLeague(activeLeague.id, team.id)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              )}
+                              <span className="font-black text-lg text-primary w-12">{team.points}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
                 </div>
               </Card>
             </TabsContent>
             <TabsContent value="command" className="mt-0 animate-in fade-in duration-500"><LeagueOverview league={activeLeague} schedule={activeLeague.schedule || []} /></TabsContent>
+            <TabsContent value="personnel" className="mt-0 animate-in fade-in duration-500">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Personnel Pool</h3></div>
+                  <Link href={`/leagues/registration/${activeLeague.id}`}>
+                    <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px]">Open Recruiting Center</Button>
+                  </Link>
+                </div>
+                <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Athlete Name</th><th className="px-4 py-5 text-center">Status</th><th className="px-4 py-5 text-center">Waiver</th><th className="px-10 py-5 text-right">Contact</th></tr></thead>
+                      <tbody className="divide-y divide-muted/50">
+                        {Object.entries(activeLeague.individualRecruits || {}).map(([id, p]) => (
+                          <tr key={id} className="hover:bg-primary/5 transition-colors group">
+                            <td className="px-10 py-6">
+                              <div className="flex items-center gap-4">
+                                <div className="h-10 w-10 rounded-xl bg-primary/5 flex items-center justify-center text-primary"><UserPlus className="h-5 w-5" /></div>
+                                <span className="font-black text-sm uppercase truncate text-foreground">{p.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-6 text-center">
+                              <Badge className={cn("border-none font-black text-[8px] uppercase px-3 h-6", p.status === 'pending' ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700")}>{p.status}</Badge>
+                            </td>
+                            <td className="px-4 py-6 text-center">
+                              {p.signedAt ? (
+                                <div className="space-y-0.5">
+                                  <Badge className="bg-black/5 text-black border-none font-black text-[7px] h-4">SIGNED</Badge>
+                                  <p className="text-[6px] font-bold text-muted-foreground uppercase">{format(new Date(p.signedAt), 'MMM d, p')}</p>
+                                </div>
+                              ) : <span className="text-[8px] font-bold text-muted-foreground uppercase opacity-40 italic">Pending</span>}
+                            </td>
+                            <td className="px-10 py-6 text-right font-bold text-[10px] text-muted-foreground uppercase">{p.email}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {(!activeLeague.individualRecruits || Object.keys(activeLeague.individualRecruits).length === 0) && (
+                      <div className="py-24 text-center opacity-20 italic font-black uppercase text-xs">No active personnel applicants detected.</div>
+                    )}
+                  </div>
+                </Card>
+              </div>
+            </TabsContent>
           </Tabs>
         </div>
       ) : (

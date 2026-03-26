@@ -30,12 +30,14 @@ function NewTeamForm() {
   const [organizerPosition, setOrganizerPosition] = useState('Coach');
   const [selectedPlan, setSelectedPlan] = useState<'starter_squad' | 'squad_pro'>('starter_squad');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [customWaiverTitle, setCustomWaiverTitle] = useState('');
+  const [customWaiverContent, setCustomWaiverContent] = useState('');
 
   const handleCreate = async () => {
     if (!teamName.trim()) return;
     setIsProcessing(true);
     try {
-      await createNewTeam(teamName, type, organizerPosition, description, selectedPlan);
+      await createNewTeam(teamName, type, organizerPosition, description, selectedPlan, customWaiverTitle, customWaiverContent);
       router.push('/feed');
     } catch (e) {
       setIsProcessing(false);
@@ -88,6 +90,24 @@ function NewTeamForm() {
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest">Biography</Label>
                 <Textarea value={description} onChange={e => setDescription(e.target.value)} className="rounded-2xl min-h-[100px] border-2 font-medium" />
+              </div>
+
+              <div className="space-y-4 pt-4 border-t">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-primary" />
+                  <h3 className="font-black uppercase tracking-widest text-[12px]">League / Institutional Protocol</h3>
+                </div>
+                <p className="text-[10px] text-muted-foreground font-bold tracking-widest mb-4">Create a custom liability waiver, code of conduct, or media release. This will automatically deploy to all athletes assigned to this squad.</p>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest">Protocol Title (Optional)</Label>
+                    <Input value={customWaiverTitle} onChange={e => setCustomWaiverTitle(e.target.value)} className="h-12 rounded-xl border-2 font-bold" placeholder="e.g. 2025 League Waiver" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest">Legal Execution Text</Label>
+                    <Textarea value={customWaiverContent} onChange={e => setCustomWaiverContent(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium bg-muted/30" placeholder="Enter terms and conditions for your members..." />
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

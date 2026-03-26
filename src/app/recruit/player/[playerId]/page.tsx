@@ -63,7 +63,7 @@ export default function PublicScoutPortalPage() {
           getDoc(doc(db, 'players', playerId as string)),
           getDoc(doc(db, 'players', playerId as string, 'recruitingProfile', 'profile')),
           getDoc(doc(db, 'players', playerId as string, 'recruitingProfile', 'metrics')),
-          getDocs(query(collection(db, 'players', playerId as string, 'recruitingProfile', 'stats'))),
+          getDocs(query(collection(db, 'players', playerId as string, 'stats'))),
           getDocs(query(collection(db, 'players', playerId as string, 'evaluations'), orderBy('createdAt', 'desc'))),
           getDocs(query(collection(db, 'players', playerId as string, 'videos'), orderBy('createdAt', 'desc')))
         ]);
@@ -108,6 +108,7 @@ export default function PublicScoutPortalPage() {
     </div>
   );
 
+  // Only block if explicitly disabled — undefined means not yet set (treat as enabled)
   if (!player || player.recruitingProfileEnabled === false) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10">
@@ -120,37 +121,118 @@ export default function PublicScoutPortalPage() {
     );
   }
 
+  const activeSport = profile?.typeOfSport || 'Baseball';
+  const customStats = metrics?.customStats || [];
+
+  const getSportFields = () => {
+    switch (activeSport) {
+      case 'Baseball': return [
+        { key: 'sixtyYardDash', label: '60yd Dash (s)' }, { key: 'exitVelo', label: 'Exit Velo (mph)' },
+        { key: 'throwingVelo', label: 'Throw Velo (mph)' }, { key: 'popTime', label: 'Pop Time (s)' },
+        { key: 'pitchVelo', label: 'Pitch Velo (mph)' }, { key: 'infieldVelo', label: 'Infield Velo' },
+        { key: 'batSpeed', label: 'Bat Speed (mph)' }, { key: 'launchAngle', label: 'Launch Angle (°)' },
+        { key: 'sprintHome', label: 'Home to 1st (s)' }, { key: 'verticalJump', label: 'Vertical Jump (in)' }
+      ];
+      case 'Slowpitch': return [
+        { key: 'exitVelo', label: 'Exit Velo (mph)' }, { key: 'batSpeed', label: 'Bat Speed (mph)' },
+        { key: 'sixtyYardDash', label: '60yd Dash (s)' }, { key: 'throwingVelo', label: 'Throw Velo (mph)' },
+        { key: 'launchAngle', label: 'Launch Angle (°)' }, { key: 'sprintHome', label: 'Home to 1st (s)' },
+        { key: 'fieldingRange', label: 'Fielding Range' }, { key: 'armStrength', label: 'Arm Strength' },
+        { key: 'verticalJump', label: 'Vertical Jump (in)' }, { key: 'reactionTime', label: 'Reaction (ms)' }
+      ];
+      case 'Football': return [
+        { key: 'fortyYardDash', label: '40yd Dash (s)' }, { key: 'verticalJump', label: 'Vertical Jump (in)' },
+        { key: 'benchPress', label: 'Bench Press (reps)' }, { key: 'broadJump', label: 'Broad Jump (in)' },
+        { key: 'threeConeDrill', label: '3-Cone Drill (s)' }, { key: 'twentyYardShuttle', label: '20yd Shuttle (s)' },
+        { key: 'squat', label: 'Squat (lbs)' }, { key: 'powerClean', label: 'Power Clean (lbs)' },
+        { key: 'throwingVelo', label: 'Throw Velo (mph)' }, { key: 'wingspan', label: 'Wingspan (in)' }
+      ];
+      case 'Soccer': return [
+        { key: 'shuttleRun', label: 'Shuttle Run (s)' }, { key: 'beepTest', label: 'Beep Test Level' },
+        { key: 'verticalJump', label: 'Vertical Jump (in)' }, { key: 'fortyYardDash', label: '40yd Dash (s)' },
+        { key: 'sprintSpeed', label: 'Sprint Speed (mph)' }, { key: 'vo2Max', label: 'VO2 Max' },
+        { key: 'passingAcc', label: 'Passing Acc (%)' }, { key: 'shotPower', label: 'Shot Power (mph)' },
+        { key: 'dribbleSpeed', label: 'Dribble Speed' }, { key: 'reactionTime', label: 'Reaction (ms)' }
+      ];
+      case 'Tennis': return [
+        { key: 'serveVelo', label: 'Serve Velo (mph)' }, { key: 'forehandVelo', label: 'Forehand (mph)' },
+        { key: 'backhandVelo', label: 'Backhand (mph)' }, { key: 'footworkDrill', label: 'Footwork (s)' },
+        { key: 'reactionTime', label: 'Reaction (ms)' }, { key: 'sprintSpeed', label: 'Sprint Speed (mph)' },
+        { key: 'agility', label: 'Agility Rating' }, { key: 'firstServePerc', label: '1st Serve %' },
+        { key: 'rallyConsist', label: 'Rally Consist.' }, { key: 'verticalJump', label: 'Vertical Jump (in)' }
+      ];
+      case 'Pickleball': return [
+        { key: 'serveVelo', label: 'Serve Velo (mph)' }, { key: 'forehandVelo', label: 'Forehand (mph)' },
+        { key: 'footworkDrill', label: 'Footwork (s)' }, { key: 'reactionTime', label: 'Reaction (ms)' },
+        { key: 'dinkAccuracy', label: 'Dink Acc (%)' }, { key: 'driveSpeed', label: 'Drive Speed (mph)' },
+        { key: 'agility', label: 'Agility Rating' }, { key: 'sprintSpeed', label: 'Sprint Speed (mph)' },
+        { key: 'verticalJump', label: 'Vertical Jump (in)' }, { key: 'handSpeed', label: 'Hand Speed' }
+      ];
+      case 'Golf': return [
+        { key: 'clubSpeed', label: 'Club Speed (mph)' }, { key: 'ballSpeed', label: 'Ball Speed (mph)' },
+        { key: 'smashFactor', label: 'Smash Factor' }, { key: 'spinRate', label: 'Spin Rate (rpm)' },
+        { key: 'carryDistance', label: 'Carry Dist (yds)' }, { key: 'launchAngle', label: 'Launch Angle (°)' },
+        { key: 'attackAngle', label: 'Attack Angle (°)' }, { key: 'clubPath', label: 'Club Path (°)' },
+        { key: 'faceAngle', label: 'Face Angle (°)' }, { key: 'dynamicLoft', label: 'Dynamic Loft (°)' }
+      ];
+      case 'Custom':
+      default: return [
+        { key: 'agility', label: 'Agility (1-10)' }, { key: 'strength', label: 'Strength (1-10)' },
+        { key: 'sprint', label: 'Sprint (s)' }, { key: 'verticalJump', label: 'Vertical Jump (in)' },
+        { key: 'reactionTime', label: 'Reaction (ms)' }, { key: 'endurance', label: 'Endurance (1-10)' },
+        { key: 'flexibility', label: 'Flexibility (1-10)' }, { key: 'explosiveness', label: 'Explosiveness' },
+        { key: 'coordination', label: 'Coordination' }, { key: 'balance', label: 'Balance (1-10)' }
+      ];
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-muted/5 pb-24">
-      <nav className="border-b bg-white/80 backdrop-blur-md sticky top-0 z-50 h-16 flex items-center px-6 md:px-12 justify-between">
-        <BrandLogo variant="light-background" className="h-8 w-32" />
-        <Badge className="bg-primary text-white border-none font-black text-[8px] tracking-widest uppercase h-6 px-3 shadow-lg">Verified Prospect</Badge>
+    <div className="min-h-screen bg-[#0a0a0a] pb-24 text-white">
+      {/* NAV */}
+      <nav className="border-b border-white/5 bg-black/80 backdrop-blur-md sticky top-0 z-50 h-16 flex items-center px-6 md:px-12 justify-between">
+        <BrandLogo variant="dark-background" className="h-8 w-32" />
+        <div className="flex items-center gap-3">
+          <Badge className="bg-primary/20 text-primary border border-primary/30 font-black text-[8px] tracking-widest uppercase h-6 px-3">{activeSport.toUpperCase()} · SCOUT PORTAL</Badge>
+          <Badge className="bg-white text-black border-none font-black text-[8px] tracking-widest uppercase h-6 px-3 shadow-lg">VERIFIED PROSPECT</Badge>
+        </div>
       </nav>
 
       <main className="container mx-auto px-4 md:px-12 py-12 max-w-7xl space-y-12">
-        <section className="bg-black text-white rounded-[3rem] overflow-hidden shadow-2xl relative">
-          <div className="absolute top-0 right-0 p-12 opacity-10 -rotate-12 pointer-events-none"><Zap className="h-64 w-64" /></div>
+        {/* HERO */}
+        <section className="relative overflow-hidden rounded-[3rem] shadow-2xl" style={{background: 'linear-gradient(135deg, #0d0d0d 0%, #1a1a2e 50%, #0d0d0d 100%)'}}>
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent pointer-events-none" />
+          <div className="absolute top-0 right-0 p-16 opacity-5 pointer-events-none"><Zap className="h-96 w-96" /></div>
+          {/* Sport accent bar */}
+          <div className="h-1 bg-gradient-to-r from-primary via-primary/60 to-transparent" />
           <div className="flex flex-col lg:flex-row items-center gap-12 p-10 lg:p-16 relative z-10">
-            <div className="relative group shrink-0">
-              <div className="h-48 w-48 lg:h-64 lg:w-64 rounded-[3rem] border-4 border-white/10 shadow-2xl overflow-hidden bg-white/5 flex items-center justify-center">
-                {player.photoURL ? <img src={player.photoURL} className="w-full h-full object-cover" alt="Athlete" /> : <User className="h-24 w-24 opacity-20" />}
+            <div className="relative shrink-0">
+              <div className="h-48 w-48 lg:h-64 lg:w-64 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden bg-white/5 flex items-center justify-center ring-1 ring-primary/20">
+                {player.photoURL ? <img src={player.photoURL} className="w-full h-full object-cover" alt="Athlete" /> : <User className="h-24 w-24 opacity-10" />}
               </div>
-              <Badge className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-primary text-white border-none font-black text-[10px] h-8 px-6 shadow-xl whitespace-nowrap">CLASS OF {profile?.graduationYear || '20XX'}</Badge>
+              <Badge className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-primary text-white border-none font-black text-[10px] h-8 px-6 shadow-xl shadow-primary/30 whitespace-nowrap">CLASS OF {profile?.graduationYear || '20XX'}</Badge>
             </div>
             
             <div className="flex-1 text-center lg:text-left space-y-6">
-              <div className="space-y-2">
-                <h1 className="text-5xl lg:text-7xl font-black tracking-tighter leading-none uppercase">{player.firstName} {player.lastName}</h1>
-                <p className="text-primary font-black uppercase tracking-[0.3em] text-xl">{profile?.primaryPosition || player.position} • #{player.jersey || 'HQ'}</p>
+              <div className="space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-[0.4em] text-primary/80 mb-3">Institutional Recruiting Pack</p>
+                <h1 className="text-5xl lg:text-7xl font-black tracking-tighter leading-none uppercase text-white">{player.firstName} {player.lastName}</h1>
+                <p className="text-primary font-black uppercase tracking-[0.2em] text-lg mt-2">{profile?.primaryPosition || player.position} • #{player.jersey || '—'}</p>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-sm font-bold uppercase tracking-widest">
-                <div className="space-y-1"><p className="opacity-40 text-[8px]">Height</p><p className="text-lg font-black">{profile?.height || '--'}</p></div>
-                <div className="space-y-1"><p className="opacity-40 text-[8px]">Weight</p><p className="text-lg font-black">{profile?.weight || '--'} lbs</p></div>
-                <div className="space-y-1"><p className="opacity-40 text-[8px]">GPA</p><p className="text-lg font-black text-primary">{profile?.academicGPA || '--'}</p></div>
-                <div className="space-y-1"><p className="opacity-40 text-[8px]">School</p><p className="text-lg font-black truncate max-w-[150px]">{player.school || 'Unlisted'}</p></div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {[
+                  { label: 'Height', val: profile?.height || '--' },
+                  { label: 'Weight', val: profile?.weight ? `${profile.weight} lbs` : '--' },
+                  { label: 'GPA', val: profile?.academicGPA || '--', accent: true },
+                  { label: 'School', val: player.school || 'Unlisted' },
+                ].map(item => (
+                  <div key={item.label} className="bg-white/5 rounded-2xl p-4 border border-white/5">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-white/30 mb-1">{item.label}</p>
+                    <p className={`text-lg font-black truncate ${item.accent ? 'text-primary' : 'text-white'}`}>{item.val}</p>
+                  </div>
+                ))}
               </div>
-              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-4">
-                <Button className="rounded-xl h-12 px-8 font-black uppercase text-[10px] bg-white text-black hover:bg-primary hover:text-white transition-all shadow-xl"><Download className="h-4 w-4 mr-2" /> Download Pack</Button>
+              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-2">
+                <Button className="rounded-xl h-12 px-8 font-black uppercase text-[10px] bg-primary text-white hover:bg-primary/90 transition-all shadow-xl shadow-primary/20"><Download className="h-4 w-4 mr-2" /> Download Pack</Button>
                 <Button variant="outline" className="rounded-xl h-12 px-8 font-black uppercase text-[10px] border-white/20 bg-white/5 hover:bg-white/10 text-white"><Share2 className="h-4 w-4 mr-2" /> Copy Link</Button>
               </div>
             </div>
@@ -245,17 +327,18 @@ export default function PublicScoutPortalPage() {
             </section>
 
             <section className="space-y-6">
-              <div className="flex items-center gap-3 px-2"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Zap className="h-5 w-5" /></div><h2 className="text-xl font-black uppercase tracking-tight">Athletic Metrics</h2></div>
+              <div className="flex items-center gap-3 px-2"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Zap className="h-5 w-5" /></div><h2 className="text-xl font-black uppercase tracking-tight">Athletic Metrics ({activeSport})</h2></div>
               <div className="grid grid-cols-2 gap-4">
-                {[
-                  { label: '40yd Dash', val: metrics?.fortyYardDash ? `${metrics.fortyYardDash}s` : '--' },
-                  { label: 'Vertical', val: metrics?.verticalJump ? `${metrics.verticalJump}"` : '--' },
-                  { label: 'Wingspan', val: metrics?.wingspan ? `${metrics.wingspan}"` : '--' },
-                  { label: 'Bench', val: metrics?.benchPress ? `${metrics.benchPress} lbs` : '--' }
-                ].map(m => (
-                  <Card key={m.label} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 text-center space-y-1">
-                    <p className="text-[8px] font-black uppercase opacity-40">{m.label}</p>
-                    <p className="text-xl font-black text-primary">{m.val}</p>
+                {getSportFields().map(f => (
+                  <Card key={f.key} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 text-center space-y-1">
+                    <p className="text-[8px] font-black uppercase opacity-40">{f.label}</p>
+                    <p className="text-xl font-black text-primary">{metrics?.[f.key] || '--'}</p>
+                  </Card>
+                ))}
+                {customStats.map((cs: any, i: number) => (
+                  <Card key={`cs-${i}`} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 text-center space-y-1">
+                    <p className="text-[8px] font-black uppercase opacity-40">{cs.label || 'Custom'}</p>
+                    <p className="text-xl font-black text-primary">{cs.value || '--'}</p>
                   </Card>
                 ))}
               </div>

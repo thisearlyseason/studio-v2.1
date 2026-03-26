@@ -27,10 +27,21 @@ import { useRouter } from 'next/navigation';
 import { format, isFuture, isToday } from 'date-fns';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, limit } from 'firebase/firestore';
+import { usePendingWaivers } from '@/hooks/use-pending-waivers';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function UniversalAccountDashboard() {
   const { 
-    user, activeTeam, householdEvents, 
+    user, activeTeam, activeTeamEvents, 
     householdBalance
   } = useTeam();
   const router = useRouter();
@@ -51,12 +62,18 @@ export default function UniversalAccountDashboard() {
     return Math.round((wins / games.length) * 100);
   }, [games]);
 
-  const docsQuery = useMemoFirebase(() => {
-    if (!db || !activeTeam?.id) return null;
-    return collection(db, 'teams', activeTeam.id, 'documents');
-  }, [db, activeTeam?.id]);
-  const { data: documents } = useCollection(docsQuery);
-  const pendingWaiversCount = useMemo(() => documents?.length || 0, [documents]);
+  const { pendingDocs } = usePendingWaivers();
+  const pendingWaiversCount = pendingDocs.length;
+  // Create a state to control the dialog so it doesn't get stuck if the user cancels
+  const [showWaiverModal, setShowWaiverModal] = useState(false);
+  
+  useEffect(() => {
+    if (pendingWaiversCount > 0) {
+      setShowWaiverModal(true);
+    } else {
+      setShowWaiverModal(false);
+    }
+  }, [pendingWaiversCount]);
 
   const volQuery = useMemoFirebase(() => {
     if (!db || !activeTeam?.id) return null;
@@ -71,9 +88,13 @@ export default function UniversalAccountDashboard() {
   const { data: fundraisers } = useCollection(fundQuery);
 
   const upcomingItinerary = useMemo(() => {
-    if (!householdEvents || !Array.isArray(householdEvents)) return [];
-    return householdEvents.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date))).slice(0, 3);
-  }, [householdEvents]);
+    if (!activeTeamEvents || !Array.isArray(activeTeamEvents)) return [];
+    const futureEvents = activeTeamEvents.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date)));
+    if (futureEvents.length > 0) return futureEvents.slice(0, 3);
+    
+    // Fallback to most recent events if no future events exist (useful for demo team)
+    return [...activeTeamEvents].reverse().slice(0, 3);
+  }, [activeTeamEvents]);
 
   if (!mounted || !user) return (
     <div className="flex flex-col items-center justify-center py-20 animate-pulse">
@@ -153,8 +174,28 @@ export default function UniversalAccountDashboard() {
           <section className="space-y-4">
             <div className="flex items-center gap-3 px-2"><HandHelping className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Community Intelligence</h3></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4"><p className="text-[10px] font-black uppercase text-foreground">Open Volunteer Ops</p>{volunteers?.slice(0, 2).map((v: any) => (<div key={v.id} className="flex items-center justify-between gap-4"><p className="text-xs font-black uppercase truncate text-foreground">{v.title}</p><Button size="sm" variant="ghost" className="h-7 text-[8px] font-black border uppercase" onClick={() => router.push('/volunteers')}>Claim</Button></div>))}</Card>
-              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4"><p className="text-[10px] font-black uppercase text-foreground">Active Fundraising</p>{fundraisers?.slice(0, 2).map((f: any) => (<div key={f.id} className="flex items-center justify-between gap-4"><p className="text-xs font-black uppercase truncate text-foreground">{f.title}</p><Button size="sm" variant="ghost" className="h-7 text-[8px] font-black border uppercase" onClick={() => router.push('/fundraising')}>Join</Button></div>))}</Card>
+              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4">
+                <p className="text-[10px] font-black uppercase text-foreground">Open Volunteer Ops</p>
+                {volunteers && volunteers.length > 0 ? volunteers.slice(0, 2).map((v: any) => (
+                  <div key={v.id} className="flex items-center justify-between gap-4">
+                    <p className="text-xs font-black uppercase truncate text-foreground">{v.title}</p>
+                    <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black border uppercase" onClick={() => router.push('/volunteers')}>Claim</Button>
+                  </div>
+                )) : (
+                  <div className="text-center py-4 bg-muted/10 rounded-xl border border-dashed"><p className="text-[10px] font-bold text-muted-foreground uppercase">No open ops</p></div>
+                )}
+              </Card>
+              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4">
+                <p className="text-[10px] font-black uppercase text-foreground">Active Fundraising</p>
+                {fundraisers && fundraisers.length > 0 ? fundraisers.slice(0, 2).map((f: any) => (
+                  <div key={f.id} className="flex items-center justify-between gap-4">
+                    <p className="text-xs font-black uppercase truncate text-foreground">{f.title}</p>
+                    <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black border uppercase" onClick={() => router.push('/fundraising')}>Join</Button>
+                  </div>
+                )) : (
+                  <div className="text-center py-4 bg-muted/10 rounded-xl border border-dashed"><p className="text-[10px] font-bold text-muted-foreground uppercase">No active campaigns</p></div>
+                )}
+              </Card>
             </div>
           </section>
         </div>
@@ -168,6 +209,28 @@ export default function UniversalAccountDashboard() {
           <Card className="rounded-[2rem] shadow-xl bg-white p-6 space-y-4 ring-1 ring-black/5"><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><CardTitle className="text-[10px] font-black uppercase text-foreground">Roster Compliance</CardTitle></div><p className="text-[10px] font-medium text-muted-foreground leading-relaxed">Ensure all teammates have signed their liability and media release waivers before match day.</p><Button onClick={() => router.push('/files')} variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px] border-2">Audit Ledger</Button></Card>
         </aside>
       </div>
+
+      <AlertDialog open={showWaiverModal} onOpenChange={setShowWaiverModal}>
+        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl p-8 max-w-md">
+          <AlertDialogHeader>
+            <div className="mx-auto bg-red-100 p-4 rounded-full w-max mb-4">
+              <ShieldCheck className="h-8 w-8 text-red-600" />
+            </div>
+            <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight text-center">Action Required</AlertDialogTitle>
+            <AlertDialogDescription className="text-center font-medium text-muted-foreground mt-2">
+              You have <span className="font-black text-foreground">{pendingWaiversCount} unsigned institutional document(s)</span> requiring immediate attention.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-8 flex-col sm:flex-col gap-3">
+            <AlertDialogAction asChild className="w-full h-14 rounded-xl text-sm font-black uppercase text-white tracking-widest bg-red-600 hover:bg-red-700 active:scale-[0.98] transition-all">
+              <Button onClick={() => router.push('/files')}>Review & Sign Now</Button>
+            </AlertDialogAction>
+            <AlertDialogCancel className="w-full h-12 rounded-xl text-xs font-bold uppercase tracking-widest border-none hover:bg-muted transition-all">
+              Remind Me Later
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
