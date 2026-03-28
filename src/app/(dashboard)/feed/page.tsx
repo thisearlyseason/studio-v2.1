@@ -402,7 +402,7 @@ export default function FeedPage() {
                   </Button>
                   <div className="flex items-center gap-1.5 lg:gap-2 text-muted-foreground font-black uppercase tracking-widest text-[8px] lg:text-[10px]"><MessageSquare className="h-3.5 w-3.5 lg:h-4 lg:w-4" /> Discussion</div>
                 </div>
-                <CommentList postId={post.id} teamId={activeTeam.id} isAdmin={isAdmin} currentUserId={user?.id || ''} canComment={canComment} />
+                <CommentList postId={post.id} teamId={activeTeam.id} isAdmin={isAdmin} currentUserId={user?.id || ''} canComment={!!canComment} />
                 <div className="flex gap-2 lg:gap-3 w-full">
                   <Input 
                     placeholder={canComment ? "Write to squad..." : "Comments restricted"} 

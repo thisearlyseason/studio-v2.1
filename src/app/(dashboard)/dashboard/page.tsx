@@ -21,13 +21,15 @@ import {
   TrendingUp,
   FileText,
   MapPin,
-  ArrowRight
+  ArrowRight,
+  Star
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { format, isFuture, isToday } from 'date-fns';
+import { format, isFuture, isToday, isSameDay, isSameMonth } from 'date-fns';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, limit } from 'firebase/firestore';
 import { usePendingWaivers } from '@/hooks/use-pending-waivers';
+import { cn } from '@/lib/utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,7 +44,7 @@ import {
 export default function UniversalAccountDashboard() {
   const { 
     user, activeTeam, activeTeamEvents, 
-    householdBalance
+    householdBalance, isYouth
   } = useTeam();
   const router = useRouter();
   const db = useFirestore();
@@ -112,12 +114,21 @@ export default function UniversalAccountDashboard() {
           <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Status: Operational • {user.role?.replace(/_/g, ' ')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => router.push('/teams/new')} variant="outline" className="rounded-xl h-12 border-2 font-black uppercase text-[10px] text-foreground">
-            <Plus className="h-4 w-4 mr-2" /> New Squad
-          </Button>
-          <Button onClick={() => router.push('/teams/join')} className="rounded-xl h-12 px-6 font-black uppercase text-[10px] shadow-lg shadow-primary/20">
-            <UserPlus className="h-4 w-4 mr-2" /> Recruitment Hub
-          </Button>
+          {!isYouth && (
+            <>
+              <Button onClick={() => router.push('/teams/new')} variant="outline" className="rounded-xl h-12 border-2 font-black uppercase text-[10px] text-foreground">
+                <Plus className="h-4 w-4 mr-2" /> New Squad
+              </Button>
+              <Button onClick={() => router.push('/teams/join')} className="rounded-xl h-12 px-6 font-black uppercase text-[10px] shadow-lg shadow-primary/20">
+                <UserPlus className="h-4 w-4 mr-2" /> Recruitment Hub
+              </Button>
+            </>
+          )}
+          {isYouth && (
+            <Button onClick={() => router.push('/settings')} variant="outline" className="rounded-xl h-12 border-2 font-black uppercase text-[10px] text-foreground">
+              <Activity className="h-4 w-4 mr-2" /> Athlete Profile
+            </Button>
+          )}
         </div>
       </header>
 
@@ -137,11 +148,23 @@ export default function UniversalAccountDashboard() {
           <p className="text-[10px] font-black uppercase text-muted-foreground">Community</p>
           <div className="flex items-baseline gap-1"><p className="text-5xl font-black text-primary">{(volunteers?.length || 0) + (fundraisers?.length || 0)}</p><span className="text-sm font-black text-foreground uppercase">Ops</span></div>
         </Card>
-        <Card className="rounded-[2.5rem] shadow-xl bg-muted/20 p-8 space-y-2">
-          <p className="text-[10px] font-black uppercase text-muted-foreground">Household</p>
-          <p className="text-3xl font-black text-foreground">${householdBalance.toLocaleString()}</p>
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-[8px] font-black uppercase border mt-2 text-foreground" onClick={() => router.push('/family')}>Audit Detail</Button>
-        </Card>
+        {isYouth ? (
+          <Card className="rounded-[2.5rem] shadow-xl bg-muted/20 p-8 space-y-2 relative overflow-hidden group">
+            <Star className="absolute -right-4 -bottom-4 h-24 w-24 text-primary opacity-5 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
+            <p className="text-[10px] font-black uppercase text-muted-foreground">Recruitment</p>
+            <div className="flex items-baseline gap-1">
+              <p className="text-3xl font-black text-foreground">Active</p>
+              <span className="text-[8px] font-black uppercase text-primary tracking-widest bg-primary/10 px-2 py-0.5 rounded-full ml-2">Visible</span>
+            </div>
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-[8px] font-black uppercase border mt-2 text-foreground" onClick={() => router.push('/settings')}>Review Profile</Button>
+          </Card>
+        ) : (
+          <Card className="rounded-[2.5rem] shadow-xl bg-muted/20 p-8 space-y-2">
+            <p className="text-[10px] font-black uppercase text-muted-foreground">Household</p>
+            <p className="text-3xl font-black text-foreground">${householdBalance.toLocaleString()}</p>
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-[8px] font-black uppercase border mt-2 text-foreground" onClick={() => router.push('/family')}>Audit Detail</Button>
+          </Card>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -151,23 +174,53 @@ export default function UniversalAccountDashboard() {
               <div className="flex items-center gap-3"><CalendarDays className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Mission Itinerary</h3></div>
               <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest text-foreground" onClick={() => router.push('/calendar')}>Master Calendar <ChevronRight className="h-3 w-3 ml-1" /></Button>
             </div>
-            {upcomingItinerary.length > 0 ? upcomingItinerary.map((event) => (
-              <Card key={event.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white cursor-pointer" onClick={() => router.push('/calendar')}>
-                <div className="flex items-stretch h-24">
-                  <div className="w-20 bg-muted/30 flex flex-col items-center justify-center border-r shrink-0">
-                    <span className="text-[8px] font-black uppercase opacity-40 text-foreground">{format(new Date(event.date), 'MMM')}</span>
-                    <span className="text-2xl font-black text-foreground">{format(new Date(event.date), 'dd')}</span>
-                  </div>
-                  <div className="flex-1 p-5 flex flex-col justify-center min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <Badge className="bg-primary/10 text-primary border-none text-[7px] uppercase font-black px-1.5 h-4">{event.eventType}</Badge>
-                      <span className="text-[10px] font-bold text-muted-foreground">{event.startTime}</span>
+            {upcomingItinerary.length > 0 ? upcomingItinerary.map((event) => {
+              const startD = new Date(event.date);
+              const endD = event.endDate ? new Date(event.endDate) : startD;
+              const isMultiDay = !isSameDay(startD, endD);
+
+              return (
+                <Card key={event.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white cursor-pointer" onClick={() => router.push('/calendar')}>
+                  <div className="flex items-stretch h-24">
+                    <div className={cn(
+                      "w-20 bg-muted/30 flex flex-col items-center justify-center border-r shrink-0 transition-colors group-hover:bg-primary/5",
+                      isMultiDay && "w-28"
+                    )}>
+                      {!isSameMonth(startD, endD) ? (
+                        <div className="flex flex-col items-center">
+                          <span className="text-[8px] font-black uppercase opacity-40 text-foreground leading-none">{format(startD, 'MMM')} - {format(endD, 'MMM')}</span>
+                          <div className="flex items-center gap-1 mt-1">
+                            <span className="text-xl font-black text-foreground leading-none">{format(startD, 'dd')}</span>
+                            <span className="text-xs font-black opacity-20">-</span>
+                            <span className="text-xl font-black text-primary leading-none">{format(endD, 'dd')}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-[8px] font-black uppercase opacity-40 text-foreground">{format(startD, 'MMM')}</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-2xl font-black text-foreground">{format(startD, 'dd')}</span>
+                            {isMultiDay && (
+                              <>
+                                <span className="text-xs font-black opacity-20">-</span>
+                                <span className="text-2xl font-black text-primary">{format(endD, 'dd')}</span>
+                              </>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
-                    <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
+                    <div className="flex-1 p-5 flex flex-col justify-center min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <Badge className="bg-primary/10 text-primary border-none text-[7px] uppercase font-black px-1.5 h-4">{event.eventType}</Badge>
+                        <span className="text-[10px] font-bold text-muted-foreground">{event.startTime}</span>
+                      </div>
+                      <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
+                    </div>
                   </div>
-                </div>
-              </Card>
-            )) : (
+                </Card>
+              );
+            }) : (
               <div className="text-center py-12 bg-muted/10 rounded-3xl border-2 border-dashed opacity-40"><p className="text-xs font-black uppercase tracking-widest text-foreground">No active deployments</p></div>
             )}
           </section>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -19,6 +19,7 @@ import {
   Activity,
   MapPin,
   ChevronRight,
+  ChevronLeft,
   Edit3,
   Building,
   ShieldCheck,
@@ -29,12 +30,14 @@ import {
   Trash2,
   Info,
   ArrowRight,
+  Download,
   Settings,
   Timer,
   Globe,
   LayoutGrid,
   ExternalLink,
-  Users
+  Users,
+  Share2
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -47,17 +50,23 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, where, doc, updateDoc, limit } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { generateLeagueSchedule } from '@/lib/scheduler-utils';
 import { Calendar } from '@/components/ui/calendar';
-import { format, isSameDay } from 'date-fns';
+import { format, isSameDay, startOfDay, endOfDay } from 'date-fns';
+import { DateRange } from 'react-day-picker';
+import { jsPDF } from 'jspdf';
 import { useTeam, League, TournamentGame, Field, Facility } from '@/components/providers/team-provider';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem,  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const DAYS_OF_WEEK = [
   { id: 1, label: 'Mon' },
@@ -325,7 +334,8 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
 function LeagueOverview({ league, schedule }: { league: League, schedule: TournamentGame[] }) {
   const { isStaff, submitLeagueMatchScore } = useTeam();
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [teamFilter, setTeamFilter] = useState<string>('all');
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
   const [scoreForm, setScoreForm] = useState({ s1: '', s2: '' });
 
@@ -340,7 +350,24 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
   }, [schedule]);
 
   const gameDays = useMemo(() => Object.keys(gamesByDay).map(d => new Date(d + 'T12:00:00')), [gamesByDay]);
-  const gamesOnSelectedDate = useMemo(() => gamesByDay[format(selectedDate, 'yyyy-MM-dd')] || [], [gamesByDay, selectedDate]);
+
+  const allTeams = useMemo(() => {
+    const teams = new Set<string>();
+    (schedule || []).forEach(g => { teams.add(g.team1); teams.add(g.team2); });
+    return Array.from(teams).sort();
+  }, [schedule]);
+
+  const filteredSchedule = useMemo(() => {
+    return (schedule || []).filter(g => {
+      if (teamFilter !== 'all' && g.team1 !== teamFilter && g.team2 !== teamFilter) return false;
+      if (dateRange?.from) {
+        const gameDate = new Date(g.date + 'T12:00:00');
+        if (gameDate < startOfDay(dateRange.from)) return false;
+        if (dateRange.to && gameDate > endOfDay(dateRange.to)) return false;
+      }
+      return true;
+    });
+  }, [schedule, teamFilter, dateRange]);
 
   const handleUpdateScore = async () => {
     if (!editingGame || !scoreForm.s1 || !scoreForm.s2) return;
@@ -357,13 +384,50 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
     return null;
   };
 
+  const exportSchedule = useCallback(() => {
+    if (!schedule || schedule.length === 0) return;
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    doc.setFillColor(0, 0, 0); doc.rect(0, 0, pageWidth, 50, 'F');
+    doc.setTextColor(255, 255, 255); doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text(`${league.name.toUpperCase()} SCHEDULE`, 20, 30);
+    doc.setFontSize(9); doc.text("OFFICIAL COMPETITIVE FIXTURES LOG", 20, 38);
+    doc.setTextColor(0, 0, 0); doc.setFontSize(14); doc.text(`Total Fixtures: ${schedule.length}`, 20, 70);
+    doc.setFillColor(245, 245, 245); doc.rect(20, 80, pageWidth - 40, 10, 'F');
+    doc.setTextColor(100, 100, 100); doc.setFontSize(8); doc.text("DATE", 25, 86.5); doc.text("MATCHUP", 60, 86.5); doc.text("LOCATION", 140, 86.5); doc.text("TIME", pageWidth - 25, 86.5, { align: 'right' });
+    let y = 100; doc.setTextColor(30,30,30); doc.setFontSize(9);
+    schedule.forEach(g => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      doc.setFont("helvetica", "bold"); doc.text(g.date, 25, y);
+      doc.text(`${g.team1.toUpperCase()} vs ${g.team2.toUpperCase()}`, 60, y);
+      doc.setFont("helvetica", "normal"); doc.text(g.location || 'TBD', 140, y);
+      doc.setFont("helvetica", "bold"); doc.text(g.time, pageWidth - 25, y, { align: 'right' });
+      doc.setDrawColor(245, 245, 245); doc.line(25, y + 4, pageWidth - 25, y+4); y += 12;
+    });
+    doc.save(`SCHEDULE_${league.name.replace(/\s+/g, '_')}.pdf`);
+    toast({ title: "Fixtures Ledger Exported" });
+  }, [league, schedule]);
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between px-2">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
         <div className="flex items-center gap-3"><Activity className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Match Command</h3></div>
-        <div className="bg-muted/50 p-1.5 rounded-2xl border-2 flex items-center shadow-inner">
-          <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-6 rounded-xl font-black text-[10px] uppercase">Ledger</Button>
-          <Button variant={viewMode === 'calendar' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('calendar')} className="h-9 px-6 rounded-xl font-black text-[10px] uppercase">Calendar</Button>
+        <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap sm:flex-nowrap">
+          <Select value={teamFilter} onValueChange={setTeamFilter}>
+            <SelectTrigger className="w-full sm:w-[180px] h-11 rounded-xl border-2 font-black uppercase text-[10px] text-foreground">
+              <SelectValue placeholder="View as team" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Full Schedule</SelectItem>
+              {allTeams.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" className="flex-1 sm:flex-none h-11 rounded-xl border-2 font-black uppercase text-[10px] text-foreground" onClick={exportSchedule}>
+            <Download className="h-4 w-4 mr-2" /> Download Schedule
+          </Button>
+          <div className="bg-muted/50 p-1.5 rounded-2xl border-2 flex items-center shadow-inner mt-2 sm:mt-0 w-full sm:w-auto overflow-x-auto">
+            <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="flex-1 h-9 px-6 rounded-xl font-black text-[10px] uppercase">Ledger</Button>
+            <Button variant={viewMode === 'calendar' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('calendar')} className="flex-1 h-9 px-6 rounded-xl font-black text-[10px] uppercase">Calendar</Button>
+          </div>
         </div>
       </div>
       
@@ -381,48 +445,56 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-muted/50">
-                  {schedule.map(game => (
-                    <tr key={game.id} className="hover:bg-muted/5 transition-colors group">
-                      <td className="px-8 py-6">
-                        <p className="font-black text-xs uppercase">{game.date}</p>
-                        <div className="flex items-center gap-2">
-                          <p className="text-[10px] font-bold text-muted-foreground">{game.time}</p>
-                          {getDoubleHeaderLabel(game) && <Badge className="bg-primary/10 text-primary border-none text-[7px] h-4 font-black">DOUBLE HEADER</Badge>}
-                        </div>
-                      </td>
-                      <td className="px-4 py-6 font-bold text-xs uppercase text-muted-foreground">{game.location || 'TBD'}</td>
-                      <td className="px-4 py-6">
-                        <div className="flex items-center gap-4">
-                          <span className="font-black text-xs uppercase truncate max-w-[120px] text-primary">{game.team1}</span>
-                          {game.isCompleted ? (
-                            <div className="flex items-center gap-2 bg-muted/50 px-2 py-1 rounded-lg">
-                              <span className="font-black text-xs">{game.score1} - {game.score2}</span>
-                            </div>
-                          ) : <span className="opacity-20 text-[10px] font-black">VS</span>}
-                          <span className="font-black text-xs uppercase truncate max-w-[120px]">{game.team2}</span>
-                        </div>
-                      </td>
-                      <td className="px-8 py-6 text-right">
-                        {isStaff && (
-                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100" onClick={() => { setEditingGame(game); setScoreForm({ s1: game.score1.toString(), s2: game.score2.toString() }); }}>
-                            <Edit3 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                    {filteredSchedule.map(game => (
+                      <tr key={game.id} className="hover:bg-muted/5 transition-colors group">
+                        <td className="px-8 py-6">
+                          <p className="font-black text-xs uppercase">{game.date}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-[10px] font-bold text-muted-foreground">{game.time}</p>
+                            {getDoubleHeaderLabel(game) && <Badge className="bg-primary/10 text-primary border-none text-[7px] h-4 font-black">DOUBLE HEADER</Badge>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-6 font-bold text-xs uppercase text-muted-foreground">{game.location || 'TBD'}</td>
+                        <td className="px-4 py-6">
+                          <div className="flex items-center gap-4">
+                            <span className="font-black text-xs uppercase truncate max-w-[120px] text-primary">{game.team1}</span>
+                            {game.isCompleted ? (
+                              <div className="flex items-center gap-2 bg-muted/50 px-2 py-1 rounded-lg">
+                                <span className="font-black text-xs">{game.score1} - {game.score2}</span>
+                              </div>
+                            ) : <span className="opacity-20 text-[10px] font-black">VS</span>}
+                            <span className="font-black text-xs uppercase truncate max-w-[120px]">{game.team2}</span>
+                          </div>
+                        </td>
+                        <td className="px-8 py-6 text-right">
+                          {isStaff && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100" onClick={() => { setEditingGame(game); setScoreForm({ s1: game.score1.toString(), s2: game.score2.toString() }); }}>
+                              <Edit3 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredSchedule.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-8 py-12 text-center text-muted-foreground text-sm font-bold uppercase tracking-widest">
+                          No matches found for current filters.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
       ) : (
         <div className="space-y-10">
           <div className="w-full flex justify-center">
             <Calendar 
-              mode="single" 
-              selected={selectedDate} 
-              onSelect={(d) => d && setSelectedDate(d)}
+              mode="range" 
+              selected={dateRange} 
+              onSelect={setDateRange}
+              showOutsideDays={false}
               modifiers={{ hasGame: gameDays }}
               modifiersClassNames={{
                 hasGame: "after:content-[''] after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:h-1 after:w-1 after:bg-primary after:rounded-full after:z-20",
@@ -433,12 +505,14 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
           
           <div className="space-y-4 max-w-4xl mx-auto">
             <div className="flex items-center justify-between px-2">
-              <h4 className="text-xl font-black uppercase tracking-tight">{format(selectedDate, 'EEEE, MMMM do')}</h4>
-              <Badge variant="outline" className="font-black text-[10px]">{gamesOnSelectedDate.length} MATCHES</Badge>
+              <h4 className="text-xl font-black uppercase tracking-tight">
+                {dateRange?.from ? (dateRange.to ? `${format(dateRange.from, 'MMM do')} - ${format(dateRange.to, 'MMM do')}` : format(dateRange.from, 'EEEE, MMMM do')) : 'Select Date Range'}
+              </h4>
+              <Badge variant="outline" className="font-black text-[10px]">{filteredSchedule.length} MATCHES</Badge>
             </div>
             
             <div className="grid grid-cols-1 gap-4">
-              {gamesOnSelectedDate.map(game => (
+              {filteredSchedule.map(game => (
                 <Card key={game.id} className="rounded-[2rem] border-none shadow-sm p-6 flex flex-col md:flex-row md:items-center justify-between bg-white text-foreground group hover:ring-2 hover:ring-primary/20 transition-all" onClick={() => isStaff && setEditingGame(game)}>
                   <div className="flex items-center gap-6">
                     <div className="w-16 h-16 rounded-2xl bg-primary/5 flex flex-col items-center justify-center border shrink-0">
@@ -459,7 +533,7 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
                   <ChevronRight className="h-6 w-6 text-primary opacity-20 group-hover:opacity-100 transition-all hidden md:block" />
                 </Card>
               ))}
-              {gamesOnSelectedDate.length === 0 && (
+              {filteredSchedule.length === 0 && (
                 <div className="py-24 text-center opacity-20 italic font-black uppercase text-sm border-2 border-dashed rounded-[3rem] bg-muted/10">
                   No matches scheduled for this window.
                 </div>
@@ -498,7 +572,11 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
 }
 
 export default function LeaguesPage() {
-  const { activeTeam, createLeague, isStaff, isPro, purchasePro, teams, removeTeamFromLeague, updateLeagueTeamDetails } = useTeam();
+  const { 
+    activeTeam, createLeague, isStaff, isPro, purchasePro, 
+    teams, removeTeamFromLeague, updateLeagueTeamDetails,
+    isClubManager, updateLeaguePin
+  } = useTeam();
   const db = useFirestore();
   const { user: authUser, isAuthResolved } = useUser();
   const router = useRouter();
@@ -513,22 +591,157 @@ export default function LeaguesPage() {
   const [editingTeam, setEditingTeam] = useState<any>(null);
   const [editTeamForm, setEditTeamForm] = useState({ teamName: '', coachName: '', coachEmail: '' });
 
-  useEffect(() => { setMounted(true); }, []);
+  const [isFinancesOpen, setIsFinancesOpen] = useState(false);
+  const [isEditLeagueOpen, setIsEditLeagueOpen] = useState(false);
+  const [editLeagueForm, setEditLeagueForm] = useState({
+    name: '', sport: '', description: '', startDate: '', endDate: '', ages: '', 
+    contactEmail: '', contactPhone: '', registrationCost: '', twitter: '', instagram: '', paymentInstructions: ''
+  });
 
   const leaguesQuery = useMemoFirebase(() => {
-    if (!isAuthResolved || !activeTeam?.id || !db || !authUser?.uid) return null;
-    return query(collection(db, 'leagues'), where('memberTeamIds', 'array-contains', activeTeam.id));
-  }, [isAuthResolved, activeTeam?.id, db, authUser?.uid]);
+    if (!isAuthResolved || !db || !authUser?.uid) return null;
+    
+    // For regular users, leagues where their active team is a member
+    if (activeTeam?.id) {
+      return query(
+        collection(db, 'leagues'), 
+        where('memberTeamIds', 'array-contains', activeTeam.id),
+        limit(20)
+      );
+    }
+    
+    // For managers without a selected team, leagues they created
+    if (isStaff) {
+      return query(
+        collection(db, 'leagues'),
+        where('creatorId', '==', authUser.uid),
+        limit(20)
+      );
+    }
+    
+    return null;
+  }, [isAuthResolved, activeTeam?.id, db, authUser?.uid, isStaff]);
 
   const { data: leagues, isLoading: isLeaguesLoading } = useCollection<League>(leaguesQuery);
-  const activeLeague = useMemo(() => (leagues || [])[0] || null, [leagues]);
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
+  
+  const activeLeague = useMemo(() => {
+    if (selectedLeagueId) return (leagues || []).find(l => l.id === selectedLeagueId) || null;
+    return (leagues || [])[0] || null;
+  }, [leagues, selectedLeagueId]);
+
+  const [leaguePin, setLeaguePin] = useState(activeLeague?.scorekeeperPin || '');
+
+  useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (activeLeague) setLeaguePin(activeLeague.scorekeeperPin || '');
+  }, [selectedLeagueId, activeLeague?.scorekeeperPin]);
+
+  const handleSavePin = async () => {
+    if (!activeLeague) return;
+    await updateLeaguePin(activeLeague.id, leaguePin);
+    toast({ title: "Operations Key Updated" });
+  };
+
+  const handleToggleActive = async (val: boolean) => {
+    if (!activeLeague) return;
+    await updateDoc(doc(db, 'leagues', activeLeague.id), { is_active: val });
+    toast({ title: val ? "Recruitment Portal Activated" : "Recruitment Portal Deactivated" });
+  };
 
   const sortedStandings = useMemo(() => {
     if (!activeLeague || !activeLeague.teams) return [];
     return Object.entries(activeLeague.teams).map(([id, stats]) => ({ id, ...stats })).sort((a, b) => b.points - a.points || b.wins - a.wins);
   }, [activeLeague]);
 
-  const showLoading = !mounted || isLeaguesLoading || !activeTeam;
+  const exportStandings = useCallback(() => {
+    if (!activeLeague || sortedStandings.length === 0) return;
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    doc.setFillColor(0, 0, 0); doc.rect(0, 0, pageWidth, 50, 'F');
+    doc.setTextColor(255, 255, 255); doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text("OFFICIAL STANDINGS", 20, 30);
+    doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.text(`${activeLeague.name.toUpperCase()} COMPETITIVE HUB`, 20, 38);
+    doc.setTextColor(0, 0, 0); doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text("COMPETITIVE LOG: " + activeLeague.id.slice(-8), 20, 70);
+    doc.setFillColor(245, 245, 245); doc.rect(20, 80, pageWidth - 40, 10, 'F');
+    doc.setTextColor(100, 100, 100); doc.setFontSize(8); doc.text("RANK", 25, 86.5); doc.text("SQUAD", 45, 86.5); doc.text("WINS", 110, 86.5); doc.text("LOSSES", 135, 86.5); doc.text("POINTS", pageWidth - 30, 86.5, { align: 'right' });
+    let y = 100; doc.setTextColor(30, 30, 30); doc.setFontSize(10);
+    sortedStandings.forEach((t, i) => {
+      doc.text(`${i + 1}`, 25, y); doc.setFont("helvetica", "bold"); doc.text(t.teamName.toUpperCase(), 45, y); doc.setFont("helvetica", "normal"); doc.text(`${t.wins}`, 110, y); doc.text(`${t.losses}`, 135, y); doc.setFont("helvetica", "bold"); doc.text(`${t.points}`, pageWidth - 30, y, { align: 'right' });
+      doc.setDrawColor(245, 245, 245); doc.line(25, y + 4, pageWidth - 25, y + 4); y += 12;
+    });
+    doc.save(`STANDINGS_${activeLeague.name.replace(/\s+/g, '_')}.pdf`);
+  }, [activeLeague, sortedStandings]);
+
+  const exportRecruitPool = useCallback(() => {
+    if (!activeLeague?.individualRecruits) return;
+    const recruits = Object.entries(activeLeague.individualRecruits);
+    if (recruits.length === 0) return;
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    doc.setFillColor(30,30,30); doc.rect(0, 0, pageWidth, 50, 'F');
+    doc.setTextColor(255, 255, 255); doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text("INSTITUTIONAL PERSONNEL LOG", 20, 30);
+    doc.setFontSize(9); doc.text("PERSONNEL & RECRUITMENT PIPELINE", 20, 38);
+    doc.setTextColor(0, 0, 0); doc.setFontSize(14); doc.text(`Participating Recruits: ${recruits.length}`, 20, 70);
+    doc.setFillColor(245, 245, 245); doc.rect(20, 80, pageWidth - 40, 10, 'F');
+    doc.setTextColor(100, 100, 100); doc.setFontSize(8); doc.text("NAME", 25, 86.5); doc.text("EMAIL", 85, 86.5); doc.text("STATUS", 150, 86.5); doc.text("VERIFIED", pageWidth - 25, 86.5, { align: 'right' });
+    let y = 100; doc.setTextColor(30, 30, 30); doc.setFontSize(9);
+    recruits.forEach(([id, p]) => {
+      doc.setFont("helvetica", "bold"); doc.text(p.name.toUpperCase(), 25, y); doc.setFont("helvetica", "normal"); doc.text(p.email, 85, y); doc.text(p.status.toUpperCase(), 150, y); doc.text(p.signedAt ? 'YES' : 'NO', pageWidth - 25, y, { align: 'right' });
+      doc.line(25, y + 4, pageWidth - 25, y + 4); y += 12;
+    });
+    doc.save(`RECRUIT_POOL_${activeLeague.id.slice(-8)}.pdf`);
+  }, [activeLeague]);
+
+  const showLoading = !mounted || isLeaguesLoading || (!activeTeam && !isStaff);
+
+  const handleEditLeague = () => {
+    if (!activeLeague) return;
+    setEditLeagueForm({
+      name: activeLeague.name || '',
+      sport: activeLeague.sport || '',
+      description: activeLeague.description || '',
+      startDate: activeLeague.startDate || '',
+      endDate: activeLeague.endDate || '',
+      ages: activeLeague.ages || '',
+      contactEmail: activeLeague.contactEmail || '',
+      contactPhone: activeLeague.contactPhone || '',
+      registrationCost: activeLeague.registrationCost || '',
+      twitter: activeLeague.socialLinks?.twitter || '',
+      instagram: activeLeague.socialLinks?.instagram || '',
+      paymentInstructions: activeLeague.paymentInstructions || ''
+    });
+    setIsEditLeagueOpen(true);
+  };
+
+  const handleSaveLeague = async () => {
+    if (!activeLeague || !db) return;
+    setIsProcessing(true);
+    try {
+      await updateDoc(doc(db, 'leagues', activeLeague.id), {
+        name: editLeagueForm.name,
+        sport: editLeagueForm.sport,
+        description: editLeagueForm.description,
+        startDate: editLeagueForm.startDate,
+        endDate: editLeagueForm.endDate,
+        ages: editLeagueForm.ages,
+        contactEmail: editLeagueForm.contactEmail,
+        contactPhone: editLeagueForm.contactPhone,
+        registrationCost: editLeagueForm.registrationCost,
+        paymentInstructions: editLeagueForm.paymentInstructions,
+        socialLinks: {
+          twitter: editLeagueForm.twitter,
+          instagram: editLeagueForm.instagram
+        }
+      });
+      setIsEditLeagueOpen(false);
+      toast({ title: "League Profile Updated" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: 'destructive' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const handleCreateLeague = async () => {
     if (!leagueName.trim()) return;
@@ -579,20 +792,87 @@ export default function LeaguesPage() {
         )}
       </div>
 
-      {activeLeague ? (
-        <div className="space-y-8 animate-in fade-in duration-700">
+      {leagues && leagues.length > 0 && (
+        <div className="flex flex-col gap-8">
+          {!selectedLeagueId && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
+              {leagues.map((league) => (
+                <Card 
+                  key={league.id} 
+                  className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white flex flex-col group transition-all hover:shadow-2xl hover:ring-2 hover:ring-primary/10 cursor-pointer"
+                  onClick={() => setSelectedLeagueId(league.id)}
+                >
+                  <div className="h-2 bg-black w-full" />
+                  <CardContent className="p-8 lg:p-10 space-y-8 flex-1">
+                    <div className="flex justify-between items-start">
+                      <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary shadow-inner">
+                        <Trophy className="h-10 w-10" />
+                      </div>
+                      <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg uppercase">
+                        {league.sport}
+                      </Badge>
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-3xl font-black uppercase tracking-tight group-hover:text-primary transition-colors">{league.name}</h3>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
+                        {Object.keys(league.teams || {}).length} squads • Hub ID: {league.id.slice(-6).toUpperCase()}
+                      </p>
+                    </div>
+                    <div className="pt-4 border-t flex justify-between items-center">
+                      <div className="flex gap-2">
+                         <div className="h-8 w-8 rounded-lg bg-muted/20 flex items-center justify-center"><Users className="h-4 w-4 opacity-40" /></div>
+                         <div className="h-8 w-8 rounded-lg bg-muted/20 flex items-center justify-center"><Zap className="h-4 w-4 opacity-40" /></div>
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-8 rounded-lg text-[9px] font-black uppercase group-hover:bg-primary group-hover:text-white transition-all">Select Hub</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+              <Card 
+                className="rounded-[3rem] border-2 border-dashed border-muted bg-transparent flex flex-col items-center justify-center p-12 group hover:border-primary/40 transition-all cursor-pointer"
+                onClick={() => setIsCreateOpen(true)}
+              >
+                <Plus className="h-12 w-12 text-muted-foreground group-hover:text-primary transition-all mb-4" />
+                <p className="text-xs font-black uppercase text-muted-foreground group-hover:text-primary">New League Hub</p>
+              </Card>
+            </div>
+          )}
+        </div>
+      )}
+
+      {selectedLeagueId && activeLeague ? (
+        <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+          <div className="flex items-center gap-4 mb-4">
+            <Button variant="ghost" size="icon" onClick={() => setSelectedLeagueId(null)} className="rounded-full h-12 w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-6 w-6" /></Button>
+            <div className="bg-primary/5 px-4 py-2 rounded-xl text-primary font-black uppercase text-[10px] tracking-widest border border-primary/10">Active Context: {activeLeague.name}</div>
+          </div>
           <Card className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-black text-white p-10 relative group">
             <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700"><ShieldCheck className="h-48 w-48" /></div>
             <div className="flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
               <div className="flex items-center gap-6">
                 <div className="bg-primary p-5 rounded-[1.5rem] shadow-xl"><Trophy className="h-10 w-10 text-white" /></div>
                 <div>
-                  <h2 className="text-4xl font-black uppercase tracking-tight leading-none">{activeLeague.name}</h2>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-4xl font-black uppercase tracking-tight leading-none">{activeLeague.name}</h2>
+                    <Badge variant="outline" className="border-white/20 text-white font-black text-[8px] h-5 px-2">ACTIVE HUB</Badge>
+                  </div>
                   <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-2">{activeLeague.sport} • {Object.keys(activeLeague.teams || {}).length} Participating Squads</p>
                 </div>
               </div>
               {isStaff && activeLeague.creatorId === authUser?.uid && (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 justify-end">
+                  <Button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.id}?protocol=team_config`);
+                      toast({ title: "Public Link Copied", description: "The registration portal link is ready to share." });
+                    }} 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-12 w-12 rounded-xl border-white/20 border hover:bg-white/10 text-white transition-all"
+                  >
+                    <Share2 className="h-5 w-5" />
+                  </Button>
+                  <Button onClick={handleEditLeague} variant="ghost" size="icon" className="h-12 w-12 rounded-xl border-white/20 border hover:bg-white/10 text-white transition-all"><Settings className="h-5 w-5" /></Button>
                   <Button onClick={() => isPro ? setIsSeasonOpen(true) : purchasePro()} variant="outline" className="rounded-xl h-12 px-6 border-white/20 bg-white/5 text-white hover:bg-white hover:text-black transition-all">Season Architect</Button>
                   <Link href={`/leagues/registration/${activeLeague.id}`}>
                     <Button className="rounded-xl h-12 px-6 font-black uppercase text-xs shadow-xl">Recruit Pool</Button>
@@ -602,27 +882,26 @@ export default function LeaguesPage() {
             </div>
           </Card>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="rounded-[2rem] border-none shadow-md bg-muted/20 p-6 flex items-center justify-between group">
-              <div className="flex items-center gap-4">
-                <div className="bg-white p-3 rounded-2xl shadow-sm text-primary group-hover:bg-primary group-hover:text-white transition-all"><ExternalLink className="h-5 w-5" /></div>
-                <div><p className="text-[10px] font-black uppercase tracking-widest opacity-60">Spectator Portal</p><p className="font-black text-sm uppercase">Live Standings Hub</p></div>
-              </div>
-              <Button variant="outline" size="sm" className="rounded-xl font-black uppercase text-[9px]" onClick={() => window.open(`/leagues/spectator/${activeLeague.id}`, '_blank')}>Public View</Button>
-            </Card>
-            <Card className="rounded-[2rem] border-none shadow-md bg-muted/20 p-6 flex items-center justify-between group">
-              <div className="flex items-center gap-4">
-                <div className="bg-white p-3 rounded-2xl shadow-sm text-primary group-hover:bg-primary group-hover:text-white transition-all"><ShieldAlert className="h-5 w-5" /></div>
-                <div><p className="text-[10px] font-black uppercase tracking-widest opacity-60">Scorekeeper Portal</p><p className="font-black text-sm uppercase">Direct Result Entry</p></div>
-              </div>
-              <Button variant="outline" size="sm" className="rounded-xl font-black uppercase text-[9px]" onClick={() => window.open(`/leagues/scorekeeper/${activeLeague.id}`, '_blank')}>Result Entry</Button>
-            </Card>
-          </div>
 
-          <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex shadow-inner">
-            <Button variant={activeTab === 'standings' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('standings')}>Standings</Button>
-            {isStaff && <Button variant={activeTab === 'command' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('command')}>Match Command</Button>}
-            {isStaff && <Button variant={activeTab === 'personnel' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('personnel')}>Personnel (Recruits)</Button>}
+          <div className="flex flex-col sm:flex-row items-baseline justify-between gap-4">
+            <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex shadow-inner">
+              <Button variant={activeTab === 'standings' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('standings')}>Standings</Button>
+              {isStaff && <Button variant={activeTab === 'command' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('command')}>Match Command</Button>}
+              {isStaff && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('portals')}>Portals</Button>}
+              {isStaff && <Button variant={activeTab === 'personnel' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('personnel')}>Personnel (Recruits)</Button>}
+            </div>
+            <div className="flex gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+              {activeTab === 'standings' && (
+                <Button variant="outline" className="flex-1 sm:flex-none h-11 rounded-xl border-2 font-black uppercase text-[10px]" onClick={exportStandings}>
+                  <Download className="h-4 w-4 mr-2" /> Download Standings
+                </Button>
+              )}
+              {activeTab === 'personnel' && (
+                <Button variant="outline" className="flex-1 sm:flex-none h-11 rounded-xl border-2 font-black uppercase text-[10px]" onClick={exportRecruitPool}>
+                  <Download className="h-4 w-4 mr-2" /> Download Personnel Log
+                </Button>
+              )}
+            </div>
           </div>
 
           <Tabs value={activeTab} className="mt-0">
@@ -718,6 +997,59 @@ export default function LeaguesPage() {
                 </Card>
               </div>
             </TabsContent>
+            
+            <TabsContent value="portals" className="mt-0 animate-in fade-in duration-500">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <Card className="rounded-[2.5rem] border-none shadow-xl bg-orange-600 text-white p-8 space-y-4 group transition-all">
+                  <div className="flex items-center justify-between">
+                    <Badge className="bg-white text-orange-600 border-none font-black text-[8px] h-5 px-2">PIPELINE</Badge>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase opacity-60">Portal Live</span>
+                      <Switch 
+                        checked={activeLeague.is_active !== false} 
+                        onCheckedChange={handleToggleActive}
+                        className="data-[state=checked]:bg-white data-[state=unchecked]:bg-white/20 select-none"
+                      />
+                    </div>
+                  </div>
+                  <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Registration Portal</h4>
+                  <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public recruitment for squads to join the roster.</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.id}?protocol=team_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
+                    <Button variant="outline" className="h-12 w-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => router.push(`/leagues/registration/${activeLeague.id}`)}><Edit3 className="h-4 w-4" /></Button>
+                  </div>
+                </Card>
+
+                <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white p-8 space-y-4 group transition-all">
+                  <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-2">SECURITY</Badge>
+                  <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Operations Key</h4>
+                  <p className="text-xs text-white/60 font-medium leading-relaxed italic">Required for public scorekeepers to post official results.</p>
+                  <div className="flex items-center gap-2">
+                    <Input 
+                      placeholder="NO PIN SET" 
+                      value={leaguePin} 
+                      onChange={e => setLeaguePin(e.target.value)}
+                      className="h-12 rounded-xl bg-white/10 border-white/20 text-white placeholder:text-white/20 font-black text-center tracking-[0.2em]"
+                    />
+                    <Button variant="default" className="h-12 px-6 rounded-xl font-black uppercase text-[10px]" onClick={handleSavePin}>SAVE</Button>
+                  </div>
+                </Card>
+                
+                <Card className="rounded-[2.5rem] border-none shadow-xl bg-muted/5 p-8 space-y-4 group transition-all border-2 border-dashed border-black/5">
+                  <Badge className="bg-black text-white border-none font-black text-[8px] h-5 px-2">PUBLIC VIEW</Badge>
+                  <h4 className="text-2xl font-black uppercase tracking-tight leading-none text-black">Spectator Hub</h4>
+                  <p className="text-xs text-muted-foreground font-medium leading-relaxed italic">Real-time standings access for fans and players.</p>
+                  <Button variant="outline" className="w-full h-12 rounded-xl bg-black/5 border-black/10 text-black hover:bg-black/10" onClick={() => window.open(`/leagues/spectator/${activeLeague.id}`, '_blank')}>Open Live View <ExternalLink className="ml-2 h-3 w-3" /></Button>
+                </Card>
+
+                <Card className="rounded-[2.5rem] border-none shadow-xl bg-muted/5 p-8 space-y-4 group transition-all border-2 border-dashed border-black/5">
+                  <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-2">OPERATIONS</Badge>
+                  <h4 className="text-2xl font-black uppercase tracking-tight leading-none text-black">Scorekeeper Hub</h4>
+                  <p className="text-xs text-muted-foreground font-medium leading-relaxed italic">Result entry portal for field generals to post scores.</p>
+                  <Button variant="outline" className="w-full h-12 rounded-xl bg-black/5 border-black/10 text-black hover:bg-black/10" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/leagues/scorekeeper/${activeLeague.id}`); toast({ title: "Scorekeeper URL Copied" }); }}>Copy Entry Link <Share2 className="ml-2 h-3 w-3" /></Button>
+                </Card>
+              </div>
+            </TabsContent>
           </Tabs>
         </div>
       ) : (
@@ -776,6 +1108,80 @@ export default function LeaguesPage() {
             </div>
             <DialogFooter>
               <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSaveTeamUpdate}>Commit Standings Update</Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditLeagueOpen} onOpenChange={setIsEditLeagueOpen}>
+        <DialogContent className="sm:max-w-2xl rounded-[3rem] p-0 overflow-hidden border-none shadow-2xl bg-white text-foreground max-h-[90vh] overflow-y-auto w-11/12 mx-auto sm:w-full">
+          <div className="h-3 bg-black w-full" />
+          <div className="p-8 lg:p-12 space-y-8">
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight">League Profile</DialogTitle>
+              <DialogDescription className="font-bold text-[10px] uppercase tracking-widest mt-2">{activeLeague?.name} • Public Context</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">League Name</Label>
+                   <Input value={editLeagueForm.name} onChange={e => setEditLeagueForm({...editLeagueForm, name: e.target.value})} className="h-12 rounded-xl border-2 font-black" />
+                 </div>
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Type of Sport</Label>
+                   <Input value={editLeagueForm.sport} onChange={e => setEditLeagueForm({...editLeagueForm, sport: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                 </div>
+               </div>
+               <div className="space-y-2">
+                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Description</Label>
+                 <Textarea value={editLeagueForm.description} onChange={e => setEditLeagueForm({...editLeagueForm, description: e.target.value})} className="rounded-2xl border-2 font-medium min-h-[100px]" placeholder="Detailed description of the league..." />
+               </div>
+               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                 <div className="space-y-2 col-span-2 md:col-span-1">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label>
+                   <Input type="date" value={editLeagueForm.startDate} onChange={e => setEditLeagueForm({...editLeagueForm, startDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                 </div>
+                 <div className="space-y-2 col-span-2 md:col-span-1">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label>
+                   <Input type="date" value={editLeagueForm.endDate} onChange={e => setEditLeagueForm({...editLeagueForm, endDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                 </div>
+                 <div className="space-y-2 col-span-2 md:col-span-1">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Ages / Divisions</Label>
+                   <Input value={editLeagueForm.ages} onChange={e => setEditLeagueForm({...editLeagueForm, ages: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="e.g. U14 - U18" />
+                 </div>
+                 <div className="space-y-2 col-span-2 md:col-span-1">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season Cost</Label>
+                   <Input value={editLeagueForm.registrationCost} onChange={e => setEditLeagueForm({...editLeagueForm, registrationCost: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="$500/Team" />
+                 </div>
+               </div>
+               <div className="space-y-2">
+                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Offline Payment Instructions</Label>
+                 <Textarea value={editLeagueForm.paymentInstructions} onChange={e => setEditLeagueForm({...editLeagueForm, paymentInstructions: e.target.value})} className="rounded-2xl border-2 font-medium min-h-[80px]" placeholder="E-transfer to accounts@league.com with your team name..." />
+                 <p className="text-[10px] text-muted-foreground ml-1 font-bold">These instructions will be shown during registration. Online payments coming soon.</p>
+               </div>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t">
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Contact Email</Label>
+                   <Input type="email" value={editLeagueForm.contactEmail} onChange={e => setEditLeagueForm({...editLeagueForm, contactEmail: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="hq@league.com" />
+                 </div>
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Contact Phone</Label>
+                   <Input type="tel" value={editLeagueForm.contactPhone} onChange={e => setEditLeagueForm({...editLeagueForm, contactPhone: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="(555) 123-4567" />
+                 </div>
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-sky-600">Twitter (X) Link</Label>
+                   <Input type="url" value={editLeagueForm.twitter} onChange={e => setEditLeagueForm({...editLeagueForm, twitter: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="https://x.com/yourleague" />
+                 </div>
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-pink-600">Instagram Link</Label>
+                   <Input type="url" value={editLeagueForm.instagram} onChange={e => setEditLeagueForm({...editLeagueForm, instagram: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="https://instagram.com/yourleague" />
+                 </div>
+               </div>
+            </div>
+            <DialogFooter className="pt-6">
+              <Button disabled={isProcessing} className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSaveLeague}>
+                {isProcessing ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Commit League Profile'}
+              </Button>
             </DialogFooter>
           </div>
         </DialogContent>

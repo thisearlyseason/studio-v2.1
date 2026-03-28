@@ -7,7 +7,7 @@ import { doc } from 'firebase/firestore';
 import { TeamEvent } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Terminal, Clock, MapPin, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
+import { Terminal, Clock, MapPin, ChevronRight, Loader2, AlertCircle, ShieldCheck } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 
@@ -31,10 +31,19 @@ export default function PublicScorekeeperHub() {
       <BrandLogo variant="light-background" className="h-10 w-40 mb-12" />
       
       <div className="max-w-3xl w-full space-y-8">
-        <header className="bg-black text-white p-10 rounded-[3rem] shadow-2xl space-y-4">
-          <Badge className="bg-primary text-white border-none font-black text-[9px] uppercase tracking-widest px-3 h-6">Scorekeeper Portal</Badge>
-          <h1 className="text-4xl font-black uppercase tracking-tighter leading-[0.9]">{event.title}</h1>
-          <p className="text-white/60 font-bold uppercase tracking-widest text-xs">Result Entry Hub • Login Not Required</p>
+        <header className="bg-black text-white p-10 rounded-[3rem] shadow-2xl space-y-4 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none -rotate-12 group-hover:scale-110 transition-transform duration-1000">
+            <ShieldCheck className="h-48 w-48" />
+          </div>
+          <div className="relative z-10">
+            <Badge className="bg-primary text-white border-none font-black text-[9px] uppercase tracking-widest px-3 h-6">Scorekeeper Portal</Badge>
+            <h1 className="text-4xl font-black uppercase tracking-tighter leading-[0.9] mt-2">{event.title}</h1>
+            <p className="text-white/60 font-bold uppercase tracking-widest text-xs mt-1">Result Entry Hub • Login Not Required</p>
+            <div className="flex items-center gap-1.5 bg-green-500/10 text-green-500 border border-green-500/20 px-3 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest mt-6 inline-flex">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Verified Institutional Portal
+            </div>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 gap-4">

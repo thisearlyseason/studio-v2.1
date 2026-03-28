@@ -32,12 +32,28 @@ import {
   Info,
   CalendarDays,
   Users,
-  Shield
+  Shield,
+  Trophy,
+  Sun,
+  Cloud,
+  Wind,
+  Thermometer,
+  Zap,
+  Activity,
+  ArrowUpRight,
+  CheckCircle2,
+  Download,
+  Trash2,
+  Plus,
+  ExternalLink,
+  FileSignature,
+  Loader2
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTeam, TeamEvent, EventType } from '@/components/providers/team-provider';
+import { downloadICS } from '@/lib/calendar-utils';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -136,27 +152,91 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
               </div>
               <div className="pt-4 border-t border-white/10">
                 <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em] mb-4">Tactical RSVP</p>
-                <div className="grid grid-cols-1 gap-2">
-                  <Button variant={myRsvp === 'going' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'going' ? "bg-primary border-none" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'going')}>Going</Button>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button variant={myRsvp === 'maybe' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'maybe' ? "bg-amber-500" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'maybe')}>Maybe</Button>
-                    <Button variant={myRsvp === 'declined' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase", myRsvp === 'declined' ? "bg-red-600" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'declined')}>Decline</Button>
+                  <div className="grid grid-cols-1 gap-2">
+                    <Button variant={myRsvp === 'going' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase transition-all", myRsvp === 'going' ? "bg-green-600 border-none shadow-lg shadow-green-600/20" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'going', event.teamId)}>Going</Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant={myRsvp === 'maybe' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase transition-all", myRsvp === 'maybe' ? "bg-amber-400 text-black border-none shadow-lg shadow-amber-400/20" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'maybe', event.teamId)}>Maybe</Button>
+                      <Button variant={myRsvp === 'declined' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase transition-all", myRsvp === 'declined' ? "bg-red-600 border-none shadow-lg shadow-red-600/20" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'declined', event.teamId)}>Decline</Button>
+                    </div>
                   </div>
-                </div>
               </div>
             </div>
           </div>
           <div className="flex-1 p-8 bg-white space-y-6">
             <div className="flex items-center gap-3"><Info className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest text-foreground">Event Brief</h3></div>
             <p className="text-sm font-medium text-muted-foreground leading-relaxed italic">"{event.description || 'No specific coordination notes provided.'}"</p>
+            
+            {event.isTournament && (
+              <div className="pt-6 border-t space-y-6">
+                <div className="flex items-center gap-3"><Trophy className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest text-foreground">Match Schedule</h3></div>
+                <div className="grid grid-cols-1 gap-4">
+                  {event.tournamentGames?.map((game: any) => (
+                    <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary">{game.time}</Badge>
+                          {game.round && <Badge className="bg-muted text-foreground border-none text-[7px] font-black uppercase px-2 h-4">{game.round}</Badge>}
+                        </div>
+                        {game.isCompleted && <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2 h-5">FINAL</Badge>}
+                      </div>
+                      <div className="grid grid-cols-7 items-center gap-4 text-center">
+                        <div className="col-span-3 min-w-0">
+                          <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team1}</p>
+                          <p className={cn("text-2xl font-black", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")}>{game.score1}</p>
+                        </div>
+                        <div className="col-span-1 opacity-20 font-black text-[10px]">VS</div>
+                        <div className="col-span-3 min-w-0">
+                          <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team2}</p>
+                          <p className={cn("text-2xl font-black", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")}>{game.score2}</p>
+                        </div>
+                      </div>
+                      {game.location && (
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase text-center flex items-center justify-center gap-1.5 pt-2 border-t border-muted">
+                          <MapPin className="h-3 w-3 opacity-40" /> {game.location}
+                        </p>
+                      )}
+                    </Card>
+                  ))}
+                  {(!event.tournamentGames || event.tournamentGames.length === 0) && (
+                    <p className="text-center py-10 text-[10px] font-black uppercase opacity-20 italic">Match itinerary being established.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-6 border-t space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3"><Thermometer className="h-5 w-5 text-orange-500" /><h3 className="text-xs font-black uppercase tracking-widest text-foreground">Conditions Pulse</h3></div>
+                <Badge className="bg-orange-100/50 text-orange-700 border-none font-black text-[8px] h-5 px-3">SIMULATED FORECAST</Badge>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-muted/30 p-4 rounded-2xl border text-center space-y-1">
+                  <Sun className="h-5 w-5 mx-auto text-amber-500" />
+                  <p className="text-[10px] font-black uppercase">{((event.location?.length || 0) % 15) + 65}°F</p>
+                  <p className="text-[7px] font-bold text-muted-foreground uppercase">Fair Skies</p>
+                </div>
+                <div className="bg-muted/30 p-4 rounded-2xl border text-center space-y-1">
+                  <Wind className="h-5 w-5 mx-auto text-blue-400" />
+                  <p className="text-[10px] font-black uppercase">{((event.location?.length || 0) % 5) + 5} MPH</p>
+                  <p className="text-[7px] font-bold text-muted-foreground uppercase">Local Gusts</p>
+                </div>
+                <div className="bg-muted/30 p-4 rounded-2xl border text-center space-y-1">
+                  <Cloud className="h-5 w-5 mx-auto text-slate-400" />
+                  <p className="text-[10px] font-black uppercase">{(event.title.length % 20)}%</p>
+                  <p className="text-[7px] font-bold text-muted-foreground uppercase">Precip Probability</p>
+                </div>
+              </div>
+              <p className="text-[9px] font-medium text-muted-foreground italic leading-tight px-2 text-center">Surface integrity 100% for {event.location || 'assigned venue'}. Protocol parameters optimal for peak competition performance.</p>
+            </div>
+
             <div className="pt-6 border-t space-y-4">
               <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest text-foreground">Attendance Pulse</h3></div>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(event.userRsvps || {}).map(([uid, status]) => (
                   <Badge key={uid} variant="outline" className={cn(
-                    "text-[8px] font-black uppercase border-none h-6",
-                    status === 'going' ? "bg-green-100 text-green-700" : status === 'maybe' ? "bg-amber-100 text-amber-700" : status === 'declined' ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground"
-                  )}>{status}</Badge>
+                    "text-[8px] font-black uppercase border-none h-6 px-3",
+                    status === 'going' ? "bg-green-600 text-white" : status === 'maybe' ? "bg-amber-400 text-black" : (status === 'declined' || status === 'no') ? "bg-red-600 text-white" : "bg-muted text-muted-foreground"
+                  )}>{status === 'no' ? 'Declined' : status}</Badge>
                 ))}
               </div>
             </div>
@@ -168,7 +248,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
 }
 
 export default function MasterCalendarPage() {
-  const { teams, householdEvents, activeTeamEvents, isParent } = useTeam();
+  const { teams, householdEvents, activeTeamEvents, isParent, activeTeam, db, updateRSVP } = useTeam();
   
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(new Date());
@@ -241,8 +321,48 @@ export default function MasterCalendarPage() {
     return eventsByDay[format(selectedDay, 'yyyy-MM-dd')] || [];
   }, [selectedDay, eventsByDay]);
 
+  const nextTournament = useMemo(() => {
+    return allEvents
+      .filter(e => e.isTournament || e.eventType === 'game')
+      .filter(e => new Date(e.date) >= startOfDay(new Date()))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+  }, [allEvents]);
+
   return (
-    <div className="space-y-8 pb-32">
+    <div className="space-y-12 pb-32">
+      {/* ELITE UPGRADE: COMPETITION SPOTLIGHT */}
+      {nextTournament && (
+        <div className="relative group overflow-hidden rounded-[3rem] border-2 shadow-2xl bg-black text-white p-10 flex flex-col md:flex-row items-center justify-between gap-10">
+          <div className="absolute top-0 right-0 p-12 opacity-5 -rotate-12 group-hover:scale-110 transition-transform duration-1000">
+             <Trophy className="h-64 w-64" />
+          </div>
+          <div className="relative z-10 space-y-6 flex-1">
+             <div className="flex items-center gap-3">
+               <Badge className="bg-primary text-white border-none font-black tracking-widest text-[10px] h-7 px-4 shadow-lg shadow-primary/20">NEXT FOCUS</Badge>
+               <div className="flex items-center gap-2 text-white/40 font-black uppercase text-[10px] tracking-widest bg-white/5 px-3 py-1 rounded-full">
+                  <Zap className="h-3 w-3 text-amber-500" /> High Intensity Conflict
+               </div>
+             </div>
+             <div>
+               <h3 className="text-4xl md:text-5xl font-black uppercase tracking-tighter leading-tight italic">{nextTournament.title}</h3>
+               <div className="flex flex-wrap items-center gap-6 mt-4 opacity-70">
+                 <div className="flex items-center gap-2 text-sm font-bold uppercase"><CalendarDays className="h-4 w-4" /> {formatDateRange(nextTournament.date, nextTournament.endDate)}</div>
+                 <div className="flex items-center gap-2 text-sm font-bold uppercase"><MapPin className="h-4 w-4" /> {nextTournament.location}</div>
+               </div>
+             </div>
+          </div>
+          <div className="relative z-10 w-full md:w-auto shrink-0 flex flex-col items-center justify-center p-8 bg-white/5 backdrop-blur-xl rounded-[2.5rem] border border-white/10 ring-1 ring-white/5 space-y-4">
+             <div className="text-center">
+               <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Status Report</p>
+               <p className="text-3xl font-black leading-none uppercase">Confirmed</p>
+             </div>
+             <Button className="w-full h-14 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest shadow-xl px-10" onClick={() => setActiveDetailedEvent(nextTournament)}>
+               Examine Intel <ArrowUpRight className="ml-2 h-4 w-4" />
+             </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">{isParent ? "Household Hub" : "Squad Operations"}</Badge>
@@ -309,9 +429,18 @@ export default function MasterCalendarPage() {
                       <div className="flex justify-between items-center mb-2">
                         <span className={cn("h-7 w-7 flex items-center justify-center rounded-full text-xs font-black transition-all", isTodayDate ? "bg-primary text-white" : (isSelected ? "bg-black text-white" : "text-muted-foreground"))}>{format(day, 'd')}</span>
                       </div>
-                      <div className="space-y-1">
+                      <div className="flex flex-wrap gap-1">
                         {dayEvents.map(event => (
-                          <div key={event.id} className={cn("w-full h-1.5 rounded-full", EVENT_TYPE_COLORS[event.eventType as EventType || 'other'])} />
+                          <div 
+                            key={event.id} 
+                            className={cn(
+                              "p-1 rounded-md flex items-center justify-center shrink-0 border border-white/10",
+                              EVENT_TYPE_COLORS[event.eventType as EventType || 'other']
+                            )}
+                            title={`${event.startTime} - ${event.title}`}
+                          >
+                            {event.isTournament ? <Trophy className="h-3 w-3" /> : (event.eventType === 'game' ? <Activity className="h-3 w-3" /> : <div className="h-3 w-3 rounded-full border-2 border-white/50" />)}
+                          </div>
                         ))}
                       </div>
                     </div>

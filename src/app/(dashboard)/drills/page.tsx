@@ -18,7 +18,9 @@ import {
   Package,
   Bookmark,
   Upload,
-  Lock
+  Lock,
+  Edit2,
+  Clock
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -73,6 +75,8 @@ export default function PlaybookAndGamePlayPage() {
   const [newDesc, setNewDesc] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [newMediaUrls, setNewMediaUrls] = useState<string[]>([]);
+  const [newTime, setNewTime] = useState('');
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [expandedDrillIds, setExpandedDrillIds] = useState<Set<string>>(new Set());
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -92,26 +96,77 @@ export default function PlaybookAndGamePlayPage() {
   };
 
   const handleAddDrill = async () => {
-    if (!newTitle || !newDesc) return;
-    await addDrill({ 
-      title: newTitle, 
-      description: newDesc, 
-      videoUrl: newUrl, 
-      additionalMedia: newMediaUrls.filter(Boolean),
-      createdAt: new Date().toISOString(), 
-      comments: [] 
-    });
-    setIsAddDrillOpen(false);
-    setNewTitle(''); setNewDesc(''); setNewUrl(''); setNewMediaUrls([]);
-    toast({ title: "Drill Published", description: "Strategic execution protocol active." });
+    if (!newTitle || !newDesc || !activeTeam || !db) return;
+    try {
+      if (editingItemId) {
+        await updateDoc(doc(db, 'teams', activeTeam.id, 'drills', editingItemId), {
+          title: newTitle,
+          description: newDesc,
+          videoUrl: newUrl,
+          additionalMedia: newMediaUrls.filter(Boolean),
+          estimatedTime: newTime
+        });
+        toast({ title: "Drill Updated", description: "Strategic protocol modified." });
+      } else {
+        await addDrill({ 
+          title: newTitle, 
+          description: newDesc, 
+          videoUrl: newUrl, 
+          additionalMedia: newMediaUrls.filter(Boolean),
+          estimatedTime: newTime,
+          createdAt: new Date().toISOString(), 
+          comments: [] 
+        });
+        toast({ title: "Drill Published", description: "Strategic execution protocol active." });
+      }
+      setIsAddDrillOpen(false);
+      setNewTitle(''); setNewDesc(''); setNewUrl(''); setNewMediaUrls([]); setNewTime(''); setEditingItemId(null);
+    } catch(err) {
+      toast({ title: "Operation Failed", variant: "destructive" });
+    }
   };
 
   const handleAddFilm = async () => {
-    if (!newTitle || !newUrl) return;
-    await addFile(newTitle, 'video_link', 0, newUrl, uploadCat, newDesc);
-    setIsUploadOpen(false);
-    setNewTitle(''); setNewUrl(''); setNewDesc('');
-    toast({ title: "Film Archived", description: "Institutional tape secured in vault." });
+    if (!newTitle || !newUrl || !activeTeam || !db) return;
+    try {
+      if (editingItemId) {
+        await updateDoc(doc(db, 'teams', activeTeam.id, 'files', editingItemId), {
+          name: newTitle,
+          url: newUrl,
+          category: uploadCat,
+          description: newDesc,
+        });
+        toast({ title: "Film Updated", description: "Archive modified." });
+      } else {
+        await addFile(newTitle, 'video_link', 0, newUrl, uploadCat, newDesc);
+        toast({ title: "Film Archived", description: "Institutional tape secured in vault." });
+      }
+      setIsUploadOpen(false);
+      setNewTitle(''); setNewUrl(''); setNewDesc(''); setEditingItemId(null);
+    } catch (err) {
+      toast({ title: "Operation Failed", variant: "destructive" });
+    }
+  };
+
+  const openEditDrill = (e: React.MouseEvent, drill: any) => {
+    e.stopPropagation();
+    setNewTitle(drill.title || '');
+    setNewDesc(drill.description || '');
+    setNewUrl(drill.videoUrl || '');
+    setNewMediaUrls(drill.additionalMedia || []);
+    setNewTime(drill.estimatedTime || '');
+    setEditingItemId(drill.id);
+    setIsAddDrillOpen(true);
+  };
+
+  const openEditFile = (e: React.MouseEvent, f: any) => {
+    e.stopPropagation();
+    setNewTitle(f.name || '');
+    setNewUrl(f.url || '');
+    setNewDesc(f.description || '');
+    setUploadCat(f.category || 'Game Tape');
+    setEditingItemId(f.id);
+    setIsUploadOpen(true);
   };
 
   const handleUploadFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -247,11 +302,26 @@ export default function PlaybookAndGamePlayPage() {
                     </div>
                   )}
                   <Badge className="absolute top-4 left-4 bg-primary text-white border-none font-black text-[8px] uppercase">Drill Protocol</Badge>
+                  {drill.estimatedTime && (
+                    <Badge className="absolute top-4 right-4 bg-black/80 text-white border-none font-black text-[8px] uppercase"><Clock className="h-3 w-3 mr-1 inline" /> {drill.estimatedTime}</Badge>
+                  )}
                 </div>
                 <CardContent className="p-6 space-y-2">
                   <div className="flex justify-between items-start gap-4">
                     <h3 className="font-black text-lg uppercase truncate tracking-tight text-foreground">{drill.title}</h3>
-                    <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase shrink-0">{(drill.comments?.length || 0)} MARKS</Badge>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase">{(drill.comments?.length || 0)} MARKS</Badge>
+                      {isStaff && (
+                        <div className="flex bg-muted/50 rounded-xl overflow-hidden shadow-inner">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditDrill(e, drill); }}>
+                            <Edit2 className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteDrill(drill.id); }}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <p className={cn(
                     "text-xs font-medium text-muted-foreground leading-relaxed transition-all",
@@ -278,7 +348,19 @@ export default function PlaybookAndGamePlayPage() {
                 <CardContent className="p-6 space-y-2">
                   <div className="flex justify-between items-start gap-4">
                     <h3 className="font-black text-lg uppercase truncate tracking-tight text-foreground">{file.name}</h3>
-                    <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase shrink-0">{(file.comments?.length || 0)} MARKS</Badge>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase">{(file.comments?.length || 0)} MARKS</Badge>
+                      {isStaff && (
+                        <div className="flex bg-muted/50 rounded-xl overflow-hidden shadow-inner">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditFile(e, file); }}>
+                            <Edit2 className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteFile(file.id); }}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{file.size} • {new Date(file.date).toLocaleDateString()}</p>
                 </CardContent>
@@ -291,13 +373,19 @@ export default function PlaybookAndGamePlayPage() {
       <Dialog open={isAddDrillOpen} onOpenChange={setIsAddDrillOpen}>
         <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <div className="bg-black text-white p-8 lg:p-10 space-y-2">
-            <DialogTitle className="font-black text-2xl uppercase tracking-tighter">Publish Drill</DialogTitle>
-            <DialogDescription className="text-white/40 text-[10px] font-black uppercase tracking-widest">Enroll a new execution protocol into the playbook.</DialogDescription>
+            <DialogTitle className="font-black text-2xl uppercase tracking-tighter">{editingItemId ? 'Update Drill' : 'Publish Drill'}</DialogTitle>
+            <DialogDescription className="text-white/40 text-[10px] font-black uppercase tracking-widest">{editingItemId ? 'Modify an existing execution protocol.' : 'Enroll a new execution protocol into the playbook.'}</DialogDescription>
           </div>
           <div className="p-8 space-y-6">
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Drill Title</Label>
-              <Input placeholder="e.g. 5-4-3 Double Play Rotation" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <div className="sm:col-span-2 space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Drill Title</Label>
+                <Input placeholder="e.g. 5-4-3 Double Play Rotation" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1 flex items-center gap-1"><Clock className="h-3 w-3" /> Time</Label>
+                <Input placeholder="e.g. 15 mins" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTime} onChange={e => setNewTime(e.target.value)} />
+              </div>
             </div>
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Strategic Instructions</Label>
@@ -328,8 +416,8 @@ export default function PlaybookAndGamePlayPage() {
             </div>
           </div>
           <DialogFooter className="p-8 pt-0 flex flex-col sm:flex-row gap-3">
-            <Button variant="ghost" onClick={() => setIsAddDrillOpen(false)} className="rounded-2xl h-14 font-black uppercase text-[10px] flex-1">Abort</Button>
-            <Button onClick={handleAddDrill} disabled={!newTitle || !newDesc} className="rounded-2xl h-14 font-black uppercase text-[10px] flex-1 shadow-xl shadow-primary/20">Commit to Playbook</Button>
+            <Button variant="ghost" onClick={() => { setIsAddDrillOpen(false); setEditingItemId(null); }} className="rounded-2xl h-14 font-black uppercase text-[10px] flex-1">Abort</Button>
+            <Button onClick={handleAddDrill} disabled={!newTitle || !newDesc} className="rounded-2xl h-14 font-black uppercase text-[10px] flex-1 shadow-xl shadow-primary/20">{editingItemId ? 'Commit Updates' : 'Commit to Playbook'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -337,8 +425,8 @@ export default function PlaybookAndGamePlayPage() {
       <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
         <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <div className="bg-primary text-white p-8 lg:p-10 space-y-2">
-            <DialogTitle className="font-black text-2xl uppercase tracking-tighter">Archive Film</DialogTitle>
-            <DialogDescription className="text-white/60 text-[10px] font-black uppercase tracking-widest">Enshrine game tape or tournament footage in the vault.</DialogDescription>
+            <DialogTitle className="font-black text-2xl uppercase tracking-tighter">{editingItemId ? 'Update Tape' : 'Archive Film'}</DialogTitle>
+            <DialogDescription className="text-white/60 text-[10px] font-black uppercase tracking-widest">{editingItemId ? 'Modify existing tape parameters.' : 'Enshrine game tape or tournament footage in the vault.'}</DialogDescription>
           </div>
           <div className="p-8 space-y-6">
             <div className="space-y-2">
@@ -422,12 +510,25 @@ export default function PlaybookAndGamePlayPage() {
                         <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2">{new Date(data.createdAt || data.date).toLocaleDateString()}</p>
                       </div>
                       {isStaff && (
-                        <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50 rounded-xl shrink-0" onClick={() => { 
-                          selectedDrill ? deleteDrill(data.id) : deleteFile(data.id); 
-                          setSelectedDrill(null); setSelectedFile(null);
-                        }}>
-                          <Trash2 className="h-5 w-5" />
-                        </Button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-black hover:bg-black/5 rounded-xl shrink-0" onClick={(e) => {
+                            if (selectedDrill) {
+                              openEditDrill(e, selectedDrill);
+                              setSelectedDrill(null);
+                            } else {
+                              openEditFile(e, selectedFile);
+                              setSelectedFile(null);
+                            }
+                          }}>
+                            <Edit2 className="h-5 w-5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50 rounded-xl shrink-0" onClick={() => { 
+                            selectedDrill ? deleteDrill(data.id) : deleteFile(data.id); 
+                            setSelectedDrill(null); setSelectedFile(null);
+                          }}>
+                            <Trash2 className="h-5 w-5" />
+                          </Button>
+                        </div>
                       )}
                     </div>
                     <p className="text-xs font-medium text-muted-foreground leading-relaxed">

@@ -13,20 +13,33 @@ import { format } from 'date-fns';
 
 function calculateTournamentStandings(teams: string[], games: any[]) {
   const standings = teams.reduce((acc, team) => {
-    acc[team] = { name: team, wins: 0, losses: 0, ties: 0, points: 0 };
+    acc[team] = { name: team, wins: 0, losses: 0, ties: 0, points: 0, netScore: 0 };
     return acc;
   }, {} as Record<string, any>);
   
   games.forEach(game => {
     if (!game.isCompleted) return;
     const t1 = game.team1; const t2 = game.team2;
-    if (!standings[t1]) standings[t1] = { name: t1, wins: 0, losses: 0, ties: 0, points: 0 };
-    if (!standings[t2]) standings[t2] = { name: t2, wins: 0, losses: 0, ties: 0, points: 0 };
-    if (game.score1 > game.score2) { standings[t1].wins += 1; standings[t1].points += 1; standings[t2].losses += 1; standings[t2].points -= 1; }
-    else if (game.score2 > game.score1) { standings[t2].wins += 1; standings[t2].points += 1; standings[t1].losses += 1; standings[t1].points -= 1; }
-    else { standings[t1].ties += 1; standings[t2].ties += 1; }
+    if (!standings[t1]) standings[t1] = { name: t1, wins: 0, losses: 0, ties: 0, points: 0, netScore: 0 };
+    if (!standings[t2]) standings[t2] = { name: t2, wins: 0, losses: 0, ties: 0, points: 0, netScore: 0 };
+    
+    standings[t1].netScore += (game.score1 - game.score2);
+    standings[t2].netScore += (game.score2 - game.score1);
+
+    if (game.score1 > game.score2) { 
+      standings[t1].wins += 1; standings[t1].points += 3; 
+      standings[t2].losses += 1; 
+    }
+    else if (game.score2 > game.score1) { 
+      standings[t2].wins += 1; standings[t2].points += 3; 
+      standings[t1].losses += 1; 
+    }
+    else { 
+      standings[t1].ties += 1; standings[t1].points += 1;
+      standings[t2].ties += 1; standings[t2].points += 1;
+    }
   });
-  return Object.values(standings).sort((a, b) => b.points - a.points || b.wins - a.wins);
+  return Object.values(standings).sort((a, b) => b.points - a.points || b.netScore - a.netScore || b.wins - a.wins);
 }
 
 export default function PublicSpectatorHub() {

@@ -4,7 +4,7 @@
  * Hardened for balanced distribution, multi-venue resource mapping, and intelligent double-headers.
  */
 
-import { addMinutes, format, isBefore, parse, addDays, eachDayOfInterval, isAfter } from 'date-fns';
+import { addMinutes, format, isBefore, parse, addDays, eachDayOfInterval, isAfter, differenceInMinutes, parseISO } from 'date-fns';
 import { TournamentGame } from '@/components/providers/team-provider';
 
 export interface DailyWindow {
@@ -64,6 +64,15 @@ function parseTime(timeStr: string, referenceDate: Date): Date {
 }
 
 /**
+ * Robust date parser that avoids UTC offset issues by treating "YYYY-MM-DD" as local time.
+ */
+function parseLocalDate(dateStr: string): Date {
+  if (!dateStr) return new Date();
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/**
  * Shuffles an array in place.
  */
 function shuffle<T>(array: T[]): T[] {
@@ -88,8 +97,8 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
   const teamIdentities = teams.map((t, idx) => typeof t === 'string' ? { id: `t_${idx}`, name: t } : t);
   if (teamIdentities.length < 2 || fields.length === 0) return [];
 
-  const startD = new Date(startDate);
-  const endD = endDate ? new Date(endDate) : addDays(startD, 120);
+  const startD = parseLocalDate(startDate);
+  const endD = endDate ? parseLocalDate(endDate) : addDays(startD, 120);
 
   const basePairs: { t1: TeamIdentity; t2: TeamIdentity }[] = [];
   for (let i = 0; i < teamIdentities.length; i++) {
@@ -183,7 +192,7 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
 }
 
 /**
- * Tournament specific schedule supporting Round Robin and Multi-Venue Resource Mapping
+ * Tournament specific schedule supporting Round Robin, Single Elim, and Double Elim
  */
 export function generateTournamentSchedule(config: ScheduleConfig): TournamentGame[] {
   const { teams, fields, startDate, endDate, startTime, endTime, gameLength, breakLength, dailyWindows, tournamentType = 'round_robin' } = config;
@@ -191,23 +200,74 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
   const teamList = teams.map((t, i) => typeof t === 'string' ? { id: `t_${i}`, name: t } : t);
   if (teamList.length < 2) return [];
 
-  const matchups: [TeamIdentity, TeamIdentity][] = [];
+  const matchups: { t1: string; t2: string; t1Id?: string; t2Id?: string; round: string }[] = [];
+  
   if (tournamentType === 'round_robin') {
-    for (let i = 0; i < teamList.length; i++) {
-      for (let j = i + 1; j < teamList.length; j++) {
-        matchups.push([teamList[i], teamList[j]]);
+    const shuffled = shuffle([...teamList]);
+    for (let i = 0; i < shuffled.length; i++) {
+      for (let j = i + 1; j < shuffled.length; j++) {
+        matchups.push({ t1: shuffled[i].name, t2: shuffled[j].name, t1Id: shuffled[i].id, t2Id: shuffled[j].id, round: 'Pool Play' });
       }
     }
-  } else {
-    // Basic single elimination seeding
-    const shuffledTeams = shuffle([...teamList]);
-    for (let i = 0; i < Math.floor(shuffledTeams.length / 2); i++) {
-      matchups.push([shuffledTeams[i], shuffledTeams[shuffledTeams.length - 1 - i]]);
+  } else if (tournamentType === 'single_elimination') {
+    const shuffled = shuffle([...teamList]);
+    const numTeams = shuffled.length;
+    const numByes = Math.pow(2, Math.ceil(Math.log2(numTeams))) - numTeams;
+    
+    // First Round matches
+    const firstRoundMatches = (numTeams - numByes) / 2;
+    for (let i = 0; i < firstRoundMatches; i++) {
+      matchups.push({ t1: shuffled[i * 2 + numByes].name, t2: shuffled[i * 2 + numByes + 1].name, t1Id: shuffled[i * 2 + numByes].id, t2Id: shuffled[i * 2 + numByes + 1].id, round: 'Round 1' });
     }
+    
+    // Future placeholders
+    const totalRounds = Math.ceil(Math.log2(numTeams));
+    for (let r = 2; r <= totalRounds; r++) {
+      const label = r === totalRounds ? 'Championship' : r === totalRounds - 1 ? 'Semi-Finals' : `Round ${r}`;
+      const gamesInRound = Math.pow(2, totalRounds - r);
+      for (let i = 0; i < gamesInRound; i++) {
+        matchups.push({ t1: 'TBD', t2: 'TBD', round: label });
+      }
+    }
+  } else if (tournamentType === 'double_elimination') {
+    // Advanced DE Setup: 
+    // For N teams, we need approximately 2N-1 games.
+    const shuffled = shuffle([...teamList]);
+    const n = shuffled.length;
+    
+    // Winners Bracket R1
+    const wb1Games = Math.floor(n / 2);
+    for (let i = 0; i < wb1Games; i++) {
+      matchups.push({ t1: shuffled[i * 2].name, t2: shuffled[i * 2 + 1].name, t1Id: shuffled[i * 2].id, t2Id: shuffled[i * 2 + 1].id, round: 'WB Round 1' });
+    }
+    
+    // Losers Bracket R1
+    const lb1Games = Math.floor(wb1Games / 2) || 1;
+    for (let i = 0; i < lb1Games; i++) {
+      matchups.push({ t1: 'TBD', t2: 'TBD', round: 'LB Round 1' });
+    }
+
+    // Subsequent rounds placeholders
+    const totalRounds = Math.ceil(Math.log2(n)) + 1;
+    for (let r = 2; r <= totalRounds; r++) {
+      matchups.push({ t1: 'TBD', t2: 'TBD', round: `WB Round ${r}` });
+      matchups.push({ t1: 'TBD', t2: 'TBD', round: `LB Round ${r}` });
+    }
+    
+    matchups.push({ t1: 'TBD', t2: 'TBD', round: 'Semi-Finals' });
+    matchups.push({ t1: 'TBD', t2: 'TBD', round: 'Championship' });
+    matchups.push({ t1: 'TBD', t2: 'TBD', round: 'IF NECESSARY' });
+  }
+
+  // --- Optimization: Limit Round Robin matches if gamesPerTeam is set ---
+  let finalMatchups = matchups;
+  if (tournamentType === 'round_robin' && config.gamesPerTeam) {
+    const maxGames = Math.ceil((teamList.length * config.gamesPerTeam) / 2);
+    finalMatchups = matchups.slice(0, maxGames);
   }
   
-  const startD = new Date(startDate);
-  const endD = endDate ? new Date(endDate) : startD;
+  const startD = parseLocalDate(startDate);
+  const endD = endDate ? parseLocalDate(endDate) : startD;
   const dayInterval = eachDayOfInterval({ start: startD, end: endD });
   const slots: { date: Date; time: Date; field: string }[] = [];
   
@@ -228,23 +288,98 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
     }
   });
 
-  if (slots.length === 0) return [];
+  const finalGames: TournamentGame[] = [];
+  const dailyTeamUsage = new Map<string, { teamId: string; time: string }[]>();
+  const teamGamesPerDay = new Map<string, number>(); // key: "date:teamId"
 
-  const games: TournamentGame[] = [];
-  const totalMatches = Math.min(matchups.length, slots.length);
-  for (let i = 0; i < totalMatches; i++) {
-    games.push({
-      id: `tg_${Date.now()}_${i}`,
-      team1: matchups[i][0].name, team2: matchups[i][1].name,
-      team1Id: matchups[i][0].id, team2Id: matchups[i][1].id,
-      score1: 0, score2: 0,
-      date: format(slots[i].date, 'yyyy-MM-dd'),
-      time: format(slots[i].time, 'h:mm a'),
-      location: slots[i].field,
-      isCompleted: false,
-      updatedAt: new Date().toISOString()
-    });
+  const pool = [...finalMatchups];
+  
+  for (const slot of slots) {
+    if (pool.length === 0) break;
+
+    const dayKey = format(slot.date, 'yyyy-MM-dd');
+    const timeKey = format(slot.time, 'HH:mm');
+    if (!dailyTeamUsage.has(dayKey)) dailyTeamUsage.set(dayKey, []);
+    const todaysGames = dailyTeamUsage.get(dayKey)!;
+
+    let foundMatchupIndex = -1;
+    for (let i = 0; i < pool.length; i++) {
+      const { t1, t2, t1Id, t2Id } = pool[i];
+      const id1 = t1Id || t1; // fallback to name if ID missing
+      const id2 = t2Id || t2;
+
+      // 1. Prevent simultaneous games & enforce physical recovery (Rest Period)
+      const MIN_REST_MINUTES = config.gameLength + config.breakLength; // Minimum gap between games
+      const currentSlotTime = slot.time;
+      
+      const t1IsBusy = finalGames.some(g => {
+        if (g.team1Id !== id1 && g.team2Id !== id1) return false;
+        const gTime = parse(g.time, 'h:mm a', parseISO(g.date)); 
+        return Math.abs(differenceInMinutes(currentSlotTime, gTime)) < MIN_REST_MINUTES;
+      });
+
+      const t2IsBusy = finalGames.some(g => {
+        if (g.team1Id !== id2 && g.team2Id !== id2) return false;
+        const gTime = parse(g.time, 'h:mm a', parseISO(g.date)); 
+        return Math.abs(differenceInMinutes(currentSlotTime, gTime)) < MIN_REST_MINUTES;
+      });
+
+      if (t1IsBusy || t2IsBusy) continue;
+
+      // 2. Handle Double Header Logic
+      const t1DailyCount = teamGamesPerDay.get(`${dayKey}:${id1}`) || 0;
+      const t2DailyCount = teamGamesPerDay.get(`${dayKey}:${id2}`) || 0;
+
+      if (config.doubleHeaderOption === 'none') {
+        if (t1DailyCount >= 1 || t2DailyCount >= 1) continue;
+      } else if (config.doubleHeaderOption === 'sameTeam') {
+        if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
+        
+        // If it's a second game for T1, check if the opponent matches their first game
+        if (t1DailyCount === 1) {
+          const firstGame = finalGames.find(g => g.date === dayKey && (g.team1Id === id1 || g.team2Id === id1));
+          const firstOpponentId = firstGame?.team1Id === id1 ? firstGame?.team2Id : firstGame?.team1Id;
+          if (id2 !== firstOpponentId) continue;
+        }
+        // If it's a second game for T2, check if the opponent matches their first game
+        if (t2DailyCount === 1) {
+          const firstGame = finalGames.find(g => g.date === dayKey && (g.team1Id === id2 || g.team2Id === id2));
+          const firstOpponentId = firstGame?.team1Id === id2 ? firstGame?.team2Id : firstGame?.team1Id;
+          if (id1 !== firstOpponentId) continue;
+        }
+      } else if (config.doubleHeaderOption === 'differentTeams') {
+        if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
+      }
+
+      foundMatchupIndex = i;
+      break;
+    }
+
+    if (foundMatchupIndex !== -1) {
+      const match = pool.splice(foundMatchupIndex, 1)[0];
+      const id1 = match.t1Id || match.t1;
+      const id2 = match.t2Id || match.t2;
+
+      finalGames.push({
+        id: `tg_${Date.now()}_${finalGames.length}`,
+        team1: match.t1, team2: match.t2,
+        team1Id: match.t1Id || 'tbd', team2Id: match.t2Id || 'tbd',
+        score1: 0, score2: 0,
+        date: dayKey,
+        time: format(slot.time, 'h:mm a'),
+        location: slot.field,
+        isCompleted: false,
+        updatedAt: new Date().toISOString(),
+        round: match.round,
+        stage: match.round.includes('WB') ? 'WB' : match.round.includes('LB') ? 'LB' : 'Main'
+      });
+
+      todaysGames.push({ teamId: id1, time: timeKey });
+      todaysGames.push({ teamId: id2, time: timeKey });
+      teamGamesPerDay.set(`${dayKey}:${id1}`, (teamGamesPerDay.get(`${dayKey}:${id1}`) || 0) + 1);
+      teamGamesPerDay.set(`${dayKey}:${id2}`, (teamGamesPerDay.get(`${dayKey}:${id2}`) || 0) + 1);
+    }
   }
   
-  return games;
+  return finalGames;
 }

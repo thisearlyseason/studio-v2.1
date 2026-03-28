@@ -49,7 +49,7 @@ import {
   Save,
   Link as LinkIcon
 } from 'lucide-react';
-import jsPDF from 'jspdf';
+import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { collection, query, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -606,139 +606,119 @@ function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incident: Te
   if (!incident) return null;
 
   const handleDownloadPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    
-    // --- Header / Brand ---
-    doc.setFillColor(0, 0, 0);
-    doc.rect(0, 0, pageWidth, 40, 'F');
-    
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(24);
-    doc.setFont('helvetica', 'bold');
-    doc.text("SQUAD SAFETY REPORT", 20, 25);
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text("INSTITUTIONAL ARCHIVE RECORD", 20, 32);
-    
-    // Severity Label (Moved to header area to avoid overlap)
-    const severity = incident.severity || 'routine';
-    const sevColors: Record<string, [number, number, number]> = {
-      'critical': [220, 38, 38],
-      'severe': [234, 88, 12],
-      'moderate': [202, 138, 4],
-      'minor': [22, 163, 74],
-      'routine': [100, 100, 100]
-    };
-    const [r, g, b] = sevColors[severity.toLowerCase()] || [100, 100, 100];
-    
-    doc.setFillColor(r, g, b);
-    doc.roundedRect(pageWidth - 60, 18, 40, 10, 1, 1, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(8);
-    doc.text(severity.toUpperCase(), pageWidth - 40, 24.5, { align: 'center' });
+    generateBrandedPDF({
+      title: "SQUAD SAFETY REPORT",
+      subtitle: "INSTITUTIONAL ARCHIVE RECORD",
+      filename: `INCIDENT_REPORT_${incident.date}_${incident.title.replace(/\s+/g, '_')}`
+    }, (doc, startY) => {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // Severity Label
+      const severity = incident.severity || 'routine';
+      const sevColors: Record<string, [number, number, number]> = {
+        'critical': [220, 38, 38],
+        'severe': [234, 88, 12],
+        'moderate': [202, 138, 4],
+        'minor': [22, 163, 74],
+        'routine': [100, 100, 100]
+      };
+      const [r, g, b] = sevColors[severity.toLowerCase()] || [100, 100, 100];
+      
+      doc.setFillColor(r, g, b);
+      doc.roundedRect(pageWidth - 60, startY - 25, 40, 8, 1, 1, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(8);
+      doc.text(severity.toUpperCase(), pageWidth - 40, startY - 20, { align: 'center' });
 
-    // --- Content Section: Case Summary ---
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text("CASE SUMMARY: " + incident.title.toUpperCase(), 20, 55);
-    
-    doc.setDrawColor(230, 230, 230);
-    doc.line(20, 58, pageWidth - 20, 58);
-    
-    // --- Metadata Grid ---
-    doc.setFontSize(9);
-    doc.setTextColor(100, 100, 100);
-    doc.text("REPORT DATE", 20, 68);
-    doc.text("INCIDENT DATE", 75, 68);
-    doc.text("LOCATION", 130, 68);
-    
-    doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'bold');
-    doc.text(new Date().toLocaleDateString(), 20, 73);
-    doc.text(`${incident.date} ${incident.time || ''}`, 75, 73);
-    doc.text(incident.location || 'TBD', 130, 73);
-
-    // --- Technical Specs ---
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text("ENVIRONMENT", 20, 80);
-    doc.text("APPARATUS / EQUIPMENT", 75, 80);
-    doc.text("REPORTED TO", 130, 80);
-    
-    doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'normal');
-    doc.text(incident.weatherConditions || 'Recorded Environment', 20, 84);
-    doc.text(incident.equipmentInvolved || 'N/A', 75, 84);
-    doc.text(incident.reportedTo || 'Staff Registry', 130, 84);
-
-    
-    // --- Primary Narrative ---
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.text("FACTUAL NARRATIVE", 20, 90);
-    
-    doc.setFont('helvetica', 'normal');
-    const descLines = doc.splitTextToSize(incident.description, pageWidth - 40);
-    doc.text(descLines, 20, 98);
-    
-    let currentY = 98 + (descLines.length * 6);
-    
-    // Involved Personnel
-    if (incident.involvedPeople) {
-      currentY += 10;
+      // --- Content Section: Case Summary ---
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
-      doc.text("INVOLVED PERSONNEL", 20, currentY);
-      currentY += 8;
+      doc.text("CASE SUMMARY: " + incident.title.toUpperCase(), 20, startY);
+      
+      doc.setDrawColor(230, 230, 230);
+      doc.line(20, startY + 3, pageWidth - 20, startY + 3);
+      
+      // --- Metadata Grid ---
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      doc.text("REPORT DATE", 20, startY + 13);
+      doc.text("INCIDENT DATE", 75, startY + 13);
+      doc.text("LOCATION", 130, startY + 13);
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.text(new Date().toLocaleDateString(), 20, startY + 18);
+      doc.text(`${incident.date} ${incident.time || ''}`, 75, startY + 18);
+      doc.text(incident.location || 'TBD', 130, startY + 18);
+
+      // --- Technical Specs ---
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text("ENVIRONMENT", 20, startY + 25);
+      doc.text("APPARATUS / EQUIPMENT", 75, startY + 25);
+      doc.text("REPORTED TO", 130, startY + 25);
+      
+      doc.setTextColor(0, 0, 0);
       doc.setFont('helvetica', 'normal');
-      doc.text(incident.involvedPeople, 20, currentY);
-    }
-    
-    // Immediate Treatment
-    if (incident.treatmentProvided) {
+      doc.text(incident.weatherConditions || 'Recorded Environment', 20, startY + 29);
+      doc.text(incident.equipmentInvolved || 'N/A', 75, startY + 29);
+      doc.text(incident.reportedTo || 'Staff Registry', 130, startY + 29);
+
+      // --- Primary Narrative ---
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text("FACTUAL NARRATIVE", 20, startY + 40);
+      
+      doc.setFont('helvetica', 'normal');
+      const descLines = doc.splitTextToSize(incident.description, pageWidth - 40);
+      doc.text(descLines, 20, startY + 48);
+      
+      let currentY = startY + 48 + (descLines.length * 6);
+      
+      // Involved Personnel
+      if (incident.involvedPeople) {
+        currentY += 10;
+        doc.setFont('helvetica', 'bold');
+        doc.text("INVOLVED PERSONNEL", 20, currentY);
+        currentY += 8;
+        doc.setFont('helvetica', 'normal');
+        doc.text(incident.involvedPeople, 20, currentY);
+      }
+      
+      // Immediate Treatment
+      if (incident.treatmentProvided) {
+        currentY += 15;
+        doc.setFont('helvetica', 'bold');
+        doc.text("TREATMENT & IMMEDIATE PROTOCOL", 20, currentY);
+        currentY += 8;
+        doc.setFont('helvetica', 'normal');
+        const treatmentLines = doc.splitTextToSize(incident.treatmentProvided, pageWidth - 40);
+        doc.text(treatmentLines, 20, currentY);
+        currentY += (treatmentLines.length * 6);
+      }
+      
+      // Witnesses
       currentY += 15;
       doc.setFont('helvetica', 'bold');
-      doc.text("TREATMENT & IMMEDIATE PROTOCOL", 20, currentY);
+      doc.text("WITNESSES", 20, currentY);
       currentY += 8;
       doc.setFont('helvetica', 'normal');
-      const treatmentLines = doc.splitTextToSize(incident.treatmentProvided, pageWidth - 40);
-      doc.text(treatmentLines, 20, currentY);
-      currentY += (treatmentLines.length * 6);
-    }
-    
-    // Witnesses
-    currentY += 15;
-    doc.setFont('helvetica', 'bold');
-    doc.text("WITNESSES", 20, currentY);
-    currentY += 8;
-    doc.setFont('helvetica', 'normal');
-    doc.text(incident.witnesses || 'None recorded', 20, currentY);
-    
-    // Tactical Actions
-    currentY += 15;
-    doc.setFont('helvetica', 'bold');
-    doc.text("FOLLOW-UP ACTIONS TAKEN", 20, currentY);
-    currentY += 8;
-    doc.setFont('helvetica', 'normal');
-    const actionLines = doc.splitTextToSize(incident.actionsTaken || 'Standard safety protocols applied.', pageWidth - 40);
-    doc.text(actionLines, 20, currentY);
-    currentY += (actionLines.length * 6);
-    
-    // --- Footer Authentication ---
-    currentY = doc.internal.pageSize.getHeight() - 40;
-    doc.setDrawColor(200, 200, 200);
-    doc.line(20, currentY, pageWidth - 20, currentY);
-    
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text(`Official Document of ${activeTeam?.name || 'The Squad Hub'}`, 20, currentY + 10);
-    doc.text(`Verification ID: ${incident.id}`, 20, currentY + 15);
-    doc.text("CONFIDENTIAL | FOR AUTHORIZED PERSONNEL ONLY", pageWidth - 20, currentY + 10, { align: 'right' });
-    
-    doc.save(`INCIDENT_REPORT_${incident.date}_${incident.title.replace(/\s+/g, '_')}.pdf`);
+      doc.text(incident.witnesses || 'None recorded', 20, currentY);
+      
+      // Tactical Actions
+      currentY += 15;
+      doc.setFont('helvetica', 'bold');
+      doc.text("FOLLOW-UP ACTIONS TAKEN", 20, currentY);
+      currentY += 8;
+      doc.setFont('helvetica', 'normal');
+      const actionLines = doc.splitTextToSize(incident.actionsTaken || 'Standard safety protocols applied.', pageWidth - 40);
+      doc.text(actionLines, 20, currentY);
+      currentY += (actionLines.length * 6);
+
+      return currentY + 20;
+    });
   };
 
   return (
@@ -884,25 +864,72 @@ function SafetyHub() {
 
   const exportLedger = useCallback(() => {
     if (!incidents || incidents.length === 0) return;
-    const headers = ["Title", "Date", "Location", "Emergency Services", "Description", "Witnesses", "Actions Taken"];
-    const rows = incidents.map(inc => [
-      inc.title,
-      inc.date,
-      inc.location,
-      inc.emergencyServicesCalled ? "YES" : "NO",
-      inc.description.replace(/,/g, ';'),
-      (inc.witnesses || "").replace(/,/g, ';'),
-      (inc.actionsTaken || "").replace(/,/g, ';')
-    ]);
-    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].map(e => e.join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `SAFETY_LEDGER_${activeTeam?.name}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, [incidents, activeTeam?.name]);
+    
+    generateBrandedPDF({
+      title: "SQUAD SAFETY LEDGER",
+      subtitle: "OFFICIAL INSTITUTIONAL RISK LOG",
+      filename: `SAFETY_LEDGER_${activeTeam?.name.replace(/\s+/g, '_')}`
+    }, (doc, startY) => {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // --- Document Metadata ---
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Operational Summary: ${activeTeam?.name || 'Authorized Squad'}`, 20, startY);
+      
+      doc.setFontSize(9);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`GENERATE DATE: ${new Date().toLocaleDateString()}`, 20, startY + 7);
+      doc.text(`LOG ENTRIES: ${incidents.length}`, pageWidth - 20, startY + 7, { align: 'right' });
+      
+      doc.setDrawColor(230, 230, 230);
+      doc.line(20, startY + 12, pageWidth - 20, startY + 12);
+
+      // --- Table Header ---
+      doc.setFillColor(245, 245, 245);
+      doc.rect(20, startY + 20, pageWidth - 40, 10, 'F');
+      doc.setTextColor(100, 100, 100);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.text("DATE", 25, startY + 26.5);
+      doc.text("INCIDENT TITLE", 50, startY + 26.5);
+      doc.text("LOCATION", 120, startY + 26.5);
+      doc.text("SEVERITY", pageWidth - 25, startY + 26.5, { align: 'right' });
+
+      // --- Table Content ---
+      let y = startY + 38;
+      doc.setTextColor(0, 0, 0);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+
+      incidents.forEach((inc) => {
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+        
+        doc.setFont("helvetica", "bold");
+        doc.text(inc.date, 25, y);
+        doc.text(inc.title.toUpperCase(), 50, y);
+        doc.setFont("helvetica", "normal");
+        doc.text(inc.location || 'TBD', 120, y);
+        
+        const sev = (inc.severity || 'minor').toUpperCase();
+        doc.text(sev, pageWidth - 25, y, { align: 'right' });
+        
+        // Divider
+        doc.setDrawColor(245, 245, 245);
+        doc.line(25, y + 4, pageWidth - 25, y + 4);
+        
+        y += 12;
+      });
+
+      return y;
+    });
+    
+    toast({ title: "Strategic Ledger Exported", description: "Professional PDF generated." });
+  }, [incidents, activeTeam]);
 
   if (isLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>;
 
@@ -1098,8 +1125,14 @@ function SafetyHub() {
   );
 }
 
+import { AccessRestricted } from '@/components/layout/AccessRestricted';
+
 export default function CoachesCornerPage() {
-  const { activeTeam, isStaff, createTeamDocument, updateTeamDocument, db, members, createAlert } = useTeam();
+  const { activeTeam, isStaff, isPro, createTeamDocument, updateTeamDocument, db, members, createAlert } = useTeam();
+
+  if (!isStaff) return <AccessRestricted type="role" title="Coaches Hub Restricted" description="This tactical vault is reserved for Coaching Staff and Team Administrators." />;
+  if (!isPro) return <AccessRestricted type="tier" />;
+
   const [activeTab, setActiveTab] = useState('recruiting');
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [editingWaiver, setEditingWaiver] = useState<TeamDocument | null>(null);
@@ -1353,55 +1386,47 @@ function WaiverArchive() {
               </div>
             </div>
             <Button variant="outline" className="w-full h-11 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-sm" onClick={() => {
-               const doc = new jsPDF();
-               
-               // PDF Branded Header
-               doc.setFillColor(30, 30, 30);
-               doc.rect(0, 0, 210, 40, 'F');
-               doc.setTextColor(255, 255, 255);
-               doc.setFont("helvetica", "bold");
-               doc.setFontSize(20);
-               doc.text("WAIVER COMPLIANCE RECEIPT", 20, 25);
-               doc.setFontSize(8);
-               doc.text("OFFICIAL INSTITUTIONAL ARCHIVE RECORD", 20, 32);
-
-               // Main Info
-               doc.setTextColor(0, 0, 0);
-               doc.setFontSize(14);
-               doc.text("Protocol Metadata", 20, 55);
-               
-               doc.setFontSize(10);
-               doc.text(`Title: ${w.title}`, 20, 65);
-               doc.text(`Waiver Type: ${w.type}`, 20, 72);
-               doc.text(`Signer: ${w.signer}`, 20, 79);
-               doc.text(`Timestamp: ${w.signedAt ? format(new Date(w.signedAt), 'PPP p') : 'TBD'}`, 20, 86);
-               
-               doc.setDrawColor(200, 200, 200);
-               doc.line(20, 95, 190, 95);
-
-               // Answers Section
-               doc.setFontSize(12);
-               doc.text("Execution Responses", 20, 105);
-               doc.setFontSize(9);
-               
-               let yPos = 115;
-               Object.entries(w.answers || {}).forEach(([k, v]) => {
-                 const label = `${k}:`;
-                 const val = String(v);
+               generateBrandedPDF({
+                 title: "WAIVER COMPLIANCE RECEIPT",
+                 subtitle: "OFFICIAL INSTITUTIONAL ARCHIVE RECORD",
+                 filename: `waiver_archive_${w.id}`
+               }, (doc, startY) => {
+                 // Main Info
+                 doc.setTextColor(0, 0, 0);
+                 doc.setFontSize(14);
                  doc.setFont("helvetica", "bold");
-                 doc.text(label, 20, yPos);
+                 doc.text("Protocol Metadata", 20, startY);
+                 
+                 doc.setFontSize(10);
                  doc.setFont("helvetica", "normal");
-                 doc.text(val, 60, yPos);
-                 yPos += 7;
-                 if (yPos > 270) { doc.addPage(); yPos = 20; }
+                 doc.text(`Title: ${w.title}`, 20, startY + 10);
+                 doc.text(`Waiver Type: ${w.type}`, 20, startY + 17);
+                 doc.text(`Signer: ${w.signer}`, 20, startY + 24);
+                 doc.text(`Timestamp: ${w.signedAt ? format(new Date(w.signedAt), 'PPP p') : 'TBD'}`, 20, startY + 31);
+                 
+                 doc.setDrawColor(200, 200, 200);
+                 doc.line(20, startY + 40, 190, startY + 40);
+
+                 // Answers Section
+                 doc.setFontSize(12);
+                 doc.setFont("helvetica", "bold");
+                 doc.text("Execution Responses", 20, startY + 50);
+                 doc.setFontSize(9);
+                 
+                 let yPos = startY + 60;
+                 Object.entries(w.answers || {}).forEach(([k, v]) => {
+                   const label = `${k}:`;
+                   const val = String(v);
+                   doc.setFont("helvetica", "bold");
+                   doc.text(label, 20, yPos);
+                   doc.setFont("helvetica", "normal");
+                   doc.text(val, 60, yPos);
+                   yPos += 7;
+                   if (yPos > 270) { doc.addPage(); yPos = 20; }
+                 });
+
+                 return yPos + 10;
                });
-
-               // Footer
-               doc.setFontSize(7);
-               doc.setTextColor(150, 150, 150);
-               doc.text("This document serves as a legally binding verification of digital execution. Produced by Studio Vault Systems.", 20, 285);
-
-               doc.save(`waiver_archive_${w.id}.pdf`);
                toast({ title: "Audit Log Exported" });
             }}>Download PDF Audit <Download className="ml-2 h-3 w-3" /></Button>
           </Card>

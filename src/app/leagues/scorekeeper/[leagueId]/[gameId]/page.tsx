@@ -33,6 +33,7 @@ export default function PublicLeagueScorekeeperEntryPage() {
   const [score1, setScore1] = useState<string>(game?.score1?.toString() || '');
   const [score2, setScore2] = useState<string>(game?.score2?.toString() || '');
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+  const [pin, setPin] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   
@@ -47,10 +48,10 @@ export default function PublicLeagueScorekeeperEntryPage() {
     setIsSubmitting(true);
     const isTeam1 = selectedTeam === game.team1;
     try {
-      await submitLeagueMatchScore(leagueId as string, gameId as string, isTeam1, parseInt(score1), parseInt(score2));
+      await submitLeagueMatchScore(leagueId as string, gameId as string, isTeam1, parseInt(score1), parseInt(score2), pin);
       setIsSubmitted(true);
-    } catch (err) {
-      toast({ title: "Submission Error", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Submission Error", description: err.message || "Invalid credentials.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -105,14 +106,30 @@ export default function PublicLeagueScorekeeperEntryPage() {
               </div>
             </div>
             {selectedTeam && (
-              <div className="grid grid-cols-2 gap-8 animate-in slide-in-from-top-4">
-                <div className="space-y-3"><Label className="text-[10px] font-black uppercase">{game.team1}</Label><Input type="number" value={score1} onChange={e => setScore1(e.target.value)} className="h-16 text-center font-black text-3xl rounded-2xl border-2" /></div>
-                <div className="space-y-3"><Label className="text-[10px] font-black uppercase">{game.team2}</Label><Input type="number" value={score2} onChange={e => setScore2(e.target.value)} className="h-16 text-center font-black text-3xl rounded-2xl border-2" /></div>
+              <div className="space-y-8 animate-in slide-in-from-top-4">
+                <div className="grid grid-cols-2 gap-8">
+                  <div className="space-y-3"><Label className="text-[10px] font-black uppercase">{game.team1}</Label><Input type="number" value={score1} onChange={e => setScore1(e.target.value)} className="h-16 text-center font-black text-3xl rounded-2xl border-2" /></div>
+                  <div className="space-y-3"><Label className="text-[10px] font-black uppercase">{game.team2}</Label><Input type="number" value={score2} onChange={e => setScore2(e.target.value)} className="h-16 text-center font-black text-3xl rounded-2xl border-2" /></div>
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                    <Lock className="h-3 w-3" /> Institutional Entry PIN
+                  </Label>
+                  <Input 
+                    type="password" 
+                    placeholder="4-8 Digit Key" 
+                    value={pin}
+                    onChange={e => setPin(e.target.value)}
+                    className="h-16 text-center font-black text-2xl tracking-[0.5em] rounded-2xl border-2"
+                  />
+                  <p className="text-[8px] font-bold text-muted-foreground uppercase text-center opacity-40">Contact your league organizer for the operations key.</p>
+                </div>
               </div>
             )}
           </CardContent>
           <CardFooter className="p-8 lg:p-10 pt-0 flex flex-col gap-4">
-            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" disabled={!selectedTeam || !score1 || !score2 || isSubmitting} onClick={handleSubmit}>{isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Score Result"}</Button>
+            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" disabled={!selectedTeam || !score1 || !score2 || !pin || isSubmitting} onClick={handleSubmit}>{isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Score Result"}</Button>
             
             <div className="flex items-center gap-4 w-full">
               <div className="h-px bg-muted flex-1" />

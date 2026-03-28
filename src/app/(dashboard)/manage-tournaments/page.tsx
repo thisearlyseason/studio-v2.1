@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
@@ -38,7 +37,9 @@ import {
   FileText,
   Play,
   Database,
-  UserPlus
+  UserPlus,
+  AlertCircle,
+  Wallet
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -66,16 +67,18 @@ import { generateTournamentSchedule, DailyWindow, TeamIdentity } from '@/lib/sch
 import { ScrollArea } from '@/components/ui/scroll-area';
 import html2canvas from 'html2canvas';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import TournamentBracket from '@/components/TournamentBracket';
 
 interface TournamentTeam extends TeamIdentity {
   coach?: string;
   email?: string;
   source?: 'manual' | 'league' | 'pipeline';
+  rosterLimit?: number;
 }
 
 function calculateTournamentStandings(teams: TournamentTeam[], games: TournamentGame[]) {
   const standings = teams.reduce((acc, team) => {
-    acc[team.name] = { name: team.name, wins: 0, losses: 0, ties: 0, points: 0 };
+    acc[team.name] = { name: team.name, wins: 0, losses: 0, ties: 0, points: 0, netScore: 0 };
     return acc;
   }, {} as Record<string, any>);
   
@@ -84,75 +87,23 @@ function calculateTournamentStandings(teams: TournamentTeam[], games: Tournament
     const t1 = game.team1; const t2 = game.team2;
     if (!standings[t1] || !standings[t2]) return;
     
-    if (game.score1 > game.score2) { standings[t1].wins += 1; standings[t1].points += 1; standings[t2].losses += 1; standings[t2].points -= 1; }
-    else if (game.score2 > game.score1) { standings[t2].wins += 1; standings[t2].points += 1; standings[t1].losses += 1; standings[t1].points -= 1; }
-    else { standings[t1].ties += 1; standings[t2].ties += 1; }
+    standings[t1].netScore += (game.score1 - game.score2);
+    standings[t2].netScore += (game.score2 - game.score1);
+
+    if (game.score1 > game.score2) { 
+      standings[t1].wins += 1; standings[t1].points += 3; 
+      standings[t2].losses += 1; 
+    }
+    else if (game.score2 > game.score1) { 
+      standings[t2].wins += 1; standings[t2].points += 3; 
+      standings[t1].losses += 1; 
+    }
+    else { 
+      standings[t1].ties += 1; standings[t1].points += 1;
+      standings[t2].ties += 1; standings[t2].points += 1;
+    }
   });
-  return Object.values(standings).sort((a, b) => b.points - a.points || b.wins - a.wins);
-}
-
-function BracketVisualizer({ games }: { games: TournamentGame[] }) {
-  const bracketRef = useRef<HTMLDivElement>(null);
-
-  const handleDownload = async () => {
-    if (!bracketRef.current) return;
-    const canvas = await html2canvas(bracketRef.current, { backgroundColor: '#000' });
-    const link = document.createElement('a');
-    link.download = 'tournament_bracket.png';
-    link.href = canvas.toDataURL();
-    link.click();
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-end">
-        <Button size="sm" variant="outline" className="rounded-xl font-black text-[10px] uppercase border-black text-black hover:bg-black hover:text-white" onClick={handleDownload}>
-          <Download className="h-3 w-3 mr-2" /> Export Bracket
-        </Button>
-      </div>
-      <div ref={bracketRef} className="p-12 bg-black rounded-[3rem] border-2 border-primary/20 overflow-x-auto min-h-[600px] flex items-center justify-center text-white shadow-2xl relative">
-        <div className="absolute inset-0 bg-primary/5 opacity-50" />
-        <div className="flex gap-16 items-center relative z-10">
-          <div className="flex flex-col gap-12">
-            <p className="text-[10px] font-black uppercase text-center text-primary/40 mb-2 tracking-[0.2em]">Pool Stage</p>
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className="w-56 h-20 bg-white/5 rounded-2xl border-2 border-white/10 flex flex-col justify-center px-5 shadow-lg group hover:border-primary/40 transition-all">
-                <div className="flex justify-between items-center mb-2"><div className="h-2 w-24 bg-white/20 rounded-full group-hover:bg-primary/20" /><div className="h-2 w-4 bg-white/10 rounded-full" /></div>
-                <div className="flex justify-between items-center"><div className="h-2 w-16 bg-white/10 rounded-full" /><div className="h-2 w-4 bg-white/10 rounded-full" /></div>
-              </div>
-            ))}
-          </div>
-          <ArrowRight className="h-8 w-8 text-primary opacity-20" />
-          <div className="flex flex-col gap-32">
-            <p className="text-[10px] font-black uppercase text-center text-primary/40 mb-2 tracking-[0.2em]">Semi Finals</p>
-            {[1, 2].map(i => (
-              <div key={i} className="w-60 h-24 bg-primary/5 rounded-[2rem] border-2 border-primary/20 flex flex-col justify-center px-6 shadow-xl relative group hover:ring-2 hover:ring-primary/20 transition-all">
-                <div className="absolute -left-2 top-1/2 -translate-y-1/2 h-8 w-1 bg-primary rounded-full" />
-                <div className="flex justify-between items-center mb-3"><span className="text-xs font-black uppercase text-white/40 group-hover:text-white/60 transition-colors">TBD</span><span className="text-xs font-bold text-primary">0</span></div>
-                <div className="flex justify-between items-center"><span className="text-xs font-black uppercase text-white/40 group-hover:text-white/60 transition-colors">TBD</span><span className="text-xs font-bold text-primary">0</span></div>
-              </div>
-            ))}
-          </div>
-          <ArrowRight className="h-10 w-10 text-primary opacity-40 animate-pulse" />
-          <div className="flex flex-col">
-            <p className="text-[10px] font-black uppercase text-center text-primary mb-6 tracking-widest">Championship Final</p>
-            <div className="w-72 h-40 bg-white text-black rounded-[2.5rem] border-4 border-primary flex flex-col justify-center items-center gap-4 shadow-2xl relative group overflow-hidden">
-              <div className="absolute inset-0 bg-primary opacity-0 group-hover:opacity-5 transition-opacity" />
-              <Trophy className="absolute -top-8 h-16 w-16 text-amber-500 animate-bounce" />
-              <div className="text-center pt-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-2">Finalist Matchup</p>
-                <div className="flex items-center gap-4">
-                  <span className="font-black text-xl uppercase opacity-20 tracking-tighter">TBD</span>
-                  <span className="font-black text-sm opacity-10">VS</span>
-                  <span className="font-black text-xl uppercase opacity-20 tracking-tighter">TBD</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return Object.values(standings).sort((a, b) => b.points - a.points || b.netScore - a.netScore || b.wins - a.wins);
 }
 
 function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { facilityId: string, selectedFields: string[], onToggleField: (name: string) => void }) {
@@ -201,10 +152,12 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
     gameLength: '60',
     breakLength: '15',
     gamesPerTeam: '3',
+    doubleHeaderOption: 'none' as 'none' | 'sameTeam' | 'differentTeams',
     dailyWindows: [] as DailyWindow[],
     selectedFields: [] as string[],
     manualVenue: '',
     waiverId: 'default_tournament',
+    registration_cost: '0',
     teams: [] as TournamentTeam[]
   });
 
@@ -235,15 +188,31 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
 
   const initDailyWindows = () => {
     if (!form.startDate || !form.endDate) return;
-    const days = eachDayOfInterval({ start: new Date(form.startDate), end: new Date(form.endDate) });
-    setForm(p => ({
-      ...p,
-      dailyWindows: days.map(d => ({
-        date: format(d, 'yyyy-MM-dd'),
-        startTime: '08:00',
-        endTime: '20:00'
-      }))
-    }));
+    
+    // Validate format YYYY-MM-DD
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(form.endDate)) return;
+
+    try {
+      const [sy, sm, sd] = form.startDate.split('-').map(Number);
+      const [ey, em, ed] = form.endDate.split('-').map(Number);
+      
+      const startD = new Date(sy, sm - 1, sd, 12, 0, 0);
+      const endD = new Date(ey, em - 1, ed, 12, 0, 0);
+      
+      if (isNaN(startD.getTime()) || isNaN(endD.getTime())) return;
+
+      const days = eachDayOfInterval({ start: startD, end: endD });
+      setForm(p => ({
+        ...p,
+        dailyWindows: days.map(d => ({
+          date: format(d, 'yyyy-MM-dd'),
+          startTime: '08:00',
+          endTime: '20:00'
+        }))
+      }));
+    } catch (e) {
+      console.error("Failed to init daily windows:", e);
+    }
   };
 
   const handleNext = () => {
@@ -282,6 +251,17 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
     if (!form.title || form.teams.length < 2) return;
     setIsProcessing(true);
     
+    const [sy, sm, sd] = form.startDate.split('-').map(Number);
+    const [ey, em, ed] = form.endDate.split('-').map(Number);
+    const startD = new Date(sy, sm - 1, sd, 12, 0, 0);
+    const endD = new Date(ey, em - 1, ed, 12, 0, 0);
+
+    if (isNaN(startD.getTime()) || isNaN(endD.getTime())) {
+      toast({ title: "Timeline Corrupted", description: "Deployment failed due to invalid dates. Please re-verify the series schedule.", variant: "destructive" });
+      setIsProcessing(false);
+      return;
+    }
+
     const schedule = generateTournamentSchedule({
       teams: form.teams,
       fields: form.selectedFields.length > 0 ? form.selectedFields : [form.manualVenue || form.location],
@@ -292,14 +272,14 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
       gameLength: parseInt(form.gameLength),
       breakLength: parseInt(form.breakLength),
       dailyWindows: form.dailyWindows,
-      tournamentType: form.tournamentType,
+      doubleHeaderOption: form.doubleHeaderOption,
       gamesPerTeam: parseInt(form.gamesPerTeam)
     });
 
     const success = await addEvent({
       title: form.title,
-      date: new Date(form.startDate).toISOString(),
-      endDate: new Date(form.endDate).toISOString(),
+      date: startD.toISOString(),
+      endDate: endD.toISOString(),
       startTime: form.dailyWindows[0]?.startTime || '08:00',
       location: form.location,
       description: form.description,
@@ -309,6 +289,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
       tournamentTeams: form.teams.map(t => t.name),
       tournamentGames: schedule,
       waiverId: form.waiverId,
+      registration_cost: form.registration_cost,
       teamWaiverText: documents?.find(d => d.id === form.waiverId)?.content || 'Standard Tournament Agreement.'
     });
 
@@ -371,9 +352,26 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                           <Input placeholder="Stadium or City..." value={form.location} onChange={e => setForm({...form, location: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
                         </div>
                         <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase ml-1">Series Entry Fee ($)</Label>
+                          <Input type="number" value={form.registration_cost} onChange={e => setForm({...form, registration_cost: e.target.value})} className="h-12 border-2 rounded-xl font-black text-primary shadow-inner" />
+                        </div>
+                        <div className="space-y-2">
                           <Label className="text-[10px] font-black uppercase ml-1">Games/Team (Min)</Label>
                           <Input type="number" value={form.gamesPerTeam} onChange={e => setForm({...form, gamesPerTeam: e.target.value})} className="h-12 border-2 rounded-xl font-black text-primary" />
                         </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase ml-1">Initial Double Header Mode</Label>
+                        <Select value={form.doubleHeaderOption} onValueChange={(v: any) => setForm({...form, doubleHeaderOption: v})}>
+                          <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            <SelectItem value="none" className="font-bold">None (1 Game/Day)</SelectItem>
+                            <SelectItem value="sameTeam" className="font-bold">Same Opponent (Swap)</SelectItem>
+                            <SelectItem value="differentTeams" className="font-bold">Different Opponents</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   </section>
@@ -425,15 +423,27 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                   <section className="space-y-6">
                     <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Daily Coordination Windows</h3>
                     <div className="grid grid-cols-1 gap-4">
-                      {form.dailyWindows.map((win, idx) => (
-                        <div key={win.date} className="bg-muted/20 p-6 rounded-3xl flex items-center justify-between border">
-                          <p className="text-sm font-black uppercase tracking-widest min-w-[150px]">{format(new Date(win.date), 'EEEE, MMM d')}</p>
-                          <div className="flex items-center gap-6">
-                            <div className="space-y-1"><Label className="text-[8px] font-black uppercase opacity-40">Start</Label><Input type="time" value={win.startTime} onChange={e => { const n = [...form.dailyWindows]; n[idx].startTime = e.target.value; setForm({...form, dailyWindows: n}); }} className="h-10 bg-white font-bold" /></div>
-                            <div className="space-y-1"><Label className="text-[8px] font-black uppercase opacity-40">End</Label><Input type="time" value={win.endTime} onChange={e => { const n = [...form.dailyWindows]; n[idx].endTime = e.target.value; setForm({...form, dailyWindows: n}); }} className="h-10 bg-white font-bold" /></div>
+                      {form.dailyWindows.map((win, idx) => {
+                        let dateLabel = "Invalid Date";
+                        try {
+                          const dateObj = new Date(win.date + 'T12:00:00');
+                          if (!isNaN(dateObj.getTime())) {
+                            dateLabel = format(dateObj, 'EEEE, MMM d');
+                          }
+                        } catch (e) {
+                          console.error("Date formatting error in wizard:", e);
+                        }
+                        
+                        return (
+                          <div key={win.date} className="bg-muted/20 p-6 rounded-3xl flex items-center justify-between border">
+                            <p className="text-sm font-black uppercase tracking-widest min-w-[150px]">{dateLabel}</p>
+                            <div className="flex items-center gap-6">
+                              <div className="space-y-1"><Label className="text-[8px] font-black uppercase opacity-40">Start</Label><Input type="time" value={win.startTime} onChange={e => { const n = [...form.dailyWindows]; n[idx].startTime = e.target.value; setForm({...form, dailyWindows: n}); }} className="h-10 bg-white font-bold" /></div>
+                              <div className="space-y-1"><Label className="text-[8px] font-black uppercase opacity-40">End</Label><Input type="time" value={win.endTime} onChange={e => { const n = [...form.dailyWindows]; n[idx].endTime = e.target.value; setForm({...form, dailyWindows: n}); }} className="h-10 bg-white font-bold" /></div>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </section>
 
@@ -479,28 +489,43 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                       <div className="space-y-6">
                         <div className="space-y-2">
                           <Label className="text-[10px] font-black uppercase ml-1">Competition Protocol</Label>
-                          <Select value={form.tournamentType} onValueChange={(v: any) => setForm({...form, tournamentType: v})}>
-                            <SelectTrigger className="h-14 rounded-2xl border-2 font-black"><SelectValue /></SelectTrigger>
+                          <select 
+                            value={form.tournamentType} 
+                            onChange={(e) => setForm({...form, tournamentType: e.target.value as any})}
+                            className="w-full h-14 rounded-2xl border-2 font-black px-4 bg-white"
+                          >
+                            <option value="round_robin">Round Robin (Pool Play)</option>
+                            <option value="single_elimination">Single Elimination</option>
+                            <option value="double_elimination">Double Elimination</option>
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase ml-1">Double Header Strategy</Label>
+                          <Select value={form.doubleHeaderOption} onValueChange={(v: any) => setForm({...form, doubleHeaderOption: v})}>
+                            <SelectTrigger className="w-full h-14 rounded-2xl border-2 font-black px-4 bg-white">
+                              <SelectValue />
+                            </SelectTrigger>
                             <SelectContent className="rounded-xl">
-                              <SelectItem value="round_robin" className="font-bold">Round Robin (Pool Play)</SelectItem>
-                              <SelectItem value="single_elimination" className="font-bold">Single Elimination</SelectItem>
-                              <SelectItem value="double_elimination" className="font-bold">Double Elimination</SelectItem>
+                              <SelectItem value="none" className="font-bold">None</SelectItem>
+                              <SelectItem value="sameTeam" className="font-bold">Same Opponent</SelectItem>
+                              <SelectItem value="differentTeams" className="font-bold">Different Opponents</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-black uppercase ml-1">Compliance Waiver</Label>
-                          <Select value={form.waiverId} onValueChange={(v) => setForm({...form, waiverId: v})}>
-                            <SelectTrigger className="h-14 rounded-2xl border-2 font-black"><SelectValue placeholder="Select Institutional Protocol..." /></SelectTrigger>
-                            <SelectContent className="rounded-xl">
-                              {documents?.map(doc => (
-                                <SelectItem key={doc.id} value={doc.id} className="font-bold">{doc.title}</SelectItem>
-                              ))}
-                              {(!documents || documents.length === 0) && (
-                                <SelectItem value="default_tournament" className="font-bold">Standard Tournament Waiver</SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
+                          <select 
+                            value={form.waiverId} 
+                            onChange={(e) => setForm({...form, waiverId: e.target.value})}
+                            className="w-full h-14 rounded-2xl border-2 font-black px-4 bg-white"
+                          >
+                            {documents?.map(doc => (
+                              <option key={doc.id} value={doc.id}>{doc.title}</option>
+                            ))}
+                            {(!documents || documents.length === 0) && (
+                              <option value="default_tournament">Standard Tournament Waiver</option>
+                            )}
+                          </select>
                         </div>
                       </div>
 
@@ -525,7 +550,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
           <footer className="pt-8 border-t flex gap-4 shrink-0">
             {step > 1 && <Button variant="outline" className="h-16 px-10 rounded-2xl border-2 font-black uppercase text-xs" onClick={() => setStep(step - 1)}>Modify Step {step - 1}</Button>}
             {step < 4 ? (
-              <Button className="flex-1 h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleNext} disabled={step === 1 && !form.title}>
+              <Button className="flex-1 h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleNext} disabled={step === 1 && (!form.title || !form.startDate || !form.endDate)}>
                 Continue Architecture <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             ) : (
@@ -543,8 +568,54 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
 
 function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () => void }) {
   const { isStaff, activeTeam, db } = useTeam();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('itinerary');
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: event.title || '',
+    eventType: event.eventType || '',
+    description: event.description || '',
+    startDate: event.date || '',
+    endDate: event.endDate || '',
+    ages: event.ages || '',
+    contactEmail: event.contactEmail || '',
+    contactPhone: event.contactPhone || '',
+    registrationCost: event.registrationCost || '',
+    twitter: event.socialLinks?.twitter || '',
+    instagram: event.socialLinks?.instagram || '',
+    paymentInstructions: event.paymentInstructions || ''
+  });
+
+  const handleSaveTournament = async () => {
+    if (!db || !activeTeam) return;
+    setIsProcessing(true);
+    try {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
+        title: editForm.title,
+        eventType: editForm.eventType,
+        description: editForm.description,
+        date: editForm.startDate,
+        endDate: editForm.endDate,
+        ages: editForm.ages,
+        contactEmail: editForm.contactEmail,
+        contactPhone: editForm.contactPhone,
+        registrationCost: editForm.registrationCost,
+        paymentInstructions: editForm.paymentInstructions,
+        socialLinks: {
+          twitter: editForm.twitter,
+          instagram: editForm.instagram
+        }
+      });
+      setIsEditOpen(false);
+      toast({ title: "Tournament Profile Updated" });
+    } catch (e: any) {
+      toast({ title: "Update Failed", description: e.message, variant: 'destructive' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const standings = useMemo(() => calculateTournamentStandings(event.tournamentTeamsData || [], event.tournamentGames || []), [event]);
 
@@ -558,6 +629,22 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
             <h1 className="text-2xl md:text-4xl font-black uppercase tracking-tight mt-1">{event.title}</h1>
           </div>
         </div>
+        {isStaff && (
+          <div className="flex flex-wrap gap-2 justify-end">
+            <Button 
+              onClick={() => {
+                navigator.clipboard.writeText(`${baseUrl}/register/tournament/${activeTeam?.id}/${event.id}?protocol=team_config`);
+                toast({ title: "Public Link Copied", description: "The tourney registration link is ready to share." });
+              }} 
+              variant="outline" 
+              size="icon" 
+              className="h-12 w-12 rounded-xl border-2 font-black transition-all"
+            >
+              <Share2 className="h-5 w-5" />
+            </Button>
+            <Button onClick={() => setIsEditOpen(true)} variant="outline" size="icon" className="h-12 w-12 rounded-xl border-2 font-black transition-all"><Settings className="h-5 w-5" /></Button>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
@@ -583,33 +670,52 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                 <TabsTrigger value="itinerary" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Matches</TabsTrigger>
                 <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">Bracket</TabsTrigger>
                 <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">Portals</TabsTrigger>
+                <TabsTrigger value="protocol" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-orange-600 data-[state=active]:text-white transition-all">Protocol</TabsTrigger>
                 <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Compliance</TabsTrigger>
               </TabsList>
             </div>
             <div className="flex-1 p-8 lg:p-10">
               <TabsContent value="itinerary" className="mt-0 space-y-4">
-                {event.tournamentGames?.map((game) => (
-                  <Card key={game.id} className="rounded-2xl border shadow-sm p-6 flex items-center justify-between group bg-white hover:shadow-md transition-all">
-                    <div className="flex items-center gap-6 flex-1">
-                      <div className="w-12 h-12 rounded-xl bg-muted/30 flex flex-col items-center justify-center shrink-0 border"><Clock className="h-4 w-4 text-primary" /><span className="text-[8px] font-black uppercase">{game.time}</span></div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-4 justify-center">
-                          <span className="font-black text-sm uppercase truncate text-right flex-1">{game.team1}</span>
-                          <span className={cn("text-xl font-black", game.score1 > game.score2 ? "text-primary" : "text-foreground")}>{game.score1}</span>
-                          <span className="opacity-20 text-[10px] font-black">VS</span>
-                          <span className={cn("text-xl font-black", game.score2 > game.score1 ? "text-primary" : "text-foreground")}>{game.score2}</span>
-                          <span className="font-black text-sm uppercase truncate flex-1">{game.team2}</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {event.tournamentGames?.map((game) => (
+                    <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary">{game.time}</Badge>
+                          {game.round && <Badge className="bg-muted text-foreground border-none text-[7px] font-black uppercase px-2 h-4">{game.round}</Badge>}
                         </div>
-                        <div className="text-center mt-2">
-                          <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em]">{game.location}</span>
+                        <div className="flex items-center gap-2">
+                          {game.isCompleted && <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2 h-5">FINAL</Badge>}
+                          {game.isDisputed && <Badge className="bg-red-600 text-white border-none text-[8px] font-black uppercase px-2 h-5 animate-pulse shadow-lg shadow-red-600/20">DISPUTED</Badge>}
+                        </div>
+                      <div className="grid grid-cols-7 items-center gap-4 text-center">
+                        <div className="col-span-3 min-w-0">
+                          <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team1}</p>
+                          <p className={cn("text-3xl font-black", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")}>{game.score1}</p>
+                        </div>
+                        <div className="col-span-1 opacity-20 font-black text-[10px]">VS</div>
+                        <div className="col-span-3 min-w-0">
+                          <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team2}</p>
+                          <p className={cn("text-3xl font-black", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")}>{game.score2}</p>
                         </div>
                       </div>
+                      {game.location && (
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase text-center flex items-center justify-center gap-1.5 pt-2 border-t border-muted">
+                          <MapPin className="h-3 w-3 opacity-40" /> {game.location}
+                        </p>
+                      )}
+                    </Card>
+                  ))}
+                  {(!event.tournamentGames || event.tournamentGames.length === 0) && (
+                    <div className="col-span-full py-20 text-center bg-muted/10 rounded-3xl border-2 border-dashed opacity-40">
+                      <Clock className="h-12 w-12 mx-auto mb-4" />
+                      <p className="text-sm font-black uppercase tracking-widest">No matches scheduled.</p>
                     </div>
-                  </Card>
-                ))}
-                {(!event.tournamentGames || event.tournamentGames.length === 0) && <div className="text-center py-20 opacity-30"><Clock className="h-12 w-12 mx-auto mb-4" /><p className="text-sm font-black uppercase">No matches scheduled.</p></div>}
+                  )}
+                </div>
               </TabsContent>
-              <TabsContent value="bracket" className="mt-0"><BracketVisualizer games={event.tournamentGames || []} /></TabsContent>
+              <TabsContent value="bracket" className="mt-0">
+                <TournamentBracket games={event.tournamentGames || []} />
+              </TabsContent>
               <TabsContent value="portals" className="mt-0 space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                   <Card className="rounded-[2.5rem] border-none shadow-xl bg-primary text-white p-8 space-y-4 group cursor-pointer active:scale-95 transition-all" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/${event.teamId}/waiver/${event.id}`); toast({ title: "Waiver URL Copied" }); }}>
@@ -626,29 +732,199 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                   </Card>
                   <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white p-8 space-y-4 group cursor-pointer active:scale-95 transition-all" onClick={() => window.open(`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`, '_blank')}>
                     <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-2">LIVE</Badge>
-
                     <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Spectator Hub</h4>
-                    <p className="text-xs text-white/60 font-medium leading-relaxed italic">Real-time bracket tracking and standsings access for fans and players.</p>
+                    <p className="text-xs text-white/60 font-medium leading-relaxed italic">Real-time bracket tracking and standings access for fans and players.</p>
                     <Button variant="outline" className="w-full h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20">Open Live View <ExternalLink className="ml-2 h-3 w-3" /></Button>
+                  </Card>
+                  <Card className="rounded-[2.5rem] border-none shadow-xl bg-muted/10 p-8 space-y-4 group cursor-pointer active:scale-95 transition-all" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}`); toast({ title: "Scorekeeper URL Copied" }); }}>
+                    <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-2">OPERATIONS</Badge>
+                    <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Scorekeeper Hub</h4>
+                    <p className="text-xs text-muted-foreground font-medium leading-relaxed italic">Institutional result entry portal for field generals and officials to post scores.</p>
+                    <Button variant="outline" className="w-full h-12 rounded-xl bg-muted/20 border-black/10 text-black hover:bg-muted/30">Copy Portal URL <Share2 className="ml-2 h-3 w-3" /></Button>
                   </Card>
                 </div>
               </TabsContent>
+              <TabsContent value="protocol" className="mt-0">
+                  <div className="flex flex-col items-center justify-center p-12 lg:p-20 text-center space-y-8 bg-muted/5 rounded-[3rem] border-2 border-dashed border-muted">
+                    <div className="bg-orange-100 p-8 rounded-[2.5rem] text-orange-600 shadow-inner">
+                      <Target className="h-16 w-16" />
+                    </div>
+                    <div className="space-y-3 max-w-md">
+                      <h3 className="text-3xl font-black uppercase tracking-tight">Protocol Architect</h3>
+                      <p className="text-sm font-medium text-muted-foreground leading-relaxed italic">Design custom recruitment forms, establish enrollment fees, and manage the automated squad pipeline for this series.</p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-lg">
+                      <div className="bg-white p-6 rounded-3xl border-2 space-y-2 text-left">
+                         <div className="flex items-center gap-2 text-primary font-black uppercase text-[10px]"><Wallet className="h-3 w-3" /> Fee Management</div>
+                         <p className="text-[11px] font-medium opacity-60">Control institutional series entry costs and payment guidance.</p>
+                      </div>
+                      <div className="bg-white p-6 rounded-3xl border-2 space-y-2 text-left">
+                         <div className="flex items-center gap-2 text-primary font-black uppercase text-[10px]"><Users className="h-3 w-3" /> Form Design</div>
+                         <p className="text-[11px] font-medium opacity-60">Define required data points and digital signature mandates.</p>
+                      </div>
+                    </div>
+                    <Button className="h-16 px-12 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-black uppercase text-sm shadow-xl shadow-orange-600/20 group" onClick={() => router.push(`/manage-tournaments/registration/${event.teamId}/${event.id}`)}>
+                      Enter Architect <ChevronRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                    </Button>
+                  </div>
+              </TabsContent>
               <TabsContent value="compliance" className="mt-0">
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between px-2"><div className="flex items-center gap-3"><FileSignature className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase tracking-tight">Signature Ledger</h3></div></div>
-                  <div className="grid grid-cols-1 gap-3">{(event.tournamentTeamsData || []).map(t => { const agreement = event.teamAgreements?.[t.name]; return (<Card key={t.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white flex items-center justify-between transition-all hover:ring-primary/20"><div className="flex items-center gap-4"><div className={cn("h-10 w-10 rounded-xl flex items-center justify-center transition-colors", agreement ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground/30")}>{agreement ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}</div><div className="min-w-0"><span className="font-black text-sm uppercase truncate block">{t.name}</span>{t.coach && <span className="text-[8px] font-bold text-muted-foreground uppercase">Coach: {t.coach}</span>}</div></div>{agreement ? (<div className="text-right"><p className="text-[8px] font-black uppercase text-green-600">Verified by {agreement.captainName}</p><p className="text-[7px] text-muted-foreground uppercase">{format(new Date(agreement.signedAt), 'MMM d, h:mm a')}</p></div>) : (<Badge variant="outline" className="text-[7px] font-black uppercase border-muted-foreground/20 text-muted-foreground">Pending Execution</Badge>)}</Card>); })}</div>
-                </div>
+                  <section className="space-y-6">
+                    <div className="flex items-center justify-between px-2">
+                      <div className="flex items-center gap-3">
+                        <FileSignature className="h-5 w-5 text-primary" />
+                        <h3 className="text-xl font-black uppercase tracking-tight">Signature Ledger</h3>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3">
+                      {(event.tournamentTeamsData || []).map(t => { 
+                        const agreement = event.teamAgreements?.[t.name]; 
+                        return (
+                          <Card key={t.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white flex items-center justify-between transition-all hover:ring-primary/20">
+                            <div className="flex items-center gap-4">
+                              <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center transition-colors", agreement ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground/30")}>
+                                {agreement ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
+                              </div>
+                              <div className="min-w-0">
+                                <span className="font-black text-sm uppercase truncate block">{t.name}</span>
+                                {t.coach && <span className="text-[8px] font-bold text-muted-foreground uppercase">Coach: {t.coach}</span>}
+                              </div>
+                            </div>
+                            {agreement ? (
+                              <div className="text-right">
+                                <p className="text-[8px] font-black uppercase text-green-600">Verified by {agreement.captainName}</p>
+                                <p className="text-[7px] text-muted-foreground uppercase">{format(new Date(agreement.signedAt), 'MMM d, h:mm a')}</p>
+                              </div>
+                            ) : (
+                              <Badge variant="outline" className="text-[7px] font-black uppercase border-muted-foreground/20 text-muted-foreground">Pending Execution</Badge>
+                            )}
+                          </Card>
+                        ); 
+                      })}
+                    </div>
+                  </section>
+
+                  {event.tournamentGames?.some(g => g.isDisputed) && (
+                    <section className="space-y-6 pt-6 border-t border-dashed">
+                      <div className="flex items-center gap-3 px-2 text-red-600">
+                        <ShieldAlert className="h-6 w-6" />
+                        <h3 className="text-xl font-black uppercase tracking-tight">Result Conflict Resolution</h3>
+                      </div>
+                      <div className="grid grid-cols-1 gap-4">
+                        {event.tournamentGames.filter(g => g.isDisputed).map(game => (
+                          <Card key={game.id} className="rounded-3xl border-2 border-red-100 overflow-hidden bg-red-50/20">
+                            <div className="bg-red-600 text-white px-6 py-2 flex items-center justify-between">
+                              <span className="text-[10px] font-black uppercase tracking-widest">Active Dispute: {game.team1} vs {game.team2}</span>
+                              <Button variant="ghost" className="h-6 p-0 hover:bg-transparent text-white opacity-60 hover:opacity-100 uppercase text-[8px] font-black">Resolve Conflict</Button>
+                            </div>
+                            <div className="p-6 space-y-3">
+                              <div className="bg-white/80 p-4 rounded-xl border border-red-100 flex gap-4">
+                                <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+                                <div className="space-y-1">
+                                  <p className="text-[8px] font-black uppercase opacity-40">Narrative</p>
+                                  <p className="text-xs font-bold leading-relaxed">"{game.disputeNotes || 'No specific notes provided.'}"</p>
+                                </div>
+                              </div>
+                              <div className="flex justify-end gap-3 pt-2">
+                                <Button size="sm" variant="outline" className="h-8 rounded-lg text-[8px] font-black uppercase" onClick={() => window.open(`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}/${game.id}`, '_blank')}>Review Portal Result</Button>
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    </section>
+                  )}
               </TabsContent>
             </div>
           </Tabs>
         </div>
       </div>
+
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="sm:max-w-2xl rounded-[3rem] p-0 overflow-hidden border-none shadow-2xl bg-white text-foreground max-h-[90vh] overflow-y-auto w-11/12 mx-auto sm:w-full">
+          <div className="h-3 bg-black w-full" />
+          <div className="p-8 lg:p-12 space-y-8">
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight">Series Profile</DialogTitle>
+              <DialogDescription className="font-bold text-[10px] uppercase tracking-widest mt-2">{event.title} • Public Context</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Series Name</Label>
+                   <Input value={editForm.title} onChange={e => setEditForm({...editForm, title: e.target.value})} className="h-12 rounded-xl border-2 font-black" />
+                 </div>
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Type of Event</Label>
+                   <Input value={editForm.eventType} onChange={e => setEditForm({...editForm, eventType: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                 </div>
+               </div>
+               <div className="space-y-2">
+                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Description</Label>
+                 <Textarea value={editForm.description} onChange={e => setEditForm({...editForm, description: e.target.value})} className="rounded-2xl border-2 font-medium min-h-[100px]" placeholder="Detailed description of the series..." />
+               </div>
+               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                 <div className="space-y-2 col-span-2 md:col-span-1">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label>
+                   <Input type="date" value={editForm.startDate} onChange={e => setEditForm({...editForm, startDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                 </div>
+                 <div className="space-y-2 col-span-2 md:col-span-1">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label>
+                   <Input type="date" value={editForm.endDate} onChange={e => setEditForm({...editForm, endDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                 </div>
+                 <div className="space-y-2 col-span-2 md:col-span-1">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Ages / Divisions</Label>
+                   <Input value={editForm.ages} onChange={e => setEditForm({...editForm, ages: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="e.g. U14 - U18" />
+                 </div>
+                 <div className="space-y-2 col-span-2 md:col-span-1">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Entry Fee</Label>
+                   <Input value={editForm.registrationCost} onChange={e => setEditForm({...editForm, registrationCost: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="$500/Team" />
+                 </div>
+               </div>
+               <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Offline Payment Instructions</Label>
+                  <Textarea value={editForm.paymentInstructions} onChange={e => setEditForm({...editForm, paymentInstructions: e.target.value})} className="rounded-2xl border-2 font-medium min-h-[80px]" placeholder="E-transfer to accounts@series.com with your team name..." />
+                  <p className="text-[10px] text-muted-foreground ml-1 font-bold">These instructions will be shown during registration. Online payments coming soon.</p>
+                </div>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t">
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Contact Email</Label>
+                   <Input type="email" value={editForm.contactEmail} onChange={e => setEditForm({...editForm, contactEmail: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="hq@series.com" />
+                 </div>
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Contact Phone</Label>
+                   <Input type="tel" value={editForm.contactPhone} onChange={e => setEditForm({...editForm, contactPhone: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="(555) 123-4567" />
+                 </div>
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-sky-600">Twitter (X) Link</Label>
+                   <Input type="url" value={editForm.twitter} onChange={e => setEditForm({...editForm, twitter: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="https://x.com/yourseries" />
+                 </div>
+                 <div className="space-y-2">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-pink-600">Instagram Link</Label>
+                   <Input type="url" value={editForm.instagram} onChange={e => setEditForm({...editForm, instagram: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="https://instagram.com/yourseries" />
+                 </div>
+               </div>
+            </div>
+            <DialogFooter className="pt-6">
+              <Button disabled={isProcessing} className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSaveTournament}>
+                 {isProcessing ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Commit Series Profile'}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
+import { AccessRestricted } from '@/components/layout/AccessRestricted';
+
 export default function ManageTournamentsPage() {
-  const { activeTeamEvents, isStaff } = useTeam();
+  const { activeTeamEvents, isStaff, isPro } = useTeam();
+
+  if (!isStaff) return <AccessRestricted type="role" title="Series Architect Locked" description="Tournament orchestration and bracket management are reserved for League Coordinators." />;
+  if (!isPro) return <AccessRestricted type="tier" />;
+
   const [selectedTournament, setSelectedTournament] = useState<TeamEvent | null>(null);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
 

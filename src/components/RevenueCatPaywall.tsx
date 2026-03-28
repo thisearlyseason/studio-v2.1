@@ -108,9 +108,9 @@ export function RevenueCatPaywall() {
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
                   <>
-                    <span className="text-lg font-black">{pkg.product.title}</span>
+                    <span className="text-lg font-black">{(pkg as any).product?.title || pkg.identifier}</span>
                     <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">
-                      {pkg.product.priceString} / {pkg.packageType.toLowerCase()}
+                      {(pkg as any).product?.priceString || 'Subscribe'} / {pkg.packageType.toLowerCase()}
                     </span>
                   </>
                 )}

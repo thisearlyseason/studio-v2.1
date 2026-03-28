@@ -18,11 +18,11 @@ ai.defineModel(
   {
     name: 'straico/default',
     label: 'Straico Claude Model',
-  },
+  } as any,
   async (request) => {
     // Construct a single prompt string from the message history
     const prompt = request.messages
-      .map((m) => `${m.role.toUpperCase()}: ${m.content.map((c) => c.text).join('')}`)
+      .map((m) => `${m.role.toUpperCase()}: ${m.content.map((c: any) => c.text).join('')}`)
       .join('\n\n');
 
     // Call the Straico generation helper using anthropic/claude-sonnet-4.5
@@ -30,9 +30,9 @@ ai.defineModel(
 
     return {
       message: {
-        role: 'model',
-        content: [{ text: responseText }],
+        role: 'model' as const,
+        content: [{ text: responseText || "" }],
       },
-    };
+    } as any;
   }
 );

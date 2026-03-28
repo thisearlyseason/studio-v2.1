@@ -44,6 +44,7 @@ import { format, differenceInYears } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { useTeam, TeamFile, TeamDocument, Member, Team } from '@/components/providers/team-provider';
 import { usePendingWaivers } from '@/hooks/use-pending-waivers';
+import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { 
   Dialog, 
   DialogContent, 
@@ -170,10 +171,16 @@ function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: a
   );
 }
 
+import { AccessRestricted } from '@/components/layout/AccessRestricted';
+
 export default function FilesPage() {
   const { activeTeam, addFile, deleteFile, user, isPro, purchasePro, isSuperAdmin, isStaff, isClubManager, members, teams, signTeamDocument } = useTeam();
-  const db = useFirestore();
   
+  // Players and Parents need to access this page to SIGN documents, 
+  // but we gate the full LIBRARY features for non-pro teams.
+  if (!isPro && isStaff) return <AccessRestricted type="tier" />;
+  
+  const db = useFirestore();
   const [mounted, setMounted] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -223,16 +230,58 @@ export default function FilesPage() {
 
   if (!mounted || !activeTeam) return null;
 
-  const handleDownloadCertificate = (file: TeamFile) => {
-    const content = `CERTIFICATE OF VERIFIED SIGNATURE\n\nDocument: ${file.name}\nTimestamp: ${file.date}\nDescription: ${file.description}\n\nThis document was digitally executed within the SquadForge platform.`;
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${file.name.replace(/\s+/g, '_')}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownloadCertificate = (file: TeamFile & { resolvedMemberName?: string; resolvedDocTitle?: string; }) => {
+    generateBrandedPDF({
+      title: "Verified Signature Receipt",
+      subtitle: "STUDIO SECURE HUB INSTITUTIONAL ARCHIVE",
+      filename: `VERIFIED_CERT_${file.name.replace(/\s+/g, '_')}`
+    }, (doc, startY) => {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // --- Certificate Body ---
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text("CERTIFICATE OF DIGITAL EXECUTION", 20, startY);
+      
+      doc.setDrawColor(220, 220, 220);
+      doc.line(20, startY + 5, pageWidth - 20, startY + 5);
+
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.text("DOCUMENT ATTRIBUTES", 20, startY + 15);
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Title: ${file.resolvedDocTitle || file.name}`, 20, startY + 22);
+      doc.text(`Category: Compliance & Waivers`, 20, startY + 29);
+      doc.text(`Execution Token: ${file.id}`, 20, startY + 36);
+      
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'normal');
+      doc.text("SIGNATORY & TIMESTAMP", 20, startY + 50);
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Member: ${file.resolvedMemberName || 'Authorized Signatory'}`, 20, startY + 57);
+      doc.text(`Timestamp: ${file.date ? format(new Date(file.date), 'PPPP p') : 'TBD'}`, 20, startY + 64);
+
+      // --- Verification Shield ---
+      doc.setFillColor(245, 245, 245);
+      doc.roundedRect(20, startY + 75, pageWidth - 40, 40, 2, 2, 'F');
+      doc.setTextColor(30, 30, 30);
+      doc.setFontSize(11);
+      doc.text("AUTHENTICITY STATEMENT", 30, startY + 87);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'italic');
+      const statement = "This institutional document confirms that the above signatory has reviewed and digitally accepted the terms through the secure verification protocol. This record is held in the Studio cryptographically signed vault.";
+      const lines = doc.splitTextToSize(statement, pageWidth - 60);
+      doc.text(lines, 30, startY + 95);
+
+      return startY + 130;
+    });
+    
+    toast({ title: "Certificate Exported", description: "Institutional PDF generated." });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {

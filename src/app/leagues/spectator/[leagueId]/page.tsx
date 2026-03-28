@@ -1,25 +1,58 @@
 
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { DateRange } from "react-day-picker";
 import { useParams } from 'next/navigation';
 import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import { League, TournamentGame } from '@/components/providers/team-provider';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Trophy, CalendarDays, MapPin, Clock, Loader2, AlertCircle, LayoutGrid, List, ChevronRight } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
-import { format } from 'date-fns';
+import { format, isAfter, isBefore, isSameDay, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 
 export default function PublicLeagueSpectatorHub() {
   const { leagueId } = useParams();
   const db = useFirestore();
 
+  const [teamFilter, setTeamFilter] = useState<string | 'all'>('all');
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+
   const leagueRef = useMemoFirebase(() => (db && leagueId) ? doc(db, 'leagues', leagueId as string) : null, [db, leagueId]);
   const { data: league, isLoading } = useDoc<League>(leagueRef);
+
+  const filteredSchedule = useMemo(() => {
+    if (!league?.schedule) return [];
+    
+    return league.schedule.filter(game => {
+      // Team name filter
+      if (teamFilter !== 'all' && game.team1 !== teamFilter && game.team2 !== teamFilter) {
+        return false;
+      }
+      
+      // Date range filter
+      if (game.date) {
+        try {
+          const gameDate = parseISO(game.date);
+          if (dateRange?.from && isBefore(gameDate, dateRange.from) && !isSameDay(gameDate, dateRange.from)) return false;
+          if (dateRange?.to && isAfter(gameDate, dateRange.to) && !isSameDay(gameDate, dateRange.to)) return false;
+        } catch (e) {
+          return true;
+        }
+      }
+      
+      return true;
+    });
+  }, [league?.schedule, teamFilter, dateRange]);
 
   const standings = useMemo(() => {
     if (!league?.teams) return [];
@@ -39,24 +72,78 @@ export default function PublicLeagueSpectatorHub() {
           <div className="relative z-10 space-y-4">
             <Badge className="bg-primary text-white border-none font-black text-[9px] uppercase tracking-widest px-3 h-6">Live League Hub</Badge>
             <h1 className="text-4xl lg:text-6xl font-black uppercase tracking-tighter leading-[0.9]">{league.name}</h1>
-            <p className="text-white/60 font-bold uppercase tracking-widest text-xs">{league.sport} • {Object.keys(league.teams).length} Active Squads</p>
+            <p className="text-white/60 font-bold uppercase tracking-widest text-xs">{league.sport} • {Object.keys(league.teams || {}).length} Active Squads</p>
           </div>
         </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           <div className="lg:col-span-2 space-y-6">
-            <div className="flex items-center justify-between px-2">
-              <div className="flex items-center gap-3">
-                <div className="bg-primary/10 p-2 rounded-xl text-primary"><List className="h-5 w-5" /></div>
-                <h2 className="text-xl font-black uppercase tracking-tight">Full Schedule</h2>
+            <div className="flex flex-col space-y-4 px-2">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3 self-start">
+                  <div className="bg-primary/10 p-2 rounded-xl text-primary"><List className="h-5 w-5" /></div>
+                  <h2 className="text-xl font-black uppercase tracking-tight">Schedule</h2>
+                </div>
+                <Link href={`/leagues/scorekeeper/${leagueId}`}>
+                  <Button size="sm" variant="outline" className="rounded-xl border-primary/20 text-primary font-black uppercase text-[10px] w-full sm:w-auto">Scorekeeper Portal <ChevronRight className="ml-1 h-3 w-3" /></Button>
+                </Link>
               </div>
-              <Link href={`/leagues/scorekeeper/${leagueId}`}>
-                <Button size="sm" variant="outline" className="rounded-xl border-primary/20 text-primary font-black uppercase text-[10px]">Scorekeeper Portal <ChevronRight className="ml-1 h-3 w-3" /></Button>
-              </Link>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Select value={teamFilter} onValueChange={setTeamFilter}>
+                  <SelectTrigger className="rounded-xl bg-white border-2 font-black uppercase text-[10px] h-11 ring-0 focus:ring-0">
+                    <SelectValue placeholder="View as Team" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="all" className="font-black uppercase text-[10px]">All Squads</SelectItem>
+                    {Object.values(league.teams || {}).map(team => (
+                      <SelectItem key={team.teamName} value={team.teamName} className="font-black uppercase text-[10px]">{team.teamName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" id="date" className={cn("rounded-xl h-11 bg-white border-2 font-black uppercase text-[10px] justify-start", !dateRange && "text-muted-foreground")}>
+                      <CalendarDays className="mr-2 h-4 w-4 opacity-40" />
+                      {dateRange?.from ? (
+                        dateRange.to ? (
+                          <>
+                            {format(dateRange.from, "LLL dd, y")} -{" "}
+                            {format(dateRange.to, "LLL dd, y")}
+                          </>
+                        ) : (
+                          format(dateRange.from, "LLL dd, y")
+                        )
+                      ) : (
+                        <span>Filter by Date Range</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 rounded-2xl shadow-2xl border-none" align="end">
+                    <Calendar
+                      initialFocus
+                      mode="range"
+                      defaultMonth={dateRange?.from}
+                      selected={dateRange}
+                      onSelect={setDateRange}
+                      numberOfMonths={2}
+                      showOutsideDays={false}
+                      className="rounded-2xl"
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {(teamFilter !== 'all' || dateRange) && (
+                <div className="flex justify-end pt-2">
+                  <Button variant="ghost" size="sm" onClick={() => { setTeamFilter('all'); setDateRange(undefined); }} className="text-[9px] font-black uppercase text-muted-foreground hover:text-primary h-6 px-2">Clear Filters</Button>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {league.schedule?.map((game) => (
+              {filteredSchedule.map((game) => (
                 <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md">
                   <div className="flex justify-between items-center">
                     <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary">{game.date} • {game.time}</Badge>
@@ -70,7 +157,7 @@ export default function PublicLeagueSpectatorHub() {
                   {game.location && <p className="text-[9px] font-bold text-muted-foreground uppercase text-center flex items-center justify-center gap-1.5 pt-2 border-t"><MapPin className="h-3 w-3 opacity-40" /> {game.location}</p>}
                 </Card>
               ))}
-              {(!league.schedule || league.schedule.length === 0) && <div className="col-span-full py-20 text-center opacity-30 italic">No matches scheduled.</div>}
+              {filteredSchedule.length === 0 && <div className="col-span-full py-20 text-center opacity-30 italic">No matches found for the selected filters.</div>}
             </div>
           </div>
 

@@ -41,7 +41,8 @@ import {
   Home,
   Users,
   Menu,
-  MoreHorizontal
+  MoreHorizontal,
+  Radio
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -81,10 +82,10 @@ import BrandLogo from '@/components/BrandLogo';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 const coordinationTabs = [
-  { name: 'Feed', href: '/feed', icon: LayoutDashboard, pro: true },
+  { name: 'Feed', href: '/feed', icon: Radio, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Leagues', href: '/leagues', icon: Shield, pro: false },
-  { name: 'Tournaments', href: '/manage-tournaments', icon: TableIcon, pro: true },
+  { name: 'Tournaments', href: '/manage-tournaments', icon: TableIcon, pro: true, gate: 'staff_only' },
   { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: false },
   { name: 'Calendar', href: '/calendar', icon: CalendarIcon, pro: false },
   { name: 'Playbook', icon: Dumbbell, href: '/drills', pro: false },
@@ -190,7 +191,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const filteredCoordTabs = coordinationTabs.filter(tab => {
     if (tab.gate === 'staff_or_parent') return isStaff || isParent;
-    if (tab.name === 'Feed' && isParent && !activeTeam?.parentCommentsEnabled) return false;
+    if (tab.gate === 'staff_only') return isStaff;
+    
+    // Adult teams allow all players to see volunteer/fundraising
+    const isAdultTeam = activeTeam?.type === 'adult';
+    if (isAdultTeam && (tab.name === 'Volunteer' || tab.name === 'Fundraising')) return true;
+
     return true;
   });
 
@@ -287,7 +293,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 )}
                 <div className="space-y-1.5">
                   <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground px-2 mb-2">Operations</p>
-                  {filteredCoordTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro && isStaff} />)}
+                  {filteredCoordTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
                 </div>
               </SidebarMenu>
             </SidebarContent>
@@ -407,7 +413,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                           <div className="grid grid-cols-2 gap-3">
                             {filteredCoordTabs.map((tab) => {
                               if (bottomNavItems.find(item => item.href === tab.href)) return null;
-                              const isLocked = tab.pro && !isPro && isStaff;
+                              const isLocked = tab.pro && !isPro;
                               
                               return (
                                 <Link 

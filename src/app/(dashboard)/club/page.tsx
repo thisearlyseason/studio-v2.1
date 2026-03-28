@@ -123,8 +123,15 @@ function TeamComplianceCard({ teams, clubDocs }: { teams: Team[], clubDocs: Team
   );
 }
 
+import { AccessRestricted } from '@/components/layout/AccessRestricted';
+
 export default function ClubManagementPage() {
   const { teams, user, isClubManager, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol } = useTeam();
+  
+  if (!isClubManager) {
+    return <AccessRestricted type="role" title="Organization Hub Locked" description="This command center is reserved for Institutional Stakeholders and Club Administrators." />;
+  }
+
   const db = useFirestore();
   const router = useRouter();
   
@@ -139,17 +146,17 @@ export default function ClubManagementPage() {
   const clubTeams = useMemo(() => teams.filter(t => t.ownerUserId === user?.id && t.isPro), [teams, user?.id]);
   const clubTeamIds = useMemo(() => clubTeams.map(t => t.id), [clubTeams]);
 
-  const membersQuery = useMemoFirebase(() => (db && clubTeamIds.length > 0) ? query(collectionGroup(db, 'members')) : null, [db, clubTeamIds.length]);
+  const membersQuery = useMemoFirebase(() => (db && user?.id) ? query(collectionGroup(db, 'members'), where('ownerUserId', '==', user.id)) : null, [db, user?.id]);
   const { data: allMembersRaw } = useCollection<Member>(membersQuery);
-  const clubMembers = useMemo(() => (allMembersRaw || []).filter(m => clubTeamIds.includes(m.teamId)), [allMembersRaw, clubTeamIds]);
+  const clubMembers = useMemo(() => (allMembersRaw || []), [allMembersRaw]);
 
-  const docsQuery = useMemoFirebase(() => (db && clubTeamIds.length > 0) ? query(collectionGroup(db, 'documents')) : null, [db, clubTeamIds.length]);
+  const docsQuery = useMemoFirebase(() => (db && user?.id) ? query(collectionGroup(db, 'documents'), where('ownerUserId', '==', user.id)) : null, [db, user?.id]);
   const { data: allDocsRaw } = useCollection<TeamDocument>(docsQuery);
-  const clubDocs = useMemo(() => (allDocsRaw || []).filter(d => clubTeamIds.includes(d.teamId)), [allDocsRaw, clubTeamIds]);
+  const clubDocs = useMemo(() => (allDocsRaw || []), [allDocsRaw]);
 
-  const incidentsQuery = useMemoFirebase(() => (db && clubTeamIds.length > 0) ? query(collectionGroup(db, 'incidents'), orderBy('createdAt', 'desc')) : null, [db, clubTeamIds.length]);
+  const incidentsQuery = useMemoFirebase(() => (db && user?.id) ? query(collectionGroup(db, 'incidents'), where('ownerUserId', '==', user.id), orderBy('createdAt', 'desc')) : null, [db, user?.id]);
   const { data: allIncidentsRaw } = useCollection<TeamIncident>(incidentsQuery);
-  const clubIncidents = useMemo(() => (allIncidentsRaw || []).filter(i => clubTeamIds.includes(i.teamId)), [allIncidentsRaw, clubTeamIds]);
+  const clubIncidents = useMemo(() => (allIncidentsRaw || []), [allIncidentsRaw]);
 
   const stats = useMemo(() => {
     let owed = 0, total = 0, cleared = 0;
@@ -176,13 +183,28 @@ export default function ClubManagementPage() {
 
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-700">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-1"><Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Institutional Command</Badge><h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none text-foreground">{user?.clubName || 'Club Command'}</h1></div>
-        <div className="flex gap-2">
-          <Button variant="outline" className="h-14 px-6 rounded-2xl border-2 font-black uppercase text-xs text-foreground" onClick={() => setIsEditOpen(true)}><Edit3 className="h-4 w-4 mr-2" /> Edit Club</Button>
-          <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 border-none" onClick={() => createNewTeam('New Squad', 'youth', 'Coach', 'Club squad', 'squad_pro')}><Plus className="h-5 w-5 mr-2" /> Add Team</Button>
+      <Card className="bg-black text-white p-10 lg:p-14 rounded-[3.5rem] shadow-2xl relative overflow-hidden group border-none hero-gradient">
+        <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
+          <Building className="h-64 w-64" />
         </div>
-      </div>
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
+          <div className="space-y-3">
+            <Badge className="bg-primary text-white border-none font-black uppercase tracking-[0.2em] text-[10px] h-7 px-4 shadow-lg">Institutional Command</Badge>
+            <h1 className="text-4xl md:text-6xl font-black tracking-tighter uppercase leading-[0.8] text-white">
+              {user?.clubName || 'Club Command'}
+            </h1>
+            <p className="text-white/60 font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Master Governance Hub</p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="outline" className="h-14 px-8 rounded-2xl border-white/20 bg-white/10 text-white hover:bg-white hover:text-black transition-all font-black uppercase text-xs" onClick={() => setIsEditOpen(true)}>
+              <Edit3 className="h-4 w-4 mr-2" /> Edit Club
+            </Button>
+            <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/40 bg-white text-black hover:bg-primary hover:text-white transition-all border-none" onClick={() => createNewTeam('New Squad', 'youth', 'Coach', 'Club squad', 'squad_pro')}>
+              <Plus className="h-5 w-5 mr-2" /> Add Squad
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="rounded-[2.5rem] border-none shadow-md bg-primary text-white p-8 space-y-2"><p className="text-[10px] font-black uppercase opacity-60 tracking-widest">Total Squads</p><p className="text-5xl font-black">{clubTeams.length}</p></Card>
@@ -208,7 +230,7 @@ export default function ClubManagementPage() {
                       <AvatarImage src={team.teamLogoUrl} className="object-cover" />
                       <AvatarFallback className="font-black bg-white text-foreground">{team.name[0]}</AvatarFallback>
                     </Avatar>
-                    <div className="space-y-1">
+                    <div className="space-y-1 transform group-hover:translate-x-2 transition-transform duration-300">
                       <h3 className="text-xl font-black uppercase text-foreground group-hover:text-primary transition-colors">{team.name}</h3>
                       <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">{team.sport} • {clubMembers.filter(m => m.teamId === team.id).length} Athletes • Code: {team.code}</p>
                     </div>
@@ -293,7 +315,7 @@ export default function ClubManagementPage() {
       </Tabs>
 
       <Dialog open={isEditClubOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="rounded-[3rem] p-0 overflow-hidden sm:max-w-md border-none shadow-2xl bg-white text-foreground">
+        <DialogContent className="rounded-[3rem] p-0 overflow-hidden sm:max-w-md border-none shadow-2xl glass text-foreground">
           <div className="h-2 bg-black w-full" />
           <div className="p-10 space-y-8">
             <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">Club Architect</DialogTitle><DialogDescription className="text-primary font-bold uppercase text-[10px] tracking-widest">Update institutional identity</DialogDescription></DialogHeader>
@@ -307,7 +329,7 @@ export default function ClubManagementPage() {
       </Dialog>
 
       <Dialog open={isDeployProtocolOpen} onOpenChange={setIsDeployProtocolOpen}>
-        <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-lg bg-white text-foreground">
+        <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-lg glass text-foreground">
           <div className="h-2 bg-primary w-full" />
           <div className="p-10 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">Deploy Mandate</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Deploy atomic institutional protocol</DialogDescription></DialogHeader>

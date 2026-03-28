@@ -53,6 +53,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { 
   Select, 
   SelectContent, 
@@ -87,7 +88,7 @@ const POSITION_OPTIONS = [
 ];
 
 export default function RosterPage() {
-  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember, purchasePro } = useTeam();
+  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro } = useTeam();
   const db = useFirestore();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
@@ -185,34 +186,90 @@ export default function RosterPage() {
 
   const handleExportPortfolio = useCallback(() => {
     if (!selectedMember) return;
-    const headers = [
-      "PLAYER PROFILE - THE SQUAD CERTIFIED",
-      "",
-      "Name", "Position", "Jersey", "Class", "GPA", "Clearance", "School", "Highlights", "Contact", "Evaluations"
-    ];
-    const row = [
-      "", "",
-      selectedMember.name,
-      selectedMember.position,
-      selectedMember.jersey,
-      selectedMember.gradYear || 'N/A',
-      selectedMember.gpa || 'N/A',
-      selectedMember.medicalClearance ? 'CLEARED' : 'PENDING',
-      selectedMember.school || 'N/A',
-      videos.find(v => v.type === 'Highlight')?.url || 'N/A',
-      selectedMember.phone || selectedMember.parentEmail || 'N/A',
-      staffNote.replace(/,/g, ';').replace(/\n/g, ' ')
-    ];
-    const csvContent = "data:text/csv;charset=utf-8," + [headers, row].map(e => e.join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `RECRUITING_PACK_${selectedMember.name.replace(/\s+/g, '_')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast({ title: "Recruiting Pack Generated", description: "Professional CSV portfolio exported." });
-  }, [selectedMember, staffNote]);
+    
+    generateBrandedPDF({
+      title: "VERIFIED ATHLETE PORTFOLIO",
+      subtitle: "SQUADFORGE RECRUITING COURIER • INSTITUTIONAL DATA",
+      filename: `SCOUTING_REPORT_${selectedMember.name.replace(/\s+/g, '_')}`
+    }, (doc, startY) => {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // Main Content Header
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
+      doc.text(selectedMember.name.toUpperCase(), 20, startY);
+      
+      doc.setFontSize(11);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`${selectedMember.position}  |  #${selectedMember.jersey}`, 20, startY + 8);
+      
+      doc.setDrawColor(230, 230, 230);
+      doc.line(20, startY + 13, pageWidth - 20, startY + 13);
+
+      // --- Stats Grid ---
+      let y = startY + 25;
+      const drawStat = (label: string, value: string, x: number, currentY: number) => {
+        doc.setTextColor(150, 150, 150);
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.text(label.toUpperCase(), x, currentY);
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(11);
+        doc.text(value || 'N/A', x, currentY + 6);
+      };
+
+      drawStat("Graduation Class", selectedMember.gradYear || 'N/A', 20, y);
+      drawStat("Academic GPA", selectedMember.gpa || 'N/A', 80, y);
+      drawStat("Recruit Status", selectedMember.medicalClearance ? 'CLEARED' : 'VERIFIED', 140, y);
+      
+      y += 20;
+      drawStat("Sanctioned Sport", activeTeam?.sport || 'General', 20, y);
+      drawStat("Age Group", calculateAgeGroup(selectedMember.birthdate) || 'U18', 80, y);
+      drawStat("Institutional ID", selectedMember.id.slice(-8), 140, y);
+
+      // --- Narrative Section ---
+      y += 25;
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("ATHLETE NARRATIVE & EVALUATION", 20, y);
+      
+      y += 8;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      const bioLines = doc.splitTextToSize(selectedMember.notes || "This athlete is currently maintaining an active profile within the squad ecosystem.", pageWidth - 40);
+      doc.text(bioLines, 20, y);
+      
+      y += (bioLines.length * 6) + 10;
+      
+      // Staff Commentary
+      if (staffNote) {
+        doc.setFont("helvetica", "bold");
+        doc.text("COMMANDER'S FIELD NOTES", 20, y);
+        y += 7;
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(80, 80, 80);
+        const noteLines = doc.splitTextToSize(staffNote, pageWidth - 40);
+        doc.text(noteLines, 20, y);
+        y += (noteLines.length * 6) + 10;
+      }
+
+      // Compliance Tracking
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0, 0, 0);
+      doc.text("INSTITUTIONAL COMPLIANCE", 20, y);
+      y += 7;
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Medical Clearance: ${selectedMember.medicalClearance ? 'VALID' : 'PENDING'}`, 20, y);
+      doc.text(`Institutional Waiver: ${signedDocIds.includes('default_medical') || signedDocIds.length > 0 ? 'EXECUTED' : 'PENDING'}`, 80, y);
+
+      return y + 20;
+    });
+    
+    toast({ title: "Professional Portfolio Exported", description: "Modern PDF generated successfully." });
+  }, [selectedMember, staffNote, activeTeam, signedDocIds]);
 
   if (!mounted || !activeTeam || isMembersLoading) {
     return (
@@ -246,8 +303,17 @@ export default function RosterPage() {
             {isStaff && (
               <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
                 <DialogTrigger asChild>
-                  <Button size="sm" className="rounded-full px-6 font-black uppercase text-[10px] lg:text-xs h-10 lg:h-11 tracking-widest shadow-lg shadow-primary/20">
-                    <UserPlus className="h-4 w-4 mr-2" /> Invite
+                  <Button 
+                    size="sm" 
+                    disabled={activeTeam.rosterLimit ? members.filter(m => m.role === 'Member').length >= activeTeam.rosterLimit : false}
+                    className="rounded-full px-6 font-black uppercase text-[10px] lg:text-xs h-10 lg:h-11 tracking-widest shadow-lg shadow-primary/20"
+                  >
+                    {activeTeam.rosterLimit && members.filter(m => m.role === 'Member').length >= activeTeam.rosterLimit ? (
+                      <Badge className="bg-red-600 text-white h-5 mr-2 -ml-2 border-none text-[8px] font-black uppercase">FULL</Badge>
+                    ) : (
+                      <UserPlus className="h-4 w-4 mr-2" />
+                    )}
+                    {activeTeam.rosterLimit && members.filter(m => m.role === 'Member').length >= activeTeam.rosterLimit ? 'Squad Full' : 'Invite'}
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0 overflow-y-auto bg-white text-foreground">
@@ -257,10 +323,32 @@ export default function RosterPage() {
                   <div className="p-8 space-y-8">
                     <DialogHeader>
                       <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Recruit Hub</DialogTitle>
-                      <DialogDescription className="font-bold text-primary uppercase text-[10px]">Enroll new teammates to {activeTeam.name}</DialogDescription>
+                      <div className="flex items-center gap-2 mt-1">
+                        <DialogDescription className="font-bold text-primary uppercase text-[10px] shrink-0">Enroll new teammates to {activeTeam.name}</DialogDescription>
+                        <div className="h-px bg-primary/20 flex-1 ml-2" />
+                      </div>
                     </DialogHeader>
                     
                     <div className="space-y-6">
+                      <div className="bg-black/5 p-6 rounded-3xl border-2 border-dashed space-y-4">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Personnel Cap (Coach Controlled)</Label>
+                          <Badge className="bg-primary text-white border-none font-black text-[9px] h-5 px-3 uppercase tracking-widest">{members.filter(m => m.role === 'Member').length} / {activeTeam.rosterLimit || '∞'} Seats</Badge>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Input 
+                            type="number" 
+                            placeholder="Set Seat Limit..."
+                            value={activeTeam.rosterLimit || ''}
+                            onChange={(e) => updateTeam(activeTeam.id, { rosterLimit: parseInt(e.target.value) || 0 })}
+                            className="h-12 rounded-[1.5rem] border-2 font-black text-lg bg-white"
+                          />
+                          <div className="p-3 bg-white rounded-2xl border-2 text-muted-foreground/30">
+                            <Settings className="h-5 w-5" />
+                          </div>
+                        </div>
+                        <p className="text-[9px] font-medium text-muted-foreground italic leading-relaxed"> Define the total number of athletes permitted in the squad personnel pool.</p>
+                      </div>
                       <div className="p-8 bg-primary/5 rounded-[2.5rem] text-center space-y-4 border-2 border-dashed border-primary/20 group cursor-pointer active:scale-95 transition-all" onClick={() => { navigator.clipboard.writeText(activeTeam.code); toast({ title: "Code Copied" }); }}>
                         <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Squad Identity Code</p>
                         <div className="flex items-center justify-center gap-4">

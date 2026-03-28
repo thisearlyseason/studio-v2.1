@@ -96,10 +96,29 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
                         pathname === '/settings' || 
                         pathname === '/pricing' ||
                         pathname === '/how-to' ||
+                        pathname === '/leagues' ||
+                        pathname === '/manage-tournaments' ||
+                        pathname === '/facilities' ||
+                        pathname === '/coaches-corner' ||
+                        pathname === '/equipment' ||
+                        pathname === '/playbook' ||
+                        pathname === '/drills' ||
+                        pathname === '/feed' ||
+                        pathname === '/events' ||
+                        pathname === '/games' ||
+                        pathname === '/calendar' ||
+                        pathname === '/volunteers' ||
+                        pathname === '/fundraising' ||
+                        pathname === '/chats' ||
+                        pathname === '/roster' ||
+                        pathname === '/files' ||
                         pathname.startsWith('/tournaments/') ||
+                        pathname.startsWith('/leagues/') ||
                         pathname.startsWith('/register/league/');
     
-    if (teams.length === 0 && !isSetupPage) {
+    const isStaffLocal = userProfile?.role === 'admin' || userProfile?.role === 'superadmin';
+    
+    if (teams.length === 0 && !isSetupPage && !isStaffLocal) {
       if (userProfile?.role === 'coach') router.push('/teams/new');
       else router.push('/teams/join');
     }

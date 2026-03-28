@@ -99,8 +99,14 @@ function FacilityFieldManager({ facility }: { facility: Facility }) {
   );
 }
 
+import { AccessRestricted } from '@/components/layout/AccessRestricted';
+
 export default function FacilityManagementPage() {
-  const { user, isStaff, addFacility, deleteFacility, isSuperAdmin } = useTeam();
+  const { activeTeam, isStaff, isPro, addFacility, deleteFacility, isSuperAdmin, user } = useTeam();
+  
+  if (!isStaff) return <AccessRestricted type="role" />;
+  if (!isPro) return <AccessRestricted type="tier" />;
+
   const db = useFirestore();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newFac, setNewFac] = useState({ name: '', address: '', notes: '' });

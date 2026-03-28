@@ -48,7 +48,6 @@ export function useCollection<T = any>(
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
-    // If no target ref is provided, explicitly clear state and return
     if (!memoizedTargetRefOrQuery) {
       setData(null);
       setIsLoading(false);
@@ -59,77 +58,59 @@ export function useCollection<T = any>(
     const auth = getAuth();
     let unsubscribeSnapshot: (() => void) | null = null;
 
-    // TACTICAL GUARD: Explicitly wait for authentication identity resolution.
-    // This ensures that request.auth is populated in the rules engine.
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      // 1. Cleanup existing listener if any
-      if (unsubscribeSnapshot) {
-        unsubscribeSnapshot();
-        unsubscribeSnapshot = null;
+    // 1. Path Extraction for Contextual Errors
+    let path: string = '';
+    try {
+      if ((memoizedTargetRefOrQuery as any).type === 'collection') {
+        path = (memoizedTargetRefOrQuery as CollectionReference).path;
+      } else {
+        const iq = memoizedTargetRefOrQuery as unknown as InternalQuery;
+        path = iq._query?.path?.canonicalString?.() || iq._query?.path?.toString?.() || '';
       }
+    } catch (e) {
+      path = 'unknown';
+    }
 
-      // 2. Identity Verification: Do not dispatch if no user is present in SDK context
-      if (!user || !auth.currentUser) {
+    // 2. Defensive Guard: Prevent malformed paths or unauthorized root access
+    const isRootPath = !path || path === '/' || path === '.' || path === 'databases/(default)/documents';
+    const hasUndefined = path === 'unknown' || path.includes('undefined') || path.includes('/null/');
+    
+    if (isRootPath || hasUndefined) {
+      setData(null);
+      setIsLoading(false);
+      return;
+    }
+
+    // 3. Establish Real-time Listener
+    setIsLoading(true);
+    setError(null);
+
+    unsubscribeSnapshot = onSnapshot(
+      memoizedTargetRefOrQuery,
+      (snapshot: QuerySnapshot<DocumentData>) => {
+        const results: ResultItemType[] = [];
+        for (const doc of snapshot.docs) {
+          results.push({ ...(doc.data() as T), id: doc.id });
+        }
+        setData(results);
+        setError(null);
+        setIsLoading(false);
+      },
+      async (err: FirestoreError) => {
+        // Construct rich contextual error for the overlay
+        const permissionError = new FirestorePermissionError({
+          path: path || 'unknown',
+          operation: 'list',
+        });
+        
+        errorEmitter.emit('permission-error', permissionError);
+        setError(permissionError);
         setData(null);
         setIsLoading(false);
-        return;
       }
-
-      // 3. Path Extraction for Contextual Errors
-      let path: string = '';
-      try {
-        if ((memoizedTargetRefOrQuery as any).type === 'collection') {
-          path = (memoizedTargetRefOrQuery as CollectionReference).path;
-        } else {
-          const iq = memoizedTargetRefOrQuery as unknown as InternalQuery;
-          path = iq._query?.path?.canonicalString?.() || iq._query?.path?.toString?.() || '';
-        }
-      } catch (e) {
-        path = 'unknown';
-      }
-
-      // 4. Defensive Guard: Prevent malformed paths or unauthorized root access
-      const isRootPath = !path || path === '/' || path === '.' || path === 'databases/(default)/documents';
-      const hasUndefined = path === 'unknown' || path.includes('undefined') || path.includes('/null/');
-      
-      if (isRootPath || hasUndefined) {
-        setData(null);
-        setIsLoading(false);
-        return;
-      }
-
-      // 5. Establish Real-time Listener
-      setIsLoading(true);
-      setError(null);
-
-      unsubscribeSnapshot = onSnapshot(
-        memoizedTargetRefOrQuery,
-        (snapshot: QuerySnapshot<DocumentData>) => {
-          const results: ResultItemType[] = [];
-          for (const doc of snapshot.docs) {
-            results.push({ ...(doc.data() as T), id: doc.id });
-          }
-          setData(results);
-          setError(null);
-          setIsLoading(false);
-        },
-        async (err: FirestoreError) => {
-          // Construct rich contextual error for the overlay
-          const permissionError = new FirestorePermissionError({
-            path: path || 'unknown',
-            operation: 'list',
-          });
-          
-          errorEmitter.emit('permission-error', permissionError);
-          setError(permissionError);
-          setData(null);
-          setIsLoading(false);
-        }
-      );
-    });
+    );
 
     return () => {
-      unsubscribeAuth();
       if (unsubscribeSnapshot) unsubscribeSnapshot();
     };
   }, [memoizedTargetRefOrQuery]);

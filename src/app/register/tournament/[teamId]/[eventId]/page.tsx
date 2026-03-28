@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Badge } from '@/components/ui/badge';
 import { 
   ShieldCheck, 
@@ -25,7 +26,10 @@ import {
   Trophy,
   MapPin,
   Clock,
-  Info
+  Info,
+  Wallet,
+  Sparkles,
+  Globe
 } from 'lucide-react';
 import { 
   Select, 
@@ -61,8 +65,8 @@ function RegistrationForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!config || isSubmitting) return;
-    if (config.waiver_text && (!waiverAgreed || !signature.trim())) {
-      toast({ title: "Compliance Required", description: "Please sign the institutional waiver.", variant: "destructive" });
+    if ((config.require_default_waiver || config.custom_waiver_text) && (!waiverAgreed || !signature.trim())) {
+      toast({ title: "Compliance Required", description: "Please sign the required documentation.", variant: "destructive" });
       return;
     }
 
@@ -134,24 +138,83 @@ function RegistrationForm() {
       <BrandLogo variant="light-background" className="h-10 w-40 mb-12" />
       
       <div className="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
-        <div className="lg:col-span-5 space-y-10 lg:sticky lg:top-16">
+        <div className="lg:col-span-5 space-y-8 lg:sticky lg:top-12">
           <div className="space-y-4">
-            <Badge className="bg-primary text-white border-none font-black uppercase tracking-widest text-[10px] h-7 px-4 shadow-lg shadow-primary/20">Tournament Pipeline</Badge>
-            <h1 className="text-5xl font-black tracking-tighter uppercase leading-[0.8]">{event.title}</h1>
-            <div className="flex items-center gap-3 mt-4 text-[11px] font-black uppercase text-primary tracking-widest">
+            <h1 className="text-4xl lg:text-5xl font-black tracking-tighter uppercase leading-[0.9]">{event.title}</h1>
+            <div className="flex items-center gap-2 text-primary font-black uppercase text-[10px] tracking-[0.2em] bg-primary/10 w-fit px-4 h-8 rounded-full shadow-sm">
               <Trophy className="h-4 w-4" />
               <span>Championship Series Enrollment</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4">
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-[1.5rem] border border-white shadow-sm flex items-center gap-4">
-              <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><Clock className="h-5 w-5" /></div>
-              <div><p className="text-[8px] font-black uppercase opacity-40">Start Date</p><p className="font-black uppercase">{format(new Date(event.date), 'EEEE, MMM d')}</p></div>
+          <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl border-2 border-white shadow-xl space-y-4">
+            <h3 className="font-black text-xs uppercase tracking-widest text-primary mb-2">Series Context</h3>
+            <p className="text-sm font-medium leading-relaxed text-foreground/80">{event.description || 'Championship itinerary established.'}</p>
+            
+            <div className="pt-4 border-t border-black/5 grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Venue</p>
+                <p className="font-bold text-sm uppercase truncate" title={event.location}>{event.location || 'TBA'}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Timeline</p>
+                <p className="font-bold text-sm uppercase">
+                  {format(new Date(event.date), 'MMM d')} 
+                  {event.endDate ? ` - ${format(new Date(event.endDate), 'MMM d')}` : ''}
+                </p>
+              </div>
+              {event.ages && (
+                <div className="col-span-2 space-y-1 pt-2">
+                  <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Divisions</p>
+                  <p className="font-bold text-sm uppercase">{event.ages}</p>
+                </div>
+              )}
+              {(event?.contactEmail || event?.contactPhone) && (
+                <div className="col-span-2 space-y-1 pt-2">
+                  <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Administration</p>
+                  <div className="flex flex-wrap gap-4">
+                    {event?.contactEmail && <p className="font-bold text-sm text-primary">{event.contactEmail}</p>}
+                    {event?.contactPhone && <p className="font-bold text-sm">{event.contactPhone}</p>}
+                  </div>
+                </div>
+              )}
+              {(event?.socialLinks?.twitter || event?.socialLinks?.instagram) && (
+                <div className="col-span-2 space-y-2 pt-2">
+                  <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Social Channels</p>
+                  <div className="flex gap-2">
+                    {event?.socialLinks?.twitter && (
+                      <a href={event.socialLinks.twitter} target="_blank" rel="noopener noreferrer" className="bg-black text-white h-8 w-8 rounded-lg flex items-center justify-center hover:scale-105 transition-transform"><Globe className="h-4 w-4" /></a>
+                    )}
+                    {event?.socialLinks?.instagram && (
+                      <a href={event.socialLinks.instagram} target="_blank" rel="noopener noreferrer" className="bg-pink-600 text-white h-8 w-8 rounded-lg flex items-center justify-center hover:scale-105 transition-transform"><AlertCircle className="h-4 w-4" /></a>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-[1.5rem] border border-white shadow-sm flex items-center gap-4">
-              <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><MapPin className="h-5 w-5" /></div>
-              <div><p className="text-[8px] font-black uppercase opacity-40">Series Venue</p><p className="font-black uppercase truncate">{event.location}</p></div>
+          </div>
+
+          <div className="bg-primary/5 p-8 rounded-[3rem] border-2 border-primary/10 space-y-4 shadow-sm relative overflow-hidden group">
+            {config.registration_cost && parseFloat(config.registration_cost) > 0 && (
+              <div className="absolute -bottom-4 -right-4 p-4 opacity-5 rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700 font-black text-6xl text-primary">${config.registration_cost}</div>
+            )}
+            <div className="flex items-center gap-3"><div className="bg-primary p-2.5 rounded-2xl text-white shadow-lg"><Wallet className="h-5 w-5" /></div><h4 className="text-xl font-black uppercase tracking-tight text-foreground">Series Entry Fee</h4></div>
+            {config.registration_cost && parseFloat(config.registration_cost) > 0 ? (
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-black text-primary">${config.registration_cost}</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Guaranteed Slot</span>
+              </div>
+            ) : (
+              <p className="text-sm font-black text-primary uppercase tracking-widest">Pipeline Entry: Under Review</p>
+            )}
+            <div className="pt-4 border-t border-primary/10 space-y-4">
+              <div className="bg-white p-5 rounded-[2rem] text-[11px] font-medium leading-relaxed border border-primary/5 text-foreground/80 shadow-inner whitespace-pre-wrap">
+                {event?.paymentInstructions || config.offline_payment_instructions || 'Tournament entry fees are currently processed via bank transfer or institutional check. Please coordinate with regional directors for final validation.'}
+              </div>
+              <div className="flex items-center gap-3 bg-white p-4 rounded-2xl border-2 border-amber-200">
+                <div className="bg-amber-100 p-2 rounded-xl"><Sparkles className="h-4 w-4 text-amber-600" /></div>
+                <p className="text-[10px] font-black uppercase text-amber-700 tracking-tight leading-tight">Direct Online Checkout Coming Soon</p>
+              </div>
             </div>
           </div>
 
@@ -189,28 +252,78 @@ function RegistrationForm() {
                         <Textarea required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="rounded-2xl min-h-[120px] border-2 font-medium bg-muted/5 focus:bg-white transition-all p-5 shadow-inner" />
                       )}
                       {field.type === 'dropdown' && (
-                        <Select required={field.required} onValueChange={v => handleInputChange(field.id, v)}>
+                        <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
                           <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select Choice..." /></SelectTrigger>
                           <SelectContent className="rounded-2xl">
                             {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold text-[10px] uppercase">{opt}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       )}
+                      {field.type === 'radio' && (
+                        <RadioGroup required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)} className="flex flex-col gap-3 py-2">
+                          {field.options?.map((opt: string) => (
+                            <div key={opt} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2 cursor-pointer hover:bg-white transition-all">
+                              <RadioGroupItem value={opt} id={`${field.id}_${opt}`} />
+                              <Label htmlFor={`${field.id}_${opt}`} className="font-black text-[10px] uppercase cursor-pointer flex-1">{opt}</Label>
+                            </div>
+                          ))}
+                        </RadioGroup>
+                      )}
+                      {field.type === 'checkbox' && (
+                        <div className="flex flex-col gap-3 py-2">
+                          {field.options?.map((opt: string) => (
+                            <div key={opt} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2 hover:bg-white transition-all">
+                              <Checkbox 
+                                id={`${field.id}_${opt}`} 
+                                checked={(answers[field.id] || []).includes(opt)} 
+                                onCheckedChange={(checked) => {
+                                  const current = Array.isArray(answers[field.id]) ? answers[field.id] : [];
+                                  const updated = checked ? [...current, opt] : current.filter((i: string) => i !== opt);
+                                  handleInputChange(field.id, updated);
+                                }} 
+                              />
+                              <Label htmlFor={`${field.id}_${opt}`} className="font-black text-[10px] uppercase cursor-pointer flex-1">{opt}</Label>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {field.type === 'signature' && (
+                        <div className="space-y-2">
+                           <Input required={field.required} placeholder="Type Full Legal Name to Sign..." value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-16 rounded-2xl border-2 font-mono italic text-center text-xl bg-muted/5 shadow-inner" />
+                           <p className="text-[8px] font-black uppercase text-center opacity-40">Verified Tournament Handshake v{config.form_version || 1}</p>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
               ))}
 
-              {config.waiver_text && (
+              {(config.require_default_waiver || config.custom_waiver_text) && (
                 <div className="space-y-8 pt-10 border-t-2">
-                  <div className="flex items-center gap-3"><FileSignature className="h-6 w-6 text-primary" /><h4 className="text-xl font-black uppercase tracking-tighter">Participation Terms</h4></div>
-                  <ScrollArea className="h-48 p-6 rounded-[2rem] bg-muted/10 border-2 font-medium text-xs leading-loose text-foreground/80">
-                    {config.waiver_text}
-                  </ScrollArea>
+                  <div className="flex items-center gap-3"><FileSignature className="h-6 w-6 text-primary" /><h4 className="text-xl font-black uppercase tracking-tighter">Required Agreements</h4></div>
+                  
+                  {config.require_default_waiver && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Universal Institutional Liability Waiver</p>
+                      <ScrollArea className="h-40 p-5 rounded-2xl bg-muted/10 border-2 font-medium text-xs leading-relaxed">
+                        {config.default_waiver_text || 'I hereby assume all risks, hazards, and liabilities associated with participation in this tournament series. I waive, release, and discharge the organization, its directors, host facilities, and affiliated sponsors from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.'}
+                      </ScrollArea>
+                    </div>
+                  )}
+
+                  {config.custom_waiver_text && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Organization Specific Agreement</p>
+                      <ScrollArea className="h-48 p-6 rounded-[2rem] bg-primary/5 border border-primary/20 font-medium text-xs leading-loose text-primary/90">
+                        {config.custom_waiver_text}
+                      </ScrollArea>
+                    </div>
+                  )}
+
                   <div className="flex items-center space-x-4 p-5 bg-primary/5 rounded-[2rem] border-2 border-primary/10 group cursor-pointer transition-all hover:bg-primary/10" onClick={() => setWaiverAgreed(!waiverAgreed)}>
                     <Checkbox id="waiver_agree" checked={waiverAgreed} onCheckedChange={v => setWaiverAgreed(!!v)} className="h-6 w-6 rounded-lg border-2 border-primary" />
                     <Label htmlFor="waiver_agree" className="text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight">
-                      I verify that our entire squad roster has reviewed and accepts the championship protocols and liability terms.
+                      I verify that our entire squad roster has reviewed and accepts the championship protocols and liability terms listed above.
                     </Label>
                   </div>
                   <div className="space-y-3">

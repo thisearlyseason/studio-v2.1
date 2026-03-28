@@ -49,8 +49,14 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
+import { AccessRestricted } from '@/components/layout/AccessRestricted';
+
 export default function EquipmentPage() {
-  const { activeTeam, isStaff, members, addEquipmentItem, updateEquipmentItem, deleteEquipmentItem, assignEquipment, returnEquipment } = useTeam();
+  const { activeTeam, isStaff, isPro, members, addEquipmentItem, updateEquipmentItem, deleteEquipmentItem, assignEquipment, returnEquipment } = useTeam();
+  
+  if (!isStaff) return <AccessRestricted type="role" />;
+  if (!isPro) return <AccessRestricted type="tier" />;
+
   const db = useFirestore();
   
   const [isAddOpen, setIsAddOpen] = useState(false);
