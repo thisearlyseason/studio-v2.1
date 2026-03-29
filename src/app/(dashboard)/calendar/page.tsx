@@ -34,10 +34,6 @@ import {
   Users,
   Shield,
   Trophy,
-  Sun,
-  Cloud,
-  Wind,
-  Thermometer,
   Zap,
   Activity,
   ArrowUpRight,
@@ -47,7 +43,8 @@ import {
   Plus,
   ExternalLink,
   FileSignature,
-  Loader2
+  Loader2,
+  Eye
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -63,9 +60,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { 
   Dialog, 
   DialogContent, 
-  DialogTitle, 
-  DialogClose
+  DialogTitle
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WeatherPulse } from '@/components/WeatherPulse';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary border-primary text-white',
@@ -120,126 +118,230 @@ function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], 
   );
 }
 
+
+
 function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent | null, isOpen: boolean, onOpenChange: (open: boolean) => void }) {
-  const { updateRSVP, user } = useTeam();
+  const { updateRSVP, user, myChildren, isParent, members, teams, getMember } = useTeam();
   if (!event) return null;
 
-  const myRsvp = event.userRsvps?.[user?.id || ''] || 'no_response';
+  const team = teams.find(t => t.id === event.teamId);
+  const relevantParticipants = [
+    { id: user?.id, name: 'You', isChild: false },
+    ...(isParent ? (myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId)).map(c => ({ id: c.id, name: c.firstName, isChild: true })) : [])
+  ];
+
+  const attendees = Object.entries(event.userRsvps || {}).map(([uid, status]) => {
+    const member = getMember(uid);
+    return { name: member?.name || 'Unknown', status, avatar: member?.avatar, position: member?.position };
+  });
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground">
+      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col h-[90vh] sm:h-auto sm:max-h-[85vh]">
         <DialogTitle className="sr-only">Event Details: {event.title}</DialogTitle>
-        <div className="flex flex-col lg:flex-row h-full">
-          <div className="w-full lg:w-1/2 flex flex-col text-white bg-black p-8 relative">
-            <div className="flex justify-between items-start mb-8 relative z-10">
-              <div className="flex gap-2">
+        <div className="flex flex-col lg:flex-row h-full overflow-hidden">
+          {/* LEFT PANEL: ELITE STATUS & RSVP */}
+          <div className="w-full lg:w-2/5 flex flex-col text-white bg-black p-8 relative shrink-0">
+            <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none">
+              <Zap className="h-48 w-48" />
+            </div>
+            
+            <div className="space-y-6 relative z-10 overflow-y-auto custom-scrollbar pr-2">
+              <div className="flex gap-2 mb-4">
                 <Badge className="uppercase font-black tracking-widest text-[9px] h-6 px-3 bg-primary text-white border-none">{(event.eventType || 'other').toUpperCase()}</Badge>
                 {event.isLeagueGame && (
                   <Badge className={cn("uppercase font-black tracking-widest text-[9px] h-6 px-3 border-none", event.isHome ? "bg-white text-black" : "bg-primary/20 text-white")}>
-                    {event.isHome ? 'HOME TEAM' : 'VISITING TEAM'}
+                    {event.isHome ? 'HOME' : 'AWAY'}
                   </Badge>
                 )}
               </div>
-              <DialogClose asChild><X className="h-5 w-5 text-white/40 cursor-pointer hover:text-white" /></DialogClose>
-            </div>
-            <div className="space-y-6 relative z-10">
-              <h2 className="text-3xl font-black tracking-tighter leading-tight uppercase">{event.title}</h2>
-              <div className="bg-white/10 p-4 rounded-2xl border border-white/10 space-y-3 font-bold text-sm">
-                <div className="flex items-center gap-3"><CalendarDays className="h-4 w-4 text-primary" />{formatDateRange(event.date, event.endDate)}</div>
-                <div className="flex items-center gap-3"><Clock className="h-4 w-4 text-primary" />{event.startTime}</div>
-                <div className="flex items-center gap-3"><MapPin className="h-4 w-4 text-primary" /><span className="truncate">{event.location}</span></div>
+
+              <div className="space-y-2">
+                <p className="text-[10px] font-black uppercase text-primary tracking-[0.3em]">{team?.name || 'SQUAD OPERATIONS'}</p>
+                <h2 className="text-4xl font-black tracking-tighter leading-tight uppercase italic">{event.title}</h2>
               </div>
-              <div className="pt-4 border-t border-white/10">
-                <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em] mb-4">Tactical RSVP</p>
-                  <div className="grid grid-cols-1 gap-2">
-                    <Button variant={myRsvp === 'going' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase transition-all", myRsvp === 'going' ? "bg-green-600 border-none shadow-lg shadow-green-600/20" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'going', event.teamId)}>Going</Button>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button variant={myRsvp === 'maybe' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase transition-all", myRsvp === 'maybe' ? "bg-amber-400 text-black border-none shadow-lg shadow-amber-400/20" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'maybe', event.teamId)}>Maybe</Button>
-                      <Button variant={myRsvp === 'declined' ? 'default' : 'outline'} className={cn("h-12 rounded-xl font-black text-xs uppercase transition-all", myRsvp === 'declined' ? "bg-red-600 border-none shadow-lg shadow-red-600/20" : "bg-white/5 border-white/10")} onClick={() => updateRSVP(event.id, 'declined', event.teamId)}>Decline</Button>
-                    </div>
-                  </div>
+
+              <div className="bg-white/5 p-5 rounded-[2rem] border border-white/10 space-y-4 font-bold text-sm shadow-inner mt-8">
+                <div className="flex items-center gap-4 text-white/80"><CalendarDays className="h-5 w-5 text-primary" />{formatDateRange(event.date, event.endDate)}</div>
+                <div className="flex items-center gap-4 text-white/80"><Clock className="h-5 w-5 text-primary" />{event.startTime}</div>
+                <div className="flex items-center gap-4 text-white/80"><MapPin className="h-5 w-5 text-primary" /><span className="truncate">{event.location}</span></div>
+              </div>
+              
+              <div className="pt-8 border-t border-white/10 space-y-6">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Deployment RSVP</p>
+                  <Badge variant="outline" className="border-white/10 text-white/40 font-black text-[8px] h-5 uppercase">Tactical Status</Badge>
+                </div>
+                
+                <div className="space-y-4">
+                  {relevantParticipants.map((p) => {
+                    const rsvp = event.userRsvps?.[p.id || ''] || 'no_response';
+                    return (
+                      <div key={p.id} className="space-y-4 p-5 bg-white/5 rounded-[2rem] border border-white/10 group hover:border-white/20 transition-all">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[11px] font-black uppercase text-primary tracking-widest flex items-center gap-2">
+                            <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                            {p.name}'s Status
+                          </p>
+                          <Badge className={cn(
+                            "text-[8px] font-black uppercase border-none h-5 px-3 shadow-lg", 
+                            rsvp === 'going' ? "bg-green-500 text-white" : 
+                            rsvp === 'maybe' ? "bg-amber-400 text-black" : 
+                            (rsvp === 'declined' || rsvp === 'no') ? "bg-red-500 text-white" : 
+                            "bg-white/10 text-white/40"
+                          )}>
+                            {rsvp === 'no' ? 'DECLINED' : rsvp.replace('_', ' ').toUpperCase()}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                          <Button 
+                            variant="outline" 
+                            className={cn(
+                              "h-12 rounded-2xl font-black text-xs uppercase transition-all tracking-widest border-2", 
+                              rsvp === 'going' ? "bg-green-600 border-none text-white shadow-xl shadow-green-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-green-500/50 hover:bg-green-500/5"
+                            )} 
+                            onClick={() => updateRSVP(event.id, 'going', event.teamId, p.id)}
+                          >
+                            Going
+                          </Button>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button 
+                              variant="outline" 
+                              className={cn(
+                                "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
+                                rsvp === 'maybe' ? "bg-amber-400 text-black border-none shadow-lg shadow-amber-400/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-amber-400/50 hover:bg-amber-400/5"
+                              )} 
+                              onClick={() => updateRSVP(event.id, 'maybe', event.teamId, p.id)}
+                            >
+                              Maybe
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              className={cn(
+                                "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
+                                (rsvp === 'declined' || rsvp === 'no') ? "bg-red-600 text-white border-none shadow-lg shadow-red-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-red-500/50 hover:bg-red-500/5"
+                              )} 
+                              onClick={() => updateRSVP(event.id, 'declined', event.teamId, p.id)}
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
-          <div className="flex-1 p-8 bg-white space-y-6">
-            <div className="flex items-center gap-3"><Info className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest text-foreground">Event Brief</h3></div>
-            <p className="text-sm font-medium text-muted-foreground leading-relaxed italic">"{event.description || 'No specific coordination notes provided.'}"</p>
-            
-            {event.isTournament && (
-              <div className="pt-6 border-t space-y-6">
-                <div className="flex items-center gap-3"><Trophy className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest text-foreground">Match Schedule</h3></div>
-                <div className="grid grid-cols-1 gap-4">
-                  {event.tournamentGames?.map((game: any) => (
-                    <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary">{game.time}</Badge>
-                          {game.round && <Badge className="bg-muted text-foreground border-none text-[7px] font-black uppercase px-2 h-4">{game.round}</Badge>}
-                        </div>
-                        {game.isCompleted && <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2 h-5">FINAL</Badge>}
-                      </div>
-                      <div className="grid grid-cols-7 items-center gap-4 text-center">
-                        <div className="col-span-3 min-w-0">
-                          <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team1}</p>
-                          <p className={cn("text-2xl font-black", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")}>{game.score1}</p>
-                        </div>
-                        <div className="col-span-1 opacity-20 font-black text-[10px]">VS</div>
-                        <div className="col-span-3 min-w-0">
-                          <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team2}</p>
-                          <p className={cn("text-2xl font-black", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")}>{game.score2}</p>
-                        </div>
-                      </div>
-                      {game.location && (
-                        <p className="text-[9px] font-bold text-muted-foreground uppercase text-center flex items-center justify-center gap-1.5 pt-2 border-t border-muted">
-                          <MapPin className="h-3 w-3 opacity-40" /> {game.location}
-                        </p>
-                      )}
-                    </Card>
-                  ))}
-                  {(!event.tournamentGames || event.tournamentGames.length === 0) && (
-                    <p className="text-center py-10 text-[10px] font-black uppercase opacity-20 italic">Match itinerary being established.</p>
-                  )}
-                </div>
-              </div>
-            )}
 
-            <div className="pt-6 border-t space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3"><Thermometer className="h-5 w-5 text-orange-500" /><h3 className="text-xs font-black uppercase tracking-widest text-foreground">Conditions Pulse</h3></div>
-                <Badge className="bg-orange-100/50 text-orange-700 border-none font-black text-[8px] h-5 px-3">SIMULATED FORECAST</Badge>
+          {/* RIGHT PANEL: TABS & INTELLIGENCE */}
+          <div className="flex-1 bg-white overflow-hidden flex flex-col h-full">
+            <Tabs defaultValue="brief" className="flex flex-col h-full">
+              <div className="px-8 pt-8 shrink-0">
+                <TabsList className="grid w-full grid-cols-3 bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14">
+                  <TabsTrigger value="brief" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Brief</TabsTrigger>
+                  <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md" disabled={!event.isTournament}>Matches</TabsTrigger>
+                  <TabsTrigger value="roster" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Attendance</TabsTrigger>
+                </TabsList>
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-muted/30 p-4 rounded-2xl border text-center space-y-1">
-                  <Sun className="h-5 w-5 mx-auto text-amber-500" />
-                  <p className="text-[10px] font-black uppercase">{((event.location?.length || 0) % 15) + 65}°F</p>
-                  <p className="text-[7px] font-bold text-muted-foreground uppercase">Fair Skies</p>
-                </div>
-                <div className="bg-muted/30 p-4 rounded-2xl border text-center space-y-1">
-                  <Wind className="h-5 w-5 mx-auto text-blue-400" />
-                  <p className="text-[10px] font-black uppercase">{((event.location?.length || 0) % 5) + 5} MPH</p>
-                  <p className="text-[7px] font-bold text-muted-foreground uppercase">Local Gusts</p>
-                </div>
-                <div className="bg-muted/30 p-4 rounded-2xl border text-center space-y-1">
-                  <Cloud className="h-5 w-5 mx-auto text-slate-400" />
-                  <p className="text-[10px] font-black uppercase">{(event.title.length % 20)}%</p>
-                  <p className="text-[7px] font-bold text-muted-foreground uppercase">Precip Probability</p>
-                </div>
-              </div>
-              <p className="text-[9px] font-medium text-muted-foreground italic leading-tight px-2 text-center">Surface integrity 100% for {event.location || 'assigned venue'}. Protocol parameters optimal for peak competition performance.</p>
-            </div>
 
-            <div className="pt-6 border-t space-y-4">
-              <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest text-foreground">Attendance Pulse</h3></div>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(event.userRsvps || {}).map(([uid, status]) => (
-                  <Badge key={uid} variant="outline" className={cn(
-                    "text-[8px] font-black uppercase border-none h-6 px-3",
-                    status === 'going' ? "bg-green-600 text-white" : status === 'maybe' ? "bg-amber-400 text-black" : (status === 'declined' || status === 'no') ? "bg-red-600 text-white" : "bg-muted text-muted-foreground"
-                  )}>{status === 'no' ? 'Declined' : status}</Badge>
-                ))}
+              <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 pt-4">
+                <TabsContent value="brief" className="space-y-8 mt-0 animate-in fade-in duration-300">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-primary/10 p-2 rounded-xl text-primary"><Info className="h-5 w-5" /></div>
+                      <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Mission Parameters</h3>
+                    </div>
+                    <div className="bg-muted/30 p-8 rounded-[2.5rem] border-2 border-dashed">
+                      <p className="text-base font-medium text-foreground/80 leading-relaxed italic">
+                        "{event.description || 'No specific coordination notes provided for this deployment.'}"
+                      </p>
+                    </div>
+                  </div>
+
+                  <WeatherPulse location={event.location} />
+                </TabsContent>
+
+                <TabsContent value="matches" className="space-y-6 mt-0 animate-in fade-in duration-300">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-primary/10 p-2 rounded-xl text-primary"><Trophy className="h-5 w-5" /></div>
+                      <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Competition Itinerary</h3>
+                    </div>
+                    <Badge variant="outline" className="font-black text-[9px] border-primary/20 text-primary uppercase h-6 px-3">{event.tournamentGames?.length || 0} Matches</Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4">
+                    {event.tournamentGames?.map((game: any) => (
+                      <Card key={game.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md group">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2.5 h-6 tracking-widest">{game.time}</Badge>
+                            {game.round && <Badge variant="outline" className="bg-muted text-foreground border-none text-[8px] font-black uppercase px-3 h-5">{game.round}</Badge>}
+                          </div>
+                          {game.isCompleted && (
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-1.5 w-1.5 rounded-full bg-red-600 animate-pulse" />
+                              <span className="text-[10px] font-black text-foreground uppercase tracking-wider">Final Intelligence</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-7 items-center gap-4 text-center">
+                          <div className="col-span-3 min-w-0">
+                            <p className="font-black text-[10px] uppercase truncate opacity-50 mb-1">{game.team1}</p>
+                            <p className={cn("text-3xl font-black tracking-tighter", game.isCompleted && game.score1 > game.score2 ? "text-primary scale-110" : "text-foreground")}>{game.score1}</p>
+                          </div>
+                          <div className="col-span-1 opacity-10 font-black text-xs uppercase italic">vs</div>
+                          <div className="col-span-3 min-w-0">
+                            <p className="font-black text-[10px] uppercase truncate opacity-50 mb-1">{game.team2}</p>
+                            <p className={cn("text-3xl font-black tracking-tighter", game.isCompleted && game.score2 > game.score1 ? "text-primary scale-110" : "text-foreground")}>{game.score2}</p>
+                          </div>
+                        </div>
+                        {game.location && (
+                          <div className="pt-4 border-t border-muted/50 flex items-center justify-center gap-2 group-hover:scale-105 transition-transform">
+                            <MapPin className="h-3 w-3 text-primary opacity-50" />
+                            <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">{game.location}</span>
+                          </div>
+                        )}
+                      </Card>
+                    ))}
+                    {(!event.tournamentGames || event.tournamentGames.length === 0) && (
+                      <div className="text-center py-20 bg-muted/10 rounded-[2.5rem] border-2 border-dashed opacity-30">
+                        <Trophy className="h-12 w-12 mx-auto mb-4" />
+                        <p className="text-[10px] font-black uppercase tracking-widest italic">Squad match logistics pending deployment.</p>
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="roster" className="space-y-6 mt-0 animate-in fade-in duration-300">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-primary/10 p-2 rounded-xl text-primary"><Users className="h-5 w-5" /></div>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Attendance Pulse</h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {attendees.length > 0 ? attendees.map((att, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border transition-all hover:bg-white hover:shadow-sm">
+                        <span className="text-[10px] font-black uppercase truncate text-foreground pr-2">{att.name}</span>
+                        <Badge className={cn(
+                          "text-[7px] font-black uppercase border-none h-5 px-2 tracking-widest",
+                          att.status === 'going' ? "bg-green-600 text-white" : 
+                          att.status === 'maybe' ? "bg-amber-400 text-black" : 
+                          (att.status === 'declined' || att.status === 'no') ? "bg-red-600 text-white" : 
+                          "bg-muted text-muted-foreground"
+                        )}>
+                          {att.status === 'no' ? 'DECLINED' : att.status.toUpperCase()}
+                        </Badge>
+                      </div>
+                    )) : (
+                      <div className="col-span-full py-20 text-center opacity-30 italic text-[10px] font-black uppercase">No squad responses recorded.</div>
+                    )}
+                  </div>
+                </TabsContent>
               </div>
-            </div>
+            </Tabs>
           </div>
         </div>
       </DialogContent>

@@ -71,7 +71,6 @@ import { format, differenceInYears } from 'date-fns';
 const STANDARD_WAIVERS = [
   { id: 'medical', label: 'Medical Clearance', icon: HeartPulse, docId: 'default_medical' },
   { id: 'travel', label: 'Travel Consent', icon: Plane, docId: 'default_travel' },
-  { id: 'parental', label: 'Parental Waiver', icon: ShieldCheck, minorOnly: true, docId: 'default_parental' },
   { id: 'photography', label: 'Photography Release', icon: Camera, docId: 'default_photography' }
 ];
 
@@ -97,8 +96,10 @@ export default function RosterPage() {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [staffNote, setStaffNote] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
+  const [isSavingPosition, setIsSavingPosition] = useState(false);
   const [isEditPositionOpen, setIsEditPositionOpen] = useState(false);
   const [newPosition, setNewPosition] = useState('');
+  const [customPosition, setCustomPosition] = useState('');
 
   // Fetch team protocols to see what's "turned on"
   const docsQuery = useMemoFirebase(() => (db && activeTeam?.id) ? query(collection(db, 'teams', activeTeam.id, 'documents')) : null, [db, activeTeam?.id]);
@@ -143,17 +144,24 @@ export default function RosterPage() {
   useEffect(() => {
     if (selectedMember && isStaff) {
       getStaffEvaluation(selectedMember.id).then(setStaffNote);
-      setNewPosition(selectedMember.position);
+      const pos = selectedMember.position || '';
+      // Initialize position state correctly for custom values
+      setNewPosition(pos);
+      if (pos && !POSITION_OPTIONS.includes(pos)) {
+        setCustomPosition(pos);
+      } else {
+        setCustomPosition('');
+      }
     }
   }, [selectedMember, isStaff, getStaffEvaluation]);
 
   const recruitmentUrl = useMemo(() => {
-    if (!activeTeam) return '';
+    if (!activeTeam || typeof window === 'undefined') return '';
     if (activeTeam.registrationProtocolId) {
       return `${window.location.origin}/register/league/${activeTeam.id}?protocol=${activeTeam.registrationProtocolId}`;
     }
     return `${window.location.origin}/teams/join?code=${activeTeam.code}`;
-  }, [activeTeam]);
+  }, [activeTeam, mounted]);
 
   const handleCopyRecruitmentUrl = async () => {
     try {
@@ -175,13 +183,20 @@ export default function RosterPage() {
   };
 
   const handleUpdatePosition = async () => {
-    if (!selectedMember || !newPosition) return;
-    setIsSavingNote(true);
-    await updateMember(selectedMember.id, { position: newPosition });
-    setSelectedMember(prev => prev ? { ...prev, position: newPosition } : null);
-    setIsSavingNote(false);
-    setIsEditPositionOpen(false);
-    toast({ title: "Role Provisioned", description: `${selectedMember.name} is now ${newPosition}.` });
+    if (!selectedMember) return;
+    setIsSavingPosition(true);
+    try {
+      const finalPosition = newPosition === 'Custom' ? customPosition : newPosition;
+      if (!finalPosition) return;
+      await updateMember(selectedMember.id, { position: finalPosition });
+      setSelectedMember(prev => prev ? { ...prev, position: finalPosition } : null);
+      setIsEditPositionOpen(false);
+      toast({ title: "Role Provisioned", description: `${selectedMember.name} has been assigned as ${finalPosition}` });
+    } catch (e) {
+      toast({ title: "Provisioning Error", variant: "destructive" });
+    } finally {
+      setIsSavingPosition(false);
+    }
   };
 
   const handleExportPortfolio = useCallback(() => {
@@ -396,8 +411,18 @@ export default function RosterPage() {
                   <div className="flex items-center gap-2 mb-0.5">
                     <h3 className="font-black truncate text-lg tracking-tight group-hover:text-primary transition-colors text-foreground">{member.name}</h3>
                     {member.jersey !== 'HQ' && <Badge variant="outline" className="text-[9px] h-5 border-primary/20 text-primary font-black uppercase">#{member.jersey}</Badge>}
+                    {member.medicalClearance && (
+                      <div className="bg-green-500 rounded-full h-1.5 w-1.5 animate-pulse shrink-0" title="Squad Protocol: Cleared" />
+                    )}
                   </div>
-                  <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest truncate">{member.position}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest truncate">{member.position}</p>
+                    {member.medicalClearance && (
+                      <Badge variant="outline" className="h-4 px-1 text-primary border-none bg-primary/5 -mt-0.5" title="Execution Confirmed">
+                        <FileSignature className="h-3 w-3" />
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </div>
               <ChevronRight className="h-5 w-5 text-primary opacity-20 group-hover:opacity-100 transition-all" />
@@ -491,18 +516,33 @@ export default function RosterPage() {
                             return (
                               <div key={w.id} className="bg-muted/30 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between border border-transparent gap-2">
                                 <div>
-                                  <span className="text-[10px] font-black uppercase text-foreground relative top-0.5">{w.title || 'Custom Waiver'}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black uppercase text-foreground relative top-0.5">{w.title || 'Custom Waiver'}</span>
+                                    {signatureRecord?.signedByParent && (
+                                      <Badge variant="outline" className="h-4 px-1.5 text-[6px] border-primary/20 text-primary font-black uppercase tracking-tighter">Parent Signature</Badge>
+                                    )}
+                                  </div>
                                   {isSigned && signatureRecord.signedAt && (
-                                    <p className="text-[9px] font-bold text-muted-foreground uppercase mt-1 tracking-wider">
-                                      {format(new Date(signatureRecord.signedAt), 'MMM d, yyyy h:mm a')}
-                                    </p>
+                                    <div className="space-y-0.5 mt-1">
+                                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                                        {format(new Date(signatureRecord.signedAt), 'MMM d, yyyy h:mm a')}
+                                      </p>
+                                      {signatureRecord.signedByParent && signatureRecord.parentName && (
+                                        <p className="text-[8px] font-black text-primary uppercase tracking-[0.1em]">
+                                          Signed by {signatureRecord.parentName}
+                                        </p>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
-                                <div className="shrink-0 flex items-center">
+                                <div className="shrink-0 flex items-center gap-2">
                                   {isSigned ? (
-                                    <Badge className="bg-green-100 text-green-700 border-none rounded-xl px-3 py-1 font-black text-[9px] uppercase flex items-center gap-1 shadow-sm">
-                                      <CheckCircle2 className="h-3 w-3" /> Signed
-                                    </Badge>
+                                    <>
+                                      {signatureRecord?.signedByParent && <ShieldCheck className="h-4 w-4 text-primary opacity-40 shrink-0" />}
+                                      <Badge className="bg-green-100 text-green-700 border-none rounded-xl px-3 py-1 font-black text-[9px] uppercase flex items-center gap-1 shadow-sm">
+                                        <CheckCircle2 className="h-3 w-3" /> Signed
+                                      </Badge>
+                                    </>
                                   ) : (
                                     <Badge className="bg-red-100 text-red-700 border-none rounded-xl px-3 py-1 font-black text-[9px] uppercase flex items-center gap-1 shadow-sm">
                                       <XCircle className="h-3 w-3" /> Pending
@@ -625,11 +665,27 @@ export default function RosterPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
+                  {newPosition && newPosition !== 'Custom' && !POSITION_OPTIONS.includes(newPosition) && (
+                    <SelectItem key={newPosition} value={newPosition} className="font-bold text-foreground">{newPosition}</SelectItem>
+                  )}
                   {POSITION_OPTIONS.map(opt => (
                     <SelectItem key={opt} value={opt} className="font-bold text-foreground">{opt}</SelectItem>
                   ))}
+                  <SelectItem value="Custom" className="font-black text-primary uppercase text-[10px]">Set Custom Role...</SelectItem>
                 </SelectContent>
               </Select>
+              {newPosition === 'Custom' && (
+                <div className="space-y-4 animate-in slide-in-from-top duration-300">
+                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Specify Unique Role</Label>
+                   <Input 
+                     autoFocus
+                     value={customPosition}
+                     placeholder="e.g. Offensive Tactician..." 
+                     className="h-14 rounded-2xl border-2 font-black text-foreground bg-muted/10"
+                     onChange={(e) => setCustomPosition(e.target.value)}
+                   />
+                </div>
+              )}
               <div className="bg-primary/5 p-4 rounded-2xl border-2 border-dashed border-primary/20 space-y-2">
                 <p className="text-[10px] font-black text-primary uppercase">Governance Tip</p>
                 <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">
@@ -638,8 +694,8 @@ export default function RosterPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdatePosition} disabled={isSavingNote}>
-                {isSavingNote ? <Loader2 className="h-6 w-6 animate-spin" /> : <Save className="h-6 w-6 mr-2" />}
+              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdatePosition} disabled={isSavingPosition}>
+                {isSavingPosition ? <Loader2 className="h-6 w-6 animate-spin" /> : <Save className="h-6 w-6 mr-2" />}
                 Commit Position Update
               </Button>
             </DialogFooter>

@@ -76,6 +76,7 @@ function EditChildModal({ child, onClose }: { child: PlayerProfile; onClose: () 
     school: child.school || '',
     gradYear: child.gradYear || '',
     notes: child.notes || '',
+    sportPositions: child.sportPositions || {},
   });
   const [sports, setSports] = useState<string[]>(child.sports || []);
   const [isSaving, setIsSaving] = useState(false);
@@ -177,13 +178,40 @@ function EditChildModal({ child, onClose }: { child: PlayerProfile; onClose: () 
               </Button>
             </div>
             {sports.length > 0 && (
-              <div className="flex flex-wrap gap-1 pt-1">
-                {sports.map(s => (
-                  <Badge key={s} className="bg-primary/10 text-primary border-none font-black text-[9px] uppercase px-2 gap-1">
-                    {s}
-                    <button type="button" onClick={() => toggleSport(s)}><X className="h-2.5 w-2.5" /></button>
-                  </Badge>
-                ))}
+              <div className="space-y-3 pt-1">
+                <div className="flex flex-wrap gap-1">
+                  {sports.map(s => (
+                    <Badge key={s} className="bg-primary/10 text-primary border-none font-black text-[9px] uppercase px-2 gap-1">
+                      {s}
+                      <button type="button" onClick={() => toggleSport(s)}><X className="h-2.5 w-2.5" /></button>
+                    </Badge>
+                  ))}
+                </div>
+                
+                {/* Position/Role assignments for ALL selected sports */}
+                {sports.length > 0 && (
+                  <div className="bg-muted/10 p-4 rounded-2xl border border-dashed space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <p className="text-[9px] font-black uppercase text-primary tracking-widest flex items-center gap-2">
+                       <Activity className="h-3 w-3" /> Sport-Specific Role Assignments
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {sports.map(s => (
+                        <div key={s} className="space-y-1.5">
+                          <Label className="text-[8px] font-black uppercase tracking-widest ml-1 opacity-60">Primary Role in {s}</Label>
+                          <Input 
+                            placeholder={`e.g. ${s === 'Soccer' ? 'Striker' : s === 'Basketball' ? 'Point Guard' : 'Key Role'}`}
+                            value={form.sportPositions?.[s] || ''} 
+                            onChange={e => setForm(f => ({ 
+                              ...f, 
+                              sportPositions: { ...(f.sportPositions || {}), [s]: e.target.value } 
+                            }))} 
+                            className="h-10 rounded-xl border-2 font-bold text-xs" 
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -368,34 +396,40 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
         )}
 
         {/* Stats Grid */}
-        {(child.primaryPosition || child.height || child.weight || child.school) && (
-          <div className="grid grid-cols-2 gap-2">
-            {child.primaryPosition && (
-              <div className="bg-muted/30 p-3 rounded-2xl border shadow-inner">
-                <p className="text-[8px] font-black uppercase opacity-40">Position</p>
-                <p className="text-sm font-black uppercase truncate">{child.primaryPosition}</p>
+        <div className="grid grid-cols-2 gap-2">
+          {child.sportPositions && Object.entries(child.sportPositions).length > 0 ? (
+            Object.entries(child.sportPositions).map(([sport, pos]) => (
+              <div key={sport} className="bg-primary/5 p-3 rounded-2xl border border-primary/10 group-hover:bg-primary/10 transition-colors">
+                <p className="text-[8px] font-black uppercase text-primary opacity-60">{sport} Role</p>
+                <p className="text-sm font-black uppercase truncate">{pos || 'TBD'}</p>
               </div>
-            )}
-            {child.height && (
-              <div className="bg-muted/30 p-3 rounded-2xl border shadow-inner">
-                <p className="text-[8px] font-black uppercase opacity-40">Height</p>
-                <p className="text-sm font-black">{child.height}</p>
-              </div>
-            )}
-            {child.weight && (
-              <div className="bg-muted/30 p-3 rounded-2xl border shadow-inner">
-                <p className="text-[8px] font-black uppercase opacity-40">Weight</p>
-                <p className="text-sm font-black">{child.weight}</p>
-              </div>
-            )}
-            {child.school && (
-              <div className="bg-muted/30 p-3 rounded-2xl border shadow-inner col-span-2">
-                <p className="text-[8px] font-black uppercase opacity-40">School {child.gradYear ? `• Class of ${child.gradYear}` : ''}</p>
-                <p className="text-sm font-black truncate">{child.school}</p>
-              </div>
-            )}
-          </div>
-        )}
+            ))
+          ) : child.primaryPosition ? (
+            <div className="bg-muted/30 p-3 rounded-2xl border shadow-inner">
+              <p className="text-[8px] font-black uppercase opacity-40">Primary Position</p>
+              <p className="text-sm font-black uppercase truncate">{child.primaryPosition}</p>
+            </div>
+          ) : null}
+          
+          {child.height && (
+            <div className="bg-muted/30 p-3 rounded-2xl border shadow-inner">
+              <p className="text-[8px] font-black uppercase opacity-40">Height</p>
+              <p className="text-sm font-black">{child.height}</p>
+            </div>
+          )}
+          {child.weight && (
+            <div className="bg-muted/30 p-3 rounded-2xl border shadow-inner">
+              <p className="text-[8px] font-black uppercase opacity-40">Weight</p>
+              <p className="text-sm font-black">{child.weight}</p>
+            </div>
+          )}
+          {child.school && (
+            <div className="bg-muted/30 p-3 rounded-2xl border shadow-inner col-span-2">
+              <p className="text-[8px] font-black uppercase opacity-40">School {child.gradYear ? `• Class of ${child.gradYear}` : ''}</p>
+              <p className="text-sm font-black truncate">{child.school}</p>
+            </div>
+          )}
+        </div>
 
         {/* Enrolled Squads */}
         <div className="space-y-3 pt-2 border-t">
@@ -493,13 +527,6 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
             {/* Success Modal */}
         <Dialog open={isSuccessOpen} onOpenChange={setIsSuccessOpen}>
           <DialogContent className="max-w-md bg-white rounded-[2rem] p-10 space-y-8 border-none shadow-2xl overflow-hidden">
-            <div className="absolute top-0 right-0 p-6">
-              <DialogClose className="opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none disabled:pointer-events-none">
-                <X className="h-6 w-6" />
-                <span className="sr-only">Close</span>
-              </DialogClose>
-            </div>
-
             <div className="space-y-4 text-center">
               <div className="w-20 h-20 hero-gradient rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl animate-in zoom-in-50 duration-500">
                 <Check className="h-10 w-10 text-white" />
@@ -571,10 +598,6 @@ export default function FamilyDashboardPage() {
     householdEvents, householdBalance, isParent
   } = useTeam();
 
-  if (!isParent) {
-    return <AccessRestricted type="role" title="Household Domain Restricted" description="This sector is reserved for Guardians and Household Administrators." />;
-  }
-
   const db = useFirestore();
   const router = useRouter();
 
@@ -603,8 +626,17 @@ export default function FamilyDashboardPage() {
 
   const upcomingEvents = useMemo(() => {
     if (!householdEvents || !Array.isArray(householdEvents)) return [];
-    return householdEvents.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date))).slice(0, 5);
+    return householdEvents.filter(e => {
+      if (!e.date) return false;
+      const d = new Date(e.date);
+      if (isNaN(d.getTime())) return false;
+      return isFuture(d) || isToday(d);
+    }).slice(0, 5);
   }, [householdEvents]);
+
+  if (!isParent) {
+    return <AccessRestricted type="role" title="Household Domain Restricted" description="This sector is reserved for Guardians and Household Administrators." />;
+  }
 
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-700">
@@ -721,26 +753,50 @@ export default function FamilyDashboardPage() {
           <div className="space-y-4">
             {upcomingEvents.length > 0 ? upcomingEvents.map((event) => {
               const team = (teams || []).find(t => t.id === event.teamId);
+              const participants = [
+                ...(myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId)).map(c => c.firstName),
+                ...((teams || []).some(t => t.id === event.teamId) ? ['You'] : [])
+              ];
+              
               return (
                 <Card key={event.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white">
                   <CardContent className="p-0">
                     <div className="flex items-stretch h-24">
                       <div className="w-20 bg-muted/30 flex flex-col items-center justify-center border-r shrink-0 group-hover:bg-primary/5 transition-colors">
-                        <span className="text-[8px] font-black uppercase opacity-40">{format(new Date(event.date), 'MMM')}</span>
-                        <span className="text-2xl font-black">{format(new Date(event.date), 'dd')}</span>
+                        <span className="text-[8px] font-black uppercase opacity-40">{event.date ? format(new Date(event.date), 'MMM') : '—'}</span>
+                        <span className="text-2xl font-black">{event.date ? format(new Date(event.date), 'dd') : '—'}</span>
                       </div>
                       <div className="flex-1 p-5 flex flex-col justify-center min-w-0">
                         <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-2">
                             <Badge className="bg-primary/10 text-primary border-none text-[7px] uppercase font-black px-1.5 h-4">{event.eventType}</Badge>
-                            <span className="text-[9px] font-black uppercase text-muted-foreground truncate max-w-[120px]">{team?.name}</span>
+                            <span className="text-[9px] font-black uppercase text-muted-foreground truncate max-w-[120px]">{team?.name || 'Squad Deployment'}</span>
                           </div>
-                          <span className="text-[10px] font-bold text-muted-foreground">{event.startTime}</span>
+                          <div className="flex gap-1 shrink-0">
+                            {participants.map((p, idx) => (
+                              <Badge 
+                                key={p} 
+                                className={cn(
+                                  "h-4 px-2 text-[7px] border-none font-black uppercase tracking-tighter shadow-sm",
+                                  p === 'You' ? "bg-black text-white" : 
+                                  idx === 0 ? "bg-primary text-white" : 
+                                  idx === 1 ? "bg-amber-500 text-black" : 
+                                  idx === 2 ? "bg-green-600 text-white" : 
+                                  "bg-blue-600 text-white"
+                                )}
+                              >
+                                {p}
+                              </Badge>
+                            ))}
+                          </div>
                         </div>
                         <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
-                        <p className="text-[9px] font-medium text-muted-foreground mt-1 flex items-center gap-1">
-                          <MapPin className="h-2 w-2" /> {event.location}
-                        </p>
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-[9px] font-medium text-muted-foreground flex items-center gap-1 truncate">
+                            <MapPin className="h-2 w-2" /> {event.location || 'No Location Set'}
+                          </p>
+                          <span className="text-[10px] font-bold text-muted-foreground whitespace-nowrap ml-2">{event.startTime || 'TBD'}</span>
+                        </div>
                       </div>
                     </div>
                   </CardContent>

@@ -28,7 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 export default function ChatsPage() {
-  const { activeTeam, members, createChat, isStaff, isParent, isSuperAdmin, user } = useTeam();
+  const { activeTeam, members, createChat, isStaff, isParent, isPlayer, isSuperAdmin, user } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   
@@ -70,18 +70,25 @@ export default function ChatsPage() {
   // Governance: Filter member list based on position
   const filteredMembers = useMemo(() => {
     if (!activeTeam) return [];
-    if (isStaff || isSuperAdmin) return members;
+    if (isSuperAdmin || isStaff) return members;
     
     if (isParent) {
       return members.filter(m => {
-        if (['Coach', 'Assistant Coach', 'Team Lead', 'Squad Leader', 'Platform Admin'].includes(m.position)) return true;
-        if (m.position === 'Parent') return activeTeam.parentChatEnabled;
+        // Parents can ONLY message other parents and staff/coaches
+        const isStaffPos = ['Coach', 'Assistant Coach', 'Team Lead', 'Squad Leader', 'Platform Admin', 'Manager', 'Team Representative'].includes(m.position);
+        if (isStaffPos) return true;
+        if (m.position === 'Parent') return true;
         return false;
       });
     }
 
+    if (isPlayer) {
+      // Players can message everyone EXCEPT parents
+      return members.filter(m => m.position !== 'Parent');
+    }
+
     return members;
-  }, [members, isStaff, isParent, activeTeam?.parentChatEnabled, isSuperAdmin, activeTeam]);
+  }, [members, isStaff, isParent, isPlayer, isSuperAdmin, activeTeam]);
 
   useEffect(() => {
     setMounted(true);

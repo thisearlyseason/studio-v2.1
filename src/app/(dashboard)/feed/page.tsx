@@ -133,7 +133,7 @@ export default function FeedPage() {
   if (!activeTeam) return null;
   const isAdmin = activeTeam.role === 'Admin' || isSuperAdmin;
   const canReadFeed = hasFeature('live_feed_read');
-  const canPost = isStaff; 
+  const canPost = isStaff || isPlayer || (isParent && activeTeam.parentPostingEnabled); 
   const canComment = isStaff || isPlayer || (isParent && activeTeam.parentCommentsEnabled);
 
   if (!canReadFeed) {

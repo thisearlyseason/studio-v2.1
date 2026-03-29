@@ -66,6 +66,7 @@ export type PlayerProfile = {
   // Editable profile fields
   sports?: string[];
   primaryPosition?: string;
+  sportPositions?: Record<string, string>;
   notes?: string;
   school?: string;
   gradYear?: string;
@@ -158,6 +159,7 @@ export type Team = {
   ownerUserId?: string;
   parentChatEnabled?: boolean;
   parentCommentsEnabled?: boolean;
+  parentPostingEnabled?: boolean;
   contactEmail?: string;
   contactPhone?: string;
   registrationProtocolId?: string;
@@ -250,6 +252,12 @@ export type TeamAlert = {
   createdBy: string;
 };
 
+export type IncidentPerson = {
+  name: string;
+  phone?: string;
+  email?: string;
+};
+
 export type TeamIncident = {
   id: string;
   teamId: string;
@@ -261,7 +269,9 @@ export type TeamIncident = {
   description: string;
   emergencyServicesCalled: boolean;
   witnesses?: string;
+  witnessesList?: IncidentPerson[];
   involvedPeople?: string;
+  involvedPersonnel?: IncidentPerson[];
   severity?: 'minor' | 'moderate' | 'severe' | 'critical';
   treatmentProvided?: string;
   followUpRequired?: boolean;
@@ -507,7 +517,7 @@ interface TeamContextType {
   isTeamsLoading: boolean;
   members: Member[];
   isMembersLoading: boolean;
-  currentMember: Member | null;
+  currentMember: Member | null | undefined;
   isStaff: boolean;
   isPro: boolean;
   isParent: boolean;
@@ -567,7 +577,7 @@ interface TeamContextType {
   addEvent: (data: any) => Promise<boolean>;
   updateEvent: (id: string, data: any) => Promise<boolean>;
   deleteEvent: (id: string) => Promise<void>;
-  updateRSVP: (eventId: string, status: string, teamId?: string) => Promise<void>;
+  updateRSVP: (eventId: string, status: string, teamId?: string, userId?: string) => Promise<void>;
   addMessage: (chatId: string, author: string, content: string, type: string, img?: string, poll?: any) => Promise<void>;
   createChat: (name: string, members: string[]) => Promise<string>;
   deleteChat: (chatId: string) => Promise<void>;
@@ -639,6 +649,7 @@ interface TeamContextType {
   deleteFundraisingOpportunity: (id: string) => Promise<void>;
   addGame: (data: any) => Promise<void>;
   updateGame: (gameId: string, data: any) => Promise<void>;
+  getMember: (id: string | null | undefined) => Member | undefined;
   canAddProTeam: boolean;
 }
 
@@ -750,6 +761,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
   const members = useMemo(() => membersData || [], [membersData]);
+  const getMember = useCallback((id: string | null | undefined) => {
+    if (!id) return undefined;
+    return members.find(m => m.id === id || m.userId === id);
+  }, [members]);
 
   const activeEventsQuery = useMemoFirebase(() => {
     if (!db || !activeTeam?.id) return null;
@@ -774,11 +789,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const myChildren = useMemo(() => myChildrenRaw || [], [myChildrenRaw]);
 
   const householdEventsQuery = useMemoFirebase(() => {
-    if (!db || !firebaseUser?.uid || !teamsData || teamsData.length === 0) return null;
-    const teamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
-    if (teamIds.length === 0) return null;
-    return query(collectionGroup(db, 'events'), where('teamId', 'in', teamIds.slice(0, 30)));
-  }, [db, firebaseUser?.uid, teamsData]);
+    if (!db || !firebaseUser?.uid) return null;
+    
+    // Hardening: Aggregate all team IDs from Parent AND ALL children
+    const myOwnTeamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
+    const childrenTeamIds = (myChildren || []).flatMap(c => c.joinedTeamIds || []);
+    
+    const allTeamIds = Array.from(new Set([...myOwnTeamIds, ...childrenTeamIds])).filter(Boolean);
+    
+    if (allTeamIds.length === 0) return null;
+    
+    // Firestore 'in' query limit is 30. For institutional scales, we slice to the first 30.
+    return query(collectionGroup(db, 'events'), where('teamId', 'in', allTeamIds.slice(0, 30)));
+  }, [db, firebaseUser?.uid, teamsData, myChildren]);
+  
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
   const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
 
@@ -799,12 +823,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (isSuperAdmin) return true;
     if (userProfile?.role === 'coach' || userProfile?.role === 'admin') return true; 
     if (activeTeam?.role === 'Admin') return true;
-    const currentMember = members.find(m => m.userId === firebaseUser.uid);
+    const currentMember = getMember(firebaseUser.uid);
     const staffPositions = ['Coach', 'Assistant Coach', 'Team Representative', 'Manager', 'Squad Leader', 'Coach Guest'];
     return staffPositions.includes(currentMember?.position || '');
   }, [activeTeam, firebaseUser, members, userProfile, isSuperAdmin]);
 
-  const isClubManager = useMemo(() => ['elite_teams', 'elite_league'].includes(userProfile?.activePlanId || '') || isSuperAdmin, [userProfile?.activePlanId, isSuperAdmin]);
+  const isParent = useMemo(() => userProfile?.role === 'parent', [userProfile?.role]);
+  const isPlayer = useMemo(() => userProfile?.role === 'adult_player' || userProfile?.role === 'youth_player', [userProfile?.role]);
+
+  const isClubManager = useMemo(() => {
+    if (isSuperAdmin) return true;
+    const isElite = ['elite_teams', 'elite_league'].includes(userProfile?.activePlanId || '') || 
+                    ['elite_teams', 'elite_league'].includes(activeTeam?.planId || '');
+    return isElite;
+  }, [userProfile?.activePlanId, activeTeam?.planId, isSuperAdmin]);
 
   const proQuotaStatus = useMemo(() => {
     if (!userProfile?.id) return { current: 0, limit: 0, exceeded: false, remaining: 0 };
@@ -815,7 +847,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const isPro = useMemo(() => {
     if (isSuperAdmin) return true;
-    return activeTeam?.isPro || userProfile?.activePlanId === 'squad_pro' || false;
+    return activeTeam?.isPro || 
+           userProfile?.activePlanId === 'squad_pro' || 
+           ['elite_teams', 'elite_league'].includes(activeTeam?.planId || '') || 
+           false;
   }, [activeTeam, userProfile, isSuperAdmin]);
 
   const hasFeature = useCallback((featureId: string) => {
@@ -921,13 +956,28 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const signTeamDocument = useCallback(async (docId: string, sig: string, mid: string) => { 
     if (!activeTeam?.id || !firebaseUser || !db) return false; 
     const certId = `cert_${Date.now()}`; 
-    const member = members.find(m => m.id === mid);
+    const member = getMember(mid);
     const memberName = member?.name || 'Unknown Member';
+    const isParentSigning = member?.userId !== firebaseUser.uid;
+    const parentName = userProfile?.name || firebaseUser.displayName || 'Authorized Guardian';
+    
+    // Hardening: If parent is signing for a minor, ensure dual-name recording
+    const finalSignature = isParentSigning 
+      ? `${memberName} (Signed by ${parentName})`
+      : sig;
+
     const docTitle = docId === 'default_medical' ? 'Medical Waiver' : docId === 'default_travel' ? 'Travel Waiver' : docId === 'default_parental' ? 'Parental Consent' : 'General Waiver';
     const batch = writeBatch(db); 
+    
     batch.set(doc(db, 'teams', activeTeam.id, 'members', mid, 'signatures', docId), { 
-      docId, signature: sig, signedAt: new Date().toISOString() 
+      docId, 
+      signature: finalSignature, 
+      signedAt: new Date().toISOString(),
+      signedByParent: isParentSigning,
+      parentName: isParentSigning ? parentName : null,
+      parentUid: isParentSigning ? firebaseUser.uid : null
     }); 
+    
     batch.set(doc(db, 'teams', activeTeam.id, 'files', certId), { 
       id: certId, 
       name: `Signed Certificate: ${docId}`, 
@@ -942,7 +992,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       teamName: activeTeam.name,
       waiverType: docId === 'default_medical' ? 'Medical' : docId === 'default_travel' ? 'Travel' : docId === 'default_parental' ? 'Parental' : 'General',
       resolvedMemberName: memberName,
-      resolvedDocTitle: docTitle
+      resolvedDocTitle: docTitle,
+      signedByParent: isParentSigning,
+      signerName: parentName
     }); 
 
     // Synchronize with Centralized Waiver Library (Coaches Corner Vault)
@@ -951,26 +1003,28 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       id: archId,
       documentId: docId,
       title: docTitle,
-      signer: sig,
+      signer: finalSignature,
       signedAt: new Date().toISOString(),
       type: 'Team Document',
       memberId: mid,
-      memberName: memberName
+      memberName: memberName,
+      signedByParent: isParentSigning
     }));
 
     await batch.commit(); 
     return true; 
-  }, [db, activeTeam, firebaseUser, members]);
+  }, [db, activeTeam, firebaseUser, members, userProfile]);
   const createTeamDocument = useCallback(async (data: any) => { if (activeTeam?.id && db) await setDoc(doc(db, 'teams', activeTeam.id, 'documents', data.id), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId, createdAt: new Date().toISOString() })); }, [db, activeTeam]);
   const updateTeamDocument = useCallback(async (docId: string, data: any) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'documents', docId), clean(data)); }, [db, activeTeam]);
 
   const addEvent = useCallback(async (data: any) => { if (activeTeam?.id && db) { await addDoc(collection(db, 'teams', activeTeam.id, 'events'), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId })); return true; } return false; }, [db, activeTeam]);
   const updateEvent = useCallback(async (id: string, data: any) => { if (activeTeam?.id && db) { await updateDoc(doc(db, 'teams', activeTeam.id, 'events', id), clean(data)); return true; } return false; }, [db, activeTeam]);
   const deleteEvent = useCallback(async (id: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'events', id)); }, [db, activeTeam]);
-  const updateRSVP = useCallback(async (eventId: string, status: string, teamId?: string) => { 
+  const updateRSVP = useCallback(async (eventId: string, status: string, teamId?: string, userId?: string) => { 
     const tid = teamId || activeTeam?.id;
-    if (tid && firebaseUser && db) {
-      await updateDoc(doc(db, 'teams', tid, 'events', eventId), { [`userRsvps.${firebaseUser.uid}`]: status }); 
+    const uid = userId || firebaseUser?.uid;
+    if (tid && uid && db) {
+      await updateDoc(doc(db, 'teams', tid, 'events', eventId), { [`userRsvps.${uid}`]: status }); 
     }
   }, [db, activeTeam, firebaseUser]);
 
@@ -1336,8 +1390,81 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const deleteTeam = useCallback(async (tid: string) => { if(db) await deleteDoc(doc(db, 'teams', tid)); }, [db]);
 
-  const markAlertAsSeen = useCallback(async (id: string) => { if (firebaseUser && db) await updateDoc(doc(db, 'users', firebaseUser.uid), { seenAlertIds: arrayUnion(id) }); }, [firebaseUser, db]);
-  const markAllAlertsAsSeen = useCallback(async () => { if (firebaseUser && db && alerts.length > 0) await updateDoc(doc(db, 'users', firebaseUser.uid), { seenAlertIds: alerts.map(a => a.id) }); }, [firebaseUser, db, alerts]);
+  const markAlertAsSeen = useCallback(async (id: string) => { 
+    console.log("DEBUG: markAlertAsSeen called for ID:", id);
+    if (!firebaseUser) {
+      console.warn("DEBUG: markAlertAsSeen failed: no firebaseUser");
+      return;
+    }
+    if (!db) {
+      console.warn("DEBUG: markAlertAsSeen failed: no db");
+      return;
+    }
+    try {
+      console.log("DEBUG: Attempting Firestore update for user:", firebaseUser.uid);
+      const userRef = doc(db, 'users', firebaseUser.uid);
+      
+      // Hardening: Use a batch or at least verify the ID is valid
+      if (!id) throw new Error("No alert ID provided to archive");
+
+      await setDoc(userRef, { 
+        seenAlertIds: arrayUnion(id),
+        lastAlertArchivedAt: new Date().toISOString() // Diagnostic field
+      }, { merge: true }); 
+      
+      console.log("DEBUG: markAlertAsSeen Firestore write successful for ID:", id);
+    } catch (error) {
+      console.error("CRITICAL: markAlertAsSeen failed:", error);
+      toast({
+        title: "Update Failed",
+        description: "Could not archive the broadcast. Please try again.",
+        variant: "destructive"
+      });
+    }
+  }, [firebaseUser, db]);
+
+  const markAllAlertsAsSeen = useCallback(async () => { 
+    console.log("DEBUG: markAllAlertsAsSeen called. Alerts count in memory:", alerts.length);
+    if (!firebaseUser || !db) {
+      console.warn("DEBUG: markAllAlertsAsSeen aborted: missing user or db", { hasUser: !!firebaseUser, hasDb: !!db });
+      return;
+    }
+    
+    if (alerts.length === 0) {
+      console.log("DEBUG: No alerts found to archive in markAllAlertsAsSeen");
+      return;
+    }
+
+    try {
+      const userRelevantIds = alerts.filter(alert => {
+        if (alert.audience === 'everyone') return true;
+        if (alert.audience === 'coaches' && isStaff) return true;
+        if (alert.audience === 'players' && isPlayer) return true;
+        if (alert.audience === 'parents' && isParent) return true;
+        return false;
+      }).map(a => a.id);
+
+      console.log("DEBUG: Filtered relevant IDs for bulk archive:", userRelevantIds);
+
+      if (userRelevantIds.length > 0) {
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        await setDoc(userRef, { 
+          seenAlertIds: arrayUnion(...userRelevantIds),
+          lastBulkArchiveAt: new Date().toISOString() // Diagnostic field
+        }, { merge: true }); 
+        console.log("DEBUG: Bulk archive Firestore write successful.");
+      } else {
+        console.log("DEBUG: No relevant unread alerts for this user's role.");
+      }
+    } catch (error) {
+      console.error("CRITICAL: markAllAlertsAsSeen failed:", error);
+      toast({
+        title: "Bulk Archive Failed",
+        description: "Could not clear all notifications. Please try again.",
+        variant: "destructive"
+      });
+    }
+  }, [firebaseUser, db, alerts, isStaff, isPlayer, isParent]);
   const createAlert = useCallback(async (t: string, m: string, a: any) => { if (activeTeam?.id && db && firebaseUser) await addDoc(collection(db, 'teams', activeTeam.id, 'alerts'), clean({ title: t, message: m, audience: a, createdAt: new Date().toISOString(), createdBy: firebaseUser.uid })); }, [activeTeam, db, firebaseUser]);
   const deleteAlert = useCallback(async (id: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'alerts', id)); }, [activeTeam, db]);
 
@@ -1453,9 +1580,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (db) await updateDoc(doc(db, 'leagues', leagueId), { scorekeeperPin: pin }); 
   }, [db]);
 
+
+
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam, teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
-    currentMember: members.find(m => m.userId === firebaseUser?.uid) || null,
+    currentMember: getMember(firebaseUser?.uid),
     isStaff, isPro, isParent: userProfile?.role === 'parent', 
     isPlayer: userProfile?.role === 'adult_player' || userProfile?.role === 'youth_player',
     isYouth: userProfile?.role === 'youth_player',
@@ -1485,7 +1614,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
     isRCInitialized: true, addRegistration, addLeaguePayment, updateLeagueGlobalFees,
-    firebaseUser
+    getMember, firebaseUser
   }), [
     db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser,
     isStaff, isPro, householdEvents, activeTeamEvents, myChildren, plans, isPlansLoading, isPaywallOpen, isSeedingDemo,
@@ -1509,7 +1638,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addField, deleteFacilityField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
-    addRegistration, purchasePro, addLeaguePayment, updateLeagueGlobalFees
+    addRegistration, purchasePro, addLeaguePayment, updateLeagueGlobalFees,
+    getMember
   ]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;

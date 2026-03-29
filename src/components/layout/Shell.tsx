@@ -85,12 +85,12 @@ const coordinationTabs = [
   { name: 'Feed', href: '/feed', icon: Radio, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Leagues', href: '/leagues', icon: Shield, pro: false },
-  { name: 'Tournaments', href: '/manage-tournaments', icon: TableIcon, pro: true, gate: 'staff_only' },
+  { name: 'Tournaments', href: '/manage-tournaments', icon: TableIcon, pro: true },
   { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: false },
   { name: 'Calendar', href: '/calendar', icon: CalendarIcon, pro: false },
   { name: 'Playbook', icon: Dumbbell, href: '/drills', pro: false },
-  { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: false, gate: 'staff_or_parent' },
-  { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: false, gate: 'staff_or_parent' },
+  { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: false },
+  { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: false },
   { name: 'Chats', href: '/chats', icon: MessageCircle, pro: false },
   { name: 'Roster', href: '/roster', icon: Users2, pro: false },
   { name: 'Library', href: '/files', icon: FolderClosed, pro: false },
@@ -190,13 +190,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
   const filteredCoordTabs = coordinationTabs.filter(tab => {
-    if (tab.gate === 'staff_or_parent') return isStaff || isParent;
-    if (tab.gate === 'staff_only') return isStaff;
+    // Feed is filtered by plan/feature
+    if (tab.name === 'Feed') return hasFeature('live_feed_read');
     
-    // Adult teams allow all players to see volunteer/fundraising
-    const isAdultTeam = activeTeam?.type === 'adult';
-    if (isAdultTeam && (tab.name === 'Volunteer' || tab.name === 'Fundraising')) return true;
-
+    // Most coordination items are visible to all members for transparency,
+    // internal page logic handles edit/administrative permissions.
     return true;
   });
 

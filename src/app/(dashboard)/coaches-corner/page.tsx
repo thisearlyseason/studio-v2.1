@@ -47,7 +47,8 @@ import {
   ClipboardList,
   X,
   Save,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Eye
 } from 'lucide-react';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { collection, query, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -822,7 +823,17 @@ function SafetyHub() {
     emergencyServicesCalled: false,
     severity: 'minor',
     witnesses: '',
+    witnessesList: [
+      { name: '', phone: '', email: '' },
+      { name: '', phone: '', email: '' },
+      { name: '', phone: '', email: '' },
+    ],
     involvedPeople: '',
+    involvedPersonnel: [
+      { name: '', phone: '', email: '' },
+      { name: '', phone: '', email: '' },
+      { name: '', phone: '', email: '' },
+    ],
     treatmentProvided: '',
     followUpRequired: false,
     actionsTaken: '',
@@ -850,7 +861,17 @@ function SafetyHub() {
       emergencyServicesCalled: false,
       severity: 'minor',
       witnesses: '',
+      witnessesList: [
+        { name: '', phone: '', email: '' },
+        { name: '', phone: '', email: '' },
+        { name: '', phone: '', email: '' },
+      ],
       involvedPeople: '',
+      involvedPersonnel: [
+        { name: '', phone: '', email: '' },
+        { name: '', phone: '', email: '' },
+        { name: '', phone: '', email: '' },
+      ],
       treatmentProvided: '',
       followUpRequired: false,
       actionsTaken: '',
@@ -1073,14 +1094,55 @@ function SafetyHub() {
                 <Textarea placeholder="What occurred? Be descriptive and objective..." value={form.description ?? ''} onChange={e => setForm({...form, description: e.target.value})} className="min-h-[100px] rounded-2xl border-2 font-medium" />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase ml-1">Personnel Involved</Label>
-                  <Input placeholder="Names of affected players/staff..." value={form.involvedPeople ?? ''} onChange={e => setForm({...form, involvedPeople: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2"><div className="bg-primary/10 p-1.5 rounded-lg text-primary"><Users className="h-4 w-4" /></div><Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Personnel Involved</Label></div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {form.involvedPersonnel.map((p, i) => (
+                      <div key={i} className="grid grid-cols-3 gap-2">
+                        <Input placeholder="Name..." value={p.name} onChange={e => {
+                          const newList = [...form.involvedPersonnel];
+                          newList[i].name = e.target.value;
+                          setForm({...form, involvedPersonnel: newList});
+                        }} className="h-10 border-2 rounded-xl text-[10px] font-bold" />
+                        <Input placeholder="Phone..." value={p.phone} onChange={e => {
+                          const newList = [...form.involvedPersonnel];
+                          newList[i].phone = e.target.value;
+                          setForm({...form, involvedPersonnel: newList});
+                        }} className="h-10 border-2 rounded-xl text-[10px] font-bold" />
+                        <Input placeholder="Email..." value={p.email} onChange={e => {
+                          const newList = [...form.involvedPersonnel];
+                          newList[i].email = e.target.value;
+                          setForm({...form, involvedPersonnel: newList});
+                        }} className="h-10 border-2 rounded-xl text-[10px] font-bold" />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase ml-1">Witnesses</Label>
-                  <Input placeholder="Others present..." value={form.witnesses ?? ''} onChange={e => setForm({...form, witnesses: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2"><div className="bg-primary/10 p-1.5 rounded-lg text-primary"><Eye className="h-4 w-4" /></div><Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Witnesses</Label></div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {form.witnessesList.map((p, i) => (
+                      <div key={i} className="grid grid-cols-3 gap-2">
+                        <Input placeholder="Name..." value={p.name} onChange={e => {
+                          const newList = [...form.witnessesList];
+                          newList[i].name = e.target.value;
+                          setForm({...form, witnessesList: newList});
+                        }} className="h-10 border-2 rounded-xl text-[10px] font-bold" />
+                        <Input placeholder="Phone..." value={p.phone} onChange={e => {
+                          const newList = [...form.witnessesList];
+                          newList[i].phone = e.target.value;
+                          setForm({...form, witnessesList: newList});
+                        }} className="h-10 border-2 rounded-xl text-[10px] font-bold" />
+                        <Input placeholder="Email..." value={p.email} onChange={e => {
+                          const newList = [...form.witnessesList];
+                          newList[i].email = e.target.value;
+                          setForm({...form, witnessesList: newList});
+                        }} className="h-10 border-2 rounded-xl text-[10px] font-bold" />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 

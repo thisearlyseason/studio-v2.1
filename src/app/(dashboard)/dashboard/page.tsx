@@ -25,7 +25,7 @@ import {
   Star
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { format, isFuture, isToday, isSameDay, isSameMonth } from 'date-fns';
+import { format, isFuture, isToday, isSameDay, isSameMonth, startOfDay, isPast } from 'date-fns';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, limit } from 'firebase/firestore';
 import { usePendingWaivers } from '@/hooks/use-pending-waivers';
@@ -91,7 +91,11 @@ export default function UniversalAccountDashboard() {
 
   const upcomingItinerary = useMemo(() => {
     if (!activeTeamEvents || !Array.isArray(activeTeamEvents)) return [];
-    const futureEvents = activeTeamEvents.filter(e => isFuture(new Date(e.date)) || isToday(new Date(e.date)));
+    const nowStart = startOfDay(new Date());
+    const futureEvents = activeTeamEvents.filter(e => {
+        const eventEnd = startOfDay(new Date(e.endDate || e.date));
+        return eventEnd >= nowStart;
+    });
     if (futureEvents.length > 0) return futureEvents.slice(0, 3);
     
     // Fallback to most recent events if no future events exist (useful for demo team)

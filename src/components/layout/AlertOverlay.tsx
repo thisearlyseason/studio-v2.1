@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Dialog, 
   DialogContent, 
@@ -160,14 +160,29 @@ function QuoteIcon({ className }: { className?: string }) {
 export function AlertsHistoryDialog({ children }: { children: React.ReactNode }) {
   const { alerts, markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isStaff, isPlayer, isParent, deleteAlert } = useTeam();
   const [isOpen, setIsOpen] = useState(false);
+  const { toast } = useToast();
 
-  const myAlerts = (alerts || []).filter(alert => {
-    if (alert.audience === 'everyone') return true;
-    if (alert.audience === 'coaches' && isStaff) return true;
-    if (alert.audience === 'players' && isPlayer) return true;
-    if (alert.audience === 'parents' && isParent) return true;
-    return false;
-  });
+  const [showArchived, setShowArchived] = useState(false);
+  const [processingIds, setProcessingIds] = useState<string[]>([]);
+
+  const filteredAlerts = useMemo(() => {
+    return (alerts || []).filter(alert => {
+      if (alert.audience === 'everyone') return true;
+      if (alert.audience === 'coaches' && isStaff) return true;
+      if (alert.audience === 'players' && isPlayer) return true;
+      if (alert.audience === 'parents' && isParent) return true;
+      return false;
+    });
+  }, [alerts, isStaff, isPlayer, isParent]);
+
+  const { activeAlerts, archivedAlerts } = useMemo(() => {
+    return {
+      activeAlerts: filteredAlerts.filter((a: TeamAlert) => !seenAlertIds.includes(a.id) && !processingIds.includes(a.id)),
+      archivedAlerts: filteredAlerts.filter((a: TeamAlert) => seenAlertIds.includes(a.id) || (processingIds.includes(a.id) && !seenAlertIds.includes(a.id)))
+    };
+  }, [filteredAlerts, seenAlertIds, processingIds]);
+
+  const displayAlerts = showArchived ? [...activeAlerts, ...archivedAlerts] : activeAlerts;
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -184,16 +199,40 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
               </div>
               <DialogTitle className="text-2xl font-black uppercase tracking-tight">Broadcast Inbox</DialogTitle>
             </div>
-            {myAlerts.length > 0 && (
-              <Button variant="ghost" size="sm" className="text-[10px] font-black uppercase tracking-widest h-8 px-3 hover:bg-primary/5 text-primary" onClick={markAllAlertsAsSeen}>
-                Archive All
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className={cn(
+                  "text-[10px] font-black uppercase tracking-widest h-8 px-3 rounded-xl transition-all",
+                  showArchived ? "bg-primary text-white border-primary" : "hover:bg-primary/5 text-muted-foreground"
+                )}
+                onClick={() => setShowArchived(!showArchived)}
+              >
+                {showArchived ? 'Hide History' : 'Show History'}
               </Button>
-            )}
+              {activeAlerts.length > 0 && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-[10px] font-black uppercase tracking-widest h-8 px-3 hover:bg-primary/5 text-primary" 
+                  onClick={async () => {
+                    await markAllAlertsAsSeen();
+                    toast({
+                      title: "All Broadcasts Archived",
+                      description: "Every unread notification has been marked as seen."
+                    });
+                  }}
+                >
+                  Archive All
+                </Button>
+              )}
+            </div>
           </div>
         </DialogHeader>
         <ScrollArea className="max-h-[450px] px-8 pb-10">
           <div className="space-y-4 pt-4">
-            {myAlerts.length > 0 ? myAlerts.map((alert) => {
+            {displayAlerts.length > 0 ? displayAlerts.map((alert: TeamAlert) => {
               const isUnread = !seenAlertIds.includes(alert.id);
               return (
                 <div key={alert.id} className={cn(
@@ -212,27 +251,87 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <h4 className="font-black text-sm tracking-tight leading-tight uppercase truncate pr-6">{alert.title}</h4>
+                        <h4 className="font-black text-sm tracking-tight leading-tight uppercase truncate pr-12">{alert.title}</h4>
                         <Badge variant="outline" className={cn(
-                          "text-[7px] font-black uppercase px-1.5 h-4 border-none",
+                          "text-[7px] font-black uppercase px-1.5 h-4 border-none shrink-0",
                           isUnread ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                         )}>{alert.audience}</Badge>
                       </div>
-                      <p className="text-xs font-medium text-foreground/80 leading-relaxed italic">"{alert.message}"</p>
+                      <p className="text-xs font-medium text-foreground/80 leading-relaxed italic pr-4">"{alert.message}"</p>
                       <div className="flex items-center justify-between mt-4">
                         <div className="flex items-center gap-1.5 opacity-40">
                           <Clock className="h-3 w-3" />
                           <span className="text-[9px] font-black uppercase tracking-widest">{formatDistanceToNow(new Date(alert.createdAt))} ago</span>
                         </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className={cn(
+                          "flex items-center gap-1 transition-all",
+                          isUnread ? "opacity-100" : "opacity-0 group-hover:opacity-40"
+                        )}>
                           {isUnread && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl bg-white/50 hover:bg-primary hover:text-white" onClick={() => markAlertAsSeen(alert.id)}>
-                              <CheckCircle2 className="h-4 w-4" />
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 rounded-xl bg-white/80 hover:bg-primary hover:text-white shadow-sm border border-black/5" 
+                              disabled={processingIds.includes(alert.id)}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setProcessingIds(prev => [...prev, alert.id]);
+                                toast({ 
+                                  title: "Broadcast Archived", 
+                                  description: "Notification moved to history." 
+                                });
+                                await markAlertAsSeen(alert.id);
+                                setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
+                              }}
+                              title="Archive broadcast"
+                            >
+                              <CheckCircle2 className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
+                            </Button>
+                          )}
+                          {isUnread && (
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 rounded-xl bg-white/80 hover:bg-black hover:text-white shadow-sm border border-black/5" 
+                              disabled={processingIds.includes(alert.id)}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setProcessingIds(prev => [...prev, alert.id]);
+                                toast({ 
+                                  title: "Notification Removed", 
+                                  description: "Moved to archive history." 
+                                });
+                                await markAlertAsSeen(alert.id);
+                                setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
+                              }}
+                              title="Remove from inbox"
+                            >
+                              <X className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
                             </Button>
                           )}
                           {isStaff && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl bg-white/50 hover:bg-destructive hover:text-white" onClick={() => deleteAlert(alert.id)}>
-                              <Trash2 className="h-4 w-4" />
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 rounded-xl bg-white/80 hover:bg-destructive hover:text-white shadow-sm border border-black/5" 
+                              disabled={processingIds.includes(alert.id)}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setProcessingIds(prev => [...prev, alert.id]);
+                                toast({ 
+                                  title: "Broadcast Deleted", 
+                                  description: "Permanently removed from team history.",
+                                  variant: "destructive"
+                                });
+                                await deleteAlert(alert.id);
+                                setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
+                              }}
+                              title="Permantently delete (Admin)"
+                            >
+                              <Trash2 className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
                             </Button>
                           )}
                         </div>
