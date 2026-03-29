@@ -43,6 +43,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { Lock as LockIcon } from 'lucide-react';
 
 export default function VolunteerHubPage() {
   const { activeTeam, user, isStaff, isParent, addVolunteerOpportunity, signUpForVolunteer, verifyVolunteerHours, deleteVolunteerOpportunity, confirmVolunteerAttendance, isPro, purchasePro } = useTeam();
@@ -104,7 +105,43 @@ export default function VolunteerHubPage() {
   }
 
   return (
-    <div className="space-y-10 pb-20 animate-in fade-in duration-500">
+    <div className="relative min-h-[calc(100vh-10rem)]">
+      {!isPro && (
+        <div 
+          className="absolute inset-x-[-2rem] inset-y-[-2rem] z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
+          style={{ 
+            background: 'radial-gradient(circle at center, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.8) 100%)',
+            backdropFilter: 'blur(8px)'
+          }}
+        >
+          <Card className="max-w-md w-full rounded-[3rem] border-none shadow-[0_30px_60px_-15px_rgba(0,0,0,0.1)] bg-white overflow-hidden ring-1 ring-black/5">
+            <div className="h-2 bg-primary w-full" />
+            <CardHeader className="p-10 text-center space-y-6">
+              <div className="bg-primary/10 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto shadow-inner">
+                <LockIcon className="h-10 w-10 text-primary" />
+              </div>
+              <div className="space-y-2">
+                <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[10px] h-6 px-4 mb-2 mx-auto">Elite Access Protocol</Badge>
+                <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none">Volunteer Hub Locked</CardTitle>
+                <CardDescription className="font-bold uppercase tracking-widest text-[10px] text-muted-foreground/60">Institutional Logistics Terminal</CardDescription>
+              </div>
+              <p className="text-xs font-medium text-muted-foreground leading-relaxed">
+                The Volunteer Hub is an <span className="text-primary font-black uppercase">Elite Pro</span> feature. Unlock unlimited logistics coordination, automated hour audit trails, and public enrollment portals.
+              </p>
+            </CardHeader>
+            <CardFooter className="p-10 pt-0">
+              <Button 
+                onClick={purchasePro}
+                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all bg-primary"
+              >
+                Upgrade to Pro
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      )}
+
+      <div className={cn("space-y-10 pb-20 animate-in fade-in duration-500", !isPro && "blur-[2px] pointer-events-none grayscale opacity-40")}>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Squad Support</Badge>
@@ -264,6 +301,7 @@ export default function VolunteerHubPage() {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
     </div>
   );
 }

@@ -46,6 +46,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format, isPast } from 'date-fns';
+import { Lock as LockIcon } from 'lucide-react';
 
 function DonationAuditLedger({ fundId }: { fundId: string }) {
   const { activeTeam, confirmExternalDonation } = useTeam();
@@ -146,7 +147,43 @@ export default function FundraisingPage() {
   );
 
   return (
-    <div className="space-y-10 pb-20 animate-in fade-in duration-500 text-foreground">
+    <div className="relative min-h-[calc(100vh-10rem)]">
+      {!isPro && (
+        <div 
+          className="absolute inset-x-[-2rem] inset-y-[-2rem] z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
+          style={{ 
+            background: 'radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.8) 100%)',
+            backdropFilter: 'blur(12px)'
+          }}
+        >
+          <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-[0_40px_80px_-15px_rgba(0,0,0,0.15)] bg-white overflow-hidden ring-1 ring-black/5">
+            <div className="h-2 bg-primary w-full" />
+            <CardHeader className="p-10 lg:p-12 text-center space-y-6">
+              <div className="bg-primary/10 w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-inner ring-8 ring-primary/5">
+                <LockIcon className="h-10 w-10 text-primary" />
+              </div>
+              <div className="space-y-2">
+                <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-4 mb-2 mx-auto">Fiscal Access Protocol</Badge>
+                <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none">Fundraising Locked</CardTitle>
+                <CardDescription className="font-bold uppercase tracking-widest text-[10px] text-muted-foreground/60">Institutional Capital Mobilization Hub</CardDescription>
+              </div>
+              <p className="text-xs font-medium text-muted-foreground leading-relaxed">
+                Unlock the <span className="text-primary font-black uppercase tracking-tighter">Elite Pro</span> fundraising suite. Manage multi-channel campaigns, automated audit ledgers, and institutional donor portals.
+              </p>
+            </CardHeader>
+            <CardFooter className="p-10 lg:p-12 pt-0">
+              <Button 
+                onClick={purchasePro}
+                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all bg-primary"
+              >
+                Unlock Pro Capital Hub
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      )}
+
+      <div className={cn("space-y-10 pb-20 animate-in fade-in duration-500", !isPro && "blur-[1px] pointer-events-none grayscale opacity-40")}>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Squad Capital</Badge>
@@ -380,6 +417,7 @@ export default function FundraisingPage() {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
     </div>
   );
 }

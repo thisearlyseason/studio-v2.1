@@ -609,6 +609,7 @@ interface TeamContextType {
   deleteField: (facilityId: string, fieldId: string) => Promise<void>;
   createLeague: (name: string) => Promise<string>;
   updateLeague: (leagueId: string, updates: Partial<League>) => Promise<void>;
+  addLeagueGame: (leagueId: string, game: any) => Promise<void>;
   updateLeagueSchedule: (leagueId: string, schedule: any[]) => Promise<void>;
   removeTeamFromLeague: (leagueId: string, teamId: string) => Promise<void>;
   inviteTeamToLeague: (leagueId: string, leagueName: string, email: string, teamName?: string) => Promise<void>;
@@ -1114,6 +1115,51 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await updateDoc(doc(db, 'leagues', leagueId), clean(updates)); 
   }, [db]);
 
+  const addLeagueGame = useCallback(async (lId: string, game: any) => {
+    if (!db) return;
+    const leagueRef = doc(db, 'leagues', lId);
+    const leagueSnap = await getDoc(leagueRef);
+    const leagueData = leagueSnap.data();
+    if (!leagueData) return;
+
+    const gameId = `game_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const newGame = {
+      ...game,
+      id: gameId,
+      isCompleted: false,
+      score1: 0,
+      score2: 0,
+      createdAt: new Date().toISOString()
+    };
+
+    const batch = writeBatch(db);
+    batch.update(leagueRef, { schedule: arrayUnion(newGame) });
+
+    const createEvent = (tid: string, myName: string, oppName: string, isHome: boolean) => {
+      if (!tid) return;
+      const eid = `lg_${lId}_${gameId}`;
+      batch.set(doc(db, 'teams', tid, 'events', eid), clean({ 
+        id: eid, 
+        teamId: tid, 
+        title: `League Match vs ${oppName}`, 
+        eventType: 'game', 
+        isLeagueGame: true, 
+        isHome,
+        leagueId: lId, 
+        date: game.date, 
+        startTime: game.time, 
+        location: game.location, 
+        description: `Official season fixture for ${leagueData.name}. Matchup: ${myName} vs ${oppName}`, 
+        createdAt: new Date().toISOString() 
+      }));
+    };
+
+    if (game.team1Id) createEvent(game.team1Id, game.team1, game.team2, true);
+    if (game.team2Id) createEvent(game.team2Id, game.team2, game.team1, false);
+
+    await batch.commit();
+  }, [db]);
+
   const updateLeagueSchedule = useCallback(async (lId: string, s: any[]) => { 
     if (!db) return; 
     
@@ -1609,6 +1655,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     confirmExternalDonation, addIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
+    addLeagueGame,
     createAlert, deleteAlert, addDrill, deleteDrill, addFile, deleteFile, addFacility, deleteFacility,
     addField, deleteField: deleteFacilityField, 
     assignEquipment, returnEquipment,
@@ -1634,6 +1681,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     confirmExternalDonation, addIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
+    addLeagueGame,
     createAlert, deleteAlert, addDrill, deleteDrill, addFile, deleteFile, addFacility, deleteFacility,
     addField, deleteFacilityField, 
     assignEquipment, returnEquipment,

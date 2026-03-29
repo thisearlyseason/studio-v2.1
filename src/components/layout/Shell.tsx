@@ -42,7 +42,8 @@ import {
   Users,
   Menu,
   MoreHorizontal,
-  Radio
+  Radio,
+  GraduationCap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -86,11 +87,11 @@ const coordinationTabs = [
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Leagues', href: '/leagues', icon: Shield, pro: false },
   { name: 'Tournaments', href: '/manage-tournaments', icon: TableIcon, pro: true },
-  { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: false },
+  { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: true },
   { name: 'Calendar', href: '/calendar', icon: CalendarIcon, pro: false },
-  { name: 'Playbook', icon: Dumbbell, href: '/drills', pro: false },
-  { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: false },
-  { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: false },
+  { name: 'Playbook', href: '/drills', icon: GraduationCap, pro: true },
+  { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: true },
+  { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: true },
   { name: 'Chats', href: '/chats', icon: MessageCircle, pro: false },
   { name: 'Roster', href: '/roster', icon: Users2, pro: false },
   { name: 'Library', href: '/files', icon: FolderClosed, pro: false },
@@ -104,19 +105,30 @@ const adminTabs = [
 
 const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boolean, isLocked: boolean }) => {
   const Icon = tab.icon;
+  const { purchasePro } = useTeam();
+  
+  const handleClick = (e: React.MouseEvent) => {
+    if (isLocked) {
+      e.preventDefault();
+      purchasePro();
+    }
+  };
+
   return (
     <SidebarMenuItem>
       <SidebarMenuButton 
         asChild 
         isActive={isActive}
+        onClick={handleClick}
         className={cn(
           "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
           isActive 
             ? "bg-primary/10 text-primary shadow-none hover:bg-primary/10 hover:text-primary" 
-            : "text-foreground hover:bg-muted/80 hover:text-primary"
+            : "text-foreground hover:bg-muted/80 hover:text-primary",
+          isLocked && "opacity-80"
         )}
       >
-        <Link href={tab.href} className="flex items-center justify-between w-full">
+        <Link href={isLocked ? '#' : tab.href} className="flex items-center justify-between w-full">
           <div className="flex items-center gap-4">
             <Icon className={cn("h-5 w-5", isActive ? "stroke-[3px] text-primary" : "stroke-[2.5]")} />
             <span className={cn(isActive && "text-primary")}>{tab.name}</span>
@@ -184,7 +196,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const { 
     activeTeam, setActiveTeam, teams, user, isPro, 
     isClubManager, isStaff, isParent, isPlayer, hasFeature, alerts,
-    unreadAlertsCount
+    unreadAlertsCount, purchasePro
   } = useTeam();
 
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
@@ -413,14 +425,24 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                               if (bottomNavItems.find(item => item.href === tab.href)) return null;
                               const isLocked = tab.pro && !isPro;
                               
+                              const handleClick = (e: React.MouseEvent) => {
+                                if (isLocked) {
+                                  e.preventDefault();
+                                  purchasePro();
+                                } else {
+                                  setIsMoreMenuOpen(false);
+                                }
+                              };
+
                               return (
                                 <Link 
                                   key={tab.name} 
-                                  href={tab.href}
-                                  onClick={() => setIsMoreMenuOpen(false)}
+                                  href={isLocked ? '#' : tab.href}
+                                  onClick={handleClick}
                                   className={cn(
                                     "flex items-center gap-3 p-4 rounded-2xl border transition-all group active:scale-95",
-                                    pathname === tab.href ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:bg-white hover:border-primary/20"
+                                    pathname === tab.href ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:bg-white hover:border-primary/20",
+                                    isLocked && "opacity-80"
                                   )}
                                 >
                                   <div className={cn(
@@ -500,14 +522,25 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                             <div className="grid grid-cols-1 gap-2">
                               {adminTabs.map((tab) => {
                                 const isLocked = tab.pro && !isPro;
+                                
+                                const handleClick = (e: React.MouseEvent) => {
+                                  if (isLocked) {
+                                    e.preventDefault();
+                                    purchasePro();
+                                  } else {
+                                    setIsMoreMenuOpen(false);
+                                  }
+                                };
+
                                 return (
                                   <Link 
                                     key={tab.name} 
-                                    href={tab.href}
-                                    onClick={() => setIsMoreMenuOpen(false)}
+                                    href={isLocked ? '#' : tab.href}
+                                    onClick={handleClick}
                                     className={cn(
                                       "flex items-center justify-between p-4 rounded-2xl border bg-muted/30 text-foreground transition-all active:scale-[0.98]",
-                                      pathname === tab.href ? "bg-white ring-2 ring-primary ring-offset-2" : ""
+                                      pathname === tab.href ? "bg-white ring-2 ring-primary ring-offset-2" : "",
+                                      isLocked && "opacity-80"
                                     )}
                                   >
                                     <div className="flex items-center gap-4">

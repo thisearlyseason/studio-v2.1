@@ -229,26 +229,58 @@ export default function PlaybookAndGamePlayPage() {
   if (isDrillsLoading || isFilesLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Tactical Hub...</p></div>;
 
   return (
-    <div className="space-y-8 pb-20 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest mb-1">Execution Hub</Badge>
-          <h1 className="text-4xl font-black tracking-tight uppercase text-foreground leading-none">Playbook Hub</h1>
+    <div className="relative min-h-[calc(100vh-10rem)]">
+      {!isPro && (
+        <div 
+          className="absolute inset-x-[-2rem] inset-y-[-2rem] z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
+          style={{ 
+            background: 'radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.8) 100%)',
+            backdropFilter: 'blur(12px)'
+          }}
+        >
+          <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-[0_40px_80px_-15px_rgba(0,0,0,0.15)] bg-white overflow-hidden ring-1 ring-black/5">
+            <div className="h-2 bg-primary w-full" />
+            <div className="p-10 text-center space-y-6">
+              <div className="mx-auto w-20 h-20 bg-primary/5 rounded-[2rem] flex items-center justify-center ring-1 ring-primary/10 animate-pulse">
+                <Lock className="h-10 w-10 text-primary" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-bold tracking-tight text-slate-900">Tactical Playbook</h3>
+                <p className="text-slate-500 text-sm leading-relaxed">
+                  Institutional-grade drills, private game tape, and advanced tactical archives require a Pro subscription.
+                </p>
+              </div>
+              <Button 
+                onClick={purchasePro}
+                className="w-full h-14 rounded-2xl bg-primary text-white font-bold hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 shadow-lg shadow-primary/20"
+              >
+                Upgrade to Pro
+              </Button>
+            </div>
+          </Card>
         </div>
-        <div className="flex bg-muted/30 p-1.5 rounded-2xl border-2 shadow-inner">
-          <button onClick={() => setViewMode('drills')} className={cn("px-8 h-11 rounded-xl font-black text-xs uppercase tracking-widest transition-all", viewMode === 'drills' ? "bg-black text-white shadow-xl" : "text-muted-foreground hover:text-black")}>Drills</button>
-          <button 
-            onClick={() => isPro ? setViewMode('gameplay') : purchasePro()} 
-            className={cn(
-              "px-8 h-11 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2", 
-              viewMode === 'gameplay' ? "bg-black text-white shadow-xl" : "text-muted-foreground hover:text-black"
-            )}
-          >
-            {!isPro && <Lock className="h-3 w-3 text-red-600" />}
-            Game Play
-          </button>
+      )}
+
+      <div className={cn("space-y-8 pb-20 animate-in fade-in duration-500", !isPro && "blur-[8px] grayscale pointer-events-none")}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest mb-1">Execution Hub</Badge>
+            <h1 className="text-4xl font-black tracking-tight uppercase text-foreground leading-none">Playbook Hub</h1>
+          </div>
+          <div className="flex bg-muted/30 p-1.5 rounded-2xl border-2 shadow-inner">
+            <button onClick={() => setViewMode('drills')} className={cn("px-8 h-11 rounded-xl font-black text-xs uppercase tracking-widest transition-all", viewMode === 'drills' ? "bg-black text-white shadow-xl" : "text-muted-foreground hover:text-black")}>Drills</button>
+            <button 
+              onClick={() => isPro ? setViewMode('gameplay') : purchasePro()} 
+              className={cn(
+                "px-8 h-11 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2", 
+                viewMode === 'gameplay' ? "bg-black text-white shadow-xl" : "text-muted-foreground hover:text-black"
+              )}
+            >
+              {!isPro && <Lock className="h-3 w-3 text-red-600" />}
+              Game Play
+            </button>
+          </div>
         </div>
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <aside className="space-y-6">
@@ -580,6 +612,7 @@ export default function PlaybookAndGamePlayPage() {
           })()}
         </DialogContent>
       </Dialog>
+    </div>
     </div>
   );
 }

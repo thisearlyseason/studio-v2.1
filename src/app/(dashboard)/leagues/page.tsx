@@ -37,7 +37,8 @@ import {
   LayoutGrid,
   ExternalLink,
   Users,
-  Share2
+  Share2,
+  Lock as LockIcon
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -424,6 +425,11 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
           <Button variant="outline" className="flex-1 sm:flex-none h-11 rounded-xl border-2 font-black uppercase text-[10px] text-foreground" onClick={exportSchedule}>
             <Download className="h-4 w-4 mr-2" /> Download Schedule
           </Button>
+          {isStaff && (
+            <Button variant="default" className="flex-1 sm:flex-none h-11 rounded-xl font-black uppercase text-[10px]" onClick={() => (window as any).openManualGame?.()}>
+              <Plus className="h-4 w-4 mr-2" /> Manual Entry
+            </Button>
+          )}
           <div className="bg-muted/50 p-1.5 rounded-2xl border-2 flex items-center shadow-inner mt-2 sm:mt-0 w-full sm:w-auto overflow-x-auto">
             <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="flex-1 h-9 px-6 rounded-xl font-black text-[10px] uppercase">Ledger</Button>
             <Button variant={viewMode === 'calendar' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('calendar')} className="flex-1 h-9 px-6 rounded-xl font-black text-[10px] uppercase">Calendar</Button>
@@ -571,6 +577,113 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
   );
 }
 
+function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
+  const { addLeagueGame } = useTeam();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [form, setForm] = useState({
+    date: format(new Date(), 'yyyy-MM-dd'),
+    time: '18:00',
+    location: '',
+    team1Id: '',
+    team2Id: ''
+  });
+
+  const leagueTeams = useMemo(() => {
+    if (!league?.teams) return [];
+    return Object.entries(league.teams)
+      .filter(([_, t]) => t.status === 'accepted' || t.status === 'assigned')
+      .map(([id, t]) => ({ id, name: t.teamName }));
+  }, [league?.teams]);
+
+  const handleSubmit = async () => {
+    if (!form.team1Id || !form.team2Id || form.team1Id === form.team2Id) {
+      toast({ title: "Invalid Matchup", description: "Select two different squads.", variant: "destructive" });
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const t1 = leagueTeams.find(t => t.id === form.team1Id);
+      const t2 = leagueTeams.find(t => t.id === form.team2Id);
+      
+      await addLeagueGame(league.id, {
+        ...form,
+        team1: t1?.name,
+        team2: t2?.name,
+      });
+      onOpenChange(false);
+      toast({ title: "Match Appended", description: "Manual entry successfully synced." });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden bg-white text-foreground shadow-2xl border-none">
+        <div className="h-2 bg-primary w-full" />
+        <div className="p-8 space-y-8">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="bg-primary/5 p-3 rounded-xl text-primary"><Plus className="h-5 w-5" /></div>
+              <DialogTitle className="text-2xl font-black uppercase">Manual Match Entry</DialogTitle>
+            </div>
+            <DialogDescription className="font-bold text-[10px] uppercase tracking-widest mt-1">Append custom fixture to season schedule</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase">Home Squad</Label>
+                <Select value={form.team1Id} onValueChange={(v) => setForm({...form, team1Id: v})}>
+                  <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white text-foreground">
+                    <SelectValue placeholder="Select Home" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    {leagueTeams.map(t => <SelectItem key={t.id} value={t.id} className="font-bold uppercase text-[10px]">{t.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase">Guest Squad</Label>
+                <Select value={form.team2Id} onValueChange={(v) => setForm({...form, team2Id: v})}>
+                  <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white text-foreground">
+                    <SelectValue placeholder="Select Guest" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    {leagueTeams.map(t => <SelectItem key={t.id} value={t.id} className="font-bold uppercase text-[10px]">{t.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase">Match Date</Label>
+                <Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className="h-12 border-2 font-black bg-white" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase">Start Time</Label>
+                <Input type="time" value={form.time} onChange={e => setForm({...form, time: e.target.value})} className="h-12 border-2 font-bold bg-white" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase">Location / Court</Label>
+              <Input placeholder="e.g. Field 1 or South Gym" value={form.location} onChange={e => setForm({...form, location: e.target.value})} className="h-12 border-2 font-bold bg-white" />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSubmit} disabled={isProcessing}>
+              {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Append Fixture"}
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function LeaguesPage() {
   const { 
     activeTeam, createLeague, isStaff, isPro, purchasePro, 
@@ -583,6 +696,13 @@ export default function LeaguesPage() {
   
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSeasonOpen, setIsSeasonOpen] = useState(false);
+  const [isManualGameOpen, setIsManualGameOpen] = useState(false);
+
+  // Expose it to LeagueOverview via window for simplicity in this shared file
+  useEffect(() => {
+    (window as any).openManualGame = () => setIsManualGameOpen(true);
+    return () => { delete (window as any).openManualGame; };
+  }, []);
   const [leagueName, setLeagueName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('standings');
@@ -863,6 +983,7 @@ export default function LeaguesPage() {
                 <div className="flex flex-wrap gap-2 justify-end">
                   <Button 
                     onClick={() => {
+                      if (!isPro) { purchasePro(); return; }
                       navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.id}?protocol=team_config`);
                       toast({ title: "Public Link Copied", description: "The registration portal link is ready to share." });
                     }} 
@@ -870,13 +991,21 @@ export default function LeaguesPage() {
                     size="icon" 
                     className="h-12 w-12 rounded-xl border-white/20 border hover:bg-white/10 text-white transition-all"
                   >
-                    <Share2 className="h-5 w-5" />
+                    {!isPro ? <LockIcon className="h-5 w-5 opacity-40" /> : <Share2 className="h-5 w-5" />}
                   </Button>
                   <Button onClick={handleEditLeague} variant="ghost" size="icon" className="h-12 w-12 rounded-xl border-white/20 border hover:bg-white/10 text-white transition-all"><Settings className="h-5 w-5" /></Button>
-                  <Button onClick={() => isPro ? setIsSeasonOpen(true) : purchasePro()} variant="outline" className="rounded-xl h-12 px-6 border-white/20 bg-white/5 text-white hover:bg-white hover:text-black transition-all">Season Architect</Button>
-                  <Link href={`/leagues/registration/${activeLeague.id}`}>
-                    <Button className="rounded-xl h-12 px-6 font-black uppercase text-xs shadow-xl">Recruit Pool</Button>
-                  </Link>
+                  <Button onClick={() => isPro ? setIsSeasonOpen(true) : purchasePro()} variant="outline" className="rounded-xl h-12 px-6 border-white/20 bg-white/5 text-white hover:bg-white hover:text-black transition-all flex items-center gap-2">
+                    {!isPro && <LockIcon className="h-3 w-3" />}
+                    Season Architect
+                  </Button>
+                  <Button 
+                    variant="default" 
+                    className="rounded-xl h-12 px-6 font-black uppercase text-xs shadow-xl flex items-center gap-2"
+                    onClick={() => isPro ? router.push(`/leagues/registration/${activeLeague.id}`) : purchasePro()}
+                  >
+                    {!isPro && <LockIcon className="h-3 w-3" />}
+                    Recruit Pool
+                  </Button>
                 </div>
               )}
             </div>
@@ -887,8 +1016,8 @@ export default function LeaguesPage() {
             <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex shadow-inner">
               <Button variant={activeTab === 'standings' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('standings')}>Standings</Button>
               {isStaff && <Button variant={activeTab === 'command' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('command')}>Match Command</Button>}
-              {isStaff && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('portals')}>Portals</Button>}
-              {isStaff && <Button variant={activeTab === 'personnel' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('personnel')}>Personnel (Recruits)</Button>}
+              {isStaff && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all flex items-center gap-2" onClick={() => isPro ? setActiveTab('portals') : purchasePro()}>{!isPro && <LockIcon className="h-3 w-3" />} Portals</Button>}
+              {isStaff && <Button variant={activeTab === 'personnel' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all flex items-center gap-2" onClick={() => isPro ? setActiveTab('personnel') : purchasePro()}>{!isPro && <LockIcon className="h-3 w-3" />} Personnel (Recruiter)</Button>}
             </div>
             <div className="flex gap-2 w-full sm:w-auto mt-2 sm:mt-0">
               {activeTab === 'standings' && (
@@ -1188,6 +1317,7 @@ export default function LeaguesPage() {
       </Dialog>
 
       {activeLeague && <SeasonSchedulerDialog league={activeLeague} isOpen={isSeasonOpen} onOpenChange={setIsSeasonOpen} />}
+      {activeLeague && <ManualGameDialog league={activeLeague} isOpen={isManualGameOpen} onOpenChange={setIsManualGameOpen} />}
     </div>
   );
 }
