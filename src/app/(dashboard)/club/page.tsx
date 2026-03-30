@@ -126,9 +126,9 @@ function TeamComplianceCard({ teams, clubDocs }: { teams: Team[], clubDocs: Team
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function ClubManagementPage() {
-  const { teams, user, isClubManager, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol } = useTeam();
+  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol } = useTeam();
   
-  if (!isClubManager) {
+  if (!isPrimaryClubAuthority) {
     return <AccessRestricted type="role" title="Organization Hub Locked" description="This command center is reserved for Institutional Stakeholders and Club Administrators." />;
   }
 
@@ -169,7 +169,7 @@ export default function ClubManagementPage() {
 
   const filteredTeams = useMemo(() => clubTeams.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase())), [clubTeams, searchTerm]);
 
-  if (!isClubManager) return <div className="py-24 text-center space-y-6"><div className="bg-muted/30 p-10 rounded-[3rem] opacity-20"><Building className="h-20 w-20 mx-auto" /></div><h1 className="text-3xl font-black uppercase tracking-tight text-foreground">Institutional Hub Locked</h1></div>;
+  if (!isPrimaryClubAuthority) return <div className="py-24 text-center space-y-6"><div className="bg-muted/30 p-10 rounded-[3rem] opacity-20"><Building className="h-20 w-20 mx-auto" /></div><h1 className="text-3xl font-black uppercase tracking-tight text-foreground">Institutional Hub Locked</h1></div>;
 
   const handleUpdateClub = async () => { await updateUser({ clubName: clubForm.name, clubDescription: clubForm.description }); setIsEditOpen(false); toast({ title: "Club Synchronized" }); };
 

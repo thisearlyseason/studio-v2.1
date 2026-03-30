@@ -141,7 +141,7 @@ const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boo
 });
 SidebarItem.displayName = "SidebarItem";
 
-function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router }: { activeTeam: any, teams: any[], setActiveTeam: any, router: any }) {
+function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user }: { activeTeam: any, teams: any[], setActiveTeam: any, router: any, user: any }) {
   return (
     <DropdownMenuContent align="start" className="w-72 p-2 rounded-2xl shadow-2xl bg-white">
       <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground p-3">My Squads</DropdownMenuLabel>
@@ -159,6 +159,11 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router }: { activ
                   <span className="text-[7px] font-black uppercase text-primary tracking-tighter">ELITE PRO</span>
                 ) : (
                   <span className="text-[7px] font-black uppercase text-muted-foreground/60 tracking-tighter">STARTER</span>
+                )}
+                {team.ownerUserId === user?.id && ['elite_teams', 'elite_league'].includes(team.planId) && (
+                  <Badge variant="outline" className="h-4 px-1.5 border-primary/20 text-primary bg-primary/5 text-[6px] font-black uppercase tracking-tighter flex items-center gap-1">
+                    <Star className="h-2 w-2 fill-current" /> PRIMARY
+                  </Badge>
                 )}
               </div>
             </div>
@@ -195,7 +200,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { 
     activeTeam, setActiveTeam, teams, user, isPro, 
-    isClubManager, isStaff, isParent, isPlayer, hasFeature, alerts,
+    isPrimaryClubAuthority, isStaff, isParent, isPlayer, hasFeature, alerts,
     unreadAlertsCount, purchasePro
   } = useTeam();
 
@@ -258,7 +263,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </SidebarMenuItem>
                 )}
 
-                {isClubManager && (
+                {isPrimaryClubAuthority && (
                   <SidebarMenuItem>
                     <SidebarMenuButton 
                       asChild 
@@ -289,7 +294,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     <ChevronDown className="h-4 w-4 opacity-40 text-foreground" />
                   </Button>
                 </DropdownMenuTrigger>
-                <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} />
+                <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} />
               </DropdownMenu>
             </SidebarHeader>
 
@@ -308,7 +313,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </SidebarMenu>
             </SidebarContent>
 
-            <SidebarFooter className="p-6 border-t bg-white">
+            <SidebarFooter className="p-4 border-t bg-white space-y-4">
+              <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10">
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/60 mb-1">Squad Identity Code</p>
+                <p className="text-xl font-black text-primary tracking-widest">{activeTeam?.teamCode || activeTeam?.code}</p>
+              </div>
+
               <Link href="/settings">
                 <div className="flex items-center gap-3 p-2 hover:bg-primary/5 rounded-2xl transition-all cursor-pointer group">
                   <Avatar className="h-10 w-10 border-2 border-background shadow-md transition-transform group-hover:scale-105">
@@ -334,7 +344,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         <Zap className="h-5 w-5 fill-current" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} />
+                    <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} />
                   </DropdownMenu>
                 </div>
                 <div className="hidden md:block">
@@ -466,11 +476,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                           </div>
                         </div>
 
-                        {(isClubManager || isParent) && (
+                        {(isPrimaryClubAuthority || isParent) && (
                           <div className="space-y-3">
                             <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Management Hubs</p>
                             <div className="grid grid-cols-1 gap-2">
-                              {isClubManager && (
+{isPrimaryClubAuthority && (
                                 <Link 
                                   href="/club"
                                   onClick={() => setIsMoreMenuOpen(false)}

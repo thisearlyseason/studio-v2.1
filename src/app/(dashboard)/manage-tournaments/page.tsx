@@ -24,6 +24,7 @@ import {
   Users,
   FileSignature,
   Info,
+  Lock,
   X,
   Download,
   Share2,
@@ -135,9 +136,9 @@ function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { fa
 }
 
 function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOpen: boolean, onOpenChange: (o: boolean) => void, onComplete: () => void }) {
-  const { user: authUser } = useUser();
+  const { activeTeam, user, isPrimaryClubAuthority } = useTeam();
   const db = useFirestore();
-  const { addEvent, activeTeam } = useTeam();
+  const { addEvent } = useTeam();
 
   const [step, setStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -152,38 +153,37 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
     gameLength: '60',
     breakLength: '15',
     gamesPerTeam: '3',
-    doubleHeaderOption: 'none' as 'none' | 'sameTeam' | 'differentTeams',
     dailyWindows: [] as DailyWindow[],
     selectedFields: [] as string[],
     manualVenue: '',
-    waiverId: 'default_tournament',
+    waiverIds: [] as string[],
     registration_cost: '0',
     teams: [] as TournamentTeam[]
   });
 
   // --- External Data Fetching ---
   const facilitiesQuery = useMemoFirebase(() => {
-    if (!db || !authUser?.uid) return null;
-    return query(collection(db, 'facilities'), where('clubId', '==', authUser.uid));
-  }, [db, authUser?.uid]);
+    if (!db || !user?.id) return null;
+    return query(collection(db, 'facilities'), where('clubId', '==', user.id));
+  }, [db, user?.id]);
   const { data: facilities } = useCollection<Facility>(facilitiesQuery);
 
   const docsQuery = useMemoFirebase(() => {
     if (!db || !activeTeam?.id) return null;
-    return collection(db, 'teams', activeTeam.id, 'documents');
+    return query(collection(db, 'teams', activeTeam.id, 'documents'), orderBy('createdAt', 'desc'));
   }, [db, activeTeam?.id]);
   const { data: documents } = useCollection<TeamDocument>(docsQuery);
 
   const leaguesQuery = useMemoFirebase(() => {
-    if (!db || !authUser?.uid) return null;
-    return query(collection(db, 'leagues'), where('creatorId', '==', authUser.uid));
-  }, [db, authUser?.uid]);
+    if (!db || !user?.id) return null;
+    return query(collection(db, 'leagues'), where('creatorId', '==', user.id));
+  }, [db, user?.id]);
   const { data: leagues } = useCollection<League>(leaguesQuery);
 
   const pipelineEntriesQuery = useMemoFirebase(() => {
-    if (!db || !authUser?.uid) return null;
+    if (!db || !user?.id) return null;
     return query(collectionGroup(db, 'registrationEntries'), where('status', 'in', ['accepted', 'assigned']));
-  }, [db, authUser?.uid]);
+  }, [db, user?.id]);
   const { data: pipelineEntries } = useCollection<RegistrationEntry>(pipelineEntriesQuery);
 
   const initDailyWindows = () => {
@@ -272,7 +272,6 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
       gameLength: parseInt(form.gameLength),
       breakLength: parseInt(form.breakLength),
       dailyWindows: form.dailyWindows,
-      doubleHeaderOption: form.doubleHeaderOption,
       gamesPerTeam: parseInt(form.gamesPerTeam)
     });
 
@@ -288,9 +287,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
       tournamentTeamsData: form.teams,
       tournamentTeams: form.teams.map(t => t.name),
       tournamentGames: schedule,
-      waiverId: form.waiverId,
+      waiverIds: form.waiverIds,
       registration_cost: form.registration_cost,
-      teamWaiverText: documents?.find(d => d.id === form.waiverId)?.content || 'Standard Tournament Agreement.'
+      teamWaiverText: documents?.filter(d => form.waiverIds.includes(d.id)).map(d => d.content).join('\n\n') || 'Standard Tournament Agreement.'
     });
 
     if (success) {
@@ -360,23 +359,10 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                           <Input type="number" value={form.gamesPerTeam} onChange={e => setForm({...form, gamesPerTeam: e.target.value})} className="h-12 border-2 rounded-xl font-black text-primary" />
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-[10px] font-black uppercase ml-1">Initial Double Header Mode</Label>
-                        <Select value={form.doubleHeaderOption} onValueChange={(v: any) => setForm({...form, doubleHeaderOption: v})}>
-                          <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="rounded-xl">
-                            <SelectItem value="none" className="font-bold">None (1 Game/Day)</SelectItem>
-                            <SelectItem value="sameTeam" className="font-bold">Same Opponent (Swap)</SelectItem>
-                            <SelectItem value="differentTeams" className="font-bold">Different Opponents</SelectItem>
-                          </SelectContent>
-                        </Select>
                       </div>
-                    </div>
-                  </section>
-                </div>
-              )}
+                    </section>
+                  </div>
+                )}
 
               {step === 2 && (
                 <div className="space-y-8 animate-in slide-in-from-right-4">
@@ -384,7 +370,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                       <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Squad Roster Enrollment</h3>
                       <div className="flex flex-wrap gap-2">
-                        {leagues?.map(l => (
+                        {leagues?.filter(l => activeTeam?.leagueIds?.[l.id]).map(l => (
                           <Button key={l.id} variant="outline" size="sm" className="text-[8px] font-black uppercase h-8 border-primary/20 hover:bg-primary/5" onClick={() => importLeagueTeams(l.id)}>
                             <Database className="h-3 w-3 mr-1" /> From {l.name}
                           </Button>
@@ -499,33 +485,33 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                             <option value="double_elimination">Double Elimination</option>
                           </select>
                         </div>
-                        <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase ml-1">Double Header Strategy</Label>
-                          <Select value={form.doubleHeaderOption} onValueChange={(v: any) => setForm({...form, doubleHeaderOption: v})}>
-                            <SelectTrigger className="w-full h-14 rounded-2xl border-2 font-black px-4 bg-white">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="rounded-xl">
-                              <SelectItem value="none" className="font-bold">None</SelectItem>
-                              <SelectItem value="sameTeam" className="font-bold">Same Opponent</SelectItem>
-                              <SelectItem value="differentTeams" className="font-bold">Different Opponents</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase ml-1">Compliance Waiver</Label>
-                          <select 
-                            value={form.waiverId} 
-                            onChange={(e) => setForm({...form, waiverId: e.target.value})}
-                            className="w-full h-14 rounded-2xl border-2 font-black px-4 bg-white"
-                          >
+                        <div className="space-y-3">
+                          <Label className="text-[10px] font-black uppercase ml-1">Compliance Waivers (Select Multiple)</Label>
+                          <div className="grid grid-cols-1 gap-2 max-h-[200px] overflow-y-auto p-4 bg-muted/20 rounded-2xl border-2">
                             {documents?.map(doc => (
-                              <option key={doc.id} value={doc.id}>{doc.title}</option>
+                              <div 
+                                key={doc.id} 
+                                className={cn(
+                                  "flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border-2",
+                                  form.waiverIds.includes(doc.id) ? "border-primary bg-primary/5" : "border-transparent hover:bg-white"
+                                )}
+                                onClick={() => {
+                                  setForm(p => ({
+                                    ...p,
+                                    waiverIds: p.waiverIds.includes(doc.id) 
+                                      ? p.waiverIds.filter(id => id !== doc.id)
+                                      : [...p.waiverIds, doc.id]
+                                  }));
+                                }}
+                              >
+                                <span className="text-[10px] font-black uppercase">{doc.title}</span>
+                                {form.waiverIds.includes(doc.id) ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <div className="h-4 w-4 rounded-full border-2 border-muted" />}
+                              </div>
                             ))}
                             {(!documents || documents.length === 0) && (
-                              <option value="default_tournament">Standard Tournament Waiver</option>
+                              <div className="text-[10px] font-bold text-muted-foreground p-2 uppercase italic">No saved documents found.</div>
                             )}
-                          </select>
+                          </div>
                         </div>
                       </div>
 
@@ -1183,13 +1169,13 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function ManageTournamentsPage() {
-  const { activeTeamEvents, isStaff, isPro } = useTeam();
+  const { activeTeamEvents, isStaff, isPro, activeTeam, user, isPrimaryClubAuthority } = useTeam();
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
 
   if (!isStaff) return <AccessRestricted type="role" title="Series Architect Locked" description="Tournament orchestration and bracket management are reserved for League Coordinators." />;
   if (!isPro) return <AccessRestricted type="tier" />;
 
   const [selectedTournament, setSelectedTournament] = useState<TeamEvent | null>(null);
-  const [isWizardOpen, setIsWizardOpen] = useState(false);
 
   const tournaments = useMemo(() => 
     (activeTeamEvents || []).filter(e => e.isTournament), 
@@ -1208,11 +1194,22 @@ export default function ManageTournamentsPage() {
           <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Championships</h1>
           <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Institutional Tournament Management</p>
         </div>
-        {isStaff && (
-          <Button onClick={() => setIsWizardOpen(true)} className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 transition-all active:scale-95">
-            <Plus className="h-5 w-5 mr-2" /> Launch Series
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-3">
+          {isPrimaryClubAuthority ? (
+            <Button 
+              onClick={() => setIsWizardOpen(true)}
+              className="rounded-full px-8 h-12 font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20 transition-all active:scale-95"
+            >
+              <Plus className="h-5 w-5 mr-2" />
+              Deploy New Elite Series
+            </Button>
+          ) : (
+            <div className="bg-muted/50 p-4 rounded-2xl flex items-center gap-3 border-2 border-dashed">
+              <Lock className="h-4 w-4 text-muted-foreground" />
+              <p className="text-[10px] font-black uppercase text-muted-foreground">Series Architecture restricted to Primary Club Authority</p>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">

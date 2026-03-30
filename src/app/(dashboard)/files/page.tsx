@@ -174,7 +174,7 @@ function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: a
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function FilesPage() {
-  const { activeTeam, addFile, deleteFile, user, isPro, purchasePro, isSuperAdmin, isStaff, isClubManager, members, teams, signTeamDocument } = useTeam();
+  const { activeTeam, addFile, deleteFile, user, isPro, purchasePro, isSuperAdmin, isStaff, isPrimaryClubAuthority, members, teams, signTeamDocument } = useTeam();
   
   // Players and Parents need to access this page to SIGN documents, 
   // but we gate the full LIBRARY features for non-pro teams.

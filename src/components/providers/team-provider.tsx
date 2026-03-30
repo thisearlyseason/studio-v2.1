@@ -546,7 +546,7 @@ interface TeamContextType {
   isPlayer: boolean;
   isYouth: boolean;
   isSuperAdmin: boolean;
-  isClubManager: boolean;
+  isPrimaryClubAuthority: boolean;
   householdEvents: TeamEvent[];
   activeTeamEvents: TeamEvent[];
   householdBalance: number;
@@ -856,12 +856,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const isParent = useMemo(() => userProfile?.role === 'parent', [userProfile?.role]);
   const isPlayer = useMemo(() => userProfile?.role === 'adult_player' || userProfile?.role === 'youth_player', [userProfile?.role]);
 
-  const isClubManager = useMemo(() => {
+  const isPrimaryClubAuthority = useMemo(() => {
     if (isSuperAdmin) return true;
-    const isElite = ['elite_teams', 'elite_league'].includes(userProfile?.activePlanId || '') || 
-                    ['elite_teams', 'elite_league'].includes(activeTeam?.planId || '');
-    return isElite;
-  }, [userProfile?.activePlanId, activeTeam?.planId, isSuperAdmin]);
+    return teamsRaw.some(t => 
+      t.ownerUserId === userProfile?.id && 
+      ['elite_teams', 'elite_league'].includes(t.planId || '')
+    );
+  }, [teamsRaw, userProfile, isSuperAdmin]);
 
   const proQuotaStatus = useMemo(() => {
     if (!userProfile?.id) return { current: 0, limit: 0, exceeded: false, remaining: 0 };
@@ -901,8 +902,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (isSuperAdmin) return true;
     return activeTeam?.isPro || 
            userProfile?.activePlanId === 'squad_pro' || 
-           ['elite_teams', 'elite_league'].includes(activeTeam?.planId || '') || 
-           false;
+           ['elite_teams', 'elite_league'].includes(activeTeam?.planId || '');
   }, [activeTeam, userProfile, isSuperAdmin]);
 
   const hasFeature = useCallback((featureId: string) => {
@@ -1789,7 +1789,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     isStaff, isPro, isParent: userProfile?.role === 'parent', 
     isPlayer: userProfile?.role === 'adult_player' || userProfile?.role === 'youth_player',
     isYouth: userProfile?.role === 'youth_player',
-    isSuperAdmin, isClubManager, householdEvents: householdEvents || [], activeTeamEvents, householdBalance: 0, myChildren, plans, isPlansLoading, proQuotaStatus,
+    isSuperAdmin, isPrimaryClubAuthority, householdEvents: householdEvents || [], activeTeamEvents, householdBalance: 0, myChildren, plans, isPlansLoading, proQuotaStatus,
     deleteFundraisingOpportunity, addGame, updateGame, canAddProTeam: (proQuotaStatus.remaining > 0),
     isPaywallOpen, setIsPaywallOpen, purchasePro,
     hasFeature, alerts, unreadAlertsCount,
@@ -1819,7 +1819,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }), [
     db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser,
     isStaff, isPro, householdEvents, activeTeamEvents, myChildren, plans, isPlansLoading, isPaywallOpen, isSeedingDemo,
-    seenAlertIds, alerts, unreadAlertsCount, isSuperAdmin, isClubManager, hasFeature, proQuotaStatus,
+    seenAlertIds, alerts, unreadAlertsCount, isSuperAdmin, isPrimaryClubAuthority, hasFeature, proQuotaStatus,
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
     getPlayerStats, addPlayerStat, deletePlayerStat, getEvaluations, addEvaluation,
     getRecruitingContact, updateRecruitingContact, getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo,

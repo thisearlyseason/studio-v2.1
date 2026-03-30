@@ -776,7 +776,7 @@ export default function LeaguesPage() {
   const { 
     activeTeam, createLeague, isStaff, isPro, purchasePro, 
     teams, removeTeamFromLeague, updateLeagueTeamDetails,
-    isClubManager, updateLeaguePin
+    isPrimaryClubAuthority, updateLeaguePin
   } = useTeam();
   const db = useFirestore();
   const { user: authUser, isAuthResolved } = useUser();
@@ -1124,7 +1124,7 @@ export default function LeaguesPage() {
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Master Hub</Badge>
           <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Leagues</h1>
         </div>
-        {!activeLeague && isStaff && (
+        {!activeLeague && isPrimaryClubAuthority && (
           <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
             <Plus className="h-5 w-5 mr-2" /> Launch League Architect
           </Button>
