@@ -370,7 +370,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                       <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Squad Roster Enrollment</h3>
                       <div className="flex flex-wrap gap-2">
-                        {leagues?.filter(l => activeTeam?.leagueIds?.[l.id]).map(l => (
+                        {leagues?.filter(l => activeTeam?.leagueIds?.includes(l.id)).map(l => (
                           <Button key={l.id} variant="outline" size="sm" className="text-[8px] font-black uppercase h-8 border-primary/20 hover:bg-primary/5" onClick={() => importLeagueTeams(l.id)}>
                             <Database className="h-3 w-3 mr-1" /> From {l.name}
                           </Button>

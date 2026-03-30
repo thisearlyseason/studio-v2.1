@@ -422,6 +422,18 @@ export default function LeagueRegistrationAdminPage() {
                           </SelectContent>
                         </Select>
                       </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-black ml-1">Pipeline Step</Label>
+                        <Select value={editingField?.step || 'identity'} onValueChange={(v: any) => setEditingField({ ...editingField, step: v })}>
+                          <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue placeholder="Select step..." /></SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            <SelectItem value="identity" className="font-bold text-[10px] uppercase">Step 1: Identity</SelectItem>
+                            <SelectItem value="guardian" className="font-bold text-[10px] uppercase">Step 2: Guardian</SelectItem>
+                            <SelectItem value="team_code" className="font-bold text-[10px] uppercase">Step 3: Team Code</SelectItem>
+                            <SelectItem value="additional" className="font-bold text-[10px] uppercase">Additional Info</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       {['dropdown', 'radio', 'checkbox'].includes(editingField?.type || '') && (
                         <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
                           <Label className="text-[10px] uppercase font-black ml-1">Options (Comma Separated)</Label>
@@ -441,12 +453,20 @@ export default function LeagueRegistrationAdminPage() {
                 </Dialog>
               </CardHeader>
               <CardContent className="p-0 divide-y">
-                {((localConfig?.form_schema || config?.form_schema) || []).map((field, i) => (
-                  <div key={field.id} className="p-8 flex items-center justify-between group hover:bg-muted/10 transition-colors">
-                    <div className="flex items-center gap-6"><div className="text-[10px] font-black text-muted-foreground w-8 opacity-40 text-center">{i + 1}</div><div className="space-y-1"><p className="font-black text-base uppercase tracking-tight">{field.label}</p><Badge variant="outline" className="text-[8px] font-black uppercase">{field.type.replace('_', ' ')}</Badge></div></div>
-                    {i > 1 && (<Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleUpdateConfig({ form_schema: (localConfig?.form_schema || []).filter(f => f.id !== field.id) }, true)}><Trash2 className="h-5 w-5" /></Button>)}
-                  </div>
-                ))}
+                {((localConfig?.form_schema || config?.form_schema) || []).map((field, i) => {
+                  const stepLabels: Record<string, string> = {
+                    identity: 'Identity',
+                    guardian: 'Guardian',
+                    team_code: 'Team Code',
+                    additional: 'Additional'
+                  };
+                  return (
+                    <div key={field.id} className="p-8 flex items-center justify-between group hover:bg-muted/10 transition-colors">
+                      <div className="flex items-center gap-6"><div className="text-[10px] font-black text-muted-foreground w-8 opacity-40 text-center">{i + 1}</div><div className="space-y-1"><p className="font-black text-base uppercase tracking-tight">{field.label}</p><div className="flex items-center gap-2"><Badge variant="outline" className="text-[8px] font-black uppercase">{field.type.replace('_', ' ')}</Badge>{field.step && <Badge variant="secondary" className="text-[8px] font-black uppercase bg-primary/10 text-primary border-none">{stepLabels[field.step] || field.step}</Badge>}</div></div></div>
+                      <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleUpdateConfig({ form_schema: (localConfig?.form_schema || []).filter(f => f.id !== field.id) }, true)}><Trash2 className="h-5 w-5" /></Button>
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
           </div>

@@ -164,7 +164,7 @@ export type Team = {
   contactEmail?: string;
   contactPhone?: string;
   registrationProtocolId?: string;
-  leagueIds?: Record<string, boolean>;
+  leagueIds?: string[];
   isDemo?: boolean;
   rosterLimit?: number;
 };
@@ -454,6 +454,8 @@ export type RegistrationFormField = {
   type: 'short_text' | 'long_text' | 'dropdown' | 'header' | 'radio' | 'checkbox' | 'signature';
   required: boolean;
   options?: string[];
+  step?: 'identity' | 'guardian' | 'team_code' | 'additional';
+  placeholder?: string;
 };
 
 

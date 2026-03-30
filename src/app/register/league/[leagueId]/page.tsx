@@ -75,10 +75,48 @@ function RegistrationForm() {
   const [waiverAgreed, setWaiverAgreed] = useState(false);
   const [signature, setSignature] = useState('');
 
-  // Team Code Validation State
   const [teamCode, setTeamCode] = useState('');
   const [validatingCode, setValidatingCode] = useState(false);
   const [validatedTeam, setValidatedTeam] = useState<any>(null);
+
+  const formSchema = config?.form_schema || [];
+
+  const isUnder18 = useMemo(() => {
+    const dob = answers['dateOfBirth'] || answers['dob'];
+    if (!dob) return false;
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age < 18;
+  }, [answers['dateOfBirth'], answers['dob']]);
+
+  const totalSteps = useMemo(() => {
+    let steps = 1; // Identity
+    if (formSchema.some(f => f.step === 'guardian') && isUnder18) steps++; // Guardian
+    steps++; // Team Code
+    steps++; // Compliance
+    return steps;
+  }, [formSchema, isUnder18]);
+
+  const currentStepInfo = useMemo(() => {
+    let stepNum = 1;
+    if (currentStep === stepNum++) return { label: 'Identity', icon: Users };
+    if (formSchema.some(f => f.step === 'guardian') && isUnder18 && currentStep === stepNum++) return { label: 'Guardian', icon: ShieldCheck };
+    if (currentStep === stepNum++) return { label: 'Team Code', icon: Zap };
+    return { label: 'Compliance', icon: FileSignature };
+  }, [currentStep, formSchema, isUnder18]);
+
+  const stepFields = useMemo(() => {
+    if (currentStep === 1) {
+      return formSchema.filter(f => f.step === 'identity' || !f.step);
+    }
+    if (currentStep === 2 && isUnder18 && formSchema.some(f => f.step === 'guardian')) {
+      return formSchema.filter(f => f.step === 'guardian');
+    }
+    return [];
+  }, [formSchema, currentStep, isUnder18]);
 
   useEffect(() => {
     if (!teamCode || teamCode.length < 3) {
@@ -105,26 +143,6 @@ function RegistrationForm() {
     { id: 3, name: 'Team Code', icon: Zap },
     { id: 4, name: 'Compliance', icon: FileSignature }
   ];
-
-  const formSchema = config?.form_schema || [];
-
-  const stepFields = useMemo(() => {
-    if (currentStep === 1) {
-      return formSchema.filter(f => !f.label.toLowerCase().includes('guardian') && !f.id.toLowerCase().includes('guardian'));
-    }
-    if (currentStep === 2) {
-      return formSchema.filter(f => f.label.toLowerCase().includes('guardian') || f.id.toLowerCase().includes('guardian'));
-    }
-    return [];
-  }, [formSchema, currentStep]);
-
-  // Skip guardian step if no fields exist
-  useEffect(() => {
-    if (currentStep === 2 && stepFields.length === 0) {
-      // Automatically advance to team code if no guardian fields
-      setCurrentStep(3);
-    }
-  }, [currentStep, stepFields]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -294,17 +312,19 @@ function RegistrationForm() {
             <CardHeader className="p-8 lg:p-10 pb-4">
               <div className="space-y-1">
                 <Badge variant="outline" className="border-primary/20 text-primary font-black uppercase text-[8px] tracking-widest">
-                  {steps.find(s => s.id === currentStep)?.name} Phase
+                  {currentStepInfo.label} Phase
                 </Badge>
                 <CardTitle className="text-3xl font-black uppercase tracking-tight">
                   {currentStep === 1 && "Identity Verification"}
-                  {currentStep === 2 && "Guardian Validation"}
+                  {currentStep === 2 && isUnder18 && "Guardian Validation"}
+                  {currentStep === 2 && !isUnder18 && "Identity Complete"}
                   {currentStep === 3 && "Team Affiliation"}
                   {currentStep === 4 && "Final Compliance"}
                 </CardTitle>
                 <CardDescription className="text-xs font-semibold">
                   {currentStep === 1 && "Start your enrollment by providing basic participant data."}
-                  {currentStep === 2 && "Required documentation for underage athlete participation."}
+                  {currentStep === 2 && isUnder18 && "Required documentation for underage athlete participation."}
+                  {currentStep === 2 && !isUnder18 && "You are over 18, guardian information not required."}
                   {currentStep === 3 && "If you were recruited by a team, enter their code here."}
                   {currentStep === 4 && "Review legal terms and provide digital signature."}
                 </CardDescription>
@@ -312,9 +332,47 @@ function RegistrationForm() {
             </CardHeader>
             
             <CardContent className="p-8 lg:p-10 flex-1">
-              {/* Steps 1 & 2: Dynamic Fields */}
-              {(currentStep === 1 || currentStep === 2) && (
+              {/* Step 1: Identity */}
+              {currentStep === 1 && (
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <Label className="text-[10px] font-black uppercase tracking-widest">Full Name <span className="text-primary">*</span></Label>
+                      <Input 
+                        required
+                        placeholder="e.g. Marcus Thompson" 
+                        value={answers['fullName'] || ''} 
+                        onChange={e => handleInputChange('fullName', e.target.value)} 
+                        className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
+                      />
+                    </div>
+                    <div className="space-y-3">
+                      <Label className="text-[10px] font-black uppercase tracking-widest">Email <span className="text-primary">*</span></Label>
+                      <Input 
+                        required
+                        type="email"
+                        placeholder="player@email.com" 
+                        value={answers['email'] || ''} 
+                        onChange={e => handleInputChange('email', e.target.value)} 
+                        className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <Label className="text-[10px] font-black uppercase tracking-widest">Date of Birth <span className="text-primary">*</span></Label>
+                    <Input 
+                      required
+                      type="date"
+                      value={answers['dateOfBirth'] || ''} 
+                      onChange={e => handleInputChange('dateOfBirth', e.target.value)} 
+                      className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
+                    />
+                    {answers['dateOfBirth'] && (
+                      <p className={cn("text-[10px] font-black uppercase tracking-widest mt-2", isUnder18 ? "text-amber-600" : "text-green-600")}>
+                        {isUnder18 ? "Guardian information will be required (Under 18)" : "No guardian required (18 or older)"}
+                      </p>
+                    )}
+                  </div>
                   {stepFields.map(field => (
                     <div key={field.id} className="space-y-3">
                       {field.type === 'header' ? (
@@ -327,10 +385,7 @@ function RegistrationForm() {
                             </Label>
                           </div>
                           {field.type === 'short_text' && (
-                            <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm focus:ring-4 focus:ring-primary/10" />
-                          )}
-                          {field.type === 'long_text' && (
-                            <Textarea required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="rounded-2xl min-h-[120px] border-2 font-medium bg-muted/5 focus:bg-white transition-all shadow-sm" />
+                            <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" />
                           )}
                           {field.type === 'dropdown' && (
                             <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
@@ -340,17 +395,85 @@ function RegistrationForm() {
                               </SelectContent>
                             </Select>
                           )}
-                          {/* ... other field types could be added as needed ... */}
                         </>
                       )}
                     </div>
                   ))}
-                  {stepFields.length === 0 && currentStep === 2 && (
-                    <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 opacity-40">
-                      <ShieldCheck className="h-12 w-12" />
-                      <p className="font-black uppercase tracking-widest text-[10px]">No Guardian Verification Required</p>
+                </div>
+              )}
+
+              {/* Step 2: Guardian (if under 18) */}
+              {currentStep === 2 && isUnder18 && (
+                <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+                  <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border-2 border-amber-200">
+                    <ShieldCheck className="h-6 w-6 text-amber-600" />
+                    <p className="text-sm font-bold text-amber-800">Guardian Information Required (Under 18)</p>
+                  </div>
+                  {stepFields.map(field => (
+                    <div key={field.id} className="space-y-3">
+                      <div className="flex justify-between items-end px-1">
+                        <Label className="text-[10px] font-black uppercase tracking-widest">
+                          {field.label} {field.required && <span className="text-primary">*</span>}
+                        </Label>
+                      </div>
+                      {field.type === 'short_text' && (
+                        <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" />
+                      )}
+                      {field.type === 'dropdown' && (
+                        <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
+                          <SelectTrigger className="h-14 rounded-2xl border-2 font-bold bg-muted/5"><SelectValue placeholder="Select choice..." /></SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold">{opt}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  ))}
+                  {stepFields.length === 0 && (
+                    <div className="space-y-4">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest">Guardian Full Name <span className="text-primary">*</span></Label>
+                        <Input 
+                          required
+                          placeholder="e.g. Sarah Thompson" 
+                          value={answers['guardianName'] || ''} 
+                          onChange={e => handleInputChange('guardianName', e.target.value)} 
+                          className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-3">
+                          <Label className="text-[10px] font-black uppercase tracking-widest">Guardian Email <span className="text-primary">*</span></Label>
+                          <Input 
+                            required
+                            type="email"
+                            placeholder="guardian@email.com" 
+                            value={answers['guardianEmail'] || ''} 
+                            onChange={e => handleInputChange('guardianEmail', e.target.value)} 
+                            className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
+                          />
+                        </div>
+                        <div className="space-y-3">
+                          <Label className="text-[10px] font-black uppercase tracking-widest">Guardian Phone</Label>
+                          <Input 
+                            type="tel"
+                            placeholder="(555) 000-0000" 
+                            value={answers['guardianPhone'] || ''} 
+                            onChange={e => handleInputChange('guardianPhone', e.target.value)} 
+                            className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
+                          />
+                        </div>
+                      </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {currentStep === 2 && !isUnder18 && (
+                <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                  <ShieldCheck className="h-16 w-16 text-green-600" />
+                  <p className="text-xl font-black uppercase tracking-tight text-green-700">Guardian Not Required</p>
+                  <p className="text-sm font-medium text-muted-foreground">You are 18 or older and do not need guardian information.</p>
                 </div>
               )}
 
@@ -472,10 +595,10 @@ function RegistrationForm() {
                    <ArrowLeft className="h-4 w-4 mr-2" /> Back
                  </Button>
                )}
-              <Button type="submit" className="flex-1 h-16 rounded-2xl text-lg font-black shadow-xl" disabled={isSubmitting || (currentStep === 3 && !!teamCode && !validatedTeam && !validatingCode)}>
+              <Button type="submit" className="flex-1 h-16 rounded-2xl text-lg font-black shadow-xl" disabled={isSubmitting || (currentStep === 3 && !!teamCode && !validatedTeam && !validatingCode) || (currentStep === 1 && (!answers['fullName'] || !answers['email'] || !answers['dateOfBirth']))}>
                 {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : 
-                 currentStep === 4 ? "Dispatch Enrollment" : "Continue to Phase " + (currentStep + 1)}
-                 {currentStep < 4 && <ArrowRight className="h-5 w-5 ml-2" />}
+                 currentStep === totalSteps ? "Dispatch Enrollment" : "Continue to " + currentStepInfo.label}
+                 {currentStep < totalSteps && <ArrowRight className="h-5 w-5 ml-2" />}
               </Button>
             </CardFooter>
           </form>

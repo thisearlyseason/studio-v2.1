@@ -42,11 +42,30 @@ function RapidJoinForm() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [waiverAgreed, setWaiverAgreed] = useState(false);
   const [signature, setSignature] = useState('');
+  const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: user?.name || '',
     email: user?.email || '',
+    dateOfBirth: '',
+    guardianName: '',
+    guardianEmail: '',
+    guardianPhone: '',
     playerId: ''
   });
+
+  const isUnder18 = useMemo(() => {
+    if (!formData.dateOfBirth) return false;
+    const birthDate = new Date(formData.dateOfBirth);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age < 18;
+  }, [formData.dateOfBirth]);
+
+  const totalSteps = useMemo(() => {
+    return isUnder18 ? 3 : 2; // Identity -> Guardian (if <18) -> Compliance
+  }, [isUnder18]);
 
   useEffect(() => {
     if (user) {
@@ -55,6 +74,22 @@ function RapidJoinForm() {
   }, [user]);
 
   const activeWaiver = protocols?.find(p => p.type === 'waiver' || p.id.startsWith('default_')) || protocols?.[0];
+
+  const handleNextStep = () => {
+    if (step === 1 && isUnder18) {
+      setStep(2);
+    } else if (step === 1 && !isUnder18) {
+      setStep(2);
+    } else if (step === 2 && isUnder18) {
+      setStep(3);
+    } else {
+      setStep(prev => Math.min(prev + 1, totalSteps));
+    }
+  };
+
+  const handlePrevStep = () => {
+    setStep(prev => Math.max(prev - 1, 1));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -176,71 +211,153 @@ function RapidJoinForm() {
           <div className="h-2 bg-primary w-full" />
           <form onSubmit={handleSubmit}>
             <CardHeader className="p-8 lg:p-10 pb-4">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="bg-muted p-3 rounded-2xl">
-                  <Users className="h-6 w-6 text-primary" />
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  <div className="bg-muted p-3 rounded-2xl">
+                    <Users className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-2xl font-black uppercase tracking-tight">
+                      {step === 1 ? 'Personal Data' : step === 2 && isUnder18 ? 'Guardian Info' : 'Compliance'}
+                    </CardTitle>
+                    <CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Step {step} of {totalSteps}</CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle className="text-2xl font-black uppercase tracking-tight">Personal Data</CardTitle>
-                  <CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Institutional Roster Info</CardDescription>
+                <div className="flex gap-2">
+                  {Array.from({ length: totalSteps }, (_, i) => i + 1).map(s => (
+                    <div key={s} className={cn("h-2 rounded-full transition-all duration-300", step >= s ? "w-8 bg-primary" : "w-4 bg-muted")} />
+                  ))}
                 </div>
               </div>
             </CardHeader>
             
             <CardContent className="p-8 lg:p-10 space-y-8">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Full Name</Label>
-                  <Input 
-                    required 
-                    value={formData.name} 
-                    onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
-                    className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Email Address</Label>
-                  <Input 
-                    required 
-                    type="email"
-                    value={formData.email} 
-                    onChange={e => setFormData(p => ({ ...p, email: e.target.value }))}
-                    className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
-                  />
-                </div>
-              </div>
-
-              {isParent && (
-                <div className="space-y-3 pt-4 border-t">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Select Active Player <span className="text-primary">*</span></Label>
-                  <div className="grid grid-cols-1 gap-3">
-                    {myChildren.map(child => (
-                      <div 
-                        key={child.id}
-                        onClick={() => setFormData(p => ({ ...p, playerId: child.id }))}
-                        className={cn(
-                          "flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer",
-                          formData.playerId === child.id ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/5 border-transparent hover:border-black/5"
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={cn("h-4 w-4 rounded-full border-2 p-0.5", formData.playerId === child.id ? "border-primary" : "border-muted-foreground/30")}>
-                            {formData.playerId === child.id && <div className="h-full w-full rounded-full bg-primary" />}
-                          </div>
-                          <span className="font-black uppercase text-xs tracking-tight">{child.firstName} {child.lastName}</span>
-                        </div>
-                        <CheckCircle2 className={cn("h-5 w-5", formData.playerId === child.id ? "text-primary opacity-100" : "opacity-0")} />
-                      </div>
-                    ))}
-                    {myChildren.length === 0 && (
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase italic px-1">No players found in your registry. Please add them in the family dashboard.</p>
+              {step === 1 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Full Name</Label>
+                      <Input 
+                        required 
+                        value={formData.name} 
+                        onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
+                        className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Email Address</Label>
+                      <Input 
+                        required 
+                        type="email"
+                        value={formData.email} 
+                        onChange={e => setFormData(p => ({ ...p, email: e.target.value }))}
+                        className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth <span className="text-primary">*</span></Label>
+                    <Input 
+                      required
+                      type="date"
+                      value={formData.dateOfBirth} 
+                      onChange={e => setFormData(p => ({ ...p, dateOfBirth: e.target.value }))}
+                      className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                    />
+                    {formData.dateOfBirth && (
+                      <p className={cn("text-[10px] font-black uppercase tracking-widest mt-2", isUnder18 ? "text-amber-600" : "text-green-600")}>
+                        {isUnder18 ? "Guardian information will be required (Under 18)" : "No guardian required (18 or older)"}
+                      </p>
                     )}
+                  </div>
+
+                  {isParent && (
+                    <div className="space-y-3 pt-4 border-t">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Select Active Player <span className="text-primary">*</span></Label>
+                      <div className="grid grid-cols-1 gap-3">
+                        {myChildren.map(child => (
+                          <div 
+                            key={child.id}
+                            onClick={() => setFormData(p => ({ ...p, playerId: child.id }))}
+                            className={cn(
+                              "flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer",
+                              formData.playerId === child.id ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/5 border-transparent hover:border-black/5"
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={cn("h-4 w-4 rounded-full border-2 p-0.5", formData.playerId === child.id ? "border-primary" : "border-muted-foreground/30")}>
+                                {formData.playerId === child.id && <div className="h-full w-full rounded-full bg-primary" />}
+                              </div>
+                              <span className="font-black uppercase text-xs tracking-tight">{child.firstName} {child.lastName}</span>
+                            </div>
+                            <CheckCircle2 className={cn("h-5 w-5", formData.playerId === child.id ? "text-primary opacity-100" : "opacity-0")} />
+                          </div>
+                        ))}
+                        {myChildren.length === 0 && (
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase italic px-1">No players found in your registry. Please add them in the family dashboard.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {step === 2 && isUnder18 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+                  <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border-2 border-amber-200">
+                    <ShieldCheck className="h-6 w-6 text-amber-600" />
+                    <p className="text-sm font-bold text-amber-800">Guardian Information Required (Under 18)</p>
+                  </div>
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Full Name <span className="text-primary">*</span></Label>
+                      <Input 
+                        required
+                        placeholder="e.g. Sarah Thompson" 
+                        value={formData.guardianName} 
+                        onChange={e => setFormData(p => ({ ...p, guardianName: e.target.value }))}
+                        className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Email <span className="text-primary">*</span></Label>
+                        <Input 
+                          required
+                          type="email"
+                          placeholder="guardian@email.com" 
+                          value={formData.guardianEmail} 
+                          onChange={e => setFormData(p => ({ ...p, guardianEmail: e.target.value }))}
+                          className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Phone</Label>
+                        <Input 
+                          type="tel"
+                          placeholder="(555) 000-0000" 
+                          value={formData.guardianPhone} 
+                          onChange={e => setFormData(p => ({ ...p, guardianPhone: e.target.value }))}
+                          className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {activeWaiver && (
-                <div className="space-y-6 pt-8 border-t">
+              {step === 2 && !isUnder18 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+                  <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+                    <ShieldCheck className="h-16 w-16 text-green-600" />
+                    <p className="text-xl font-black uppercase tracking-tight text-green-700">Guardian Not Required</p>
+                    <p className="text-sm font-medium text-muted-foreground">You are 18 or older and do not need guardian information.</p>
+                  </div>
+                </div>
+              )}
+
+              {activeWaiver && ((step === 3 && isUnder18) || (step === 2 && !isUnder18)) && (
+                <div className="space-y-6 pt-8 border-t animate-in fade-in slide-in-from-right-4 duration-500">
                   <div className="flex items-center gap-3"><Signature className="h-6 w-6 text-primary" /><h4 className="text-lg font-black uppercase tracking-tight">Compliance Protocol</h4></div>
                   
                   <div className="space-y-2">
@@ -269,7 +386,7 @@ function RapidJoinForm() {
                         placeholder="Type legal name to execute..." 
                         value={signature} 
                         onChange={e => setSignature(e.target.value)} 
-                        className="h-16 rounded-2xl border-2 font-mono italic text-center text-2xl bg-muted/10 focus:bg-white transition-all shadow-inner" 
+                        className="h-16 rounded-xl border-2 font-mono italic text-center text-2xl bg-muted/10 focus:bg-white transition-all shadow-inner" 
                         required 
                     />
                     <p className="text-[8px] font-black uppercase text-center opacity-30 mt-2">Time-Stamped Institutional Handshake Protocol</p>
@@ -278,13 +395,14 @@ function RapidJoinForm() {
               )}
             </CardContent>
 
-            <CardFooter className="p-8 lg:p-10 pt-0">
-              <Button type="submit" className="w-full h-16 rounded-2xl text-xl font-black shadow-2xl shadow-primary/20" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : (
-                    <div className="flex items-center gap-2">
-                        Execute Join Portal <ArrowRight className="h-5 w-5" />
-                    </div>
-                )}
+            <CardFooter className="p-8 lg:p-10 pt-0 flex gap-4">
+              {step > 1 && (
+                <Button type="button" variant="outline" className="h-14 px-8 rounded-xl border-2 font-black uppercase text-xs" onClick={handlePrevStep}>
+                  Back
+                </Button>
+              )}
+              <Button type="button" className="flex-1 h-14 rounded-xl text-base font-black shadow-2xl shadow-primary/20" disabled={isSubmitting || (step === 1 && (!formData.name || !formData.email || !formData.dateOfBirth)) || (step === 2 && isUnder18 && (!formData.guardianName || !formData.guardianEmail))} onClick={handleNextStep}>
+                {step < totalSteps ? 'Continue' : 'Execute Join Portal'}
               </Button>
             </CardFooter>
           </form>
