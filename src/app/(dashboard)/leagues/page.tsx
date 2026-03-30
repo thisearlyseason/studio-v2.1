@@ -38,7 +38,9 @@ import {
   ExternalLink,
   Users,
   Share2,
-  Lock as LockIcon
+  Lock as LockIcon,
+  AlertCircle,
+  FileText
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -62,7 +64,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { format, isSameDay, startOfDay, endOfDay } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { jsPDF } from 'jspdf';
-import { useTeam, League, TournamentGame, Field, Facility } from '@/components/providers/team-provider';
+import { useTeam, League, TournamentGame, Field, Facility, LeagueArchiveWaiver } from '@/components/providers/team-provider';
 import { Select, SelectContent, SelectItem,  SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
@@ -118,7 +120,8 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     gamesPerTeam: '10',
     doubleHeaderOption: 'none' as 'none' | 'sameTeam' | 'differentTeams',
     selectedFields: [] as string[],
-    blackoutDates: [] as Date[]
+    blackoutDates: [] as Date[],
+    blackoutDaysOfWeek: league.blackoutDaysOfWeek || [] as number[]
   });
 
   const facilitiesQuery = useMemoFirebase(() => {
@@ -144,6 +147,11 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
       });
       return;
     }
+
+    if (league.requiredSquads && leagueTeams.length < league.requiredSquads) {
+      const confirmProceed = window.confirm(`League requires ${league.requiredSquads} squads, but only ${leagueTeams.length} are enrolled. The generated schedule will be incomplete. Proceed anyway?`);
+      if (!confirmProceed) return;
+    }
     setIsProcessing(true);
     try {
       const schedule = generateLeagueSchedule({
@@ -158,7 +166,8 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
         playDays: config.playDays,
         gamesPerTeam: parseInt(config.gamesPerTeam),
         doubleHeaderOption: config.doubleHeaderOption,
-        blackoutDates: config.blackoutDates.map(d => d.toISOString())
+        blackoutDates: config.blackoutDates.map(d => d.toISOString()),
+        blackoutDaysOfWeek: config.blackoutDaysOfWeek
       });
       
       if (schedule.length === 0) {
@@ -177,6 +186,15 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     setConfig(p => ({
       ...p,
       playDays: p.playDays.includes(dayId) ? p.playDays.filter(d => d !== dayId) : [...p.playDays, dayId]
+    }));
+  };
+
+  const toggleSkipDay = (dayId: number) => {
+    setConfig(p => ({
+      ...p,
+      blackoutDaysOfWeek: p.blackoutDaysOfWeek.includes(dayId) ? p.blackoutDaysOfWeek.filter(d => d !== dayId) : [...p.blackoutDaysOfWeek, dayId],
+      // Ensure it's not also in playDays
+      playDays: p.playDays.filter(d => d !== dayId)
     }));
   };
 
@@ -224,9 +242,32 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                       <button 
                         key={day.id} 
                         onClick={() => toggleDay(day.id)} 
+                        disabled={config.blackoutDaysOfWeek.includes(day.id)}
                         className={cn(
                           "h-10 px-4 rounded-xl font-black text-[10px] uppercase border-2 transition-all", 
-                          config.playDays.includes(day.id) ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" : "bg-white text-muted-foreground hover:border-primary/20"
+                          config.playDays.includes(day.id) ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" : "bg-white text-muted-foreground hover:border-primary/20",
+                          config.blackoutDaysOfWeek.includes(day.id) && "opacity-20 cursor-not-allowed border-dashed"
+                        )}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Do Not Schedule Days (Recurring)</Label>
+                    <Badge variant="outline" className="text-[8px] font-black uppercase py-0 px-1 border-primary/30 text-primary">Priority</Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS_OF_WEEK.map(day => (
+                      <button 
+                        key={day.id} 
+                        onClick={() => toggleSkipDay(day.id)} 
+                        className={cn(
+                          "h-10 px-4 rounded-xl font-black text-[10px] uppercase border-2 transition-all", 
+                          config.blackoutDaysOfWeek.includes(day.id) ? "bg-black text-white border-black shadow-lg" : "bg-white text-muted-foreground hover:border-black/20"
                         )}
                       >
                         {day.label}
@@ -315,7 +356,27 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
 
               <div className="bg-primary/5 p-6 rounded-3xl border-2 border-dashed border-primary/20 space-y-4">
                 <div className="flex items-center gap-2 text-primary"><Info className="h-4 w-4" /><h4 className="text-[10px] font-black uppercase tracking-widest">Enrollment Status</h4></div>
-                <p className="text-[11px] font-bold text-muted-foreground uppercase">{leagueTeams.length} squads detected in active roster.</p>
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase">{leagueTeams.length} squads detected in active roster.</p>
+                  {league.requiredSquads && leagueTeams.length < league.requiredSquads && (
+                    <div className="bg-red-50 p-4 rounded-2xl border border-red-100 flex items-start gap-3">
+                      <ShieldAlert className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-[9px] font-black uppercase text-red-600 leading-tight">Incomplete Deployment Warning</p>
+                        <p className="text-[10px] font-bold text-red-500 leading-tight mt-1">League requires {league.requiredSquads} squads. Current enrollment ({leagueTeams.length}) will result in an undersized season.</p>
+                      </div>
+                    </div>
+                  )}
+                  {league.requiredSquads && leagueTeams.length >= league.requiredSquads && (
+                    <div className="bg-green-50 p-4 rounded-2xl border border-green-100 flex items-start gap-3">
+                      <ShieldCheck className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-[9px] font-black uppercase text-green-600 leading-tight">Minimum Target Met</p>
+                        <p className="text-[10px] font-bold text-green-500 leading-tight mt-1">Enrollment threshold ({league.requiredSquads}) satisfied for full deployment.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </aside>
           </div>
@@ -332,7 +393,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   );
 }
 
-function LeagueOverview({ league, schedule }: { league: League, schedule: TournamentGame[] }) {
+function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League, schedule: TournamentGame[], onOpenManualGame?: () => void }) {
   const { isStaff, submitLeagueMatchScore } = useTeam();
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
@@ -426,8 +487,8 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
             <Download className="h-4 w-4 mr-2" /> Download Schedule
           </Button>
           {isStaff && (
-            <Button variant="default" className="flex-1 sm:flex-none h-11 rounded-xl font-black uppercase text-[10px]" onClick={() => (window as any).openManualGame?.()}>
-              <Plus className="h-4 w-4 mr-2" /> Manual Entry
+            <Button variant="default" className="flex-1 sm:flex-none h-11 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20 hover:scale-105 transition-all" onClick={onOpenManualGame}>
+              <Plus className="h-4 w-4 mr-2" /> Generate Match
             </Button>
           )}
           <div className="bg-muted/50 p-1.5 rounded-2xl border-2 flex items-center shadow-inner mt-2 sm:mt-0 w-full sm:w-auto overflow-x-auto">
@@ -464,11 +525,17 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
                         <td className="px-4 py-6">
                           <div className="flex items-center gap-4">
                             <span className="font-black text-xs uppercase truncate max-w-[120px] text-primary">{game.team1}</span>
-                            {game.isCompleted ? (
-                              <div className="flex items-center gap-2 bg-muted/50 px-2 py-1 rounded-lg">
-                                <span className="font-black text-xs">{game.score1} - {game.score2}</span>
-                              </div>
-                            ) : <span className="opacity-20 text-[10px] font-black">VS</span>}
+                            <div className="flex flex-col items-center gap-1">
+                              {game.isCompleted ? (
+                                <div className={cn("flex items-center gap-2 px-3 py-1 rounded-lg border-2", game.isDisputed ? "bg-red-50 border-red-200 text-red-600 animate-pulse" : "bg-muted/50 border-black/5")}>
+                                  <span className="font-black text-xs">{game.score1} - {game.score2}</span>
+                                </div>
+                              ) : <span className="opacity-20 text-[10px] font-black">VS</span>}
+                              {game.isDisputed && <p className="text-[6px] font-black text-red-600 uppercase tracking-widest leading-none mt-1">Dispute Pending</p>}
+                              {game.reportedBy && !game.isDisputed && (
+                                <p className="text-[6px] font-bold text-muted-foreground uppercase opacity-40">Posted by {game.reportedBy}</p>
+                              )}
+                            </div>
                             <span className="font-black text-xs uppercase truncate max-w-[120px]">{game.team2}</span>
                           </div>
                         </td>
@@ -532,7 +599,14 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
                       </div>
                       <div className="flex items-center gap-3 mt-1">
                         <p className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1"><MapPin className="h-3 w-3 text-primary" /> {game.location || 'Venue TBD'}</p>
-                        {game.isCompleted && <Badge className="bg-black text-white border-none font-black text-[8px] h-5">FINAL: {game.score1}-{game.score2}</Badge>}
+                        {game.isCompleted && (
+                          <div className="flex items-center gap-2">
+                            <Badge className={cn("border-none font-black text-[8px] h-5", game.isDisputed ? "bg-red-600 text-white animate-pulse" : "bg-black text-white")}>
+                              {game.isDisputed ? "DISPUTED" : `FINAL: ${game.score1}-${game.score2}`}
+                            </Badge>
+                            {game.reportedBy && !game.isDisputed && <span className="text-[8px] font-bold text-muted-foreground uppercase opacity-60 italic">Reported by {game.reportedBy}</span>}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -550,26 +624,39 @@ function LeagueOverview({ league, schedule }: { league: League, schedule: Tourna
       )}
       
       <Dialog open={!!editingGame} onOpenChange={(o) => !o && setEditingGame(null)}>
-        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white text-foreground">
+        <DialogContent hideClose className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white text-foreground">
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 space-y-8">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-black uppercase">Result Verification</DialogTitle>
-              <DialogDescription className="font-bold text-[10px] uppercase text-primary">{editingGame?.team1} vs {editingGame?.team2}</DialogDescription>
-            </DialogHeader>
-            <div className="grid grid-cols-2 gap-8">
-              <div className="space-y-2">
-                <Label className="text-[8px] font-black uppercase opacity-40 ml-1">HOME: {editingGame?.team1}</Label>
-                <Input type="number" value={scoreForm.s1} onChange={e => setScoreForm({...scoreForm, s1: e.target.value})} className="h-16 text-center text-3xl font-black rounded-2xl" />
+              <div className="flex items-center gap-3">
+                <div className="bg-primary/5 p-3 rounded-xl text-primary"><Activity className="h-5 w-5" /></div>
+                <DialogTitle className="text-2xl font-black uppercase">Result Verification</DialogTitle>
               </div>
-              <div className="space-y-2">
-                <Label className="text-[8px] font-black uppercase opacity-40 ml-1">GUEST: {editingGame?.team2}</Label>
-                <Input type="number" value={scoreForm.s2} onChange={e => setScoreForm({...scoreForm, s2: e.target.value})} className="h-16 text-center text-3xl font-black rounded-2xl" />
+              <DialogDescription className="font-bold text-[10px] uppercase text-primary mt-1">
+                {editingGame?.team1} vs {editingGame?.team2}
+                {editingGame?.isDisputed && (
+                  <div className="mt-4 p-4 rounded-xl bg-red-50 border-2 border-red-100 text-red-600">
+                    <p className="text-[8px] font-black uppercase flex items-center gap-2 mb-1"><AlertCircle className="h-3 w-3" /> Reported Issue:</p>
+                    <p className="text-xs font-medium italic lowercase leading-tight">{editingGame.disputeNotes || "Unofficial score entry disputed by squad representative."}</p>
+                    {editingGame.reportedBy && <p className="text-[7px] font-black uppercase opacity-60 mt-3 pt-3 border-t border-red-100">Originally Posted By: {editingGame.reportedBy}</p>}
+                  </div>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <Label className="text-[10px] font-black uppercase opacity-60 ml-1">Home Score</Label>
+                <Input type="number" value={scoreForm.s1} onChange={e => setScoreForm({...scoreForm, s1: e.target.value})} className="h-20 text-center text-4xl font-black rounded-[1.5rem] border-2 focus:ring-primary focus:border-primary transition-all" placeholder="0" />
+              </div>
+              <div className="space-y-3">
+                <Label className="text-[10px] font-black uppercase opacity-60 ml-1">Guest Score</Label>
+                <Input type="number" value={scoreForm.s2} onChange={e => setScoreForm({...scoreForm, s2: e.target.value})} className="h-20 text-center text-4xl font-black rounded-[1.5rem] border-2 focus:ring-primary focus:border-primary transition-all" placeholder="0" />
               </div>
             </div>
-            <DialogFooter>
-              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleUpdateScore}>Commit Result</Button>
-            </DialogFooter>
+            <div className="flex gap-4">
+              <Button variant="outline" className="flex-1 h-14 rounded-2xl font-black uppercase text-xs" onClick={() => setEditingGame(null)}>Cancel</Button>
+              <Button className="flex-[2] h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleUpdateScore}>Commit Result</Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -619,7 +706,7 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden bg-white text-foreground shadow-2xl border-none">
+      <DialogContent hideClose className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden bg-white text-foreground shadow-2xl border-none">
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 space-y-8">
           <DialogHeader>
@@ -673,11 +760,12 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
             </div>
           </div>
 
-          <DialogFooter>
-            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSubmit} disabled={isProcessing}>
+          <div className="flex gap-4 pt-4">
+            <Button variant="outline" className="flex-1 h-14 rounded-2xl font-black uppercase text-xs" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button className="flex-[2] h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 disabled:opacity-50" onClick={handleSubmit} disabled={isProcessing}>
               {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Append Fixture"}
             </Button>
-          </DialogFooter>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -698,24 +786,32 @@ export default function LeaguesPage() {
   const [isSeasonOpen, setIsSeasonOpen] = useState(false);
   const [isManualGameOpen, setIsManualGameOpen] = useState(false);
 
-  // Expose it to LeagueOverview via window for simplicity in this shared file
-  useEffect(() => {
-    (window as any).openManualGame = () => setIsManualGameOpen(true);
-    return () => { delete (window as any).openManualGame; };
-  }, []);
+
   const [leagueName, setLeagueName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [activeTab, setActiveTab] = useState('standings');
+  const [activeTab, setActiveTab] = useState<'recruit_pool' | 'teams' | 'players' | 'compliance' | 'command'>('teams');
   const [mounted, setMounted] = useState(false);
 
   const [editingTeam, setEditingTeam] = useState<any>(null);
-  const [editTeamForm, setEditTeamForm] = useState({ teamName: '', coachName: '', coachEmail: '' });
+  const [editTeamForm, setEditTeamForm] = useState({ 
+    teamName: '', 
+    coachName: '', 
+    coachEmail: '',
+    coachPhone: '',
+    origin: '',
+    organizerNotes: '',
+    inviteCode: '',
+    wins: 0,
+    losses: 0,
+    ties: 0,
+    points: 0
+  });
 
-  const [isFinancesOpen, setIsFinancesOpen] = useState(false);
   const [isEditLeagueOpen, setIsEditLeagueOpen] = useState(false);
   const [editLeagueForm, setEditLeagueForm] = useState({
     name: '', sport: '', description: '', startDate: '', endDate: '', ages: '', 
-    contactEmail: '', contactPhone: '', registrationCost: '', twitter: '', instagram: '', paymentInstructions: ''
+    contactEmail: '', contactPhone: '', registrationCost: '', twitter: '', instagram: '', paymentInstructions: '',
+    slug: '', requiredSquads: '', blackoutDaysOfWeek: [] as number[]
   });
 
   const leaguesQuery = useMemoFirebase(() => {
@@ -749,6 +845,13 @@ export default function LeaguesPage() {
     if (selectedLeagueId) return (leagues || []).find(l => l.id === selectedLeagueId) || null;
     return (leagues || [])[0] || null;
   }, [leagues, selectedLeagueId]);
+
+  const waiversQuery = useMemoFirebase(() => {
+    if (!db || !activeLeague?.id) return null;
+    return collection(db, 'leagues', activeLeague.id, 'archived_waivers');
+  }, [db, activeLeague?.id]);
+  const { data: waiversData } = useCollection<LeagueArchiveWaiver>(waiversQuery);
+  const waivers = useMemo(() => waiversData || [], [waiversData]);
 
   const [leaguePin, setLeaguePin] = useState(activeLeague?.scorekeeperPin || '');
 
@@ -813,6 +916,99 @@ export default function LeaguesPage() {
     doc.save(`RECRUIT_POOL_${activeLeague.id.slice(-8)}.pdf`);
   }, [activeLeague]);
 
+  const exportWaiver = useCallback((waiver: LeagueArchiveWaiver) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // Header
+    doc.setFillColor(0, 0, 0); doc.rect(0, 0, pageWidth, 40, 'F');
+    doc.setTextColor(255, 255, 255); doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.text("OFFICIAL WAIVER & AGREEMENT", 20, 25);
+    
+    // Content
+    doc.setTextColor(0, 0, 0); doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.text(`DOCUMENT ID: ${waiver.id}`, 20, 55);
+    doc.setFont("helvetica", "normal"); doc.text(`SIGNED AT: ${format(new Date(waiver.signedAt), 'MMMM d, yyyy @ h:mm a')}`, 20, 62);
+    doc.text(`TYPE: ${waiver.type.toUpperCase()}`, 20, 69);
+    
+    doc.setDrawColor(230, 230, 230); doc.line(20, 75, pageWidth - 20, 75);
+    
+    doc.setFontSize(12); doc.setFont("helvetica", "bold"); doc.text("PARTICIPANT DETAILS", 20, 85);
+    doc.setFontSize(10); doc.setFont("helvetica", "normal");
+    
+    let y = 95;
+    Object.entries(waiver.answers).forEach(([key, value]) => {
+      if (key === 'manual_enrollment' || key === 'signature_date' || key === 'waiver_signed_text') return;
+      
+      const cleanKey = key.replace(/_/g, ' ').toUpperCase();
+      let cleanValue = value;
+      if (typeof value === 'object' && value !== null) {
+        cleanValue = JSON.stringify(value);
+      } else if (value === true) cleanValue = 'YES';
+      else if (value === false) cleanValue = 'NO';
+      
+      doc.setFont("helvetica", "bold"); doc.text(`${cleanKey}:`, 20, y);
+      doc.setFont("helvetica", "normal"); 
+      const splitValue = doc.splitTextToSize(String(cleanValue), pageWidth - 85);
+      doc.text(splitValue, 65, y);
+      
+      y += (splitValue.length * 5) + 3;
+      if (y > 270) { doc.addPage(); y = 20; }
+    });
+    
+    y = Math.min(y + 15, 275);
+    doc.setDrawColor(0, 0, 0); doc.line(20, y, 100, y);
+    doc.setFontSize(8); doc.text("AUTHORIZED DIGITAL SIGNATURE", 20, y + 5);
+    doc.setFontSize(14); doc.setFont("times", "italic"); doc.text(waiver.signer, 25, y - 5);
+    
+    doc.save(`WAIVER_${waiver.title.replace(/\s+/g, '_')}_${waiver.id.slice(-6)}.pdf`);
+  }, []);
+
+  const exportAllWaivers = useCallback(() => {
+    if (!activeLeague || waivers.length === 0) return;
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    waivers.forEach((waiver, index) => {
+      if (index > 0) doc.addPage();
+      
+      // Header
+      doc.setFillColor(0, 0, 0); doc.rect(0, 0, pageWidth, 40, 'F');
+      doc.setTextColor(255, 255, 255); doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.text("OFFICIAL WAIVER & AGREEMENT", 20, 25);
+      
+      // Content
+      doc.setTextColor(0, 0, 0); doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.text(`DOCUMENT ID: ${waiver.id}`, 20, 55);
+      doc.setFont("helvetica", "normal"); doc.text(`SIGNED AT: ${format(new Date(waiver.signedAt), 'MMMM d, yyyy @ h:mm a')}`, 20, 62);
+      doc.text(`TYPE: ${waiver.type.toUpperCase()}`, 20, 69);
+      
+      doc.setDrawColor(230, 230, 230); doc.line(20, 75, pageWidth - 20, 75);
+      doc.setFontSize(12); doc.setFont("helvetica", "bold"); doc.text("PARTICIPANT DETAILS", 20, 85);
+      doc.setFontSize(10); doc.setFont("helvetica", "normal");
+      
+      let y = 95;
+      Object.entries(waiver.answers).forEach(([key, value]) => {
+        if (key === 'manual_enrollment' || key === 'signature_date' || key === 'waiver_signed_text') return;
+        const cleanKey = key.replace(/_/g, ' ').toUpperCase();
+        let cleanValue = value;
+        if (typeof value === 'object' && value !== null) cleanValue = JSON.stringify(value);
+        else if (value === true) cleanValue = 'YES';
+        else if (value === false) cleanValue = 'NO';
+        
+        doc.setFont("helvetica", "bold"); doc.text(`${cleanKey}:`, 20, y);
+        doc.setFont("helvetica", "normal"); 
+        const splitValue = doc.splitTextToSize(String(cleanValue), pageWidth - 85);
+        doc.text(splitValue, 65, y);
+        y += (splitValue.length * 5) + 3;
+        if (y > 270) { doc.addPage(); y = 20; }
+      });
+      
+      y = Math.min(y + 15, 275);
+      doc.setDrawColor(0, 0, 0); doc.line(20, y, 100, y);
+      doc.setFontSize(8); doc.text("AUTHORIZED DIGITAL SIGNATURE", 20, y + 5);
+      doc.setFontSize(14); doc.setFont("times", "italic"); doc.text(waiver.signer, 25, y - 5);
+    });
+    
+    doc.save(`${activeLeague.name.replace(/\s+/g, '_')}_WAIVER_ARCHIVE.pdf`);
+  }, [activeLeague, waivers]);
+
   const showLoading = !mounted || isLeaguesLoading || (!activeTeam && !isStaff);
 
   const handleEditLeague = () => {
@@ -829,7 +1025,10 @@ export default function LeaguesPage() {
       registrationCost: activeLeague.registrationCost || '',
       twitter: activeLeague.socialLinks?.twitter || '',
       instagram: activeLeague.socialLinks?.instagram || '',
-      paymentInstructions: activeLeague.paymentInstructions || ''
+      paymentInstructions: activeLeague.paymentInstructions || '',
+      slug: activeLeague.slug || '',
+      requiredSquads: activeLeague.requiredSquads?.toString() || '',
+      blackoutDaysOfWeek: activeLeague.blackoutDaysOfWeek || []
     });
     setIsEditLeagueOpen(true);
   };
@@ -852,7 +1051,10 @@ export default function LeaguesPage() {
         socialLinks: {
           twitter: editLeagueForm.twitter,
           instagram: editLeagueForm.instagram
-        }
+        },
+        slug: editLeagueForm.slug,
+        requiredSquads: editLeagueForm.requiredSquads ? parseInt(editLeagueForm.requiredSquads) : null,
+        blackoutDaysOfWeek: editLeagueForm.blackoutDaysOfWeek
       });
       setIsEditLeagueOpen(false);
       toast({ title: "League Profile Updated" });
@@ -878,15 +1080,32 @@ export default function LeaguesPage() {
     setEditTeamForm({
       teamName: team.teamName,
       coachName: team.coachName || '',
-      coachEmail: team.coachEmail || ''
+      coachEmail: team.coachEmail || '',
+      coachPhone: team.coachPhone || '',
+      origin: team.origin || '',
+      organizerNotes: team.organizerNotes || '',
+      inviteCode: team.inviteCode || '',
+      wins: team.wins || 0,
+      losses: team.losses || 0,
+      ties: team.ties || 0,
+      points: team.points || 0
     });
   };
 
   const handleSaveTeamUpdate = async () => {
     if (!activeLeague || !editingTeam) return;
-    await updateLeagueTeamDetails(activeLeague.id, editingTeam.id, editTeamForm);
-    setEditingTeam(null);
-    toast({ title: "Standings Synchronized" });
+    setIsProcessing(true);
+    try {
+      console.log("[Leagues] Updating team:", editingTeam.id, editTeamForm);
+      await updateLeagueTeamDetails(activeLeague.id, editingTeam.id, editTeamForm);
+      setEditingTeam(null);
+      toast({ title: "Standings Synchronized", description: "The squad metadata has been updated successfully." });
+    } catch (e: any) {
+      console.error("[Leagues] Error updating team:", e);
+      toast({ title: "Update Failed", description: e.message, variant: 'destructive' });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   if (showLoading) {
@@ -984,7 +1203,7 @@ export default function LeaguesPage() {
                   <Button 
                     onClick={() => {
                       if (!isPro) { purchasePro(); return; }
-                      navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.id}?protocol=team_config`);
+                      navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.slug || activeLeague.id}?protocol=team_config`);
                       toast({ title: "Public Link Copied", description: "The registration portal link is ready to share." });
                     }} 
                     variant="ghost" 
@@ -1013,19 +1232,20 @@ export default function LeaguesPage() {
 
 
           <div className="flex flex-col sm:flex-row items-baseline justify-between gap-4">
-            <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex shadow-inner">
-              <Button variant={activeTab === 'standings' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('standings')}>Standings</Button>
-              {isStaff && <Button variant={activeTab === 'command' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all" onClick={() => setActiveTab('command')}>Match Command</Button>}
-              {isStaff && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all flex items-center gap-2" onClick={() => isPro ? setActiveTab('portals') : purchasePro()}>{!isPro && <LockIcon className="h-3 w-3" />} Portals</Button>}
-              {isStaff && <Button variant={activeTab === 'personnel' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all flex items-center gap-2" onClick={() => isPro ? setActiveTab('personnel') : purchasePro()}>{!isPro && <LockIcon className="h-3 w-3" />} Personnel (Recruiter)</Button>}
+            <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex shadow-inner overflow-x-auto max-w-full no-scrollbar">
+              <Button variant={activeTab === 'teams' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('teams')}>Teams</Button>
+              {isStaff && <Button variant={activeTab === 'players' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('players')}>Players</Button>}
+              {isStaff && <Button variant={activeTab === 'recruit_pool' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('recruit_pool')}>Recruit Pool</Button>}
+              {isStaff && <Button variant={activeTab === 'compliance' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('compliance')}>Compliance</Button>}
+              {isStaff && <Button variant={activeTab === 'command' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('command')}>Command</Button>}
             </div>
             <div className="flex gap-2 w-full sm:w-auto mt-2 sm:mt-0">
-              {activeTab === 'standings' && (
+              {activeTab === 'teams' && (
                 <Button variant="outline" className="flex-1 sm:flex-none h-11 rounded-xl border-2 font-black uppercase text-[10px]" onClick={exportStandings}>
                   <Download className="h-4 w-4 mr-2" /> Download Standings
                 </Button>
               )}
-              {activeTab === 'personnel' && (
+              {activeTab === 'players' && (
                 <Button variant="outline" className="flex-1 sm:flex-none h-11 rounded-xl border-2 font-black uppercase text-[10px]" onClick={exportRecruitPool}>
                   <Download className="h-4 w-4 mr-2" /> Download Personnel Log
                 </Button>
@@ -1034,11 +1254,11 @@ export default function LeaguesPage() {
           </div>
 
           <Tabs value={activeTab} className="mt-0">
-            <TabsContent value="standings" className="mt-0 animate-in fade-in duration-500">
+            <TabsContent value="teams" className="mt-0 animate-in fade-in duration-500">
               <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Squad Rank</th><th className="px-4 py-5 text-center">Wins</th><th className="px-4 py-5 text-center">Losses</th><th className="px-4 py-5 text-center">Waiver</th><th className="px-10 py-5 text-right text-primary">Actions & PTS</th></tr></thead>
+                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Squad Rank</th><th className="px-4 py-5 text-center">Recruit Code</th><th className="px-4 py-5 text-center">Record</th><th className="px-4 py-5 text-center">PTS</th><th className="px-4 py-5 text-center">Compliance</th><th className="px-10 py-5 text-right text-primary">Actions</th></tr></thead>
                       <tbody className="divide-y divide-muted/50">{sortedStandings.map((team, idx) => (
                         <tr key={team.id} className="hover:bg-primary/5 transition-colors group">
                           <td className="px-10 py-6">
@@ -1050,15 +1270,34 @@ export default function LeaguesPage() {
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-6 text-center font-bold text-sm">{team.wins}</td>
-                          <td className="px-4 py-6 text-center font-bold text-sm">{team.losses}</td>
+                          <td className="px-4 py-6 text-center">
+                            {team.inviteCode ? (
+                              <Badge variant="outline" className="border-primary/20 text-primary font-black text-[9px] h-6 px-3">{team.inviteCode}</Badge>
+                            ) : (
+                              <span className="text-[10px] font-bold text-muted-foreground/30">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-6 text-center font-bold text-sm">
+                            <div className="flex items-center justify-center gap-1">
+                              <span className="text-green-600">{team.wins}</span>
+                              <span className="opacity-20">/</span>
+                              <span className="text-red-600">{team.losses}</span>
+                              <span className="opacity-20">/</span>
+                              <span className="text-muted-foreground/60">{team.ties || 0}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-6 text-center font-black text-primary">{team.points}</td>
                           <td className="px-4 py-6 text-center">
                             {team.signedAt ? (
-                              <div className="space-y-0.5">
+                              <div className="space-y-0.5 text-center">
                                 <Badge className="bg-green-100 text-green-700 border-none font-black text-[7px] h-4">SIGNED</Badge>
                                 <p className="text-[6px] font-bold text-muted-foreground uppercase">{format(new Date(team.signedAt), 'MMM d, p')}</p>
                               </div>
-                            ) : <Badge variant="outline" className="text-[7px] font-black opacity-30 uppercase">PENDING</Badge>}
+                            ) : (
+                              <Badge variant="outline" className={cn("text-[7px] font-black uppercase border-dashed", (team.manual || team.id.startsWith('manual_')) ? "text-amber-600 border-amber-200 bg-amber-50" : "opacity-30")}>
+                                {(team.manual || team.id.startsWith('manual_')) ? "WAIVER PENDING" : "PENDING"}
+                              </Badge>
+                            )}
                           </td>
                           <td className="px-10 py-6 text-right">
                             <div className="flex items-center justify-end gap-4">
@@ -1081,27 +1320,37 @@ export default function LeaguesPage() {
                 </div>
               </Card>
             </TabsContent>
-            <TabsContent value="command" className="mt-0 animate-in fade-in duration-500"><LeagueOverview league={activeLeague} schedule={activeLeague.schedule || []} /></TabsContent>
-            <TabsContent value="personnel" className="mt-0 animate-in fade-in duration-500">
+            <TabsContent value="command" className="mt-0 animate-in fade-in duration-500"><LeagueOverview league={activeLeague} schedule={activeLeague.schedule || []} onOpenManualGame={() => setIsManualGameOpen(true)} /></TabsContent>
+            <TabsContent value="players" className="mt-0 animate-in fade-in duration-500">
               <div className="space-y-6">
                 <div className="flex items-center justify-between px-2">
-                  <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Personnel Pool</h3></div>
-                  <Link href={`/leagues/registration/${activeLeague.id}`}>
-                    <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px]">Open Recruiting Center</Button>
+                  <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Personnel Hub</h3></div>
+                  <Link href={`/leagues/registration/${activeLeague.id}?protocol=player_config`}>
+                    <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px]">Open Athlete Recruiting</Button>
                   </Link>
                 </div>
                 <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Athlete Name</th><th className="px-4 py-5 text-center">Status</th><th className="px-4 py-5 text-center">Waiver</th><th className="px-10 py-5 text-right">Contact</th></tr></thead>
+                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Athlete Name</th><th className="px-4 py-5 text-center">Recruit Code</th><th className="px-4 py-5 text-center">Status</th><th className="px-4 py-5 text-center">Compliance</th><th className="px-10 py-5 text-right">Contact</th></tr></thead>
                       <tbody className="divide-y divide-muted/50">
                         {Object.entries(activeLeague.individualRecruits || {}).map(([id, p]) => (
                           <tr key={id} className="hover:bg-primary/5 transition-colors group">
                             <td className="px-10 py-6">
                               <div className="flex items-center gap-4">
                                 <div className="h-10 w-10 rounded-xl bg-primary/5 flex items-center justify-center text-primary"><UserPlus className="h-5 w-5" /></div>
-                                <span className="font-black text-sm uppercase truncate text-foreground">{p.name}</span>
+                                <div>
+                                  <span className="font-black text-sm uppercase truncate text-foreground">{p.name}</span>
+                                  {p.teamName && <p className="text-[7px] font-bold text-muted-foreground uppercase">Affiliation: {p.teamName}</p>}
+                                </div>
                               </div>
+                            </td>
+                            <td className="px-4 py-6 text-center font-bold text-xs">
+                              {p.teamCode ? (
+                                <Badge variant="outline" className="border-primary/20 text-primary font-black text-[9px] h-6 px-3">{p.teamCode}</Badge>
+                              ) : (
+                                <span className="text-[10px] font-bold text-muted-foreground/30">—</span>
+                              )}
                             </td>
                             <td className="px-4 py-6 text-center">
                               <Badge className={cn("border-none font-black text-[8px] uppercase px-3 h-6", p.status === 'pending' ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700")}>{p.status}</Badge>
@@ -1114,7 +1363,25 @@ export default function LeaguesPage() {
                                 </div>
                               ) : <span className="text-[8px] font-bold text-muted-foreground uppercase opacity-40 italic">Pending</span>}
                             </td>
-                            <td className="px-10 py-6 text-right font-bold text-[10px] text-muted-foreground uppercase">{p.email}</td>
+                            <td className="px-10 py-6 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                {p.signedAt && activeLeague && (
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => exportWaiver({ 
+                                    id: id, 
+                                    title: p.name, 
+                                    signer: p.name, 
+                                    signedAt: p.signedAt!, 
+                                    waiverText: 'Official League Participation Waiver',
+                                    registrationId: (activeLeague as any).id || selectedLeagueId || '',
+                                    answers: { name: p.name, email: p.email, phone: p.phone, status: p.status, type: 'individual' }, 
+                                    type: 'individual' 
+                                  })}>
+                                    <Download className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                <span className="font-bold text-[10px] text-muted-foreground uppercase">{p.email}</span>
+                              </div>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1127,13 +1394,54 @@ export default function LeaguesPage() {
               </div>
             </TabsContent>
             
-            <TabsContent value="portals" className="mt-0 animate-in fade-in duration-500">
+            <TabsContent value="compliance" className="mt-0 animate-in fade-in duration-500">
+               <div className="space-y-6">
+                <div className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Compliance Archive</h3></div>
+                  <Button variant="outline" onClick={exportAllWaivers} className="rounded-xl h-10 px-6 font-black uppercase text-[10px] flex items-center gap-2">
+                    <Download className="h-3 w-3" /> Download Full Archive
+                  </Button>
+                </div>
+                <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Document Title</th><th className="px-4 py-5">Type</th><th className="px-4 py-5">Signer</th><th className="px-4 py-5">Signed Date</th><th className="px-10 py-5 text-right">Actions</th></tr></thead>
+                      <tbody className="divide-y divide-muted/50">
+                        {waivers.map((waiver) => (
+                          <tr key={waiver.id} className="hover:bg-primary/5 transition-colors group">
+                            <td className="px-10 py-6">
+                              <div className="flex items-center gap-4">
+                                <div className="h-10 w-10 rounded-xl bg-primary/5 flex items-center justify-center text-primary"><FileText className="h-5 w-5" /></div>
+                                <span className="font-black text-sm uppercase truncate text-foreground">{waiver.title}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-6 text-[10px] font-black uppercase text-muted-foreground">{waiver.type}</td>
+                            <td className="px-4 py-6 font-black text-xs uppercase">{waiver.signer}</td>
+                            <td className="px-4 py-6 text-[10px] font-bold text-muted-foreground uppercase">{format(new Date(waiver.signedAt), 'MMM d, h:mm a')}</td>
+                            <td className="px-10 py-6 text-right">
+                              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-primary/10 text-primary" onClick={() => exportWaiver(waiver)}>
+                                <Download className="h-5 w-5" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {waivers.length === 0 && (
+                      <div className="py-24 text-center opacity-20 italic font-black uppercase text-xs">No signed compliance documents archived yet.</div>
+                    )}
+                  </div>
+                </Card>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="recruit_pool" className="mt-0 animate-in fade-in duration-500">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 <Card className="rounded-[2.5rem] border-none shadow-xl bg-orange-600 text-white p-8 space-y-4 group transition-all">
                   <div className="flex items-center justify-between">
-                    <Badge className="bg-white text-orange-600 border-none font-black text-[8px] h-5 px-2">PIPELINE</Badge>
+                    <Badge className="bg-white text-orange-600 border-none font-black text-[8px] h-5 px-2">SQUAD ARCHITECT</Badge>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black uppercase opacity-60">Portal Live</span>
+                      <span className="text-[10px] font-black uppercase opacity-60">Live</span>
                       <Switch 
                         checked={activeLeague.is_active !== false} 
                         onCheckedChange={handleToggleActive}
@@ -1141,11 +1449,21 @@ export default function LeaguesPage() {
                       />
                     </div>
                   </div>
-                  <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Registration Portal</h4>
-                  <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public recruitment for squads to join the roster.</p>
+                  <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Team Registration</h4>
+                  <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public portal for new squads to join the roster.</p>
                   <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.id}?protocol=team_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
-                    <Button variant="outline" className="h-12 w-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => router.push(`/leagues/registration/${activeLeague.id}`)}><Edit3 className="h-4 w-4" /></Button>
+                    <Button variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.slug || activeLeague.id}?protocol=team_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
+                    <Button variant="outline" className="h-12 w-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => router.push(`/leagues/registration/${activeLeague.id}?protocol=team_config`)}><Settings className="h-4 w-4" /></Button>
+                  </div>
+                </Card>
+
+                <Card className="rounded-[2.5rem] border-none shadow-xl bg-blue-600 text-white p-8 space-y-4 group transition-all">
+                  <Badge className="bg-white text-blue-600 border-none font-black text-[8px] h-5 px-2">ATHLETE PIPELINE</Badge>
+                  <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Individual Recruits</h4>
+                  <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public portal for athletes seeking squad placement.</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.slug || activeLeague.id}?protocol=player_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
+                   <Button variant="outline" className="h-12 w-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => router.push(`/leagues/registration/${activeLeague.id}?protocol=player_config`)}><Settings className="h-4 w-4" /></Button>
                   </div>
                 </Card>
 
@@ -1175,7 +1493,7 @@ export default function LeaguesPage() {
                   <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-2">OPERATIONS</Badge>
                   <h4 className="text-2xl font-black uppercase tracking-tight leading-none text-black">Scorekeeper Hub</h4>
                   <p className="text-xs text-muted-foreground font-medium leading-relaxed italic">Result entry portal for field generals to post scores.</p>
-                  <Button variant="outline" className="w-full h-12 rounded-xl bg-black/5 border-black/10 text-black hover:bg-black/10" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/leagues/scorekeeper/${activeLeague.id}`); toast({ title: "Scorekeeper URL Copied" }); }}>Copy Entry Link <Share2 className="ml-2 h-3 w-3" /></Button>
+                  <Button variant="outline" className="w-full h-12 rounded-xl bg-black/5 border-black/10 text-black hover:bg-black/10" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/leagues/scorekeeper/${activeLeague.slug || activeLeague.id}`); toast({ title: "Scorekeeper URL Copied" }); }}>Copy Entry Link <Share2 className="ml-2 h-3 w-3" /></Button>
                 </Card>
               </div>
             </TabsContent>
@@ -1222,21 +1540,65 @@ export default function LeaguesPage() {
               </div>
             </DialogHeader>
             <div className="space-y-5">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Standings Team Name</Label>
-                <Input value={editTeamForm.teamName} onChange={e => setEditTeamForm({...editTeamForm, teamName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20" />
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2 col-span-1">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label>
+                  <Input value={editTeamForm.teamName} onChange={e => setEditTeamForm({...editTeamForm, teamName: e.target.value})} className="h-12 rounded-xl border-2 font-bold focus:border-primary/20" />
+                </div>
+                <div className="space-y-2 col-span-1">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Origin</Label>
+                  <Input value={editTeamForm.origin} onChange={e => setEditTeamForm({...editTeamForm, origin: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="e.g. Toronto, ON" />
+                </div>
+                <div className="space-y-2 col-span-1">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Recruit Code</Label>
+                  <Input value={editTeamForm.inviteCode || ''} onChange={e => setEditTeamForm({...editTeamForm, inviteCode: e.target.value.toUpperCase()})} className="h-12 rounded-xl border-2 font-black text-center tracking-widest" maxLength={6} placeholder="AUTO" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Primary Coach / Contact</Label>
+                  <Input value={editTeamForm.coachName} onChange={e => setEditTeamForm({...editTeamForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label>
+                  <Input type="email" value={editTeamForm.coachEmail} onChange={e => setEditTeamForm({...editTeamForm, coachEmail: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Wins</Label>
+                  <Input type="number" value={editTeamForm.wins} onChange={e => setEditTeamForm({...editTeamForm, wins: parseInt(e.target.value) || 0})} className="h-12 rounded-xl border-2 font-bold text-center" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Losses</Label>
+                  <Input type="number" value={editTeamForm.losses} onChange={e => setEditTeamForm({...editTeamForm, losses: parseInt(e.target.value) || 0})} className="h-12 rounded-xl border-2 font-bold text-center" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Ties</Label>
+                  <Input type="number" value={editTeamForm.ties} onChange={e => setEditTeamForm({...editTeamForm, ties: parseInt(e.target.value) || 0})} className="h-12 rounded-xl border-2 font-bold text-center" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Points</Label>
+                  <Input type="number" value={editTeamForm.points} onChange={e => setEditTeamForm({...editTeamForm, points: parseInt(e.target.value) || 0})} className="h-12 rounded-xl border-2 font-black text-center text-primary" />
+                </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Primary Coach</Label>
-                <Input value={editTeamForm.coachName} onChange={e => setEditTeamForm({...editTeamForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Phone</Label>
+                <Input value={editTeamForm.coachPhone} onChange={e => setEditTeamForm({...editTeamForm, coachPhone: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
               </div>
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label>
-                <Input type="email" value={editTeamForm.coachEmail} onChange={e => setEditTeamForm({...editTeamForm, coachEmail: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Organizer Internal Notes</Label>
+                <Textarea value={editTeamForm.organizerNotes} onChange={e => setEditTeamForm({...editTeamForm, organizerNotes: e.target.value})} className="rounded-xl border-2 font-medium min-h-[80px]" placeholder="Special notes about this squad..." />
               </div>
             </div>
             <DialogFooter>
-              <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSaveTeamUpdate}>Commit Standings Update</Button>
+              <Button 
+                disabled={isProcessing}
+                className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" 
+                onClick={handleSaveTeamUpdate}
+              >
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : 'Commit Changes'}
+              </Button>
             </DialogFooter>
           </div>
         </DialogContent>
@@ -1251,16 +1613,28 @@ export default function LeaguesPage() {
               <DialogDescription className="font-bold text-[10px] uppercase tracking-widest mt-2">{activeLeague?.name} • Public Context</DialogDescription>
             </DialogHeader>
             <div className="space-y-6">
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 <div className="space-y-2">
-                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">League Name</Label>
-                   <Input value={editLeagueForm.name} onChange={e => setEditLeagueForm({...editLeagueForm, name: e.target.value})} className="h-12 rounded-xl border-2 font-black" />
-                 </div>
-                 <div className="space-y-2">
-                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Type of Sport</Label>
-                   <Input value={editLeagueForm.sport} onChange={e => setEditLeagueForm({...editLeagueForm, sport: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
-                 </div>
-               </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Registration Slug</Label>
+                    <Input value={editLeagueForm.slug} onChange={e => setEditLeagueForm({...editLeagueForm, slug: e.target.value})} className="h-12 rounded-xl border-2 font-black" placeholder="my-premier-league" />
+                    <p className="text-[8px] text-muted-foreground ml-1 font-bold italic">Custom URL: /register/league/{editLeagueForm.slug || 'id'}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Required Squads</Label>
+                    <Input type="number" value={editLeagueForm.requiredSquads} onChange={e => setEditLeagueForm({...editLeagueForm, requiredSquads: e.target.value})} className="h-12 rounded-xl border-2 font-black" placeholder="8" />
+                    <p className="text-[8px] text-muted-foreground ml-1 font-bold italic">Triggers validation warnings in Season Architect.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">League Name</Label>
+                    <Input value={editLeagueForm.name} onChange={e => setEditLeagueForm({...editLeagueForm, name: e.target.value})} className="h-12 rounded-xl border-2 font-black" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Type of Sport</Label>
+                    <Input value={editLeagueForm.sport} onChange={e => setEditLeagueForm({...editLeagueForm, sport: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
+                  </div>
+                </div>
                <div className="space-y-2">
                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Description</Label>
                  <Textarea value={editLeagueForm.description} onChange={e => setEditLeagueForm({...editLeagueForm, description: e.target.value})} className="rounded-2xl border-2 font-medium min-h-[100px]" placeholder="Detailed description of the league..." />

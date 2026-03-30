@@ -48,7 +48,10 @@ import {
   X,
   Save,
   Link as LinkIcon,
-  Eye
+  Eye,
+  Zap,
+  Link2,
+  Copy
 } from 'lucide-react';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { collection, query, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -78,6 +81,7 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { FundraisingManager } from '@/components/coaches-corner/FundraisingManager';
 
 const DEFAULT_PROTOCOLS = [
   { id: 'default_medical', title: 'Medical Clearance', type: 'waiver' },
@@ -1249,6 +1253,7 @@ export default function CoachesCornerPage() {
             <TabsTrigger value="recruiting" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Recruiting Hub</TabsTrigger>
             <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Compliance</TabsTrigger>
             <TabsTrigger value="archives" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Waiver Library</TabsTrigger>
+            <TabsTrigger value="fundraising" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Fundraising</TabsTrigger>
             <TabsTrigger value="safety" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">Safety Hub</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -1359,6 +1364,70 @@ export default function CoachesCornerPage() {
               })}
             </div>
           </section>
+
+          <section className="space-y-6 pt-4 border-t-2 border-dashed border-primary/10 mt-10">
+            <div className="flex items-center gap-3 px-2">
+              <Zap className="h-5 w-5 text-primary" />
+              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Rapid Join Portal</h2>
+            </div>
+            <Card className="rounded-[2.5rem] border-none shadow-xl transition-all bg-black text-white p-10 overflow-hidden relative group">
+              <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
+                <Link2 className="h-40 w-40" />
+              </div>
+              
+              <div className="max-w-xl space-y-8 relative z-10">
+                <div className="space-y-2">
+                  <h3 className="text-3xl font-black uppercase tracking-tighter leading-none">Onboarding Gateway</h3>
+                  <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-relaxed text-balance">
+                    Enable a public enrollment pipeline where new members can join your squad and execute mandatory compliance protocols in one step.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pb-6 border-b border-white/10">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">Squad Code</Label>
+                    <div className="bg-white/10 rounded-2xl h-16 flex items-center justify-center border border-white/10 shadow-inner group-hover:border-primary/20 transition-all">
+                      <span className="text-3xl font-black tracking-[0.3em] ml-[0.3em]">{activeTeam?.teamCode || activeTeam?.code || 'CODE'}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">Portal Status</Label>
+                    <div className="bg-primary/20 rounded-2xl h-16 flex items-center px-6 border border-primary/30">
+                      <div className="h-2 w-2 rounded-full bg-primary animate-pulse mr-3" />
+                      <span className="text-sm font-black uppercase tracking-tight text-primary">Active Gateway</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex justify-between items-end px-1">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-white/40">Magic Join Link</Label>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="bg-white/5 rounded-2xl h-14 flex items-center px-4 border border-white/10 flex-1 overflow-hidden shadow-inner font-mono text-primary/60">
+                      <span className="text-[10px] font-bold truncate">
+                        {typeof window !== 'undefined' ? `${window.location.origin}/register/squad/${activeTeam?.id}` : `/register/squad/${activeTeam?.id}`}
+                      </span>
+                    </div>
+                    <Button 
+                      className="h-14 w-14 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 shrink-0 transition-transform active:scale-95"
+                      onClick={() => {
+                        const link = `${window.location.origin}/register/squad/${activeTeam?.id}`;
+                        navigator.clipboard.writeText(link);
+                        toast({ title: "Link Copied", description: "Direct join link is ready to share." });
+                      }}
+                    >
+                      <Copy className="h-5 w-5" />
+                    </Button>
+                  </div>
+                  <p className="text-[9px] font-bold text-white/20 uppercase tracking-[0.05em] leading-relaxed">
+                    Share this unique institutional URL with parents and players to bypass manual coordination. 
+                    Successful enrollments will appear instantly in your member roster.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </section>
         </TabsContent>
 
         <TabsContent value="archives" className="mt-0 space-y-8 animate-in fade-in duration-500">
@@ -1368,6 +1437,15 @@ export default function CoachesCornerPage() {
              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Auditable Log of Digital Signatures & Executed Agrements</p>
            </div>
            <WaiverArchive />
+        </TabsContent>
+
+        <TabsContent value="fundraising" className="mt-0 space-y-8 animate-in fade-in duration-500">
+           <div className="space-y-2">
+             <Badge className="bg-primary/5 text-primary border-none font-black uppercase text-[8px] h-5 px-2 tracking-widest">Financial Hub</Badge>
+             <h2 className="text-3xl font-black uppercase tracking-tight">Fundraising Mobilization</h2>
+             <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Manage Squad Campaigns, Tracking & Institutional Donations</p>
+           </div>
+           <FundraisingManager />
         </TabsContent>
 
         <TabsContent value="safety" className="mt-0">

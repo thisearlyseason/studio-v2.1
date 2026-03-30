@@ -621,97 +621,314 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 
   return (
     <div className="space-y-10 animate-in fade-in duration-500 pb-20">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full h-12 w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-6 w-6" /></Button>
-          <div>
-            <Badge className="bg-primary text-white border-none font-black uppercase text-[10px] h-6 px-3 shadow-lg">Live Series</Badge>
-            <h1 className="text-2xl md:text-4xl font-black uppercase tracking-tight mt-1">{event.title}</h1>
+      <div className="relative overflow-hidden bg-black rounded-[3.5rem] p-10 lg:p-14 text-white shadow-2xl border border-white/5 group">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-transparent opacity-50 group-hover:opacity-70 transition-opacity" />
+        <div className="absolute -right-20 -top-20 w-96 h-96 bg-primary/20 rounded-full blur-[100px] pointer-events-none" />
+        
+        {/* Championship Image Overlay */}
+        <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-20 pointer-events-none group-hover:scale-105 transition-transform duration-1000 hidden lg:block">
+           <img 
+             src="/Users/tylerans/.gemini/antigravity/brain/9ff20e19-8bfd-407d-8ca1-e2b0b73705b9/championship_trophy_premium_png_1774896013640.png" 
+             alt="Championship Trophy" 
+             className="w-full h-full object-cover grayscale brightness-50"
+           />
+        </div>
+
+        <div className="relative z-10 space-y-8 max-w-4xl">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex items-center gap-5">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={onBack} 
+                className="rounded-full h-14 w-14 border-2 border-white/20 hover:bg-white/10 shrink-0 text-white hover:scale-105 transition-all"
+              >
+                <ChevronLeft className="h-7 w-7" />
+              </Button>
+              <div className="space-y-1">
+                <Badge className="bg-primary text-white border-none font-black uppercase text-[10px] h-6 px-4 shadow-lg tracking-widest">
+                  Series Hub 2024
+                </Badge>
+                <h1 className="text-3xl md:text-5xl lg:text-6xl font-black uppercase tracking-tighter leading-none mt-1">
+                  {event.title}
+                </h1>
+              </div>
+            </div>
+            {isStaff && (
+              <div className="flex flex-wrap gap-3 justify-end self-end md:self-center">
+                <Button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${baseUrl}/register/tournament/${activeTeam?.id}/${event.id}?protocol=team_config`);
+                    toast({ title: "Public Link Copied", description: "Registration gateway ready for distribution." });
+                  }} 
+                  variant="outline" 
+                  className="h-14 px-6 rounded-2xl border-2 border-white/20 font-black transition-all bg-white/5 hover:bg-white/10 group"
+                >
+                  <Share2 className="h-5 w-5 mr-3 group-hover:rotate-12 transition-transform" /> Share Portal
+                </Button>
+                <Button 
+                  onClick={() => setIsEditOpen(true)} 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-14 w-14 rounded-2xl border-2 border-white/20 font-black transition-all bg-white/5 hover:bg-white/10"
+                >
+                  <Settings className="h-6 w-6" />
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 md:gap-8 pt-8 border-t border-white/10">
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Enrolled Squads</p>
+              <p className="text-3xl font-black">{(event.tournamentTeamsData || []).length}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Match Count</p>
+              <p className="text-3xl font-black">{(event.tournamentGames || []).length}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Compliance</p>
+              <div className="flex items-center gap-2">
+                <p className="text-3xl font-black">
+                  {Math.round(((event.tournamentTeamsData || []).filter(t => event.teamAgreements?.[t.name]).length / Math.max(1, (event.tournamentTeamsData || []).length)) * 100)}%
+                </p>
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Timeline</p>
+              <p className="text-lg font-bold leading-tight">
+                {format(new Date(event.date), 'MMM d')} - {format(new Date(event.endDate || event.date), 'MMM d, yyyy')}
+              </p>
+            </div>
           </div>
         </div>
-        {isStaff && (
-          <div className="flex flex-wrap gap-2 justify-end">
-            <Button 
-              onClick={() => {
-                navigator.clipboard.writeText(`${baseUrl}/register/tournament/${activeTeam?.id}/${event.id}?protocol=team_config`);
-                toast({ title: "Public Link Copied", description: "The tourney registration link is ready to share." });
-              }} 
-              variant="outline" 
-              size="icon" 
-              className="h-12 w-12 rounded-xl border-2 font-black transition-all"
-            >
-              <Share2 className="h-5 w-5" />
-            </Button>
-            <Button onClick={() => setIsEditOpen(true)} variant="outline" size="icon" className="h-12 w-12 rounded-xl border-2 font-black transition-all"><Settings className="h-5 w-5" /></Button>
-          </div>
-        )}
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-8">
-        <aside className="w-full lg:w-1/3 flex flex-col text-white bg-black rounded-[3rem] p-8 lg:p-10 space-y-8">
-          <div className="space-y-4"><p className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Brief</p><p className="text-sm font-medium text-white/80 leading-relaxed italic">"{event.description || 'Championship itinerary established.'}"</p></div>
-          <div className="space-y-4 pt-4 border-t border-white/10">
-            <h4 className="text-[10px] font-black uppercase text-white/40 tracking-[0.2em]">Leaderboard</h4>
-            <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden">
-              {standings.length > 0 ? standings.map((team) => (
-                <div className="flex justify-between items-center px-5 py-4 border-b border-white/5 last:border-0" key={team.name}>
-                  <span className="text-xs font-black uppercase truncate pr-2">{team.name}</span>
-                  <Badge className="bg-primary text-white border-none font-black text-[9px] px-2 h-5">{team.points} PTS</Badge>
-                </div>
-              )) : <div className="p-8 text-center opacity-20 text-[10px] font-black uppercase">No standing data.</div>}
-            </div>
-          </div>
-        </aside>
-
-        <div className="flex-1 min-w-0 bg-white rounded-[3rem] border-2 shadow-sm overflow-hidden">
+      <div className="flex-1 min-w-0 bg-white rounded-[4rem] border-2 shadow-2xl overflow-hidden flex flex-col relative">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col">
-            <div className="bg-muted/30 p-6 border-b">
-              <TabsList className="bg-white/50 h-auto p-1.5 rounded-2xl border w-full flex-wrap gap-1 shadow-inner">
-                <TabsTrigger value="itinerary" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Matches</TabsTrigger>
-                <TabsTrigger value="bracket" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">Bracket</TabsTrigger>
-                <TabsTrigger value="portals" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">Portals</TabsTrigger>
-                <TabsTrigger value="protocol" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-orange-600 data-[state=active]:text-white transition-all">Protocol</TabsTrigger>
-                <TabsTrigger value="compliance" className="rounded-xl font-black text-xs uppercase px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Compliance</TabsTrigger>
+            <div className="bg-muted/30 p-8 border-b">
+              <TabsList className="bg-white/50 h-auto p-2 rounded-[1.75rem] border-2 w-full flex-wrap gap-1 shadow-inner">
+                <TabsTrigger value="itinerary" className="rounded-2xl font-black text-xs uppercase px-8 py-3.5 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none h-auto">Matches</TabsTrigger>
+                <TabsTrigger value="squads" className="rounded-2xl font-black text-xs uppercase px-8 py-3.5 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all shadow-none h-auto">Teams</TabsTrigger>
+                <TabsTrigger value="standings" className="rounded-2xl font-black text-xs uppercase px-8 py-3.5 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all shadow-none h-auto">Standings</TabsTrigger>
+                <TabsTrigger value="bracket" className="rounded-2xl font-black text-xs uppercase px-8 py-3.5 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all shadow-none h-auto">Brackets</TabsTrigger>
+                <TabsTrigger value="compliance" className="rounded-2xl font-black text-xs uppercase px-8 py-3.5 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-none h-auto">Compliance</TabsTrigger>
+                <TabsTrigger value="portals" className="rounded-2xl font-black text-xs uppercase px-8 py-3.5 flex-1 data-[state=active]:bg-muted-foreground data-[state=active]:text-white transition-all shadow-none h-auto">Portals</TabsTrigger>
+                <TabsTrigger value="protocol" className="rounded-2xl font-black text-xs uppercase px-8 py-3.5 flex-1 data-[state=active]:bg-orange-600 data-[state=active]:text-white transition-all shadow-none h-auto">Architecture</TabsTrigger>
               </TabsList>
             </div>
-            <div className="flex-1 p-8 lg:p-10">
-              <TabsContent value="itinerary" className="mt-0 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            <div className="flex-1 p-8 lg:p-14">
+              <TabsContent value="itinerary" className="mt-0 space-y-8 focus-visible:outline-none">
+                <div className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary"><CalendarIcon className="h-5 w-5" /></div>
+                    <div>
+                      <h3 className="text-xl font-black uppercase tracking-tight">Competition Itinerary</h3>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Synchronized Match Schedule</p>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="text-[9px] font-black uppercase py-1 px-4 border-2">{(event.tournamentGames || []).length} Verified Matches</Badge>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                   {event.tournamentGames?.map((game) => (
-                    <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary">{game.time}</Badge>
-                          {game.round && <Badge className="bg-muted text-foreground border-none text-[7px] font-black uppercase px-2 h-4">{game.round}</Badge>}
+                    <Card key={game.id} className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 bg-white overflow-hidden p-8 space-y-6 transition-all hover:shadow-2xl hover:ring-primary/20 group">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-primary/10 text-primary border-none text-[9px] font-black uppercase px-3 h-6">{game.time}</Badge>
+                            {game.isCompleted && <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2 h-6">FINAL</Badge>}
+                          </div>
+                          {game.round && <Badge className="bg-muted text-foreground border-none text-[8px] font-black uppercase px-3 h-6">{game.round}</Badge>}
                         </div>
-                        <div className="flex items-center gap-2">
-                          {game.isCompleted && <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2 h-5">FINAL</Badge>}
-                          {game.isDisputed && <Badge className="bg-red-600 text-white border-none text-[8px] font-black uppercase px-2 h-5 animate-pulse shadow-lg shadow-red-600/20">DISPUTED</Badge>}
+                        
+                      <div className="grid grid-cols-7 items-center gap-1 text-center">
+                        <div className="col-span-3 min-w-0 space-y-2">
+                          <div className="w-12 h-12 rounded-[1rem] bg-primary/5 mx-auto flex items-center justify-center font-black text-lg text-primary shadow-inner group-hover:scale-110 transition-transform">{game.team1[0]}</div>
+                          <p className="font-black text-xs uppercase truncate leading-tight h-4">{game.team1}</p>
+                          <p className={cn("text-4xl font-black tracking-tighter", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground opacity-20")}>{game.score1}</p>
                         </div>
-                      <div className="grid grid-cols-7 items-center gap-4 text-center">
-                        <div className="col-span-3 min-w-0">
-                          <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team1}</p>
-                          <p className={cn("text-3xl font-black", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")}>{game.score1}</p>
-                        </div>
-                        <div className="col-span-1 opacity-20 font-black text-[10px]">VS</div>
-                        <div className="col-span-3 min-w-0">
-                          <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team2}</p>
-                          <p className={cn("text-3xl font-black", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")}>{game.score2}</p>
+                        <div className="col-span-1 pt-8 opacity-10 font-black text-[11px]">VS</div>
+                        <div className="col-span-3 min-w-0 space-y-2">
+                          <div className="w-12 h-12 rounded-[1rem] bg-primary/5 mx-auto flex items-center justify-center font-black text-lg text-primary shadow-inner group-hover:scale-110 transition-transform">{game.team2[0]}</div>
+                          <p className="font-black text-xs uppercase truncate leading-tight h-4">{game.team2}</p>
+                          <p className={cn("text-4xl font-black tracking-tighter", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground opacity-20")}>{game.score2}</p>
                         </div>
                       </div>
+                      
+                      {game.isDisputed && (
+                        <div className="bg-red-50 p-3 rounded-2xl border-2 border-red-100 flex items-center gap-3 animate-pulse">
+                          <ShieldAlert className="h-4 w-4 text-red-600" />
+                          <span className="text-[10px] font-black text-red-600 uppercase">Active Conflict Reported</span>
+                        </div>
+                      )}
+
                       {game.location && (
-                        <p className="text-[9px] font-bold text-muted-foreground uppercase text-center flex items-center justify-center gap-1.5 pt-2 border-t border-muted">
-                          <MapPin className="h-3 w-3 opacity-40" /> {game.location}
-                        </p>
+                        <div className="pt-4 border-t border-black/5">
+                          <p className="text-[10px] font-black text-muted-foreground uppercase text-center flex items-center justify-center gap-2 group-hover:text-primary transition-colors">
+                            <MapPin className="h-3 w-3 opacity-40" /> {game.location}
+                          </p>
+                        </div>
                       )}
                     </Card>
                   ))}
                   {(!event.tournamentGames || event.tournamentGames.length === 0) && (
-                    <div className="col-span-full py-20 text-center bg-muted/10 rounded-3xl border-2 border-dashed opacity-40">
-                      <Clock className="h-12 w-12 mx-auto mb-4" />
-                      <p className="text-sm font-black uppercase tracking-widest">No matches scheduled.</p>
+                    <div className="col-span-full py-24 text-center bg-muted/10 rounded-[3rem] border-2 border-dashed border-muted/50 opacity-40">
+                      <div className="bg-white w-20 h-20 rounded-[2.5rem] flex items-center justify-center mx-auto shadow-xl mb-6"><Clock className="h-10 w-10 text-primary opacity-20" /></div>
+                      <p className="text-xl font-black uppercase tracking-tight">Timeline Pending</p>
+                      <p className="text-xs font-black text-muted-foreground uppercase tracking-widest mt-2">Initialize the competition architect to establish matches.</p>
                     </div>
                   )}
                 </div>
+              </TabsContent>
+
+              <TabsContent value="squads" className="mt-0 space-y-6">
+                <div className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-primary" />
+                    <h3 className="text-xl font-black uppercase tracking-tight">Verified Squad Roster</h3>
+                  </div>
+                  <Badge variant="outline" className="text-[8px] font-black uppercase">{(event.tournamentTeamsData || []).length} Enrolled</Badge>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {(event.tournamentTeamsData || []).map((team) => {
+                    const agreement = event.teamAgreements?.[team.name];
+                    return (
+                      <Card key={team.id} className="rounded-[2.5rem] border-none shadow-xl bg-white p-8 space-y-6 transition-all hover:ring-2 hover:ring-primary/20 hover:shadow-2xl group">
+                        <div className="flex justify-between items-start">
+                          <div className="h-16 w-16 rounded-[1.25rem] bg-primary/5 flex items-center justify-center text-primary font-black text-2xl shadow-inner group-hover:scale-110 transition-transform">
+                            {team.name[0]}
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <Badge className={cn(
+                              "border-none font-black text-[7px] px-2 h-5 tracking-widest",
+                              agreement ? "bg-green-100 text-green-600" : "bg-amber-100 text-amber-600"
+                            )}>
+                              {agreement ? 'COMPLIANT' : 'PENDING WAIVER'}
+                            </Badge>
+                            {team.experience && (
+                              <Badge variant="outline" className="text-[7px] font-black uppercase text-primary border-primary/20 bg-primary/5 h-5 px-2 tracking-widest">
+                                {team.experience}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-4">
+                          <div>
+                            <h4 className="text-xl font-black uppercase tracking-tighter leading-none group-hover:text-primary transition-colors">{team.name}</h4>
+                            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-2 flex items-center gap-1.5 leading-none">
+                              <MapPin className="h-3 w-3 opacity-40 shrink-0" /> {team.source || 'Regional Origin'}
+                            </p>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 gap-2 pt-4 border-t border-black/5">
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-xl bg-muted/30 flex items-center justify-center"><Info className="h-4 w-4 opacity-40" /></div>
+                              <div className="min-w-0">
+                                <p className="text-[8px] font-black uppercase text-muted-foreground tracking-tighter leading-none mb-1">Architecture Representative</p>
+                                <p className="text-[11px] font-black uppercase truncate">{team.coach || 'Institutional Lead'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="pt-4 flex items-center justify-between border-t border-dashed border-black/10">
+                           <div className="flex -space-x-2">
+                              {[1,2,3].map(i => (
+                                <div key={i} className="h-7 w-7 rounded-full border-2 border-white bg-slate-100 text-[8px] flex items-center justify-center font-black text-slate-400 italic">
+                                  {i === 3 ? <Plus className="h-2 w-2" /> : '?'}
+                                </div>
+                              ))}
+                           </div>
+                           <Button variant="ghost" className="h-8 px-3 rounded-lg text-[8px] font-black uppercase tracking-widest hover:bg-muted group/btn">
+                             View Squad <ChevronRight className="ml-1 h-3 w-3 group-hover/btn:translate-x-0.5 transition-transform" />
+                           </Button>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                  {(event.tournamentTeamsData || []).length === 0 && (
+                    <div className="col-span-full py-20 text-center bg-muted/10 rounded-3xl border-2 border-dashed opacity-40">
+                      <Users className="h-10 w-10 mx-auto mb-4" />
+                      <p className="text-sm font-black uppercase tracking-widest">No squads enrolled yet.</p>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="standings" className="mt-0 space-y-8 focus-visible:outline-none">
+                <div className="flex items-center justify-between px-2">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary"><Trophy className="h-5 w-5" /></div>
+                    <div>
+                      <h3 className="text-xl font-black uppercase tracking-tight">Leaderboard Dynamics</h3>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Live Point Distribution</p>
+                    </div>
+                  </div>
+                  <Badge className="bg-black text-white border-none text-[9px] font-black uppercase h-7 px-4 shadow-lg">Verified Standings</Badge>
+                </div>
+                <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-muted/30 border-b-2">
+                          <th className="px-10 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Rank</th>
+                          <th className="px-10 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Organization</th>
+                          <th className="px-10 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground text-center">GP</th>
+                          <th className="px-10 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground text-center">W</th>
+                          <th className="px-10 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground text-center">L</th>
+                          <th className="px-10 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground text-center">T</th>
+                          <th className="px-10 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground text-center">DIFF</th>
+                          <th className="px-10 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-primary text-center">Points</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-black/5">
+                        {standings.map((team, idx) => {
+                          const gp = team.wins + team.losses + team.ties;
+                          return (
+                            <tr key={team.name} className="group hover:bg-primary/[0.02] transition-colors">
+                              <td className="px-10 py-6">
+                                <span className={cn(
+                                  "h-10 w-10 rounded-xl flex items-center justify-center text-xs font-black shadow-sm transition-transform group-hover:scale-110",
+                                  idx === 0 ? "bg-amber-400 text-white shadow-amber-400/20" : 
+                                  idx === 1 ? "bg-slate-300 text-white shadow-slate-300/20" :
+                                  idx === 2 ? "bg-stone-400 text-white shadow-stone-400/20" : "bg-muted/50 text-muted-foreground"
+                                )}>
+                                  {idx + 1}
+                                </span>
+                              </td>
+                              <td className="px-10 py-6">
+                                <div className="flex items-center gap-4">
+                                  <div className="w-8 h-8 rounded-lg bg-primary/5 flex items-center justify-center text-[10px] font-black text-primary">{team.name[0]}</div>
+                                  <span className="font-black uppercase text-sm tracking-tight">{team.name}</span>
+                                </div>
+                              </td>
+                              <td className="px-10 py-6 text-center font-bold text-xs opacity-40">{gp}</td>
+                              <td className="px-10 py-6 text-center font-black text-sm text-green-600">{team.wins}</td>
+                              <td className="px-10 py-6 text-center font-black text-sm text-red-600">{team.losses}</td>
+                              <td className="px-10 py-6 text-center font-bold text-sm text-muted-foreground">{team.ties}</td>
+                              <td className="px-10 py-6 text-center font-black text-sm">{team.netScore > 0 ? `+${team.netScore}` : team.netScore}</td>
+                              <td className="px-10 py-6 text-center bg-primary/[0.03]">
+                                <Badge className="bg-primary text-white border-none font-black text-xs h-9 px-6 rounded-xl shadow-xl shadow-primary/20">{team.points}</Badge>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {standings.length === 0 && (
+                          <tr>
+                            <td colSpan={8} className="px-10 py-32 text-center">
+                              <div className="opacity-20 flex flex-col items-center">
+                                <Trophy className="h-12 w-12 mb-4" />
+                                <p className="text-xs font-black uppercase tracking-widest">No match history recorded.</p>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
               </TabsContent>
               <TabsContent value="bracket" className="mt-0">
                 <TournamentBracket games={event.tournamentGames || []} />
@@ -768,35 +985,75 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                     </Button>
                   </div>
               </TabsContent>
-              <TabsContent value="compliance" className="mt-0">
+              <TabsContent value="compliance" className="mt-0 space-y-10 focus-visible:outline-none">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white p-8 flex flex-col justify-between group">
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-black uppercase text-white/40 tracking-widest">Execution Rate</p>
+                        <h4 className="text-4xl font-black">{Math.round(((event.tournamentTeamsData || []).filter(t => event.teamAgreements?.[t.name]).length / Math.max(1, (event.tournamentTeamsData || []).length)) * 100)}%</h4>
+                      </div>
+                      <p className="text-[10px] font-bold text-white/60 uppercase leading-relaxed mt-4 italic">Total institutional compliance across all rostered squads.</p>
+                    </Card>
+                    <Card className="rounded-[2.5rem] border-none shadow-xl bg-primary text-white p-8 flex flex-col justify-between">
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-black uppercase text-white/40 tracking-widest">Pending Signatures</p>
+                        <h4 className="text-4xl font-black">{(event.tournamentTeamsData || []).length - (Object.keys(event.teamAgreements || {}).length)}</h4>
+                      </div>
+                      <div className="flex items-center gap-2 mt-4 text-[10px] font-black uppercase">
+                        <Clock className="h-4 w-4" /> Action Required
+                      </div>
+                    </Card>
+                    <Card className="rounded-[2.5rem] border-none shadow-xl bg-muted/10 p-8 flex flex-col justify-between border-2 border-dashed border-black/5">
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Digital Ledger</p>
+                        <h4 className="text-2xl font-black uppercase tracking-tighter">Verified Protocol</h4>
+                      </div>
+                      <Button variant="outline" className="w-full h-12 rounded-xl bg-white border-black/10 font-black uppercase text-[10px] shadow-sm">Review Master Waiver</Button>
+                    </Card>
+                  </div>
+
                   <section className="space-y-6">
                     <div className="flex items-center justify-between px-2">
                       <div className="flex items-center gap-3">
-                        <FileSignature className="h-5 w-5 text-primary" />
-                        <h3 className="text-xl font-black uppercase tracking-tight">Signature Ledger</h3>
+                        <div className="h-10 w-10 rounded-2xl bg-black/5 flex items-center justify-center"><FileSignature className="h-5 w-5" /></div>
+                        <div>
+                          <h3 className="text-xl font-black uppercase tracking-tight">Institutional Ledger</h3>
+                          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Waiver Execution Tracking</p>
+                        </div>
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 gap-4">
                       {(event.tournamentTeamsData || []).map(t => { 
                         const agreement = event.teamAgreements?.[t.name]; 
                         return (
-                          <Card key={t.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white flex items-center justify-between transition-all hover:ring-primary/20">
-                            <div className="flex items-center gap-4">
-                              <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center transition-colors", agreement ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground/30")}>
-                                {agreement ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
+                          <Card key={t.id} className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 p-6 bg-white flex items-center justify-between transition-all hover:ring-primary/20 group">
+                            <div className="flex items-center gap-6">
+                              <div className={cn(
+                                "h-14 w-14 rounded-2xl flex items-center justify-center transition-all shadow-inner group-hover:scale-105", 
+                                agreement ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground/30"
+                              )}>
+                                {agreement ? <CheckCircle2 className="h-7 w-7" /> : <Clock className="h-7 w-7" />}
                               </div>
-                              <div className="min-w-0">
-                                <span className="font-black text-sm uppercase truncate block">{t.name}</span>
-                                {t.coach && <span className="text-[8px] font-bold text-muted-foreground uppercase">Coach: {t.coach}</span>}
+                              <div className="min-w-0 space-y-1">
+                                <span className="font-black text-lg uppercase truncate block tracking-tight">{t.name}</span>
+                                <div className="flex items-center gap-3">
+                                  {t.coach && <Badge variant="outline" className="text-[8px] font-black uppercase h-5 px-2 border-black/10">COACH: {t.coach}</Badge>}
+                                  {agreement && <Badge className="bg-green-100 text-green-700 border-none text-[8px] font-black uppercase h-5 px-2">EXECUTED</Badge>}
+                                </div>
                               </div>
                             </div>
                             {agreement ? (
-                              <div className="text-right">
-                                <p className="text-[8px] font-black uppercase text-green-600">Verified by {agreement.captainName}</p>
-                                <p className="text-[7px] text-muted-foreground uppercase">{format(new Date(agreement.signedAt), 'MMM d, h:mm a')}</p>
+                              <div className="text-right space-y-1">
+                                <p className="text-[10px] font-black uppercase text-green-600">Verified by {agreement.captainName}</p>
+                                <div className="flex items-center justify-end gap-2 text-[8px] text-muted-foreground font-bold uppercase">
+                                  <CalendarIcon className="h-3 w-3" /> {format(new Date(agreement.signedAt), 'MMM d, h:mm a')}
+                                </div>
                               </div>
                             ) : (
-                              <Badge variant="outline" className="text-[7px] font-black uppercase border-muted-foreground/20 text-muted-foreground">Pending Execution</Badge>
+                              <div className="flex flex-col items-end gap-2">
+                                <Badge variant="outline" className="text-[10px] font-black uppercase h-8 px-4 border-dashed border-muted-foreground/30 text-muted-foreground">Pending Execution</Badge>
+                                <p className="text-[8px] font-bold text-muted-foreground/40 uppercase">Awaiting Signature</p>
+                              </div>
                             )}
                           </Card>
                         ); 
@@ -805,28 +1062,35 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                   </section>
 
                   {event.tournamentGames?.some(g => g.isDisputed) && (
-                    <section className="space-y-6 pt-6 border-t border-dashed">
-                      <div className="flex items-center gap-3 px-2 text-red-600">
-                        <ShieldAlert className="h-6 w-6" />
-                        <h3 className="text-xl font-black uppercase tracking-tight">Result Conflict Resolution</h3>
+                    <section className="space-y-8 pt-10 border-t-2 border-dashed">
+                      <div className="flex items-center gap-4 px-2">
+                        <div className="h-12 w-12 rounded-2xl bg-red-100 flex items-center justify-center text-red-600 shadow-lg shadow-red-600/10"><ShieldAlert className="h-6 w-6" /></div>
+                        <div>
+                          <h3 className="text-2xl font-black uppercase tracking-tighter text-red-600">Conflict Resolution Hub</h3>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-red-600/40">Active Institutional Disputes</p>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-1 gap-4">
+                      <div className="grid grid-cols-1 gap-6">
                         {event.tournamentGames.filter(g => g.isDisputed).map(game => (
-                          <Card key={game.id} className="rounded-3xl border-2 border-red-100 overflow-hidden bg-red-50/20">
-                            <div className="bg-red-600 text-white px-6 py-2 flex items-center justify-between">
-                              <span className="text-[10px] font-black uppercase tracking-widest">Active Dispute: {game.team1} vs {game.team2}</span>
-                              <Button variant="ghost" className="h-6 p-0 hover:bg-transparent text-white opacity-60 hover:opacity-100 uppercase text-[8px] font-black">Resolve Conflict</Button>
+                          <Card key={game.id} className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white ring-2 ring-red-100 group transition-all hover:ring-red-500/20">
+                            <div className="bg-red-600 text-white px-8 py-4 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <AlertCircle className="h-4 w-4" />
+                                <span className="text-[10px] font-black uppercase tracking-widest">Conflict Narrative: {game.team1} vs {game.team2}</span>
+                              </div>
+                              <Button variant="ghost" className="h-8 px-4 rounded-xl hover:bg-white/10 text-white uppercase text-[9px] font-black border border-white/20">Resolve Protocol</Button>
                             </div>
-                            <div className="p-6 space-y-3">
-                              <div className="bg-white/80 p-4 rounded-xl border border-red-100 flex gap-4">
-                                <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
-                                <div className="space-y-1">
-                                  <p className="text-[8px] font-black uppercase opacity-40">Narrative</p>
-                                  <p className="text-xs font-bold leading-relaxed">"{game.disputeNotes || 'No specific notes provided.'}"</p>
+                            <div className="p-8 space-y-6">
+                              <div className="bg-red-50/50 p-6 rounded-[2rem] border border-red-100 flex gap-5">
+                                <div className="bg-white p-3 rounded-2xl h-fit border border-red-100"><Info className="h-5 w-5 text-red-600" /></div>
+                                <div className="space-y-2">
+                                  <p className="text-[10px] font-black uppercase opacity-40 tracking-widest">Dispute Testimony</p>
+                                  <p className="text-sm font-bold leading-relaxed italic text-red-950">"{game.disputeNotes || 'Reporting official did not provide additional narrative context.'}"</p>
                                 </div>
                               </div>
-                              <div className="flex justify-end gap-3 pt-2">
-                                <Button size="sm" variant="outline" className="h-8 rounded-lg text-[8px] font-black uppercase" onClick={() => window.open(`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}/${game.id}`, '_blank')}>Review Portal Result</Button>
+                              <div className="flex justify-end gap-4">
+                                <Button variant="outline" className="h-12 rounded-xl text-[10px] font-black uppercase border-black px-6" onClick={() => window.open(`${baseUrl}/tournaments/scorekeeper/${event.teamId}/${event.id}/${game.id}`, '_blank')}>Review Scoped Result</Button>
+                                <Button className="h-12 rounded-xl text-[10px] font-black uppercase bg-red-600 hover:bg-red-700 text-white shadow-xl shadow-red-600/20 px-8">Execute Final Decision</Button>
                               </div>
                             </div>
                           </Card>
@@ -838,7 +1102,6 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
             </div>
           </Tabs>
         </div>
-      </div>
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="sm:max-w-2xl rounded-[3rem] p-0 overflow-hidden border-none shadow-2xl bg-white text-foreground max-h-[90vh] overflow-y-auto w-11/12 mx-auto sm:w-full">

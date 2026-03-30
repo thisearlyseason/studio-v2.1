@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import { cn } from '@/lib/utils';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTeam, LeagueRegistrationConfig, RegistrationFormField, TeamEvent } from '@/components/providers/team-provider';
 import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
@@ -29,7 +30,8 @@ import {
   Info,
   Wallet,
   Sparkles,
-  Globe
+  Globe,
+  ArrowRight
 } from 'lucide-react';
 import { 
   Select, 
@@ -56,11 +58,14 @@ function RegistrationForm() {
   const configRef = useMemoFirebase(() => db ? doc(db, 'teams', teamId as string, 'events', eventId as string, 'registration', protocolId) : null, [db, teamId, eventId, protocolId]);
   const { data: config, isLoading: isConfigLoading } = useDoc<LeagueRegistrationConfig>(configRef);
 
+  const [step, setStep] = useState(1);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [waiverAgreed, setWaiverAgreed] = useState(false);
   const [signature, setSignature] = useState('');
+
+  const totalSteps = 4;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,6 +88,14 @@ function RegistrationForm() {
 
   const handleInputChange = (id: string, value: any) => {
     setAnswers(prev => ({ ...prev, [id]: value }));
+  };
+
+  const nextStep = () => {
+    setStep(prev => Math.min(prev + 1, totalSteps));
+  };
+
+  const prevStep = () => {
+    setStep(prev => Math.max(prev - 1, 1));
   };
 
   if (isEventLoading || isConfigLoading) {
@@ -178,19 +191,6 @@ function RegistrationForm() {
                   </div>
                 </div>
               )}
-              {(event?.socialLinks?.twitter || event?.socialLinks?.instagram) && (
-                <div className="col-span-2 space-y-2 pt-2">
-                  <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Social Channels</p>
-                  <div className="flex gap-2">
-                    {event?.socialLinks?.twitter && (
-                      <a href={event.socialLinks.twitter} target="_blank" rel="noopener noreferrer" className="bg-black text-white h-8 w-8 rounded-lg flex items-center justify-center hover:scale-105 transition-transform"><Globe className="h-4 w-4" /></a>
-                    )}
-                    {event?.socialLinks?.instagram && (
-                      <a href={event.socialLinks.instagram} target="_blank" rel="noopener noreferrer" className="bg-pink-600 text-white h-8 w-8 rounded-lg flex items-center justify-center hover:scale-105 transition-transform"><AlertCircle className="h-4 w-4" /></a>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
 
@@ -217,127 +217,251 @@ function RegistrationForm() {
               </div>
             </div>
           </div>
-
-          <div className="bg-black text-white p-10 rounded-[3rem] shadow-2xl space-y-6 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 group-hover:scale-110 transition-all duration-700 pointer-events-none"><Target className="h-40 w-40" /></div>
-            <h4 className="text-xl font-black uppercase tracking-tight relative z-10">Elite Competition</h4>
-            <div className="space-y-2 relative z-10">
-              <p className="text-xs font-medium text-white/70 leading-relaxed italic">"{config.description}"</p>
-            </div>
-          </div>
         </div>
 
-        <Card className="lg:col-span-7 rounded-[3.5rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5">
+        <Card className="lg:col-span-7 rounded-[3.5rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5 min-h-[600px] flex flex-col">
           <div className="h-3 bg-primary w-full" />
-          <form onSubmit={handleSubmit}>
-            <CardHeader className="p-10 lg:p-12 pb-6">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="bg-muted p-4 rounded-2xl flex items-center justify-center text-primary"><Users className="h-7 w-7" /></div>
-                <div><CardTitle className="text-3xl font-black uppercase tracking-tighter">Squad Roster</CardTitle><CardDescription className="text-[10px] font-black uppercase tracking-[0.2em] mt-1">Institutional Verification</CardDescription></div>
+          
+          <div className="p-10 lg:p-12 pb-6 border-b flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="bg-muted p-4 rounded-2xl flex items-center justify-center text-primary">
+                {step === 1 && <Target className="h-7 w-7" />}
+                {step === 2 && <Users className="h-7 w-7" />}
+                {step === 3 && <Sparkles className="h-7 w-7" />}
+                {step === 4 && <FileSignature className="h-7 w-7" />}
               </div>
-            </CardHeader>
-            
-            <CardContent className="p-10 lg:p-12 space-y-10">
-              {formSchema.map(field => (
-                <div key={field.id} className="space-y-3">
-                  {field.type === 'header' ? (
-                    <div className="pt-6 border-b-2 pb-2 mb-4 text-primary"><h3 className="font-black text-xl uppercase tracking-tighter">{field.label}</h3></div>
-                  ) : (
-                    <>
-                      <div className="flex justify-between items-end px-1"><Label className="text-[10px] font-black uppercase tracking-widest">{field.label} {field.required && <span className="text-primary">*</span>}</Label></div>
-                      {field.type === 'short_text' && (
-                        <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-lg shadow-inner" />
-                      )}
-                      {field.type === 'long_text' && (
-                        <Textarea required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="rounded-2xl min-h-[120px] border-2 font-medium bg-muted/5 focus:bg-white transition-all p-5 shadow-inner" />
-                      )}
-                      {field.type === 'dropdown' && (
-                        <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
-                          <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select Choice..." /></SelectTrigger>
+              <div>
+                <CardTitle className="text-3xl font-black uppercase tracking-tighter">
+                  {step === 1 && "Team Details"}
+                  {step === 2 && "Coach Identity"}
+                  {step === 3 && "Protocol Fields"}
+                  {step === 4 && "Handshake"}
+                </CardTitle>
+                <CardDescription className="text-[10px] font-black uppercase tracking-[0.2em] mt-1">Step {step} of {totalSteps}</CardDescription>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4].map(s => (
+                <div key={s} className={cn("h-2 rounded-full transition-all duration-300", step >= s ? "w-8 bg-primary" : "w-4 bg-muted")} />
+              ))}
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="flex-1 flex flex-col">
+            <CardContent className="p-10 lg:p-12 space-y-10 flex-1">
+              <ScrollArea className="h-full pr-4">
+                <div className="space-y-10 animate-in fade-in slide-in-from-right-4 duration-500">
+                  {step === 1 && (
+                    <div className="space-y-8">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Official Team Name <span className="text-primary">*</span></Label>
+                        <Input 
+                          placeholder="e.g. Phoenix Elite Academy" 
+                          value={answers['teamName'] || ''} 
+                          onChange={e => handleInputChange('teamName', e.target.value)} 
+                          className="h-16 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-xl shadow-inner" 
+                          required
+                        />
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Origin Organization / City</Label>
+                        <Input 
+                          placeholder="e.g. Chicago, IL" 
+                          value={answers['teamOrigin'] || ''} 
+                          onChange={e => handleInputChange('teamOrigin', e.target.value)} 
+                          className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
+                        />
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Competitive Experience</Label>
+                        <Select value={answers['experience'] || ''} onValueChange={v => handleInputChange('experience', v)}>
+                          <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select Level..." /></SelectTrigger>
                           <SelectContent className="rounded-2xl">
-                            {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold text-[10px] uppercase">{opt}</SelectItem>)}
+                            <SelectItem value="Elite" className="font-bold text-[10px] uppercase">Elite / National</SelectItem>
+                            <SelectItem value="Advanced" className="font-bold text-[10px] uppercase">Advanced / Regional</SelectItem>
+                            <SelectItem value="Intermediate" className="font-bold text-[10px] uppercase">Intermediate</SelectItem>
+                            <SelectItem value="Developmental" className="font-bold text-[10px] uppercase">Developmental</SelectItem>
                           </SelectContent>
                         </Select>
-                      )}
-                      {field.type === 'radio' && (
-                        <RadioGroup required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)} className="flex flex-col gap-3 py-2">
-                          {field.options?.map((opt: string) => (
-                            <div key={opt} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2 cursor-pointer hover:bg-white transition-all">
-                              <RadioGroupItem value={opt} id={`${field.id}_${opt}`} />
-                              <Label htmlFor={`${field.id}_${opt}`} className="font-black text-[10px] uppercase cursor-pointer flex-1">{opt}</Label>
-                            </div>
-                          ))}
-                        </RadioGroup>
-                      )}
-                      {field.type === 'checkbox' && (
-                        <div className="flex flex-col gap-3 py-2">
-                          {field.options?.map((opt: string) => (
-                            <div key={opt} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2 hover:bg-white transition-all">
-                              <Checkbox 
-                                id={`${field.id}_${opt}`} 
-                                checked={(answers[field.id] || []).includes(opt)} 
-                                onCheckedChange={(checked) => {
-                                  const current = Array.isArray(answers[field.id]) ? answers[field.id] : [];
-                                  const updated = checked ? [...current, opt] : current.filter((i: string) => i !== opt);
-                                  handleInputChange(field.id, updated);
-                                }} 
-                              />
-                              <Label htmlFor={`${field.id}_${opt}`} className="font-black text-[10px] uppercase cursor-pointer flex-1">{opt}</Label>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {field.type === 'signature' && (
-                        <div className="space-y-2">
-                           <Input required={field.required} placeholder="Type Full Legal Name to Sign..." value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-16 rounded-2xl border-2 font-mono italic text-center text-xl bg-muted/5 shadow-inner" />
-                           <p className="text-[8px] font-black uppercase text-center opacity-40">Verified Tournament Handshake v{config.form_version || 1}</p>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              ))}
-
-              {(config.require_default_waiver || config.custom_waiver_text) && (
-                <div className="space-y-8 pt-10 border-t-2">
-                  <div className="flex items-center gap-3"><FileSignature className="h-6 w-6 text-primary" /><h4 className="text-xl font-black uppercase tracking-tighter">Required Agreements</h4></div>
-                  
-                  {config.require_default_waiver && (
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Universal Institutional Liability Waiver</p>
-                      <ScrollArea className="h-40 p-5 rounded-2xl bg-muted/10 border-2 font-medium text-xs leading-relaxed">
-                        {config.default_waiver_text || 'I hereby assume all risks, hazards, and liabilities associated with participation in this tournament series. I waive, release, and discharge the organization, its directors, host facilities, and affiliated sponsors from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.'}
-                      </ScrollArea>
+                      </div>
                     </div>
                   )}
 
-                  {config.custom_waiver_text && (
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Organization Specific Agreement</p>
-                      <ScrollArea className="h-48 p-6 rounded-[2rem] bg-primary/5 border border-primary/20 font-medium text-xs leading-loose text-primary/90">
-                        {config.custom_waiver_text}
-                      </ScrollArea>
+                  {step === 2 && (
+                    <div className="space-y-8">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Head Coach Full Name <span className="text-primary">*</span></Label>
+                        <Input 
+                          placeholder="e.g. Marcus Thompson" 
+                          value={answers['name'] || ''} 
+                          onChange={e => handleInputChange('name', e.target.value)} 
+                          className="h-16 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-xl shadow-inner" 
+                          required
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-3">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Direct Email <span className="text-primary">*</span></Label>
+                          <Input 
+                            type="email"
+                            placeholder="coach@team.com" 
+                            value={answers['email'] || ''} 
+                            onChange={e => handleInputChange('email', e.target.value)} 
+                            className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
+                            required
+                          />
+                        </div>
+                        <div className="space-y-3">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Cell Phone Number</Label>
+                          <Input 
+                            type="tel"
+                            placeholder="(555) 000-0000" 
+                            value={answers['phone'] || ''} 
+                            onChange={e => handleInputChange('phone', e.target.value)} 
+                            className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
+                          />
+                        </div>
+                      </div>
                     </div>
                   )}
 
-                  <div className="flex items-center space-x-4 p-5 bg-primary/5 rounded-[2rem] border-2 border-primary/10 group cursor-pointer transition-all hover:bg-primary/10" onClick={() => setWaiverAgreed(!waiverAgreed)}>
-                    <Checkbox id="waiver_agree" checked={waiverAgreed} onCheckedChange={v => setWaiverAgreed(!!v)} className="h-6 w-6 rounded-lg border-2 border-primary" />
-                    <Label htmlFor="waiver_agree" className="text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight">
-                      I verify that our entire squad roster has reviewed and accepts the championship protocols and liability terms listed above.
-                    </Label>
-                  </div>
-                  <div className="space-y-3">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-60">Coach / Rep Authorization (Digital Signature)</Label>
-                    <Input placeholder="Type legal name to execute..." value={signature} onChange={e => setSignature(e.target.value)} className="h-16 rounded-2xl border-2 font-mono italic text-center text-2xl bg-muted/5 focus:bg-white shadow-inner" required />
-                  </div>
+                  {step === 3 && (
+                    <div className="space-y-10">
+                      {formSchema.length > 0 ? formSchema.map(field => {
+                        // Skip system fields if they are already handled in steps 1 & 2
+                        const systemFields = ['name', 'email', 'teamName', 'teamOrigin', 'experience', 'phone'];
+                        if (systemFields.includes(field.id)) return null;
+
+                        return (
+                          <div key={field.id} className="space-y-3">
+                            {field.type === 'header' ? (
+                              <div className="pt-6 border-b-2 pb-2 mb-4 text-primary"><h3 className="font-black text-xl uppercase tracking-tighter">{field.label}</h3></div>
+                            ) : (
+                              <>
+                                <div className="flex justify-between items-end px-1"><Label className="text-[10px] font-black uppercase tracking-widest">{field.label} {field.required && <span className="text-primary">*</span>}</Label></div>
+                                {field.type === 'short_text' && (
+                                  <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-lg shadow-inner" />
+                                )}
+                                {field.type === 'long_text' && (
+                                  <Textarea required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="rounded-2xl min-h-[120px] border-2 font-medium bg-muted/5 focus:bg-white transition-all p-5 shadow-inner" />
+                                )}
+                                {field.type === 'dropdown' && (
+                                  <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
+                                    <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select Choice..." /></SelectTrigger>
+                                    <SelectContent className="rounded-2xl">
+                                      {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold text-[10px] uppercase">{opt}</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                                {field.type === 'radio' && (
+                                  <RadioGroup required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)} className="flex flex-col gap-3 py-2">
+                                    {field.options?.map((opt: string) => (
+                                      <div key={opt} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2 cursor-pointer hover:bg-white transition-all">
+                                        <RadioGroupItem value={opt} id={`${field.id}_${opt}`} />
+                                        <Label htmlFor={`${field.id}_${opt}`} className="font-black text-[10px] uppercase cursor-pointer flex-1">{opt}</Label>
+                                      </div>
+                                    ))}
+                                  </RadioGroup>
+                                )}
+                                {field.type === 'checkbox' && (
+                                  <div className="flex flex-col gap-3 py-2">
+                                    {field.options?.map((opt: string) => (
+                                      <div key={opt} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2 hover:bg-white transition-all">
+                                        <Checkbox 
+                                          id={`${field.id}_${opt}`} 
+                                          checked={(answers[field.id] || []).includes(opt)} 
+                                          onCheckedChange={(checked) => {
+                                            const current = Array.isArray(answers[field.id]) ? answers[field.id] : [];
+                                            const updated = checked ? [...current, opt] : current.filter((i: string) => i !== opt);
+                                            handleInputChange(field.id, updated);
+                                          }} 
+                                        />
+                                        <Label htmlFor={`${field.id}_${opt}`} className="font-black text-[10px] uppercase cursor-pointer flex-1">{opt}</Label>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        );
+                      }) : (
+                        <div className="py-20 text-center opacity-40">
+                          <Info className="h-12 w-12 mx-auto mb-4" />
+                          <p className="text-xs font-black uppercase">No additional fields required for this series protocol.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {step === 4 && (
+                    <div className="space-y-10">
+                      {(config.require_default_waiver || config.custom_waiver_text) ? (
+                        <div className="space-y-8">
+                          <div className="flex items-center gap-3"><FileSignature className="h-6 w-6 text-primary" /><h4 className="text-xl font-black uppercase tracking-tighter">Required Agreements</h4></div>
+                          
+                          {config.require_default_waiver && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Universal Institutional Liability Waiver</p>
+                              <ScrollArea className="h-40 p-5 rounded-2xl bg-muted/10 border-2 font-medium text-xs leading-relaxed">
+                                {config.default_waiver_text || 'I hereby assume all risks, hazards, and liabilities associated with participation in this tournament series. I waive, release, and discharge the organization, its directors, host facilities, and affiliated sponsors from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.'}
+                              </ScrollArea>
+                            </div>
+                          )}
+
+                          {config.custom_waiver_text && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Organization Specific Agreement</p>
+                              <ScrollArea className="h-48 p-6 rounded-[2rem] bg-primary/5 border border-primary/20 font-medium text-xs leading-loose text-primary/90">
+                                {config.custom_waiver_text}
+                              </ScrollArea>
+                            </div>
+                          )}
+
+                          <div className="flex items-center space-x-4 p-5 bg-primary/5 rounded-[2rem] border-2 border-primary/10 group cursor-pointer transition-all hover:bg-primary/10" onClick={() => setWaiverAgreed(!waiverAgreed)}>
+                            <Checkbox id="waiver_agree" checked={waiverAgreed} onCheckedChange={v => setWaiverAgreed(!!v)} className="h-6 w-6 rounded-lg border-2 border-primary" />
+                            <Label htmlFor="waiver_agree" className="text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight">
+                              I verify that our entire squad roster has reviewed and accepts the championship protocols and liability terms listed above.
+                            </Label>
+                          </div>
+                          <div className="space-y-3">
+                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-60">Coach / Rep Authorization (Digital Signature)</Label>
+                            <Input placeholder="Type legal name to execute..." value={signature} onChange={e => setSignature(e.target.value)} className="h-16 rounded-2xl border-2 font-mono italic text-center text-2xl bg-muted/5 focus:bg-white shadow-inner" required />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="py-20 text-center space-y-4">
+                           <ShieldCheck className="h-16 w-16 text-primary mx-auto mb-4" />
+                           <h3 className="text-2xl font-black uppercase tracking-tight">Final Handshake</h3>
+                           <p className="text-sm font-medium text-muted-foreground max-w-sm mx-auto">No formal waivers are configured for this series. Proceed to finalize your roster enrollment.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
+              </ScrollArea>
             </CardContent>
 
-            <CardFooter className="p-10 lg:p-12 pt-0">
-              <Button type="submit" className="w-full h-18 py-8 rounded-[2rem] text-xl font-black shadow-2xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="h-8 w-8 animate-spin" /> : "Deploy Roster Enrollment"}
-              </Button>
+            <CardFooter className="p-10 lg:p-12 pt-0 border-t flex gap-4">
+              {step > 1 && (
+                <Button type="button" variant="outline" className="h-16 px-10 rounded-2xl border-2 font-black uppercase text-xs" onClick={prevStep}>
+                  Back
+                </Button>
+              )}
+              {step < totalSteps ? (
+                <Button 
+                  type="button" 
+                  className="flex-1 h-16 rounded-2xl text-lg font-black shadow-xl" 
+                  onClick={nextStep}
+                  disabled={step === 1 ? !answers['teamName'] : step === 2 ? (!answers['name'] || !answers['email']) : false}
+                >
+                  Continue Enrollment <ArrowRight className="ml-2 h-5 w-5" />
+                </Button>
+              ) : (
+                <Button type="submit" className="flex-1 h-16 rounded-2xl text-lg font-black shadow-2xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all" disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="h-8 w-8 animate-spin" /> : "Deploy Roster Enrollment"}
+                </Button>
+              )}
             </CardFooter>
           </form>
         </Card>

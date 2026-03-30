@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useTeam, LeagueRegistrationConfig, RegistrationEntry, RegistrationFormField } from '@/components/providers/team-provider';
+import { useTeam, LeagueRegistrationConfig, RegistrationEntry, RegistrationFormField, LeagueArchiveWaiver } from '@/components/providers/team-provider';
 import { useFirestore, useDoc, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { doc, collection, query, orderBy, where, deleteDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -29,7 +29,8 @@ import {
   ChevronRight,
   Wallet,
   Sparkles,
-  FileSignature
+  FileSignature,
+  Download
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -46,6 +47,8 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { jsPDF } from 'jspdf';
+import { format } from 'date-fns';
 
 // CRITICAL BUILD FIX: Prevent static generation failures for dynamic enrollment routes
 export const dynamic = 'force-dynamic';
@@ -68,7 +71,7 @@ export default function LeagueRegistrationAdminPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'assigned' | 'accepted'>('all');
   const [editingField, setEditingField] = useState<Partial<RegistrationFormField> | null>(null);
   const [isManualAddOpen, setIsManualAddOpen] = useState(false);
-  const [manualForm, setManualForm] = useState({ teamName: '', coachName: '', email: '' });
+  const [manualForm, setManualForm] = useState({ teamName: '', coachName: '', email: '', inviteCode: '' });
   const [isManualProcessing, setIsManualProcessing] = useState(false);
 
   // --- SYNC ---
@@ -100,6 +103,74 @@ export default function LeagueRegistrationAdminPage() {
   const [localConfig, setLocalConfig] = useState<Partial<LeagueRegistrationConfig> | null>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // --- WAIVER EXPORT ---
+  const activeLeagueDocRef = useMemo(() => leagueId ? doc(db, 'leagues', leagueId as string) : null, [db, leagueId]);
+  const { data: leagueData } = useDoc(activeLeagueDocRef);
+  const activeLeague = useMemo(() => leagueData || null, [leagueData]);
+
+  const waiversQuery = useMemoFirebase(() => {
+    if (!db || !leagueId) return null;
+    return collection(db, 'leagues', leagueId as string, 'archived_waivers');
+  }, [db, leagueId]);
+  const { data: waiversData } = useCollection<LeagueArchiveWaiver>(waiversQuery);
+  const archivedWaivers = useMemo(() => waiversData || [], [waiversData]);
+
+  const exportAllWaivers = () => {
+    if (archivedWaivers.length === 0) {
+      toast({ title: "No waivers found", description: "This league has no signed waivers yet." });
+      return;
+    }
+    const doc = new jsPDF();
+    doc.setFontSize(22);
+    doc.text(`Official Waiver Archive: ${activeLeague?.name || 'League'}`, 20, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 30);
+    doc.setFontSize(12);
+    doc.text(`Total Records: ${archivedWaivers.length}`, 20, 38);
+    doc.setDrawColor(200);
+    doc.line(20, 45, 190, 45);
+
+    archivedWaivers.forEach((waiver, index) => {
+      doc.addPage();
+      doc.setFontSize(24);
+      doc.setTextColor(0, 0, 0);
+      doc.text("WAIVER RECORD", 20, 30);
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text(`UID: ${waiver.id}`, 20, 38);
+      
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.5);
+      doc.line(20, 45, 190, 45);
+
+      doc.setFontSize(14);
+      doc.setTextColor(0);
+      doc.text("PARTICIPANT INFO", 20, 60);
+      doc.setFontSize(11);
+      doc.text(`Name: ${waiver.signer}`, 20, 70);
+      doc.text(`Affiliation: ${waiver.teamName || 'Independent'}`, 20, 78);
+      doc.text(`Signed At: ${format(new Date(waiver.signedAt), 'PPP p')}`, 20, 86);
+      doc.text(`Type: ${waiver.type.toUpperCase()}`, 20, 94);
+
+      doc.setFontSize(14);
+      doc.text("WAIVER TEXT", 20, 115);
+      doc.setFontSize(8);
+      doc.setTextColor(50);
+      const splitWaiver = doc.splitTextToSize(waiver.waiverText, 170);
+      doc.text(splitWaiver, 20, 125);
+
+      doc.setFontSize(14);
+      doc.setTextColor(0);
+      const lastLine = 125 + (splitWaiver.length * 3.5);
+      doc.text("EXECUTION LOG", 20, lastLine + 15);
+      doc.setFontSize(9);
+      doc.text(`The user ${waiver.signer} confirmed their identity and agreed to the above terms via electronic signature on ${format(new Date(waiver.signedAt), 'PPP p')}.`, 20, lastLine + 25, { maxWidth: 170 });
+    });
+
+    doc.save(`${activeLeague?.name || 'League'}_Waiver_Archive.pdf`);
+    toast({ title: "Archive Generated" });
+  };
+
   useEffect(() => {
     if (config) setLocalConfig(config);
     else setLocalConfig(null);
@@ -127,9 +198,9 @@ export default function LeagueRegistrationAdminPage() {
     if (!manualForm.teamName || !manualForm.coachName || !manualForm.email || !leagueId) return;
     setIsManualProcessing(true);
     try {
-      await submitRegistrationEntry(leagueId as string, 'team_config', { teamName: manualForm.teamName, name: manualForm.coachName, email: manualForm.email, manual_enrollment: true }, 0, 'Manual Enrollment', 'leagues');
+      await submitRegistrationEntry(leagueId as string, 'team_config', { ...manualForm, manual_enrollment: true, name: manualForm.coachName }, 0, 'Manual Enrollment', 'leagues');
       setIsManualAddOpen(false);
-      setManualForm({ teamName: '', coachName: '', email: '' });
+      setManualForm({ teamName: '', coachName: '', email: '', inviteCode: '' });
       toast({ title: "Squad Enrolled" });
     } finally { setIsManualProcessing(false); }
   };
@@ -151,6 +222,7 @@ export default function LeagueRegistrationAdminPage() {
         <div className="flex bg-muted/50 p-1.5 rounded-2xl border-2 shadow-inner">
           <Button variant={pipelineType === 'player' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px]" onClick={() => { setPipelineType('player'); setActiveTab('entries'); }}><Users className="h-4 w-4 mr-2" /> Players</Button>
           <Button variant={pipelineType === 'team' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px]" onClick={() => { setPipelineType('team'); setActiveTab('entries'); }}><Zap className="h-4 w-4 mr-2" /> Squads</Button>
+          <Button variant="ghost" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] ml-4 bg-white/50 border-white" onClick={exportAllWaivers}><Download className="h-4 w-4 mr-2" /> Export Waivers</Button>
         </div>
       </div>
 
@@ -403,6 +475,13 @@ export default function LeagueRegistrationAdminPage() {
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label><Input placeholder="e.g. Metro Tigers" value={manualForm.teamName} onChange={e => setManualForm({...manualForm, teamName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Name</Label><Input placeholder="Full Name" value={manualForm.coachName} onChange={e => setManualForm({...manualForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label><Input type="email" placeholder="coach@org.com" value={manualForm.email} onChange={e => setManualForm({...manualForm, email: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center px-1">
+                  <Label className="text-[10px] font-black uppercase tracking-widest">Override Invite Code</Label>
+                  <span className="text-[8px] font-bold text-muted-foreground uppercase opacity-40 italic">Opt-Out for auto-gen</span>
+                </div>
+                <Input placeholder="AUTO" maxLength={6} value={manualForm.inviteCode} onChange={e => setManualForm({...manualForm, inviteCode: e.target.value.toUpperCase()})} className="h-12 rounded-xl border-2 font-black text-center tracking-widest placeholder:font-bold placeholder:tracking-normal" />
+              </div>
             </div>
             <DialogFooter><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleManualAdd} disabled={isManualProcessing}>{isManualProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Inject Squad"}</Button></DialogFooter>
           </div>

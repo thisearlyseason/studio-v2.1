@@ -34,6 +34,7 @@ export interface ScheduleConfig {
   blackoutDates?: string[]; // ISO Strings
   dailyWindows?: DailyWindow[];
   playDays?: number[];
+  blackoutDaysOfWeek?: number[];
   tournamentType?: 'round_robin' | 'single_elimination' | 'double_elimination';
 }
 
@@ -92,6 +93,7 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
     teams, fields, startDate, endDate, startTime, endTime,
     gameLength, breakLength, playDays = [1, 2, 3, 4, 5, 6, 0],
     gamesPerTeam = 10, doubleHeaderOption = 'none', blackoutDates = [],
+    blackoutDaysOfWeek = []
   } = config;
 
   const teamIdentities = teams.map((t, idx) => typeof t === 'string' ? { id: `t_${idx}`, name: t } : t);
@@ -125,8 +127,9 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
   while (!isAfter(currentDay, endD)) {
     const dayKey = format(currentDay, 'yyyy-MM-dd');
     const isBlackout = blackoutDates.some(d => format(new Date(d), 'yyyy-MM-dd') === dayKey);
+    const isDayBlackout = blackoutDaysOfWeek.includes(currentDay.getDay());
 
-    if (playDays.includes(currentDay.getDay()) && !isBlackout) {
+    if (playDays.includes(currentDay.getDay()) && !isBlackout && !isDayBlackout) {
       let currentTime = parseTime(startTime, currentDay);
       const dayEndTime = parseTime(endTime, currentDay);
 

@@ -29,7 +29,8 @@ import {
   Copy,
   CheckCircle2,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Zap
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -46,10 +47,25 @@ import { format } from 'date-fns';
 import { Lock as LockIcon } from 'lucide-react';
 
 export default function VolunteerHubPage() {
-  const { activeTeam, user, isStaff, isParent, addVolunteerOpportunity, signUpForVolunteer, verifyVolunteerHours, deleteVolunteerOpportunity, confirmVolunteerAttendance, isPro, purchasePro } = useTeam();
+  const { 
+    activeTeam, 
+    user, 
+    isStaff, 
+    isParent, 
+    addVolunteerOpportunity, 
+    updateVolunteerOpportunity,
+    signUpForVolunteer, 
+    verifyVolunteerHours, 
+    deleteVolunteerOpportunity, 
+    confirmVolunteerAttendance, 
+    isPro, 
+    purchasePro 
+  } = useTeam();
   const db = useFirestore();
   
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingOpp, setEditingOpp] = useState<VolunteerOpportunity | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [newOpp, setNewOpp] = useState({ title: '', description: '', date: '', location: '', slots: '5', hoursPerSlot: '2', isShareable: false });
 
@@ -75,6 +91,20 @@ export default function VolunteerHubPage() {
     setIsProcessing(false);
     setNewOpp({ title: '', description: '', date: '', location: '', slots: '5', hoursPerSlot: '2', isShareable: false });
     toast({ title: "Opportunity Published" });
+  };
+
+  const handleEditOpportunity = async () => {
+    if (!editingOpp) return;
+    setIsProcessing(true);
+    await updateVolunteerOpportunity(editingOpp.id, {
+      ...editingOpp,
+      slots: parseInt(String(editingOpp.slots)),
+      hoursPerSlot: parseFloat(String(editingOpp.hoursPerSlot))
+    });
+    setIsEditOpen(false);
+    setIsProcessing(false);
+    setEditingOpp(null);
+    toast({ title: "Opportunity Updated" });
   };
 
   const totalVerifiedHours = useMemo(() => {
@@ -228,9 +258,14 @@ export default function VolunteerHubPage() {
                         <Button className={cn("flex-1 h-14 rounded-2xl font-black uppercase shadow-lg", hasSignedUp ? "bg-muted text-muted-foreground" : "bg-black text-white hover:bg-primary")} onClick={() => signUpForVolunteer(opp.id)} disabled={hasSignedUp || isFull}>
                           {hasSignedUp ? "Enrolled" : "Sign Up"}
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-14 w-14 rounded-2xl text-destructive hover:bg-destructive/5" onClick={() => deleteVolunteerOpportunity(opp.id)}>
-                          <Trash2 className="h-5 w-5" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-14 w-14 rounded-2xl text-primary hover:bg-primary/5" onClick={() => { setEditingOpp(opp); setIsEditOpen(true); }}>
+                            <Zap className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-14 w-14 rounded-2xl text-destructive hover:bg-destructive/5" onClick={() => deleteVolunteerOpportunity(opp.id)}>
+                            <Trash2 className="h-5 w-5" />
+                          </Button>
+                        </div>
                       </div>
                     ) : (
                       <Button className={cn("w-full h-14 rounded-2xl font-black uppercase shadow-lg", hasSignedUp ? "bg-muted text-muted-foreground" : "bg-black text-white hover:bg-primary shadow-black/20")} onClick={() => signUpForVolunteer(opp.id)} disabled={hasSignedUp || isFull || !isParent}>
@@ -298,6 +333,67 @@ export default function VolunteerHubPage() {
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Description</Label><Textarea value={newOpp.description} onChange={e => setNewOpp({...newOpp, description: e.target.value})} className="min-h-[100px] border-2" /></div>
             </div>
             <DialogFooter><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleAddOpportunity} disabled={isProcessing}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Publish Request"}</Button></DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 lg:p-12 space-y-8">
+            <DialogHeader>
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Zap className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">Edit Assignment</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest text-foreground">Modify existing logistics coordination request</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            {editingOpp && (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase ml-1">Assignment Title</Label>
+                  <Input value={editingOpp.title} onChange={e => setEditingOpp({...editingOpp, title: e.target.value})} className="h-12 border-2" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Date</Label>
+                    <Input type="date" value={editingOpp.date} onChange={e => setEditingOpp({...editingOpp, date: e.target.value})} className="h-12 border-2" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Slots</Label>
+                    <Input type="number" value={editingOpp.slots} onChange={e => setEditingOpp({...editingOpp, slots: parseInt(e.target.value)})} className="h-12 border-2" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Hours/Slot</Label>
+                    <Input type="number" step="0.5" value={editingOpp.hoursPerSlot} onChange={e => setEditingOpp({...editingOpp, hoursPerSlot: parseFloat(e.target.value)})} className="h-12 border-2" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase ml-1">Location</Label>
+                    <Input value={editingOpp.location || ''} onChange={e => setEditingOpp({...editingOpp, location: e.target.value})} className="h-12 border-2" />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border">
+                  <div>
+                    <p className="text-xs font-black uppercase">Shareable Opportunity</p>
+                    <p className="text-[8px] font-bold text-muted-foreground uppercase">Enable public signups via shared link</p>
+                  </div>
+                  <Switch checked={editingOpp.isShareable} onCheckedChange={v => setEditingOpp({...editingOpp, isShareable: v})} />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase ml-1">Description</Label>
+                  <Textarea value={editingOpp.description || ''} onChange={e => setEditingOpp({...editingOpp, description: e.target.value})} className="min-h-[100px] border-2" />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleEditOpportunity} disabled={isProcessing || !editingOpp?.title}>
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Update Request"}
+              </Button>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>

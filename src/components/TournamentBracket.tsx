@@ -156,14 +156,23 @@ export default function TournamentBracket({ games, standalone = false }: Bracket
           ))}
 
           {/* Championship Culmination Effect */}
-          <div className="flex flex-col items-center justify-center min-w-[320px] px-8">
-            <div className="relative w-full aspect-square max-w-[200px] flex items-center justify-center">
-              <div className="absolute inset-0 bg-primary/10 rounded-full blur-[80px] animate-pulse" />
-              <div className="relative z-10 bg-gradient-to-br from-amber-400 to-amber-600 p-8 rounded-[3rem] shadow-[0_0_50px_rgba(251,191,36,0.2)] group hover:scale-110 transition-transform duration-700">
-                <Trophy className="h-16 w-16 text-white shadow-xl" />
+          <div className="flex flex-col items-center justify-center min-w-[320px] px-8 py-20 bg-primary/[0.02] rounded-[4rem] border-2 border-dashed border-white/5 relative group ml-8">
+            <div className="absolute inset-0 bg-primary/[0.01] opacity-0 group-hover:opacity-100 transition-opacity rounded-[4rem]" />
+            <div className="relative w-full max-w-[220px] flex flex-col items-center justify-center">
+              <div className="absolute inset-0 bg-primary/20 rounded-full blur-[100px] animate-pulse scale-150" />
+              <div className="relative z-10 w-48 h-48 group-hover:scale-110 transition-transform duration-700 ease-out">
+                <img 
+                  src="/artifacts/champion_trophy_render.png" 
+                  alt="Championship Trophy" 
+                  className="w-full h-full object-contain filter drop-shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
+                />
               </div>
             </div>
-            <h4 className="mt-8 text-[10px] font-black uppercase tracking-[0.5em] text-primary">Absolute Champion</h4>
+            <div className="mt-12 text-center space-y-2 relative z-10">
+              <p className="text-[9px] font-black uppercase tracking-[0.6em] text-primary/60 mb-1">Grand Finale Protocol</p>
+              <h4 className="text-4xl font-black uppercase tracking-tighter text-white drop-shadow-2xl">Absolute Champion</h4>
+              <div className="w-12 h-1 bg-primary mx-auto rounded-full mt-4 opacity-40" />
+            </div>
           </div>
         </div>
       </div>

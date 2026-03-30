@@ -80,11 +80,13 @@ function DonationAuditLedger({ fundId }: { fundId: string }) {
 }
 
 export default function FundraisingPage() {
-  const { activeTeam, user, isStaff, addFundraisingOpportunity, deleteFundraisingOpportunity, isPro, purchasePro } = useTeam();
+  const { activeTeam, user, isStaff, addFundraisingOpportunity, updateFundraisingOpportunity, deleteFundraisingOpportunity, isPro, purchasePro } = useTeam();
   const db = useFirestore();
   
   const [filterMode, setFilterMode] = useState<'active' | 'past'>('active');
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingFund, setEditingFund] = useState<FundraisingOpportunity | null>(null);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [selectedFundId, setSelectedFundId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -131,6 +133,19 @@ export default function FundraisingPage() {
     setIsProcessing(false);
     setNewFund({ title: '', description: '', goal: '1000', deadline: '', isShareable: false, externalLink: '', eTransferDetails: '' });
     toast({ title: "Campaign Strategy Launched" });
+  };
+
+  const handleEditCampaign = async () => {
+    if (!editingFund) return;
+    setIsProcessing(true);
+    await updateFundraisingOpportunity(editingFund.id, {
+      ...editingFund,
+      goalAmount: parseFloat(String(editingFund.goalAmount))
+    });
+    setIsEditOpen(false);
+    setIsProcessing(false);
+    setEditingFund(null);
+    toast({ title: "Campaign Strategy Updated" });
   };
 
   const handleCopyLink = (fundId: string) => {
@@ -237,11 +252,11 @@ export default function FundraisingPage() {
         </div>
         <div className="relative w-full md:w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input 
+          <input 
             placeholder="Search campaigns..." 
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            className="pl-10 h-11 rounded-xl bg-muted/30 border-none font-bold text-xs" 
+            className="pl-10 h-11 w-full rounded-xl bg-muted/30 border-none font-bold text-xs focus:ring-2 focus:ring-primary/20 outline-none" 
           />
         </div>
       </div>
@@ -266,7 +281,7 @@ export default function FundraisingPage() {
                       </Button>
                     )}
                     <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg flex items-center gap-2">
-                      <Target className="h-3 w-3" /> ${fund.goalAmount.toLocaleString()}
+                       <Target className="h-3 w-3" /> ${fund.goalAmount.toLocaleString()}
                     </Badge>
                   </div>
                 </div>
@@ -294,9 +309,14 @@ export default function FundraisingPage() {
                     <Button variant="outline" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px] border-2 group-hover:border-primary group-hover:text-primary transition-all" onClick={() => { setSelectedFundId(fund.id); setIsAuditOpen(true); }}>
                       <DollarSign className="h-4 w-4 mr-2" /> Audit Hub
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => deleteFundraisingOpportunity(fund.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-primary hover:bg-primary/5" onClick={() => { setEditingFund(fund); setIsEditOpen(true); }}>
+                        <Zap className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => deleteFundraisingOpportunity(fund.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -387,6 +407,65 @@ export default function FundraisingPage() {
             <DialogFooter>
               <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title || !newFund.goal}>
                 {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Authorize Deployment"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="rounded-[3.5rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+          <DialogTitle className="sr-only">Edit Campaign Strategy</DialogTitle>
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
+            <DialogHeader>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Zap className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Edit Strategy</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Modify existing capital mobilization protocol</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            {editingFund && (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Campaign Title</Label>
+                  <Input placeholder="e.g. 2024 Nationals Travel Fund" value={editingFund.title} onChange={e => setEditingFund({...editingFund, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold focus:border-primary/20 transition-all shadow-inner text-foreground" />
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Goal ($)</Label>
+                    <Input type="number" value={editingFund.goalAmount} onChange={e => setEditingFund({...editingFund, goalAmount: parseFloat(e.target.value)})} className="h-14 rounded-2xl border-2 font-black text-xl text-primary" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Deadline</Label>
+                    <Input type="date" value={editingFund.deadline} onChange={e => setEditingFund({...editingFund, deadline: e.target.value})} className="h-14 rounded-2xl border-2 font-black text-foreground" />
+                  </div>
+                </div>
+                
+                <div className="space-y-2 animate-in slide-in-from-top-2">
+                  <Label className="text-[10px] font-black uppercase ml-1 text-foreground">Digital Payment URL</Label>
+                  <Input placeholder="Stripe, PayPal, Venmo URL..." value={editingFund.externalLink} onChange={e => setEditingFund({...editingFund, externalLink: e.target.value})} className="h-12 rounded-xl border-2 bg-muted/10 font-bold text-foreground" />
+                </div>
+
+                <div className="space-y-2 animate-in slide-in-from-top-2">
+                  <Label className="text-[10px] font-black uppercase ml-1 text-foreground">E-Transfer Protocol</Label>
+                  <Textarea placeholder="Recipient email and security instructions..." value={editingFund.eTransferDetails} onChange={e => setEditingFund({...editingFund, eTransferDetails: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium bg-muted/10 resize-none p-4 text-foreground" />
+                </div>
+
+                <div className="flex items-center justify-between p-5 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20 mt-4">
+                  <div>
+                    <p className="text-xs font-black uppercase leading-tight text-foreground">Public Enrollment</p>
+                    <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter mt-1">Enable unauthenticated portal links</p>
+                  </div>
+                  <Switch checked={editingFund.isShareable} onCheckedChange={v => setEditingFund({...editingFund, isShareable: v})} />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleEditCampaign} disabled={isProcessing || !editingFund?.title}>
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Update Strategy"}
               </Button>
             </DialogFooter>
           </div>
