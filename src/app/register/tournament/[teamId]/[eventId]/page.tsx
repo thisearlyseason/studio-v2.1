@@ -110,7 +110,7 @@ function RegistrationForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!config || isSubmitting) return;
-    if ((config.require_default_waiver || config.custom_waiver_text) && (!waiverAgreed || !signature.trim())) {
+    if ((config.require_default_waiver || config.custom_waiver_text || (config.team_waivers_content && config.team_waivers_content.length > 0)) && (!waiverAgreed || !signature.trim())) {
       toast({ title: "Compliance Required", description: "Please sign the required documentation.", variant: "destructive" });
       return;
     }
@@ -526,10 +526,10 @@ function RegistrationForm() {
 
                   {step === totalSteps && (
                     <div className="space-y-10">
-                      {(config.require_default_waiver || config.custom_waiver_text) ? (
+                      {(config.require_default_waiver || config.custom_waiver_text || (config.team_waivers_content && config.team_waivers_content.length > 0)) ? (
                         <div className="space-y-8">
                           <div className="flex items-center gap-3"><FileSignature className="h-6 w-6 text-primary" /><h4 className="text-xl font-black uppercase tracking-tighter">Required Agreements</h4></div>
-                          
+                           
                           {config.require_default_waiver && (
                             <div className="space-y-2">
                               <p className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Universal Institutional Liability Waiver</p>
@@ -547,6 +547,15 @@ function RegistrationForm() {
                               </ScrollArea>
                             </div>
                           )}
+
+                          {config.team_waivers_content?.map((waiver) => (
+                            <div key={waiver.id} className="space-y-2">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-rose-600 ml-1">{waiver.title}</p>
+                              <ScrollArea className="h-40 p-5 rounded-2xl bg-rose-50 border-2 border-rose-100 font-medium text-xs leading-relaxed">
+                                {waiver.content}
+                              </ScrollArea>
+                            </div>
+                          ))}
 
                           <div className="flex items-center space-x-4 p-5 bg-primary/5 rounded-[2rem] border-2 border-primary/10 group cursor-pointer transition-all hover:bg-primary/10" onClick={() => setWaiverAgreed(!waiverAgreed)}>
                             <Checkbox id="waiver_agree" checked={waiverAgreed} onCheckedChange={v => setWaiverAgreed(!!v)} className="h-6 w-6 rounded-lg border-2 border-primary" />

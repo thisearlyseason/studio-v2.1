@@ -2,9 +2,9 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useTeam, LeagueRegistrationConfig, RegistrationEntry, RegistrationFormField, LeagueArchiveWaiver } from '@/components/providers/team-provider';
+import { useTeam, LeagueRegistrationConfig, RegistrationEntry, RegistrationFormField, LeagueArchiveWaiver, TeamDocument } from '@/components/providers/team-provider';
 import { useFirestore, useDoc, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { doc, collection, query, orderBy, where, deleteDoc } from 'firebase/firestore';
+import { doc, collection, query, orderBy, where, deleteDoc, getDocs } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Plus, 
   Trash2, 
@@ -30,7 +31,15 @@ import {
   Wallet,
   Sparkles,
   FileSignature,
-  Download
+  Download,
+  Mail,
+  Calendar,
+  Fingerprint,
+  Lock,
+  CreditCard,
+  ArrowRight,
+  UserPlus,
+  Smartphone
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -107,6 +116,15 @@ export default function LeagueRegistrationAdminPage() {
   const activeLeagueDocRef = useMemo(() => leagueId ? doc(db, 'leagues', leagueId as string) : null, [db, leagueId]);
   const { data: leagueData } = useDoc(activeLeagueDocRef);
   const activeLeague = useMemo(() => leagueData || null, [leagueData]);
+
+  // --- TEAM WAIVERS FETCHING ---
+  const targetTeamId = useMemo(() => activeLeague?.teamId || activeTeam?.id, [activeLeague?.teamId, activeTeam?.id]);
+  const teamWaiversQuery = useMemo(() => {
+    if (!db || !targetTeamId) return null;
+    return query(collection(db, 'teams', targetTeamId, 'documents'), where('isActive', '==', true));
+  }, [db, targetTeamId]);
+  const { data: teamWaiversData } = useCollection<TeamDocument>(teamWaiversQuery);
+  const teamWaivers = useMemo(() => (teamWaiversData || []), [teamWaiversData]);
 
   const waiversQuery = useMemoFirebase(() => {
     if (!db || !leagueId) return null;
@@ -221,6 +239,17 @@ export default function LeagueRegistrationAdminPage() {
       form_version: 1 
     };
     const updated = { ...base, ...updates } as LeagueRegistrationConfig;
+    
+    // If team waivers are being selected, fetch their content
+    if (updates.selected_team_waivers) {
+      const selectedIds = updates.selected_team_waivers;
+      const contents = selectedIds.map(id => {
+        const w = teamWaivers.find(tw => tw.id === id);
+        return w ? { id: w.id, title: w.title, content: w.content } : null;
+      }).filter(Boolean) as { id: string; title: string; content: string }[];
+      updated.team_waivers_content = contents;
+    }
+
     setLocalConfig(updated);
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     const performSync = async () => { await saveLeagueRegistrationConfig(leagueId as string, configId, updated); };
@@ -274,19 +303,13 @@ export default function LeagueRegistrationAdminPage() {
 
       {activeTab === 'entries' ? (
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
-            <div className="flex items-center gap-3">
-              <div className="bg-primary/10 p-2.5 rounded-xl text-primary">{pipelineType === 'player' ? <Users className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}</div>
-              <div><h3 className="text-xl font-black uppercase tracking-tight">{pipelineType === 'player' ? 'Athlete Pool' : 'Squad Pool'}</h3><p className="text-[9px] font-bold text-muted-foreground uppercase">{filteredEntries.length} Active Applicants</p></div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border-2 shadow-sm">
+              {(['all', 'pending', 'assigned', 'accepted'] as const).map(s => (
+                <Button key={s} variant={filterStatus === s ? 'secondary' : 'ghost'} size="sm" className="h-8 rounded-xl font-black text-[9px] uppercase px-4" onClick={() => setFilterStatus(s)}>{s}</Button>
+              ))}
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border-2 shadow-sm">
-                {(['all', 'pending', 'assigned', 'accepted'] as const).map(s => (
-                  <Button key={s} variant={filterStatus === s ? 'secondary' : 'ghost'} size="sm" className="h-8 rounded-xl font-black text-[9px] uppercase px-4" onClick={() => setFilterStatus(s)}>{s}</Button>
-                ))}
-              </div>
-              {pipelineType === 'team' && <Button className="rounded-xl h-11 px-6 font-black uppercase text-[10px] shadow-xl" onClick={() => setIsManualAddOpen(true)}><Plus className="h-4 w-4 mr-2" /> Enroll Squad</Button>}
-            </div>
+            {pipelineType === 'team' && <Button className="rounded-xl h-11 px-6 font-black uppercase text-[10px] shadow-xl" onClick={() => setIsManualAddOpen(true)}><Plus className="h-4 w-4 mr-2" /> Enroll Squad</Button>}
           </div>
 
           <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
@@ -358,181 +381,582 @@ export default function LeagueRegistrationAdminPage() {
           </Card>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-8">
-            <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
-              <CardHeader className="bg-primary/5 border-b p-8 lg:p-10 flex flex-row items-center justify-between">
-                <div className="flex items-center gap-4"><div className="bg-primary p-4 rounded-3xl text-white shadow-xl"><Globe className="h-8 w-8" /></div><div><CardTitle className="text-3xl font-black uppercase tracking-tight">{localConfig?.title || 'Pipeline Protocol'}</CardTitle><CardDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Institutional Blueprint v{localConfig?.form_version || 1}</CardDescription></div></div>
-                <Switch checked={localConfig?.is_active || false} onCheckedChange={(v) => handleUpdateConfig({ is_active: v }, true)} />
-              </CardHeader>
-              <CardContent className="p-8 lg:p-10 space-y-10">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Protocol Headline</Label><Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-14 rounded-2xl border-2 font-black" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Enrollment Fee ($)</Label><Input type="number" value={localConfig?.registration_cost || '0'} onChange={e => handleUpdateConfig({ registration_cost: e.target.value })} className="h-14 rounded-2xl border-2 font-black text-primary" /></div>
-                </div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Operational Brief</Label><Textarea value={localConfig?.description || ''} onChange={e => handleUpdateConfig({ description: e.target.value })} className="rounded-3xl min-h-[150px] border-2 font-medium" placeholder="Define the recruitment scope..." /></div>
-                
-                <div className="bg-amber-50 rounded-[2.5rem] border-2 border-amber-200 p-8 lg:p-10 space-y-6 shadow-sm">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-amber-100 p-3 rounded-2xl text-amber-700 shadow-sm"><Wallet className="h-6 w-6" /></div>
-                    <div>
-                      <h4 className="text-xl font-black uppercase tracking-tight text-amber-900 leading-none">Payment Protocol</h4>
-                      <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-1">Disbursement Guidance v1.0</p>
-                    </div>
-                  </div>
+        <div className="max-w-4xl mx-auto pb-32">
+          <div className="space-y-16 relative">
+            {/* Vertical Timeline Connector */}
+            <div className="absolute left-[2.45rem] top-10 bottom-10 w-1 bg-gradient-to-b from-primary via-indigo-500 via-amber-500 via-rose-500 to-green-500 opacity-20 hidden md:block" />
+
+            {/* DEPLOYMENT PROTOCOL HEADER */}
+            <Card className="relative z-10 rounded-[3rem] border-none shadow-2xl bg-black text-white overflow-hidden ring-1 ring-white/10 group">
+              <div className="absolute top-0 right-0 p-8 h-full flex flex-col justify-between opacity-5 pointer-events-none transition-opacity group-hover:opacity-10">
+                <Globe className="h-32 w-32 -mr-16 -mt-16" />
+                <Zap className="h-32 w-32 -mr-16 -mb-16" />
+              </div>
+              <CardContent className="p-10 space-y-8">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
                   <div className="space-y-4">
-                    <div className="space-y-2">
-                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-amber-900">Offline Payment Instructions (e-Transfer / Cheque)</Label>
-                       <Textarea 
-                         value={localConfig?.offline_payment_instructions || ''} 
-                         onChange={e => handleUpdateConfig({ offline_payment_instructions: e.target.value })} 
-                         className="rounded-3xl min-h-[100px] border-2 font-medium border-amber-200 bg-white" 
-                         placeholder="e.g., Please send e-transfer to accounting@organization.com. Include team name in notes." 
-                       />
+                    <div className="flex items-center gap-3">
+                      <Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3 shadow-lg shadow-primary/20">Active Protocol</Badge>
+                      <Badge variant="outline" className="border-white/20 text-white/60 font-black uppercase text-[8px] h-6 px-3 tracking-[0.2em]">v2.5-PRODUCTION</Badge>
                     </div>
-                  </div>
-                  <div className="bg-white/60 p-6 rounded-2xl border-2 border-amber-100/50 space-y-4">
-                     <div className="flex items-center justify-between"><p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Institutional Interface</p><Badge variant="outline" className="text-[8px] font-black uppercase border-amber-200 text-amber-700">Live Preview</Badge></div>
-                     <p className="text-[11px] font-medium leading-relaxed text-amber-900/80 italic">"{localConfig?.offline_payment_instructions || 'Enrollment fees are currently processed via bank transfer or institutional check. Online Checkout Pipeline: In Active Development.'}"</p>
-                  </div>
-                  <div className="flex items-center gap-2 text-[9px] font-black uppercase text-amber-700 tracking-[0.2em] opacity-60 px-1"><Sparkles className="h-3 w-3" /> Stripe Integration Pending</div>
-                </div>
-
-                <div className="bg-rose-50 rounded-[2.5rem] border-2 border-rose-200 p-8 lg:p-10 space-y-6 shadow-sm">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-rose-100 p-3 rounded-2xl text-rose-700 shadow-sm"><FileSignature className="h-6 w-6" /></div>
                     <div>
-                      <h4 className="text-xl font-black uppercase tracking-tight text-rose-900 leading-none">Compliance & Waivers</h4>
-                      <p className="text-[10px] font-bold text-rose-600 uppercase tracking-widest mt-1">Institutional Liability & Agreements</p>
+                      <h3 className="text-4xl font-black uppercase tracking-tighter leading-none">Deployment Protocol</h3>
+                      <p className="text-xs font-bold text-white/40 uppercase tracking-widest mt-2 ml-1">Universal Recruitment Bridge for {activeLeague?.name || 'League'}</p>
                     </div>
                   </div>
-                  
-                  <div className="space-y-6">
-                    <div className="space-y-4 bg-white p-6 rounded-3xl border-2 border-rose-100 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <Label className="text-sm font-black uppercase tracking-widest text-rose-900">Universal Athletics Waiver</Label>
-                          <p className="text-[10px] uppercase font-bold text-rose-600/70">Enforce standard injury & liability protections</p>
-                        </div>
-                        <Switch checked={localConfig?.require_default_waiver || false} onCheckedChange={(v) => handleUpdateConfig({ require_default_waiver: v })} />
-                      </div>
-                      {localConfig?.require_default_waiver && (
-                        <div className="space-y-2 pt-4 border-t border-rose-50 animate-in slide-in-from-top-2">
-                          <Label className="text-[10px] font-black uppercase tracking-widest text-rose-900">Edit Default Waiver Text</Label>
-                          <Textarea 
-                            value={localConfig?.default_waiver_text || 'I hereby assume all risks, hazards, and liabilities associated with participation in this program. I waive, release, and discharge the organization, its directors, coaches, and facility providers from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.'} 
-                            onChange={e => handleUpdateConfig({ default_waiver_text: e.target.value })} 
-                            className="rounded-2xl min-h-[120px] border-2 font-medium border-rose-100 bg-rose-50/50 text-xs leading-relaxed" 
-                          />
-                        </div>
-                      )}
+                  <div className="flex flex-col gap-4 bg-white/5 p-6 rounded-[2.5rem] border border-white/10 backdrop-blur-xl">
+                    <div className="space-y-1 px-1">
+                      <p className="text-[10px] font-black uppercase text-white/40 tracking-widest">Portal Endpoint</p>
+                      <p className="text-[10px] font-mono text-primary font-bold">/register/league/{leagueId}</p>
                     </div>
+                    <Button 
+                      className="h-12 px-8 rounded-2xl bg-white text-black font-black uppercase text-[10px] shadow-xl hover:scale-105 transition-all flex items-center gap-2" 
+                      onClick={() => { 
+                        const url = `${window.location.origin}/register/league/${leagueId}?protocol=${configId}`;
+                        navigator.clipboard.writeText(url); 
+                        toast({ title: "Protocol Link Copied", description: "URL is now in your clipboard." }); 
+                      }}
+                    >
+                      <Share2 className="h-4 w-4" /> Copy Access Key
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
+            {/* PHASE 01: PORTAL BASELINE */}
+            <div id="phase-01" className="relative z-10 space-y-10 group">
+              <div className="flex items-center gap-6">
+                <div className="h-20 w-20 rounded-[2.5rem] bg-primary text-white flex items-center justify-center text-3xl font-black shadow-2xl shadow-primary/20 ring-8 ring-primary/5 transition-transform group-hover:scale-110 shrink-0">01</div>
+                <div className="h-px bg-primary/20 flex-1" />
+              </div>
+              
+              <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+                <CardHeader className="bg-primary/5 border-b p-8 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-primary p-3 rounded-2xl text-white shadow-lg"><Globe className="h-6 w-6" /></div>
+                    <div>
+                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Portal Baseline</CardTitle>
+                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-primary mt-1">Institutional Identity & Meta-Data</CardDescription>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex flex-col items-end gap-1 mr-4">
+                      <span className="text-[9px] font-black uppercase text-muted-foreground">Portal Status</span>
+                      <span className={cn("text-[10px] font-black uppercase transition-colors", localConfig?.is_active ? "text-green-600" : "text-rose-600")}>
+                        {localConfig?.is_active ? "Live" : "Draft"}
+                      </span>
+                    </div>
+                    <Switch checked={localConfig?.is_active || false} onCheckedChange={(v) => handleUpdateConfig({ is_active: v }, true)} />
+                  </div>
+                </CardHeader>
+                <CardContent className="p-8 space-y-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-2">
-                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-rose-900">Custom Organization Agreement (Optional)</Label>
-                       <Textarea 
-                         value={localConfig?.custom_waiver_text || ''} 
-                         onChange={e => handleUpdateConfig({ custom_waiver_text: e.target.value })} 
-                         className="rounded-3xl min-h-[120px] border-2 font-medium border-rose-200 bg-white" 
-                         placeholder="Define custom terms, facility rules, or specific compliance clauses that require applicant signature..." 
-                       />
-                       <p className="text-[10px] uppercase font-bold text-rose-600/60 ml-1">This agreement will be appended to the recruitment portal and require digital authorization.</p>
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Protocol Headline</Label>
+                      <Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-14 rounded-2xl border-2 font-black shadow-sm" placeholder="e.g. 2024 Spring Season Recruitment" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Enrollment Fee (USD)</Label>
+                      <div className="relative">
+                        <span className="absolute left-5 top-1/2 -translate-y-1/2 font-black text-primary">$</span>
+                        <Input type="number" value={localConfig?.registration_cost || '0'} onChange={e => handleUpdateConfig({ registration_cost: e.target.value })} className="h-14 pl-10 rounded-2xl border-2 font-black text-primary bg-primary/5 border-primary/20" />
+                      </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Portal Description</Label>
+                    <Textarea value={localConfig?.description || ''} onChange={e => handleUpdateConfig({ description: e.target.value })} className="rounded-3xl min-h-[100px] border-2 font-medium bg-muted/5 p-6 focus:bg-white transition-all" placeholder="Explain the registration process..." />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
-            <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
-              <CardHeader className="bg-black text-white p-8 lg:p-10 flex flex-row items-center justify-between">
-                <div className="flex items-center gap-4"><div className="bg-primary p-3 rounded-2xl text-white"><Users className="h-6 w-6" /></div><CardTitle className="text-2xl font-black uppercase tracking-tight">Form Architect</CardTitle></div>
-                <Dialog>
-                  <DialogTrigger asChild><Button variant="secondary" className="rounded-full h-11 px-6 font-black uppercase text-[10px]"><Plus className="h-4 w-4 mr-2" /> Add Data Point</Button></DialogTrigger>
-                  <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-8 max-w-sm">
-                    <DialogHeader className="mb-6"><DialogTitle className="text-2xl font-black uppercase">New Data Point</DialogTitle></DialogHeader>
-                    <div className="space-y-6 py-2">
-                      <div className="space-y-2">
-                        <Label className="text-[10px] uppercase font-black ml-1">Field Headline</Label>
-                        <Input value={editingField?.label || ''} onChange={e => setEditingField({ ...editingField, label: e.target.value })} className="h-12 rounded-xl border-2 font-bold" />
+            {/* PHASE 02: IDENTITY HUB */}
+            <div id="phase-02" className="relative z-10 space-y-10 group">
+              <div className="flex items-center gap-6">
+                <div className="h-20 w-20 rounded-[2.5rem] bg-indigo-600 text-white flex items-center justify-center text-3xl font-black shadow-2xl shadow-indigo-600/20 ring-8 ring-indigo-600/5 transition-transform group-hover:scale-110 shrink-0">02</div>
+                <div className="h-px bg-indigo-600/20 flex-1" />
+              </div>
+
+              <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+                <CardHeader className="bg-indigo-50/50 border-b p-8 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-lg"><Fingerprint className="h-6 w-6" /></div>
+                    <div>
+                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Identity Hub</CardTitle>
+                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 mt-1">Participant Data Injection</CardDescription>
+                    </div>
+                  </div>
+                  <Button variant="outline" className="rounded-xl h-11 px-6 border-indigo-200 text-indigo-700 font-black uppercase text-[10px] shadow-sm hover:bg-indigo-50 transition-all hover:scale-105" onClick={() => setEditingField({ step: 'identity', type: 'short_text', required: true })}>
+                    <Plus className="h-4 w-4 mr-2" /> Inject Field
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-8 space-y-12">
+                    {/* AUTO INJECTED FIELDS */}
+                    <div className="space-y-5">
+                      <div className="flex items-center justify-between px-1">
+                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Institutional Baseline (Global Injection)</p>
+                        <Badge variant="outline" className="text-[8px] font-black uppercase opacity-60">System Enforced</Badge>
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-[10px] uppercase font-black ml-1">Input Mechanism</Label>
-                        <Select value={editingField?.type} onValueChange={(v: any) => setEditingField({ ...editingField, type: v })}>
-                          <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue placeholder="Select type..." /></SelectTrigger>
-                          <SelectContent className="rounded-xl">
-                            <SelectItem value="short_text" className="font-bold text-[10px] uppercase">Short Text</SelectItem>
-                            <SelectItem value="long_text" className="font-bold text-[10px] uppercase">Long Narrative</SelectItem>
-                            <SelectItem value="dropdown" className="font-bold text-[10px] uppercase">Dropdown Menu</SelectItem>
-                            <SelectItem value="radio" className="font-bold text-[10px] uppercase">Single Choice (Radio)</SelectItem>
-                            <SelectItem value="checkbox" className="font-bold text-[10px] uppercase">Multi Choice (Check)</SelectItem>
-                            <SelectItem value="signature" className="font-bold text-[10px] uppercase">Digital Signature</SelectItem>
-                            <SelectItem value="header" className="font-bold text-[10px] uppercase">Section Header</SelectItem>
-                          </SelectContent>
-                        </Select>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {[
+                          { label: 'Full Name', detail: 'Legal Identity', icon: Users },
+                          { label: 'Primary Email', detail: 'System Relay', icon: Mail },
+                          { label: 'Date of Birth', detail: 'Eligibility Proto', icon: Calendar },
+                          { label: 'Mobile Phone', detail: 'Direct Link', icon: Smartphone }
+                        ].map(f => (
+                          <div key={f.label} className="p-5 rounded-2xl bg-muted/40 border-2 border-transparent flex flex-col gap-3 relative group/base">
+                            <div className="h-10 w-10 rounded-xl bg-white flex items-center justify-center shadow-sm">
+                              <f.icon className="h-5 w-5 opacity-40 text-black" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase text-black leading-none">{f.label}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground uppercase mt-1">{f.detail}</p>
+                            </div>
+                            <Lock className="absolute top-4 right-4 h-3 w-3 opacity-10" />
+                          </div>
+                        ))}
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-[10px] uppercase font-black ml-1">Pipeline Step</Label>
-                        <Select value={editingField?.step || 'identity'} onValueChange={(v: any) => setEditingField({ ...editingField, step: v })}>
-                          <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue placeholder="Select step..." /></SelectTrigger>
-                          <SelectContent className="rounded-xl">
-                            <SelectItem value="identity" className="font-bold text-[10px] uppercase">Step 1: Identity</SelectItem>
-                            <SelectItem value="guardian" className="font-bold text-[10px] uppercase">Step 2: Guardian</SelectItem>
-                            <SelectItem value="team_code" className="font-bold text-[10px] uppercase">Step 3: Team Code</SelectItem>
-                            <SelectItem value="additional" className="font-bold text-[10px] uppercase">Additional Info</SelectItem>
-                          </SelectContent>
-                        </Select>
+                    </div>
+
+                    {/* CUSTOM FIELDS */}
+                    <div className="space-y-5">
+                      <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest px-1">Organization Protocol Specs</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {((localConfig?.form_schema || []).filter(f => f.step === 'identity' || !f.step)).map(f => (
+                            <div key={f.id} className="p-6 rounded-3xl border-2 border-indigo-100 bg-indigo-50/10 flex items-center justify-between group/f hover:border-indigo-400 transition-all shadow-sm">
+                              <div className="flex flex-col gap-2">
+                                <span className="text-[11px] font-black uppercase flex items-center gap-2">
+                                  {f.label}
+                                  {f.required && <span className="h-1.5 w-1.5 rounded-full bg-rose-500" title="Required" />}
+                                </span>
+                                <Badge className="w-fit bg-indigo-600 text-white hover:bg-indigo-600 border-none text-[8px] font-black uppercase h-5 px-2">
+                                  {f.type === 'signature' ? 'Digital Signature' : f.type.replace('_', ' ')}
+                                </Badge>
+                              </div>
+                              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-rose-500 opacity-0 group-hover/f:opacity-100 hover:bg-rose-50 transition-opacity" onClick={() => handleUpdateConfig({ form_schema: (localConfig?.form_schema || []).filter(field => field.id !== f.id) }, true)}><Trash2 className="h-5 w-5" /></Button>
+                            </div>
+                          ))}
+                          {((localConfig?.form_schema || []).filter(f => f.step === 'identity' || !f.step)).length === 0 && (
+                            <div className="md:col-span-2 py-12 text-center border-2 border-dashed rounded-[3rem] border-indigo-100 bg-indigo-50/5">
+                              <Fingerprint className="h-10 w-10 mx-auto mb-3 opacity-10 text-indigo-600" />
+                              <p className="text-[10px] font-black uppercase text-indigo-300 tracking-widest">Awaiting Custom Input Injection</p>
+                            </div>
+                          )}
                       </div>
-                      {['dropdown', 'radio', 'checkbox'].includes(editingField?.type || '') && (
-                        <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
-                          <Label className="text-[10px] uppercase font-black ml-1">Options (Comma Separated)</Label>
-                          <Input 
-                            placeholder="Option 1, Option 2, Option 3" 
-                            value={editingField?.options?.join(', ') || ''} 
-                            onChange={e => setEditingField({ ...editingField, options: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-                            className="h-12 rounded-xl border-2 font-bold focus:border-primary/20"
-                          />
+                    </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* PHASE 03: GUARDIAN BRIDGE */}
+            <div id="phase-03" className="relative z-10 space-y-10 group">
+              <div className="flex items-center gap-6">
+                <div className="h-20 w-20 rounded-[2.5rem] bg-amber-600 text-white flex items-center justify-center text-3xl font-black shadow-2xl shadow-amber-600/20 ring-8 ring-amber-600/5 transition-transform group-hover:scale-110 shrink-0">03</div>
+                <div className="h-px bg-amber-600/20 flex-1" />
+              </div>
+
+              <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+                <CardHeader className="bg-amber-50/50 border-b p-8 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-amber-600 p-3 rounded-2xl text-white shadow-lg"><UserCheck className="h-6 w-6" /></div>
+                    <div>
+                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Guardian Bridge</CardTitle>
+                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-amber-600 mt-1">Minor Logic & Field Injection</CardDescription>
+                    </div>
+                  </div>
+                  <Button variant="outline" className="rounded-xl h-11 px-6 border-amber-200 text-amber-700 font-black uppercase text-[10px] shadow-sm hover:bg-amber-50 transition-all hover:scale-105" onClick={() => setEditingField({ step: 'guardian', type: 'short_text', required: true })}>
+                    <Plus className="h-4 w-4 mr-2" /> Inject Field
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-8 space-y-12">
+                  <div className="bg-amber-50 rounded-[2.5rem] p-8 border border-amber-100 flex flex-col md:flex-row items-center gap-8 shadow-sm">
+                    <div className="h-20 w-20 rounded-3xl bg-amber-600 text-white flex items-center justify-center shadow-lg shrink-0">
+                      <ShieldCheck className="h-10 w-10" />
+                    </div>
+                    <div className="text-center md:text-left space-y-2">
+                      <div className="text-[14px] font-black uppercase text-amber-900 tracking-tight flex items-center justify-center md:justify-start gap-4">
+                        Automated Trigger: Minor Safety Mode
+                        <Badge className="bg-amber-600 text-white border-none font-black uppercase text-[8px] h-6 px-3">Enrolled</Badge>
+                      </div>
+                      <p className="text-xs font-medium text-amber-800/70 leading-relaxed max-w-xl">System detects participant age via Phase 02 and automatically enforces guardian identity and legal consent to satisfy compliance standards.</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-8">
+                    <div className="space-y-5">
+                      <div className="flex items-center justify-between px-1">
+                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Baseline Guardian Protocol (Locked)</p>
+                        <Badge variant="outline" className="text-[8px] font-black uppercase opacity-60">Compliance Enforced</Badge>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {[
+                          { label: 'Guardian Name', icon: Users, detail: 'Legal Signature' },
+                          { label: 'Rel. Email', icon: Mail, detail: 'Relay Target' },
+                          { label: 'Contact Phone', icon: Smartphone, detail: 'Emergency Port' },
+                          { label: 'Relationship', icon: UserPlus, detail: 'Kinship Type' }
+                        ].map(f => (
+                          <div key={f.label} className="p-5 rounded-2xl bg-muted/40 border-2 border-transparent flex flex-col gap-3 relative transition-all hover:bg-muted/60">
+                            <div className="h-10 w-10 rounded-xl bg-white flex items-center justify-center shadow-sm text-amber-600">
+                              <f.icon className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase text-black leading-none">{f.label}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground uppercase mt-1">{f.detail}</p>
+                            </div>
+                            <Lock className="absolute top-4 right-4 h-3 w-3 opacity-10" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-5">
+                      <p className="text-[10px] font-black uppercase text-amber-600 tracking-widest px-1">Experimental Guardian Specs</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {((localConfig?.form_schema || []).filter(f => f.step === 'guardian')).map(f => (
+                          <div key={f.id} className="p-6 border-2 border-amber-100 rounded-3xl flex items-center justify-between group/f bg-amber-50/10 hover:border-amber-400 transition-all shadow-sm">
+                            <div className="flex flex-col gap-2">
+                              <span className="text-[11px] font-black uppercase">{f.label}</span>
+                              <Badge className="w-fit bg-amber-600 text-white hover:bg-amber-600 border-none text-[8px] font-black uppercase h-5 px-2">
+                                {f.type.replace('_', ' ')}
+                              </Badge>
+                            </div>
+                            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-rose-500 opacity-0 group-hover/f:opacity-100 hover:bg-rose-50 transition-opacity" onClick={() => handleUpdateConfig({ form_schema: (localConfig?.form_schema || []).filter(field => field.id !== f.id) }, true)}><Trash2 className="h-5 w-5" /></Button>
+                          </div>
+                        ))}
+                        {((localConfig?.form_schema || []).filter(f => f.step === 'guardian')).length === 0 && (
+                          <div className="md:col-span-2 py-12 text-center border-2 border-dashed rounded-[3rem] border-amber-100 bg-amber-50/5">
+                            <Plus className="h-10 w-10 mx-auto mb-3 opacity-10 text-amber-600" />
+                            <p className="text-[10px] font-black uppercase text-amber-300 tracking-widest">Inject Supplemental Guardian Requirements</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* PHASE 04: SYNAPSE DISPATCH */}
+            <div id="phase-04" className="relative z-10 space-y-10 group">
+              <div className="flex items-center gap-6">
+                <div className="h-20 w-20 rounded-[2.5rem] bg-indigo-600 text-white flex items-center justify-center text-3xl font-black shadow-2xl shadow-indigo-600/20 ring-8 ring-indigo-600/5 transition-transform group-hover:scale-110 shrink-0">04</div>
+                <div className="h-px bg-indigo-600/20 flex-1" />
+              </div>
+
+              <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+                <CardHeader className="bg-indigo-50/50 border-b p-8 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-lg"><Zap className="h-6 w-6" /></div>
+                    <div>
+                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Synapse Dispatch</CardTitle>
+                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 mt-1">Recruitment Code & Squadron Access</CardDescription>
+                    </div>
+                  </div>
+                  <Button variant="outline" className="rounded-xl h-11 px-6 border-indigo-200 text-indigo-700 font-black uppercase text-[10px] shadow-sm hover:bg-indigo-50 transition-all hover:scale-105" onClick={() => setEditingField({ step: 'team_code', type: 'short_text', required: true })}>
+                    <Plus className="h-4 w-4 mr-2" /> Inject Field
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-8 space-y-12">
+                    <div className="space-y-5">
+                      <div className="flex items-center justify-between px-1">
+                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Digital Synapse Baseline (Locked)</p>
+                        <Badge variant="outline" className="text-[8px] font-black uppercase opacity-60">Identity Bridge</Badge>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {[
+                          { label: 'Recruitment Code', detail: 'Primary Squad Link', icon: Zap },
+                          { label: 'Invite Link Hash', detail: 'URL-Encoded Verification', icon: Globe }
+                        ].map(f => (
+                          <div key={f.label} className="p-6 rounded-[2rem] bg-muted/30 border-2 border-transparent flex items-center gap-6 relative transition-all hover:bg-muted/50">
+                            <div className="h-14 w-14 rounded-2xl bg-white flex items-center justify-center shadow-lg text-indigo-600 shrink-0">
+                              <f.icon className="h-7 w-7" />
+                            </div>
+                            <div>
+                                <p className="text-[12px] font-black uppercase text-black leading-none">{f.label}</p>
+                                <p className="text-[9px] font-bold text-muted-foreground uppercase mt-2">{f.detail}</p>
+                            </div>
+                            <Lock className="absolute top-6 right-6 h-4 w-4 opacity-10" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-5">
+                      <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest px-1">Custom Synapse Payloads</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {((localConfig?.form_schema || []).filter(f => f.step === 'team_code')).map(f => (
+                          <div key={f.id} className="p-6 border-2 border-indigo-100 rounded-3xl flex items-center justify-between group/f bg-indigo-50/10 hover:border-indigo-400 transition-all shadow-sm">
+                            <div className="flex flex-col gap-2">
+                              <span className="text-[11px] font-black uppercase flex items-center gap-2">
+                                {f.label}
+                                {f.required && <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />}
+                              </span>
+                              <Badge className="w-fit bg-indigo-600 text-white hover:bg-indigo-600 border-none text-[8px] font-black uppercase h-5 px-2">
+                                {f.type.replace('_', ' ')}
+                              </Badge>
+                            </div>
+                            <Button variant="ghost" size="icon" className="h-11 w-11 rounded-xl text-rose-500 opacity-0 group-hover/f:opacity-100 hover:bg-rose-50 transition-opacity" onClick={() => handleUpdateConfig({ form_schema: (localConfig?.form_schema || []).filter(field => field.id !== f.id) }, true)}><Trash2 className="h-6 w-6" /></Button>
+                          </div>
+                        ))}
+                        {((localConfig?.form_schema || []).filter(f => f.step === 'team_code')).length === 0 && (
+                          <div className="md:col-span-2 py-12 text-center border-2 border-dashed rounded-[3rem] border-indigo-100 bg-indigo-50/5">
+                            <Plus className="h-10 w-10 mx-auto mb-3 opacity-10 text-indigo-600" />
+                            <p className="text-[10px] font-black uppercase text-indigo-300 tracking-widest">Inject Tactical Verification Logic</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* PHASE 05: INSTITUTIONAL SHIELD */}
+            <div id="phase-05" className="relative z-10 space-y-10 group">
+              <div className="flex items-center gap-6">
+                <div className="h-20 w-20 rounded-[2.5rem] bg-rose-600 text-white flex items-center justify-center text-3xl font-black shadow-2xl shadow-rose-600/20 ring-8 ring-rose-600/5 transition-transform group-hover:scale-110 shrink-0">05</div>
+                <div className="h-px bg-rose-600/20 flex-1" />
+              </div>
+
+              <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+                <CardHeader className="bg-rose-50/50 border-b p-8 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-rose-600 p-3 rounded-2xl text-white shadow-lg"><ShieldCheck className="h-6 w-6" /></div>
+                    <div>
+                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Institutional Shield</CardTitle>
+                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-rose-600 mt-1">Compliance & Risk Ledger</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-8 lg:p-10 space-y-12">
+                  <div className="bg-rose-50/30 p-8 rounded-[2.5rem] border-2 border-dashed border-rose-100 flex flex-col md:flex-row items-center gap-8 group/info transition-all hover:bg-rose-50/50">
+                    <div className="h-16 w-16 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-lg transition-transform group-hover/info:rotate-12 shrink-0">
+                      <Lock className="h-8 w-8" />
+                    </div>
+                    <div className="space-y-2">
+                       <p className="text-[10px] font-black uppercase text-rose-600 tracking-widest px-1">Institutional Compliance Briefing</p>
+                       <p className="text-xs font-medium text-rose-900/60 leading-relaxed max-w-2xl">The Institutional Shield protocol enforces legal binding between the organization and the participant. All signed documents are SHA-256 encrypted and stored in the permanent recruitment vault.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                      <div className="space-y-10">
+                        <div className="space-y-6">
+                           <div className="flex items-center justify-between p-6 rounded-[2rem] bg-white border-2 border-rose-100 shadow-sm transition-all hover:border-rose-300">
+                             <div className="flex items-center gap-4">
+                               <div className="h-12 w-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
+                                 <Globe className="h-6 w-6" />
+                               </div>
+                               <div className="space-y-1">
+                                 <Label className="text-[13px] font-black uppercase text-rose-900 leading-none">Universal Hub Release</Label>
+                                 <p className="text-[9px] font-bold text-rose-700/60 uppercase tracking-widest mt-1">Global system-level waiver</p>
+                               </div>
+                             </div>
+                             <Switch checked={localConfig?.require_default_waiver} onCheckedChange={(v) => handleUpdateConfig({ require_default_waiver: v }, true)} />
+                           </div>
+
+                           {localConfig?.require_default_waiver && (
+                             <div className="space-y-3 animate-in slide-in-from-top-4 duration-500">
+                               <div className="flex items-center justify-between px-2">
+                                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-900/40">Default Release Payload (Read-Only)</Label>
+                                  <Badge variant="outline" className="text-[8px] font-black uppercase text-rose-400 border-rose-100">Global Standard</Badge>
+                               </div>
+                               <div className="rounded-[2rem] border-2 border-rose-50 bg-rose-50/10 p-6 shadow-inner">
+                                 <ScrollArea className="h-[120px] pr-4">
+                                   <p className="text-[10px] font-medium leading-relaxed text-rose-800/70 italic">
+                                     {localConfig?.default_waiver_text || "The standard Institutional Release covers liability, medical consent, and media participation for all organizational events. This text is managed at the system level."}
+                                   </p>
+                                 </ScrollArea>
+                               </div>
+                             </div>
+                           )}
                         </div>
-                      )}
-                    </div>
-                    <DialogFooter className="pt-4">
-                      <Button className="w-full h-14 rounded-2xl font-black shadow-xl" onClick={handleAddField} disabled={!editingField?.label}>Inject Spec</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </CardHeader>
-              <CardContent className="p-0 divide-y">
-                {((localConfig?.form_schema || config?.form_schema) || []).map((field, i) => {
-                  const stepLabels: Record<string, string> = {
-                    identity: 'Identity',
-                    guardian: 'Guardian',
-                    team_code: 'Team Code',
-                    additional: 'Additional'
-                  };
-                  return (
-                    <div key={field.id} className="p-8 flex items-center justify-between group hover:bg-muted/10 transition-colors">
-                      <div className="flex items-center gap-6"><div className="text-[10px] font-black text-muted-foreground w-8 opacity-40 text-center">{i + 1}</div><div className="space-y-1"><p className="font-black text-base uppercase tracking-tight">{field.label}</p><div className="flex items-center gap-2"><Badge variant="outline" className="text-[8px] font-black uppercase">{field.type.replace('_', ' ')}</Badge>{field.step && <Badge variant="secondary" className="text-[8px] font-black uppercase bg-primary/10 text-primary border-none">{stepLabels[field.step] || field.step}</Badge>}</div></div></div>
-                      <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleUpdateConfig({ form_schema: (localConfig?.form_schema || []).filter(f => f.id !== field.id) }, true)}><Trash2 className="h-5 w-5" /></Button>
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-          </div>
 
-          <aside className="space-y-8">
-            <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden relative group">
-              <CardContent className="p-8 lg:p-10 space-y-8 relative z-10">
-                <Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3 shadow-lg shadow-primary/20">Public Portal</Badge>
-                <h3 className="text-3xl font-black tracking-tighter uppercase leading-[0.9]">Recruitment Portal</h3>
-                <div className="bg-white/10 p-6 rounded-[2rem] border border-white/5 space-y-4">
-                  <p className="text-xs font-mono font-bold truncate opacity-80">/register/league/{leagueId}</p>
-                  <Button className="w-full h-14 rounded-2xl bg-white text-black font-black uppercase text-xs shadow-xl" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${leagueId}?protocol=${configId}`); toast({ title: "Portal Link Copied" }); }}>Copy Deployment Link</Button>
-                </div>
-              </CardContent>
-            </Card>
-          </aside>
+                        <div className="space-y-3">
+                           <div className="flex items-center justify-between px-2">
+                              <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-900">Bespoke Agreement Payload</Label>
+                              <Badge className="bg-rose-600 text-white border-none font-black uppercase text-[8px] h-5 px-2">Custom Injection</Badge>
+                           </div>
+                           <Textarea 
+                            value={localConfig?.custom_waiver_text || ''} 
+                            onChange={e => handleUpdateConfig({ custom_waiver_text: e.target.value })} 
+                            className="rounded-[2.5rem] border-2 min-h-[220px] text-[11px] font-medium leading-relaxed bg-white/50 p-8 focus:bg-white focus:border-rose-400 transition-all shadow-sm border-rose-100" 
+                            placeholder="INJECT CUSTOM LEGAL SPECIFICATIONS HERE..." 
+                           />
+                           <div className="flex items-center gap-2 justify-center mt-4">
+                             <div className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" />
+                             <p className="text-[8px] font-black text-rose-400 uppercase tracking-widest">Permanent Record: Archive on Signature</p>
+                           </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-8">
+                         <div className="flex items-center justify-between px-1">
+                            <div className="space-y-1">
+                               <p className="text-[11px] font-black uppercase text-rose-700 tracking-widest">Coaches Corner Libraries</p>
+                               <p className="text-[8px] font-bold text-rose-400 uppercase tracking-widest opacity-60">Syncing External Vaults</p>
+                            </div>
+                            <Badge className="bg-rose-600 text-white border-none font-black uppercase text-[8px] h-6 px-3 shadow-lg shadow-rose-600/20">Sync v2.1</Badge>
+                         </div>
+                         
+                         <div className="space-y-4">
+                            {(localConfig?.selected_team_waivers || []).map(wid => {
+                              const waiver = teamWaivers.find(w => w.id === wid);
+                              return (
+                                <div key={wid} className="p-6 bg-white rounded-3xl border-2 border-rose-100 flex items-center justify-between shadow-sm group/w transition-all hover:border-rose-400 hover:shadow-md">
+                                  <div className="flex items-center gap-4 overflow-hidden">
+                                    <div className="h-12 w-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-100">
+                                      <FileSignature className="h-6 w-6" />
+                                    </div>
+                                    <div className="flex flex-col gap-1 overflow-hidden">
+                                      <span className="text-[12px] font-black uppercase text-rose-900 truncate">{waiver?.title || "Unknown Specification"}</span>
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="outline" className="text-[7px] font-bold text-rose-400 p-0 border-none hover:bg-transparent uppercase tracking-widest">CRC-ENCRYPTED: {wid.slice(0, 12)}</Badge>
+                                        <div className="h-1 w-1 rounded-full bg-rose-200" />
+                                        <span className="text-[7px] font-black text-rose-300 uppercase">Vault Ready</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-rose-500 hover:bg-rose-50 shrink-0 transition-opacity" onClick={() => handleUpdateConfig({ selected_team_waivers: (localConfig?.selected_team_waivers || []).filter(id => id !== wid) }, true)}><Trash2 className="h-5 w-5" /></Button>
+                                </div>
+                              );
+                            })}
+                            
+                            <div className="pt-4 space-y-6">
+                              <Select onValueChange={(v) => handleUpdateConfig({ selected_team_waivers: [...(localConfig?.selected_team_waivers || []), v] }, true)}>
+                                <SelectTrigger className="rounded-[2.5rem] border-dashed border-2 h-20 text-[10px] font-black uppercase text-rose-400 bg-rose-50/10 hover:border-rose-400 hover:text-rose-600 transition-all hover:bg-rose-50/30">
+                                  <div className="flex items-center gap-4 px-4">
+                                    <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-rose-100"><Plus className="h-5 w-5" /></div>
+                                    <SelectValue placeholder="Inject Waiver from Coaches Corner" />
+                                  </div>
+                                </SelectTrigger>
+                                <SelectContent className="rounded-3xl shadow-2xl border-2 max-h-[400px]">
+                                  {teamWaivers.filter(tw => !(localConfig?.selected_team_waivers || []).includes(tw.id)).map(tw => (
+                                    <SelectItem key={tw.id} value={tw.id} className="text-[10px] font-black uppercase py-4 px-6">{tw.title}</SelectItem>
+                                  ))}
+                                  {teamWaivers.length === 0 && (
+                                    <div className="p-8 text-center text-rose-400 italic text-[10px] uppercase font-black opacity-40">No available waivers in organizational library</div>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              
+                              <div className="p-8 rounded-[2.5rem] bg-muted/20 border-2 border-transparent text-center space-y-4">
+                                <ShieldCheck className="h-10 w-10 mx-auto text-rose-200" />
+                                <p className="text-[9px] font-bold text-rose-400/60 uppercase tracking-tight px-6 italic leading-relaxed">
+                                  You are viewing active documents from the administrative team connected to this league. Injected waivers will appear as separate signing steps for participants.
+                                </p>
+                              </div>
+                            </div>
+                         </div>
+                      </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* PHASE 06: ADDITIONAL ARCHITECT */}
+            <div id="phase-06" className="relative z-10 space-y-10 group">
+              <div className="flex items-center gap-6">
+                <div className="h-20 w-20 rounded-[2.5rem] bg-green-600 text-white flex items-center justify-center text-3xl font-black shadow-2xl shadow-green-600/20 ring-8 ring-green-600/5 transition-transform group-hover:scale-110 shrink-0">06</div>
+                <div className="h-px bg-green-600/20 flex-1" />
+              </div>
+
+              <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+                <CardHeader className="bg-green-50/50 border-b p-8 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-green-600 p-3 rounded-2xl text-white shadow-lg"><Plus className="h-6 w-6" /></div>
+                    <div>
+                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Additional Specs</CardTitle>
+                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-green-600 mt-1">Terminal Capture Extensions</CardDescription>
+                    </div>
+                  </div>
+                  <Button variant="outline" className="rounded-xl h-11 px-6 border-green-200 text-green-700 font-black uppercase text-[10px] shadow-sm hover:bg-green-50 transition-all hover:scale-105" onClick={() => setEditingField({ step: 'additional', type: 'short_text', required: false })}>
+                    <Plus className="h-4 w-4 mr-2" /> Inject Field
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {((localConfig?.form_schema || []).filter(f => f.step === 'additional')).map(f => (
+                      <div key={f.id} className="p-6 border-2 border-green-100 rounded-3xl flex items-center justify-between group/f bg-green-50/10 hover:border-green-400 transition-all shadow-sm">
+                        <div className="flex flex-col gap-2">
+                          <span className="text-[11px] font-black uppercase flex items-center gap-2">
+                            {f.label}
+                            {f.required && <span className="h-1.5 w-1.5 rounded-full bg-rose-500" title="Required" />}
+                          </span>
+                          <Badge className="w-fit bg-green-600 text-white hover:bg-indigo-600 border-none text-[8px] font-black uppercase h-5 px-2">
+                            {f.type.replace('_', ' ')}
+                          </Badge>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-rose-500 opacity-0 group-hover/f:opacity-100 hover:bg-rose-50 transition-all" onClick={() => handleUpdateConfig({ form_schema: (localConfig?.form_schema || []).filter(field => field.id !== f.id) }, true)}><Trash2 className="h-5 w-5" /></Button>
+                      </div>
+                    ))}
+                    {((localConfig?.form_schema || []).filter(f => f.step === 'additional')).length === 0 && (
+                      <div className="md:col-span-2 py-16 text-center border-2 border-dashed rounded-[3rem] border-green-100 bg-green-50/5">
+                        <Sparkles className="h-10 w-10 mx-auto mb-4 opacity-10 text-green-600" />
+                        <p className="text-[10px] font-black uppercase text-green-400 tracking-[0.2em]">Awaiting Custom Spec Injection</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
       )}
+
+      {/* SHARED FIELD ARCHITECT */}
+      <Dialog open={!!editingField} onOpenChange={(open) => !open && setEditingField(null)}>
+        <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden max-w-sm">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 space-y-6">
+              <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Field Architect</DialogTitle></DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-black ml-1">Field Label</Label>
+                  <Input placeholder="e.g. Jersey Size" value={editingField?.label || ''} onChange={e => setEditingField({ ...editingField, label: e.target.value })} className="h-12 rounded-xl border-2 font-bold" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-black ml-1">Field Type</Label>
+                  <Select value={editingField?.type || 'short_text'} onValueChange={(v: any) => setEditingField({ ...editingField, type: v })}>
+                    <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="short_text" className="font-bold text-[10px] uppercase text-primary">Short Text</SelectItem>
+                      <SelectItem value="long_text" className="font-bold text-[10px] uppercase">Long Text</SelectItem>
+                      <SelectItem value="dropdown" className="font-bold text-[10px] uppercase">Multi-Select (Dropdown)</SelectItem>
+                      <SelectItem value="radio" className="font-bold text-[10px] uppercase">Radio Options</SelectItem>
+                      <SelectItem value="checkbox" className="font-bold text-[10px] uppercase">Checkbox</SelectItem>
+                      <SelectItem value="signature" className="font-bold text-[10px] uppercase text-rose-600">Digital Signature</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-black ml-1">Phase Placement</Label>
+                  <Select value={editingField?.step || 'identity'} onValueChange={(v: any) => setEditingField({ ...editingField, step: v })}>
+                    <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="identity" className="font-bold text-[10px] uppercase">Phase 02: Identity</SelectItem>
+                      <SelectItem value="guardian" className="font-bold text-[10px] uppercase">Phase 03: Guardian</SelectItem>
+                      <SelectItem value="team_code" className="font-bold text-[10px] uppercase">Phase 04: Synapse</SelectItem>
+                      <SelectItem value="additional" className="font-bold text-[10px] uppercase">Phase 06: Additional</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(editingField?.type === 'dropdown' || editingField?.type === 'radio') && (
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-black ml-1">Options (comma separated)</Label>
+                    <Input placeholder="Small, Medium, Large" value={editingField?.options?.join(', ') || ''} onChange={e => setEditingField({ ...editingField, options: e.target.value.split(',').map(s => s.trim()) })} className="h-12 rounded-xl border-2 font-bold" />
+                  </div>
+                )}
+                <div className="flex items-center gap-2 pt-2">
+                   <Checkbox id="req" checked={editingField?.required} onCheckedChange={(v) => setEditingField({...editingField, required: !!v})} className="rounded-md h-5 w-5 border-2" />
+                   <Label htmlFor="req" className="text-[10px] font-black uppercase">Mandatory Injection</Label>
+                </div>
+              </div>
+              <Button className="w-full h-14 rounded-2xl font-black uppercase shadow-xl" onClick={handleAddField} disabled={!editingField?.label}>Confirm Protocol Spec</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isManualAddOpen} onOpenChange={setIsManualAddOpen}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-md bg-white">

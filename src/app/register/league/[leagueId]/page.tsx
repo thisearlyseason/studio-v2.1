@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, Suspense, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTeam, LeagueRegistrationConfig, RegistrationFormField } from '@/components/providers/team-provider';
 import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
@@ -53,20 +53,20 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { toast } from '@/hooks/use-toast';
 
+const REQUIRED_STEPS = [
+  { id: 'identity', name: 'Identity', icon: Users, label: 'Identity' },
+  { id: 'guardian', name: 'Guardian', icon: ShieldCheck, label: 'Guardian' },
+  { id: 'team_code', name: 'Team Code', icon: Zap, label: 'Team Code' },
+  { id: 'compliance', name: 'Compliance', icon: FileSignature, label: 'Compliance' }
+];
+
 function RegistrationForm() {
+
   const { leagueId } = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
   const protocolId = searchParams.get('protocol') || 'player_config';
-  const { submitRegistrationEntry, getTeamByCode } = useTeam();
-  const db = useFirestore();
-
-  const configRef = useMemoFirebase(() => db ? doc(db, 'leagues', leagueId as string, 'registration', protocolId) : null, [db, leagueId, protocolId]);
-  const leagueRef = useMemoFirebase(() => db ? doc(db, 'leagues', leagueId as string) : null, [db, leagueId]);
-  const { data: config, isLoading: isConfigLoading } = useDoc<LeagueRegistrationConfig>(configRef);
-  const { data: league, isLoading: isLeagueLoading } = useDoc<any>(leagueRef);
-
-  const isLoading = isConfigLoading || isLeagueLoading;
+  const { submitRegistrationEntry, getTeamByCode, db } = useTeam();
 
   const [currentStep, setCurrentStep] = useState(1);
   const [answers, setAnswers] = useState<Record<string, any>>({});
@@ -78,6 +78,13 @@ function RegistrationForm() {
   const [teamCode, setTeamCode] = useState('');
   const [validatingCode, setValidatingCode] = useState(false);
   const [validatedTeam, setValidatedTeam] = useState<any>(null);
+
+  const configRef = useMemoFirebase(() => db ? doc(db, 'leagues', leagueId as string, 'registration', protocolId) : null, [db, leagueId, protocolId]);
+  const leagueRef = useMemoFirebase(() => db ? doc(db, 'leagues', leagueId as string) : null, [db, leagueId]);
+  const { data: config, isLoading: isConfigLoading } = useDoc<LeagueRegistrationConfig>(configRef);
+  const { data: league, isLoading: isLeagueLoading } = useDoc<any>(leagueRef);
+
+  const isLoading = isConfigLoading || isLeagueLoading;
 
   const formSchema = config?.form_schema || [];
 
@@ -92,31 +99,28 @@ function RegistrationForm() {
     return age < 18;
   }, [answers['dateOfBirth'], answers['dob']]);
 
-  const totalSteps = useMemo(() => {
-    let steps = 1; // Identity
-    if (formSchema.some(f => f.step === 'guardian') && isUnder18) steps++; // Guardian
-    steps++; // Team Code
-    steps++; // Compliance
+  const activeSteps = useMemo(() => {
+    const steps = [REQUIRED_STEPS[0]]; // Identity
+    if (formSchema.some(f => f.step === 'guardian') && isUnder18) {
+      steps.push(REQUIRED_STEPS[1]); // Guardian
+    }
+    steps.push(REQUIRED_STEPS[2]); // Team Code
+    steps.push(REQUIRED_STEPS[3]); // Compliance
     return steps;
   }, [formSchema, isUnder18]);
 
+  const totalSteps = activeSteps.length;
+
   const currentStepInfo = useMemo(() => {
-    let stepNum = 1;
-    if (currentStep === stepNum++) return { label: 'Identity', icon: Users };
-    if (formSchema.some(f => f.step === 'guardian') && isUnder18 && currentStep === stepNum++) return { label: 'Guardian', icon: ShieldCheck };
-    if (currentStep === stepNum++) return { label: 'Team Code', icon: Zap };
-    return { label: 'Compliance', icon: FileSignature };
-  }, [currentStep, formSchema, isUnder18]);
+    return activeSteps[currentStep - 1] || activeSteps[0];
+  }, [activeSteps, currentStep]);
 
   const stepFields = useMemo(() => {
-    if (currentStep === 1) {
-      return formSchema.filter(f => f.step === 'identity' || !f.step);
-    }
-    if (currentStep === 2 && isUnder18 && formSchema.some(f => f.step === 'guardian')) {
-      return formSchema.filter(f => f.step === 'guardian');
-    }
+    const stepId = activeSteps[currentStep - 1]?.id;
+    if (stepId === 'identity') return formSchema.filter(f => f.step === 'identity' || !f.step);
+    if (stepId === 'guardian') return formSchema.filter(f => f.step === 'guardian');
     return [];
-  }, [formSchema, currentStep, isUnder18]);
+  }, [formSchema, activeSteps, currentStep]);
 
   useEffect(() => {
     if (!teamCode || teamCode.length < 3) {
@@ -135,25 +139,26 @@ function RegistrationForm() {
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [teamCode, getTeamByCode]);
+  }, [teamCode, getTeamByCode, leagueId]);
 
-  const steps = [
-    { id: 1, name: 'Identity', icon: Users },
-    { id: 2, name: 'Guardian', icon: ShieldCheck },
-    { id: 3, name: 'Team Code', icon: Zap },
-    { id: 4, name: 'Compliance', icon: FileSignature }
-  ];
+  const handleInputChange = useCallback((id: string, value: any) => {
+    setAnswers(prev => {
+      if (prev[id] === value) return prev;
+      return { ...prev, [id]: value };
+    });
+  }, []);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!config || isSubmitting) return;
 
-    if (currentStep < 4) {
+    if (currentStep < totalSteps) {
       setCurrentStep(prev => prev + 1);
       return;
     }
 
-    if ((config.require_default_waiver || config.custom_waiver_text) && (!waiverAgreed || !signature.trim())) {
+    if ((config.require_default_waiver || config.custom_waiver_text || (config.team_waivers_content && config.team_waivers_content.length > 0)) && (!waiverAgreed || !signature.trim())) {
       toast({ title: "Compliance Required", description: "Please sign the required documentation.", variant: "destructive" });
       return;
     }
@@ -175,9 +180,6 @@ function RegistrationForm() {
     }
   };
 
-  const handleInputChange = (id: string, value: any) => {
-    setAnswers(prev => ({ ...prev, [id]: value }));
-  };
 
   if (isLoading) {
     return (
@@ -259,13 +261,14 @@ function RegistrationForm() {
           <div className="space-y-6">
             <div className="flex justify-between items-end px-1">
               <p className="text-[10px] font-black uppercase tracking-widest opacity-40 text-black">Progression</p>
-              <p className="text-[10px] font-black text-primary uppercase">{currentStep} / {steps.length}</p>
+              <p className="text-[10px] font-black text-primary uppercase">{currentStep} / {totalSteps}</p>
             </div>
             <div className="space-y-3">
-              {steps.map((step, idx) => {
+              {activeSteps.map((step, idx) => {
                 const Icon = step.icon;
-                const isCompleted = currentStep > step.id;
-                const isActive = currentStep === step.id;
+                const stepNumber = idx + 1;
+                const isCompleted = currentStep > stepNumber;
+                const isActive = currentStep === stepNumber;
                 
                 return (
                   <div key={step.id} className={cn(
@@ -284,7 +287,7 @@ function RegistrationForm() {
                       <p className={cn(
                         "text-[10px] font-black uppercase tracking-tight",
                         isActive ? "text-primary" : isCompleted ? "text-green-700" : "text-muted-foreground"
-                      )}>Step {step.id}</p>
+                      )}>Step {stepNumber}</p>
                       <p className="text-sm font-bold uppercase tracking-tight">{step.name}</p>
                     </div>
                   </div>
@@ -292,6 +295,7 @@ function RegistrationForm() {
               })}
             </div>
           </div>
+
 
           <div className="bg-primary/5 p-6 rounded-3xl border-2 border-primary/10 space-y-2">
              <div className="flex items-center gap-2 text-primary">
@@ -315,19 +319,15 @@ function RegistrationForm() {
                   {currentStepInfo.label} Phase
                 </Badge>
                 <CardTitle className="text-3xl font-black uppercase tracking-tight">
-                  {currentStep === 1 && "Identity Verification"}
-                  {currentStep === 2 && isUnder18 && "Guardian Validation"}
-                  {currentStep === 2 && !isUnder18 && "Identity Complete"}
-                  {currentStep === 3 && "Team Affiliation"}
-                  {currentStep === 4 && "Final Compliance"}
+                  {currentStepInfo.name} Verification
                 </CardTitle>
                 <CardDescription className="text-xs font-semibold">
-                  {currentStep === 1 && "Start your enrollment by providing basic participant data."}
-                  {currentStep === 2 && isUnder18 && "Required documentation for underage athlete participation."}
-                  {currentStep === 2 && !isUnder18 && "You are over 18, guardian information not required."}
-                  {currentStep === 3 && "If you were recruited by a team, enter their code here."}
-                  {currentStep === 4 && "Review legal terms and provide digital signature."}
+                  {activeSteps[currentStep-1]?.id === 'identity' && "Start your enrollment by providing basic participant data."}
+                  {activeSteps[currentStep-1]?.id === 'guardian' && "Required documentation for underage athlete participation."}
+                  {activeSteps[currentStep-1]?.id === 'team_code' && "If you were recruited by a team, enter their code here."}
+                  {activeSteps[currentStep-1]?.id === 'compliance' && "Review legal terms and provide digital signature."}
                 </CardDescription>
+
               </div>
             </CardHeader>
             
@@ -402,8 +402,8 @@ function RegistrationForm() {
                 </div>
               )}
 
-              {/* Step 2: Guardian (if under 18) */}
-              {currentStep === 2 && isUnder18 && (
+              {/* Step 2: Guardian (if active) */}
+              {activeSteps[currentStep - 1]?.id === 'guardian' && (
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                   <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border-2 border-amber-200">
                     <ShieldCheck className="h-6 w-6 text-amber-600" />
@@ -469,16 +469,10 @@ function RegistrationForm() {
                 </div>
               )}
 
-              {currentStep === 2 && !isUnder18 && (
-                <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-                  <ShieldCheck className="h-16 w-16 text-green-600" />
-                  <p className="text-xl font-black uppercase tracking-tight text-green-700">Guardian Not Required</p>
-                  <p className="text-sm font-medium text-muted-foreground">You are 18 or older and do not need guardian information.</p>
-                </div>
-              )}
 
               {/* Step 3: Team Code Identification */}
-              {currentStep === 3 && (
+              {activeSteps[currentStep - 1]?.id === 'team_code' && (
+
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                   <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-primary/10 space-y-6">
                     <div className="space-y-2">
@@ -529,9 +523,10 @@ function RegistrationForm() {
               )}
 
               {/* Step 4: Compliance & Signature */}
-              {currentStep === 4 && (
+              {activeSteps[currentStep - 1]?.id === 'compliance' && (
+
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
-                   {(config.require_default_waiver || config.custom_waiver_text) && (
+                   {(config.require_default_waiver || config.custom_waiver_text || (config.team_waivers_content && config.team_waivers_content.length > 0)) && (
                     <div className="space-y-6">
                       {config.require_default_waiver && (
                         <div className="space-y-3">
@@ -556,6 +551,18 @@ function RegistrationForm() {
                           </ScrollArea>
                         </div>
                       )}
+
+                      {config.team_waivers_content?.map((waiver) => (
+                        <div key={waiver.id} className="space-y-3">
+                          <div className="flex items-center gap-2 text-rose-600">
+                            <FileSignature className="h-4 w-4" />
+                            <p className="text-[10px] font-black uppercase tracking-widest">{waiver.title}</p>
+                          </div>
+                          <ScrollArea className="h-48 p-6 rounded-[2rem] bg-rose-50 border-2 border-rose-100 font-medium text-xs leading-relaxed text-rose-800">
+                            {waiver.content}
+                          </ScrollArea>
+                        </div>
+                      ))}
 
                       <div className="flex items-center space-x-3 p-6 bg-primary/5 rounded-3xl border-2 border-primary/20 group cursor-pointer transition-all hover:bg-white" onClick={() => setWaiverAgreed(!waiverAgreed)}>
                         <Checkbox id="waiver_agree" checked={waiverAgreed} onCheckedChange={v => setWaiverAgreed(!!v)} className="h-6 w-6 rounded-lg" />
@@ -595,12 +602,17 @@ function RegistrationForm() {
                    <ArrowLeft className="h-4 w-4 mr-2" /> Back
                  </Button>
                )}
-              <Button type="submit" className="flex-1 h-16 rounded-2xl text-lg font-black shadow-xl" disabled={isSubmitting || (currentStep === 3 && !!teamCode && !validatedTeam && !validatingCode) || (currentStep === 1 && (!answers['fullName'] || !answers['email'] || !answers['dateOfBirth']))}>
+              <Button 
+                type="submit" 
+                className="flex-1 h-16 rounded-2xl text-lg font-black shadow-xl" 
+                disabled={isSubmitting || (activeSteps[currentStep-1]?.id === 'team_code' && !!teamCode && !validatedTeam && !validatingCode) || (activeSteps[currentStep-1]?.id === 'identity' && (!answers['fullName'] || !answers['email'] || !answers['dateOfBirth']))}
+              >
                 {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : 
-                 currentStep === totalSteps ? "Dispatch Enrollment" : "Continue to " + currentStepInfo.label}
+                 currentStep === totalSteps ? "Dispatch Enrollment" : `Continue to ${activeSteps[currentStep]?.name || 'Next'}`}
                  {currentStep < totalSteps && <ArrowRight className="h-5 w-5 ml-2" />}
               </Button>
             </CardFooter>
+
           </form>
         </Card>
       </div>

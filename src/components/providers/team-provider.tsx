@@ -419,7 +419,9 @@ export type LeagueRegistrationConfig = {
   description: string;
   is_active: boolean;
   form_schema: RegistrationFormField[];
-  waiver_text?: string;
+  waiver_mode?: 'none' | 'universal' | 'team' | 'mixed';
+  selected_team_waivers?: string[]; // IDs of TeamDocuments
+  team_waivers_content?: { id: string; title: string; content: string }[]; // Cached content for export
   default_waiver_text?: string;
   require_default_waiver?: boolean;
   custom_waiver_text?: string;
@@ -1342,12 +1344,38 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   
   const submitRegistrationEntry = useCallback(async (tId: string, pId: string, a: any, v: number, signature?: string, targetType?: any, eventId?: string) => { 
     if (!db) return; 
+
+    // Fetch config to get waiver texts for archiving
+    let waiverTextToStore = "";
+    try {
+      const configSnap = await getDoc(doc(db, 'leagues', tId, 'registration', pId));
+      if (configSnap.exists()) {
+        const config = configSnap.data() as LeagueRegistrationConfig;
+        const parts: string[] = [];
+        
+        if (config.require_default_waiver) {
+          parts.push("--- UNIVERSAL WAIVER ---\n" + (config.default_waiver_text || ""));
+        }
+        if (config.custom_waiver_text) {
+          parts.push("--- ORGANIZATION AGREEMENT ---\n" + config.custom_waiver_text);
+        }
+        if (config.team_waivers_content && config.team_waivers_content.length > 0) {
+          config.team_waivers_content.forEach(tw => {
+             parts.push(`--- ${tw.title.toUpperCase()} ---\n${tw.content}`);
+          });
+        }
+        waiverTextToStore = parts.join("\n\n");
+      }
+    } catch (e) {
+      console.error("Error fetching config for waiver archive", e);
+    }
+
     const entryData: any = { 
       league_id: tId, 
       protocol_id: pId, 
       answers: a, 
       form_version: v, 
-      waiver_signed_text: signature, 
+      waiver_signed_text: waiverTextToStore || signature, 
       signature_date: signature ? new Date().toISOString() : null,
       status: 'pending', 
       created_at: new Date().toISOString() 
@@ -1368,6 +1396,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         title: a.teamName || a.name || 'Participant Registration',
         signer: signature,
         signedAt: entryData.signature_date,
+        waiverText: waiverTextToStore, // Store the full text here
         type: pId === 'player_config' ? 'Individual' : 'Squad',
         answers: a
       }));

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useTeam, LeagueRegistrationConfig, RegistrationEntry, RegistrationFormField, TeamEvent } from '@/components/providers/team-provider';
+import { useTeam, LeagueRegistrationConfig, RegistrationEntry, RegistrationFormField, TeamEvent, TeamDocument } from '@/components/providers/team-provider';
 import { useFirestore, useDoc, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { doc, collection, query, orderBy, where, setDoc, updateDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Plus, 
   Trash2, 
@@ -101,6 +102,14 @@ export default function TournamentRegistrationAdminPage() {
   const [localConfig, setLocalConfig] = useState<Partial<LeagueRegistrationConfig> | null>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // --- TEAM WAIVERS FETCHING ---
+  const teamWaiversQuery = useMemo(() => {
+    if (!db || !teamId) return null;
+    return query(collection(db, 'teams', teamId as string, 'documents'), where('isActive', '==', true));
+  }, [db, teamId]);
+  const { data: teamWaiversData } = useCollection<TeamDocument>(teamWaiversQuery);
+  const teamWaivers = useMemo(() => (teamWaiversData || []).filter(d => d.type === 'waiver'), [teamWaiversData]);
+
   useEffect(() => {
     if (config) setLocalConfig(config);
     else if (!isConfigLoading) {
@@ -125,6 +134,17 @@ export default function TournamentRegistrationAdminPage() {
     if (!teamId || !eventId || !configRef) return;
     const base = localConfig || config || { id: configId, type: 'team', title: '', is_active: false, form_schema: [], form_version: 1 };
     const updated = { ...base, ...updates } as LeagueRegistrationConfig;
+
+    // If team waivers are being selected, fetch their content
+    if (updates.selected_team_waivers) {
+      const selectedIds = updates.selected_team_waivers;
+      const contents = selectedIds.map(id => {
+        const w = teamWaivers.find(tw => tw.id === id);
+        return w ? { id: w.id, title: w.title, content: w.content } : null;
+      }).filter(Boolean) as { id: string; title: string; content: string }[];
+      updated.team_waivers_content = contents;
+    }
+
     setLocalConfig(updated);
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     
@@ -331,6 +351,33 @@ export default function TournamentRegistrationAdminPage() {
                        />
                        <p className="text-[10px] uppercase font-bold text-rose-600/60 ml-1">This agreement will be appended to the recruitment portal and require digital authorization.</p>
                     </div>
+
+                    {teamWaivers.length > 0 && (
+                      <div className="space-y-3 bg-white p-6 rounded-3xl border-2 border-rose-100 shadow-sm animate-in slide-in-from-top-2">
+                        <div className="space-y-1">
+                          <Label className="text-sm font-black uppercase tracking-widest text-rose-900">Coaches Corner Waivers</Label>
+                          <p className="text-[10px] uppercase font-bold text-rose-600/70">Include waivers from your team's document library</p>
+                        </div>
+                        <div className="space-y-2 pt-2 max-h-48 overflow-y-auto">
+                          {teamWaivers.map(waiver => (
+                            <div key={waiver.id} className="flex items-center space-x-3 p-3 bg-muted/20 rounded-lg border border-rose-100">
+                              <Checkbox 
+                                id={`tw-${waiver.id}`} 
+                                checked={localConfig?.selected_team_waivers?.includes(waiver.id) || false}
+                                onCheckedChange={(checked) => {
+                                  const current = localConfig?.selected_team_waivers || [];
+                                  const newSelection = checked 
+                                    ? [...current, waiver.id] 
+                                    : current.filter(id => id !== waiver.id);
+                                  handleUpdateConfig({ selected_team_waivers: newSelection });
+                                }}
+                              />
+                              <Label htmlFor={`tw-${waiver.id}`} className="flex-1 text-xs font-bold cursor-pointer">{waiver.title}</Label>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>
