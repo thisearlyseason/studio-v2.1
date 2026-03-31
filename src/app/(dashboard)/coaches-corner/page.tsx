@@ -88,7 +88,8 @@ const DEFAULT_PROTOCOLS = [
   { id: 'default_travel', title: 'Travel Consent', type: 'waiver' },
   { id: 'default_parental', title: 'Parental Waiver', type: 'waiver' },
   { id: 'default_photography', title: 'Photography Release', type: 'waiver' },
-  { id: 'default_tournament', title: 'Tournament Waiver', type: 'tournament_waiver' }
+  { id: 'default_tournament', title: 'Tournament Waiver', type: 'tournament_waiver' },
+  { id: 'default_universal_hub', title: 'Universal Hub Release', type: 'waiver' }
 ];
 
 function RecruitingProfileManager({ member }: { member: Member }) {
@@ -1316,8 +1317,15 @@ export default function CoachesCornerPage() {
                         </Button>
                         <Switch checked={isActive} onCheckedChange={async (v) => {
                           const existing = teamProtocols.find(d => d.id === proto.id);
-                          if (!existing) await createTeamDocument({ ...proto, isActive: v, assignedTo: ['all'], content: 'Enter legal text here...' });
-                          else await updateTeamDocument(proto.id, { isActive: v });
+                          const defaultContent = "I hereby assume all risks, hazards, and liabilities associated with participation in this program. I waive, release, and discharge the organization, its directors, coaches, and facility providers from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.";
+                          
+                          // Use createTeamDocument (setDoc) for both create and update to avoid "No document to update" errors
+                          await createTeamDocument({ 
+                            ...proto, 
+                            isActive: v, 
+                            assignedTo: ['all'], 
+                            content: existing?.content || (proto.id === 'default_universal_hub' ? defaultContent : 'Enter legal text here...') 
+                          });
                           
                           if (v) {
                             await createAlert(
@@ -1331,6 +1339,15 @@ export default function CoachesCornerPage() {
                       </div>
                     </div>
                     <div className="space-y-1 mb-4"><p className="font-black text-sm uppercase text-foreground">{proto.title}</p><p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">System Mandate</p></div>
+                    
+                    {/* Display Waiver Content if Active */}
+                    {isActive && activeDoc?.content && (
+                      <div className="mt-4 p-4 bg-muted/30 rounded-xl border border-dashed border-muted-foreground/20">
+                        <p className="text-[10px] font-medium text-muted-foreground line-clamp-3">
+                          {activeDoc.content}
+                        </p>
+                      </div>
+                    )}
                   </Card>
                 );
               })}
