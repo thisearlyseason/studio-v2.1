@@ -172,13 +172,54 @@ export default function LeagueRegistrationAdminPage() {
   };
 
   useEffect(() => {
-    if (config) setLocalConfig(config);
-    else setLocalConfig(null);
-  }, [config]);
+    if (config) {
+      setLocalConfig(config);
+    } else if (!isConfigLoading && !config) {
+      const defaultPlayerSchema: RegistrationFormField[] = [
+        { id: 'f_phone', label: 'Phone Number', type: 'short_text', required: true, step: 'identity' },
+        { id: 'f_position', label: 'Position/Role', type: 'dropdown', required: false, options: ['Forward', 'Midfield', 'Defense', 'Goalkeeper', 'General'], step: 'identity' },
+        { id: 'f_emer_name', label: 'Emergency Contact Name', type: 'short_text', required: true, step: 'identity' },
+        { id: 'f_emer_phone', label: 'Emergency Contact Phone', type: 'short_text', required: true, step: 'identity' },
+      ];
+      const defaultTeamSchema: RegistrationFormField[] = [
+        { id: 'f_team_name', label: 'Team Name', type: 'short_text', required: true, step: 'identity' },
+        { id: 'f_coach_name', label: 'Coach Name', type: 'short_text', required: true, step: 'identity' },
+        { id: 'f_contact_email', label: 'Contact Email', type: 'short_text', required: true, step: 'identity' },
+        { id: 'f_team_color', label: 'Team Color', type: 'short_text', required: false, step: 'additional' },
+      ];
+      setLocalConfig({
+        id: configId,
+        type: pipelineType,
+        title: pipelineType === 'player' ? 'Athlete Registration' : 'Squad Registration',
+        is_active: false,
+        form_schema: pipelineType === 'player' ? defaultPlayerSchema : defaultTeamSchema,
+        form_version: 1
+      });
+    }
+  }, [config, isConfigLoading, configId, pipelineType]);
 
   const handleUpdateConfig = (updates: Partial<LeagueRegistrationConfig>, immediate = false) => {
     if (!leagueId) return;
-    const base = localConfig || config || { id: configId, type: pipelineType, title: '', is_active: false, form_schema: [], form_version: 1 };
+    const defaultPlayerSchema: RegistrationFormField[] = [
+      { id: 'f_phone', label: 'Phone Number', type: 'short_text', required: true, step: 'identity' },
+      { id: 'f_position', label: 'Position/Role', type: 'dropdown', required: false, options: ['Forward', 'Midfield', 'Defense', 'Goalkeeper', 'General'], step: 'identity' },
+      { id: 'f_emer_name', label: 'Emergency Contact Name', type: 'short_text', required: true, step: 'identity' },
+      { id: 'f_emer_phone', label: 'Emergency Contact Phone', type: 'short_text', required: true, step: 'identity' },
+    ];
+    const defaultTeamSchema: RegistrationFormField[] = [
+      { id: 'f_team_name', label: 'Team Name', type: 'short_text', required: true, step: 'identity' },
+      { id: 'f_coach_name', label: 'Coach Name', type: 'short_text', required: true, step: 'identity' },
+      { id: 'f_contact_email', label: 'Contact Email', type: 'short_text', required: true, step: 'identity' },
+      { id: 'f_team_color', label: 'Team Color', type: 'short_text', required: false, step: 'additional' },
+    ];
+    const base = localConfig || config || { 
+      id: configId, 
+      type: pipelineType, 
+      title: pipelineType === 'player' ? 'Athlete Registration' : 'Squad Registration', 
+      is_active: false, 
+      form_schema: pipelineType === 'player' ? defaultPlayerSchema : defaultTeamSchema, 
+      form_version: 1 
+    };
     const updated = { ...base, ...updates } as LeagueRegistrationConfig;
     setLocalConfig(updated);
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
