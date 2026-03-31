@@ -157,6 +157,7 @@ export type Team = {
   heroImageUrl?: string;
   isPro?: boolean;
   planId?: string;
+  clubId?: string;
   role?: 'Admin' | 'Member';
   ownerUserId?: string;
   parentChatEnabled?: boolean;
@@ -168,6 +169,15 @@ export type Team = {
   leagueIds?: string[];
   isDemo?: boolean;
   rosterLimit?: number;
+};
+
+export type Club = {
+  id: string;
+  name: string;
+  ownerUserId: string;
+  subscriptionStatus: 'active' | 'canceled' | 'past_due';
+  maxTeams: number;
+  createdAt: any;
 };
 
 export type Member = {
@@ -884,6 +894,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     );
   }, [teamsRaw, userProfile, isSuperAdmin]);
 
+  // Fetch Club Data
+  const clubRef = useMemo(() => {
+    if (!db || !activeTeam?.clubId) return null;
+    return doc(db, 'clubs', activeTeam.clubId);
+  }, [db, activeTeam?.clubId]);
+  const { data: clubData } = useDoc<Club>(clubRef);
+
   const proQuotaStatus = useMemo(() => {
     if (!userProfile?.id) return { current: 0, limit: 0, exceeded: false, remaining: 0 };
     const ownedProTeams = teamsRaw.filter(t => t.ownerUserId === userProfile.id && t.isPro);
@@ -928,18 +945,51 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const isPro = useMemo(() => {
     if (isSuperAdmin) return true;
-    return activeTeam?.isPro || 
-           userProfile?.activePlanId === 'squad_pro' || 
+
+    // 1. Check Team Level Pro (Team Subscription)
+    if (activeTeam?.isPro) return true;
+
+    // 2. Check Club Level Pro (Elite Subscription)
+    // If team belongs to a club, and club is active, return true
+    // Note: In the future we might check specific roles, but for now, members of a Pro club get Pro access
+    if (activeTeam?.clubId && clubData?.subscriptionStatus === 'active') return true;
+
+    // 3. Legacy User Level Pro (Fallback for existing users)
+    // This allows users who bought "Pro" previously to still have access if they are not in a Pro team/club yet
+    return userProfile?.activePlanId === 'squad_pro' || 
            ['elite_teams', 'elite_league'].includes(activeTeam?.planId || '');
-  }, [activeTeam, userProfile, isSuperAdmin]);
+  }, [activeTeam, clubData, userProfile, isSuperAdmin]);
 
   const hasFeature = useCallback((featureId: string) => {
     if (isSuperAdmin) return true;
+
+    // Special handling for Club-restricted features
+    if (featureId === 'league_generation' || featureId === 'tournament_generation') {
+      // Allowed if: 
+      // 1. Team is Pro (Team Subscription)
+      // 2. Club is Pro AND User is Club Owner
+      const isTeamPro = activeTeam?.isPro;
+      const isClubPro = activeTeam?.clubId && clubData?.subscriptionStatus === 'active';
+      const isClubOwner = isClubPro && clubData?.ownerUserId === userProfile?.id;
+
+      if (isTeamPro) return true;
+      if (isClubOwner) return true; // Club owners get these features
+      
+      return false;
+    }
+
+    if (featureId === 'club_management') {
+      // Only Club Owners
+      if (!clubData || !userProfile) return false;
+      return clubData.ownerUserId === userProfile.id;
+    }
+
+    // General Feature Check
     const currentPlanId = activeTeam?.planId || userProfile?.activePlanId || 'starter_squad';
     const plan = plans.find(p => p.id === currentPlanId);
     if (plan) return !!plan.features?.[featureId];
     return ['live_feed_read', 'basic_scheduling'].includes(featureId);
-  }, [activeTeam, userProfile, plans, isSuperAdmin]);
+  }, [activeTeam, clubData, userProfile, plans, isSuperAdmin]);
 
   const formatTime = (iso: string) => { try { return format(new Date(iso), 'h:mm a'); } catch (e) { return '--:--'; } };
 

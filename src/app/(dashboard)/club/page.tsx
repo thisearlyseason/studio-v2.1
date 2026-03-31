@@ -126,7 +126,7 @@ function TeamComplianceCard({ teams, clubDocs }: { teams: Team[], clubDocs: Team
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function ClubManagementPage() {
-  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol } = useTeam();
+  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol, hasFeature } = useTeam();
   
   if (!isPrimaryClubAuthority) {
     return <AccessRestricted type="role" title="Organization Hub Locked" description="This command center is reserved for Institutional Stakeholders and Club Administrators." />;

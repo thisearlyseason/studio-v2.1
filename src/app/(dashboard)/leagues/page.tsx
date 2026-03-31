@@ -107,7 +107,7 @@ function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { fa
 
 function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: League, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
   const { user: authUser } = useUser();
-  const { db, updateLeagueSchedule } = useTeam();
+  const { db, updateLeagueSchedule, hasFeature } = useTeam();
   const [isProcessing, setIsProcessing] = useState(false);
   const [config, setConfig] = useState({
     startDate: format(new Date(), 'yyyy-MM-dd'),
@@ -382,9 +382,13 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
           </div>
 
           <DialogFooter className="pt-6 border-t">
-            <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-0.98 transition-all" onClick={handleGenerate} disabled={isProcessing}>
+            <Button 
+              className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-0.98 transition-all" 
+              onClick={handleGenerate} 
+              disabled={isProcessing || !hasFeature('league_generation')}
+            >
               {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : <Sparkles className="h-6 w-6 mr-3" />}
-              Deploy Seasonal Pipeline
+              {!hasFeature('league_generation') ? 'Upgrade to Generate' : 'Deploy Seasonal Pipeline'}
             </Button>
           </DialogFooter>
         </div>
