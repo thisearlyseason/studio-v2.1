@@ -200,7 +200,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                               "h-12 rounded-2xl font-black text-xs uppercase transition-all tracking-widest border-2", 
                               rsvp === 'going' ? "bg-green-600 border-none text-white shadow-xl shadow-green-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-green-500/50 hover:bg-green-500/5"
                             )} 
-                            onClick={() => updateRSVP(event.id, 'going', event.teamId, p.id)}
+                            onClick={() => updateRSVP(event.id, 'going', undefined, p.id)}
                           >
                             Going
                           </Button>
@@ -211,7 +211,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                                 "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
                                 rsvp === 'maybe' ? "bg-amber-400 text-black border-none shadow-lg shadow-amber-400/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-amber-400/50 hover:bg-amber-400/5"
                               )} 
-                              onClick={() => updateRSVP(event.id, 'maybe', event.teamId, p.id)}
+                              onClick={() => updateRSVP(event.id, 'maybe', undefined, p.id)}
                             >
                               Maybe
                             </Button>
@@ -221,7 +221,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                                 "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
                                 (rsvp === 'declined' || rsvp === 'no') ? "bg-red-600 text-white border-none shadow-lg shadow-red-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-red-500/50 hover:bg-red-500/5"
                               )} 
-                              onClick={() => updateRSVP(event.id, 'declined', event.teamId, p.id)}
+                              onClick={() => updateRSVP(event.id, 'declined', undefined, p.id)}
                             >
                               Decline
                             </Button>

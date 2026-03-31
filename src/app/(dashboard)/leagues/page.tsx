@@ -1084,7 +1084,7 @@ export default function LeaguesPage() {
       coachPhone: team.coachPhone || '',
       origin: team.origin || '',
       organizerNotes: team.organizerNotes || '',
-      inviteCode: team.inviteCode || '',
+      inviteCode: team.inviteCode || team.teamCode || team.code || '',
       wins: team.wins || 0,
       losses: team.losses || 0,
       ties: team.ties || 0,
@@ -1271,8 +1271,8 @@ export default function LeaguesPage() {
                             </div>
                           </td>
                           <td className="px-4 py-6 text-center">
-                            {team.inviteCode ? (
-                              <Badge variant="outline" className="border-primary/20 text-primary font-black text-[9px] h-6 px-3">{team.inviteCode}</Badge>
+                            {(team.inviteCode || team.teamCode || team.code) ? (
+                              <Badge variant="outline" className="border-primary/20 text-primary font-black text-[9px] h-6 px-3">{team.inviteCode || team.teamCode || team.code}</Badge>
                             ) : (
                               <span className="text-[10px] font-bold text-muted-foreground/30">—</span>
                             )}
@@ -1346,8 +1346,8 @@ export default function LeaguesPage() {
                               </div>
                             </td>
                             <td className="px-4 py-6 text-center font-bold text-xs">
-                              {p.teamCode ? (
-                                <Badge variant="outline" className="border-primary/20 text-primary font-black text-[9px] h-6 px-3">{p.teamCode}</Badge>
+                              {(p.teamCode || p.inviteCode || p.code) ? (
+                                <Badge variant="outline" className="border-primary/20 text-primary font-black text-[9px] h-6 px-3">{p.teamCode || p.inviteCode || p.code}</Badge>
                               ) : (
                                 <span className="text-[10px] font-bold text-muted-foreground/30">—</span>
                               )}

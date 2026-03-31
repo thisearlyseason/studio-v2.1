@@ -151,7 +151,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
     // Squad Identity
     batch.set(doc(db, 'teams', teamId), clean({
-      id: teamId, teamName: name, teamCode: teamId.slice(-6).toUpperCase(),
+      id: teamId, 
+      teamName: name, 
+      code: teamId.slice(-6).toUpperCase(),
+      teamCode: teamId.slice(-6).toUpperCase(),
       ownerUserId: userId, isPro: isProTier, planId: actualPlanId, sport: 'Multi-Sport', isDemo: true,
       createdAt: now, createdBy: userId,
       heroImageUrl: `https://picsum.photos/seed/${teamId}hero/1200/400`,

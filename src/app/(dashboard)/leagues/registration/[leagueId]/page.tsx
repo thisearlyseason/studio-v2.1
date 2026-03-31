@@ -255,7 +255,7 @@ export default function LeagueRegistrationAdminPage() {
                   <div className="py-32 text-center flex flex-col items-center gap-6"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase tracking-[0.3em]">Synchronizing...</p></div>
                 ) : (
                   <table className="w-full text-left">
-                    <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b"><tr><th className="px-10 py-6">Applicant</th><th className="px-4 py-6 text-center">Status</th><th className="px-10 py-6 text-right">Actions</th></tr></thead>
+                    <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b"><tr><th className="px-10 py-6">Applicant</th><th className="px-4 py-6 text-center">Recruit Code</th><th className="px-4 py-6 text-center">Status</th><th className="px-10 py-6 text-right">Actions</th></tr></thead>
                     <tbody className="divide-y divide-muted/50">
                       {filteredEntries.map(entry => (
                         <tr key={entry.id} className="hover:bg-primary/5 transition-colors group">
@@ -264,6 +264,13 @@ export default function LeagueRegistrationAdminPage() {
                               <div className="h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 border-2 bg-white shadow-sm">{pipelineType === 'player' ? <UserCheck className="h-6 w-6 text-primary" /> : <ShieldCheck className="h-6 w-6 text-primary" />}</div>
                               <div className="min-w-0"><p className="font-black text-sm uppercase truncate">{entry.answers?.teamName || entry.answers?.name || entry.answers?.fullName || 'Untitled'}</p><p className="text-[10px] font-bold text-muted-foreground truncate uppercase">{entry.answers?.email || 'No Email'}</p></div>
                             </div>
+                          </td>
+                          <td className="px-4 py-6 text-center">
+                            {(entry.answers?.inviteCode || entry.answers?.teamCode || entry.answers?.recruiter_code || entry.answers?.code) ? (
+                              <Badge variant="outline" className="border-primary/20 text-primary font-black text-[9px] h-6 px-3">{entry.answers?.inviteCode || entry.answers?.teamCode || entry.answers?.recruiter_code || entry.answers?.code}</Badge>
+                            ) : (
+                              <span className="text-[10px] font-bold text-muted-foreground/30">—</span>
+                            )}
                           </td>
                           <td className="px-4 py-6 text-center"><Badge className={cn("border-none font-black text-[8px] uppercase px-3 h-6", entry.status === 'pending' ? "bg-amber-100 text-amber-700" : entry.status === 'assigned' ? "bg-primary text-white" : entry.status === 'accepted' ? "bg-green-100 text-green-700" : "bg-muted")}>{entry.status}</Badge></td>
                           <td className="px-10 py-6 text-right">

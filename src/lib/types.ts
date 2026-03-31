@@ -13,11 +13,21 @@ export interface User {
 
 export interface Team {
   id: string;
+  name: string;
   teamName: string;
   sport: string;
   teamLogoUrl?: string;
+  code: string;
   teamCode: string;
   creatorId: string;
+  // governance
+  inviteCode?: string;
+  parentCommentsEnabled?: boolean;
+  parentChatEnabled?: boolean;
+  description?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  registrationProtocolId?: string;
 }
 
 export interface TeamMember {

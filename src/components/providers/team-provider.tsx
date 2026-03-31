@@ -22,7 +22,8 @@ import {
   collectionGroup,
   serverTimestamp,
   deleteField,
-  arrayRemove
+  arrayRemove,
+  or
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -356,8 +357,12 @@ export type League = {
     status: 'pending' | 'accepted' | 'declined' | 'assigned';
     signedAt?: string;
     inviteCode?: string;
+    teamCode?: string;
+    code?: string;
     manual?: boolean;
     origin?: string;
+    coachPhone?: string;
+    organizerNotes?: string;
   }>;
   individualRecruits?: Record<string, {
     name: string;
@@ -367,6 +372,8 @@ export type League = {
     signedAt?: string;
     teamName?: string;
     teamCode?: string;
+    inviteCode?: string;
+    code?: string;
   }>;
   memberTeamIds?: string[];
   memberIndivIds?: string[];
@@ -782,7 +789,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const activeTeam = useMemo(() => {
     if (!activeTeamMembership) return null;
-    return { ...activeTeamMembership, ...activeTeamDoc };
+    const combined = { ...activeTeamMembership, ...activeTeamDoc };
+    // Bridge the gap between 'code', 'teamCode', and 'inviteCode' fields
+    const code = (combined.code || combined.teamCode || combined.inviteCode || '').toString().toUpperCase();
+    const finalCode = code || (combined.id ? 'SF' + combined.id.slice(-4).toUpperCase() : 'SQUAD');
+    return { 
+      ...combined, 
+      code: finalCode,
+      teamCode: finalCode,
+      inviteCode: finalCode
+    } as Team;
   }, [activeTeamMembership, activeTeamDoc]);
 
   const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
@@ -877,7 +893,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!db || !code) return null;
     
     // 1. Check global teams collection
-    const q = query(collection(db, 'teams'), where('inviteCode', '==', code.toUpperCase()), limit(1));
+    const q = query(
+      collection(db, 'teams'), 
+      or(
+        where('inviteCode', '==', code.toUpperCase()), 
+        where('teamCode', '==', code.toUpperCase()), 
+        where('code', '==', code.toUpperCase())
+      ), 
+      limit(1)
+    );
     const snap = await getDocs(q);
     if (!snap.empty) {
       const d = snap.docs[0];
@@ -942,8 +966,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const tid = `team_${Date.now()}`; 
     const batch = writeBatch(db); 
     
+    const teamCode = tid.slice(-6).toUpperCase();
     batch.set(doc(db, 'teams', tid), clean({ 
-      id: tid, teamName: name, teamCode: tid.slice(-6).toUpperCase(), type, sport: 'General', 
+      id: tid, 
+      teamName: name, 
+      code: teamCode,
+      teamCode: teamCode, 
+      inviteCode: teamCode, // Explicitly set all three for maximum compatibility
+      type, sport: 'General', 
       description, createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, 
       planId: planId || 'starter_squad', isPro: planId !== 'starter_squad', createdAt: new Date().toISOString() 
     })); 
@@ -955,7 +985,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
     
     batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ 
-      teamId: tid, name, role: 'Admin', joinedAt: new Date().toISOString() 
+      teamId: tid, name, role: 'Admin', code: teamCode, joinedAt: new Date().toISOString() 
     })); 
     
     batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ 
@@ -984,14 +1014,29 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const joinTeamWithCode = useCallback(async (code: string, playerId: string, position: string) => { 
     if (!firebaseUser || !db || !userProfile) return false; 
-    const q = query(collection(db, 'teams'), where('teamCode', '==', code), limit(1)); 
+    const q = query(
+      collection(db, 'teams'), 
+      or(
+        where('teamCode', '==', code.toUpperCase()), 
+        where('code', '==', code.toUpperCase()),
+        where('inviteCode', '==', code.toUpperCase())
+      ), 
+      limit(1)
+    ); 
     const snap = await getDocs(q); 
     if (snap.empty) return false; 
     const teamDoc = snap.docs[0]; 
     const tid = teamDoc.id; 
     const ownerId = teamDoc.data().ownerUserId;
     const batch = writeBatch(db); 
-    batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ teamId: tid, name: teamDoc.data().teamName, role: 'Member', joinedAt: new Date().toISOString() })); 
+    const teamCodeValue = teamDoc.data().code || teamDoc.data().teamCode || teamDoc.data().inviteCode;
+    batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ 
+      teamId: tid, 
+      name: teamDoc.data().teamName, 
+      role: 'Member', 
+      code: teamCodeValue,
+      joinedAt: new Date().toISOString() 
+    })); 
     batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ 
       id: firebaseUser.uid, userId: firebaseUser.uid, playerId, name: firebaseUser.displayName, 
       role: 'Member', position, joinedAt: new Date().toISOString(), 
@@ -1077,8 +1122,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateRSVP = useCallback(async (eventId: string, status: string, teamId?: string, userId?: string) => { 
     const tid = teamId || activeTeam?.id;
     const uid = userId || firebaseUser?.uid;
+    console.log(`[RSVP] Updating RSVP: Event ${eventId}, Status ${status}, Team ${tid}, User ${uid}`);
     if (tid && uid && db) {
       await updateDoc(doc(db, 'teams', tid, 'events', eventId), { [`userRsvps.${uid}`]: status }); 
+    } else {
+      console.error(`[RSVP] Failed: tid=${tid}, uid=${uid}, db=${!!db}`);
     }
   }, [db, activeTeam, firebaseUser]);
 
