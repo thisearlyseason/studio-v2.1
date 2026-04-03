@@ -581,6 +581,7 @@ interface TeamContextType {
   isPlayer: boolean;
   isYouth: boolean;
   isSuperAdmin: boolean;
+  isClubManager: boolean;
   isPrimaryClubAuthority: boolean;
   isSchoolMode: boolean;
   isSchoolAdmin: boolean;
@@ -949,6 +950,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     );
     return isSchoolAdminOwned;
   }, [teams, userProfile, isSuperAdmin]);
+  
+  const isClubManager = useMemo(() => isSuperAdmin || isPrimaryClubAuthority || userProfile?.role === 'admin', [isSuperAdmin, isPrimaryClubAuthority, userProfile?.role]);
 
   // Fetch Club Data
   const clubRef = useMemo(() => {
@@ -2063,8 +2066,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     currentMember: getMember(firebaseUser?.uid),
     isStaff, isPro, isParent, 
     isPlayer,
-    isYouth: userProfile?.role === 'youth_player',
-    isSuperAdmin, isPrimaryClubAuthority, isSchoolMode, isSchoolAdmin, householdEvents: householdEvents || [], activeTeamEvents, householdBalance: 0, myChildren, plans, isPlansLoading, proQuotaStatus,
+    isYouth: activeTeam?.type === 'youth',
+    isSuperAdmin,
+    isClubManager,
+    isPrimaryClubAuthority,
+    isSchoolMode,
+    isSchoolAdmin, householdEvents: householdEvents || [], activeTeamEvents, householdBalance: 0, myChildren, plans, isPlansLoading, proQuotaStatus,
     deleteFundraisingOpportunity, addGame, updateGame, canAddProTeam: (proQuotaStatus.remaining > 0),
     isPaywallOpen, setIsPaywallOpen, purchasePro,
     hasFeature, alerts, unreadAlertsCount,
@@ -2094,7 +2101,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }), [
     db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser,
     isStaff, isPro, householdEvents, activeTeamEvents, myChildren, plans, isPlansLoading, isPaywallOpen, isSeedingDemo,
-    seenAlertIds, alerts, unreadAlertsCount, isSuperAdmin, isPrimaryClubAuthority, hasFeature, proQuotaStatus,
+    seenAlertIds, alerts, unreadAlertsCount, isSuperAdmin, isClubManager, isPrimaryClubAuthority, hasFeature, proQuotaStatus,
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
     getPlayerStats, addPlayerStat, updatePlayerStat, deletePlayerStat, getEvaluations, addEvaluation,
     getRecruitingContact, updateRecruitingContact, getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo,

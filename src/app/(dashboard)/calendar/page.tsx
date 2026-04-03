@@ -181,7 +181,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                         <div className="flex items-center justify-between">
                           <p className="text-[11px] font-black uppercase text-primary tracking-widest flex items-center gap-2">
                             <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                            {p.name}'s Status
+                            {p.name === 'You' ? 'Your RSVP' : `${p.name}'s RSVP`}
                           </p>
                           <Badge className={cn(
                             "text-[8px] font-black uppercase border-none h-5 px-3 shadow-lg", 

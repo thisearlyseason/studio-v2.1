@@ -82,6 +82,12 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     const unsubscribe = onAuthStateChanged(
       auth,
       (firebaseUser) => { // Auth state determined
+        if (!firebaseUser) {
+          // If we log out, we must ensure any stale demo locks or session pointers are purged
+          localStorage.removeItem('squad_seeding_lock');
+          localStorage.removeItem('sf_session_team_id');
+          sessionStorage.removeItem('squad_demo_start_time');
+        }
         setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null });
       },
       (error) => { // Auth listener error

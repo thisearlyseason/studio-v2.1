@@ -47,6 +47,11 @@ export default function LoginPage() {
       await signOut(auth);
       // Brief delay to ensure auth state clean
       await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Always wipe stale demo locks/state so the seeder runs fresh
+      localStorage.removeItem('squad_seeding_lock');
+      localStorage.removeItem('sf_session_team_id');
+      sessionStorage.removeItem('squad_demo_start_time');
       
       await signInAnonymously(auth);
       

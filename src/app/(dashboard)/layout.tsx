@@ -41,16 +41,17 @@ function DemoSeedWrapper({
     const demoPlanId = searchParams.get('seed_demo');
     if (!user || isDemoInitializing || !demoPlanId || isTeamsLoading || seedingAttempted.current) return;
     
-    // Check global lock to prevent multi-tab write storms
+    // Check lock BEFORE escalating state to initializing/seeding to prevent deadlocks
     const globalLock = localStorage.getItem('squad_seeding_lock');
     if (globalLock === demoPlanId) {
+      console.warn("Seeding lock detected for this plan. Skipping redundant seed.");
       return;
     }
 
     seedingAttempted.current = true;
     setIsDemoInitializing(true);
-    setIsSeedingDemo(true);
     localStorage.setItem('squad_seeding_lock', demoPlanId);
+    setIsSeedingDemo(true);
     
     // Immediately clear the URL parameter visually to prevent loops on user refresh
     const url = new URL(window.location.href);
@@ -66,6 +67,9 @@ function DemoSeedWrapper({
           }
           toast({ title: "Environment Ready", description: "Tactical data synchronized." });
           
+          // Clear lock on success so future entries aren't blocked
+          localStorage.removeItem('squad_seeding_lock');
+
           // Force full reload to reset all providers with new seed state
           setTimeout(() => {
             window.location.replace('/dashboard');
@@ -105,7 +109,13 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => { 
+    setMounted(true); 
+    return () => {
+      // Clear seeding state on unmount out of abundance of caution
+      localStorage.removeItem('squad_seeding_lock');
+    };
+  }, []);
 
   useEffect(() => {
     if (!mounted || !isAuthResolved || isDemoInitializing) return;

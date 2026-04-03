@@ -123,13 +123,25 @@ export default function LandingPage() {
   const handleLaunchDemo = async (planId: string) => {
     setIsDemoLoading(true);
     try {
+      // Clear current session first to prevent state pollution
       await signOut(auth);
+      // Brief delay to ensure auth state clean
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Always wipe stale demo locks/state so the seeder runs fresh
+      localStorage.removeItem('squad_seeding_lock');
+      localStorage.removeItem('sf_session_team_id');
+      sessionStorage.removeItem('squad_demo_start_time');
+      
       await signInAnonymously(auth);
-      window.location.href = `/dashboard?seed_demo=${planId}`;
+      
+      // Use window.replace to bypass internal router cache 
+      // and ensure DashboardLayout initializes with fresh demo parameters
+      window.location.replace(`/dashboard?seed_demo=${planId}`);
     } catch (error: any) {
       toast({
         title: "Demo Launch Failed",
-        description: "Please try again later.",
+        description: "Verification service unavailable. Try again shortly.",
         variant: "destructive"
       });
       setIsDemoLoading(false);
