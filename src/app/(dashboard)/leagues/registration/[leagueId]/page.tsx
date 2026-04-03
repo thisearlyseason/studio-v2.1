@@ -76,7 +76,7 @@ export default function LeagueRegistrationAdminPage() {
   const db = useFirestore();
 
   // --- STATE ---
-  const [pipelineType, setPipelineType] = useState<'player' | 'team'>('player');
+  const [pipelineType, setPipelineType] = useState<'player' | 'team' | 'waiver'>('player');
   const [activeTab, setActiveTab] = useState<'entries' | 'config'>('entries');
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'assigned' | 'accepted'>('all');
   const [editingField, setEditingField] = useState<Partial<RegistrationFormField> | null>(null);
@@ -85,7 +85,11 @@ export default function LeagueRegistrationAdminPage() {
   const [isManualProcessing, setIsManualProcessing] = useState(false);
 
   // --- SYNC ---
-  const configId = useMemo(() => pipelineType === 'player' ? 'player_config' : 'team_config', [pipelineType]);
+  const configId = useMemo(() => {
+    if (pipelineType === 'player') return 'player_config';
+    if (pipelineType === 'team') return 'team_config';
+    return 'waiver_config';
+  }, [pipelineType]);
   
   const configRef = useMemoFirebase(() => {
     if (!db || !leagueId || !isAuthResolved) return null;
@@ -210,12 +214,16 @@ export default function LeagueRegistrationAdminPage() {
         { id: 'f_contact_email', label: 'Contact Email', type: 'short_text', required: true, step: 'identity' },
         { id: 'f_team_color', label: 'Team Color', type: 'short_text', required: false, step: 'additional' },
       ];
+      const defaultWaiverSchema: RegistrationFormField[] = [
+        { id: 'f_phone', label: 'Phone Number', type: 'short_text', required: true, step: 'identity' },
+        { id: 'f_affiliation', label: 'Team/Organization Affiliation', type: 'short_text', required: false, step: 'identity' },
+      ];
       setLocalConfig({
         id: configId,
         type: pipelineType,
-        title: pipelineType === 'player' ? 'Athlete Registration' : 'Squad Registration',
+        title: pipelineType === 'player' ? 'Athlete Registration' : pipelineType === 'team' ? 'Squad Registration' : 'Universal Waiver Portal',
         is_active: false,
-        form_schema: pipelineType === 'player' ? defaultPlayerSchema : defaultTeamSchema,
+        form_schema: pipelineType === 'player' ? defaultPlayerSchema : pipelineType === 'team' ? defaultTeamSchema : defaultWaiverSchema,
         form_version: 1
       });
     }
@@ -292,17 +300,18 @@ export default function LeagueRegistrationAdminPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => router.push('/leagues')} className="rounded-full h-12 w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-6 w-6" /></Button>
-          <div><Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3">Recruit Hub</Badge><h1 className="text-3xl font-black uppercase tracking-tight mt-1">Personnel Pool</h1></div>
+          <div><Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3">Portals</Badge><h1 className="text-3xl font-black uppercase tracking-tight mt-1">Personnel Pool</h1></div>
         </div>
-        <div className="flex bg-muted/50 p-1.5 rounded-2xl border-2 shadow-inner">
-          <Button variant={pipelineType === 'player' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px]" onClick={() => { setPipelineType('player'); setActiveTab('entries'); }}><Users className="h-4 w-4 mr-2" /> Players</Button>
-          <Button variant={pipelineType === 'team' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px]" onClick={() => { setPipelineType('team'); setActiveTab('entries'); }}><Zap className="h-4 w-4 mr-2" /> Squads</Button>
-          <Button variant="ghost" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] ml-4 bg-white/50 border-white" onClick={exportAllWaivers}><Download className="h-4 w-4 mr-2" /> Export Waivers</Button>
+        <div className="flex bg-muted/50 p-1.5 rounded-2xl border-2 shadow-inner overflow-x-auto max-w-full no-scrollbar">
+          <Button variant={pipelineType === 'player' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px] shrink-0" onClick={() => { setPipelineType('player'); setActiveTab('entries'); }}><Users className="h-4 w-4 mr-2" /> Players</Button>
+          <Button variant={pipelineType === 'team' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px] shrink-0" onClick={() => { setPipelineType('team'); setActiveTab('entries'); }}><Zap className="h-4 w-4 mr-2" /> Squads</Button>
+          <Button variant={pipelineType === 'waiver' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px] shrink-0" onClick={() => { setPipelineType('waiver'); setActiveTab('entries'); }}><FileSignature className="h-4 w-4 mr-2" /> Waivers</Button>
+          <Button variant="ghost" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] shrink-0 ml-4 bg-white/50 border-white" onClick={exportAllWaivers}><Download className="h-4 w-4 mr-2" /> Export Waivers</Button>
         </div>
       </div>
 
       <div className="bg-white p-1.5 rounded-2xl border-2 flex items-center shadow-sm w-fit">
-        <Button variant={activeTab === 'entries' ? 'secondary' : 'ghost'} className="rounded-xl h-9 px-6 font-black uppercase text-[9px]" onClick={() => setActiveTab('entries')}>Recruit Ledger</Button>
+        <Button variant={activeTab === 'entries' ? 'secondary' : 'ghost'} className="rounded-xl h-9 px-6 font-black uppercase text-[9px]" onClick={() => setActiveTab('entries')}>Portals Ledger</Button>
         <Button variant={activeTab === 'config' ? 'secondary' : 'ghost'} className="rounded-xl h-9 px-6 font-black uppercase text-[9px]" onClick={() => setActiveTab('config')}>Protocol Architect</Button>
       </div>
 
@@ -324,7 +333,7 @@ export default function LeagueRegistrationAdminPage() {
                   <div className="py-32 text-center flex flex-col items-center gap-6"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase tracking-[0.3em]">Synchronizing...</p></div>
                 ) : (
                   <table className="w-full text-left">
-                    <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b"><tr><th className="px-10 py-6">Applicant</th><th className="px-4 py-6 text-center">Recruit Code</th><th className="px-4 py-6 text-center">Status</th><th className="px-10 py-6 text-right">Actions</th></tr></thead>
+                    <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b"><tr><th className="px-10 py-6">Applicant</th><th className="px-4 py-6 text-center">Portal Code</th><th className="px-4 py-6 text-center">Status</th><th className="px-10 py-6 text-right">Actions</th></tr></thead>
                     <tbody className="divide-y divide-muted/50">
                       {filteredEntries.map(entry => (
                         <tr key={entry.id} className="hover:bg-primary/5 transition-colors group">
@@ -420,7 +429,7 @@ export default function LeagueRegistrationAdminPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-2">
                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Protocol Headline</Label>
-                      <Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-14 rounded-2xl border-2 font-black shadow-sm" placeholder="e.g. 2024 Spring Season Recruitment" />
+                      <Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-14 rounded-2xl border-2 font-black shadow-sm" placeholder="e.g. 2024 Spring Season Portal" />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Enrollment Fee (USD)</Label>
@@ -622,7 +631,7 @@ export default function LeagueRegistrationAdminPage() {
                       <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-lg"><Zap className="h-6 w-6" /></div>
                       <div>
                         <CardTitle className="text-2xl font-black uppercase tracking-tight">Synapse Dispatch</CardTitle>
-                        <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 mt-1">Recruitment Code & Squadron Access</CardDescription>
+                        <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 mt-1">Portal Code & Squadron Access</CardDescription>
                       </div>
                     </div>
                     <Button variant="outline" className="rounded-xl h-11 px-6 border-indigo-200 text-indigo-700 font-black uppercase text-[10px] shadow-sm hover:bg-indigo-50 transition-all hover:scale-105" onClick={() => setEditingField({ step: 'team_code', type: 'short_text', required: true })}>
@@ -637,7 +646,7 @@ export default function LeagueRegistrationAdminPage() {
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           {[
-                            { label: 'Recruitment Identification', detail: 'Primary Squad Logical Sync', icon: Zap, req: true },
+                            { label: 'Portal Identification', detail: 'Primary Squad Logical Sync', icon: Zap, req: true },
                             { label: 'Invite Link Vector', detail: 'URL-Encoded Cryptographic Verification', icon: Globe, req: false }
                           ].map(f => (
                             <div key={f.label} className="p-6 rounded-[2.5rem] bg-indigo-500/5 border-2 border-transparent flex items-center gap-6 relative transition-all hover:bg-indigo-500/10 hover:border-indigo-500/20">
@@ -715,7 +724,7 @@ export default function LeagueRegistrationAdminPage() {
                           <p className="text-[10px] font-black uppercase text-rose-200 tracking-widest px-1 mb-2">Institutional Compliance Briefing</p>
                           <h4 className="text-xl font-black uppercase leading-tight">Secured Legal Binding Protocol</h4>
                         </div>
-                        <p className="text-xs font-bold text-rose-100/60 leading-relaxed italic">The Institutional Shield protocol enforces legal binding between the organization and the participant. All signed documents are SHA-256 encrypted and stored in the permanent recruitment vault.</p>
+                        <p className="text-xs font-bold text-rose-100/60 leading-relaxed italic">The Institutional Shield protocol enforces legal binding between the organization and the participant. All signed documents are SHA-256 encrypted and stored in the permanent registration vault.</p>
                       </div>
                     </div>
                     

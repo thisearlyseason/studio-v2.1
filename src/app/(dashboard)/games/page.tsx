@@ -76,7 +76,7 @@ export default function GamesPage() {
   if (isLoading) return <div className="flex flex-col items-center justify-center py-20 animate-pulse"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase mt-4">Syncing Ledger...</p></div>;
 
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
-  const isPro = hasFeature('stats_basic');
+  const isPro = hasFeature?.('stats_basic');
 
   const handleRecordGame = () => {
     if (!opponent || !date || !myScore || !opponentScore) return;

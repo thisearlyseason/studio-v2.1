@@ -61,21 +61,23 @@ export function useCollection<T = any>(
     // 1. Path Extraction for Contextual Errors
     let path: string = '';
     try {
+      // Only CollectionReference has a 'type' property and a readable path
+      // For Query objects (including collectionGroup), we can't easily extract a path
       if ((memoizedTargetRefOrQuery as any).type === 'collection') {
         path = (memoizedTargetRefOrQuery as CollectionReference).path;
-      } else {
-        const iq = memoizedTargetRefOrQuery as unknown as InternalQuery;
-        path = iq._query?.path?.canonicalString?.() || iq._query?.path?.toString?.() || '';
       }
+      // For all other query types (including collectionGroup), leave path empty
+      // The query will still execute if Firestore rules allow it
     } catch (e) {
-      path = 'unknown';
+      // If anything fails, allow the query through anyway
     }
 
     // 2. Defensive Guard: Prevent malformed paths or unauthorized root access
-    const isRootPath = !path || path === '/' || path === '.' || path === 'databases/(default)/documents';
-    const hasUndefined = path === 'unknown' || path.includes('undefined') || path.includes('/null/');
+    // Only block clearly invalid paths
+    const isInvalidRootPath = path === '/' || path === '.' || path === 'databases/(default)/documents';
+    const hasUndefined = path.includes('undefined') || path.includes('/null/');
     
-    if (isRootPath || hasUndefined) {
+    if (isInvalidRootPath || hasUndefined) {
       setData(null);
       setIsLoading(false);
       return;
@@ -96,15 +98,21 @@ export function useCollection<T = any>(
         setError(null);
         setIsLoading(false);
       },
-      async (err: FirestoreError) => {
-        // Construct rich contextual error for the overlay
-        const permissionError = new FirestorePermissionError({
-          path: path || 'unknown',
-          operation: 'list',
-        });
-        
-        errorEmitter.emit('permission-error', permissionError);
-        setError(permissionError);
+      (err: FirestoreError) => {
+        // Only surface permission-denied errors to the error overlay.
+        // Other errors (missing index, network, unavailable, etc.) are
+        // logged but should not block the entire UI.
+        if (err.code === 'permission-denied') {
+          const permissionError = new FirestorePermissionError({
+            path: path || 'unknown',
+            operation: 'list',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+          setError(permissionError);
+        } else {
+          console.warn(`[useCollection] Non-permission Firestore error (${err.code}):`, err.message);
+          setError(err);
+        }
         setData(null);
         setIsLoading(false);
       }

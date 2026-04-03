@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { useFirestore, useDoc, useCollection, useMemoFirebase } from '@/firebase';
 import { doc, collection, getDocs, orderBy, query, getDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,7 +32,8 @@ import {
   User,
   Info,
   Loader2,
-  ChevronRight
+  ChevronRight,
+  Camera
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
@@ -46,46 +47,42 @@ export default function PublicScoutPortalPage() {
   const { playerId } = useParams();
   const db = useFirestore();
 
-  const [profile, setProfile] = useState<any>(null);
-  const [metrics, setMetrics] = useState<any>(null);
-  const [stats, setStats] = useState<any[]>([]);
-  const [evals, setEvaluations] = useState<any[]>([]);
-  const [videos, setVideos] = useState<any[]>([]);
-  const [player, setPlayer] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const playerRef = useMemoFirebase(() => playerId ? doc(db, 'players', playerId as string) : null, [db, playerId]);
+  const profileRef = useMemoFirebase(() => playerId ? doc(db, 'players', playerId as string, 'recruitingProfile', 'profile') : null, [db, playerId]);
+  const metricsRef = useMemoFirebase(() => playerId ? doc(db, 'players', playerId as string, 'recruitingProfile', 'metrics') : null, [db, playerId]);
+  const statsRef = useMemoFirebase(() => playerId ? collection(db, 'players', playerId as string, 'stats') : null, [db, playerId]);
+  const evalsQuery = useMemoFirebase(() => playerId ? query(collection(db, 'players', playerId as string, 'evaluations'), orderBy('createdAt', 'desc')) : null, [db, playerId]);
+  const videosQuery = useMemoFirebase(() => playerId ? query(collection(db, 'players', playerId as string, 'videos'), orderBy('createdAt', 'desc')) : null, [db, playerId]);
+
+  const { data: player, isLoading: playerLoading } = useDoc(playerRef);
+  const { data: profile, isLoading: profileLoading } = useDoc(profileRef);
+  const { data: metrics, isLoading: metricsLoading } = useDoc(metricsRef);
+  const { data: statsData, isLoading: statsLoading } = useCollection(statsRef);
+  const { data: evalsData, isLoading: evalsLoading } = useCollection(evalsQuery);
+  const { data: videosData, isLoading: videosLoading } = useCollection(videosQuery);
+
+  const stats = statsData || [];
+  const evals = evalsData || [];
+  const videos = videosData || [];
+
+  // Failsafe state to break out of loading if Firestore hangs
+  const [loadingFailsafe, setLoadingFailsafe] = useState(false);
 
   useEffect(() => {
-    async function loadScoutData() {
-      if (!playerId || !db) return;
-      setLoading(true);
-      try {
-        const [playerSnap, pSnap, mSnap, sSnap, eSnap, vSnap] = await Promise.all([
-          getDoc(doc(db, 'players', playerId as string)),
-          getDoc(doc(db, 'players', playerId as string, 'recruitingProfile', 'profile')),
-          getDoc(doc(db, 'players', playerId as string, 'recruitingProfile', 'metrics')),
-          getDocs(query(collection(db, 'players', playerId as string, 'stats'))),
-          getDocs(query(collection(db, 'players', playerId as string, 'evaluations'), orderBy('createdAt', 'desc'))),
-          getDocs(query(collection(db, 'players', playerId as string, 'videos'), orderBy('createdAt', 'desc')))
-        ]);
+    const timer = setTimeout(() => {
+      setLoadingFailsafe(true);
+    }, 8000); // 8 second timeout
+    return () => clearTimeout(timer);
+  }, []);
 
-        if (playerSnap.exists()) setPlayer(playerSnap.data());
-        if (pSnap.exists()) setProfile(pSnap.data());
-        if (mSnap.exists()) setMetrics(mSnap.data());
-        setStats(sSnap.docs.map(d => d.data()));
-        setEvaluations(eSnap.docs.map(d => d.data()));
-        setVideos(vSnap.docs.map(d => d.data()));
-      } catch (e) {
-        console.error("Scout Pack Load Failure:", e);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadScoutData();
-  }, [playerId, db]);
+  // ONLY block core UI on player loading. Sub-sections can lazy land.
+  // Combine with failsafe.
+  const isEssentiallyLoaded = !playerLoading || loadingFailsafe;
+  const loading = !isEssentiallyLoaded || (!player && !loadingFailsafe);
 
   const averageEval = useMemo(() => {
     if (evals.length === 0) return null;
-    const totals = evals.reduce((acc, curr) => {
+    const totals = evals.reduce((acc: any, curr: any) => {
       acc.athleticism += curr.athleticism || 0;
       acc.skillLevel += curr.skillLevel || 0;
       acc.gameIQ += curr.gameIQ || 0;
@@ -100,6 +97,20 @@ export default function PublicScoutPortalPage() {
       overall: (totals.athleticism + totals.skillLevel + totals.gameIQ + totals.leadership) / (evals.length * 4)
     };
   }, [evals]);
+
+  const playerName = useMemo(() => {
+    if (!player) return loading ? "" : 'Elite Prospect';
+    const combined = [player.firstName, player.lastName].filter(Boolean).join(' ');
+    return combined || player.name || 'Elite Prospect';
+  }, [player, loading]);
+
+  useEffect(() => {
+    if (playerName) {
+      document.title = `${playerName} | Institutional Scout Portal`;
+    } else {
+      document.title = 'Elite Prospect | Institutional Scout Portal';
+    }
+  }, [playerName]);
 
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-muted/10">
@@ -190,7 +201,13 @@ export default function PublicScoutPortalPage() {
     <div className="min-h-screen bg-[#0a0a0a] pb-24 text-white">
       {/* NAV */}
       <nav className="border-b border-white/5 bg-black/80 backdrop-blur-md sticky top-0 z-50 h-16 flex items-center px-6 md:px-12 justify-between">
-        <BrandLogo variant="dark-background" className="h-8 w-32" />
+        <div className="flex items-center gap-6">
+          <BrandLogo variant="dark-background" className="h-8 w-32" />
+          <div className="hidden md:flex items-center gap-2 text-zinc-500 font-black text-[10px] uppercase tracking-widest">
+            <span className="h-1 w-1 rounded-full bg-zinc-800" />
+            {playerName}
+          </div>
+        </div>
         <div className="flex items-center gap-3">
           <Badge className="bg-primary/20 text-primary border border-primary/30 font-black text-[8px] tracking-widest uppercase h-6 px-3">{activeSport.toUpperCase()} · SCOUT PORTAL</Badge>
           <Badge className="bg-white text-black border-none font-black text-[8px] tracking-widest uppercase h-6 px-3 shadow-lg">VERIFIED PROSPECT</Badge>
@@ -207,7 +224,7 @@ export default function PublicScoutPortalPage() {
           <div className="flex flex-col lg:flex-row items-center gap-12 p-10 lg:p-16 relative z-10">
             <div className="relative shrink-0">
               <div className="h-48 w-48 lg:h-64 lg:w-64 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden bg-white/5 flex items-center justify-center ring-1 ring-primary/20">
-                {player.photoURL ? <img src={player.photoURL} className="w-full h-full object-cover" alt="Athlete" /> : <User className="h-24 w-24 opacity-10" />}
+                {profile?.photoURL || player?.photoURL ? <img src={profile?.photoURL || player?.photoURL} className="w-full h-full object-cover" alt={playerName} /> : <User className="h-24 w-24 opacity-10" />}
               </div>
               <Badge className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-primary text-white border-none font-black text-[10px] h-8 px-6 shadow-xl shadow-primary/30 whitespace-nowrap">CLASS OF {profile?.graduationYear || '20XX'}</Badge>
             </div>
@@ -215,8 +232,10 @@ export default function PublicScoutPortalPage() {
             <div className="flex-1 text-center lg:text-left space-y-6">
               <div className="space-y-1">
                 <p className="text-[10px] font-black uppercase tracking-[0.4em] text-primary/80 mb-3">Institutional Recruiting Pack</p>
-                <h1 className="text-5xl lg:text-7xl font-black tracking-tighter leading-none uppercase text-white">{player.firstName} {player.lastName}</h1>
-                <p className="text-primary font-black uppercase tracking-[0.2em] text-lg mt-2">{profile?.primaryPosition || player.position} • #{player.jersey || '—'}</p>
+                <h1 className="text-5xl lg:text-7xl font-black tracking-tighter leading-none uppercase text-white">{playerName}</h1>
+                <p className="text-primary font-black uppercase tracking-[0.2em] text-lg mt-2">
+                  {profile?.primaryPosition || player.position} {profile?.secondaryPosition ? ` / ${profile.secondaryPosition}` : ''} • #{profile?.jerseyNumber || player.jersey || '—'}
+                </p>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {[
@@ -231,7 +250,13 @@ export default function PublicScoutPortalPage() {
                   </div>
                 ))}
               </div>
-              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-2">
+              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-4 pt-2">
+                <div className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-full border border-white/10">
+                  <ShieldCheck className="h-4 w-4 text-primary" />
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white">{profile?.teamName || player.clubName || 'Elite Academy'}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-4">
                 <Button className="rounded-xl h-12 px-8 font-black uppercase text-[10px] bg-primary text-white hover:bg-primary/90 transition-all shadow-xl shadow-primary/20"><Download className="h-4 w-4 mr-2" /> Download Pack</Button>
                 <Button variant="outline" className="rounded-xl h-12 px-8 font-black uppercase text-[10px] border-white/20 bg-white/5 hover:bg-white/10 text-white"><Share2 className="h-4 w-4 mr-2" /> Copy Link</Button>
               </div>
@@ -241,6 +266,20 @@ export default function PublicScoutPortalPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
           <div className="lg:col-span-8 space-y-12">
+
+            {profile?.photos && profile.photos.length > 0 && (
+              <section className="space-y-6">
+                <div className="flex items-center gap-3 px-2"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Camera className="h-5 w-5" /></div><h2 className="text-xl font-black uppercase tracking-tight">Scouting Gallery</h2></div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                  {profile.photos.map((url: string, i: number) => (
+                    <div key={i} className="aspect-square rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl ring-1 ring-black/5 group">
+                      <img src={url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt="Scouting" />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <section className="space-y-6">
               <div className="flex items-center gap-3 px-2"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Video className="h-5 w-5" /></div><h2 className="text-xl font-black uppercase tracking-tight">Highlight Reels</h2></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -265,10 +304,12 @@ export default function PublicScoutPortalPage() {
                   <span className="absolute -top-3 left-6 bg-white px-2 text-[8px] font-black uppercase text-primary tracking-widest">Narrative Bio</span>
                   <p className="text-base font-medium italic leading-relaxed text-foreground/80">"{profile?.bio || "No tactical narrative established."}"</p>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-center sm:text-left">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-8 gap-x-12 text-center sm:text-left">
+                  <div className="space-y-1"><p className="text-[8px] font-black uppercase text-muted-foreground opacity-40">School / Institutional Body</p><p className="text-sm font-black uppercase">{profile?.school || player.school || 'TBD'}</p></div>
                   <div className="space-y-1"><p className="text-[8px] font-black uppercase text-muted-foreground opacity-40">Hometown</p><p className="text-sm font-black uppercase">{profile?.hometown || 'TBD'}</p></div>
-                  <div className="space-y-1"><p className="text-[8px] font-black uppercase text-muted-foreground opacity-40">Intended Major</p><p className="text-sm font-black uppercase">{profile?.intendedMajor || 'Undecided'}</p></div>
+                  <div className="space-y-1"><p className="text-[8px] font-black uppercase text-muted-foreground opacity-40">Institutional Major</p><p className="text-sm font-black uppercase">{profile?.intendedMajor || 'Undecided'}</p></div>
                   <div className="space-y-1"><p className="text-[8px] font-black uppercase text-muted-foreground opacity-40">Dominant Hand</p><p className="text-sm font-black uppercase">{profile?.dominantHand || 'Right'}</p></div>
+                  <div className="space-y-1"><p className="text-[8px] font-black uppercase text-muted-foreground opacity-40">Class of</p><p className="text-sm font-black uppercase">{profile?.graduationYear || '20XX'}</p></div>
                 </div>
               </Card>
             </section>
@@ -322,6 +363,13 @@ export default function PublicScoutPortalPage() {
                   </div>
                 ) : (
                   <div className="py-12 text-center opacity-20"><Target className="h-10 w-10 mx-auto mb-2" /><p className="text-[9px] font-black uppercase">Pending Official Review</p></div>
+                )}
+
+                {profile?.institutionalPulse && (
+                  <div className="pt-6 border-t border-black/5 space-y-3">
+                    <p className="text-[8px] font-black uppercase text-primary tracking-widest">Institutional Narrative</p>
+                    <p className="text-xs font-medium italic text-foreground/70 leading-relaxed">"{profile.institutionalPulse}"</p>
+                  </div>
                 )}
               </Card>
             </section>

@@ -39,25 +39,52 @@ function DemoSeedWrapper({
 
   useEffect(() => {
     const demoPlanId = searchParams.get('seed_demo');
-    if (!user || isDemoInitializing || !demoPlanId || isTeamsLoading || teamsCount > 0 || seedingAttempted.current) return;
+    if (!user || isDemoInitializing || !demoPlanId || isTeamsLoading || seedingAttempted.current) return;
     
+    // Check global lock to prevent multi-tab write storms
+    const globalLock = localStorage.getItem('squad_seeding_lock');
+    if (globalLock === demoPlanId) {
+      return;
+    }
+
     seedingAttempted.current = true;
     setIsDemoInitializing(true);
     setIsSeedingDemo(true);
+    localStorage.setItem('squad_seeding_lock', demoPlanId);
     
+    // Immediately clear the URL parameter visually to prevent loops on user refresh
+    const url = new URL(window.location.href);
+    url.searchParams.delete('seed_demo');
+    window.history.replaceState({}, '', url.pathname + url.search);
+
     const seed = async () => {
       try {
         if (auth.currentUser) {
-          await seedGuestDemoTeam(db, user.uid, demoPlanId);
+          const primaryId = await seedGuestDemoTeam(db, user.uid, demoPlanId);
+          if (primaryId) {
+            localStorage.setItem('sf_session_team_id', primaryId);
+          }
+          toast({ title: "Environment Ready", description: "Tactical data synchronized." });
+          
+          // Force full reload to reset all providers with new seed state
           setTimeout(() => {
             window.location.replace('/dashboard');
-          }, 1500);
+          }, 1000);
         }
-      } catch (e) {
-        console.error("Demo seeding failed:", e);
+      } catch (e: any) {
         setIsDemoInitializing(false);
         setIsSeedingDemo(false);
-        toast({ title: "Sync Failed", description: "Could not establish environment.", variant: "destructive" });
+        localStorage.removeItem('squad_seeding_lock');
+        
+        if (e.code === 'resource-exhausted') {
+          toast({ 
+            title: "Quota Exceeded", 
+            description: "Database write bandwidth reached. Please try again in 24 hours or upgrade plan.", 
+            variant: "destructive" 
+          });
+        } else {
+          toast({ title: "Sync Failed", description: "Environment could not be established.", variant: "destructive" });
+        }
       }
     };
     seed();

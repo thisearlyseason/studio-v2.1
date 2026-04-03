@@ -71,7 +71,7 @@ export default function TeamProfilePage() {
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const assignmentsQuery = useMemoFirebase(() => {
-    if (!db || !authUser?.uid || !activeTeam?.id || !isStaff || !hasFeature('league_registration')) return null;
+    if (!db || !authUser?.uid || !activeTeam?.id || !isStaff || !hasFeature?.('league_registration')) return null;
     
     const constraints = [
       where('assigned_team_id', '==', activeTeam.id),
@@ -195,7 +195,7 @@ export default function TeamProfilePage() {
         <div className="flex items-center gap-3">
           <div className="text-right hidden md:block">
             <p className="text-[10px] font-black uppercase text-muted-foreground">Status</p>
-            <p className="text-sm font-black text-primary">{activePlan?.name || 'Starter'}</p>
+            <p className="text-sm font-black text-primary">{activePlan?.name || (activeTeam.planId === 'squad_organization' ? 'Squad Organization' : 'Starter')}</p>
           </div>
           <Badge className="bg-primary/10 text-primary border-none font-black text-[9px] h-6 px-3 uppercase">{activeTeam.role}</Badge>
         </div>
@@ -401,7 +401,7 @@ export default function TeamProfilePage() {
           <Card className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
             <CardHeader className="bg-primary/5 border-b border-primary/5">
               <CardTitle className="text-xl font-black">Official Squad Identity</CardTitle>
-              <CardDescription className="text-xs font-bold uppercase tracking-widest text-primary/60">Tier: {activePlan?.name || 'Starter'}</CardDescription>
+              <CardDescription className="text-xs font-bold uppercase tracking-widest text-primary/60">Tier: {activePlan?.name || (activeTeam.planId === 'squad_organization' ? 'Squad Organization' : 'Starter')}</CardDescription>
             </CardHeader>
             <CardContent className="pt-8 space-y-8">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">

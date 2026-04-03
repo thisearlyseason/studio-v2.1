@@ -48,6 +48,7 @@ export type UserProfile = {
   seenAlertIds?: string[];
   clubName?: string;
   clubDescription?: string;
+  schoolAdminIds?: string[];
 };
 
 export type PlayerProfile = {
@@ -79,6 +80,8 @@ export type PlayerProfile = {
 
 export type RecruitingProfile = {
   playerId: string;
+  photoURL?: string;
+  photos?: string[];
   typeOfSport?: string;
   status: "active" | "hidden" | "committed";
   primaryPosition: string;
@@ -90,9 +93,14 @@ export type RecruitingProfile = {
   graduationYear: number;
   academicGPA: number;
   intendedMajor?: string;
+  school?: string;
+  teamName?: string;
+  jerseyNumber?: string;
   bio: string;
+  institutionalPulse?: string;
   updatedAt: any;
 };
+
 
 export type AthleticMetrics = {
   fortyYardDash?: number;
@@ -110,7 +118,10 @@ export type PlayerStat = {
   gamesPlayed: number;
   points: number;
   assists: number;
+  efficiency?: number;
+  [key: string]: any;
 };
+
 
 export type PlayerEvaluation = {
   id: string;
@@ -150,7 +161,7 @@ export type Team = {
   name: string;
   code: string;
   teamCode?: string;
-  type: "adult" | "youth";
+  type: "adult" | "youth" | "school" | "school_squad";
   sport?: string;
   description?: string;
   teamLogoUrl?: string;
@@ -158,6 +169,8 @@ export type Team = {
   isPro?: boolean;
   planId?: string;
   clubId?: string;
+  schoolId?: string; // ID of the primary school team (for sub-squads)
+  schoolAdminIds?: string[]; // IDs of additional school admins (for primary team)
   role?: 'Admin' | 'Member';
   ownerUserId?: string;
   parentChatEnabled?: boolean;
@@ -166,7 +179,7 @@ export type Team = {
   contactEmail?: string;
   contactPhone?: string;
   registrationProtocolId?: string;
-  leagueIds?: string[];
+  leagueIds?: Record<string, boolean>;
   isDemo?: boolean;
   rosterLimit?: number;
 };
@@ -204,6 +217,7 @@ export type Member = {
   phone?: string;
   skills?: string[];
   achievements?: string[];
+  schoolId?: string;
 };
 
 export interface Plan {
@@ -439,7 +453,7 @@ export type LeagueRegistrationConfig = {
   form_version?: number;
   registration_cost?: string;
   offline_payment_instructions?: string;
-  type: 'player' | 'team';
+  type: 'player' | 'team' | 'waiver';
 };
 
 export type LeagueArchiveWaiver = {
@@ -473,7 +487,7 @@ export type RegistrationFormField = {
   type: 'short_text' | 'long_text' | 'dropdown' | 'header' | 'radio' | 'checkbox' | 'signature';
   required: boolean;
   options?: string[];
-  step?: 'identity' | 'guardian' | 'team_code' | 'additional';
+  step?: 'identity' | 'contact' | 'medical' | 'guardian' | 'team_code' | 'additional' | 'compliance';
   placeholder?: string;
 };
 
@@ -568,6 +582,8 @@ interface TeamContextType {
   isYouth: boolean;
   isSuperAdmin: boolean;
   isPrimaryClubAuthority: boolean;
+  isSchoolMode: boolean;
+  isSchoolAdmin: boolean;
   householdEvents: TeamEvent[];
   activeTeamEvents: TeamEvent[];
   householdBalance: number;
@@ -593,6 +609,7 @@ interface TeamContextType {
   updateAthleticMetrics: (playerId: string, data: Partial<AthleticMetrics>) => Promise<void>;
   getPlayerStats: (playerId: string) => Promise<PlayerStat[]>;
   addPlayerStat: (playerId: string, data: Partial<PlayerStat>) => Promise<void>;
+  updatePlayerStat: (playerId: string, statId: string, data: Partial<PlayerStat>) => Promise<void>;
   deletePlayerStat: (playerId: string, statId: string) => Promise<void>;
   getEvaluations: (playerId: string) => Promise<PlayerEvaluation[]>;
   addEvaluation: (playerId: string, data: Partial<PlayerEvaluation>) => Promise<void>;
@@ -606,7 +623,7 @@ interface TeamContextType {
   updateStaffEvaluation: (memberId: string, notes: string) => Promise<void>;
   getStaffEvaluation: (memberId: string) => Promise<string>;
 
-  createNewTeam: (name: string, type: "adult" | "youth", pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string) => Promise<string>;
+  createNewTeam: (name: string, type: string, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => Promise<string>;
   joinTeamWithCode: (code: string, playerId: string, position: string) => Promise<boolean>;
   updateUser: (updates: Partial<UserProfile>) => Promise<void>;
   updateTeam: (id: string, data: Partial<Team>) => Promise<void>;
@@ -876,23 +893,62 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const isStaff = useMemo(() => {
     if (!firebaseUser) return false;
     if (isSuperAdmin) return true;
+    
+    // 1. Global Role Override: Users with global 'coach' or 'admin' role have staff access to all teams
     if (userProfile?.role === 'coach' || userProfile?.role === 'admin') return true; 
+
+    // 2. Team-Level Admin: Check if user is an Admin for the active team
     if (activeTeam?.role === 'Admin') return true;
+
+    // 3. Position Check: Check specific staff positions within the active team
     const currentMember = getMember(firebaseUser.uid);
-    const staffPositions = ['Coach', 'Assistant Coach', 'Team Representative', 'Manager', 'Squad Leader', 'Coach Guest'];
+    const staffPositions = ['Coach', 'Assistant Coach', 'Team Representative', 'Athletic Director', 'Staff', 'Manager', 'Squad Leader', 'Coach Guest'];
     return staffPositions.includes(currentMember?.position || '');
   }, [activeTeam, firebaseUser, members, userProfile, isSuperAdmin]);
 
-  const isParent = useMemo(() => userProfile?.role === 'parent', [userProfile?.role]);
-  const isPlayer = useMemo(() => userProfile?.role === 'adult_player' || userProfile?.role === 'youth_player', [userProfile?.role]);
+  const isParent = useMemo(() => {
+    // 1. Global Parent Role
+    if (userProfile?.role === 'parent') return true;
+    // 2. Team Check: If user is not a global parent, check team context (e.g. if they are listed as a guardian for a youth player)
+    // Note: This might need expansion depending on how "Guardian" relationships are stored.
+    return false;
+  }, [userProfile?.role]);
 
+  const isPlayer = useMemo(() => {
+    // 1. Global Player Role
+    if (userProfile?.role === 'adult_player' || userProfile?.role === 'youth_player') return true;
+    
+    // 2. Team Context Check: If not globally marked as player, check if they are a 'Member' in the active team
+    // and NOT holding a staff position.
+    if (firebaseUser) {
+      const currentMember = getMember(firebaseUser.uid);
+      const staffPositions = ['Coach', 'Assistant Coach', 'Team Representative', 'Athletic Director', 'Staff', 'Manager', 'Squad Leader', 'Coach Guest'];
+      const isStaffMember = staffPositions.includes(currentMember?.position || '');
+      const isTeamAdmin = currentMember?.role === 'Admin';
+
+      // If they are a member (not staff/admin) in this team, treat them as a player/participant
+      if (currentMember?.role === 'Member' && !isStaffMember && !isTeamAdmin) return true;
+    }
+    
+    return false;
+  }, [userProfile, firebaseUser, members]);
+
+  const teams = teamsRaw;
   const isPrimaryClubAuthority = useMemo(() => {
     if (isSuperAdmin) return true;
-    return teamsRaw.some(t => 
+    const isElite = teams.some((t: any) => 
       t.ownerUserId === userProfile?.id && 
       ['elite_teams', 'elite_league'].includes(t.planId || '')
     );
-  }, [teamsRaw, userProfile, isSuperAdmin]);
+    if (isElite) return true;
+
+    // Check for School Admin (Owner of Primary School Team)
+    const isSchoolAdminOwned = teams.some((t: any) => 
+      t.ownerUserId === userProfile?.id && 
+      t.type === 'school'
+    );
+    return isSchoolAdminOwned;
+  }, [teams, userProfile, isSuperAdmin]);
 
   // Fetch Club Data
   const clubRef = useMemo(() => {
@@ -943,6 +999,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return null;
   }, [db]);
 
+  const isSchoolAdmin = useMemo(() => {
+    if (!userProfile) return false;
+    if (isPrimaryClubAuthority) return true;
+    
+    // Check specific Position (Athletic Director in any school team)
+    const activeStaff = teams.some(t => {
+      if (t.type !== 'school' && t.type !== 'school_squad') return false;
+      const m = getMember(userProfile.id);
+      return m?.position === 'Athletic Director' || m?.position === 'Staff';
+    });
+    if (activeStaff) return true;
+    
+    // Check if user is an admin of any 'school' type team
+    return (userProfile?.schoolAdminIds?.includes(userProfile.id)) || teams.some((t: any) => 
+      t.type === 'school' && 
+      (t.ownerUserId === userProfile.id || t.schoolAdminIds?.includes(userProfile.id))
+    );
+  }, [teams, userProfile, isPrimaryClubAuthority, members, getMember]);
+
   const isPro = useMemo(() => {
     if (isSuperAdmin) return true;
 
@@ -951,14 +1026,30 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
     // 2. Check Club Level Pro (Elite Subscription)
     // If team belongs to a club, and club is active, return true
-    // Note: In the future we might check specific roles, but for now, members of a Pro club get Pro access
     if (activeTeam?.clubId && clubData?.subscriptionStatus === 'active') return true;
 
-    // 3. Legacy User Level Pro (Fallback for existing users)
-    // This allows users who bought "Pro" previously to still have access if they are not in a Pro team/club yet
+    // 3. Check School Level Pro
+    // In school mode, all squads under a school hub, the hub itself, or squads owned by a school admin are Pro
+    if (activeTeam?.type === 'school' || activeTeam?.type === 'school_squad' || activeTeam?.schoolId) {
+       return true; 
+    }
+    
+    // If the active team is owned by the current user and they are a school admin, it's Pro
+    if (activeTeam?.ownerUserId === userProfile?.id && isSchoolAdmin) {
+       return true;
+    }
+
+    // 4. Legacy User Level Pro (Fallback)
     return userProfile?.activePlanId === 'squad_pro' || 
-           ['elite_teams', 'elite_league'].includes(activeTeam?.planId || '');
-  }, [activeTeam, clubData, userProfile, isSuperAdmin]);
+           userProfile?.activePlanId === 'squad_organization' ||
+           ['elite_teams', 'elite_league', 'squad_organization'].includes(activeTeam?.planId || '');
+  }, [activeTeam, clubData, userProfile, isSuperAdmin, isSchoolAdmin, teams]);
+
+  const isSchoolMode = useMemo(() => {
+    return activeTeam?.type === 'school' || activeTeam?.type === 'school_squad';
+  }, [activeTeam?.type]);
+
+
 
   const hasFeature = useCallback((featureId: string) => {
     if (isSuperAdmin) return true;
@@ -968,18 +1059,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       // Allowed if: 
       // 1. Team is Pro (Team Subscription)
       // 2. Club is Pro AND User is Club Owner
+      // 3. Is School Mode (School or School Squad)
       const isTeamPro = activeTeam?.isPro;
       const isClubPro = activeTeam?.clubId && clubData?.subscriptionStatus === 'active';
       const isClubOwner = isClubPro && clubData?.ownerUserId === userProfile?.id;
 
       if (isTeamPro) return true;
       if (isClubOwner) return true; // Club owners get these features
+      if (activeTeam?.type === 'school' || activeTeam?.type === 'school_squad') return true; // All school units get these features
       
       return false;
     }
 
     if (featureId === 'club_management') {
-      // Only Club Owners
+      // Only Club Owners OR School Admins
+      if (isSchoolAdmin) return true;
       if (!clubData || !userProfile) return false;
       return clubData.ownerUserId === userProfile.id;
     }
@@ -991,7 +1085,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return ['live_feed_read', 'basic_scheduling'].includes(featureId);
   }, [activeTeam, clubData, userProfile, plans, isSuperAdmin]);
 
-  const formatTime = (iso: string) => { try { return format(new Date(iso), 'h:mm a'); } catch (e) { return '--:--'; } };
+  const formatTime = useCallback((iso: string) => { try { return format(new Date(iso), 'h:mm a'); } catch (e) { return '--:--'; } }, []);
 
   // --- TACTICAL METHODS ---
   const getRecruitingProfile = useCallback(async (playerId: string) => { if (!db) return null; const snap = await getDoc(doc(db, 'players', playerId, 'recruitingProfile', 'profile')); return snap.exists() ? (snap.data() as RecruitingProfile) : null; }, [db]);
@@ -1000,6 +1094,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateAthleticMetrics = useCallback(async (playerId: string, data: Partial<any>) => { if (!db) return; await setDoc(doc(db, 'players', playerId, 'recruitingProfile', 'metrics'), clean(data), { merge: true }); }, [db]);
   const getPlayerStats = useCallback(async (playerId: string) => { if (!db) return []; const snap = await getDocs(collection(db, 'players', playerId, 'stats')); return snap.docs.map(d => ({ ...d.data(), id: d.id } as PlayerStat)); }, [db]);
   const addPlayerStat = useCallback(async (playerId: string, data: Partial<PlayerStat>) => { if (!db) return; await addDoc(collection(db, 'players', playerId, 'stats'), clean(data)); }, [db]);
+  const updatePlayerStat = useCallback(async (playerId: string, statId: string, data: Partial<PlayerStat>) => { if (!db) return; await setDoc(doc(db, 'players', playerId, 'stats', statId), clean(data), { merge: true }); }, [db]);
   const deletePlayerStat = useCallback(async (playerId: string, statId: string) => { if (!db) return; await deleteDoc(doc(db, 'players', playerId, 'stats', statId)); }, [db]);
   const getEvaluations = useCallback(async (playerId: string) => { if (!db) return []; const snap = await getDocs(query(collection(db, 'players', playerId, 'evaluations'), orderBy('createdAt', 'desc'))); return snap.docs.map(d => ({ ...d.data(), id: d.id } as PlayerEvaluation)); }, [db]);
   const addEvaluation = useCallback(async (playerId: string, data: Partial<PlayerEvaluation>) => { if (!db || !firebaseUser) return; await addDoc(collection(db, 'players', playerId, 'evaluations'), { ...clean(data), evaluatorId: firebaseUser.uid, createdAt: serverTimestamp() }); }, [db, firebaseUser]);
@@ -1009,25 +1104,33 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addPlayerVideo = useCallback(async (playerId: string, data: Partial<PlayerVideo>) => { if (!db) return; await addDoc(collection(db, 'players', playerId, 'videos'), { ...clean(data), createdAt: serverTimestamp() }); }, [db]);
   const updatePlayerVideo = useCallback(async (playerId: string, videoId: string, data: Partial<PlayerVideo>) => { if (!db) return; await setDoc(doc(db, 'players', playerId, 'videos', videoId), clean(data), { merge: true }); }, [db]);
   const deletePlayerVideo = useCallback(async (playerId: string, videoId: string) => { if (!db) return; await deleteDoc(doc(db, 'players', playerId, 'videos', videoId)); }, [db]);
-  const toggleRecruitingProfile = useCallback(async (playerId: string, enabled: boolean) => { if (!db) return; await updateDoc(doc(db, 'players', playerId), { recruitingProfileEnabled: enabled }); }, [db]);
+  const toggleRecruitingProfile = useCallback(async (playerId: string, enabled: boolean) => { if (!db) return; await setDoc(doc(db, 'players', playerId), { recruitingProfileEnabled: enabled }, { merge: true }); }, [db]);
   const updateStaffEvaluation = useCallback(async (memberId: string, notes: string) => { if (!activeTeam?.id || !db) return; await setDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current'), { notes, updatedAt: new Date().toISOString() }); }, [activeTeam, db]);
   const getStaffEvaluation = useCallback(async (memberId: string) => { if (!activeTeam?.id || !db) return ''; const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current')); return snap.exists() ? (snap.data()?.notes || '') : ''; }, [activeTeam, db]);
 
-  const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string) => { 
+  const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => { 
     if (!firebaseUser || !db || !userProfile) return ''; 
     const tid = `team_${Date.now()}`; 
     const batch = writeBatch(db); 
     
     const teamCode = tid.slice(-6).toUpperCase();
+    const isSchool = type === 'school' || type === 'school_squad';
+    
+    const schoolIdToUse = schoolId || (type === 'school_squad' && activeTeam?.id ? activeTeam.id : null);
+    const resolvedOwnerId = overrideOwnerId || firebaseUser.uid;
+
     batch.set(doc(db, 'teams', tid), clean({ 
       id: tid, 
       teamName: name, 
       code: teamCode,
       teamCode: teamCode, 
-      inviteCode: teamCode, // Explicitly set all three for maximum compatibility
-      type, sport: 'General', 
-      description, createdBy: firebaseUser.uid, ownerUserId: firebaseUser.uid, 
-      planId: planId || 'starter_squad', isPro: planId !== 'starter_squad', createdAt: new Date().toISOString() 
+      inviteCode: teamCode, 
+      type, sport: isSchool ? 'Basketball' : 'General', 
+      description, createdBy: firebaseUser.uid, ownerUserId: resolvedOwnerId, 
+      planId: planId || (isSchool ? 'squad_pro' : 'starter_squad'), 
+      isPro: planId !== 'starter_squad', 
+      createdAt: new Date().toISOString(),
+      schoolId: schoolIdToUse
     })); 
     
     if (customWaiverTitle && customWaiverContent) {
@@ -1037,32 +1140,65 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
     
     batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ 
-      teamId: tid, name, role: 'Admin', code: teamCode, joinedAt: new Date().toISOString() 
+      teamId: tid, 
+      name, 
+      role: 'Admin', 
+      code: teamCode, 
+      joinedAt: new Date().toISOString(),
+      type,
+      isPro: planId !== 'starter_squad',
+      planId: planId || (isSchool ? 'squad_pro' : 'starter_squad'),
+      schoolId: schoolIdToUse,
+      ownerUserId: resolvedOwnerId  // Required for DISTRICT badge in Shell
     })); 
     
     batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ 
       id: firebaseUser.uid, userId: firebaseUser.uid, playerId: `p_${firebaseUser.uid}`, 
       name: firebaseUser.displayName, role: 'Admin', position: pos, 
       joinedAt: new Date().toISOString(), avatar: userProfile?.avatar || '',
-      ownerUserId: firebaseUser.uid, teamId: tid
+      ownerUserId: resolvedOwnerId, teamId: tid,
+      schoolId: schoolIdToUse
     })); 
+    
+    if (coachName && coachEmail) {
+      const dummyId = `member_${Date.now()}`;
+      batch.set(doc(db, 'teams', tid, 'members', dummyId), clean({
+        id: dummyId,
+        teamId: tid,
+        name: coachName,
+        email: coachEmail,
+        position: 'Head Coach',
+        role: 'Member',
+        joinedAt: new Date().toISOString(),
+        ownerUserId: resolvedOwnerId,
+        schoolId: schoolIdToUse
+      }));
+    }
+
+    await batch.commit();
 
     try {
       const qEntries = query(collectionGroup(db, 'registrationEntries'), where('answers.email', '==', firebaseUser.email));
       const entriesSnap = await getDocs(qEntries);
-      entriesSnap.forEach(entryDoc => {
-        const entry = entryDoc.data();
-        if (!entry.assigned_team_id) {
-          batch.update(entryDoc.ref, { assigned_team_id: tid, assigned_team_owner_id: firebaseUser.uid, status: 'assigned' });
-        }
-      });
+      if (!entriesSnap.empty) {
+        const sweepBatch = writeBatch(db);
+        let hasUpdates = false;
+        entriesSnap.forEach(entryDoc => {
+          const entry = entryDoc.data();
+          if (!entry.assigned_team_id) {
+            sweepBatch.update(entryDoc.ref, { assigned_team_id: tid, assigned_team_owner_id: firebaseUser.uid, status: 'assigned' });
+            hasUpdates = true;
+          }
+        });
+        if (hasUpdates) await sweepBatch.commit();
+      }
     } catch (e) {
       console.warn("Identity sweep partial failure:", e);
     }
 
-    await batch.commit(); 
+    toast({ title: "Team Created Successfully!", description: `Your new ${type.replace('_', ' ')} "${name}" is ready.` });
     return tid; 
-  }, [firebaseUser, db, userProfile]);
+  }, [firebaseUser, db, userProfile, activeTeam]);
 
   const joinTeamWithCode = useCallback(async (code: string, playerId: string, position: string) => { 
     if (!firebaseUser || !db || !userProfile) return false; 
@@ -1092,7 +1228,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ 
       id: firebaseUser.uid, userId: firebaseUser.uid, playerId, name: firebaseUser.displayName, 
       role: 'Member', position, joinedAt: new Date().toISOString(), 
-      avatar: userProfile?.avatar || '', ownerUserId: ownerId, teamId: tid 
+      avatar: userProfile?.avatar || '', ownerUserId: ownerId, teamId: tid,
+      schoolId: teamDoc.data().schoolId || null
     })); 
     await batch.commit(); return true; 
   }, [firebaseUser, db, userProfile]);
@@ -1243,6 +1380,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const createLeague = useCallback(async (name: string) => { 
     if (!firebaseUser || !db || !activeTeam) return ''; 
+
+    // Check limits
+    if (activeTeam.type === 'school_squad' && activeTeam.schoolId) {
+      const currentCount = activeTeam.leagueIds ? Object.keys(activeTeam.leagueIds).length : 0;
+      if (currentCount >= 5) {
+        throw new Error("Program limit (5) reached for this squad.");
+      }
+    }
+
     const lid = `league_${Date.now()}`; 
     const batch = writeBatch(db); 
     
@@ -1915,16 +2061,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam, teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: getMember(firebaseUser?.uid),
-    isStaff, isPro, isParent: userProfile?.role === 'parent', 
-    isPlayer: userProfile?.role === 'adult_player' || userProfile?.role === 'youth_player',
+    isStaff, isPro, isParent, 
+    isPlayer,
     isYouth: userProfile?.role === 'youth_player',
-    isSuperAdmin, isPrimaryClubAuthority, householdEvents: householdEvents || [], activeTeamEvents, householdBalance: 0, myChildren, plans, isPlansLoading, proQuotaStatus,
+    isSuperAdmin, isPrimaryClubAuthority, isSchoolMode, isSchoolAdmin, householdEvents: householdEvents || [], activeTeamEvents, householdBalance: 0, myChildren, plans, isPlansLoading, proQuotaStatus,
     deleteFundraisingOpportunity, addGame, updateGame, canAddProTeam: (proQuotaStatus.remaining > 0),
     isPaywallOpen, setIsPaywallOpen, purchasePro,
     hasFeature, alerts, unreadAlertsCount,
     markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isSeedingDemo, setIsSeedingDemo,
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
-    getPlayerStats, addPlayerStat, deletePlayerStat, getEvaluations, addEvaluation,
+    getPlayerStats, addPlayerStat, updatePlayerStat, deletePlayerStat, getEvaluations, addEvaluation,
     getRecruitingContact, updateRecruitingContact, getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo,
     toggleRecruitingProfile, updateStaffEvaluation, getStaffEvaluation, createNewTeam, joinTeamWithCode,
     createChat, signUpForVolunteer, addEquipmentItem, updateEquipmentItem, deleteEquipmentItem, respondToAssignment, assignEntryToTeam, 
@@ -1950,7 +2096,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     isStaff, isPro, householdEvents, activeTeamEvents, myChildren, plans, isPlansLoading, isPaywallOpen, isSeedingDemo,
     seenAlertIds, alerts, unreadAlertsCount, isSuperAdmin, isPrimaryClubAuthority, hasFeature, proQuotaStatus,
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
-    getPlayerStats, addPlayerStat, deletePlayerStat, getEvaluations, addEvaluation,
+    getPlayerStats, addPlayerStat, updatePlayerStat, deletePlayerStat, getEvaluations, addEvaluation,
     getRecruitingContact, updateRecruitingContact, getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo,
     toggleRecruitingProfile, updateStaffEvaluation, getStaffEvaluation, createNewTeam, joinTeamWithCode,
     createLeague, signUpForVolunteer, addEquipmentItem, updateEquipmentItem, deleteEquipmentItem, respondToAssignment, assignEntryToTeam, 

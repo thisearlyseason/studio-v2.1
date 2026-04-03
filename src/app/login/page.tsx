@@ -13,7 +13,7 @@ import { signInWithEmailAndPassword, signInAnonymously, signOut } from 'firebase
 import { toast } from '@/hooks/use-toast';
 import BrandLogo from '@/components/BrandLogo';
 import Image from 'next/image';
-import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert } from 'lucide-react';
+import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -67,6 +67,7 @@ export default function LoginPage() {
     { id: 'starter_squad', name: 'Starter Plan Demo', icon: Users, desc: 'Grassroots essentials' },
     { id: 'squad_pro', name: 'Squad Pro Demo', icon: Zap, desc: 'Professional elite coordination' },
     { id: 'elite_teams', name: 'Elite Team/League Demo', icon: Trophy, desc: 'Institutional multi-team hub' },
+    { id: 'school_demo', name: 'School Demo', icon: GraduationCap, desc: 'Full K-12 Program Hub' },
     { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Teammate recruiting view' },
     { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Guardian safety view' }
   ];

@@ -38,7 +38,11 @@ import {
   Sparkles,
   ArrowLeft,
   Search,
-  Check
+  Check,
+  Activity,
+  MapPin,
+  Lock,
+  ChevronRight
 } from 'lucide-react';
 import { 
   Select, 
@@ -55,6 +59,8 @@ import { toast } from '@/hooks/use-toast';
 
 const REQUIRED_STEPS = [
   { id: 'identity', name: 'Identity', icon: Users, label: 'Identity' },
+  { id: 'contact', name: 'Contact', icon: MapPin, label: 'Contact' },
+  { id: 'medical', name: 'Medical', icon: Activity, label: 'Medical' },
   { id: 'guardian', name: 'Guardian', icon: ShieldCheck, label: 'Guardian' },
   { id: 'team_code', name: 'Team Code', icon: Zap, label: 'Team Code' },
   { id: 'compliance', name: 'Compliance', icon: FileSignature, label: 'Compliance' }
@@ -100,14 +106,9 @@ function RegistrationForm() {
   }, [answers['dateOfBirth'], answers['dob']]);
 
   const activeSteps = useMemo(() => {
-    const steps = [REQUIRED_STEPS[0]]; // Identity
-    if (formSchema.some(f => f.step === 'guardian') && isUnder18) {
-      steps.push(REQUIRED_STEPS[1]); // Guardian
-    }
-    steps.push(REQUIRED_STEPS[2]); // Team Code
-    steps.push(REQUIRED_STEPS[3]); // Compliance
-    return steps;
-  }, [formSchema, isUnder18]);
+    // Standard 6-step flow for league registration
+    return [...REQUIRED_STEPS];
+  }, []);
 
   const totalSteps = activeSteps.length;
 
@@ -117,9 +118,25 @@ function RegistrationForm() {
 
   const stepFields = useMemo(() => {
     const stepId = activeSteps[currentStep - 1]?.id;
-    if (stepId === 'identity') return formSchema.filter(f => f.step === 'identity' || !f.step);
-    if (stepId === 'guardian') return formSchema.filter(f => f.step === 'guardian');
-    return [];
+    if (!stepId) return [];
+
+    // Helper to intelligently suggest a step for uncategorized fields
+    const getSuggestedStep = (field: RegistrationFormField) => {
+      const label = (field.label || '').toLowerCase();
+      const id = (field.id || '').toLowerCase();
+      
+      if (label.includes('phone') || label.includes('address') || label.includes('city') || label.includes('zip') || label.includes('state') || label.includes('contact')) return 'contact';
+      if (label.includes('medical') || label.includes('allergy') || label.includes('condition') || label.includes('health') || label.includes('insurance') || id.includes('med')) return 'medical';
+      if (label.includes('waiver') || label.includes('agreement') || label.includes('signature') || label.includes('policy')) return 'compliance';
+      if (label.includes('identity') || label.includes('name') || label.includes('email') || label.includes('dob') || label.includes('birth')) return 'identity';
+      
+      return 'identity'; // Fallback
+    };
+
+    return formSchema.filter(f => {
+      const assignedStep = f.step || getSuggestedStep(f);
+      return assignedStep === stepId;
+    });
   }, [formSchema, activeSteps, currentStep]);
 
   useEffect(() => {
@@ -249,15 +266,12 @@ function RegistrationForm() {
       <BrandLogo variant="light-background" className="h-10 w-40 mb-12" />
       
       <div className="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
-        {/* Left Info Panel */}
         <div className="lg:col-span-4 space-y-8 lg:sticky lg:top-12">
           <div className="space-y-4">
-            <Badge className="bg-primary text-white border-none font-black uppercase tracking-widest text-[9px] h-6 px-3 shadow-lg shadow-primary/20">Recruitment Hub</Badge>
-            <h1 className="text-4xl font-black tracking-tighter uppercase leading-[0.9]">{config.title}</h1>
-            <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Official Enrollment pipeline</p>
+            <div><Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3">Portals</Badge><h1 className="text-3xl font-black uppercase tracking-tight mt-1">{config?.title || "League Registration"}</h1></div>
+            <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Official {config?.type || "Enrollment"} pipeline</p>
           </div>
 
-          {/* Progress Tracker */}
           <div className="space-y-6">
             <div className="flex justify-between items-end px-1">
               <p className="text-[10px] font-black uppercase tracking-widest opacity-40 text-black">Progression</p>
@@ -308,7 +322,6 @@ function RegistrationForm() {
           </div>
         </div>
 
-        {/* Right Form Panel */}
         <Card className="lg:col-span-8 rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5 min-h-[600px] flex flex-col">
           <div className="h-2 bg-primary w-full" />
           
@@ -323,56 +336,35 @@ function RegistrationForm() {
                 </CardTitle>
                 <CardDescription className="text-xs font-semibold">
                   {activeSteps[currentStep-1]?.id === 'identity' && "Start your enrollment by providing basic participant data."}
-                  {activeSteps[currentStep-1]?.id === 'guardian' && "Required documentation for underage athlete participation."}
-                  {activeSteps[currentStep-1]?.id === 'team_code' && "If you were recruited by a team, enter their code here."}
-                  {activeSteps[currentStep-1]?.id === 'compliance' && "Review legal terms and provide digital signature."}
+                  {activeSteps[currentStep-1]?.id === 'contact' && "Provide primary contact and deployment address info."}
+                  {activeSteps[currentStep-1]?.id === 'medical' && "Verified health clearances and emergency medical data."}
+                  {activeSteps[currentStep-1]?.id === 'guardian' && "Guardian authorization is mandatory for minor participants."}
+                  {activeSteps[currentStep-1]?.id === 'team_code' && "Enter your squad's recruitment code to auto-assign rosters."}
+                  {activeSteps[currentStep-1]?.id === 'compliance' && "Finalize your institutional agreements and waivers."}
                 </CardDescription>
 
               </div>
             </CardHeader>
             
             <CardContent className="p-8 lg:p-10 flex-1">
-              {/* Step 1: Identity */}
-              {currentStep === 1 && (
+              {/* Standard Fields Rendering */}
+              {activeSteps[currentStep - 1]?.id !== 'guardian' && activeSteps[currentStep - 1]?.id !== 'team_code' && activeSteps[currentStep - 1]?.id !== 'compliance' && (
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {activeSteps[currentStep - 1]?.id === 'identity' && (
                     <div className="space-y-3">
-                      <Label className="text-[10px] font-black uppercase tracking-widest">Full Name <span className="text-primary">*</span></Label>
-                      <Input 
-                        required
-                        placeholder="e.g. Marcus Thompson" 
-                        value={answers['fullName'] || ''} 
-                        onChange={e => handleInputChange('fullName', e.target.value)} 
-                        className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
-                      />
+                      {(answers['dateOfBirth'] || answers['dob']) ? (
+                        <div className={cn(
+                          "flex items-center gap-2 p-3 rounded-xl border-2 animate-in fade-in slide-in-from-top-1 duration-300",
+                          isUnder18 ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-green-50 border-green-200 text-green-800"
+                        )}>
+                          {isUnder18 ? <ShieldCheck className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                          <p className="text-[10px] font-black uppercase tracking-widest">
+                            {isUnder18 ? "Guardian Authorization Required (Minor)" : "Adult Participant - Self-Authorization Enabled"}
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="space-y-3">
-                      <Label className="text-[10px] font-black uppercase tracking-widest">Email <span className="text-primary">*</span></Label>
-                      <Input 
-                        required
-                        type="email"
-                        placeholder="player@email.com" 
-                        value={answers['email'] || ''} 
-                        onChange={e => handleInputChange('email', e.target.value)} 
-                        className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <Label className="text-[10px] font-black uppercase tracking-widest">Date of Birth <span className="text-primary">*</span></Label>
-                    <Input 
-                      required
-                      type="date"
-                      value={answers['dateOfBirth'] || ''} 
-                      onChange={e => handleInputChange('dateOfBirth', e.target.value)} 
-                      className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
-                    />
-                    {answers['dateOfBirth'] && (
-                      <p className={cn("text-[10px] font-black uppercase tracking-widest mt-2", isUnder18 ? "text-amber-600" : "text-green-600")}>
-                        {isUnder18 ? "Guardian information will be required (Under 18)" : "No guardian required (18 or older)"}
-                      </p>
-                    )}
-                  </div>
+                  )}
                   {stepFields.map(field => (
                     <div key={field.id} className="space-y-3">
                       {field.type === 'header' ? (
@@ -385,7 +377,12 @@ function RegistrationForm() {
                             </Label>
                           </div>
                           {field.type === 'short_text' && (
-                            <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" />
+                            <Input 
+                              required={field.required} 
+                              value={answers[field.id] || ''} 
+                              onChange={e => handleInputChange(field.id, e.target.value)} 
+                              className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
+                            />
                           )}
                           {field.type === 'dropdown' && (
                             <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
@@ -399,80 +396,173 @@ function RegistrationForm() {
                       )}
                     </div>
                   ))}
-                </div>
-              )}
 
-              {/* Step 2: Guardian (if active) */}
-              {activeSteps[currentStep - 1]?.id === 'guardian' && (
-                <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
-                  <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border-2 border-amber-200">
-                    <ShieldCheck className="h-6 w-6 text-amber-600" />
-                    <p className="text-sm font-bold text-amber-800">Guardian Information Required (Under 18)</p>
-                  </div>
-                  {stepFields.map(field => (
-                    <div key={field.id} className="space-y-3">
-                      <div className="flex justify-between items-end px-1">
-                        <Label className="text-[10px] font-black uppercase tracking-widest">
-                          {field.label} {field.required && <span className="text-primary">*</span>}
-                        </Label>
-                      </div>
-                      {field.type === 'short_text' && (
-                        <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" />
-                      )}
-                      {field.type === 'dropdown' && (
-                        <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
-                          <SelectTrigger className="h-14 rounded-2xl border-2 font-bold bg-muted/5"><SelectValue placeholder="Select choice..." /></SelectTrigger>
-                          <SelectContent className="rounded-xl">
-                            {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold">{opt}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                  ))}
-                  {stepFields.length === 0 && (
-                    <div className="space-y-4">
-                      <div className="space-y-3">
-                        <Label className="text-[10px] font-black uppercase tracking-widest">Guardian Full Name <span className="text-primary">*</span></Label>
+                  {/* Fallback Core Fields for Contact and Medical if schema is sparse */}
+                  {activeSteps[currentStep - 1]?.id === 'contact' && stepFields.length === 0 && (
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Primary Contact Phone <span className="text-primary">*</span></Label>
                         <Input 
                           required
-                          placeholder="e.g. Sarah Thompson" 
-                          value={answers['guardianName'] || ''} 
-                          onChange={e => handleInputChange('guardianName', e.target.value)} 
-                          className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
+                          placeholder="(555) 000-0000" 
+                          value={answers['primary_phone'] || ''} 
+                          onChange={e => setAnswers(p => ({ ...p, primary_phone: e.target.value }))}
+                          className="h-14 rounded-2xl border-2 font-bold bg-muted/5" 
                         />
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-3">
-                          <Label className="text-[10px] font-black uppercase tracking-widest">Guardian Email <span className="text-primary">*</span></Label>
-                          <Input 
-                            required
-                            type="email"
-                            placeholder="guardian@email.com" 
-                            value={answers['guardianEmail'] || ''} 
-                            onChange={e => handleInputChange('guardianEmail', e.target.value)} 
-                            className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
-                          />
-                        </div>
-                        <div className="space-y-3">
-                          <Label className="text-[10px] font-black uppercase tracking-widest">Guardian Phone</Label>
-                          <Input 
-                            type="tel"
-                            placeholder="(555) 000-0000" 
-                            value={answers['guardianPhone'] || ''} 
-                            onChange={e => handleInputChange('guardianPhone', e.target.value)} 
-                            className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
-                          />
-                        </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Current Residence Address</Label>
+                        <Input 
+                          placeholder="Street, City, State, Zip" 
+                          value={answers['residence_address'] || ''} 
+                          onChange={e => setAnswers(p => ({ ...p, residence_address: e.target.value }))}
+                          className="h-14 rounded-2xl border-2 font-bold bg-muted/5" 
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {activeSteps[currentStep - 1]?.id === 'medical' && stepFields.length === 0 && (
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Allergies or Medical Conditions</Label>
+                        <Textarea 
+                          placeholder="e.g. Asthma, Penicillin allergy... (Enter 'None' if applicable)" 
+                          value={answers['medical_notes'] || ''} 
+                          onChange={e => setAnswers(p => ({ ...p, medical_notes: e.target.value }))}
+                          className="min-h-[120px] rounded-2xl border-2 font-bold bg-muted/5 resize-none p-4" 
+                        />
                       </div>
                     </div>
                   )}
                 </div>
               )}
 
+              {/* Step: Guardian */}
+              {activeSteps[currentStep - 1]?.id === 'guardian' && (
+                <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+                  {isUnder18 ? (
+                    <>
+                      <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border-2 border-amber-200">
+                        <ShieldCheck className="h-6 w-6 text-amber-600" />
+                        <div>
+                          <p className="text-sm font-bold text-amber-800 uppercase tracking-tight">Guardian Authorization Required</p>
+                          <p className="text-[10px] font-medium text-amber-600 uppercase tracking-widest">Participant is under 18 years of age</p>
+                        </div>
+                      </div>
+                      
+                      {stepFields
+                        .filter(field => {
+                          // Prevent duplication of hardcoded guardian fields
+                          const id = field.id.toLowerCase();
+                          const label = field.label.toLowerCase();
+                          return !id.includes('guardian_name') && !id.includes('guardian_email') && 
+                                 !id.includes('guardian_phone') && !id.includes('guardian_relationship') &&
+                                 !label.includes('guardian full name') && !label.includes('guardian phone') &&
+                                 !label.includes('guardian email');
+                        })
+                        .map(field => (
+                          <div key={field.id} className="space-y-3">
+                            <div className="flex justify-between items-end px-1">
+                              <Label className="text-[10px] font-black uppercase tracking-widest">
+                                {field.label} {field.required && <span className="text-primary">*</span>}
+                              </Label>
+                            </div>
+                            {field.type === 'short_text' && (
+                              <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" />
+                            )}
+                            {field.type === 'dropdown' && (
+                              <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
+                                <SelectTrigger className="h-14 rounded-2xl border-2 font-bold bg-muted/5"><SelectValue placeholder="Select choice..." /></SelectTrigger>
+                                <SelectContent className="rounded-xl">
+                                  {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold">{opt}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
+                        ))}
 
-              {/* Step 3: Team Code Identification */}
+                      <div className="space-y-6">
+                        <div className="space-y-2">
+                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Full Name <span className="text-primary">*</span></Label>
+                            <Input 
+                              required
+                              placeholder="e.g. Sarah Thompson" 
+                              value={answers['guardian_name'] || ''} 
+                              onChange={e => setAnswers(p => ({ ...p, guardian_name: e.target.value }))}
+                              className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
+                            />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Email <span className="text-primary">*</span></Label>
+                            <Input 
+                              type="email"
+                              required
+                              placeholder="guardian@email.com" 
+                              value={answers['guardian_email'] || ''} 
+                              onChange={e => setAnswers(p => ({ ...p, guardian_email: e.target.value }))}
+                              className="h-14 rounded-2xl border-2 font-bold bg-muted/5 shadow-sm" 
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Phone <span className="text-primary">*</span></Label>
+                            <Input 
+                              required
+                              placeholder="(555) 000-0000" 
+                              value={answers['guardian_phone'] || ''} 
+                              onChange={e => setAnswers(p => ({ ...p, guardian_phone: e.target.value }))}
+                              className="h-14 rounded-2xl border-2 font-bold bg-muted/5 shadow-sm" 
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Relationship to Player <span className="text-primary">*</span></Label>
+                          <Select 
+                            required 
+                            value={answers['guardian_relationship'] || ''} 
+                            onValueChange={v => setAnswers(p => ({ ...p, guardian_relationship: v }))}
+                          >
+                            <SelectTrigger className="h-14 rounded-2xl border-2 font-bold bg-muted/5">
+                              <SelectValue placeholder="Select Relationship..." />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                              <SelectItem value="Father" className="font-bold">Father</SelectItem>
+                              <SelectItem value="Mother" className="font-bold">Mother</SelectItem>
+                              <SelectItem value="Legal Guardian" className="font-bold">Legal Guardian</SelectItem>
+                              <SelectItem value="Grandparent" className="font-bold">Grandparent</SelectItem>
+                              <SelectItem value="Stepparent" className="font-bold">Stepparent</SelectItem>
+                              <SelectItem value="Other" className="font-bold">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="py-12 flex flex-col items-center justify-center text-center space-y-6 animate-in zoom-in-95 duration-500">
+                      <div className="h-24 w-24 bg-green-50 rounded-full flex items-center justify-center border-4 border-dashed border-green-200">
+                        <CheckCircle2 className="h-12 w-12 text-green-600" />
+                      </div>
+                      <div className="space-y-2 max-w-sm">
+                        <h3 className="text-2xl font-black uppercase tracking-tight">Step Not Required</h3>
+                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider leading-relaxed">
+                          As an adult participant (18+), you are authorized to self-sign all registration documents. Guardian information is not necessary for this profile.
+                        </p>
+                      </div>
+                      <Button 
+                        type="button" 
+                        onClick={() => setCurrentStep(prev => prev + 1)}
+                        className="h-14 px-10 rounded-2xl font-black uppercase text-xs"
+                      >
+                        Skip to Next Step <ArrowRight className="h-4 w-4 ml-2" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step: Team Code */}
               {activeSteps[currentStep - 1]?.id === 'team_code' && (
-
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                   <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-primary/10 space-y-6">
                     <div className="space-y-2">
@@ -513,7 +603,7 @@ function RegistrationForm() {
                           <Globe className="h-6 w-6 text-muted-foreground" />
                         </div>
                         <div className="space-y-1">
-                          <p className="text-xs font-black uppercase tracking-tight">Independent Registration?</p>
+                          <h2 className="text-lg font-black uppercase tracking-tight">Portals Access Key</h2>
                           <p className="text-[10px] font-bold text-muted-foreground leading-relaxed px-10">If you are not affiliated with a specific team, you can skip this step to enter the general recruiting pool.</p>
                         </div>
                       </div>
@@ -522,9 +612,8 @@ function RegistrationForm() {
                 </div>
               )}
 
-              {/* Step 4: Compliance & Signature */}
+              {/* Step: Compliance */}
               {activeSteps[currentStep - 1]?.id === 'compliance' && (
-
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                    {(config.require_default_waiver || config.custom_waiver_text || (config.team_waivers_content && config.team_waivers_content.length > 0)) && (
                     <div className="space-y-6">
@@ -534,8 +623,10 @@ function RegistrationForm() {
                             <ShieldCheck className="h-4 w-4" />
                             <p className="text-[10px] font-black uppercase tracking-widest">Institutional Liability Waiver</p>
                           </div>
-                          <ScrollArea className="h-48 p-6 rounded-[2rem] bg-muted/5 border-2 border-black/5 font-medium text-xs leading-relaxed text-foreground/80">
-                            {config.default_waiver_text || 'I hereby assume all risks, hazards, and liabilities associated with participation in this program. I waive, release, and discharge the organization, its directors, coaches, and facility providers from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.'}
+                          <ScrollArea className="h-48 rounded-[2.5rem] bg-muted/5 border-2 border-black/5 shadow-inner">
+                            <div className="p-14 font-medium text-xs leading-relaxed text-foreground/80">
+                              {config.default_waiver_text || 'I hereby assume all risks, hazards, and liabilities associated with participation in this program. I waive, release, and discharge the organization, its directors, coaches, and facility providers from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.'}
+                            </div>
                           </ScrollArea>
                         </div>
                       )}
@@ -546,8 +637,10 @@ function RegistrationForm() {
                             <FileSignature className="h-4 w-4" />
                             <p className="text-[10px] font-black uppercase tracking-widest">Organization specific Agreement</p>
                           </div>
-                          <ScrollArea className="h-48 p-6 rounded-[2rem] bg-primary/5 border-2 border-primary/10 font-medium text-xs leading-relaxed text-primary/80">
-                            {config.custom_waiver_text}
+                          <ScrollArea className="h-48 rounded-[2.5rem] bg-primary/5 border-2 border-primary/10 shadow-inner">
+                            <div className="p-14 font-medium text-xs leading-relaxed text-primary/80">
+                              {config.custom_waiver_text}
+                            </div>
                           </ScrollArea>
                         </div>
                       )}
@@ -558,24 +651,41 @@ function RegistrationForm() {
                             <FileSignature className="h-4 w-4" />
                             <p className="text-[10px] font-black uppercase tracking-widest">{waiver.title}</p>
                           </div>
-                          <ScrollArea className="h-48 p-6 rounded-[2rem] bg-rose-50 border-2 border-rose-100 font-medium text-xs leading-relaxed text-rose-800">
-                            {waiver.content}
+                          <ScrollArea className="h-48 rounded-[2.5rem] bg-rose-50 border-2 border-rose-100 shadow-inner">
+                            <div className="p-14 font-medium text-xs leading-relaxed text-rose-800">
+                              {waiver.content}
+                            </div>
                           </ScrollArea>
                         </div>
                       ))}
 
-                      <div className="flex items-center space-x-3 p-6 bg-primary/5 rounded-3xl border-2 border-primary/20 group cursor-pointer transition-all hover:bg-white" onClick={() => setWaiverAgreed(!waiverAgreed)}>
-                        <Checkbox id="waiver_agree" checked={waiverAgreed} onCheckedChange={v => setWaiverAgreed(!!v)} className="h-6 w-6 rounded-lg" />
-                        <Label htmlFor="waiver_agree" className="text-xs font-black uppercase tracking-tight cursor-pointer leading-tight flex-1">
+                      <div className="flex items-center space-x-3 p-6 bg-primary/5 rounded-3xl border-2 border-primary/20 transition-all hover:bg-white">
+                        <Checkbox 
+                          id="waiver_agree" 
+                          checked={waiverAgreed} 
+                          onCheckedChange={v => setWaiverAgreed(!!v)} 
+                          className="h-6 w-6 rounded-lg" 
+                        />
+                        <Label 
+                          htmlFor="waiver_agree" 
+                          className="text-xs font-black uppercase tracking-tight cursor-pointer leading-tight flex-1"
+                        >
                           I verify that I have read and accept all participation terms and agreements listed above.
                         </Label>
                       </div>
 
                       <div className="space-y-3 pt-4">
-                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Digital Signature Authentication</Label>
+                        <div className="flex justify-between items-center ml-1">
+                          <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground"> Digital Signature Authentication</Label>
+                          {isUnder18 && (
+                            <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest border-amber-200 text-amber-600 bg-amber-50">
+                              Guardian Required
+                            </Badge>
+                          )}
+                        </div>
                         <div className="relative">
                            <Input 
-                             placeholder="Full Legal Name" 
+                             placeholder={isUnder18 ? "Guardian's Full Legal Name" : "Participant's Full Legal Name"} 
                              value={signature} 
                              onChange={e => setSignature(e.target.value)} 
                              className="h-20 rounded-[2rem] border-2 font-mono italic text-center text-3xl bg-muted/5 shadow-inner focus:ring-4 focus:ring-primary/10" 
@@ -583,7 +693,9 @@ function RegistrationForm() {
                            />
                            <Signature className="absolute right-6 top-1/2 -translate-y-1/2 h-8 w-8 opacity-20" />
                         </div>
-                        <p className="text-[8px] font-black uppercase text-center opacity-40 py-2 tracking-[0.3em]">Protocol Handshake v{config.form_version || 1.0}</p>
+                        <p className="text-[8px] font-black uppercase text-center opacity-40 py-2 tracking-[0.3em]">
+                          {isUnder18 ? "I certify that I am the legal guardian and authorized to sign for the minor participant." : "Protocol Handshake v" + (config.form_version || 1.0)}
+                        </p>
                       </div>
                     </div>
                   )}
@@ -605,7 +717,13 @@ function RegistrationForm() {
               <Button 
                 type="submit" 
                 className="flex-1 h-16 rounded-2xl text-lg font-black shadow-xl" 
-                disabled={isSubmitting || (activeSteps[currentStep-1]?.id === 'team_code' && !!teamCode && !validatedTeam && !validatingCode) || (activeSteps[currentStep-1]?.id === 'identity' && (!answers['fullName'] || !answers['email'] || !answers['dateOfBirth']))}
+                disabled={
+                  isSubmitting || 
+                  (activeSteps[currentStep-1]?.id === 'team_code' && !!teamCode && !validatedTeam && !validatingCode) || 
+                  (stepFields.some(f => f.required && !answers[f.id])) ||
+                  (activeSteps[currentStep-1]?.id === 'guardian' && isUnder18 && (!answers.guardian_name || !answers.guardian_email || !answers.guardian_phone || !answers.guardian_relationship)) ||
+                  (activeSteps[currentStep-1]?.id === 'contact' && stepFields.length === 0 && !answers.primary_phone)
+                }
               >
                 {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : 
                  currentStep === totalSteps ? "Dispatch Enrollment" : `Continue to ${activeSteps[currentStep]?.name || 'Next'}`}

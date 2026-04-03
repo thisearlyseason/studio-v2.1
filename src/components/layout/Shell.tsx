@@ -155,14 +155,16 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user }: {
             <div className="flex flex-col min-w-0 flex-1">
               <span className="font-black text-sm truncate uppercase tracking-tight">{team.name}</span>
               <div className="flex items-center gap-1.5 mt-0">
-                {team.isPro ? (
-                  <span className="text-[7px] font-black uppercase text-primary tracking-tighter">ELITE PRO</span>
+                {['elite_teams', 'elite_league', 'squad_organization'].includes(team.planId) || team.isPro || team.type === 'school' || team.type === 'school_squad' ? (
+                  <span className="text-[7px] font-black uppercase text-primary tracking-tighter">
+                    {(team.type === 'school' || team.type === 'school_squad' || team.planId === 'squad_organization') ? 'SCHOOL HUB' : 'ELITE PRO'}
+                  </span>
                 ) : (
                   <span className="text-[7px] font-black uppercase text-muted-foreground/60 tracking-tighter">STARTER</span>
                 )}
-                {team.ownerUserId === user?.id && ['elite_teams', 'elite_league'].includes(team.planId) && (
+                {team.ownerUserId === user?.id && (team.type === 'school' || team.type === 'school_squad' || ['elite_teams', 'elite_league', 'squad_organization'].includes(team.planId || '')) && (
                   <Badge variant="outline" className="h-4 px-1.5 border-primary/20 text-primary bg-primary/5 text-[6px] font-black uppercase tracking-tighter flex items-center gap-1">
-                    <Star className="h-2 w-2 fill-current" /> PRIMARY
+                    <Star className="h-2 w-2 fill-current" /> {(team.type === 'school' || team.type === 'school_squad' || team.planId === 'squad_organization') ? 'DISTRICT' : 'PRIMARY'}
                   </Badge>
                 )}
               </div>
@@ -179,7 +181,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user }: {
       </DropdownMenuItem>
       
       <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
-        <UserPlus className="h-4 w-4 text-primary" /> Recruitment Hub
+        <UserPlus className="h-4 w-4 text-primary" /> Portals
       </DropdownMenuItem>
 
       <DropdownMenuSeparator className="my-2" />
@@ -201,24 +203,31 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const { 
     activeTeam, setActiveTeam, teams, user, isPro, 
     isPrimaryClubAuthority, isStaff, isParent, isPlayer, hasFeature, alerts,
-    unreadAlertsCount, purchasePro
+    unreadAlertsCount, purchasePro, isSchoolMode, isSchoolAdmin
   } = useTeam();
 
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
-  const filteredCoordTabs = coordinationTabs.filter(tab => {
-    // Feed is filtered by plan/feature
-    if (tab.name === 'Feed') return hasFeature('live_feed_read');
-    
-    // Most coordination items are visible to all members for transparency,
-    // internal page logic handles edit/administrative permissions.
-    return true;
-  });
+  const filteredCoordTabs = coordinationTabs
+    .filter(tab => {
+      // Feed is filtered by plan/feature
+      if (tab.name === 'Feed') return hasFeature?.('live_feed_read');
+      
+      // Most coordination items are visible to all members for transparency,
+      // internal page logic handles edit/administrative permissions.
+      return true;
+    })
+    .map(tab => {
+      if (tab.name === 'Leagues' && isSchoolMode) {
+        return { ...tab, name: 'Programs' };
+      }
+      return tab;
+    });
 
   const bottomNavItems = [
     { name: 'Home', href: '/dashboard', icon: Home },
     { name: 'Schedule', href: '/events', icon: CalendarDays },
-    { name: 'Feed', href: '/feed', icon: LayoutDashboard, gate: () => hasFeature('live_feed_read') },
+    { name: 'Feed', href: '/feed', icon: LayoutDashboard, gate: () => hasFeature?.('live_feed_read') },
     { name: 'Chats', href: '/chats', icon: MessageCircle },
   ];
 
@@ -263,7 +272,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </SidebarMenuItem>
                 )}
 
-                {isPrimaryClubAuthority && (
+                {(isPrimaryClubAuthority || isSchoolAdmin) && (
                   <SidebarMenuItem>
                     <SidebarMenuButton 
                       asChild 
@@ -274,7 +283,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       )}
                     >
                       <Link href="/club">
-                        <Building className={cn("h-5 w-5 mr-3", pathname === '/club' ? "text-primary stroke-[3px]" : "text-foreground")} />Club Hub
+                        <Building className={cn("h-5 w-5 mr-3", pathname === '/club' ? "text-primary stroke-[3px]" : "text-foreground")} />
+                        {isSchoolMode ? 'School Hub' : 'Club Hub'}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -349,7 +359,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 </div>
                 <div className="hidden md:block">
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
-                    {pathname === '/dashboard' ? 'Strategic Command' : coordinationTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard'}
+                    {pathname === '/dashboard' ? 'Strategic Command' : 
+                     (pathname === '/leagues' && isSchoolMode ? 'Programs' : 
+                      coordinationTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard')}
                   </h2>
                 </div>
               </div>

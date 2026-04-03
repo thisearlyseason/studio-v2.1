@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useTeam, TeamDocument, Member, PlayerProfile, RecruitingProfile, AthleticMetrics, PlayerStat, PlayerEvaluation, RecruitingContact, PlayerVideo, VideoComment, TeamIncident } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { 
@@ -51,10 +51,12 @@ import {
   Eye,
   Zap,
   Link2,
-  Copy
+  Copy,
+  Camera,
+  MapPin
 } from 'lucide-react';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
-import { collection, query, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -97,7 +99,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, 
     updateAthleticMetrics, getPlayerStats, addPlayerStat, deletePlayerStat,
     getEvaluations, addEvaluation, getRecruitingContact, updateRecruitingContact,
-    getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo, toggleRecruitingProfile
+    getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo, toggleRecruitingProfile,
+    updatePlayerStat
   } = useTeam();
   const { user } = useTeam();
 
@@ -116,7 +119,11 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const [selectedVideo, setSelectedVideo] = useState<PlayerVideo | null>(null);
   const [newComment, setNewComment] = useState('');
   const [commentTimestamp, setCommentTimestamp] = useState('');
-
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [deletedStatIds, setDeletedStatIds] = useState<string[]>([]);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [activeTeam] = useState(user?.clubName || 'Elite Academy'); // Fallback for prominent display
+  const [photos, setPhotos] = useState<string[]>([]);
   const loadData = useCallback(async () => {
     if (!member.playerId) {
       setLoading(false);
@@ -132,12 +139,17 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         getRecruitingContact(member.playerId),
         getPlayerVideos(member.playerId)
       ]);
+      if (p) {
+        setProfile(p);
+        setPhotos(p.photos || []);
+      }
       if (p) setProfile(p);
       if (m) setMetrics(m);
-      setStats(s);
-      setEvaluations(e);
+      setStats(s || []);
       if (c) setContact(c);
-      setVideos(v);
+      if (e) setEvaluations(e);
+      if (v) setVideos(v || []);
+      console.log("Loaded contact details:", c);
     } catch (error) {
       console.error("Error loading athlete pack:", error);
     } finally {
@@ -145,20 +157,67 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     }
   }, [member.playerId, getRecruitingProfile, getAthleticMetrics, getPlayerStats, getEvaluations, getRecruitingContact, getPlayerVideos]);
 
+
   useEffect(() => { loadData(); }, [loadData]);
 
   const handleUpdateProfile = async () => {
-    if (!member.playerId) return;
-    await updateRecruitingProfile(member.playerId, profile);
-    await updateAthleticMetrics(member.playerId, metrics);
-    await updateRecruitingContact(member.playerId, contact);
-    // Sync the portal gate with the pipeline status:
-    // "active" or "committed" => enable the public scout portal
-    // "hidden" (or unset)     => disable it
-    const isEnabled = profile.status === 'active' || profile.status === 'committed';
-    await toggleRecruitingProfile(member.playerId, isEnabled);
-    setIsEditing(false);
-    toast({ title: "Recruiting Pack Synchronized" });
+    if (!member.playerId) {
+      toast({ 
+        title: "Synchronization Identity Failure", 
+        description: "Athlete identity (playerId) not found. Verify this athlete is correctly assigned in the roster.", 
+        variant: "destructive" 
+      });
+      console.warn("Recruiting sync failed: No playerId for member", member);
+      return;
+    }
+    
+    setIsSyncing(true);
+    console.log("Initiating pack synchronization for player:", member.playerId);
+
+    try {
+      const isEnabled = profile.status === 'active' || profile.status === 'committed';
+      
+      const updatePromises = [
+        updateRecruitingProfile(member.playerId, { ...profile, photos }),
+        updateAthleticMetrics(member.playerId, {
+          ...metrics,
+          graduationYear: profile.graduationYear ? Number(profile.graduationYear) : undefined,
+          academicGPA: profile.academicGPA ? Number(profile.academicGPA) : undefined
+        }),
+        updateRecruitingContact(member.playerId, contact),
+        toggleRecruitingProfile(member.playerId, isEnabled),
+        ...stats.map(s => {
+          if (s.id.startsWith('temp_')) {
+            const { id, ...data } = s;
+            return addPlayerStat(member.playerId as string, data);
+          }
+          return updatePlayerStat(member.playerId as string, s.id, s);
+        }),
+        ...deletedStatIds.map(id => deletePlayerStat(member.playerId as string, id))
+      ];
+      
+      await Promise.all(updatePromises);
+      
+      setDeletedStatIds([]);
+      console.log("Recruiting pack synchronization successfully persisted.");
+      
+      toast({
+        title: "Recruiting Pack Synchronized",
+        description: `Institutional repository for ${member.name} has been updated in the cloud registry.`,
+      });
+      
+      setIsEditing(false);
+      await loadData();
+    } catch (error: any) {
+      console.error("Recruiting synchronization failed:", error);
+      toast({
+        title: "Pack Sync Failed",
+        description: error.message || "An unexpected latency error occurred. Attempting to restore connection...",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleAddFilm = async () => {
@@ -203,6 +262,73 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     newStats.splice(index, 1);
     setMetrics({...metrics, customStats: newStats});
   };
+
+  const updateStat = (id: string, field: string, val: any) => {
+    setStats(stats.map(s => s.id === id ? { ...s, [field]: val } : s));
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "Asset Oversized", description: "Image exceeds 5MB threshold. Optimize or use a hosted URL.", variant: "destructive" });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setProfile({ ...profile, photoURL: base64 });
+      toast({ title: "Image Uploaded", description: "Recruiting photo updated locally. Commit to synchronize." });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "Asset Oversized", description: "Image exceeds 5MB threshold.", variant: "destructive" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setPhotos(prev => [...prev, base64]);
+      toast({ title: "Photo Added to Gallery", description: "Update successfully staged." });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removePhoto = (index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddStatRow = async () => {
+    if (!member.playerId) return;
+    const newStat: PlayerStat = { 
+      id: `temp_${Date.now()}`,
+      season: new Date().getFullYear().toString(), 
+      gamesPlayed: 0, 
+      points: 0, 
+      assists: 0, 
+      efficiency: 0,
+      playerId: member.playerId
+    };
+    setStats([...stats, newStat]);
+  };
+
+  const handleDeleteStat = async (id: string) => {
+    if (!member.playerId) return;
+    
+    if (!id.startsWith('temp_')) {
+      setDeletedStatIds(prev => [...prev, id]);
+    }
+    
+    setStats(stats.filter(s => s.id !== id));
+  };
+
 
   const getSportFields = () => {
     switch (activeSport) {
@@ -267,25 +393,86 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <header className="flex items-center justify-between border-b pb-6">
-        <div className="flex items-center gap-4">
-          <Avatar className="h-16 w-16 rounded-2xl border-2 border-primary/10">
-            <AvatarImage src={member.avatar} />
-            <AvatarFallback className="font-black">{member.name[0]}</AvatarFallback>
-          </Avatar>
-          <div>
-            <h3 className="text-2xl font-black uppercase tracking-tight">{member.name}</h3>
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{member.position} • #{member.jersey}</p>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-5 duration-700">
+      <header className="grid grid-cols-1 xl:grid-cols-12 items-center gap-10 bg-white p-10 lg:p-14 rounded-[3.5rem] lg:rounded-[4.5rem] border-2 border-black/[0.03] shadow-2xl shadow-black/5 relative overflow-hidden group">
+        <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none group-hover:rotate-12 transition-transform duration-1000">
+          <Star className="h-64 w-64 text-zinc-900" />
+        </div>
+        
+        <div className="xl:col-span-8 flex flex-col md:flex-row items-center gap-10 lg:gap-14 relative z-10">
+          <div className="relative shrink-0">
+            <Avatar className="h-44 w-44 lg:h-52 lg:w-52 rounded-[3.5rem] lg:rounded-[4rem] ring-[12px] ring-primary/5 shadow-2xl overflow-hidden border-4 border-white transition-transform duration-500 group-hover:scale-[1.02]">
+              <AvatarImage src={profile.photoURL || member.avatar} className="object-cover" />
+              <AvatarFallback className="font-black text-5xl bg-zinc-50 text-zinc-300">{member.name[0]}</AvatarFallback>
+            </Avatar>
+            <div className="absolute -bottom-2 -right-2 lg:-bottom-4 lg:-right-4 bg-black text-white h-14 w-14 lg:h-16 lg:w-16 rounded-2xl lg:rounded-3xl flex items-center justify-center shadow-2xl border-[6px] border-white font-black text-lg lg:text-xl transform rotate-3">
+              #{profile.jerseyNumber || member.jersey || '00'}
+            </div>
+          </div>
+
+          <div className="space-y-5 text-center md:text-left flex-1 min-w-0">
+            <div className="space-y-3">
+              <div className="flex flex-col md:flex-row md:items-center gap-4">
+                <Badge className="bg-primary text-white border-none font-black text-[10px] tracking-widest px-5 h-8 w-fit mx-auto md:mx-0 shadow-lg shadow-primary/20">ATHLETE CORE</Badge>
+                <div className="flex items-center justify-center md:justify-start gap-3">
+                   <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-pulse" />
+                   <p className="text-[11px] font-black uppercase text-zinc-400 tracking-[0.35em]">
+                     {activeSport} <span className="mx-2 text-zinc-200">/</span> {profile.status === 'committed' ? 'COMMITTED' : 'ACTIVE PROSPECT'}
+                   </p>
+                </div>
+              </div>
+              <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tighter text-zinc-900 leading-[1.1] break-words">
+                {member.name}
+              </h3>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-8 gap-y-4 pt-2">
+              <div className="flex items-center gap-3 group/item">
+                <div className="h-9 w-9 rounded-2xl bg-zinc-50 flex items-center justify-center text-primary border border-black/[0.03] shadow-sm transition-colors group-hover/item:bg-primary/10">
+                  <Target className="h-4.5 w-4.5" />
+                </div>
+                <p className="text-[13px] font-black text-zinc-700 uppercase tracking-widest">{profile.primaryPosition || member.position || 'Athlete'}</p>
+              </div>
+              <div className="flex items-center gap-3 group/item">
+                <div className="h-9 w-9 rounded-2xl bg-zinc-50 flex items-center justify-center text-primary border border-black/[0.03] shadow-sm transition-colors group-hover/item:bg-primary/10">
+                  <ShieldCheck className="h-4.5 w-4.5" />
+                </div>
+                <p className="text-[13px] font-black text-primary uppercase tracking-widest">{activeTeam}</p>
+              </div>
+              <div className="flex items-center gap-3 text-zinc-400 group/item">
+                <div className="h-9 w-9 rounded-2xl bg-zinc-50 flex items-center justify-center transition-colors group-hover/item:bg-zinc-100">
+                  <MapPin className="h-4.5 w-4.5" />
+                </div>
+                <p className="text-[13px] font-bold uppercase tracking-widest">{profile.hometown || 'Location TBD'}</p>
+              </div>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" className="rounded-xl h-10 border-2 font-black uppercase text-[10px]" onClick={() => window.open(`/recruit/player/${member.playerId}`, '_blank')}>
-            <ExternalLink className="h-4 w-4 mr-2" /> Scout Portal
+
+        <div className="xl:col-span-4 flex flex-col sm:flex-row xl:flex-col items-stretch gap-4 w-full relative z-10 xl:pl-8">
+          <Button 
+            variant="outline" 
+            className="group/btn relative overflow-hidden rounded-[2rem] h-16 xl:h-20 border-2 border-zinc-100 font-black uppercase text-[12px] tracking-[0.1em] hover:bg-zinc-50 transition-all active:scale-[0.98] shadow-sm px-10 bg-white" 
+            onClick={() => window.open(`/recruit/player/${member.playerId}`, '_blank')}
+          >
+            <div className="flex items-center justify-center relative z-10">
+              <ExternalLink className="h-5 w-5 mr-3 text-zinc-400 group-hover/btn:text-primary transition-colors" /> 
+              Scout Portal
+            </div>
           </Button>
-          <Button className="rounded-xl h-10 px-6 font-black uppercase text-[10px]" onClick={() => setIsEditing(true)}><Edit3 className="h-4 w-4 mr-2" /> Edit Pack</Button>
+          <Button 
+            className="group/btn relative overflow-hidden rounded-[2rem] h-16 xl:h-20 font-black uppercase text-[12px] tracking-[0.1em] shadow-2xl shadow-primary/20 active:scale-[0.98] transition-all bg-primary hover:bg-primary/95 text-white border-b-4 border-black/10 px-10" 
+            onClick={() => setIsEditing(true)}
+          >
+            <div className="flex items-center justify-center relative z-10">
+              <Sparkles className="h-5 w-5 mr-3 text-white/80 group-hover/btn:scale-110 transition-transform" /> 
+              Pack Architect
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-1000" />
+          </Button>
         </div>
       </header>
+
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <section className="md:col-span-2 space-y-8">
@@ -351,24 +538,52 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                   profile.status === 'committed' ? 'bg-primary shadow-lg shadow-primary/50' :
                   'bg-white/20'
                 }`} />
-                <h4 className="text-xl font-black uppercase">
+                <h4 className="text-xl font-black uppercase tracking-tight">
                   {profile.status === 'active' ? 'Active Prospect' :
                    profile.status === 'committed' ? 'Committed' :
                    profile.status === 'hidden' ? 'Inactive / Private' : 'Not Set'}
                 </h4>
               </div>
-              <p className="text-[10px] font-bold text-white/40 leading-relaxed">
-                {profile.status === 'hidden' ? 'Scout portal is private. Set to Active to enable.' : 'Scout portal is visible to verified recruiters.'}
+              <p className="text-[11px] font-bold text-white/40 leading-relaxed uppercase tracking-wider">
+                {profile.status === 'hidden' ? 'Scout portal is private.' : 'Scout portal is active.'}
               </p>
             </div>
           </Card>
 
+          <Card className="rounded-[2.5rem] border-none shadow-md bg-white p-8 space-y-6">
+            <div className="flex items-center justify-between">
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Seasonal Analytics</h4>
+              <BarChart2 className="h-4 w-4 text-muted-foreground opacity-30" />
+            </div>
+            <div className="space-y-4">
+              {stats.length > 0 ? (
+                <div className="space-y-2">
+                  {stats.slice(0, 3).map(s => (
+                    <div key={s.id} className="flex items-center justify-between py-2 border-b border-zinc-100 last:border-0">
+                      <p className="text-[10px] font-black uppercase">{s.season}</p>
+                      <p className="text-[10px] font-black uppercase text-primary">{s.points} PTS • {s.assists} AST</p>
+                    </div>
+                  ))}
+                  {stats.length > 3 && <p className="text-[8px] font-black uppercase text-muted-foreground text-center">+{stats.length - 3} more records</p>}
+                </div>
+              ) : (
+                <div className="text-center py-6 border-2 border-dashed rounded-3xl opacity-20">
+                  <p className="text-[8px] font-black uppercase">No records found</p>
+                </div>
+              )}
+            </div>
+          </Card>
+
           <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white p-6 space-y-4">
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Strategic Bio</h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Strategic Bio</h4>
+              <Star className="h-4 w-4 text-primary opacity-20" />
+            </div>
             <p className="text-xs font-medium text-muted-foreground leading-relaxed italic line-clamp-4">"{profile.bio || 'No strategic narrative established for this athlete.'}"</p>
           </Card>
         </aside>
       </div>
+
 
       <Dialog open={isEditing} onOpenChange={setIsEditing}>
         <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 overflow-hidden border-none shadow-2xl">
@@ -380,93 +595,271 @@ function RecruitingProfileManager({ member }: { member: Member }) {
               <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Institutional Recruiting Portfolio Synchronization</DialogDescription>
             </DialogHeader>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 text-foreground">
-              <div className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 text-foreground">
+              <div className="lg:col-span-1 space-y-8">
                 <section className="space-y-6">
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Identity & Status</h3>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                  <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Identity & Branding</h3>
+                  <div className="space-y-5">
+                    <div className="relative group mx-auto w-32 h-32">
+                      <Avatar className="h-32 w-32 rounded-[2.5rem] ring-4 ring-primary/5 shadow-xl border-4 border-white overflow-hidden">
+                        <AvatarImage src={profile.photoURL || member.avatar} className="object-cover" />
+                        <AvatarFallback className="font-black text-2xl text-muted-foreground uppercase">{member.name[0]}</AvatarFallback>
+                      </Avatar>
+                    </div>
+                    <div className="space-y-2">
+                       <Label className="text-[10px] font-black uppercase ml-1">Recruiting Image URL <span className="opacity-40 normal-case">(Max 5MB)</span></Label>
+                       <div className="flex gap-2">
+                         <Input value={profile.photoURL ?? ''} onChange={e => setProfile({...profile, photoURL: e.target.value})} className="h-10 border-2 rounded-xl font-bold text-[10px] flex-1" placeholder="https://image-hosting.com/photo.jpg" />
+                         <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+                         <Button type="button" variant="outline" className="h-10 border-2 rounded-xl text-[8px] font-black uppercase transition-all hover:bg-primary hover:text-white" onClick={() => imageInputRef.current?.click()}>
+                           <Camera className="h-4 w-4 mr-1 text-primary group-hover:text-white" /> Upload
+                         </Button>
+                       </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4">
                       <div className="space-y-2">
                         <Label className="text-[10px] font-black uppercase ml-1">Type of Sport</Label>
                         <Select value={activeSport} onValueChange={(v: any) => setProfile({...profile, typeOfSport: v})}>
-                          <SelectTrigger className="h-12 border-2 rounded-xl font-bold"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-12 border-2 rounded-xl font-bold uppercase text-[10px]"><SelectValue /></SelectTrigger>
                           <SelectContent className="rounded-xl">
-                            <SelectItem value="Baseball" className="font-bold">Baseball</SelectItem>
-                            <SelectItem value="Slowpitch" className="font-bold">Slowpitch</SelectItem>
-                            <SelectItem value="Soccer" className="font-bold">Soccer</SelectItem>
-                            <SelectItem value="Football" className="font-bold">Football</SelectItem>
-                            <SelectItem value="Tennis" className="font-bold">Tennis</SelectItem>
-                            <SelectItem value="Pickleball" className="font-bold">Pickleball</SelectItem>
-                            <SelectItem value="Golf" className="font-bold">Golf</SelectItem>
-                            <SelectItem value="Custom" className="font-bold">Custom</SelectItem>
+                            {['Baseball', 'Softball', 'Basketball', 'Soccer', 'Football', 'Lacrosse', 'Hockey', 'Custom'].map(s => (
+                              <SelectItem key={s} value={s} className="font-bold uppercase text-[10px]">{s}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2">
                         <Label className="text-[10px] font-black uppercase ml-1">Pipeline Status</Label>
                         <Select value={profile.status ?? ''} onValueChange={(v: any) => setProfile({...profile, status: v})}>
-                          <SelectTrigger className="h-12 border-2 rounded-xl font-bold"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-12 border-2 rounded-xl font-bold uppercase text-[10px]"><SelectValue /></SelectTrigger>
                           <SelectContent className="rounded-xl">
-                            <SelectItem value="active" className="font-bold">Active Prospect</SelectItem>
-                            <SelectItem value="hidden" className="font-bold">Inactive/Private</SelectItem>
-                            <SelectItem value="committed" className="font-bold">Committed</SelectItem>
+                            <SelectItem value="active" className="font-bold uppercase text-[10px]">Active Prospect</SelectItem>
+                            <SelectItem value="hidden" className="font-bold uppercase text-[10px]">Inactive/Private</SelectItem>
+                            <SelectItem value="committed" className="font-bold uppercase text-[10px]">Committed</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Height</Label><Input value={profile.height ?? ''} onChange={e => setProfile({...profile, height: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Weight (lbs)</Label><Input value={profile.weight ?? ''} onChange={e => setProfile({...profile, weight: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                    </div>
                   </div>
                 </section>
 
-                <section className="space-y-6">
-                  <div className="flex items-center justify-between ml-1 mb-2">
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Athletic Pulse ({activeSport})</h3>
-                    <Button size="sm" variant="outline" className="h-6 text-[8px] font-black uppercase rounded-lg" onClick={addCustomStat}><Plus className="h-3 w-3 mr-1" /> Add Custom Stat</Button>
+                <section className="space-y-6 bg-primary/5 p-8 rounded-[2.5rem] border-2 border-primary/10">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-primary p-2 rounded-xl text-white shadow-lg shadow-primary/20"><Target className="h-4 w-4" /></div>
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Institutional Pulse</h3>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    {getSportFields().map(f => (
-                      <div key={f.key} className="space-y-2">
-                        <Label className="text-[10px] font-black uppercase ml-1">{f.label}</Label>
-                        <Input type={f.type} value={metrics[f.key] ?? ''} onChange={e => onChangeMetric(f.key, e.target.value)} className="h-12 border-2 rounded-xl font-bold" />
+                  <div className="space-y-4">
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase leading-relaxed tracking-wider px-1">
+                      Provide a strategic overview for recruiters. This narrative is private unless the profile is shared.
+                    </p>
+                    <div className="space-y-2">
+                       <Label className="text-[10px] font-black uppercase ml-1 opacity-60">Institutional Pulse (Coach Narrative)</Label>
+                       <Textarea 
+                         value={profile.institutionalPulse ?? ''} 
+                         onChange={e => setProfile({...profile, institutionalPulse: e.target.value})} 
+                         className="min-h-[160px] border-2 rounded-2xl font-medium p-5 resize-none text-[13px] bg-white shadow-inner focus:ring-primary/20" 
+                         placeholder="Institutional overview, coach feedback, or status update..." 
+                       />
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div className="lg:col-span-2 space-y-10">
+                <Tabs defaultValue="overview" className="w-full">
+                  <TabsList className="bg-muted opacity-80 p-1 rounded-2xl h-14 w-full justify-start gap-2 px-2">
+                    <TabsTrigger value="overview" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Athlete Overview</TabsTrigger>
+                    <TabsTrigger value="athletic" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Athletic Metrics</TabsTrigger>
+                    <TabsTrigger value="seasonal" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Seasonal Analytics</TabsTrigger>
+                    <TabsTrigger value="gallery" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Gallery</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="overview" className="mt-8 space-y-8">
+                     <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Primary Position</Label><Input placeholder="e.g. RHP / SS" value={profile.primaryPosition ?? ''} onChange={e => setProfile({...profile, primaryPosition: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Secondary Position</Label><Input placeholder="e.g. OF" value={profile.secondaryPosition ?? ''} onChange={e => setProfile({...profile, secondaryPosition: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Height</Label><Input placeholder="e.g. 6'2\" value={profile.height ?? ''} onChange={e => setProfile({...profile, height: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Weight (lbs)</Label><Input placeholder="e.g. 210" value={profile.weight ?? ''} onChange={e => setProfile({...profile, weight: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Dominant Hand</Label>
+                         <Select value={profile.dominantHand ?? ''} onValueChange={v => setProfile({...profile, dominantHand: v})}>
+                           <SelectTrigger className="h-12 border-2 rounded-xl font-bold text-[10px] uppercase"><SelectValue /></SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="Right" className="font-bold">RIGHT</SelectItem>
+                             <SelectItem value="Left" className="font-bold">LEFT</SelectItem>
+                             <SelectItem value="Ambi" className="font-bold">AMBIDEXTROUS</SelectItem>
+                           </SelectContent>
+                         </Select>
+                       </div>
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Institutional Team</Label><Input placeholder="e.g. Elite Baseball" value={profile.teamName ?? ''} onChange={e => setProfile({...profile, teamName: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Graduation Year</Label><Input type="number" placeholder="2024" value={profile.graduationYear ?? ''} onChange={e => setProfile({...profile, graduationYear: parseInt(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Hometown</Label><Input placeholder="City, State" value={profile.hometown ?? ''} onChange={e => setProfile({...profile, hometown: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Institutional Major</Label><Input placeholder="e.g. Business" value={profile.intendedMajor ?? ''} onChange={e => setProfile({...profile, intendedMajor: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">School</Label><Input placeholder="e.g. Highland High" value={profile.school ?? ''} onChange={e => setProfile({...profile, school: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">GPA</Label><Input type="number" step="0.01" value={profile.academicGPA ?? ''} onChange={e => setProfile({...profile, academicGPA: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Jersey Number</Label><Input placeholder="e.g. 24" value={profile.jerseyNumber ?? ''} onChange={e => setProfile({...profile, jerseyNumber: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                     </div>
+                     
+                     <div className="space-y-4 pt-6 border-t border-dashed">
+                          <Label className="text-[10px] font-black uppercase ml-1 text-primary">Recruiting Contact Details</Label>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                               <Label className="text-[8px] font-bold uppercase ml-1 opacity-50">Player Email</Label>
+                               <Input type="email" placeholder="athlete@example.com" value={contact.playerEmail ?? ''} onChange={e => setContact({...contact, playerEmail: e.target.value})} className="h-10 border-2 rounded-xl font-medium" />
+                            </div>
+                            <div className="space-y-2">
+                               <Label className="text-[8px] font-bold uppercase ml-1 opacity-50">Parent/Guardian Email</Label>
+                               <Input type="email" placeholder="parent@example.com" value={contact.parentEmail ?? ''} onChange={e => setContact({...contact, parentEmail: e.target.value})} className="h-10 border-2 rounded-xl font-medium" />
+                            </div>
+                          </div>
                       </div>
-                    ))}
-                  </div>
-                  
-                  {customStats.length > 0 && (
-                    <div className="space-y-3 mt-4">
-                      {customStats.map((cs: any, i: number) => (
-                        <div key={`cs-${i}`} className="flex items-center gap-2">
-                          <Input placeholder="Stat Name" value={cs.label} onChange={e => updateCustomStat(i, 'label', e.target.value)} className="h-10 border-2 rounded-xl font-bold flex-1" />
-                          <Input placeholder="Value" value={cs.value} onChange={e => updateCustomStat(i, 'value', e.target.value)} className="h-10 border-2 rounded-xl font-bold flex-1" />
-                          <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 text-red-500 rounded-xl hover:bg-red-50" onClick={() => removeCustomStat(i)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+
+                     <div className="space-y-2 pt-6">
+                         <Label className="text-[10px] font-black uppercase ml-1">Athlete Narrative / Bio</Label>
+                         <Textarea value={profile.bio ?? ''} onChange={e => setProfile({...profile, bio: e.target.value})} className="min-h-[150px] border-2 rounded-[2rem] font-medium p-6 resize-none" placeholder="Athlete recruitment summary..." />
+                       </div>
+
+                      <div className="space-y-4 pt-6 border-t border-dashed">
+                        <Label className="text-[10px] font-black uppercase ml-1 text-primary">Institutional Pulse (Coach Notes)</Label>
+                        <Textarea 
+                          value={profile.institutionalPulse ?? ''} 
+                          onChange={e => setProfile({...profile, institutionalPulse: e.target.value})} 
+                          className="min-h-[120px] border-2 rounded-[2rem] font-medium p-6 resize-none bg-muted/5" 
+                          placeholder="Institutional overview, coach feedback, or status update..." 
+                        />
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase px-2 italic">This field updates the strategic pulse appearing on the public portal.</p>
+                      </div>
+                  </TabsContent>
+
+                  <TabsContent value="athletic" className="mt-8 space-y-8">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-primary opacity-60">Strategic Performance Metrics</p>
+                      <Button type="button" size="sm" variant="outline" className="h-8 text-[8px] font-black uppercase rounded-xl border-2" onClick={addCustomStat}><Plus className="h-3 w-3 mr-1" /> Custom Metric</Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      {getSportFields().map(f => (
+                        <div key={f.key} className="space-y-2 bg-muted/20 p-5 rounded-3xl border border-black/5">
+                          <Label className="text-[10px] font-black uppercase ml-1">{f.label}</Label>
+                          <Input type={f.type} value={metrics[f.key] ?? ''} onChange={e => onChangeMetric(f.key, e.target.value)} className="h-12 border-2 rounded-xl font-black bg-white" />
                         </div>
                       ))}
                     </div>
-                  )}
-                </section>
-              </div>
+                    
+                    {customStats.length > 0 && (
+                      <div className="grid grid-cols-2 gap-4">
+                        {customStats.map((cs: any, i: number) => (
+                          <div key={`cs-${i}`} className="flex items-end gap-2 bg-primary/5 p-5 rounded-3xl border border-primary/10">
+                            <div className="flex-1 space-y-2">
+                               <Label className="text-[10px] font-black uppercase ml-1 opacity-50">Label</Label>
+                               <Input value={cs.label} onChange={e => updateCustomStat(i, 'label', e.target.value)} className="h-10 border-2 rounded-xl font-bold bg-white" />
+                            </div>
+                            <div className="flex-1 space-y-2">
+                               <Label className="text-[10px] font-black uppercase ml-1 opacity-50">Value</Label>
+                               <Input value={cs.value} onChange={e => updateCustomStat(i, 'value', e.target.value)} className="h-10 border-2 rounded-xl font-bold bg-white" />
+                            </div>
+                            <Button type="button" variant="ghost" size="icon" className="h-10 w-10 shrink-0 text-red-500 rounded-xl hover:bg-red-50" onClick={() => removeCustomStat(i)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </TabsContent>
 
-              <div className="space-y-8">
-                <section className="space-y-6">
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Narrative & Academics</h3>
-                  <div className="space-y-4">
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Academic GPA</Label><Input type="number" step="0.01" value={profile.academicGPA ?? ''} onChange={e => setProfile({...profile, academicGPA: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase ml-1">Athletic Narrative</Label>
-                      <Textarea value={profile.bio ?? ''} onChange={e => setProfile({...profile, bio: e.target.value})} className="min-h-[150px] border-2 rounded-2xl font-medium p-4 resize-none" placeholder="Recruiting summary..." />
+                  <TabsContent value="seasonal" className="mt-8 space-y-8">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-primary opacity-60">Verified Seasonal Records</p>
+                      <Button type="button" size="sm" variant="outline" className="h-8 text-[8px] font-black uppercase rounded-xl border-2" onClick={handleAddStatRow}><Plus className="h-3 w-3 mr-1" /> Add Record</Button>
                     </div>
-                  </div>
-                </section>
+                    <div className="space-y-4">
+                      {stats.map((s, i) => (
+                        <div key={s.id} className="grid grid-cols-6 gap-3 bg-muted/20 p-5 rounded-3xl border border-black/5 items-end">
+                           <div className="space-y-1 col-span-1">
+                             <Label className="text-[8px] font-black uppercase ml-1 opacity-50">Season</Label>
+                             <Input value={s.season} onChange={e => updateStat(s.id, 'season', e.target.value)} className="h-10 border-2 rounded-xl font-bold text-center bg-white" />
+                           </div>
+                           <div className="space-y-1 col-span-1">
+                             <Label className="text-[8px] font-black uppercase ml-1 opacity-50">GP</Label>
+                             <Input type="number" value={s.gamesPlayed} onChange={e => updateStat(s.id, 'gamesPlayed', parseInt(e.target.value))} className="h-10 border-2 rounded-xl font-bold text-center bg-white" />
+                           </div>
+                           <div className="space-y-1 col-span-1">
+                             <Label className="text-[8px] font-black uppercase ml-1 opacity-50">PTS</Label>
+                             <Input type="number" value={s.points} onChange={e => updateStat(s.id, 'points', parseInt(e.target.value))} className="h-10 border-2 rounded-xl font-bold text-center bg-white" />
+                           </div>
+                           <div className="space-y-1 col-span-1">
+                             <Label className="text-[8px] font-black uppercase ml-1 opacity-50">AST</Label>
+                             <Input type="number" value={s.assists} onChange={e => updateStat(s.id, 'assists', parseInt(e.target.value))} className="h-10 border-2 rounded-xl font-bold text-center bg-white" />
+                           </div>
+                           <div className="space-y-1 col-span-1">
+                             <Label className="text-[8px] font-black uppercase ml-1 opacity-50">EFF</Label>
+                             <Input type="number" value={s.efficiency} onChange={e => updateStat(s.id, 'efficiency', parseInt(e.target.value))} className="h-10 border-2 rounded-xl font-black text-center bg-zinc-100" />
+                           </div>
+                           <div className="flex justify-end p-1">
+                              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500 rounded-lg hover:bg-red-50" onClick={() => handleDeleteStat(s.id)}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                           </div>
+                        </div>
+                      ))}
+                      {stats.length === 0 && (
+                        <div className="text-center py-12 border-2 border-dashed rounded-[2rem] opacity-30">
+                           <History className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                           <p className="text-[10px] font-black uppercase">No seasonal analytics established.</p>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+                    
+                  <TabsContent value="gallery" className="mt-8 space-y-8">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-primary opacity-60">Scouting Photo Gallery</p>
+                        <p className="text-[8px] font-bold text-muted-foreground uppercase">Upload up to 5 strategic photos for recruiters (Max 5MB each).</p>
+                      </div>
+                      <input type="file" id="gallery-upload" className="hidden" accept="image/*" onChange={handleGalleryUpload} disabled={photos.length >= 5} />
+                      <Button type="button" size="sm" variant="outline" className="h-10 px-6 font-black uppercase text-[10px] rounded-xl border-2" onClick={() => document.getElementById('gallery-upload')?.click()} disabled={photos.length >= 5}>
+                        <Camera className="h-4 w-4 mr-2" /> Add Photo
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
+                      {photos.map((url, i) => (
+                        <div key={i} className="relative group aspect-square rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl ring-1 ring-black/5">
+                          <img src={url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={`Gallery ${i}`} />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                            <Button type="button" variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-2xl" onClick={() => removePhoto(i)}>
+                              <Trash2 className="h-6 w-6" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      {photos.length === 0 && (
+                        <div className="col-span-full py-20 text-center border-4 border-dashed rounded-[3rem] opacity-20">
+                          <Camera className="h-12 w-12 mx-auto mb-4" />
+                          <p className="text-sm font-black uppercase tracking-widest">No additional scouting photos archived.</p>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+                </Tabs>
               </div>
             </div>
 
+
             <DialogFooter className="pt-6">
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleUpdateProfile}>Commit Pack Synchronization</Button>
+              <Button 
+                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" 
+                onClick={handleUpdateProfile}
+                disabled={isSyncing}
+              >
+                {isSyncing ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin mr-3" />
+                    Synchronizing Tactical Folder...
+                  </>
+                ) : (
+                  "Commit Pack Synchronization"
+                )}
+              </Button>
             </DialogFooter>
           </div>
         </DialogContent>
@@ -1195,7 +1588,38 @@ function SafetyHub() {
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function CoachesCornerPage() {
-  const { activeTeam, isStaff, isPro, createTeamDocument, updateTeamDocument, db, members, createAlert } = useTeam();
+  const { activeTeam, isStaff, isPro, createTeamDocument, updateTeamDocument, db, members, createAlert, isSchoolMode, user, teams } = useTeam();
+  
+  // School-wide staff logic: prioritize schoolId filtering if available, fallback to ownerUserId
+  const currentSchoolId = activeTeam?.schoolId || (activeTeam?.type === 'school' ? activeTeam?.id : null);
+  
+  const institutionalMembersQuery = useMemoFirebase(() => {
+    if (!db || !isSchoolMode) return null;
+    
+    if (currentSchoolId) {
+      return query(collectionGroup(db, 'members'), where('schoolId', '==', currentSchoolId));
+    }
+    
+    // Fallback for older school accounts or club hubs using ownerUserId
+    if (user?.id) {
+      return query(collectionGroup(db, 'members'), where('ownerUserId', '==', user.id));
+    }
+    
+    return null;
+  }, [db, user?.id, isSchoolMode, currentSchoolId, activeTeam?.id]);
+
+  const { data: institutionalMembers } = useCollection<Member>(institutionalMembersQuery);
+  
+  const allCoaches = useMemo(() => {
+    if (!isSchoolMode) return [];
+    
+    // If we have institutional members (school owner), prioritize the global pool.
+    // Fallback to local squad members if institutional data isn't available.
+    const pool = (institutionalMembers && institutionalMembers.length > 0) ? institutionalMembers : members;
+    const coachPositions = ['Coach', 'Assistant Coach', 'Manager', 'Squad Leader', 'Head Coach', 'Athletic Director', 'Staff'];
+    
+    return pool.filter(m => coachPositions.includes(m.position));
+  }, [isSchoolMode, institutionalMembers, members]);
 
   if (!isStaff) return <AccessRestricted type="role" title="Coaches Hub Restricted" description="This tactical vault is reserved for Coaching Staff and Team Administrators." />;
   if (!isPro) return <AccessRestricted type="tier" />;
@@ -1251,11 +1675,14 @@ export default function CoachesCornerPage() {
         </div>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full md:w-auto">
           <TabsList className="bg-muted/50 rounded-xl h-auto p-1 border-2 w-full md:w-auto flex-wrap gap-1 shadow-sm">
-            <TabsTrigger value="recruiting" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Recruiting Hub</TabsTrigger>
-            <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Compliance</TabsTrigger>
-            <TabsTrigger value="archives" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Waiver Library</TabsTrigger>
-            <TabsTrigger value="fundraising" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Fundraising</TabsTrigger>
-            <TabsTrigger value="safety" className="rounded-lg font-black text-[10px] uppercase tracking-widest px-6 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">Safety Hub</TabsTrigger>
+            <TabsTrigger value="recruiting" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Recruiting Hub</TabsTrigger>
+            {isSchoolMode && (
+              <TabsTrigger value="coaches" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Coaches</TabsTrigger>
+            )}
+            <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Compliance</TabsTrigger>
+            <TabsTrigger value="archives" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Waiver Library</TabsTrigger>
+            <TabsTrigger value="fundraising" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Fundraising</TabsTrigger>
+            <TabsTrigger value="safety" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Safety Hub</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -1267,7 +1694,7 @@ export default function CoachesCornerPage() {
               <div className="flex items-center gap-2 px-2"><Users className="h-4 w-4 text-primary" /><h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Select Athlete</h3></div>
               <ScrollArea className="h-[600px] border-2 rounded-[2.5rem] bg-muted/10 p-2 shadow-inner">
                 <div className="space-y-1.5">
-                  {members.map(m => (
+                  {members.filter(m => !['Coach', 'Assistant Coach', 'Manager', 'Staff', 'Athletic Director'].includes(m.position)).map(m => (
                     <button key={m.id} onClick={() => setSelectedMemberId(m.id)} className={cn("w-full flex items-center gap-3 p-3 rounded-2xl transition-all font-black text-xs uppercase", selectedMemberId === m.id ? "bg-primary text-white shadow-lg" : "hover:bg-white text-foreground")}>
                       <Avatar className="h-8 w-8 rounded-xl border shrink-0">
                         <AvatarImage src={m.avatar} />
@@ -1291,6 +1718,53 @@ export default function CoachesCornerPage() {
             </div>
           </div>
         </TabsContent>
+
+        {isSchoolMode && (
+          <TabsContent value="coaches" className="space-y-8 mt-0 animate-in fade-in duration-500">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between px-2">
+                <div className="flex items-center gap-3">
+                  <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest">Directory</Badge>
+                  <h2 className="text-3xl font-black uppercase tracking-tight">Institutional Staff</h2>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {allCoaches.map(coach => (
+                  <Card key={coach.id} className="rounded-[2.5rem] border-none shadow-xl bg-white p-8 space-y-4 group hover:shadow-2xl transition-all border-b-4 border-primary/20">
+                    <div className="flex items-center gap-4">
+                      <Avatar className="h-16 w-16 rounded-[1.5rem] border-2 border-white ring-4 ring-primary/5 shadow-lg group-hover:scale-105 transition-transform">
+                        <AvatarImage src={coach.avatar} />
+                        <AvatarFallback className="font-black text-xl">{coach.name[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xl font-black uppercase tracking-tight truncate leading-none">{coach.name}</h4>
+                        <div className="flex items-center gap-2 mt-2">
+                          <Badge className="bg-primary text-white border-none text-[8px] font-black uppercase h-5 px-2">{coach.position}</Badge>
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest truncate max-w-[120px]">
+                            {teams.find(t => t.id === coach.teamId)?.name || 'Central Staff'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t flex flex-col gap-2">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Star className="h-3 w-3 text-primary opacity-40 shrink-0" />
+                        <p className="text-[10px] font-bold uppercase tracking-widest leading-none">Institutional Authority</p>
+                      </div>
+                   </div>
+                  </Card>
+                ))}
+                {allCoaches.length === 0 && (
+                  <div className="col-span-full py-32 text-center opacity-20 space-y-4 border-2 border-dashed rounded-[3rem]">
+                    <Users className="h-16 w-16 mx-auto" />
+                    <p className="text-sm font-black uppercase tracking-widest">No staff members identified.</p>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.2em]">Institutional coaches will appear here automatically.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </TabsContent>
+        )}
 
         <TabsContent value="compliance" className="space-y-10 mt-0">
           <section className="space-y-6 pt-4">

@@ -540,9 +540,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                 Continue Architecture <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             ) : (
-              <Button className="flex-1 h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-0.98 transition-all" onClick={handleDeploy} disabled={isProcessing || !hasFeature('tournament_generation')}>
+              <Button className="flex-1 h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-0.98 transition-all" onClick={handleDeploy} disabled={isProcessing || !hasFeature?.('tournament_generation')}>
                 {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <Sparkles className="h-6 w-6 mr-3" />}
-                {!hasFeature('tournament_generation') ? 'Upgrade to Deploy' : 'Deploy Full Itinerary'}
+                {!hasFeature?.('tournament_generation') ? 'Upgrade to Deploy' : 'Deploy Full Itinerary'}
               </Button>
             )}
           </footer>

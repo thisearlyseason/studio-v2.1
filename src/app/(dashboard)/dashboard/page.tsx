@@ -124,7 +124,7 @@ export default function UniversalAccountDashboard() {
                 <Plus className="h-4 w-4 mr-2" /> New Squad
               </Button>
               <Button onClick={() => router.push('/teams/join')} className="rounded-xl h-12 px-6 font-black uppercase text-[10px] shadow-lg shadow-primary/20">
-                <UserPlus className="h-4 w-4 mr-2" /> Recruitment Hub
+                <UserPlus className="h-4 w-4 mr-2" /> Portals
               </Button>
             </>
           )}
@@ -155,7 +155,7 @@ export default function UniversalAccountDashboard() {
         {isYouth ? (
           <Card className="rounded-[2.5rem] shadow-xl bg-muted/20 p-8 space-y-2 relative overflow-hidden group">
             <Star className="absolute -right-4 -bottom-4 h-24 w-24 text-primary opacity-5 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
-            <p className="text-[10px] font-black uppercase text-muted-foreground">Recruitment</p>
+            <p className="text-[10px] font-black uppercase text-muted-foreground">Portals</p>
             <div className="flex items-baseline gap-1">
               <p className="text-3xl font-black text-foreground">Active</p>
               <span className="text-[8px] font-black uppercase text-primary tracking-widest bg-primary/10 px-2 py-0.5 rounded-full ml-2">Visible</span>

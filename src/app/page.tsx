@@ -44,7 +44,8 @@ import {
   DollarSign,
   PenTool,
   Search,
-  Building
+  Building,
+  GraduationCap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -72,6 +73,7 @@ const DEMO_OPTIONS = [
   { id: 'starter_squad', name: 'Starter Plan Demo', icon: Users, desc: 'Grassroots essentials' },
   { id: 'squad_pro', name: 'Squad Pro Demo', icon: Zap, desc: 'Professional elite coordination' },
   { id: 'elite_teams', name: 'Elite Org Demo', icon: Trophy, desc: 'Institutional multi-team hub' },
+  { id: 'school_demo', name: 'School Demo', icon: GraduationCap, desc: 'Full K-12 Program Hub' },
   { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Teammate recruiting view' },
   { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Guardian safety view' }
 ];
@@ -81,10 +83,19 @@ export default function LandingPage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isDemoDialogOpen, setIsDemoDialogOpen] = useState(false);
   const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const [isAuthResolvedFailsafe, setIsAuthResolvedFailsafe] = useState(false);
   
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    // Failsafe to hide loading spinner even if Auth is slow or hangs
+    const timer = setTimeout(() => {
+      setIsAuthResolvedFailsafe(true);
+    }, 4000); // 4 second threshold
+    return () => clearTimeout(timer);
+  }, []);
 
   const sportsImages = [
     "https://images.unsplash.com/photo-1508088062105-17d61307629d?auto=format&fit=crop&q=80&w=1200",
@@ -125,7 +136,7 @@ export default function LandingPage() {
     }
   };
 
-  if (isUserLoading) return (
+  if (isUserLoading && !isAuthResolvedFailsafe) return (
     <div className="min-h-screen flex items-center justify-center bg-black">
       <Loader2 className="h-10 w-10 animate-spin text-primary" />
     </div>

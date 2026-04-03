@@ -38,7 +38,8 @@ import {
   XCircle,
   FolderClosed,
   ChevronDown,
-  Shield
+  Shield,
+  MessageCircle
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -126,33 +127,119 @@ function TeamComplianceCard({ teams, clubDocs }: { teams: Team[], clubDocs: Team
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function ClubManagementPage() {
-  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol, hasFeature } = useTeam();
+  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat } = useTeam();
+  const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
   
   if (!isPrimaryClubAuthority) {
-    return <AccessRestricted type="role" title="Organization Hub Locked" description="This command center is reserved for Institutional Stakeholders and Club Administrators." />;
+    return <AccessRestricted type="role" title={isSchoolMode ? "School Hub Locked" : "Organization Hub Locked"} description={isSchoolMode ? "This command center is reserved for School Administrators." : "This command center is reserved for Institutional Stakeholders and Club Administrators."} />;
   }
 
-  const db = useFirestore();
   const router = useRouter();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isEditClubOpen, setIsEditOpen] = useState(false);
   const [isDeployProtocolOpen, setIsDeployProtocolOpen] = useState(false);
+  const [isSubSquadModalOpen, setIsSubSquadModalOpen] = useState(false);
   const [clubForm, setClubForm] = useState({ name: user?.clubName || '', description: user?.clubDescription || '' });
   const [protocolForm, setProtocolForm] = useState({ title: '', content: '', type: 'waiver' as any });
+  const [newSquadForm, setNewSquadForm] = useState({ name: '', coachName: '', coachEmail: '' });
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
 
-  const clubTeams = useMemo(() => teams.filter(t => t.ownerUserId === user?.id && t.isPro), [teams, user?.id]);
+  const schoolHub = useMemo(() => teams.find(t => t.type === 'school'), [teams]);
+
+  // School Logic: Get sub-squads relative to the identified hub
+  const schoolSquads = useMemo(() => {
+    if (schoolHub) {
+      return teams.filter(t => t.schoolId === schoolHub.id);
+    }
+    return [];
+  }, [schoolHub, teams]);
+
+  const clubTeams = useMemo(() => {
+    if (isSchoolMode || schoolHub) {
+        // In school mode, include the hub and all squads
+        const host = teams.find(t => t.type === 'school');
+        const squads = teams.filter(t => t.type === 'school_squad' || t.schoolId === host?.id);
+        const all = host ? [host, ...squads] : squads;
+        // Ensure unique by ID
+        return Array.from(new Map(all.map(t => [t.id, t])).values());
+    }
+    return teams.filter(t => t.ownerUserId === user?.id && t.isPro);
+  }, [teams, user?.id, isSchoolMode, schoolHub]);
   const clubTeamIds = useMemo(() => clubTeams.map(t => t.id), [clubTeams]);
 
-  const membersQuery = useMemoFirebase(() => (db && user?.id) ? query(collectionGroup(db, 'members'), where('ownerUserId', '==', user.id)) : null, [db, user?.id]);
-  const { data: allMembersRaw } = useCollection<Member>(membersQuery);
-  const clubMembers = useMemo(() => (allMembersRaw || []), [allMembersRaw]);
+  // Get all school team IDs for querying members directly
+  const schoolTeamIds = useMemo(() => {
+    if (!schoolHub) return [];
+    const host = teams.find(t => t.type === 'school');
+    const squads = teams.filter(t => t.type === 'school_squad' || t.schoolId === host?.id);
+    const allTeams = host ? [host, ...squads] : squads;
+    return allTeams.map(t => t.id);
+  }, [schoolHub, teams]);
+
+  // Query members for each school team individually - more reliable than collectionGroup
+  const hubMembersQuery = useMemoFirebase(() => {
+    if (!db || !schoolHub || schoolTeamIds.length === 0) return null;
+    return query(collection(db, 'teams', schoolTeamIds[0], 'members'), where('ownerUserId', '==', schoolHub.ownerUserId));
+  }, [db, schoolHub, schoolTeamIds]);
+  const { data: hubMembers } = useCollection<Member>(hubMembersQuery);
+
+  const squad1MembersQuery = useMemoFirebase(() => {
+    if (!db || !schoolHub || schoolTeamIds.length < 2) return null;
+    return query(collection(db, 'teams', schoolTeamIds[1], 'members'), where('ownerUserId', '==', schoolHub.ownerUserId));
+  }, [db, schoolHub, schoolTeamIds]);
+  const { data: squad1Members } = useCollection<Member>(squad1MembersQuery);
+
+  const squad2MembersQuery = useMemoFirebase(() => {
+    if (!db || !schoolHub || schoolTeamIds.length < 3) return null;
+    return query(collection(db, 'teams', schoolTeamIds[2], 'members'), where('ownerUserId', '==', schoolHub.ownerUserId));
+  }, [db, schoolHub, schoolTeamIds]);
+  const { data: squad2Members } = useCollection<Member>(squad2MembersQuery);
+
+  const squad3MembersQuery = useMemoFirebase(() => {
+    if (!db || !schoolHub || schoolTeamIds.length < 4) return null;
+    return query(collection(db, 'teams', schoolTeamIds[3], 'members'), where('ownerUserId', '==', schoolHub.ownerUserId));
+  }, [db, schoolHub, schoolTeamIds]);
+  const { data: squad3Members } = useCollection<Member>(squad3MembersQuery);
+
+  // Aggregate all members from all school teams
+  const clubMembers = useMemo(() => {
+    const allMembers = [
+      ...(hubMembers || []),
+      ...(squad1Members || []),
+      ...(squad2Members || []),
+      ...(squad3Members || [])
+    ];
+    // Deduplicate by id
+    return Array.from(new Map(allMembers.map(m => [m.id, m])).values());
+  }, [hubMembers, squad1Members, squad2Members, squad3Members]);
+
+  // Need allMembersRaw for the coaches calculation - use clubMembers
+  const allMembersRaw = clubMembers;
 
   const docsQuery = useMemoFirebase(() => (db && user?.id) ? query(collectionGroup(db, 'documents'), where('ownerUserId', '==', user.id)) : null, [db, user?.id]);
   const { data: allDocsRaw } = useCollection<TeamDocument>(docsQuery);
   const clubDocs = useMemo(() => (allDocsRaw || []), [allDocsRaw]);
+
+  // School Logic: Universal Coach Roster
+  // Uses schoolHub (not isSchoolMode) so coaches always appear regardless of which squad is active
+  const allCoaches = useMemo(() => {
+    if (!schoolHub) return [];
+    const coachPositions = ['Coach', 'Assistant Coach', 'Manager', 'Squad Leader', 'Head Coach', 'Athletic Director', 'Staff'];
+    // Get all valid team IDs for this school (hub + all squads)
+    const host = teams.find(t => t.type === 'school');
+    const squads = teams.filter(t => t.type === 'school_squad' || t.schoolId === host?.id);
+    const allSchoolTeams = host ? [host, ...squads] : squads;
+    const validTeamIds = new Set(allSchoolTeams.map(t => t.id));
+    
+    // Search ALL raw members (not just clubMembers) to avoid double-filtering
+    // Match members who: (a) have a coach position AND (b) belong to a school team
+    return (allMembersRaw || []).filter(m => 
+      coachPositions.includes(m.position) && 
+      (validTeamIds.has(m.teamId) || m.schoolId === schoolHub.id)
+    );
+  }, [schoolHub, teams, allMembersRaw]);
 
   const incidentsQuery = useMemoFirebase(() => (db && user?.id) ? query(collectionGroup(db, 'incidents'), where('ownerUserId', '==', user.id), orderBy('createdAt', 'desc')) : null, [db, user?.id]);
   const { data: allIncidentsRaw } = useCollection<TeamIncident>(incidentsQuery);
@@ -169,7 +256,8 @@ export default function ClubManagementPage() {
 
   const filteredTeams = useMemo(() => clubTeams.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase())), [clubTeams, searchTerm]);
 
-  if (!isPrimaryClubAuthority) return <div className="py-24 text-center space-y-6"><div className="bg-muted/30 p-10 rounded-[3rem] opacity-20"><Building className="h-20 w-20 mx-auto" /></div><h1 className="text-3xl font-black uppercase tracking-tight text-foreground">Institutional Hub Locked</h1></div>;
+  // ONLY the primary account owner (who owns the school subscription) can access the School Hub
+  if (!isPrimaryClubAuthority) return <div className="py-24 text-center space-y-6"><div className="bg-muted/30 p-10 rounded-[3rem] opacity-20"><Building className="h-20 w-20 mx-auto" /></div><h1 className="text-3xl font-black uppercase tracking-tight text-foreground">Institutional Hub Locked</h1><p className="text-muted-foreground font-bold uppercase text-xs tracking-widest">Reserved for the primary account owner.</p></div>;
 
   const handleUpdateClub = async () => { await updateUser({ clubName: clubForm.name, clubDescription: clubForm.description }); setIsEditOpen(false); toast({ title: "Club Synchronized" }); };
 
@@ -197,14 +285,113 @@ export default function ClubManagementPage() {
           </div>
           <div className="flex flex-wrap gap-3">
             <Button variant="outline" className="h-14 px-8 rounded-2xl border-white/20 bg-white/10 text-white hover:bg-white hover:text-black transition-all font-black uppercase text-xs" onClick={() => setIsEditOpen(true)}>
-              <Edit3 className="h-4 w-4 mr-2" /> Edit Club
+              <Edit3 className="h-4 w-4 mr-2" /> {isSchoolMode ? 'Edit School' : 'Edit Club'}
             </Button>
-            <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/40 bg-white text-black hover:bg-primary hover:text-white transition-all border-none" onClick={() => createNewTeam('New Squad', 'youth', 'Coach', 'Club squad', 'squad_pro')}>
-              <Plus className="h-5 w-5 mr-2" /> Add Squad
+            <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/40 bg-white text-black hover:bg-primary hover:text-white transition-all border-none" onClick={() => setIsSubSquadModalOpen(true)}>
+              <Plus className="h-5 w-5 mr-2" /> {isSchoolMode ? 'Add Sub-Squad' : 'Add Squad'}
             </Button>
           </div>
         </div>
       </Card>
+
+      <Dialog open={isSubSquadModalOpen} onOpenChange={setIsSubSquadModalOpen}>
+        <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-md bg-white">
+          <div className="h-2 bg-gradient-to-r from-primary via-black to-primary w-full" />
+          <div className="p-10 space-y-8">
+            <DialogHeader>
+              <div className="bg-primary/10 w-16 h-16 rounded-2xl flex items-center justify-center mb-4">
+                <Users className="h-8 w-8 text-primary" />
+              </div>
+              <DialogTitle className="text-4xl font-black uppercase tracking-tighter text-black leading-none">
+                {isSchoolMode ? 'Provision Squad' : 'New Squad'}
+              </DialogTitle>
+              <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-[0.2em] mt-2">
+                Operationalizing new pro-tier athletic unit
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-black/40 ml-1">Tactical Unit Name</Label>
+                <Input 
+                  className="h-16 rounded-2xl border-2 border-muted bg-muted/20 font-black text-lg focus:border-primary/50 focus:bg-white transition-all px-6" 
+                  placeholder="e.g. Varsity Basketball" 
+                  value={newSquadForm.name} 
+                  onChange={e => setNewSquadForm({...newSquadForm, name: e.target.value})} 
+                />
+              </div>
+              
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-black/40 ml-1">Designated Head Coach</Label>
+                  <div className="relative">
+                    <Input 
+                      className="h-14 rounded-2xl border-2 border-muted bg-muted/20 font-bold focus:border-primary/50 focus:bg-white transition-all pl-12" 
+                      placeholder="Coach Name" 
+                      value={newSquadForm.coachName} 
+                      onChange={e => setNewSquadForm({...newSquadForm, coachName: e.target.value})} 
+                    />
+                    <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-primary opacity-40" />
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-black/40 ml-1">Secure Contact Email</Label>
+                  <div className="relative">
+                    <Input 
+                      type="email" 
+                      className="h-14 rounded-2xl border-2 border-muted bg-muted/20 font-bold focus:border-primary/50 focus:bg-white transition-all pl-12" 
+                      placeholder="coach@example.com" 
+                      value={newSquadForm.coachEmail} 
+                      onChange={e => setNewSquadForm({...newSquadForm, coachEmail: e.target.value})} 
+                    />
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-primary opacity-40" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-4">
+              <Button 
+                variant="ghost" 
+                className="h-14 rounded-2xl font-black uppercase text-xs tracking-widest text-muted-foreground hover:text-black" 
+                onClick={() => setIsSubSquadModalOpen(false)}
+              >
+                Abort
+              </Button>
+              <Button 
+                className="h-14 flex-1 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20 bg-black text-white hover:bg-primary transition-all group" 
+                disabled={isCreating || !newSquadForm.name || !newSquadForm.coachName} 
+                onClick={async () => {
+                   if (isCreating) return;
+                   setIsCreating(true);
+                   // Always use the school hub id as the parent schoolId
+                   const targetSchoolId = schoolHub?.id;
+                   await createNewTeam(
+                     newSquadForm.name, 
+                     'school_squad', 
+                     'Coach', 
+                     'School squad', 
+                     'squad_organization', // gives 'SCHOOL HUB' + 'DISTRICT' badge
+                     undefined, 
+                     undefined, 
+                     targetSchoolId, 
+                     newSquadForm.coachName, 
+                     newSquadForm.coachEmail,
+                     schoolHub?.ownerUserId // Pass hub owner so coach shows up correctly
+                   );
+                   setIsCreating(false);
+                   setIsSubSquadModalOpen(false);
+                   setNewSquadForm({ name: '', coachName: '', coachEmail: '' });
+                   toast({ title: 'Operational Unit Provisioned', description: 'Squad and Head Coach profile initialized.' });
+                }}>
+                {isCreating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Plus className="h-5 w-5 mr-3 group-hover:rotate-90 transition-transform" />} 
+                Authorize Provisioning
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="rounded-[2.5rem] border-none shadow-md bg-primary text-white p-8 space-y-2"><p className="text-[10px] font-black uppercase opacity-60 tracking-widest">Total Squads</p><p className="text-5xl font-black">{clubTeams.length}</p></Card>
@@ -215,9 +402,12 @@ export default function ClubManagementPage() {
 
       <Tabs defaultValue="squads" className="space-y-8">
         <TabsList className="bg-muted/50 rounded-xl p-1 h-12 inline-flex border-2 shadow-inner">
-          <TabsTrigger value="squads" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Squad Roster</TabsTrigger>
-          <TabsTrigger value="compliance" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Institutional Vault</TabsTrigger>
-          <TabsTrigger value="safety" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Safety & Incidents</TabsTrigger>
+          <TabsTrigger value="squads" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">{schoolHub ? 'Squads' : 'Squad Roster'}</TabsTrigger>
+          {schoolHub && (
+            <TabsTrigger value="coaches" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Coaches</TabsTrigger>
+          )}
+          <TabsTrigger value="compliance" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Waivers</TabsTrigger>
+          <TabsTrigger value="safety" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Safety</TabsTrigger>
         </TabsList>
 
         <TabsContent value="squads" className="space-y-6 mt-0">
@@ -244,6 +434,126 @@ export default function ClubManagementPage() {
             ))}
           </div>
         </TabsContent>
+
+        {schoolHub && (
+          <TabsContent value="coaches" className="space-y-6 mt-0">
+             <div className="grid grid-cols-1 gap-4">
+                {allCoaches.map(coach => (
+                  <Card key={coach.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 p-6 bg-white cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all" onClick={() => setSelectedCoach(coach)}>
+                     <div className="flex items-center gap-6">
+                       <Avatar className="h-14 w-14 rounded-2xl shadow-lg border-2 border-background shrink-0">
+                         <AvatarImage src={coach.avatar} className="object-cover" />
+                         <AvatarFallback className="font-black bg-primary/10 text-primary">{coach.name[0]}</AvatarFallback>
+                       </Avatar>
+                       <div className="space-y-1 content-center flex-1">
+                          <h3 className="text-xl font-black uppercase text-foreground">{coach.name}</h3>
+                          <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{coach.position} • {teams.find(t => t.id === coach.teamId)?.name}</p>
+                       </div>
+                       <div className="ml-auto flex items-center gap-2">
+                         <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 bg-muted/20 hover:bg-primary hover:text-white rounded-xl transition-all">
+                           <ChevronRight className="h-4 w-4" />
+                         </Button>
+                       </div>
+                     </div>
+                   </Card>
+                ))}
+                {allCoaches.length === 0 && <div className="text-center py-12 text-muted-foreground font-bold">No Coaches found.</div>}
+             </div>
+          </TabsContent>
+        )}
+
+        {/* Coach Detail Modal */}
+        <Dialog open={!!selectedCoach} onOpenChange={(open) => !open && setSelectedCoach(null)}>
+          <DialogContent className="rounded-[2rem] border-none shadow-2xl p-0 max-w-lg bg-white overflow-y-auto max-h-[90vh]">
+            {selectedCoach && (
+              <div className="flex flex-col">
+                <div className="w-full bg-black text-white p-8 space-y-6">
+                  <div className="flex items-center gap-6">
+                    <Avatar className="h-20 w-20 rounded-2xl border-4 border-white/10 shadow-xl">
+                      <AvatarImage src={selectedCoach.avatar} className="object-cover" />
+                      <AvatarFallback className="text-2xl font-black bg-white/10">{selectedCoach.name[0]}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <h2 className="text-2xl font-black uppercase tracking-tight">{selectedCoach.name}</h2>
+                      <p className="text-primary font-black uppercase tracking-widest text-sm">{selectedCoach.position}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-8 space-y-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-primary/10 p-2 rounded-xl">
+                        <Trophy className="h-4 w-4 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Team</p>
+                        <p className="font-bold">{teams.find(t => t.id === selectedCoach.teamId)?.name || 'N/A'}</p>
+                      </div>
+                    </div>
+                    {(selectedCoach as any).email && (
+                      <div className="flex items-center gap-3">
+                        <div className="bg-primary/10 p-2 rounded-xl">
+                          <Mail className="h-4 w-4 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Email</p>
+                          <p className="font-bold">{(selectedCoach as any).email}</p>
+                        </div>
+                      </div>
+                    )}
+                    {selectedCoach.phone && (
+                      <div className="flex items-center gap-3">
+                        <div className="bg-primary/10 p-2 rounded-xl">
+                          <Activity className="h-4 w-4 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Phone</p>
+                          <p className="font-bold">{selectedCoach.phone}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-3 pt-4">
+                    <Button 
+                      className="flex-1 font-black uppercase text-xs h-12 rounded-2xl bg-primary hover:bg-primary/90"
+                      onClick={async () => {
+                        if (!selectedCoach.userId || !activeTeam) return;
+                        try {
+                          const chatId = await createChat(`${selectedCoach.name}`, [selectedCoach.userId]);
+                          if (chatId) {
+                            toast({ title: "Chat Created", description: `Starting conversation with ${selectedCoach.name}` });
+                            setSelectedCoach(null);
+                            router.push('/chats');
+                          }
+                        } catch (e) {
+                          toast({ title: "Error", description: "Could not start chat", variant: "destructive" });
+                        }
+                      }}
+                    >
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      Start Chat
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      className="flex-1 font-black uppercase text-xs h-12 rounded-2xl"
+                      onClick={() => {
+                        const team = teams.find(t => t.id === selectedCoach.teamId);
+                        if (team) {
+                          setActiveTeam(team);
+                          setSelectedCoach(null);
+                          router.push('/roster');
+                        }
+                      }}
+                    >
+                      <LayoutGrid className="h-4 w-4 mr-2" />
+                      View Roster
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         <TabsContent value="compliance" className="space-y-8 mt-0">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">

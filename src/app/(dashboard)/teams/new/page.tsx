@@ -22,22 +22,41 @@ import { cn } from '@/lib/utils';
 
 function NewTeamForm() {
   const router = useRouter();
-  const { createNewTeam, proQuotaStatus, canAddProTeam } = useTeam();
+  const { createNewTeam, proQuotaStatus, activeTeam, isSchoolAdmin } = useTeam();
   
   const [teamName, setTeamName] = useState('');
   const [description, setDescription] = useState('');
-  const [type, setType] = useState<"adult" | "youth">('adult');
+  const [type, setType] = useState<"adult" | "youth" | "school" | "school_squad">('adult');
   const [organizerPosition, setOrganizerPosition] = useState('Coach');
   const [selectedPlan, setSelectedPlan] = useState<'starter_squad' | 'squad_pro'>('starter_squad');
   const [isProcessing, setIsProcessing] = useState(false);
   const [customWaiverTitle, setCustomWaiverTitle] = useState('');
   const [customWaiverContent, setCustomWaiverContent] = useState('');
 
+  useEffect(() => {
+    // Pre-select school types if user is a School Admin creating a sub-squad
+    if (isSchoolAdmin && activeTeam?.type === 'school') {
+      setType('school_squad');
+      setSelectedPlan('squad_pro');
+    }
+  }, [isSchoolAdmin, activeTeam]);
+
   const handleCreate = async () => {
     if (!teamName.trim()) return;
     setIsProcessing(true);
     try {
-      await createNewTeam(teamName, type, organizerPosition, description, selectedPlan, customWaiverTitle, customWaiverContent);
+      let targetType = type;
+      let targetPlan = selectedPlan;
+      let targetSchoolId = undefined;
+
+      // Logic: If creating a sub-squad, inherit the school ID and enforce Pro
+      if (isSchoolAdmin && activeTeam?.type === 'school') {
+        targetType = 'school_squad';
+        targetSchoolId = activeTeam.id;
+        targetPlan = 'squad_pro';
+      }
+      
+      await createNewTeam(teamName, targetType, organizerPosition, description, targetPlan, customWaiverTitle, customWaiverContent, targetSchoolId);
       router.push('/feed');
     } catch (e) {
       setIsProcessing(false);
@@ -67,13 +86,19 @@ function NewTeamForm() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest">Team Protocol</Label>
-                  <Select value={type} onValueChange={(v: any) => setType(v)}>
-                    <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      <SelectItem value="adult">Adult (18+)</SelectItem>
-                      <SelectItem value="youth">Youth (Minor Support)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {isSchoolAdmin && activeTeam?.type === 'school' ? (
+                    <div className="h-12 rounded-xl border-2 border-muted bg-muted/20 flex items-center px-4 font-bold text-muted-foreground">
+                       {type === 'school_squad' ? 'Sub-Squad' : 'School Team'}
+                    </div>
+                  ) : (
+                    <Select value={type} onValueChange={(v: any) => setType(v)}>
+                      <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="adult">Adult (18+)</SelectItem>
+                        <SelectItem value="youth">Youth (Minor Support)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest">Your Role</Label>

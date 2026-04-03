@@ -385,10 +385,10 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
             <Button 
               className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-0.98 transition-all" 
               onClick={handleGenerate} 
-              disabled={isProcessing || !hasFeature('league_generation')}
+              disabled={isProcessing || !hasFeature?.('league_generation')}
             >
               {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : <Sparkles className="h-6 w-6 mr-3" />}
-              {!hasFeature('league_generation') ? 'Upgrade to Generate' : 'Deploy Seasonal Pipeline'}
+              {!hasFeature?.('league_generation') ? 'Upgrade to Generate' : 'Deploy Seasonal Pipeline'}
             </Button>
           </DialogFooter>
         </div>
@@ -535,9 +535,9 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
                                   <span className="font-black text-xs">{game.score1} - {game.score2}</span>
                                 </div>
                               ) : <span className="opacity-20 text-[10px] font-black">VS</span>}
-                              {game.isDisputed && <p className="text-[6px] font-black text-red-600 uppercase tracking-widest leading-none mt-1">Dispute Pending</p>}
+                              {game.isDisputed && <div className="text-[6px] font-black text-red-600 uppercase tracking-widest leading-none mt-1">Dispute Pending</div>}
                               {game.reportedBy && !game.isDisputed && (
-                                <p className="text-[6px] font-bold text-muted-foreground uppercase opacity-40">Posted by {game.reportedBy}</p>
+                                <div className="text-[6px] font-bold text-muted-foreground uppercase opacity-40">Posted by {game.reportedBy}</div>
                               )}
                             </div>
                             <span className="font-black text-xs uppercase truncate max-w-[120px]">{game.team2}</span>
@@ -793,7 +793,7 @@ export default function LeaguesPage() {
 
   const [leagueName, setLeagueName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'recruit_pool' | 'teams' | 'players' | 'compliance' | 'command'>('teams');
+  const [activeTab, setActiveTab] = useState<'portals' | 'teams' | 'players' | 'compliance' | 'command'>('teams');
   const [mounted, setMounted] = useState(false);
 
   const [editingTeam, setEditingTeam] = useState<any>(null);
@@ -874,7 +874,7 @@ export default function LeaguesPage() {
   const handleToggleActive = async (val: boolean) => {
     if (!activeLeague) return;
     await updateDoc(doc(db, 'leagues', activeLeague.id), { is_active: val });
-    toast({ title: val ? "Recruitment Portal Activated" : "Recruitment Portal Deactivated" });
+    toast({ title: val ? "Portal Access Activated" : "Portal Access Deactivated" });
   };
 
   const sortedStandings = useMemo(() => {
@@ -900,7 +900,7 @@ export default function LeaguesPage() {
     doc.save(`STANDINGS_${activeLeague.name.replace(/\s+/g, '_')}.pdf`);
   }, [activeLeague, sortedStandings]);
 
-  const exportRecruitPool = useCallback(() => {
+  const exportPersonnelLog = useCallback(() => {
     if (!activeLeague?.individualRecruits) return;
     const recruits = Object.entries(activeLeague.individualRecruits);
     if (recruits.length === 0) return;
@@ -908,8 +908,8 @@ export default function LeaguesPage() {
     const pageWidth = doc.internal.pageSize.getWidth();
     doc.setFillColor(30,30,30); doc.rect(0, 0, pageWidth, 50, 'F');
     doc.setTextColor(255, 255, 255); doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text("INSTITUTIONAL PERSONNEL LOG", 20, 30);
-    doc.setFontSize(9); doc.text("PERSONNEL & RECRUITMENT PIPELINE", 20, 38);
-    doc.setTextColor(0, 0, 0); doc.setFontSize(14); doc.text(`Participating Recruits: ${recruits.length}`, 20, 70);
+    doc.setFontSize(9); doc.text("PERSONNEL & PORTAL PIPELINE", 20, 38);
+    doc.setTextColor(0, 0, 0); doc.setFontSize(14); doc.text(`Participating Members: ${recruits.length}`, 20, 70);
     doc.setFillColor(245, 245, 245); doc.rect(20, 80, pageWidth - 40, 10, 'F');
     doc.setTextColor(100, 100, 100); doc.setFontSize(8); doc.text("NAME", 25, 86.5); doc.text("EMAIL", 85, 86.5); doc.text("STATUS", 150, 86.5); doc.text("VERIFIED", pageWidth - 25, 86.5, { align: 'right' });
     let y = 100; doc.setTextColor(30, 30, 30); doc.setFontSize(9);
@@ -917,7 +917,7 @@ export default function LeaguesPage() {
       doc.setFont("helvetica", "bold"); doc.text(p.name.toUpperCase(), 25, y); doc.setFont("helvetica", "normal"); doc.text(p.email, 85, y); doc.text(p.status.toUpperCase(), 150, y); doc.text(p.signedAt ? 'YES' : 'NO', pageWidth - 25, y, { align: 'right' });
       doc.line(25, y + 4, pageWidth - 25, y + 4); y += 12;
     });
-    doc.save(`RECRUIT_POOL_${activeLeague.id.slice(-8)}.pdf`);
+    doc.save(`PERSONNEL_LOG_${activeLeague.id.slice(-8)}.pdf`);
   }, [activeLeague]);
 
   const exportWaiver = useCallback((waiver: LeagueArchiveWaiver) => {
@@ -1227,7 +1227,7 @@ export default function LeaguesPage() {
                     onClick={() => isPro ? router.push(`/leagues/registration/${activeLeague.id}`) : purchasePro()}
                   >
                     {!isPro && <LockIcon className="h-3 w-3" />}
-                    Recruit Pool
+                    Portal Architect
                   </Button>
                 </div>
               )}
@@ -1239,7 +1239,7 @@ export default function LeaguesPage() {
             <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex shadow-inner overflow-x-auto max-w-full no-scrollbar">
               <Button variant={activeTab === 'teams' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('teams')}>Teams</Button>
               {isStaff && <Button variant={activeTab === 'players' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('players')}>Players</Button>}
-              {isStaff && <Button variant={activeTab === 'recruit_pool' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('recruit_pool')}>Recruit Pool</Button>}
+              {isStaff && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('portals')}>Portals</Button>}
               {isStaff && <Button variant={activeTab === 'compliance' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('compliance')}>Compliance</Button>}
               {isStaff && <Button variant={activeTab === 'command' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('command')}>Command</Button>}
             </div>
@@ -1250,7 +1250,7 @@ export default function LeaguesPage() {
                 </Button>
               )}
               {activeTab === 'players' && (
-                <Button variant="outline" className="flex-1 sm:flex-none h-11 rounded-xl border-2 font-black uppercase text-[10px]" onClick={exportRecruitPool}>
+                <Button variant="outline" className="flex-1 sm:flex-none h-11 rounded-xl border-2 font-black uppercase text-[10px]" onClick={exportPersonnelLog}>
                   <Download className="h-4 w-4 mr-2" /> Download Personnel Log
                 </Button>
               )}
@@ -1262,7 +1262,7 @@ export default function LeaguesPage() {
               <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Squad Rank</th><th className="px-4 py-5 text-center">Recruit Code</th><th className="px-4 py-5 text-center">Record</th><th className="px-4 py-5 text-center">PTS</th><th className="px-4 py-5 text-center">Compliance</th><th className="px-10 py-5 text-right text-primary">Actions</th></tr></thead>
+                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Squad Rank</th><th className="px-4 py-5 text-center">Portal Code</th><th className="px-4 py-5 text-center">Record</th><th className="px-4 py-5 text-center">PTS</th><th className="px-4 py-5 text-center">Compliance</th><th className="px-10 py-5 text-right text-primary">Actions</th></tr></thead>
                       <tbody className="divide-y divide-muted/50">{sortedStandings.map((team, idx) => (
                         <tr key={team.id} className="hover:bg-primary/5 transition-colors group">
                           <td className="px-10 py-6">
@@ -1330,13 +1330,13 @@ export default function LeaguesPage() {
                 <div className="flex items-center justify-between px-2">
                   <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Personnel Hub</h3></div>
                   <Link href={`/leagues/registration/${activeLeague.id}?protocol=player_config`}>
-                    <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px]">Open Athlete Recruiting</Button>
+                    <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px]">Open Athlete Pipeline</Button>
                   </Link>
                 </div>
                 <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Athlete Name</th><th className="px-4 py-5 text-center">Recruit Code</th><th className="px-4 py-5 text-center">Status</th><th className="px-4 py-5 text-center">Compliance</th><th className="px-10 py-5 text-right">Contact</th></tr></thead>
+                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-10 py-5">Athlete Name</th><th className="px-4 py-5 text-center">Portal Code</th><th className="px-4 py-5 text-center">Status</th><th className="px-4 py-5 text-center">Compliance</th><th className="px-10 py-5 text-right">Contact</th></tr></thead>
                       <tbody className="divide-y divide-muted/50">
                         {Object.entries(activeLeague.individualRecruits || {}).map(([id, p]) => (
                           <tr key={id} className="hover:bg-primary/5 transition-colors group">
@@ -1439,7 +1439,7 @@ export default function LeaguesPage() {
               </div>
             </TabsContent>
 
-            <TabsContent value="recruit_pool" className="mt-0 animate-in fade-in duration-500">
+            <TabsContent value="portals" className="mt-0 animate-in fade-in duration-500">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 <Card className="rounded-[2.5rem] border-none shadow-xl bg-orange-600 text-white p-8 space-y-4 group transition-all">
                   <div className="flex items-center justify-between">
@@ -1463,7 +1463,7 @@ export default function LeaguesPage() {
 
                 <Card className="rounded-[2.5rem] border-none shadow-xl bg-blue-600 text-white p-8 space-y-4 group transition-all">
                   <Badge className="bg-white text-blue-600 border-none font-black text-[8px] h-5 px-2">ATHLETE PIPELINE</Badge>
-                  <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Individual Recruits</h4>
+                  <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Athlete Pipeline</h4>
                   <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public portal for athletes seeking squad placement.</p>
                   <div className="flex gap-2">
                     <Button variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.slug || activeLeague.id}?protocol=player_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
@@ -1486,6 +1486,16 @@ export default function LeaguesPage() {
                   </div>
                 </Card>
                 
+                 <Card className="rounded-[2.5rem] border-none shadow-xl bg-purple-600 text-white p-8 space-y-4 group transition-all">
+                  <Badge className="bg-white text-purple-600 border-none font-black text-[8px] h-5 px-2">COMPLIANCE HUB</Badge>
+                  <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Waiver Portal</h4>
+                  <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public portal for standalone liability and agreement signing.</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.slug || activeLeague.id}?protocol=waiver_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
+                    <Button variant="outline" className="h-12 w-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => router.push(`/leagues/registration/${activeLeague.id}?protocol=waiver_config`)}><Settings className="h-4 w-4" /></Button>
+                  </div>
+                </Card>
+
                 <Card className="rounded-[2.5rem] border-none shadow-xl bg-muted/5 p-8 space-y-4 group transition-all border-2 border-dashed border-black/5">
                   <Badge className="bg-black text-white border-none font-black text-[8px] h-5 px-2">PUBLIC VIEW</Badge>
                   <h4 className="text-2xl font-black uppercase tracking-tight leading-none text-black">Spectator Hub</h4>
@@ -1554,7 +1564,7 @@ export default function LeaguesPage() {
                   <Input value={editTeamForm.origin} onChange={e => setEditTeamForm({...editTeamForm, origin: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="e.g. Toronto, ON" />
                 </div>
                 <div className="space-y-2 col-span-1">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Recruit Code</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Portal Code</Label>
                   <Input value={editTeamForm.inviteCode || ''} onChange={e => setEditTeamForm({...editTeamForm, inviteCode: e.target.value.toUpperCase()})} className="h-12 rounded-xl border-2 font-black text-center tracking-widest" maxLength={6} placeholder="AUTO" />
                 </div>
               </div>
