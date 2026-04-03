@@ -70,8 +70,9 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collectionGroup, query, where, orderBy, collection } from 'firebase/firestore';
+import { collectionGroup, query, where, orderBy, collection, getDocs, limit, doc, getDoc } from 'firebase/firestore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { IncidentDetailDialog } from '@/app/(dashboard)/coaches-corner/page';
 
 function TeamComplianceCard({ teams, clubDocs }: { teams: Team[], clubDocs: TeamDocument[] }) {
   const db = useFirestore();
@@ -127,7 +128,7 @@ function TeamComplianceCard({ teams, clubDocs }: { teams: Team[], clubDocs: Team
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function ClubManagementPage() {
-  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat } = useTeam();
+  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, updateTeam, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat } = useTeam();
   const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
   
   if (!isPrimaryClubAuthority) {
@@ -145,6 +146,11 @@ export default function ClubManagementPage() {
   const [protocolForm, setProtocolForm] = useState({ title: '', content: '', type: 'waiver' as any });
   const [newSquadForm, setNewSquadForm] = useState({ name: '', coachName: '', coachEmail: '' });
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
+  
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [isAddingAdmin, setIsAddingAdmin] = useState(false);
+  const [adminProfiles, setAdminProfiles] = useState<any[]>([]);
+  const [viewingIncident, setViewingIncident] = useState<TeamIncident | null>(null);
 
   const schoolHub = useMemo(() => teams.find(t => t.type === 'school'), [teams]);
 
@@ -241,7 +247,8 @@ export default function ClubManagementPage() {
     );
   }, [schoolHub, teams, allMembersRaw]);
 
-  const incidentsQuery = useMemoFirebase(() => (db && user?.id) ? query(collectionGroup(db, 'incidents'), where('ownerUserId', '==', user.id), orderBy('createdAt', 'desc')) : null, [db, user?.id]);
+  const incidentsQueryOwner = schoolHub ? schoolHub.ownerUserId : user?.id;
+  const incidentsQuery = useMemoFirebase(() => (db && incidentsQueryOwner) ? query(collectionGroup(db, 'incidents'), where('ownerUserId', '==', incidentsQueryOwner), orderBy('createdAt', 'desc')) : null, [db, incidentsQueryOwner]);
   const { data: allIncidentsRaw } = useCollection<TeamIncident>(incidentsQuery);
   const clubIncidents = useMemo(() => (allIncidentsRaw || []), [allIncidentsRaw]);
 
@@ -254,10 +261,34 @@ export default function ClubManagementPage() {
     return { owed, collected, total, rate, compliance };
   }, [clubMembers]);
 
+  // Fetch admin profiles
+  React.useEffect(() => {
+    async function fetchAdmins() {
+      if (!schoolHub?.schoolAdminIds?.length || !db) {
+        setAdminProfiles([]);
+        return;
+      }
+      try {
+        const profiles = [];
+        for (const uid of schoolHub.schoolAdminIds) {
+          const snap = await getDoc(doc(db, 'users', uid));
+          if (snap.exists()) {
+            profiles.push({ id: snap.id, ...snap.data() });
+          }
+        }
+        setAdminProfiles(profiles);
+      } catch (e) {
+        console.warn("Failed to fetch admin profiles", e);
+      }
+    }
+    fetchAdmins();
+  }, [schoolHub?.schoolAdminIds, db]);
+
   const filteredTeams = useMemo(() => clubTeams.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase())), [clubTeams, searchTerm]);
 
-  // ONLY the primary account owner (who owns the school subscription) can access the School Hub
-  if (!isPrimaryClubAuthority) return <div className="py-24 text-center space-y-6"><div className="bg-muted/30 p-10 rounded-[3rem] opacity-20"><Building className="h-20 w-20 mx-auto" /></div><h1 className="text-3xl font-black uppercase tracking-tight text-foreground">Institutional Hub Locked</h1><p className="text-muted-foreground font-bold uppercase text-xs tracking-widest">Reserved for the primary account owner.</p></div>;
+  const hasSchoolHubAccess = isPrimaryClubAuthority || isSchoolAdmin || !!schoolHub || teams.some(t => t.schoolId);
+  // Allow primary owners, school admins, and sub-squad members to access the Hub
+  if (!hasSchoolHubAccess) return <div className="py-24 text-center space-y-6"><div className="bg-muted/30 p-10 rounded-[3rem] opacity-20"><Building className="h-20 w-20 mx-auto" /></div><h1 className="text-3xl font-black uppercase tracking-tight text-foreground">Institutional Hub Locked</h1><p className="text-muted-foreground font-bold uppercase text-xs tracking-widest">Reserved for institutional staff and account owners.</p></div>;
 
   const handleUpdateClub = async () => { await updateUser({ clubName: clubForm.name, clubDescription: clubForm.description }); setIsEditOpen(false); toast({ title: "Club Synchronized" }); };
 
@@ -267,6 +298,46 @@ export default function ClubManagementPage() {
     await deployClubProtocol({ title: protocolForm.title, content: protocolForm.content, type: protocolForm.type, assignedTo: ['all'] }, clubTeamIds);
     setIsDeployProtocolOpen(false); setIsCreating(false); setProtocolForm({ title: '', content: '', type: 'waiver' });
     toast({ title: "Mandate Deployed", description: `Protocol pushed to ${clubTeamIds.length} squads.` });
+  };
+
+  const handleAddAdmin = async () => {
+    if (!newAdminEmail.trim() || !db || !schoolHub) return;
+    setIsAddingAdmin(true);
+    try {
+      // Find user by email
+      const usersQuery = query(collection(db, 'users'), where('email', '==', newAdminEmail.trim().toLowerCase()), limit(1));
+      const snaps = await getDocs(usersQuery);
+      
+      if (snaps.empty) {
+        toast({ title: "User Not Found", description: "No user found with that email address. They must create an account first.", variant: "destructive" });
+        setIsAddingAdmin(false);
+        return;
+      }
+      
+      const newAdminId = snaps.docs[0].id;
+      const currentAdmins = schoolHub.schoolAdminIds || [];
+      
+      if (currentAdmins.includes(newAdminId) || schoolHub.ownerUserId === newAdminId) {
+        toast({ title: "Already Admin", description: "This user is already an admin.", variant: "destructive" });
+      } else if (currentAdmins.length >= 3) {
+        toast({ title: "Limit Reached", description: "You can only have up to 3 additional school admins.", variant: "destructive" });
+      } else {
+        await updateTeam(schoolHub.id, { schoolAdminIds: [...currentAdmins, newAdminId] });
+        toast({ title: "Admin Added", description: "They now have School Hub access." });
+        setNewAdminEmail('');
+      }
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Error", description: "Failed to add admin", variant: "destructive" });
+    }
+    setIsAddingAdmin(false);
+  };
+
+  const handleRemoveAdmin = async (adminId: string) => {
+    if (!schoolHub) return;
+    const currentAdmins = schoolHub.schoolAdminIds || [];
+    await updateTeam(schoolHub.id, { schoolAdminIds: currentAdmins.filter(id => id !== adminId) });
+    toast({ title: "Admin Removed", description: "Access revoked." });
   };
 
   return (
@@ -406,6 +477,9 @@ export default function ClubManagementPage() {
           {schoolHub && (
             <TabsTrigger value="coaches" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Coaches</TabsTrigger>
           )}
+          {schoolHub && (
+            <TabsTrigger value="admins" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Admins</TabsTrigger>
+          )}
           <TabsTrigger value="compliance" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Waivers</TabsTrigger>
           <TabsTrigger value="safety" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Safety</TabsTrigger>
         </TabsList>
@@ -459,6 +533,91 @@ export default function ClubManagementPage() {
                 ))}
                 {allCoaches.length === 0 && <div className="text-center py-12 text-muted-foreground font-bold">No Coaches found.</div>}
              </div>
+          </TabsContent>
+        )}
+
+        {schoolHub && (
+          <TabsContent value="admins" className="space-y-6 mt-0 animate-in fade-in">
+            <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+              <CardHeader className="bg-black text-white p-10">
+                <div className="flex items-center gap-6">
+                  <div className="bg-primary p-4 rounded-2xl shadow-xl shadow-primary/20">
+                    <ShieldCheck className="h-8 w-8 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-3xl font-black uppercase tracking-tight">Institutional Authorities</CardTitle>
+                    <CardDescription className="text-white/60 font-bold uppercase text-[10px] mt-2 tracking-widest">Manage co-administrators for the {schoolHub.name} hub</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-10 space-y-8">
+                {schoolHub.ownerUserId === user?.id && (
+                  <div className="flex flex-col md:flex-row gap-4">
+                    <Input
+                      placeholder="Admin Email Address"
+                      type="email"
+                      className="h-14 rounded-2xl border-2 font-bold focus:border-primary/50 text-foreground"
+                      value={newAdminEmail}
+                      onChange={e => setNewAdminEmail(e.target.value)}
+                    />
+                    <Button 
+                      className="h-14 px-8 rounded-2xl font-black shadow-xl bg-black text-white hover:bg-primary uppercase"
+                      disabled={isAddingAdmin || (schoolHub.schoolAdminIds?.length || 0) >= 3 || !newAdminEmail}
+                      onClick={handleAddAdmin}
+                    >
+                      {isAddingAdmin ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <UserPlus className="h-5 w-5 mr-2" />}
+                      Add Admin
+                    </Button>
+                  </div>
+                )}
+                
+                {schoolHub.ownerUserId !== user?.id && (
+                  <div className="bg-muted/20 p-6 rounded-2xl border-2 text-center text-sm font-bold uppercase text-muted-foreground">
+                    Only the primary account owner can manage co-administrators.
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground px-4">
+                    <span>Active Administrators {(schoolHub.schoolAdminIds?.length || 0)}/3</span>
+                  </div>
+                  
+                  {/* Primary Owner is always an admin */}
+                  <div className="flex items-center justify-between p-6 rounded-3xl bg-muted/10 border-2 border-transparent">
+                    <div className="flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                        <Shield className="h-6 w-6 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black uppercase text-foreground">Primary Owner</p>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase">{schoolHub.name} Creator</p>
+                      </div>
+                    </div>
+                    <Badge className="bg-black text-white h-6 px-3 uppercase text-[9px] font-black tracking-widest pointer-events-none line-clamp-1 truncate max-w-[150px]">Owner</Badge>
+                  </div>
+                  
+                  {adminProfiles.map((admin) => (
+                    <div key={admin.id} className="flex items-center justify-between p-6 rounded-3xl bg-white border-2 hover:border-primary/20 transition-all group shadow-sm">
+                      <div className="flex items-center gap-4">
+                        <Avatar className="h-12 w-12 border">
+                          <AvatarImage src={admin.avatar} />
+                          <AvatarFallback className="font-bold text-primary">{admin.name?.[0]}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="text-sm font-black uppercase text-foreground">{admin.name || 'Unknown User'}</p>
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">{admin.email}</p>
+                        </div>
+                      </div>
+                      {schoolHub.ownerUserId === user?.id && (
+                        <Button variant="ghost" size="icon" onClick={() => handleRemoveAdmin(admin.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:bg-destructive/10">
+                          <XCircle className="h-5 w-5" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         )}
 
@@ -604,7 +763,7 @@ export default function ClubManagementPage() {
                   </thead>
                   <tbody className="divide-y divide-muted/50">
                     {clubIncidents.map(inc => (
-                      <tr key={inc.id} className="hover:bg-primary/5 transition-colors group cursor-pointer">
+                      <tr key={inc.id} onClick={() => setViewingIncident(inc)} className="hover:bg-primary/5 transition-colors group cursor-pointer">
                         <td className="px-10 py-6"><p className="font-black text-sm uppercase text-foreground">{inc.title}</p><p className="text-[10px] font-bold text-muted-foreground uppercase mt-0.5">{inc.location}</p></td>
                         <td className="px-6 py-6 font-black text-xs uppercase text-foreground">{inc.teamName}</td>
                         <td className="px-6 py-6"><Badge className={cn("border-none font-black text-[8px] uppercase px-3 h-5", inc.emergencyServicesCalled ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground")}>{inc.emergencyServicesCalled ? 'CRITICAL' : 'ROUTINE'}</Badge></td>
@@ -670,6 +829,8 @@ export default function ClubManagementPage() {
           </div>
         </AlertDialogContent>
       </AlertDialog>
+
+      <IncidentDetailDialog incident={viewingIncident} isOpen={!!viewingIncident} onOpenChange={(o) => !o && setViewingIncident(null)} />
     </div>
   );
 }

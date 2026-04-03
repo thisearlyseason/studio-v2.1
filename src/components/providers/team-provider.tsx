@@ -694,6 +694,7 @@ interface TeamContextType {
   exportAttendanceCSV: (eventId: string) => Promise<void>;
   exportTournamentStandingsCSV: (tournamentId: string) => Promise<void>;
   addIncident: (data: any) => Promise<void>;
+  updateIncident: (teamId: string, id: string, data: any) => Promise<void>;
   addLeaguePayment: (leagueId: string, teamId: string, data: any) => Promise<void>;
   updateLeagueGlobalFees: (leagueId: string, fees: any) => Promise<void>;
   purchasePro: () => void;
@@ -943,10 +944,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     );
     if (isElite) return true;
 
-    // Check for School Admin (Owner of Primary School Team)
+    // Check for School Admin (Owner of Primary School Team or explicit admin)
     const isSchoolAdminOwned = teams.some((t: any) => 
-      t.ownerUserId === userProfile?.id && 
-      t.type === 'school'
+      t.type === 'school' && 
+      (t.ownerUserId === userProfile?.id || t.schoolAdminIds?.includes(userProfile?.id))
     );
     return isSchoolAdminOwned;
   }, [teams, userProfile, isSuperAdmin]);
@@ -1829,6 +1830,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const assignManualPlan = useCallback(async (uid: string, planId: string, limit: number) => { if (db) await updateDoc(doc(db, 'users', uid), { activePlanId: planId, proTeamLimit: limit, planSource: 'manual' }); }, [db]);
 
   const addIncident = useCallback(async (data: any) => { if (activeTeam?.id && db && firebaseUser) await addDoc(collection(db, 'teams', activeTeam.id, 'incidents'), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId, teamName: activeTeam.name, reportedBy: firebaseUser.uid, createdAt: new Date().toISOString() })); }, [db, firebaseUser, activeTeam]);
+  const updateIncident = useCallback(async (teamId: string, id: string, data: any) => { if (db) await updateDoc(doc(db, 'teams', teamId, 'incidents', id), clean(data)); }, [db]);
   
   const resetSquadData = useCallback(async (cats: string[]) => { if (!activeTeam?.id || !db) return; const batch = writeBatch(db); if (cats.includes('games')) { const gs = await getDocs(collection(db, 'teams', activeTeam.id, 'games')); gs.forEach(d => batch.delete(d.ref)); } if (cats.includes('events')) { const es = await getDocs(collection(db, 'teams', activeTeam.id, 'events')); es.forEach(d => batch.delete(d.ref)); } await batch.commit(); }, [activeTeam, db]);
 
@@ -2088,7 +2090,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, signUpForFundraising, addFundraisingOpportunity, updateFundraisingOpportunity,
-    confirmExternalDonation, addIncident, assignManualPlan, removeTeamFromLeague,
+    confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
     addLeagueGame,
@@ -2114,7 +2116,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, addFundraisingOpportunity, updateFundraisingOpportunity, signUpForFundraising,
-    confirmExternalDonation, addIncident, assignManualPlan, removeTeamFromLeague,
+    confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
     addLeagueGame,

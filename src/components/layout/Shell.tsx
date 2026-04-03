@@ -272,7 +272,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </SidebarMenuItem>
                 )}
 
-                {(isPrimaryClubAuthority || isSchoolAdmin) && (
+                {isPrimaryClubAuthority && (
                   <SidebarMenuItem>
                     <SidebarMenuButton 
                       asChild 
