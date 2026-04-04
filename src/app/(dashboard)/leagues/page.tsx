@@ -228,11 +228,11 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase ml-1">Season Start</Label>
-                    <Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 font-black" />
+                    <Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 font-black px-4 [&::-webkit-calendar-picker-indicator]:p-1" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase ml-1">Season End</Label>
-                    <Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 font-black" />
+                    <Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 font-black px-4 [&::-webkit-calendar-picker-indicator]:p-1" />
                   </div>
                 </div>
                 <div className="space-y-3">
@@ -343,12 +343,12 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                     <p className="text-[10px] font-black uppercase tracking-widest text-primary">Blackout Calendar</p>
                   </div>
                   <p className="text-[10px] font-medium text-white/60 leading-relaxed italic">Select dates where no league matches should be scheduled.</p>
-                  <div className="bg-white rounded-2xl p-2 text-black">
+                  <div className="bg-white rounded-2xl p-2 text-black flex justify-center">
                     <Calendar 
                       mode="multiple" 
                       selected={config.blackoutDates} 
                       onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})} 
-                      className="text-black"
+                      className="mx-auto"
                     />
                   </div>
                 </div>
@@ -750,7 +750,7 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase">Match Date</Label>
-                <Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className="h-12 border-2 font-black bg-white" />
+                <Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className="h-12 border-2 font-black bg-white px-4 [&::-webkit-calendar-picker-indicator]:p-1" />
               </div>
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase">Start Time</Label>
@@ -1444,14 +1444,6 @@ export default function LeaguesPage() {
                 <Card className="rounded-[2.5rem] border-none shadow-xl bg-orange-600 text-white p-8 space-y-4 group transition-all">
                   <div className="flex items-center justify-between">
                     <Badge className="bg-white text-orange-600 border-none font-black text-[8px] h-5 px-2">SQUAD ARCHITECT</Badge>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black uppercase opacity-60">Live</span>
-                      <Switch 
-                        checked={activeLeague.is_active !== false} 
-                        onCheckedChange={handleToggleActive}
-                        className="data-[state=checked]:bg-white data-[state=unchecked]:bg-white/20 select-none"
-                      />
-                    </div>
                   </div>
                   <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Team Registration</h4>
                   <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public portal for new squads to join the roster.</p>
@@ -1655,13 +1647,13 @@ export default function LeaguesPage() {
                </div>
                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                  <div className="space-y-2 col-span-2 md:col-span-1">
-                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label>
-                   <Input type="date" value={editLeagueForm.startDate} onChange={e => setEditLeagueForm({...editLeagueForm, startDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
-                 </div>
-                 <div className="space-y-2 col-span-2 md:col-span-1">
-                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label>
-                   <Input type="date" value={editLeagueForm.endDate} onChange={e => setEditLeagueForm({...editLeagueForm, endDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
-                 </div>
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label>
+                    <Input type="date" value={editLeagueForm.startDate} onChange={e => setEditLeagueForm({...editLeagueForm, startDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold px-4 [&::-webkit-calendar-picker-indicator]:p-1" />
+                  </div>
+                  <div className="space-y-2 col-span-2 md:col-span-1">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label>
+                    <Input type="date" value={editLeagueForm.endDate} onChange={e => setEditLeagueForm({...editLeagueForm, endDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold px-4 [&::-webkit-calendar-picker-indicator]:p-1" />
+                  </div>
                  <div className="space-y-2 col-span-2 md:col-span-1">
                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Ages / Divisions</Label>
                    <Input value={editLeagueForm.ages} onChange={e => setEditLeagueForm({...editLeagueForm, ages: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="e.g. U14 - U18" />

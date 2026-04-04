@@ -591,10 +591,76 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
   );
 }
 
+// --- Master Squad Wall ---
+function MasterSquadWall({ consolidatedTeams }: { consolidatedTeams: { team: Team; members: PlayerProfile[] }[] }) {
+  const router = useRouter();
+  if (consolidatedTeams.length === 0) return null;
+
+  return (
+    <div className="space-y-4 py-2">
+      <div className="flex items-center justify-between px-2">
+        <div className="flex items-center gap-3">
+          <ShieldCheck className="h-5 w-5 text-primary" />
+          <h2 className="text-xl font-black uppercase tracking-tight text-foreground">Consolidated Squad Wall</h2>
+        </div>
+        <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest border-primary/20 text-primary bg-primary/5">
+          {consolidatedTeams.length} Active Directives
+        </Badge>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {consolidatedTeams.map(({ team, members }) => (
+          <Card 
+            key={team.id}
+            className="group relative rounded-[2rem] border-none shadow-lg bg-white/40 backdrop-blur-xl overflow-hidden ring-1 ring-black/5 hover:ring-primary/40 transition-all cursor-pointer h-32 flex flex-col justify-end p-6"
+            onClick={() => router.push(`/feed?teamId=${team.id}`)}
+          >
+            <div className="absolute top-0 left-0 w-full h-1 bg-primary transform origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
+            
+            {/* Participant Avatars */}
+            <div className="absolute top-4 right-4 flex -space-x-2">
+              {members.length > 0 ? members.map((m, i) => (
+                <div 
+                  key={m.id} 
+                  className="h-7 w-7 rounded-full border-2 border-white hero-gradient text-[9px] font-black text-white flex items-center justify-center shadow-md animate-in fade-in zoom-in duration-300" 
+                  style={{ zIndex: 10 - i }}
+                >
+                  {m.firstName[0]}
+                </div>
+              )) : (
+                <div className="h-7 w-7 rounded-full border-2 border-white bg-black/10 flex items-center justify-center">
+                  <UserCheck className="h-3 w-3 text-black/30" />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-0.5">
+              <h4 className="text-sm font-black uppercase tracking-tight leading-tight group-hover:text-primary transition-colors truncate pr-12">
+                {team.name}
+              </h4>
+              <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em] flex items-center gap-1.5">
+                <Trophy className="h-2 w-2 opacity-50" />
+                {team.sport || 'ATHLETICS'} • {team.code || team.id.slice(-6).toUpperCase()}
+              </p>
+            </div>
+          </Card>
+        ))}
+        <Button 
+          variant="outline" 
+          onClick={() => router.push('/teams/join')}
+          className="rounded-[2.5rem] border-2 border-dashed border-primary/20 bg-primary/5 h-32 flex flex-col gap-2 hover:bg-primary/10 hover:border-primary/40 transition-all"
+        >
+          <Plus className="h-6 w-6 text-primary" />
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Join New Squad</span>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // --- Main Page ---
 export default function FamilyDashboardPage() {
   const {
-    user, myChildren, registerChild, teams,
+    user, myChildren, registerChild, teams, joinTeamWithCode,
     householdEvents, householdBalance, isParent
   } = useTeam();
 
@@ -603,7 +669,7 @@ export default function FamilyDashboardPage() {
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [newChild, setNewChild] = useState({ firstName: '', lastName: '', dob: '' });
+  const [newChild, setNewChild] = useState({ firstName: '', lastName: '', dob: '', teamCode: '' });
 
   const sigsQuery = useMemoFirebase(() => {
     if (!db || !user?.id) return null;
@@ -612,17 +678,56 @@ export default function FamilyDashboardPage() {
   const { data: signatures } = useCollection<any>(sigsQuery);
 
   const handleAddChild = async () => {
-    if (!newChild.firstName || !newChild.lastName || !newChild.dob) return;
+    if (!newChild.firstName || !newChild.lastName || !newChild.dob) {
+      toast({ title: "Incomplete Data", description: "Identity parameters are required for enrollment.", variant: "destructive" });
+      return;
+    }
     setIsProcessing(true);
     try {
-      await registerChild(newChild.firstName, newChild.lastName, newChild.dob);
+      const cid = await registerChild(newChild.firstName, newChild.lastName, newChild.dob);
+      
+      if (cid && newChild.teamCode.trim()) {
+        const joinSuccess = await joinTeamWithCode(newChild.teamCode.trim().toUpperCase(), cid, 'Player');
+        if (joinSuccess) {
+          toast({ title: "Player Enrolled", description: `${newChild.firstName} joined the team successfully.` });
+        } else {
+          toast({ title: "Team Join Handled", description: "Athlete added, but team code was not recognized.", variant: "default" });
+        }
+      } else if (cid) {
+        toast({ title: "Player Registered", description: "Athlete hub initialized. You can join squads later." });
+      }
+
       setIsAddOpen(false);
-      setNewChild({ firstName: '', lastName: '', dob: '' });
-      toast({ title: "Player Registered", description: "Your child has been added to your hub." });
+      setNewChild({ firstName: '', lastName: '', dob: '', teamCode: '' });
     } finally {
       setIsProcessing(false);
     }
   };
+
+  const consolidatedTeams = useMemo(() => {
+    const map = new Map<string, { team: Team; members: PlayerProfile[] }>();
+    
+    // Use teams from context as base
+    teams.forEach(t => {
+      if (!map.has(t.id)) {
+        map.set(t.id, { team: t, members: [] });
+      }
+    });
+
+    // Populate members for each team
+    myChildren.forEach(child => {
+      child.joinedTeamIds?.forEach(tid => {
+        const entry = map.get(tid);
+        if (entry) {
+          if (!entry.members.find(m => m.id === child.id)) {
+            entry.members.push(child);
+          }
+        }
+      });
+    });
+
+    return Array.from(map.values());
+  }, [teams, myChildren]);
 
   const upcomingEvents = useMemo(() => {
     if (!householdEvents || !Array.isArray(householdEvents)) return [];
@@ -631,7 +736,7 @@ export default function FamilyDashboardPage() {
       const d = new Date(e.date);
       if (isNaN(d.getTime())) return false;
       return isFuture(d) || isToday(d);
-    }).slice(0, 5);
+    }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).slice(0, 5);
   }, [householdEvents]);
 
   if (!isParent) {
@@ -676,6 +781,23 @@ export default function FamilyDashboardPage() {
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Date of Birth</Label>
                   <Input type="date" value={newChild.dob} onChange={e => setNewChild({ ...newChild, dob: e.target.value })} className="h-12 rounded-xl border-2 font-black" />
                 </div>
+                {/* Immediate Join Integration */}
+                <div className="space-y-2 pt-4 border-t border-dashed">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-primary mb-2 flex items-center gap-1.5">
+                    <Users className="h-3 w-3" /> Quick Squad Enrollment
+                  </p>
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Squad Join Code (Optional)</Label>
+                  <Input 
+                    placeholder="6-DIGIT CODE" 
+                    value={newChild.teamCode} 
+                    onChange={e => setNewChild({ ...newChild, teamCode: e.target.value.toUpperCase() })} 
+                    className="h-14 rounded-xl border-2 font-black tracking-widest text-lg" 
+                    maxLength={6}
+                  />
+                  <p className="text-[8px] font-bold text-muted-foreground uppercase leading-relaxed mt-1">
+                    Enter a code provided by a coach to link this player immediately.
+                  </p>
+                </div>
               </div>
               <DialogFooter>
                 <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddChild} disabled={isProcessing}>
@@ -687,21 +809,24 @@ export default function FamilyDashboardPage() {
         </Dialog>
       </div>
 
-      {/* Stats + Events */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Master Wall - Strategic Visibility Layer */}
+      <MasterSquadWall consolidatedTeams={consolidatedTeams} />
+
+      {/* Stats + Events Layer */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pt-4">
         <div className="lg:col-span-1 space-y-6">
-          <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden group">
+          <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden group border-b-8 border-primary">
             <CardContent className="p-8 space-y-6">
               <div className="flex justify-between items-start">
-                <div className="bg-primary p-4 rounded-2xl shadow-lg"><DollarSign className="h-8 w-8 text-white" /></div>
+                <div className="bg-primary p-4 rounded-2xl shadow-lg ring-4 ring-primary/20"><DollarSign className="h-8 w-8 text-white" /></div>
                 <Badge className="bg-white/20 text-white border-none font-black text-[10px] uppercase tracking-widest px-3 h-6">Consolidated</Badge>
               </div>
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.2em] opacity-60 mb-1">Household Balance</p>
                 <p className="text-5xl font-black tracking-tighter">${householdBalance?.toLocaleString() || '0'}</p>
               </div>
-              <Button className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-xs tracking-widest hover:bg-primary hover:text-white transition-all shadow-xl" onClick={() => router.push('/pricing')}>
-                Manage Payments
+              <Button className="w-full h-14 rounded-2xl bg-white text-black font-black uppercase text-[10px] tracking-widest hover:bg-primary hover:text-white transition-all shadow-xl" onClick={() => router.push('/pricing')}>
+                Manage Payments Hub
               </Button>
             </CardContent>
           </Card>
@@ -710,27 +835,27 @@ export default function FamilyDashboardPage() {
             <CardHeader className="bg-muted/30 border-b p-6">
               <div className="flex items-center gap-3">
                 <Activity className="h-5 w-5 text-primary" />
-                <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Operational Pulse</CardTitle>
+                <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground">Operational Pulse</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
               <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border shadow-inner">
                 <div>
                   <p className="text-[10px] font-black uppercase opacity-40">Active Squads</p>
-                  <p className="text-xl font-black">{Array.from(new Set((myChildren || []).flatMap(c => c.joinedTeamIds || []))).length}</p>
+                  <p className="text-xl font-black">{consolidatedTeams.length}</p>
                 </div>
                 <Users className="h-6 w-6 text-primary/40" />
               </div>
               <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border shadow-inner">
                 <div>
                   <p className="text-[10px] font-black uppercase opacity-40">Verified Docs</p>
-                  <p className="text-xl font-black text-green-600">{signatures?.length || 0}</p>
+                  <p className="text-xl font-black text-green-600 font-black">{signatures?.length || 0}</p>
                 </div>
                 <FileSignature className="h-6 w-6 text-primary/40" />
               </div>
               <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border shadow-inner">
                 <div>
-                  <p className="text-[10px] font-black uppercase opacity-40">Athletes</p>
+                  <p className="text-[10px] font-black uppercase opacity-40">Total Athletes</p>
                   <p className="text-xl font-black">{myChildren?.length || 0}</p>
                 </div>
                 <Baby className="h-6 w-6 text-primary/40" />
@@ -745,12 +870,12 @@ export default function FamilyDashboardPage() {
               <CalendarDays className="h-5 w-5 text-primary" />
               <h2 className="text-xl font-black uppercase tracking-tight text-foreground">Household Itinerary</h2>
             </div>
-            <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest hover:bg-primary/5 hover:text-primary" onClick={() => router.push('/calendar')}>
-              Master View <ChevronRight className="ml-1 h-3.5 w-3.5" />
+            <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest hover:bg-primary/5 hover:text-primary rounded-full px-6" onClick={() => router.push('/calendar')}>
+              Master Schedule <ChevronRight className="ml-1 h-3.5 w-3.5" />
             </Button>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-4 scroll-mt-20">
             {upcomingEvents.length > 0 ? upcomingEvents.map((event) => {
               const team = (teams || []).find(t => t.id === event.teamId);
               const participants = [
@@ -759,30 +884,29 @@ export default function FamilyDashboardPage() {
               ];
               
               return (
-                <Card key={event.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white">
+                <Card key={event.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 hover:shadow-xl transition-all group overflow-hidden bg-white hover:-translate-y-1 duration-300">
                   <CardContent className="p-0">
-                    <div className="flex items-stretch h-24">
-                      <div className="w-20 bg-muted/30 flex flex-col items-center justify-center border-r shrink-0 group-hover:bg-primary/5 transition-colors">
-                        <span className="text-[8px] font-black uppercase opacity-40">{event.date ? format(new Date(event.date), 'MMM') : '—'}</span>
-                        <span className="text-2xl font-black">{event.date ? format(new Date(event.date), 'dd') : '—'}</span>
+                    <div className="flex items-stretch h-28">
+                      <div className="w-24 bg-muted/30 flex flex-col items-center justify-center border-r shrink-0 group-hover:bg-primary/5 transition-colors">
+                        <span className="text-[10px] font-black uppercase opacity-40">{event.date ? format(new Date(event.date), 'MMM') : '—'}</span>
+                        <span className="text-3xl font-black">{event.date ? format(new Date(event.date), 'dd') : '—'}</span>
                       </div>
-                      <div className="flex-1 p-5 flex flex-col justify-center min-w-0">
-                        <div className="flex items-center justify-between mb-1">
+                      <div className="flex-1 p-6 flex flex-col justify-center min-w-0">
+                        <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <Badge className="bg-primary/10 text-primary border-none text-[7px] uppercase font-black px-1.5 h-4">{event.eventType}</Badge>
-                            <span className="text-[9px] font-black uppercase text-muted-foreground truncate max-w-[120px]">{team?.name || 'Squad Deployment'}</span>
+                            <Badge className="bg-primary/10 text-primary border-none text-[8px] uppercase font-black px-2 h-5">{event.eventType}</Badge>
+                            <span className="text-[10px] font-black uppercase text-muted-foreground truncate max-w-[150px]">{team?.name || 'Squad Deployment'}</span>
                           </div>
-                          <div className="flex gap-1 shrink-0">
+                          <div className="flex gap-1.5 shrink-0">
                             {participants.map((p, idx) => (
                               <Badge 
                                 key={p} 
                                 className={cn(
-                                  "h-4 px-2 text-[7px] border-none font-black uppercase tracking-tighter shadow-sm",
+                                  "h-5 px-3 text-[8px] border-none font-black uppercase tracking-tighter shadow-sm",
                                   p === 'You' ? "bg-black text-white" : 
-                                  idx === 0 ? "bg-primary text-white" : 
-                                  idx === 1 ? "bg-amber-500 text-black" : 
-                                  idx === 2 ? "bg-green-600 text-white" : 
-                                  "bg-blue-600 text-white"
+                                  idx % 3 === 0 ? "bg-primary text-white" : 
+                                  idx % 3 === 1 ? "bg-amber-500 text-black" : 
+                                  "bg-green-600 text-white"
                                 )}
                               >
                                 {p}
@@ -790,12 +914,12 @@ export default function FamilyDashboardPage() {
                             ))}
                           </div>
                         </div>
-                        <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
-                        <div className="flex items-center justify-between mt-1">
-                          <p className="text-[9px] font-medium text-muted-foreground flex items-center gap-1 truncate">
-                            <MapPin className="h-2 w-2" /> {event.location || 'No Location Set'}
+                        <h4 className="font-black text-base uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
+                        <div className="flex items-center justify-between mt-2">
+                          <p className="text-[10px] font-medium text-muted-foreground flex items-center gap-1.5 truncate">
+                            <MapPin className="h-3 w-3 opacity-40" /> {event.location || 'Tactical HQ'}
                           </p>
-                          <span className="text-[10px] font-bold text-muted-foreground whitespace-nowrap ml-2">{event.startTime || 'TBD'}</span>
+                          <span className="text-[11px] font-black text-foreground/80 bg-muted/40 px-3 py-1 rounded-lg whitespace-nowrap ml-4">{event.startTime || 'TBD'}</span>
                         </div>
                       </div>
                     </div>
@@ -803,36 +927,44 @@ export default function FamilyDashboardPage() {
                 </Card>
               );
             }) : (
-              <div className="text-center py-20 bg-muted/10 rounded-[3rem] border-2 border-dashed opacity-40">
-                <Calendar className="h-12 w-12 mx-auto mb-4 text-foreground" />
-                <p className="text-sm font-black uppercase tracking-widest">Clear Schedule</p>
+              <div className="p-12 text-center rounded-[3rem] border-4 border-dashed border-muted/30 bg-muted/5">
+                <Calendar className="h-12 w-12 text-muted-foreground opacity-20 mx-auto mb-4" />
+                <h4 className="text-xl font-black uppercase tracking-tight text-muted-foreground">Tactical Silence</h4>
+                <p className="text-xs font-bold text-muted-foreground/60 uppercase tracking-widest mt-1">No upcoming household directives found.</p>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Athlete Roster */}
-      <section className="space-y-6 pt-10 border-t">
+      {/* Roster Sector */}
+      <div className="space-y-8 pt-6">
         <div className="flex items-center gap-3 px-2">
           <Baby className="h-6 w-6 text-primary" />
-          <h2 className="text-2xl font-black uppercase tracking-tight text-foreground">Athlete Roster</h2>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-foreground">The Roster</h2>
         </div>
-
-        {(myChildren || []).length === 0 && (
-          <div className="text-center py-24 bg-muted/10 rounded-[3rem] border-2 border-dashed opacity-40">
-            <Baby className="h-14 w-14 mx-auto mb-4" />
-            <p className="text-sm font-black uppercase tracking-widest">No athletes registered yet</p>
-            <p className="text-[10px] font-bold uppercase mt-1 opacity-60">Click "Register Player" above to add your first athlete</p>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {(myChildren || []).map((child) => (
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+          {myChildren?.map(child => (
             <ChildCard key={child.id} child={child} teams={teams || []} />
           ))}
+          
+          {(!myChildren || myChildren.length === 0) && (
+            <Card className="col-span-full rounded-[3rem] border-4 border-dashed border-muted/30 bg-muted/5 flex flex-col items-center justify-center p-20 text-center animate-in fade-in duration-1000">
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-xl mb-6 ring-1 ring-black/5">
+                <Baby className="h-16 w-16 text-primary/40" />
+              </div>
+              <h3 className="text-3xl font-black uppercase tracking-tight mb-2">Initialize Your Household</h3>
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-w-md mx-auto mb-10 leading-relaxed">
+                Connect your athletes to our coordination grid to manage schedules, waivers, and recruitment potential.
+              </p>
+              <Button size="lg" className="h-16 px-12 rounded-2xl text-xl font-black shadow-2xl shadow-primary/20" onClick={() => setIsAddOpen(true)}>
+                Initialize Athlete 01
+              </Button>
+            </Card>
+          )}
         </div>
-      </section>
+      </div>
 
       {/* Info Banner */}
       <Card className="rounded-[3rem] border-none shadow-2xl bg-black text-white overflow-hidden relative">

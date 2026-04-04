@@ -111,7 +111,7 @@ const coordinationTabs = [
   { name: 'Playbook', href: '/drills', icon: GraduationCap, pro: true },
   { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: true },
   { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: true },
-  { name: 'Chats', href: '/chats', icon: MessageCircle, pro: false },
+  { name: 'Tactical Chat', href: '/chats', icon: MessageCircle, pro: false },
   { name: 'Roster', href: '/roster', icon: Users2, pro: false },
   { name: 'Library', href: '/files', icon: FolderClosed, pro: false },
 ];
@@ -249,7 +249,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     { name: 'Home', href: '/dashboard', icon: Home },
     { name: 'Schedule', href: '/events', icon: CalendarDays },
     { name: 'Feed', href: '/feed', icon: LayoutDashboard, gate: () => hasFeature?.('live_feed_read') },
-    { name: 'Chats', href: '/chats', icon: MessageCircle },
+    { name: 'Tactical Chat', href: '/chats', icon: MessageCircle },
   ];
 
   const handleLogout = async () => {

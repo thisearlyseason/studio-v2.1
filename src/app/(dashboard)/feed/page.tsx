@@ -334,7 +334,24 @@ export default function FeedPage() {
                 </Avatar>
                 <div className="flex-1 min-w-0 w-full">
                   <Textarea placeholder={`What's the play, ${user?.name}?`} value={newPostContent} onChange={(e) => setNewPostContent(e.target.value)} className="min-h-[80px] lg:min-h-[100px] w-full resize-none border-none focus-visible:ring-0 p-2 lg:p-4 text-base lg:text-lg font-medium placeholder:text-muted-foreground/30 bg-transparent" />
+                  
+                  {imageUrl && (
+                    <div className="relative mt-2 rounded-2xl overflow-hidden group/img">
+                      <img src={imageUrl} className="w-full h-auto max-h-[300px] object-cover border" alt="Upload preview" />
+                      <Button variant="destructive" size="icon" className="absolute top-2 right-2 h-8 w-8 rounded-full shadow-lg opacity-0 group-hover/img:opacity-100 transition-opacity" onClick={() => setImageUrl(undefined)}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-2 lg:gap-4 pt-4 mt-2 lg:mt-4 border-t">
+                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => {
+                      if (e.target.files?.[0]) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => setImageUrl(ev.target?.result as string);
+                        reader.readAsDataURL(e.target.files[0]);
+                      }
+                    }} />
                     <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => fileInputRef.current?.click()}><ImagePlus className="h-4 w-4 lg:h-5 lg:w-5" /></Button>
                     <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => setIsPollDialogOpen(true)}><BarChart2 className="h-4 w-4 lg:h-5 lg:w-5" /></Button>
                     <Button disabled={!newPostContent.trim() && !imageUrl} onClick={handlePost} className="ml-auto rounded-full px-6 lg:px-8 h-10 lg:h-12 font-black uppercase text-[9px] lg:text-[11px] tracking-widest shadow-lg lg:shadow-xl shadow-primary/20">Post to Squad</Button>

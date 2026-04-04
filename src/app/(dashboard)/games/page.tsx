@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Trophy, Plus, MapPin, TrendingUp, Lock, LineChart as ChartIcon, ChevronRight, Zap, Quote, Loader2, Download } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,7 +37,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export default function GamesPage() {
-  const { activeTeam, addGame, updateGame, isSuperAdmin, purchasePro, hasFeature, isStaff } = useTeam();
+  const { activeTeam, addGame, updateGame, isSuperAdmin, purchasePro, hasFeature, isStaff, activeTeamEvents } = useTeam();
   const db = useFirestore();
   
   const gamesQuery = useMemoFirebase(() => {
@@ -55,6 +56,50 @@ export default function GamesPage() {
   const [opponentScore, setOpponentScore] = useState('');
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
+  const [selectedEventId, setSelectedEventId] = useState<string>('manual');
+  const searchParams = useSearchParams();
+
+  const scheduledMatches = useMemo(() => {
+    return (activeTeamEvents || []).filter(e => e.eventType === 'game');
+  }, [activeTeamEvents]);
+
+  // Check if a match has already been recorded for an event
+  const recordedEventIds = useMemo(() => {
+    return new Set(games.map(g => g.eventId).filter(Boolean));
+  }, [games]);
+
+  useEffect(() => {
+    const recordEventId = searchParams.get('recordEventId');
+    if (recordEventId && !recordedEventIds.has(recordEventId)) {
+      setSelectedEventId(recordEventId);
+      setIsRecordOpen(true);
+    }
+  }, [searchParams, recordedEventIds]);
+
+  useEffect(() => {
+    if (selectedEventId && selectedEventId !== 'manual') {
+      const event = scheduledMatches.find(e => e.id === selectedEventId);
+      if (event) {
+        // Use the explicit opponent field if available, otherwise try to extract from title
+        if (event.opponent) {
+          setOpponent(event.opponent);
+        } else {
+          const opponentMatch = event.title.match(/vs\s+(.*)/i) || event.title.match(/@\s+(.*)/i);
+          setOpponent(opponentMatch ? opponentMatch[1].trim() : event.title);
+        }
+        
+        // Format date for the input
+        try {
+          const d = new Date(event.date);
+          setDate(d.toISOString().split('T')[0]);
+        } catch (e) {
+          setDate('');
+        }
+        
+        setLocation(event.location);
+      }
+    }
+  }, [selectedEventId, scheduledMatches]);
 
   const chartData = useMemo(() => {
     if (!games.length) return [];
@@ -82,12 +127,21 @@ export default function GamesPage() {
     if (!opponent || !date || !myScore || !opponentScore) return;
     const myS = parseInt(myScore); const oppS = parseInt(opponentScore);
     let result: 'Win' | 'Loss' | 'Tie' = 'Tie'; if (myS > oppS) result = 'Win'; if (myS < oppS) result = 'Loss';
-    const payload: any = { opponent, date: new Date(date).toISOString(), myScore: myS, opponentScore: oppS, result, location, notes: isPro ? notes : '' };
+    const payload: any = { 
+      opponent, 
+      date: new Date(date).toISOString(), 
+      myScore: myS, 
+      opponentScore: oppS, 
+      result, 
+      location, 
+      notes: isPro ? notes : '',
+      eventId: selectedEventId !== 'manual' ? selectedEventId : null
+    };
     if (editingGame) updateGame(editingGame.id, payload); else addGame(payload);
     setIsRecordOpen(false); resetForm();
   };
 
-  const resetForm = () => { setOpponent(''); setDate(''); setMyScore(''); setOpponentScore(''); setLocation(''); setNotes(''); setEditingGame(null); };
+  const resetForm = () => { setOpponent(''); setDate(''); setMyScore(''); setOpponentScore(''); setLocation(''); setNotes(''); setEditingGame(null); setSelectedEventId('manual'); };
 
   return (
     <div className="space-y-8 pb-20 animate-in fade-in duration-500">
@@ -164,7 +218,19 @@ export default function GamesPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
         {games.map((game) => (
-          <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 overflow-hidden hover:shadow-lg transition-all cursor-pointer bg-white group" onClick={() => isAdmin && handleRecordGame()}>
+          <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 overflow-hidden hover:shadow-lg transition-all cursor-pointer bg-white group" onClick={() => {
+            if (isAdmin) {
+              setEditingGame(game);
+              setOpponent(game.opponent);
+              setDate(new Date(game.date).toISOString().split('T')[0]);
+              setMyScore(game.myScore.toString());
+              setOpponentScore(game.opponentScore.toString());
+              setLocation(game.location || '');
+              setNotes(game.notes || '');
+              setSelectedEventId(game.eventId || 'manual');
+              setIsRecordOpen(true);
+            }
+          }}>
             <div className={cn("h-1.5 w-full", game.result === 'Win' ? "bg-green-500" : game.result === 'Loss' ? "bg-red-600" : "bg-muted-foreground/30")} />
             <CardContent className="p-6 space-y-4">
               <div className="flex items-center justify-between">
@@ -197,6 +263,29 @@ export default function GamesPage() {
               <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Broadcast the final match score</DialogDescription>
             </DialogHeader>
             <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase ml-1">Link to Scheduled Match</Label>
+                <Select value={selectedEventId} onValueChange={setSelectedEventId}>
+                  <SelectTrigger className="h-14 rounded-2xl font-bold border-2 bg-muted/20">
+                    <SelectValue placeholder="Select a scheduled match" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-2xl">
+                    <SelectItem value="manual">-- Manual Entry --</SelectItem>
+                    {scheduledMatches.map(event => {
+                      const isRecorded = recordedEventIds.has(event.id) && event.id !== editingGame?.eventId;
+                      return (
+                        <SelectItem key={event.id} value={event.id} disabled={isRecorded}>
+                          <div className="flex flex-col items-start py-1">
+                            <span className="font-black text-xs uppercase">{event.title}</span>
+                            <span className="text-[10px] opacity-50 uppercase">{format(new Date(event.date), 'MMM d')} @ {event.location} {isRecorded ? '(Already Recorded)' : ''}</span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase ml-1">Opponent</Label>
                 <Input placeholder="e.g. Tigers" value={opponent} onChange={e => setOpponent(e.target.value)} className="h-14 rounded-2xl font-bold border-2" />

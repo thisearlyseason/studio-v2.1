@@ -100,7 +100,7 @@ function DemoSeedWrapper({
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading, isAuthResolved } = useUser();
   const auth = useAuth();
-  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile } = useTeam();
+  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, isPrimaryClubAuthority } = useTeam();
   const router = useRouter();
   const pathname = usePathname();
   
@@ -122,7 +122,17 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     if (!user && !pathname.includes('seed_demo')) {
       router.push('/login');
     }
-  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname]);
+
+    // Automatic Redirect to Institutional Hub for Admins/Schools
+    // We use sessionStorage to only perform this once per session to allow manual return to the Personal Hub
+    const landingKey = `squad_hub_landing_${user?.uid}`;
+    const hasRedirected = typeof window !== 'undefined' ? sessionStorage.getItem(landingKey) : null;
+    
+    if (pathname === '/dashboard' && isPrimaryClubAuthority && !hasRedirected) {
+      sessionStorage.setItem(landingKey, 'true');
+      router.push('/club');
+    }
+  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, isPrimaryClubAuthority]);
 
   useEffect(() => {
     if (!mounted || isSeedingDemo || isTeamsLoading || !user || isDemoInitializing) return;

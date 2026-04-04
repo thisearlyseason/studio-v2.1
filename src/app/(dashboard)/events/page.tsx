@@ -2,6 +2,8 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -74,7 +76,13 @@ const formatDateRange = (start: string | Date, end?: string | Date) => {
 };
 
 function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, children, members }: { event: TeamEvent, updateRSVP: (eventId: string, status: string, teamId?: string, userId?: string) => Promise<void>, isAdmin: boolean, onEdit: any, onDelete: any, children: React.ReactNode, members: Member[] }) {
-  const { user, exportAttendanceCSV, myChildren, isParent, teams, getMember } = useTeam();
+  const { user, exportAttendanceCSV, myChildren, isParent, teams, getMember, games, isStaff } = useTeam();
+  const router = useRouter();
+  
+  const linkedGame = useMemo(() => {
+    if (event.eventType !== 'game') return null;
+    return games.find(g => g.eventId === event.id);
+  }, [games, event.id, event.eventType]);
   
   const team = teams.find(t => t.id === event.teamId);
   const relevantParticipants = [
@@ -182,6 +190,49 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                   })}
                 </div>
               </div>
+
+              {linkedGame ? (
+                <div className="pt-8 border-t border-white/10 space-y-4 animate-in slide-in-from-bottom-2 duration-700">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-black uppercase text-primary tracking-[0.2em]">Match Verified</p>
+                    <Badge className={cn(
+                      "text-[8px] font-black uppercase h-5 px-3",
+                      linkedGame.result === 'Win' ? "bg-green-500 text-white" : 
+                      linkedGame.result === 'Loss' ? "bg-red-500 text-white" : 
+                      "bg-amber-400 text-black"
+                    )}>
+                      {linkedGame.result}
+                    </Badge>
+                  </div>
+                  <div className="bg-white/10 p-6 rounded-[2rem] border border-white/20 text-center space-y-2 group/game cursor-pointer hover:bg-white/15 transition-all" onClick={() => router.push('/games')}>
+                    <div className="flex items-center justify-center gap-6">
+                      <div className="text-center">
+                        <p className="text-[10px] font-bold opacity-40 uppercase mb-1">Squad</p>
+                        <p className="text-3xl font-black">{linkedGame.myScore}</p>
+                      </div>
+                      <div className="text-xs font-black opacity-20 uppercase italic">vs</div>
+                      <div className="text-center">
+                        <p className="text-[10px] font-bold opacity-40 uppercase mb-1">Opp</p>
+                        <p className="text-3xl font-black">{linkedGame.opponentScore}</p>
+                      </div>
+                    </div>
+                    <p className="text-[9px] font-black uppercase text-primary tracking-widest mt-2 group-hover/game:translate-x-1 transition-transform">View Full Scorecard →</p>
+                  </div>
+                </div>
+              ) : event.eventType === 'game' && isStaff && (
+                <div className="pt-8 border-t border-white/10 space-y-4 animate-in slide-in-from-bottom-2 duration-700">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-black uppercase text-primary tracking-[0.2em]">Match Intelligence</p>
+                    <Badge variant="outline" className="text-[8px] font-black text-white/40 uppercase h-5 px-3 border-white/10">Pending Result</Badge>
+                  </div>
+                  <Button 
+                    className="w-full h-14 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-[2rem] font-black uppercase text-[10px] tracking-widest transition-all group"
+                    onClick={() => router.push(`/games?recordEventId=${event.id}`)}
+                  >
+                    Record Match Result <Plus className="ml-2 h-4 w-4 group-hover:rotate-90 transition-transform" />
+                  </Button>
+                </div>
+              )}
 
               {isAdmin && (
                 <div className="mt-8 pt-8 border-t border-white/10 flex flex-col gap-3">
@@ -333,6 +384,7 @@ export default function EventsPage() {
   const [newLocation, setNewLocation] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [eventType, setEventType] = useState<EventType>('game');
+  const [opponent, setOpponent] = useState('');
 
   const filteredEvents = useMemo(() => { 
     const nowStart = startOfDay(new Date()); 
@@ -360,7 +412,8 @@ export default function EventsPage() {
         title: newTitle, eventType, 
         date: new Date(newDate).toISOString(), 
         endDate: newEndDate ? new Date(newEndDate).toISOString() : new Date(newDate).toISOString(),
-        startTime: newTime, location: newLocation, description: newDescription 
+        startTime: newTime, location: newLocation, description: newDescription,
+        opponent: eventType === 'game' ? opponent : '' 
       }; 
       const success = editingEvent ? await updateEvent(editingEvent.id, payload) : await addEvent(payload); 
       if (success) { setIsCreateOpen(false); resetForm(); }
@@ -368,7 +421,7 @@ export default function EventsPage() {
   };
 
   const resetForm = () => {
-    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setEditingEvent(null);
+    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null);
   };
 
   const handleEdit = (event: TeamEvent) => { 
@@ -380,6 +433,7 @@ export default function EventsPage() {
     setNewTime(event.startTime); 
     setNewLocation(event.location); 
     setNewDescription(event.description); 
+    setOpponent(event.opponent || '');
     setIsCreateOpen(true); 
   };
 
@@ -448,8 +502,14 @@ export default function EventsPage() {
                 </div> 
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Title *</Label>
-                  <Input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="h-12 rounded-xl font-bold border-2" />
+                  <Input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="e.g. Squad Match vs Tigers" className="h-12 rounded-xl font-bold border-2" />
                 </div>
+                {eventType === 'game' && (
+                  <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-300">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Opponent / Competitor</Label>
+                    <Input value={opponent} onChange={e => setOpponent(e.target.value)} placeholder="e.g. Tigers Squad" className="h-12 rounded-xl font-black border-2 border-primary/20 bg-primary/5 focus:bg-white transition-all capitalize" />
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date *</Label><Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div>
                   <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date (Opt)</Label><Input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="h-12 rounded-xl border-2 font-black" /></div>
