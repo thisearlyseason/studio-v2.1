@@ -80,7 +80,7 @@ function DonationAuditLedger({ fundId }: { fundId: string }) {
 }
 
 export default function FundraisingPage() {
-  const { activeTeam, user, isStaff, addFundraisingOpportunity, updateFundraisingOpportunity, deleteFundraisingOpportunity, isPro, purchasePro } = useTeam();
+  const { activeTeam, user, isStaff, isParent, isPlayer, recordDonation, addFundraisingOpportunity, updateFundraisingOpportunity, deleteFundraisingOpportunity, isPro, purchasePro } = useTeam();
   const db = useFirestore();
   
   const [filterMode, setFilterMode] = useState<'active' | 'past'>('active');
@@ -96,6 +96,9 @@ export default function FundraisingPage() {
     title: '', description: '', goal: '1000', deadline: '', 
     isShareable: false, externalLink: '', eTransferDetails: '' 
   });
+  const [isCommitOpen, setIsCommitOpen] = useState(false);
+  const [selectedFundForCommit, setSelectedFundForCommit] = useState<FundraisingOpportunity | null>(null);
+  const [commitData, setCommitData] = useState({ amount: '50', method: 'external' as 'external' | 'e-transfer' });
   const [configMethod, setConfigMethod] = useState<'external' | 'e-transfer'>('external');
 
   const fundsQuery = useMemoFirebase(() => (activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'fundraising'), orderBy('deadline', 'asc')) : null, [activeTeam?.id, db]);
@@ -152,6 +155,29 @@ export default function FundraisingPage() {
     const url = `${window.location.origin}/public/donate/${activeTeam?.id}/${fundId}`;
     navigator.clipboard.writeText(url);
     toast({ title: "Portal Link Copied", description: "External contributors can now donate via this URL." });
+  };
+
+  const handleCommitDonation = async () => {
+    if (!selectedFundForCommit || !commitData.amount) return;
+    setIsProcessing(true);
+    await recordDonation(
+      selectedFundForCommit.id, 
+      parseFloat(commitData.amount), 
+      user?.name || "Anonymous Donor", 
+      commitData.method
+    );
+    setIsCommitOpen(false);
+    setIsProcessing(false);
+    toast({ 
+      title: "Impact Recorded", 
+      description: commitData.method === 'external' 
+        ? "Redirecting to primary payment portal..." 
+        : "Please follow E-Transfer instructions to finalize." 
+    });
+    
+    if (commitData.method === 'external' && selectedFundForCommit.externalLink) {
+      window.open(selectedFundForCommit.externalLink, '_blank');
+    }
   };
 
   if (isLoading) return (
@@ -304,7 +330,7 @@ export default function FundraisingPage() {
                   </div>
                   <Progress value={progress} className="h-3 rounded-full" />
                 </div>
-                {isStaff && (
+                {isStaff ? (
                   <div className="flex gap-2 pt-4">
                     <Button variant="outline" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px] border-2 group-hover:border-primary hover:text-black transition-all" onClick={() => { setSelectedFundId(fund.id); setIsAuditOpen(true); }}>
                       <DollarSign className="h-4 w-4 mr-2" /> Audit Hub
@@ -317,6 +343,15 @@ export default function FundraisingPage() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
+                  </div>
+                ) : (
+                  <div className="pt-4">
+                    <Button 
+                      className="w-full h-12 rounded-xl font-black uppercase text-xs shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all bg-primary"
+                      onClick={() => { setSelectedFundForCommit(fund); setIsCommitOpen(true); }}
+                    >
+                      <DollarSign className="h-4 w-4 mr-2" /> Contribute to Goal
+                    </Button>
                   </div>
                 )}
               </CardContent>
@@ -492,6 +527,99 @@ export default function FundraisingPage() {
             </div>
             <DialogFooter>
               <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-[10px] border-2 text-foreground" onClick={() => setIsAuditOpen(false)}>Close Audit Hub</Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCommitOpen} onOpenChange={setIsCommitOpen}>
+        <DialogContent className="rounded-[3.5rem] p-0 border-none shadow-2xl overflow-hidden bg-white sm:max-w-md text-foreground">
+          <DialogTitle className="sr-only">Commit to Donation</DialogTitle>
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 lg:p-12 space-y-8">
+            <DialogHeader>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><DollarSign className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Contribute</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Fuel the squad's strategic objectives</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contribution Amount ($)</Label>
+                <Input 
+                  type="number" 
+                  value={commitData.amount} 
+                  onChange={e => setCommitData({...commitData, amount: e.target.value})} 
+                  className="h-16 rounded-2xl border-2 font-black text-2xl text-primary" 
+                />
+              </div>
+
+              <div className="space-y-4">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Select Protocol</Label>
+                <div className="grid grid-cols-1 gap-4">
+                  {selectedFundForCommit?.externalLink && (
+                    <div 
+                      className={cn("p-5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between", commitData.method === 'external' ? "border-primary bg-primary/5" : "border-muted")}
+                      onClick={() => setCommitData({...commitData, method: 'external'})}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={cn("p-2 rounded-lg", commitData.method === 'external' ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>
+                          <Globe className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="font-black text-xs uppercase text-foreground">Digital Portal</p>
+                          <p className="text-[8px] font-bold text-muted-foreground uppercase">Fast processing via {new URL(selectedFundForCommit.externalLink).hostname}</p>
+                        </div>
+                      </div>
+                      <RadioGroupItem value="external" checked={commitData.method === 'external'} />
+                    </div>
+                  )}
+                  
+                  {selectedFundForCommit?.eTransferDetails && (
+                    <div 
+                      className={cn("p-5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between", commitData.method === 'e-transfer' ? "border-primary bg-primary/5" : "border-muted")}
+                      onClick={() => setCommitData({...commitData, method: 'e-transfer'})}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={cn("p-2 rounded-lg", commitData.method === 'e-transfer' ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>
+                          <Search className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="font-black text-xs uppercase text-foreground">E-Transfer / Manual</p>
+                          <p className="text-[8px] font-bold text-muted-foreground uppercase">Follow manual instructions</p>
+                        </div>
+                      </div>
+                      <RadioGroupItem value="e-transfer" checked={commitData.method === 'e-transfer'} />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {commitData.method === 'e-transfer' && selectedFundForCommit?.eTransferDetails && (
+                <div className="p-6 bg-muted/20 border-2 border-dashed rounded-2xl animate-in fade-in slide-in-from-top-2">
+                  <div className="flex items-center gap-2 mb-2 text-primary">
+                    <Info className="h-3 w-3" />
+                    <p className="text-[9px] font-black uppercase tracking-widest">Protocol Instructions</p>
+                  </div>
+                  <p className="text-xs font-medium leading-relaxed italic text-foreground">
+                    {selectedFundForCommit.eTransferDetails}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button 
+                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all bg-primary" 
+                onClick={handleCommitDonation} 
+                disabled={isProcessing || !commitData.amount}
+              >
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Authorize Contribution"}
+              </Button>
             </DialogFooter>
           </div>
         </DialogContent>

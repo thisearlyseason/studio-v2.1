@@ -660,6 +660,7 @@ interface TeamContextType {
   addFundraisingOpportunity: (data: any) => Promise<void>;
   updateFundraisingOpportunity: (fundId: string, updates: any) => Promise<void>;
   signUpForFundraising: (fundId: string) => Promise<void>;
+  recordDonation: (fundId: string, amount: number, donorName: string, method: 'external' | 'e-transfer') => Promise<void>;
   confirmExternalDonation: (fundId: string, donationId: string, amount: number) => Promise<void>;
   addEquipmentItem: (data: any) => Promise<void>;
   updateEquipmentItem: (id: string, updates: any) => Promise<void>;
@@ -709,6 +710,7 @@ interface TeamContextType {
   formatTime: (iso: string) => string;
   deployClubProtocol: (data: any, teamIds: string[]) => Promise<void>;
   deleteTeam: (teamId: string) => Promise<void>;
+  deleteAccount: () => Promise<void>;
   markMediaAsViewed: (fileId: string) => Promise<void>;
   upgradeChildToLogin: (childId: string) => Promise<void>;
   registerChild: (first: string, last: string, dob: string) => Promise<void>;
@@ -1427,6 +1429,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateFundraisingOpportunity = useCallback(async (fundId: string, updates: any) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), clean(updates)); }, [activeTeam, db]);
   const deleteFundraisingOpportunity = useCallback(async (id: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'fundraising', id)); }, [activeTeam, db]);
   const signUpForFundraising = useCallback(async (fundId: string) => { if (activeTeam?.id && firebaseUser && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), { [`finances.${firebaseUser.uid}`]: { userId: firebaseUser.uid, userName: userProfile?.name, status: 'joined', contributed: 0, createdAt: new Date().toISOString() } }); }, [activeTeam, firebaseUser, db, userProfile]);
+  const recordDonation = useCallback(async (fundId: string, amount: number, donorName: string, method: 'external' | 'e-transfer') => { 
+    if (!activeTeam?.id || !db) return; 
+    const donationId = `don_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`; 
+    await setDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId, 'donations', donationId), clean({ 
+      id: donationId, 
+      amount, 
+      donorName, 
+      method, 
+      status: 'pending', 
+      createdAt: new Date().toISOString() 
+    })); 
+    // Increment the shadow finances object if user is logged in
+    if (firebaseUser) {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), {
+        [`finances.${firebaseUser.uid}.contributed`]: increment(amount),
+        [`finances.${firebaseUser.uid}.lastDonationAt`]: new Date().toISOString()
+      });
+    }
+  }, [db, activeTeam, firebaseUser]);
   const confirmExternalDonation = useCallback(async (fundId: string, donationId: string, amount: number) => { if (!activeTeam?.id || !db) return; const batch = writeBatch(db); batch.update(doc(db, 'teams', activeTeam.id, 'fundraising', fundId, 'donations', donationId), { status: 'verified', amount }); batch.update(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), { currentAmount: increment(amount) }); await batch.commit(); }, [db, activeTeam]);
 
   const addGame = useCallback(async (data: any) => { if (activeTeam?.id && db) await addDoc(collection(db, 'teams', activeTeam.id, 'games'), clean(data)); }, [activeTeam, db]);
@@ -2181,11 +2202,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     createChat, signUpForVolunteer, addEquipmentItem, updateEquipmentItem, deleteEquipmentItem, respondToAssignment, assignEntryToTeam, 
     toggleRegistrationPaymentStatus, updateLeague, updateLeagueSchedule, inviteTeamToLeague, manuallyAddTeamToLeague, 
     deleteLeagueInvite, updateLeagueTeamDetails, deleteChat, createLeague,
-    hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, upgradeChildToLogin, registerChild, updateChild, sendChildInvite,
+    hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite,
     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
-    confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, signUpForFundraising, addFundraisingOpportunity, updateFundraisingOpportunity,
+    confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, signUpForFundraising, recordDonation, addFundraisingOpportunity, updateFundraisingOpportunity,
     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
@@ -2208,11 +2229,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     createLeague, signUpForVolunteer, addEquipmentItem, updateEquipmentItem, deleteEquipmentItem, respondToAssignment, assignEntryToTeam, 
     toggleRegistrationPaymentStatus, updateLeague, updateLeagueSchedule, inviteTeamToLeague, manuallyAddTeamToLeague, 
     deleteLeagueInvite, updateLeagueTeamDetails, deleteChat, createChat,
-    hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, upgradeChildToLogin, registerChild, updateChild, sendChildInvite,
+    hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite,
     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
-    confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, addFundraisingOpportunity, updateFundraisingOpportunity, signUpForFundraising,
+    confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, addFundraisingOpportunity, updateFundraisingOpportunity, signUpForFundraising, recordDonation,
     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,

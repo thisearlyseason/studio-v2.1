@@ -230,9 +230,8 @@ export default function PricingPage() {
             <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-[#10b981]/20 text-[#10b981] w-fit">K-12 DISTRICT</Badge>
             <div className="space-y-1">
               <CardTitle className="text-2xl font-black uppercase tracking-tight">School District</CardTitle>
-              <div className="flex items-baseline gap-1">
-                <span className="text-4xl font-black tracking-tighter text-[#10b981]">{getPrice('school')}</span>
-                <span className="text-[10px] font-black uppercase opacity-60 text-muted-foreground">{billingCycle === 'annual' ? '/yr' : '/mo'}</span>
+              <div className="py-2">
+                <span className="text-lg font-black tracking-tight text-[#10b981] uppercase">Contact Us for a special deal!</span>
               </div>
             </div>
             <CardDescription className="text-[10px] font-bold text-muted-foreground uppercase">Full K-12 Academic & Athletic Program.</CardDescription>
@@ -249,7 +248,7 @@ export default function PricingPage() {
             </div>
           </CardContent>
           <CardFooter className="p-8 pt-0">
-            <Button className="w-full h-12 rounded-xl font-black shadow-xl text-xs bg-[#10b981] hover:bg-[#10b981]/90" onClick={purchasePro}>Deploy School</Button>
+            <Button className="w-full h-12 rounded-xl font-black shadow-xl text-xs bg-[#10b981] hover:bg-[#0d9488] text-white" onClick={() => setIsContactOpen(true)}>Inquire for Deal</Button>
           </CardFooter>
         </Card>
       </div>
