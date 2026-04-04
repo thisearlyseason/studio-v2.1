@@ -271,7 +271,7 @@ export default function FundraisingPage() {
               <div className={cn("h-2 w-full", isArchive ? "bg-muted" : "bg-primary")} />
               <CardContent className="p-8 lg:p-10 space-y-8 flex-1">
                 <div className="flex justify-between items-start">
-                  <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary shadow-inner">
+                  <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary group-hover:text-black shadow-inner transition-colors">
                     <PiggyBank className="h-10 w-10" />
                   </div>
                   <div className="flex gap-1">
@@ -286,7 +286,7 @@ export default function FundraisingPage() {
                   </div>
                 </div>
                 <div>
-                  <h3 className="text-3xl font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors uppercase">{fund.title}</h3>
+                  <h3 className="text-3xl font-black uppercase tracking-tight leading-none group-hover:text-black transition-colors uppercase">{fund.title}</h3>
                   <div className="flex items-center gap-2 mt-2">
                     <Clock className="h-3 w-3 text-muted-foreground" />
                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
@@ -306,7 +306,7 @@ export default function FundraisingPage() {
                 </div>
                 {isStaff && (
                   <div className="flex gap-2 pt-4">
-                    <Button variant="outline" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px] border-2 group-hover:border-primary group-hover:text-primary transition-all" onClick={() => { setSelectedFundId(fund.id); setIsAuditOpen(true); }}>
+                    <Button variant="outline" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px] border-2 group-hover:border-primary hover:text-black transition-all" onClick={() => { setSelectedFundId(fund.id); setIsAuditOpen(true); }}>
                       <DollarSign className="h-4 w-4 mr-2" /> Audit Hub
                     </Button>
                     <div className="flex gap-1">

@@ -69,7 +69,7 @@ import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
 import { cn } from '@/lib/utils';
 
-type AccountType = 'starter' | 'pro' | 'elite' | 'player' | 'parent';
+type AccountType = 'starter' | 'pro' | 'elite' | 'school' | 'player' | 'parent';
 
 interface ManualSection {
   title: string;
@@ -222,6 +222,35 @@ export default function HowToGuidePage() {
     ]
   };
 
+  const BLOCK_SCHOOL_HUB = {
+    title: "16. K-12 School District Hub",
+    icon: GraduationCap,
+    steps: [
+      { step: "District Dashboard", detail: <>Access the <strong>School Hub</strong> to view aggregated metrics across all school squads including Varsity, JV, Freshman, and Junior High.</> },
+      { step: "Athletic Director Controls", detail: <>Use the <strong>District Command</strong> to manage coaches, staff permissions, and compliance mandates across all school teams.</> },
+      { step: "Multi-Squad Coordination", detail: <>Link squads under a single school identity. Share resources, schedules, and facilities across all affiliated teams.</> }
+    ]
+  };
+
+  const BLOCK_SCHOOL_COMPLIANCE = {
+    title: "17. School-Wide Compliance",
+    icon: ShieldCheck,
+    steps: [
+      { step: "Academic Eligibility", detail: <>Track <strong>GPA requirements</strong> and academic standing for all student-athletes across squads.</> },
+      { step: "Physical Clearance", detail: <>Manage <strong>physical expiration dates</strong> and automated alerts for upcoming physical deadlines.</> },
+      { step: "Emergency Protocols", detail: <>Deploy district-wide <strong>emergency action plans</strong> and concussion protocols to all school squads.</> }
+    ]
+  };
+
+  const BLOCK_SCHOOL_RECRUITING = {
+    title: "18. School Recruiting Coordination",
+    icon: Award,
+    steps: [
+      { step: "College Tracking", detail: <>Log <strong>college interest</strong> and recruitment status for senior athletes across all school teams.</> },
+      { step: "Scouting Network", detail: <>Share <strong>scouting reports</strong> and game film with college coaches through secure recruitment portals.</> }
+    ]
+  };
+
   const BLOCK_PLAYER_HUB = {
     title: "Athlete Operational Hub",
     icon: User,
@@ -279,6 +308,16 @@ export default function HowToGuidePage() {
         BLOCK_HIGH_PRIORITY, BLOCK_SCOUTING_AI, BLOCK_CLUB_HUB, BLOCK_INSTITUTIONAL_PROTOCOLS, BLOCK_RECRUITMENT_PORTAL, BLOCK_FLEET_LOGISTICS
       ]
     },
+    school: {
+      label: "School District (K-12)",
+      desc: "Full K-12 program hub for academic athletic departments.",
+      highlights: ["District Dashboard", "Athletic Director Controls", "Multi-Squad Hub", "Academic Eligibility", "College Recruiting"],
+      sections: [
+        BLOCK_DEPLOYMENT, BLOCK_SCHEDULING, BLOCK_COMMUNICATION, BLOCK_SCOREKEEPING, BLOCK_PLAYBOOK,
+        BLOCK_PRO_ACTIVATION, BLOCK_TOURNAMENT_ENGINE, BLOCK_FILM_COMPLIANCE, BLOCK_FEES_GOVERNANCE,
+        BLOCK_HIGH_PRIORITY, BLOCK_SCOUTING_AI, BLOCK_SCHOOL_HUB, BLOCK_SCHOOL_COMPLIANCE, BLOCK_SCHOOL_RECRUITING, BLOCK_FLEET_LOGISTICS
+      ]
+    },
     player: {
       label: "Individual Athlete",
       desc: "Stay coordinated and ready. Manage your personal recruitment portfolio.",
@@ -324,7 +363,7 @@ export default function HowToGuidePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {(Object.keys(MANUAL_CONTENT) as AccountType[]).map((type) => {
                 const data = MANUAL_CONTENT[type];
-                const Icon = type === 'starter' ? Users2 : type === 'pro' ? Zap : type === 'elite' ? Building : type === 'player' ? User : Baby;
+                const Icon = type === 'starter' ? Users2 : type === 'pro' ? Zap : type === 'elite' ? Building : type === 'school' ? GraduationCap : type === 'player' ? User : Baby;
                 
                 return (
                   <Card 
@@ -334,7 +373,7 @@ export default function HowToGuidePage() {
                   >
                     <div className={cn(
                       "h-2 w-full",
-                      type === 'starter' ? "bg-muted" : type === 'pro' ? "bg-primary" : "bg-black"
+                      type === 'starter' ? "bg-muted" : type === 'pro' ? "bg-primary" : type === 'school' ? "bg-[#10b981]" : "bg-black"
                     )} />
                     <CardContent className="p-8 space-y-4">
                       <div className="bg-muted p-4 rounded-2xl w-fit group-hover:bg-primary group-hover:text-white transition-all shadow-inner">
@@ -358,6 +397,7 @@ export default function HowToGuidePage() {
                   {selectedType === 'starter' && <Users2 className="h-8 w-8" />}
                   {selectedType === 'pro' && <Zap className="h-8 w-8" />}
                   {selectedType === 'elite' && <Building className="h-8 w-8" />}
+                  {selectedType === 'school' && <GraduationCap className="h-8 w-8" />}
                   {selectedType === 'player' && <User className="h-8 w-8" />}
                   {selectedType === 'parent' && <Baby className="h-8 w-8" />}
                 </div>

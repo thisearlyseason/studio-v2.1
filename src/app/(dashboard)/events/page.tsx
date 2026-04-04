@@ -129,10 +129,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                     return (
                       <div key={p.id} className="space-y-4 p-5 bg-white/5 rounded-[2rem] border border-white/10 group hover:border-white/20 transition-all">
                         <div className="flex items-center justify-between">
-                          <p className="text-[11px] font-black uppercase text-primary tracking-widest flex items-center gap-2">
+                          <div className="text-[11px] font-black uppercase text-primary tracking-widest flex items-center gap-2">
                             <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                             {p.name === 'You' ? 'Your RSVP' : `${p.name}'s RSVP`}
-                          </p>
+                          </div>
                           <Badge className={cn(
                             "text-[8px] font-black uppercase border-none h-5 px-3 shadow-lg", 
                             rsvp === 'going' ? "bg-green-500 text-white" : 

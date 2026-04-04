@@ -1223,10 +1223,10 @@ export default function LeaguesPage() {
                   </Button>
                   <Button 
                     variant="default" 
-                    className="rounded-xl h-12 px-6 font-black uppercase text-xs shadow-xl flex items-center gap-2"
-                    onClick={() => isPro ? router.push(`/leagues/registration/${activeLeague.id}`) : purchasePro()}
+                    className="rounded-xl h-12 px-6 font-black uppercase text-xs shadow-xl flex items-center gap-2 hover:text-black transition-all"
+                    onClick={() => router.push(`/leagues/registration/${activeLeague.id}`)}
                   >
-                    {!isPro && <LockIcon className="h-3 w-3" />}
+                    <FileText className="h-4 w-4" />
                     Portal Architect
                   </Button>
                 </div>

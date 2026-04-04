@@ -121,9 +121,10 @@ export default function TournamentRegistrationAdminPage() {
         description: event?.description || '',
         is_active: true,
         form_schema: [
-           { id: 'f_core_sq', label: 'Squad Name', type: 'short_text', required: true },
-           { id: 'f_core_co', label: 'Coach Name', type: 'short_text', required: true },
-           { id: 'f_core_em', label: 'Contact Email', type: 'short_text', required: true }
+           { id: 'f_core_sq', label: 'Team Name', type: 'short_text', required: true },
+           { id: 'f_core_co', label: 'Authorized Contact Name', type: 'short_text', required: true },
+           { id: 'f_core_em', label: 'Email Address', type: 'short_text', required: true },
+           { id: 'f_core_ph', label: 'Phone Number', type: 'short_text', required: true }
         ],
         form_version: 1
       });
@@ -312,72 +313,99 @@ export default function TournamentRegistrationAdminPage() {
                 </div>
 
                 <div className="bg-rose-50 rounded-[2.5rem] border-2 border-rose-200 p-8 lg:p-10 space-y-6 shadow-sm">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-rose-100 p-3 rounded-2xl text-rose-700 shadow-sm"><FileSignature className="h-6 w-6" /></div>
-                    <div>
-                      <h4 className="text-xl font-black uppercase tracking-tight text-rose-900 leading-none">Compliance & Waivers</h4>
-                      <p className="text-[10px] font-bold text-rose-600 uppercase tracking-widest mt-1">Institutional Liability & Agreements</p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-rose-100 p-3 rounded-2xl text-rose-700 shadow-sm"><FileSignature className="h-6 w-6" /></div>
+                      <div>
+                        <h4 className="text-xl font-black uppercase tracking-tight text-rose-900 leading-none">Compliance Protocols</h4>
+                        <p className="text-[10px] font-bold text-rose-600 uppercase tracking-widest mt-1">Select from Institutional or Universal Signature Mandates</p>
+                      </div>
                     </div>
                   </div>
                   
                   <div className="space-y-6">
-                    <div className="space-y-4 bg-white p-6 rounded-3xl border-2 border-rose-100 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <Label className="text-sm font-black uppercase tracking-widest text-rose-900">Universal Athletics Waiver</Label>
-                          <p className="text-[10px] uppercase font-bold text-rose-600/70">Enforce standard injury & liability protections</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className={cn(
+                        "p-6 rounded-[2rem] border-2 transition-all cursor-pointer",
+                        localConfig?.require_default_waiver ? "bg-white border-rose-400 ring-4 ring-rose-400/10 shadow-md" : "bg-white/40 border-rose-100 opacity-60"
+                      )} onClick={() => handleUpdateConfig({ require_default_waiver: !localConfig?.require_default_waiver })}>
+                        <div className="flex items-center justify-between mb-2">
+                           <Badge variant="outline" className="text-[8px] font-black uppercase bg-primary/5">Standard</Badge>
+                           <Switch checked={localConfig?.require_default_waiver || false} />
                         </div>
-                        <Switch checked={localConfig?.require_default_waiver || false} onCheckedChange={(v) => handleUpdateConfig({ require_default_waiver: v })} />
+                        <h5 className="font-black uppercase text-sm mb-1 text-rose-900">Universal Waiver</h5>
+                        <p className="text-[10px] font-bold text-rose-600 uppercase">General Athletic Protection</p>
                       </div>
-                      {localConfig?.require_default_waiver && (
-                        <div className="space-y-2 pt-4 border-t border-rose-50 animate-in slide-in-from-top-2">
-                          <Label className="text-[10px] font-black uppercase tracking-widest text-rose-900">Edit Default Waiver Text</Label>
-                          <Textarea 
-                            value={localConfig?.default_waiver_text || 'I hereby assume all risks, hazards, and liabilities associated with participation in this program. I waive, release, and discharge the organization, its directors, coaches, and facility providers from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.'} 
-                            onChange={e => handleUpdateConfig({ default_waiver_text: e.target.value })} 
-                            className="rounded-2xl min-h-[120px] border-2 font-medium border-rose-100 bg-rose-50/50 text-xs leading-relaxed" 
-                          />
+
+                      <div className={cn(
+                        "p-6 rounded-[2rem] border-2 transition-all",
+                        (localConfig?.selected_team_waivers?.length || 0) > 0 ? "bg-white border-rose-400 ring-4 ring-rose-400/10 shadow-md" : "bg-white/40 border-rose-100 opacity-60"
+                      )}>
+                        <div className="flex items-center justify-between mb-2">
+                           <Badge variant="outline" className="text-[8px] font-black uppercase bg-orange-50">Custom</Badge>
+                           <div className={cn("h-2 w-2 rounded-full", (localConfig?.selected_team_waivers?.length || 0) > 0 ? "bg-rose-500 animate-pulse" : "bg-rose-200")} />
                         </div>
-                      )}
+                        <h5 className="font-black uppercase text-sm mb-1 text-rose-900">Coaches Corner</h5>
+                        <p className="text-[10px] font-bold text-rose-600 uppercase">Internal Organization Docs</p>
+                      </div>
                     </div>
 
-                    <div className="space-y-2">
-                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-rose-900">Custom Organization Agreement (Optional)</Label>
-                       <Textarea 
-                         value={localConfig?.custom_waiver_text || ''} 
-                         onChange={e => handleUpdateConfig({ custom_waiver_text: e.target.value })} 
-                         className="rounded-3xl min-h-[120px] border-2 font-medium border-rose-200 bg-white" 
-                         placeholder="Define custom terms, facility rules, or specific compliance clauses that require applicant signature..." 
-                       />
-                       <p className="text-[10px] uppercase font-bold text-rose-600/60 ml-1">This agreement will be appended to the recruitment portal and require digital authorization.</p>
-                    </div>
+                    {localConfig?.require_default_waiver && (
+                      <div className="space-y-2 bg-white p-6 rounded-3xl border-2 border-rose-100 shadow-sm animate-in zoom-in-95 duration-200">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-rose-900 ml-1">Universal Waiver Blueprint</Label>
+                        <Textarea 
+                          value={localConfig?.default_waiver_text || 'I hereby assume all risks, hazards, and liabilities associated with participation in this program...'} 
+                          onChange={e => handleUpdateConfig({ default_waiver_text: e.target.value })} 
+                          className="rounded-2xl min-h-[150px] border-none font-medium bg-rose-50/30 text-xs leading-relaxed" 
+                        />
+                      </div>
+                    )}
 
-                    {teamWaivers.length > 0 && (
-                      <div className="space-y-3 bg-white p-6 rounded-3xl border-2 border-rose-100 shadow-sm animate-in slide-in-from-top-2">
-                        <div className="space-y-1">
-                          <Label className="text-sm font-black uppercase tracking-widest text-rose-900">Coaches Corner Waivers</Label>
-                          <p className="text-[10px] uppercase font-bold text-rose-600/70">Include waivers from your team's document library</p>
-                        </div>
-                        <div className="space-y-2 pt-2 max-h-48 overflow-y-auto">
+                    {teamWaivers.length > 0 ? (
+                      <div className="space-y-4 bg-white p-6 rounded-3xl border-2 border-rose-100 shadow-sm">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-rose-900 ml-1">Authorized Documents from Coaches Corner</Label>
+                        <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2">
                           {teamWaivers.map(waiver => (
-                            <div key={waiver.id} className="flex items-center space-x-3 p-3 bg-muted/20 rounded-lg border border-rose-100">
+                            <div 
+                              key={waiver.id} 
+                              className={cn(
+                                "flex items-center space-x-3 p-4 rounded-2xl border-2 transition-all cursor-pointer",
+                                localConfig?.selected_team_waivers?.includes(waiver.id) ? "bg-rose-50 border-rose-200" : "bg-muted/10 border-transparent hover:bg-muted/20"
+                              )}
+                              onClick={() => {
+                                const current = localConfig?.selected_team_waivers || [];
+                                const newSelection = current.includes(waiver.id)
+                                  ? current.filter(id => id !== waiver.id)
+                                  : [...current, waiver.id];
+                                handleUpdateConfig({ selected_team_waivers: newSelection });
+                              }}
+                            >
                               <Checkbox 
                                 id={`tw-${waiver.id}`} 
                                 checked={localConfig?.selected_team_waivers?.includes(waiver.id) || false}
-                                onCheckedChange={(checked) => {
-                                  const current = localConfig?.selected_team_waivers || [];
-                                  const newSelection = checked 
-                                    ? [...current, waiver.id] 
-                                    : current.filter(id => id !== waiver.id);
-                                  handleUpdateConfig({ selected_team_waivers: newSelection });
-                                }}
+                                className="border-rose-300 data-[state=checked]:bg-rose-600 data-[state=checked]:border-rose-600"
                               />
-                              <Label htmlFor={`tw-${waiver.id}`} className="flex-1 text-xs font-bold cursor-pointer">{waiver.title}</Label>
+                              <Label htmlFor={`tw-${waiver.id}`} className="flex-1 text-xs font-black uppercase cursor-pointer">{waiver.title}</Label>
+                              <Badge variant="outline" className="text-[7px] font-black">ID: {waiver.id.slice(0, 8)}</Badge>
                             </div>
                           ))}
                         </div>
                       </div>
+                    ) : (
+                      <div className="p-6 bg-muted/10 rounded-3xl border-2 border-dashed text-center">
+                         <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest">No Waiver Documents found in Coaches Corner.</p>
+                      </div>
                     )}
+
+                    <div className="space-y-2">
+                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-rose-900">Custom Protocol Clauses (Optional)</Label>
+                       <Textarea 
+                         value={localConfig?.custom_waiver_text || ''} 
+                         onChange={e => handleUpdateConfig({ custom_waiver_text: e.target.value })} 
+                         className="rounded-3xl min-h-[100px] border-2 font-medium border-rose-200 bg-white" 
+                         placeholder="Inject additional terms or institutional mandates..." 
+                       />
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -465,7 +493,7 @@ export default function TournamentRegistrationAdminPage() {
                 <Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3 shadow-lg shadow-primary/20">Public Hub</Badge>
                 <div className="flex items-center gap-3"><Trophy className="h-8 w-8 text-primary" /><h3 className="text-3xl font-black tracking-tighter uppercase leading-[0.9]">Entry Portal</h3></div>
                 <div className="bg-white/10 p-6 rounded-[2rem] border border-white/5 space-y-4">
-                  <p className="text-[10px] font-mono font-bold truncate opacity-80">/register/tournament/{teamId}/{eventId}</p>
+                  <p className="text-[10px] font-mono font-bold truncate opacity-80">/register/tournament/{teamId}/{eventId}?protocol={configId}</p>
                   <Button className="w-full h-14 rounded-2xl bg-white text-black font-black uppercase text-xs shadow-xl" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/tournament/${teamId}/${eventId}?protocol=${configId}`); toast({ title: "Portal Link Copied" }); }}>Copy Deployment Link</Button>
                 </div>
               </CardContent>
@@ -480,8 +508,8 @@ export default function TournamentRegistrationAdminPage() {
           <div className="p-8 lg:p-10 space-y-8">
             <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Manual Squad Enrollment</DialogTitle></DialogHeader>
             <div className="space-y-5">
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Name</Label><Input placeholder="e.g. Metro Tigers" value={manualForm.teamName} onChange={e => setManualForm({...manualForm, teamName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Name</Label><Input placeholder="Full Name" value={manualForm.coachName} onChange={e => setManualForm({...manualForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label><Input placeholder="e.g. Metro Tigers" value={manualForm.teamName} onChange={e => setManualForm({...manualForm, teamName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Authorized Contact</Label><Input placeholder="Full Name" value={manualForm.coachName} onChange={e => setManualForm({...manualForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label><Input type="email" placeholder="coach@org.com" value={manualForm.email} onChange={e => setManualForm({...manualForm, email: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
             </div>
             <DialogFooter><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleManualAdd} disabled={isManualProcessing}>{isManualProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Inject Squad"}</Button></DialogFooter>

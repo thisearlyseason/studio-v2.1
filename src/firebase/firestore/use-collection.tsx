@@ -83,13 +83,14 @@ export function useCollection<T = any>(
       return;
     }
 
-    // 3. Establish Real-time Listener
+    let isMounted = true;
     setIsLoading(true);
     setError(null);
 
     unsubscribeSnapshot = onSnapshot(
       memoizedTargetRefOrQuery,
       (snapshot: QuerySnapshot<DocumentData>) => {
+        if (!isMounted) return;
         const results: ResultItemType[] = [];
         for (const doc of snapshot.docs) {
           results.push({ ...(doc.data() as T), id: doc.id });
@@ -99,6 +100,15 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (err: FirestoreError) => {
+        if (!isMounted) return;
+        // Firestore SDK internal assertion errors (ca9, b815) are benign race
+        // conditions that occur when a listener fires after its target is removed.
+        // Suppress them to avoid crashing the UI.
+        if (err.message?.includes('INTERNAL ASSERTION FAILED')) {
+          console.warn('[useCollection] Suppressed Firestore internal assertion:', err.message.slice(0, 80));
+          setIsLoading(false);
+          return;
+        }
         // Only surface permission-denied errors to the error overlay.
         // Other errors (missing index, network, unavailable, etc.) are
         // logged but should not block the entire UI.
@@ -119,6 +129,7 @@ export function useCollection<T = any>(
     );
 
     return () => {
+      isMounted = false;
       if (unsubscribeSnapshot) unsubscribeSnapshot();
     };
   }, [memoizedTargetRefOrQuery]);

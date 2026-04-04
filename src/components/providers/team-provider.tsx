@@ -49,6 +49,8 @@ export type UserProfile = {
   clubName?: string;
   clubDescription?: string;
   schoolAdminIds?: string[];
+  isPrimaryClubAuthority?: boolean;
+  isStaff?: boolean;
 };
 
 export type PlayerProfile = {
@@ -577,6 +579,7 @@ interface TeamContextType {
   currentMember: Member | null | undefined;
   isStaff: boolean;
   isPro: boolean;
+  isStarter: boolean;
   isParent: boolean;
   isPlayer: boolean;
   isYouth: boolean;
@@ -585,6 +588,7 @@ interface TeamContextType {
   isPrimaryClubAuthority: boolean;
   isSchoolMode: boolean;
   isSchoolAdmin: boolean;
+  isEliteAccount: boolean;
   householdEvents: TeamEvent[];
   activeTeamEvents: TeamEvent[];
   householdBalance: number;
@@ -936,21 +940,59 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [userProfile, firebaseUser, members]);
 
   const teams = teamsRaw;
+
+  // Plan level check helpers
+  const isEliteAccount = useMemo(() => {
+    const elitePlanIds = ['squad_organization', 'elite_teams', 'elite_league'];
+    return elitePlanIds.includes(userProfile?.activePlanId || '') || 
+           elitePlanIds.includes(activeTeam?.planId || '');
+  }, [userProfile?.activePlanId, activeTeam?.planId]);
+
   const isPrimaryClubAuthority = useMemo(() => {
     if (isSuperAdmin) return true;
-    const isElite = teams.some((t: any) => 
-      t.ownerUserId === userProfile?.id && 
-      ['elite_teams', 'elite_league'].includes(t.planId || '')
-    );
-    if (isElite) return true;
 
-    // Check for School Admin (Owner of Primary School Team or explicit admin)
+    // 1. Direct field on user profile (explicitly granted or seeded)
+    if (userProfile?.isPrimaryClubAuthority) return true;
+
+    // 2. Determine Pro/Authority status (at user level or active team level)
+    // We include squad_pro here because they CAN manage a league hub, 
+    // but the Sidebar specifically gates the "Club Hub" to Elite/School.
+    const authorityPlanIds = ['squad_organization', 'elite_teams', 'elite_league', 'squad_pro'];
+    const hasUserAuthorityPlan = authorityPlanIds.includes(userProfile?.activePlanId || '');
+    const isActiveTeamAuthority = activeTeam?.isPro && authorityPlanIds.includes(activeTeam?.planId || '');
+    
+    // 3. Check if user is an admin or owner of the active team
+    const isCurrentTeamAdmin = activeTeam?.role === 'Admin' || 
+                              activeTeam?.ownerUserId === userProfile?.id || 
+                              activeTeam?.ownerUserId === firebaseUser?.uid;
+    const isGlobalManagementRole = userProfile?.role === 'admin' || userProfile?.role === 'coach';
+
+    // 4. Authority by Plan + Role/Ownership
+    if (hasUserAuthorityPlan || isActiveTeamAuthority) {
+      if (isCurrentTeamAdmin || isGlobalManagementRole) return true;
+    }
+
+    // 5. Fallback: Check all owned teams for any Elite/Pro status
+    const ownsAnyProTeam = teams.some((t: any) => {
+      const isOwner = t.ownerUserId === userProfile?.id || t.ownerUserId === firebaseUser?.uid;
+      const isPro = t.isPro === true || authorityPlanIds.includes(t.planId || '');
+      return isOwner && isPro;
+    });
+    if (ownsAnyProTeam) return true;
+
+    // 6. Check for School Admin (Owner of Primary School Team or explicit admin)
     const isSchoolAdminOwned = teams.some((t: any) => 
-      t.type === 'school' && 
-      (t.ownerUserId === userProfile?.id || t.schoolAdminIds?.includes(userProfile?.id))
+      (t.type === 'school' || t.type === 'school_squad') && 
+      (t.ownerUserId === userProfile?.id || t.ownerUserId === firebaseUser?.uid || t.schoolAdminIds?.includes(userProfile?.id))
     );
-    return isSchoolAdminOwned;
-  }, [teams, userProfile, isSuperAdmin]);
+    if (isSchoolAdminOwned) return true;
+
+    // 7. Starter Plan Users can also have 1 league hub if they are the owner/admin
+    if (isCurrentTeamAdmin) return true;
+
+    return false;
+  }, [teams, userProfile, isSuperAdmin, activeTeam, firebaseUser]);
+
   
   const isClubManager = useMemo(() => isSuperAdmin || isPrimaryClubAuthority || userProfile?.role === 'admin', [isSuperAdmin, isPrimaryClubAuthority, userProfile?.role]);
 
@@ -1003,9 +1045,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return null;
   }, [db]);
 
+  const isStarter = useMemo(() => {
+    return activeTeam?.planId === 'starter_squad' || userProfile?.activePlanId === 'starter_squad';
+  }, [activeTeam?.planId, userProfile?.activePlanId]);
+
   const isSchoolAdmin = useMemo(() => {
     if (!userProfile) return false;
-    if (isPrimaryClubAuthority) return true;
     
     // Check specific Position (Athletic Director in any school team)
     const activeStaff = teams.some(t => {
@@ -1020,7 +1065,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       t.type === 'school' && 
       (t.ownerUserId === userProfile.id || t.schoolAdminIds?.includes(userProfile.id))
     );
-  }, [teams, userProfile, isPrimaryClubAuthority, members, getMember]);
+  }, [teams, userProfile, getMember]);
 
   const isPro = useMemo(() => {
     if (isSuperAdmin) return true;
@@ -1043,10 +1088,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
        return true;
     }
 
-    // 4. Legacy User Level Pro (Fallback)
+    // 4. Check for Squad Pro Demo / Primary Team Logic
+    // If user owns ANY team that is pro, their first (primary) team is also pro
+    const ownedProTeam = teams.find((t: any) => t.ownerUserId === userProfile?.id && t.isPro);
+    if (ownedProTeam && activeTeam?.id === teams[0]?.id) {
+       return true;
+    }
+
+    // 5. Legacy User Level Pro (Fallback)
     return userProfile?.activePlanId === 'squad_pro' || 
+           userProfile?.activePlanId === 'squad_pro_demo' ||
            userProfile?.activePlanId === 'squad_organization' ||
-           ['elite_teams', 'elite_league', 'squad_organization'].includes(activeTeam?.planId || '');
+           ['elite_teams', 'elite_league', 'squad_organization', 'squad_pro', 'squad_pro_demo'].includes(activeTeam?.planId || '');
   }, [activeTeam, clubData, userProfile, isSuperAdmin, isSchoolAdmin, teams]);
 
   const isSchoolMode = useMemo(() => {
@@ -1058,36 +1111,49 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const hasFeature = useCallback((featureId: string) => {
     if (isSuperAdmin) return true;
 
-    // Special handling for Club-restricted features
-    if (featureId === 'league_generation' || featureId === 'tournament_generation') {
-      // Allowed if: 
-      // 1. Team is Pro (Team Subscription)
-      // 2. Club is Pro AND User is Club Owner
-      // 3. Is School Mode (School or School Squad)
-      const isTeamPro = activeTeam?.isPro;
-      const isClubPro = activeTeam?.clubId && clubData?.subscriptionStatus === 'active';
-      const isClubOwner = isClubPro && clubData?.ownerUserId === userProfile?.id;
+    // Special handling for Club/League-restricted features
+    if (featureId === 'league_generation') {
+      // STARTER PLAN can now have 1 league as well
+      return true; 
+    }
+    
+    if (featureId === 'tournament_generation') {
+      // Tournaments restricted to Pro/Elite
+      return isPro;
+    }
 
-      if (isTeamPro) return true;
-      if (isClubOwner) return true; // Club owners get these features
-      if (activeTeam?.type === 'school' || activeTeam?.type === 'school_squad') return true; // All school units get these features
-      
-      return false;
+    if (featureId === 'recruit_portal') {
+      // Allow Starter and Pro/Elite
+      return true;
+    }
+
+    if (featureId === 'schedule_architect' || featureId === 'public_portal_url') {
+      // ONLY Pro accounts (Squad Pro, Elite, School)
+      return isPro;
     }
 
     if (featureId === 'club_management') {
-      // Only Club Owners OR School Admins
+      // Only Elite Plans OR School Admins (Squad Pro EXPLICITLY excluded)
+      if (activeTeam?.planId === 'squad_pro' || userProfile?.activePlanId === 'squad_pro') {
+        // Even if they are an owner, Squad Pro doesn't get Club Hub unless they are an actual School Admin
+        return isSchoolAdmin;
+      }
       if (isSchoolAdmin) return true;
-      if (!clubData || !userProfile) return false;
-      return clubData.ownerUserId === userProfile.id;
+      if (isEliteAccount) return true;
+      if (clubData && clubData.subscriptionStatus === 'active' && clubData.ownerUserId === userProfile?.id) return true;
+      return false;
     }
 
     // General Feature Check
     const currentPlanId = activeTeam?.planId || userProfile?.activePlanId || 'starter_squad';
-    const plan = plans.find(p => p.id === currentPlanId);
+    // Fallback mapping for demo plans to their parent features
+    const effectivePlanId = currentPlanId === 'squad_pro_demo' ? 'squad_pro' : currentPlanId;
+    
+    const plan = plans.find(p => p.id === effectivePlanId);
     if (plan) return !!plan.features?.[featureId];
     return ['live_feed_read', 'basic_scheduling'].includes(featureId);
-  }, [activeTeam, clubData, userProfile, plans, isSuperAdmin]);
+  }, [activeTeam, clubData, userProfile, plans, isSuperAdmin, isPro, isSchoolAdmin, teams, isEliteAccount]);
+
 
   const formatTime = useCallback((iso: string) => { try { return format(new Date(iso), 'h:mm a'); } catch (e) { return '--:--'; } }, []);
 
@@ -1385,12 +1451,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const createLeague = useCallback(async (name: string) => { 
     if (!firebaseUser || !db || !activeTeam) return ''; 
 
-    // Check limits
-    if (activeTeam.type === 'school_squad' && activeTeam.schoolId) {
-      const currentCount = activeTeam.leagueIds ? Object.keys(activeTeam.leagueIds).length : 0;
-      if (currentCount >= 5) {
-        throw new Error("Program limit (5) reached for this squad.");
-      }
+    // Enforce Capacity Limits
+    const leagueCount = activeTeam.leagueIds ? Object.keys(activeTeam.leagueIds).length : 0;
+    
+    // School / Squad Organization accounts have higher capacity
+    const isHighCapacity = isSchoolMode || activeTeam?.planId === 'squad_organization' || userProfile?.activePlanId === 'squad_organization';
+    const limit = isHighCapacity ? 20 : 1;
+    
+    if (leagueCount >= limit) {
+      throw new Error(`League limit (${limit}) reached for this squad. Upgrade to an Elite or School plan for more.`);
     }
 
     const lid = `league_${Date.now()}`; 
@@ -1840,6 +1909,31 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const deleteTeam = useCallback(async (tid: string) => { if(db) await deleteDoc(doc(db, 'teams', tid)); }, [db]);
 
+  const deleteAccount = useCallback(async () => {
+    if (!firebaseUser || !db) return;
+    try {
+      // 1. Delete Firestore user document
+      await deleteDoc(doc(db, 'users', firebaseUser.uid));
+      
+      // 2. Delete Firebase Auth user
+      await firebaseUser.delete();
+      
+      toast({ title: "Account Deleted", description: "Your profile and data have been removed." });
+      window.location.href = '/login';
+    } catch (error: any) {
+      console.error("Delete Account Error:", error);
+      if (error.code === 'auth/requires-recent-login') {
+        toast({ 
+          title: "Security Verification Required", 
+          description: "Please sign out and back in to delete your account for security reasons.",
+          variant: "destructive" 
+        });
+      } else {
+        toast({ title: "Deletion Failed", description: error.message, variant: "destructive" });
+      }
+    }
+  }, [firebaseUser, db]);
+
   const markAlertAsSeen = useCallback(async (id: string) => { 
     console.log("DEBUG: markAlertAsSeen called for ID:", id);
     if (!firebaseUser) {
@@ -2066,17 +2160,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam, teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: getMember(firebaseUser?.uid),
-    isStaff, isPro, isParent, 
+    isStaff, isPro, isStarter, isParent, 
     isPlayer,
     isYouth: activeTeam?.type === 'youth',
     isSuperAdmin,
     isClubManager,
     isPrimaryClubAuthority,
+    isEliteAccount,
     isSchoolMode,
     isSchoolAdmin, householdEvents: householdEvents || [], activeTeamEvents, householdBalance: 0, myChildren, plans, isPlansLoading, proQuotaStatus,
     deleteFundraisingOpportunity, addGame, updateGame, canAddProTeam: (proQuotaStatus.remaining > 0),
     isPaywallOpen, setIsPaywallOpen, purchasePro,
     hasFeature, alerts, unreadAlertsCount,
+
     markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isSeedingDemo, setIsSeedingDemo,
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
     getPlayerStats, addPlayerStat, updatePlayerStat, deletePlayerStat, getEvaluations, addEvaluation,
@@ -2102,8 +2198,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     getMember, firebaseUser, getTeamByCode
   }), [
     db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser,
-    isStaff, isPro, householdEvents, activeTeamEvents, myChildren, plans, isPlansLoading, isPaywallOpen, isSeedingDemo,
-    seenAlertIds, alerts, unreadAlertsCount, isSuperAdmin, isClubManager, isPrimaryClubAuthority, hasFeature, proQuotaStatus,
+    isStaff, isPro, isStarter, householdEvents, activeTeamEvents, myChildren, plans, isPlansLoading, isPaywallOpen, isSeedingDemo,
+    seenAlertIds, alerts, unreadAlertsCount, isSuperAdmin, isClubManager, isPrimaryClubAuthority, isEliteAccount, hasFeature, proQuotaStatus,
+
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,
     getPlayerStats, addPlayerStat, updatePlayerStat, deletePlayerStat, getEvaluations, addEvaluation,
     getRecruitingContact, updateRecruitingContact, getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo,

@@ -452,7 +452,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         <div className="xl:col-span-4 flex flex-col sm:flex-row xl:flex-col items-stretch gap-4 w-full relative z-10 xl:pl-8">
           <Button 
             variant="outline" 
-            className="group/btn relative overflow-hidden rounded-[2rem] h-16 xl:h-20 border-2 border-zinc-100 font-black uppercase text-[12px] tracking-[0.1em] hover:bg-zinc-50 transition-all active:scale-[0.98] shadow-sm px-10 bg-white" 
+            className="group/btn relative overflow-hidden rounded-[2rem] h-16 xl:h-20 border-2 border-zinc-100 font-black uppercase text-[12px] tracking-[0.1em] hover:bg-zinc-50 hover:text-black transition-all active:scale-[0.98] shadow-sm px-10 bg-white" 
             onClick={() => window.open(`/recruit/player/${member.playerId}`, '_blank')}
           >
             <div className="flex items-center justify-center relative z-10">
@@ -1624,7 +1624,7 @@ function SafetyHub() {
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function CoachesCornerPage() {
-  const { activeTeam, isStaff, isPro, createTeamDocument, updateTeamDocument, db, members, createAlert, isSchoolMode, user, teams } = useTeam();
+  const { activeTeam, isStaff, isPro, isStarter, createTeamDocument, updateTeamDocument, db, members, createAlert, isSchoolMode, user, teams } = useTeam();
   
   // School-wide staff logic: prioritize schoolId filtering if available, fallback to ownerUserId
   const currentSchoolId = activeTeam?.schoolId || (activeTeam?.type === 'school' ? activeTeam?.id : null);
@@ -1658,7 +1658,7 @@ export default function CoachesCornerPage() {
   }, [isSchoolMode, institutionalMembers, members]);
 
   if (!isStaff) return <AccessRestricted type="role" title="Coaches Hub Restricted" description="This tactical vault is reserved for Coaching Staff and Team Administrators." />;
-  if (!isPro) return <AccessRestricted type="tier" />;
+  if (!isPro && !isStarter) return <AccessRestricted type="tier" />;
 
   const [activeTab, setActiveTab] = useState('recruiting');
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
@@ -1707,7 +1707,15 @@ export default function CoachesCornerPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest">Command Hub</Badge>
-          <h1 className="text-4xl font-black uppercase tracking-tight text-foreground">Coaches Corner</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-4xl font-black uppercase tracking-tight text-foreground">Coaches Corner</h1>
+            <Badge className={cn(
+              "rounded-xl font-black uppercase text-[10px] px-3 h-7 border-none",
+              isPro ? "bg-black text-white shadow-xl shadow-black/10" : "bg-primary text-white shadow-lg shadow-primary/20"
+            )}>
+              {isPro ? 'Elite Pro' : isStarter ? 'Starter Tier' : 'Base Tier'}
+            </Badge>
+          </div>
         </div>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full md:w-auto">
           <TabsList className="bg-muted/50 rounded-xl h-auto p-1 border-2 w-full md:w-auto flex-wrap gap-1 shadow-sm">
@@ -1803,167 +1811,175 @@ export default function CoachesCornerPage() {
         )}
 
         <TabsContent value="compliance" className="space-y-10 mt-0">
-          <section className="space-y-6 pt-4">
-            <div className="flex items-center justify-between px-2">
-              <div className="flex items-center gap-3">
-                <Shield className="h-5 w-5 text-primary" />
-                <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Institutional Protocols</h2>
-              </div>
-              <Button size="sm" onClick={() => setEditingWaiver({ title: '', content: '', type: 'waiver', isActive: true, assignedTo: ['all'] } as any)} className="h-9 px-4 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-primary/20">
-                <Plus className="h-3 w-3 mr-1.5" /> Deploy Custom Protocol
-              </Button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {DEFAULT_PROTOCOLS.map(proto => {
-                const activeDoc = teamProtocols.find(d => d.id === proto.id);
-                const isActive = activeDoc ? (activeDoc.isActive ?? true) : false;
-                return (
-                  <Card key={proto.id} className={cn("rounded-3xl border-none shadow-sm p-6 flex flex-col justify-between group transition-all", isActive ? "bg-white ring-1 ring-black/5" : "bg-muted/20 opacity-60")}>
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="bg-primary/5 p-3 rounded-2xl shadow-sm border"><CheckCircle2 className={cn("h-5 w-5", isActive ? "text-primary" : "text-muted-foreground/30")} /></div>
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => setEditingWaiver(activeDoc || { ...proto, content: 'Enter legal text here...', isActive: true, assignedTo: ['all'] } as TeamDocument)}>
-                          <Edit3 className="h-4 w-4" />
-                        </Button>
-                        <Switch checked={isActive} onCheckedChange={async (v) => {
-                          const existing = teamProtocols.find(d => d.id === proto.id);
-                          const defaultContent = "I hereby assume all risks, hazards, and liabilities associated with participation in this program. I waive, release, and discharge the organization, its directors, coaches, and facility providers from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.";
-                          
-                          // Use createTeamDocument (setDoc) for both create and update to avoid "No document to update" errors
-                          await createTeamDocument({ 
-                            ...proto, 
-                            isActive: v, 
-                            assignedTo: ['all'], 
-                            content: existing?.content || (proto.id === 'default_universal_hub' ? defaultContent : 'Enter legal text here...') 
-                          });
-                          
-                          if (v) {
-                            await createAlert(
-                              `Action Required: Sign ${proto.title}`, 
-                              `A new institutional protocol has been activated. Please review and sign the ${proto.title} in the Library & Docs section.`, 
-                              'everyone'
-                            );
-                          }
-                          toast({ title: `Protocol ${v ? 'Activated' : 'Deactivated'}` });
-                        }} />
-                      </div>
-                    </div>
-                    <div className="space-y-1 mb-4"><p className="font-black text-sm uppercase text-foreground">{proto.title}</p><p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">System Mandate</p></div>
-                    
-                    {/* Display Waiver Content if Active */}
-                    {isActive && activeDoc?.content && (
-                      <div className="mt-4 p-4 bg-muted/30 rounded-xl border border-dashed border-muted-foreground/20">
-                        <p className="text-[10px] font-medium text-muted-foreground line-clamp-3">
-                          {activeDoc.content}
-                        </p>
-                      </div>
-                    )}
-                  </Card>
-                );
-              })}
-              
-              {customProtocols.map(proto => {
-                const isActive = proto.isActive ?? true;
-                return (
-                  <Card key={proto.id} className={cn("rounded-3xl border-none shadow-sm p-6 flex flex-col justify-between group transition-all", isActive ? "bg-white ring-1 ring-black/5 border-l-4 border-l-primary" : "bg-muted/20 opacity-60")}>
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="bg-primary/5 p-3 rounded-2xl shadow-sm border"><CheckCircle2 className={cn("h-5 w-5", isActive ? "text-primary" : "text-muted-foreground/30")} /></div>
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => setEditingWaiver(proto)}>
-                          <Edit3 className="h-4 w-4" />
-                        </Button>
-                        <Switch checked={isActive} onCheckedChange={async (v) => {
-                          await updateTeamDocument(proto.id, { isActive: v });
-                          if (v) {
-                            await createAlert(
-                              `Action Required: Sign ${proto.title}`, 
-                              `A new institutional protocol has been activated. Please review and sign the ${proto.title} in the Library & Docs section.`, 
-                              'everyone'
-                            );
-                          }
-                          toast({ title: `Protocol ${v ? 'Activated' : 'Deactivated'}` });
-                        }} />
-                      </div>
-                    </div>
-                    <div className="space-y-1 mb-4"><p className="font-black text-sm uppercase text-foreground truncate">{proto.title}</p><p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Custom Mandate</p></div>
-                  </Card>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="space-y-6 pt-4 border-t-2 border-dashed border-primary/10 mt-10">
-            <div className="flex items-center gap-3 px-2">
-              <Zap className="h-5 w-5 text-primary" />
-              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Rapid Join Portal</h2>
-            </div>
-            <Card className="rounded-[2.5rem] border-none shadow-xl transition-all bg-black text-white p-10 overflow-hidden relative group">
-              <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
-                <Link2 className="h-40 w-40" />
-              </div>
-              
-              <div className="max-w-xl space-y-8 relative z-10">
-                <div className="space-y-2">
-                  <h3 className="text-3xl font-black uppercase tracking-tighter leading-none">Onboarding Gateway</h3>
-                  <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-relaxed text-balance">
-                    Enable a public enrollment pipeline where new members can join your squad and execute mandatory compliance protocols in one step.
-                  </p>
+          {!isPro ? <AccessRestricted type="feature" /> : (
+            <section className="space-y-6 pt-4">
+              <div className="flex items-center justify-between px-2">
+                <div className="flex items-center gap-3">
+                  <Shield className="h-5 w-5 text-primary" />
+                  <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Institutional Protocols</h2>
                 </div>
+                <Button size="sm" onClick={() => setEditingWaiver({ title: '', content: '', type: 'waiver', isActive: true, assignedTo: ['all'] } as any)} className="h-9 px-4 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-primary/20">
+                  <Plus className="h-3 w-3 mr-1.5" /> Deploy Custom Protocol
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {DEFAULT_PROTOCOLS.map(proto => {
+                  const activeDoc = teamProtocols.find(d => d.id === proto.id);
+                  const isActive = activeDoc ? (activeDoc.isActive ?? true) : false;
+                  return (
+                    <Card key={proto.id} className={cn("rounded-3xl border-none shadow-sm p-6 flex flex-col justify-between group transition-all", isActive ? "bg-white ring-1 ring-black/5" : "bg-muted/20 opacity-60")}>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="bg-primary/5 p-3 rounded-2xl shadow-sm border"><CheckCircle2 className={cn("h-5 w-5", isActive ? "text-primary" : "text-muted-foreground/30")} /></div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => setEditingWaiver(activeDoc || { ...proto, content: 'Enter legal text here...', isActive: true, assignedTo: ['all'] } as TeamDocument)}>
+                            <Edit3 className="h-4 w-4" />
+                          </Button>
+                          <Switch checked={isActive} onCheckedChange={async (v) => {
+                            const existing = teamProtocols.find(d => d.id === proto.id);
+                            const defaultContent = "I hereby assume all risks, hazards, and liabilities associated with participation in this program. I waive, release, and discharge the organization, its directors, coaches, and facility providers from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.";
+                            
+                            // Use createTeamDocument (setDoc) for both create and update to avoid "No document to update" errors
+                            await createTeamDocument({ 
+                              ...proto, 
+                              isActive: v, 
+                              assignedTo: ['all'], 
+                              content: existing?.content || (proto.id === 'default_universal_hub' ? defaultContent : 'Enter legal text here...') 
+                            });
+                            
+                            if (v) {
+                              await createAlert(
+                                `Action Required: Sign ${proto.title}`, 
+                                `A new institutional protocol has been activated. Please review and sign the ${proto.title} in the Library & Docs section.`, 
+                                'everyone'
+                              );
+                            }
+                            toast({ title: `Protocol ${v ? 'Activated' : 'Deactivated'}` });
+                          }} />
+                        </div>
+                      </div>
+                      <div className="space-y-1 mb-4"><p className="font-black text-sm uppercase text-foreground">{proto.title}</p><p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">System Mandate</p></div>
+                      
+                      {/* Display Waiver Content if Active */}
+                      {isActive && activeDoc?.content && (
+                        <div className="mt-4 p-4 bg-muted/30 rounded-xl border border-dashed border-muted-foreground/20">
+                          <p className="text-[10px] font-medium text-muted-foreground line-clamp-3">
+                            {activeDoc.content}
+                          </p>
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+                
+                {customProtocols.map(proto => {
+                  const isActive = proto.isActive ?? true;
+                  return (
+                    <Card key={proto.id} className={cn("rounded-3xl border-none shadow-sm p-6 flex flex-col justify-between group transition-all", isActive ? "bg-white ring-1 ring-black/5 border-l-4 border-l-primary" : "bg-muted/20 opacity-60")}>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="bg-primary/5 p-3 rounded-2xl shadow-sm border"><CheckCircle2 className={cn("h-5 w-5", isActive ? "text-primary" : "text-muted-foreground/30")} /></div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => setEditingWaiver(proto)}>
+                            <Edit3 className="h-4 w-4" />
+                          </Button>
+                          <Switch checked={isActive} onCheckedChange={async (v) => {
+                            await updateTeamDocument(proto.id, { isActive: v });
+                            if (v) {
+                              await createAlert(
+                                `Action Required: Sign ${proto.title}`, 
+                                `A new institutional protocol has been activated. Please review and sign the ${proto.title} in the Library & Docs section.`, 
+                                'everyone'
+                              );
+                            }
+                            toast({ title: `Protocol ${v ? 'Activated' : 'Deactivated'}` });
+                          }} />
+                        </div>
+                      </div>
+                      <div className="space-y-1 mb-4"><p className="font-black text-sm uppercase text-foreground truncate">{proto.title}</p><p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Custom Mandate</p></div>
+                    </Card>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pb-6 border-b border-white/10">
+          {!isPro ? null : (
+            <section className="space-y-6 pt-4 border-t-2 border-dashed border-primary/10 mt-10">
+              <div className="flex items-center gap-3 px-2">
+                <Zap className="h-5 w-5 text-primary" />
+                <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Rapid Join Portal</h2>
+              </div>
+              <Card className="rounded-[2.5rem] border-none shadow-xl transition-all bg-black text-white p-10 overflow-hidden relative group">
+                <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
+                  <Link2 className="h-40 w-40" />
+                </div>
+                
+                <div className="max-w-xl space-y-8 relative z-10">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">Squad Code</Label>
-                    <div className="bg-white/10 rounded-2xl h-16 flex items-center justify-center border border-white/10 shadow-inner group-hover:border-primary/20 transition-all">
-                      <span className="text-3xl font-black tracking-[0.3em] ml-[0.3em]">{activeTeam?.teamCode || activeTeam?.code || 'CODE'}</span>
+                    <h3 className="text-3xl font-black uppercase tracking-tighter leading-none">Onboarding Gateway</h3>
+                    <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-relaxed text-balance">
+                      Enable a public enrollment pipeline where new members can join your squad and execute mandatory compliance protocols in one step.
+                    </p>
+                  </div>
+  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pb-6 border-b border-white/10">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">Squad Code</Label>
+                      <div className="bg-white/10 rounded-2xl h-16 flex items-center justify-center border border-white/10 shadow-inner group-hover:border-primary/20 transition-all">
+                        <span className="text-3xl font-black tracking-[0.3em] ml-[0.3em]">{activeTeam?.teamCode || activeTeam?.code || 'CODE'}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">Portal Status</Label>
+                      <div className="bg-primary/20 rounded-2xl h-16 flex items-center px-6 border border-primary/30">
+                        <div className="h-2 w-2 rounded-full bg-primary animate-pulse mr-3" />
+                        <span className="text-sm font-black uppercase tracking-tight text-primary">Active Gateway</span>
+                      </div>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">Portal Status</Label>
-                    <div className="bg-primary/20 rounded-2xl h-16 flex items-center px-6 border border-primary/30">
-                      <div className="h-2 w-2 rounded-full bg-primary animate-pulse mr-3" />
-                      <span className="text-sm font-black uppercase tracking-tight text-primary">Active Gateway</span>
+  
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-end px-1">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-white/40">Magic Join Link</Label>
                     </div>
+                    <div className="flex gap-2">
+                      <div className="bg-white/5 rounded-2xl h-14 flex items-center px-4 border border-white/10 flex-1 overflow-hidden shadow-inner font-mono text-primary/60">
+                        <span className="text-[10px] font-bold truncate">
+                          {typeof window !== 'undefined' ? `${window.location.origin}/register/squad/${activeTeam?.id}` : `/register/squad/${activeTeam?.id}`}
+                        </span>
+                      </div>
+                      <Button 
+                        className="h-14 w-14 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 shrink-0 transition-transform active:scale-95"
+                        onClick={() => {
+                          const link = `${window.location.origin}/register/squad/${activeTeam?.id}`;
+                          navigator.clipboard.writeText(link);
+                          toast({ title: "Link Copied", description: "Direct join link is ready to share." });
+                        }}
+                      >
+                        <Copy className="h-5 w-5" />
+                      </Button>
+                    </div>
+                    <p className="text-[9px] font-bold text-white/20 uppercase tracking-[0.05em] leading-relaxed">
+                      Share this unique institutional URL with parents and players to bypass manual coordination. 
+                      Successful enrollments will appear instantly in your member roster.
+                    </p>
                   </div>
                 </div>
-
-                <div className="space-y-4">
-                  <div className="flex justify-between items-end px-1">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-white/40">Magic Join Link</Label>
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="bg-white/5 rounded-2xl h-14 flex items-center px-4 border border-white/10 flex-1 overflow-hidden shadow-inner font-mono text-primary/60">
-                      <span className="text-[10px] font-bold truncate">
-                        {typeof window !== 'undefined' ? `${window.location.origin}/register/squad/${activeTeam?.id}` : `/register/squad/${activeTeam?.id}`}
-                      </span>
-                    </div>
-                    <Button 
-                      className="h-14 w-14 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 shrink-0 transition-transform active:scale-95"
-                      onClick={() => {
-                        const link = `${window.location.origin}/register/squad/${activeTeam?.id}`;
-                        navigator.clipboard.writeText(link);
-                        toast({ title: "Link Copied", description: "Direct join link is ready to share." });
-                      }}
-                    >
-                      <Copy className="h-5 w-5" />
-                    </Button>
-                  </div>
-                  <p className="text-[9px] font-bold text-white/20 uppercase tracking-[0.05em] leading-relaxed">
-                    Share this unique institutional URL with parents and players to bypass manual coordination. 
-                    Successful enrollments will appear instantly in your member roster.
-                  </p>
-                </div>
-              </div>
-            </Card>
-          </section>
+              </Card>
+            </section>
+          )}
         </TabsContent>
 
         <TabsContent value="archives" className="mt-0 space-y-8 animate-in fade-in duration-500">
-           <div className="space-y-2">
-             <Badge className="bg-primary/5 text-primary border-none font-black uppercase text-[8px] h-5 px-2 tracking-widest">Global Library</Badge>
-             <h2 className="text-3xl font-black uppercase tracking-tight">Vault Archives</h2>
-             <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Auditable Log of Digital Signatures & Executed Agrements</p>
-           </div>
-           <WaiverArchive />
+           {!isPro ? <AccessRestricted type="feature" /> : (
+             <>
+               <div className="space-y-2">
+                 <Badge className="bg-primary/5 text-primary border-none font-black uppercase text-[8px] h-5 px-2 tracking-widest">Global Library</Badge>
+                 <h2 className="text-3xl font-black uppercase tracking-tight">Vault Archives</h2>
+                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Auditable Log of Digital Signatures & Executed Agrements</p>
+               </div>
+               <WaiverArchive />
+             </>
+           )}
         </TabsContent>
 
         <TabsContent value="fundraising" className="mt-0 space-y-8 animate-in fade-in duration-500">

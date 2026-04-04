@@ -121,7 +121,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const isPlayerDemo = planId === 'player_demo';
   const isEliteDemo = ['elite_teams', 'elite_league', 'squad_organization'].includes(planId);
   const isSchoolDemo = planId === 'school_demo' || planId === 'school';
-  const isProTier = planId !== 'starter_squad' && !isParentDemo && !isPlayerDemo && !isSchoolDemo;
+  const isProTier = planId !== 'starter_squad';
   
   const actualPlanId = (isParentDemo || isPlayerDemo) ? 'squad_pro' : (isSchoolDemo ? 'squad_organization' : planId);
   const userRole = isSchoolDemo ? 'admin' : (isParentDemo ? 'parent' : (isPlayerDemo ? 'adult_player' : 'coach'));
@@ -145,7 +145,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     avatarUrl: `https://picsum.photos/seed/${userId}/150/150`,
     clubDescription: isEliteDemo ? 'Precision performance at a professional scale.' : (isSchoolDemo ? 'K-12 Academic & Athletic Program' : undefined),
     schoolAdminIds: isSchoolDemo ? [userId] : [],
-    isPrimaryClubAuthority: isEliteDemo || (isSchoolDemo && !isPlayerDemo && !isParentDemo),
+    isPrimaryClubAuthority: (isProTier || isEliteDemo || isSchoolDemo) && !isPlayerDemo && !isParentDemo,
     clubName: isSchoolDemo ? 'Springfield High School' : (isEliteDemo ? 'Elite Academy' : 'Squad Sports Hub'),
     isStaff: true
   }), { merge: true });
@@ -196,7 +196,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       code: teamId.slice(-6).toUpperCase(),
       teamCode: teamId.slice(-6).toUpperCase(),
       ownerUserId: userId, 
-      isPro: true, 
+      isPro: isProTier || isSchoolDemo, 
       planId: actualPlanId, 
       sport: isSchoolDemo ? 'Basketball' : 'Multi-Sport', 
       isDemo: true,
@@ -213,7 +213,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       teamId, 
       name, 
       role, 
-      isPro: true, 
+      isPro: isProTier || isSchoolDemo, 
       planId: actualPlanId, 
       isDemo: true, 
       joinedAt: now,

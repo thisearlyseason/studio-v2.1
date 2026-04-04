@@ -927,10 +927,10 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                     <p className="text-xs text-white/80 font-medium leading-relaxed italic">Direct portal for squad representatives to verify rosters and sign agreements.</p>
                     <Button variant="outline" className="w-full h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20">Copy Portal URL <Share2 className="ml-2 h-3 w-3" /></Button>
                   </Card>
-                  <Card className="rounded-[2.5rem] border-none shadow-xl bg-orange-600 text-white p-8 space-y-4 group cursor-pointer active:scale-95 transition-all" onClick={() => { navigator.clipboard.writeText(`${baseUrl}/register/tournament/${event.teamId}/${event.id}?protocol=team_config`); toast({ title: "Registration URL Copied" }); }}>
+                  <Card className="rounded-[2.5rem] border-none shadow-xl bg-orange-600 text-white p-8 space-y-4 group cursor-pointer active:scale-95 transition-all" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/tournament/${event.teamId}/${event.id}?protocol=team_config`); toast({ title: "Registration URL Copied" }); }}>
                     <Badge className="bg-white text-orange-600 border-none font-black text-[8px] h-5 px-2">PIPELINE</Badge>
                     <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Registration Portal</h4>
-                    <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public enrollment for squads to automatically apply and join the tournament roster.</p>
+                    <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public institutional enrollment for squads to automatically join the series roster.</p>
                     <Button variant="outline" className="w-full h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20">Copy Portal URL <Share2 className="ml-2 h-3 w-3" /></Button>
                   </Card>
                   <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white p-8 space-y-4 group cursor-pointer active:scale-95 transition-all" onClick={() => window.open(`${baseUrl}/tournaments/spectator/${event.teamId}/${event.id}`, '_blank')}>
@@ -1195,7 +1195,7 @@ export default function ManageTournamentsPage() {
           <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Institutional Tournament Management</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          {isPrimaryClubAuthority ? (
+          {isPro ? (
             <Button 
               onClick={() => setIsWizardOpen(true)}
               className="rounded-full px-8 h-12 font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20 transition-all active:scale-95"
@@ -1206,7 +1206,7 @@ export default function ManageTournamentsPage() {
           ) : (
             <div className="bg-muted/50 p-4 rounded-2xl flex items-center gap-3 border-2 border-dashed">
               <Lock className="h-4 w-4 text-muted-foreground" />
-              <p className="text-[10px] font-black uppercase text-muted-foreground">Series Architecture restricted to Primary Club Authority</p>
+              <p className="text-[10px] font-black uppercase text-muted-foreground">Series Architecture restricted to Pro Squads</p>
             </div>
           )}
         </div>

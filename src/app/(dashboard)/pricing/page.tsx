@@ -29,7 +29,8 @@ import {
   Infinity,
   AlertCircle,
   DollarSign,
-  CreditCard
+  CreditCard,
+  GraduationCap
 } from 'lucide-react';
 import { useTeam } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
@@ -72,6 +73,7 @@ export default function PricingPage() {
     if (planId === 'squad_pro') return billingCycle === 'annual' ? '$199' : '$19.99';
     if (planId === 'elite_teams') return billingCycle === 'annual' ? '$1,100' : '$110';
     if (planId === 'elite_league') return billingCycle === 'annual' ? '$2,790' : '$279';
+    if (planId === 'school') return billingCycle === 'annual' ? '$1,500' : '$150';
     return 'Custom';
   };
 
@@ -219,6 +221,35 @@ export default function PricingPage() {
           </CardContent>
           <CardFooter className="p-8 pt-0">
             <Button className="w-full h-12 rounded-xl font-black shadow-xl text-xs" onClick={purchasePro}>Deploy League</Button>
+          </CardFooter>
+        </Card>
+
+        {/* School District */}
+        <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden flex flex-col bg-white ring-1 ring-black/5">
+          <CardHeader className="p-8 pb-4 space-y-4">
+            <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-[#10b981]/20 text-[#10b981] w-fit">K-12 DISTRICT</Badge>
+            <div className="space-y-1">
+              <CardTitle className="text-2xl font-black uppercase tracking-tight">School District</CardTitle>
+              <div className="flex items-baseline gap-1">
+                <span className="text-4xl font-black tracking-tighter text-[#10b981]">{getPrice('school')}</span>
+                <span className="text-[10px] font-black uppercase opacity-60 text-muted-foreground">{billingCycle === 'annual' ? '/yr' : '/mo'}</span>
+              </div>
+            </div>
+            <CardDescription className="text-[10px] font-bold text-muted-foreground uppercase">Full K-12 Academic & Athletic Program.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-8 pt-0 flex-1 space-y-6">
+            <div className="pt-4 border-t space-y-3">
+              <p className="text-[9px] font-black uppercase text-muted-foreground">School Features</p>
+              <ul className="space-y-2">
+                <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><CheckCircle2 className="h-3.5 w-3.5 text-[#10b981]" /> District Dashboard</li>
+                <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><CheckCircle2 className="h-3.5 w-3.5 text-[#10b981]" /> Athletic Director Hub</li>
+                <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><CheckCircle2 className="h-3.5 w-3.5 text-[#10b981]" /> Academic Eligibility</li>
+                <li className="flex items-center gap-2 text-[10px] font-bold uppercase"><CheckCircle2 className="h-3.5 w-3.5 text-[#10b981]" /> Multi-Squad Management</li>
+              </ul>
+            </div>
+          </CardContent>
+          <CardFooter className="p-8 pt-0">
+            <Button className="w-full h-12 rounded-xl font-black shadow-xl text-xs bg-[#10b981] hover:bg-[#10b981]/90" onClick={purchasePro}>Deploy School</Button>
           </CardFooter>
         </Card>
       </div>

@@ -122,7 +122,25 @@ function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], 
 
 function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent | null, isOpen: boolean, onOpenChange: (open: boolean) => void }) {
   const { updateRSVP, user, myChildren, isParent, members, teams, getMember } = useTeam();
+  const [pendingStatus, setPendingStatus] = useState<Record<string, string>>({});
+
   if (!event) return null;
+
+  const handleRSVP = async (participantId: string, status: string) => {
+    setPendingStatus(prev => ({ ...prev, [participantId]: status }));
+    try {
+      await updateRSVP(event.id, status, event.teamId, participantId);
+    } finally {
+      // Clear pending status after a short delay to allow Firestore to sync
+      setTimeout(() => {
+        setPendingStatus(prev => {
+          const next = { ...prev };
+          delete next[participantId];
+          return next;
+        });
+      }, 1000);
+    }
+  };
 
   const team = teams.find(t => t.id === event.teamId);
   const relevantParticipants = [
@@ -175,53 +193,59 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                 
                 <div className="space-y-4">
                   {relevantParticipants.map((p) => {
-                    const rsvp = event.userRsvps?.[p.id || ''] || 'no_response';
+                    const currentRsvp = pendingStatus[p.id || ''] || event.userRsvps?.[p.id || ''] || 'no_response';
+                    const isPending = !!pendingStatus[p.id || ''];
+
                     return (
-                      <div key={p.id} className="space-y-4 p-5 bg-white/5 rounded-[2rem] border border-white/10 group hover:border-white/20 transition-all">
+                      <div key={p.id || 'you'} className="space-y-4 p-5 bg-white/5 rounded-[2rem] border border-white/10 group hover:border-white/20 transition-all">
                         <div className="flex items-center justify-between">
-                          <p className="text-[11px] font-black uppercase text-primary tracking-widest flex items-center gap-2">
-                            <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                          <span className="text-[11px] font-black uppercase text-primary tracking-widest flex items-center gap-2">
+                            <span className={cn("h-1.5 w-1.5 rounded-full bg-primary inline-block", isPending && "animate-ping")} />
                             {p.name === 'You' ? 'Your RSVP' : `${p.name}'s RSVP`}
-                          </p>
+                          </span>
                           <Badge className={cn(
-                            "text-[8px] font-black uppercase border-none h-5 px-3 shadow-lg", 
-                            rsvp === 'going' ? "bg-green-500 text-white" : 
-                            rsvp === 'maybe' ? "bg-amber-400 text-black" : 
-                            (rsvp === 'declined' || rsvp === 'no') ? "bg-red-500 text-white" : 
+                            "text-[8px] font-black uppercase border-none h-5 px-3 shadow-lg transition-colors", 
+                            currentRsvp === 'going' ? "bg-green-500 text-white" : 
+                            currentRsvp === 'maybe' ? "bg-amber-400 text-black" : 
+                            (currentRsvp === 'declined' || currentRsvp === 'no') ? "bg-red-500 text-white" : 
                             "bg-white/10 text-white/40"
                           )}>
-                            {rsvp === 'no' ? 'DECLINED' : rsvp.replace('_', ' ').toUpperCase()}
+                            {isPending && <Loader2 className="h-2 w-2 animate-spin mr-1 inline" />}
+                            {currentRsvp === 'no' ? 'DECLINED' : currentRsvp.replace('_', ' ').toUpperCase()}
                           </Badge>
                         </div>
                         <div className="grid grid-cols-1 gap-2">
                           <Button 
                             variant="outline" 
+                            disabled={isPending}
                             className={cn(
                               "h-12 rounded-2xl font-black text-xs uppercase transition-all tracking-widest border-2", 
-                              rsvp === 'going' ? "bg-green-600 border-none text-white shadow-xl shadow-green-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-green-500/50 hover:bg-green-500/5"
+                              currentRsvp === 'going' ? "bg-green-600 border-none text-white shadow-xl shadow-green-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-green-500/50 hover:bg-green-500/5"
                             )} 
-                            onClick={() => updateRSVP(event.id, 'going', undefined, p.id)}
+                            onClick={() => handleRSVP(p.id!, 'going')}
                           >
                             Going
                           </Button>
                           <div className="grid grid-cols-2 gap-2">
                             <Button 
                               variant="outline" 
+                              disabled={isPending}
                               className={cn(
                                 "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
-                                rsvp === 'maybe' ? "bg-amber-400 text-black border-none shadow-lg shadow-amber-400/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-amber-400/50 hover:bg-amber-400/5"
+                                currentRsvp === 'maybe' ? "bg-amber-400 text-black border-none shadow-lg shadow-amber-400/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-amber-400/50 hover:bg-amber-400/5"
                               )} 
-                              onClick={() => updateRSVP(event.id, 'maybe', undefined, p.id)}
+                              onClick={() => handleRSVP(p.id!, 'maybe')}
                             >
                               Maybe
                             </Button>
                             <Button 
                               variant="outline" 
+                              disabled={isPending}
                               className={cn(
                                 "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
-                                (rsvp === 'declined' || rsvp === 'no') ? "bg-red-600 text-white border-none shadow-lg shadow-red-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-red-500/50 hover:bg-red-500/5"
+                                (currentRsvp === 'declined' || currentRsvp === 'no') ? "bg-red-600 text-white border-none shadow-lg shadow-red-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-red-500/50 hover:bg-red-500/5"
                               )} 
-                              onClick={() => updateRSVP(event.id, 'declined', undefined, p.id)}
+                              onClick={() => handleRSVP(p.id!, 'declined')}
                             >
                               Decline
                             </Button>
@@ -358,7 +382,7 @@ export default function MasterCalendarPage() {
   const [selectedEventTypes, setSelectedEventTypes] = useState<EventType[]>(['game', 'practice', 'tournament', 'meeting', 'other']);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeDetailedEvent, setActiveDetailedEvent] = useState<TeamEvent | null>(null);
+  const [activeDetailedEventId, setActiveDetailedEventId] = useState<string | null>(null);
 
   // TACTICAL SYNC: Merge household events with the high-reliability active team stream
   const allEvents = useMemo(() => {
@@ -368,6 +392,11 @@ export default function MasterCalendarPage() {
     });
     return Array.from(map.values());
   }, [householdEvents, activeTeamEvents]);
+
+  const activeDetailedEvent = useMemo(() => {
+    if (!activeDetailedEventId) return null;
+    return allEvents.find(e => e.id === activeDetailedEventId) || null;
+  }, [allEvents, activeDetailedEventId]);
 
   const discoveryTeamIds = useMemo(() => {
     const fromTeams = (teams || []).map(t => t.id);
@@ -458,9 +487,9 @@ export default function MasterCalendarPage() {
                <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Status Report</p>
                <p className="text-3xl font-black leading-none uppercase">Confirmed</p>
              </div>
-             <Button className="w-full h-14 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest shadow-xl px-10" onClick={() => setActiveDetailedEvent(nextTournament)}>
-               Examine Intel <ArrowUpRight className="ml-2 h-4 w-4" />
-             </Button>
+              <Button className="w-full h-14 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest shadow-xl px-10" onClick={() => setActiveDetailedEventId(nextTournament.id)}>
+                Examine Intel <ArrowUpRight className="ml-2 h-4 w-4" />
+              </Button>
           </div>
         </div>
       )}
@@ -555,7 +584,7 @@ export default function MasterCalendarPage() {
                   <Badge variant="outline" className="font-black text-[10px] uppercase text-foreground">{selectedDayEvents.length} Events</Badge>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {selectedDayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => setActiveDetailedEvent(event)} />)}
+                  {selectedDayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => setActiveDetailedEventId(event.id)} />)}
                 </div>
               </div>
             </div>
@@ -572,7 +601,7 @@ export default function MasterCalendarPage() {
                       <div className="h-px bg-muted flex-1" />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-4 md:ml-16">
-                      {dayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => setActiveDetailedEvent(event)} />)}
+                      {dayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => setActiveDetailedEventId(event.id)} />)}
                     </div>
                   </div>
                 ))}
@@ -582,7 +611,11 @@ export default function MasterCalendarPage() {
         </CardContent>
       </Card>
 
-      <EventDetailDialog event={activeDetailedEvent} isOpen={!!activeDetailedEvent} onOpenChange={(o) => !o && setActiveDetailedEvent(null)} />
+      <EventDetailDialog 
+        event={activeDetailedEvent} 
+        isOpen={!!activeDetailedEventId} 
+        onOpenChange={(o) => !o && setActiveDetailedEventId(null)} 
+      />
     </div>
   );
 }

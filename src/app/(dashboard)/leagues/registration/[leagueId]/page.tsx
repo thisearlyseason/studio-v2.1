@@ -215,8 +215,7 @@ export default function LeagueRegistrationAdminPage() {
         { id: 'f_team_color', label: 'Team Color', type: 'short_text', required: false, step: 'additional' },
       ];
       const defaultWaiverSchema: RegistrationFormField[] = [
-        { id: 'f_phone', label: 'Phone Number', type: 'short_text', required: true, step: 'identity' },
-        { id: 'f_affiliation', label: 'Team/Organization Affiliation', type: 'short_text', required: false, step: 'identity' },
+        { id: 'f_affiliation', label: 'Team Name (if applicable)', type: 'short_text', required: false, step: 'identity' },
       ];
       setLocalConfig({
         id: configId,
@@ -384,7 +383,7 @@ export default function LeagueRegistrationAdminPage() {
               <div className="flex items-center gap-6">
                 <div className="text-right hidden md:block">
                   <p className="text-[10px] font-black uppercase text-white/40 tracking-widest mb-1">Bridge Endpoint</p>
-                  <p className="text-[9px] font-mono text-primary font-bold">/register/league/{leagueId}</p>
+                  <p className="text-[9px] font-mono text-primary font-bold">/register/league/{leagueId}?protocol={configId}</p>
                 </div>
                 <Button 
                   className="h-14 px-8 rounded-2xl bg-white text-black font-black uppercase text-[10px] shadow-xl hover:scale-105 transition-all flex items-center gap-2" 
@@ -480,7 +479,7 @@ export default function LeagueRegistrationAdminPage() {
                           { label: 'Primary Email', detail: 'System Relay', icon: Mail },
                           { label: 'Date of Birth', detail: 'Eligibility Proto', icon: Calendar },
                           { label: 'Mobile Phone', detail: 'Direct Link', icon: Smartphone }
-                        ].map(f => (
+                        ].filter(f => pipelineType !== 'waiver' || f.label !== 'Date of Birth').map(f => (
                           <div key={f.label} className="p-5 rounded-2xl bg-muted/40 border-2 border-transparent flex flex-col gap-3 relative group/base">
                             <div className="h-10 w-10 rounded-xl bg-white flex items-center justify-center shadow-sm">
                               <f.icon className="h-5 w-5 opacity-40 text-black" />

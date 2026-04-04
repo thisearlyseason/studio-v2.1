@@ -43,7 +43,12 @@ import {
   Menu,
   MoreHorizontal,
   Radio,
-  GraduationCap
+  GraduationCap,
+  LogOut,
+  Trash2,
+  UserX,
+  ShieldAlert,
+  User
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -81,6 +86,20 @@ import {
 } from "@/components/ui/sheet";
 import BrandLogo from '@/components/BrandLogo';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { signOut } from 'firebase/auth';
+import { useAuth } from '@/firebase';
+import { toast } from '@/hooks/use-toast';
 
 const coordinationTabs = [
   { name: 'Feed', href: '/feed', icon: Radio, pro: true },
@@ -203,8 +222,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const { 
     activeTeam, setActiveTeam, teams, user, isPro, 
     isPrimaryClubAuthority, isStaff, isParent, isPlayer, hasFeature, alerts,
-    unreadAlertsCount, purchasePro, isSchoolMode, isSchoolAdmin
+    unreadAlertsCount, purchasePro, isSchoolMode, isSchoolAdmin, isEliteAccount,
+    deleteTeam, deleteAccount
   } = useTeam();
+  const auth = useAuth();
 
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
@@ -230,6 +251,26 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     { name: 'Feed', href: '/feed', icon: LayoutDashboard, gate: () => hasFeature?.('live_feed_read') },
     { name: 'Chats', href: '/chats', icon: MessageCircle },
   ];
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.push('/login');
+    } catch (error) {
+      toast({ title: "Logout Failed", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteTeam = async () => {
+    if (!activeTeam?.id) return;
+    try {
+      await deleteTeam(activeTeam.id);
+      toast({ title: "Team Deleted", description: "The squad has been decommissioned." });
+      window.location.reload();
+    } catch (error) {
+      toast({ title: "Deletion Failed", variant: "destructive" });
+    }
+  };
 
   return (
     <SidebarProvider>
@@ -272,7 +313,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </SidebarMenuItem>
                 )}
 
-                {isPrimaryClubAuthority && (
+                {hasFeature?.('club_management') && (
                   <SidebarMenuItem>
                     <SidebarMenuButton 
                       asChild 
@@ -378,12 +419,102 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     )}
                   </Button>
                 </AlertsHistoryDialog>
-                <Link href="/settings" className="hidden sm:block">
-                  <Avatar className="h-8 w-8 md:h-10 md:w-10 border-2 border-background shadow-md">
-                    <AvatarImage src={user?.avatar} />
-                    <AvatarFallback className="font-black text-xs">{user?.name?.[0]}</AvatarFallback>
-                  </Avatar>
-                </Link>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="hidden sm:block focus:outline-none flex items-center gap-2 group">
+                      <Avatar className="h-8 w-8 md:h-10 md:w-10 border-2 border-background shadow-md transition-transform group-hover:scale-105 active:scale-95">
+                        <AvatarImage src={user?.avatar} />
+                        <AvatarFallback className="font-black text-xs">{user?.name?.[0]}</AvatarFallback>
+                      </Avatar>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64 p-2 rounded-2xl shadow-2xl bg-white border-2">
+                    <DropdownMenuLabel className="flex flex-col p-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-10 w-10 border shadow-sm">
+                          <AvatarImage src={user?.avatar} />
+                          <AvatarFallback className="font-black text-xs">{user?.name?.[0]}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-black text-sm uppercase tracking-tight truncate">{user?.name}</span>
+                          <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest truncate">{user?.email}</span>
+                        </div>
+                      </div>
+                    </DropdownMenuLabel>
+                    
+                    <DropdownMenuSeparator className="my-1 mx-2" />
+                    
+                    <DropdownMenuItem onClick={() => router.push('/settings')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+                      <User className="h-4 w-4 text-primary" /> Profile Settings
+                    </DropdownMenuItem>
+                    
+                    <DropdownMenuItem onClick={() => router.push('/how-to')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+                      <BookOpen className="h-4 w-4 text-primary" /> Tactical Manual
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator className="my-1 mx-2" />
+
+                    {isStaff && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest text-destructive hover:bg-destructive/5 hover:text-destructive focus:bg-destructive/5 focus:text-destructive">
+                            <ShieldAlert className="h-4 w-4" /> Delete Team
+                          </DropdownMenuItem>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
+                          <div className="h-2 bg-destructive w-full" />
+                          <div className="p-8 space-y-6">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">Decommission Squad</AlertDialogTitle>
+                              <AlertDialogDescription className="text-sm font-medium text-foreground/70">
+                                This will permanently delete <strong>{activeTeam?.name}</strong> and all associated data, including rosters, schedules, and analytics. This operation is IRREVERSIBLE.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter className="pt-4">
+                              <AlertDialogCancel className="rounded-xl h-14 font-black uppercase text-[10px] tracking-widest">Abort</AlertDialogCancel>
+                              <AlertDialogAction onClick={handleDeleteTeam} className="rounded-xl h-14 bg-destructive hover:bg-destructive/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl shadow-destructive/20">
+                                Confirm Deletion
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </div>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest text-destructive hover:bg-destructive/5 hover:text-destructive focus:bg-destructive/5 focus:text-destructive">
+                          <UserX className="h-4 w-4" /> Delete Account
+                        </DropdownMenuItem>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
+                        <div className="h-2 bg-destructive w-full" />
+                        <div className="p-8 space-y-6">
+                          <AlertDialogHeader>
+                            <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">Identity Termination</AlertDialogTitle>
+                            <AlertDialogDescription className="text-sm font-medium text-foreground/70">
+                              You are about to permanently delete your global account identity. All your data, settings, and role memberships will be purged. 
+                              <br /><br />
+                              <span className="font-bold text-destructive">WARNING: This cannot be undone.</span>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter className="pt-4">
+                            <AlertDialogCancel className="rounded-xl h-14 font-black uppercase text-[10px] tracking-widest">Stay Active</AlertDialogCancel>
+                            <AlertDialogAction onClick={deleteAccount} className="rounded-xl h-14 bg-destructive hover:bg-destructive/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl shadow-destructive/20">
+                              Terminate Account
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </div>
+                      </AlertDialogContent>
+                    </AlertDialog>
+
+                    <DropdownMenuSeparator className="my-1 mx-2" />
+                    
+                    <DropdownMenuItem onClick={handleLogout} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest text-muted-foreground group">
+                      <LogOut className="h-4 w-4 transition-transform group-hover:translate-x-1" /> Sign Out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </header>
             
@@ -488,31 +619,31 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                           </div>
                         </div>
 
-                        {(isPrimaryClubAuthority || isParent) && (
-                          <div className="space-y-3">
-                            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Management Hubs</p>
-                            <div className="grid grid-cols-1 gap-2">
-{isPrimaryClubAuthority && (
-                                <Link 
-                                  href="/club"
-                                  onClick={() => setIsMoreMenuOpen(false)}
-                                  className={cn(
-                                    "flex items-center justify-between p-4 rounded-2xl border bg-primary text-white transition-all active:scale-[0.98]",
-                                    pathname === '/club' ? "ring-2 ring-white ring-offset-2 ring-offset-primary" : ""
-                                  )}
-                                >
-                                  <div className="flex items-center gap-4">
-                                    <div className="bg-white/20 p-2 rounded-xl text-white">
-                                      <Building className="h-5 w-5" />
+                        {(isEliteAccount || isSchoolAdmin || isParent) && (
+                            <div className="space-y-3">
+                              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Management Hubs</p>
+                              <div className="grid grid-cols-1 gap-2">
+                                 {hasFeature?.('club_management') && (
+                                  <Link 
+                                    href="/club"
+                                    onClick={() => setIsMoreMenuOpen(false)}
+                                    className={cn(
+                                      "flex items-center justify-between p-4 rounded-2xl border bg-primary text-white transition-all active:scale-[0.98]",
+                                      pathname === '/club' ? "ring-2 ring-white ring-offset-2 ring-offset-primary" : ""
+                                    )}
+                                  >
+                                    <div className="flex items-center gap-4">
+                                      <div className="bg-white/20 p-2 rounded-xl text-white">
+                                        <Building className="h-5 w-5" />
+                                      </div>
+                                      <div className="flex flex-col">
+                                        <span className="text-xs font-black uppercase tracking-widest">{isSchoolMode ? 'School Hub' : 'Club Hub'}</span>
+                                        <span className="text-[8px] font-bold text-white/60 uppercase">Institutional Analytics</span>
+                                      </div>
                                     </div>
-                                    <div className="flex flex-col">
-                                      <span className="text-xs font-black uppercase tracking-widest">Club Hub</span>
-                                      <span className="text-[8px] font-bold text-white/60 uppercase">Institutional Analytics</span>
-                                    </div>
-                                  </div>
-                                  <ChevronRight className="h-4 w-4 text-white/20" />
-                                </Link>
-                              )}
+                                    <ChevronRight className="h-4 w-4 text-white/20" />
+                                  </Link>
+                                )}
                               {isParent && (
                                 <Link 
                                   href="/family"
