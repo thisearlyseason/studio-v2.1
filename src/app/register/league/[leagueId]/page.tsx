@@ -62,6 +62,7 @@ const REQUIRED_STEPS = [
   { id: 'contact', name: 'Contact', icon: MapPin, label: 'Contact' },
   { id: 'medical', name: 'Medical', icon: Activity, label: 'Medical' },
   { id: 'guardian', name: 'Guardian', icon: ShieldCheck, label: 'Guardian' },
+  { id: 'additional', name: 'Additional', icon: Plus, label: 'Additional' },
   { id: 'team_code', name: 'Team Code', icon: Zap, label: 'Team Code' },
   { id: 'compliance', name: 'Compliance', icon: FileSignature, label: 'Compliance' }
 ];
@@ -106,9 +107,44 @@ function RegistrationForm() {
   }, [answers['dateOfBirth'], answers['dob']]);
 
   const activeSteps = useMemo(() => {
-    // Standard 6-step flow for league registration
-    return [...REQUIRED_STEPS];
-  }, []);
+    if (!config) return [...REQUIRED_STEPS];
+    
+    // Robust type detection with fallback for older configs
+    const type = config.type || (protocolId === 'team_config' ? 'team' : protocolId === 'waiver_config' ? 'waiver' : 'player');
+
+    return REQUIRED_STEPS.filter(step => {
+      // Identity is always the starting point
+      if (step.id === 'identity') return true;
+      
+      // Compliance is required if there are waivers to sign
+      if (step.id === 'compliance') {
+        return (config.require_default_waiver || 
+                (config.custom_waiver_text && config.custom_waiver_text.trim() !== '') || 
+                (config.team_waivers_content && config.team_waivers_content.length > 0));
+      }
+
+      // 1. Waiver Pipeline: Identity + Compliance ONLY
+      if (type === 'waiver') return false;
+
+      // 2. Team Pipeline: Identity + Contact + Additional + Compliance
+      if (type === 'team') {
+        return step.id === 'contact' || step.id === 'additional';
+      }
+
+      // 3. Player Pipeline: Full logic
+      if (type === 'player') {
+        // Guardian only if minor
+        if (step.id === 'guardian') return isUnder18;
+        // Additional only if there are fields for it
+        if (step.id === 'additional') {
+          return formSchema.some(f => f.step === 'additional');
+        }
+        return true;
+      }
+
+      return true;
+    });
+  }, [config, isUnder18, protocolId, formSchema]);
 
   const totalSteps = activeSteps.length;
 
@@ -317,7 +353,7 @@ function RegistrationForm() {
                 <p className="text-[10px] font-black uppercase tracking-widest">Protocol Support</p>
              </div>
              <p className="text-[11px] font-medium leading-relaxed text-foreground/70">
-                Data provided via this portal is encrypted and routed directly to the league administration database.
+                Data provided via this portal is encrypted and routed directly to the {config?.type === 'team' ? 'squad management' : 'league administration'} database.
              </p>
           </div>
         </div>
@@ -335,12 +371,13 @@ function RegistrationForm() {
                   {currentStepInfo.name} Verification
                 </CardTitle>
                 <CardDescription className="text-xs font-semibold">
-                  {activeSteps[currentStep-1]?.id === 'identity' && "Start your enrollment by providing basic participant data."}
-                  {activeSteps[currentStep-1]?.id === 'contact' && "Provide primary contact and deployment address info."}
-                  {activeSteps[currentStep-1]?.id === 'medical' && "Verified health clearances and emergency medical data."}
-                  {activeSteps[currentStep-1]?.id === 'guardian' && "Guardian authorization is mandatory for minor participants."}
-                  {activeSteps[currentStep-1]?.id === 'team_code' && "Enter your squad's recruitment code to auto-assign rosters."}
-                  {activeSteps[currentStep-1]?.id === 'compliance' && "Finalize your institutional agreements and waivers."}
+                  {currentStepInfo.id === 'identity' && (config?.type === 'team' ? "Provide basic squad identification and leadership data." : "Start your enrollment by providing basic participant data.")}
+                  {currentStepInfo.id === 'contact' && "Provide primary contact and deployment address info."}
+                  {currentStepInfo.id === 'medical' && "Verified health clearances and emergency medical data."}
+                  {currentStepInfo.id === 'guardian' && "Guardian authorization is mandatory for minor participants."}
+                  {currentStepInfo.id === 'additional' && "Provide supplemental information required for this registration."}
+                  {currentStepInfo.id === 'team_code' && "Enter your squad's recruitment code to auto-assign rosters."}
+                  {currentStepInfo.id === 'compliance' && "Finalize your institutional agreements and waivers."}
                 </CardDescription>
 
               </div>
@@ -348,9 +385,9 @@ function RegistrationForm() {
             
             <CardContent className="p-8 lg:p-10 flex-1">
               {/* Standard Fields Rendering */}
-              {activeSteps[currentStep - 1]?.id !== 'guardian' && activeSteps[currentStep - 1]?.id !== 'team_code' && activeSteps[currentStep - 1]?.id !== 'compliance' && (
+              {currentStepInfo.id !== 'guardian' && currentStepInfo.id !== 'team_code' && currentStepInfo.id !== 'compliance' && (
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
-                  {activeSteps[currentStep - 1]?.id === 'identity' && (
+                  {currentStepInfo.id === 'identity' && (
                     <div className="space-y-3">
                       {(answers['dateOfBirth'] || answers['dob']) ? (
                         <div className={cn(
@@ -398,7 +435,7 @@ function RegistrationForm() {
                   ))}
 
                   {/* Fallback Core Fields for Contact and Medical if schema is sparse */}
-                  {activeSteps[currentStep - 1]?.id === 'contact' && stepFields.length === 0 && (
+                  {currentStepInfo.id === 'contact' && stepFields.length === 0 && (
                     <div className="space-y-6">
                       <div className="space-y-2">
                         <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Primary Contact Phone <span className="text-primary">*</span></Label>
@@ -422,7 +459,7 @@ function RegistrationForm() {
                     </div>
                   )}
 
-                  {activeSteps[currentStep - 1]?.id === 'medical' && stepFields.length === 0 && (
+                  {currentStepInfo.id === 'medical' && stepFields.length === 0 && (
                     <div className="space-y-6">
                       <div className="space-y-2">
                         <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Allergies or Medical Conditions</Label>
@@ -439,7 +476,7 @@ function RegistrationForm() {
               )}
 
               {/* Step: Guardian */}
-              {activeSteps[currentStep - 1]?.id === 'guardian' && (
+              {currentStepInfo.id === 'guardian' && (
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                   {isUnder18 ? (
                     <>
@@ -562,7 +599,7 @@ function RegistrationForm() {
               )}
 
               {/* Step: Team Code */}
-              {activeSteps[currentStep - 1]?.id === 'team_code' && (
+              {currentStepInfo.id === 'team_code' && (
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                   <div className="bg-primary/5 p-8 rounded-[2.5rem] border-2 border-primary/10 space-y-6">
                     <div className="space-y-2">
@@ -613,7 +650,7 @@ function RegistrationForm() {
               )}
 
               {/* Step: Compliance */}
-              {activeSteps[currentStep - 1]?.id === 'compliance' && (
+              {currentStepInfo.id === 'compliance' && (
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                    {(config.require_default_waiver || config.custom_waiver_text || (config.team_waivers_content && config.team_waivers_content.length > 0)) && (
                     <div className="space-y-6">
@@ -719,10 +756,10 @@ function RegistrationForm() {
                 className="flex-1 h-16 rounded-2xl text-lg font-black shadow-xl" 
                 disabled={
                   isSubmitting || 
-                  (activeSteps[currentStep-1]?.id === 'team_code' && !!teamCode && !validatedTeam && !validatingCode) || 
+                  (currentStepInfo.id === 'team_code' && !!teamCode && !validatedTeam && !validatingCode) || 
                   (stepFields.some(f => f.required && !answers[f.id])) ||
-                  (activeSteps[currentStep-1]?.id === 'guardian' && isUnder18 && (!answers.guardian_name || !answers.guardian_email || !answers.guardian_phone || !answers.guardian_relationship)) ||
-                  (activeSteps[currentStep-1]?.id === 'contact' && stepFields.length === 0 && !answers.primary_phone)
+                  (currentStepInfo.id === 'guardian' && isUnder18 && (!answers.guardian_name || !answers.guardian_email || !answers.guardian_phone || !answers.guardian_relationship)) ||
+                  (currentStepInfo.id === 'contact' && stepFields.length === 0 && !answers.primary_phone)
                 }
               >
                 {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : 
