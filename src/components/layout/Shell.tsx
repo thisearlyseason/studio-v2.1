@@ -252,6 +252,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     { name: 'Tactical Chat', href: '/chats', icon: MessageCircle },
   ];
 
+  if (!activeTeam && !user) return null;
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -402,7 +404,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
                     {pathname === '/dashboard' ? 'Strategic Command' : 
                      (pathname === '/leagues' && isSchoolMode ? 'Programs' : 
-                      coordinationTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard')}
+                      pathname === '/club' ? (isSchoolMode ? 'School Hub' : 'Club Hub') :
+                      filteredCoordTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard')}
                   </h2>
                 </div>
               </div>

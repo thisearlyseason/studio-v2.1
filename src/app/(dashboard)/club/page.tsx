@@ -132,7 +132,7 @@ export default function ClubManagementPage() {
   const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
   
   if (!isPrimaryClubAuthority) {
-    return <AccessRestricted type="role" title={isSchoolMode ? "School Hub Locked" : "Organization Hub Locked"} description={isSchoolMode ? "This command center is reserved for School Administrators." : "This command center is reserved for Institutional Stakeholders and Club Administrators."} />;
+    return <AccessRestricted type="role" title={isSchoolMode ? "School Hub Locked" : "Club Hub Locked"} description={isSchoolMode ? "This command center is reserved for School Hub Administrators." : "This command center is reserved for Institutional Stakeholders and Club Hub Administrators."} />;
   }
 
   const router = useRouter();
@@ -320,15 +320,15 @@ export default function ClubManagementPage() {
       if (currentAdmins.includes(newAdminId) || schoolHub.ownerUserId === newAdminId) {
         toast({ title: "Already Admin", description: "This user is already an admin.", variant: "destructive" });
       } else if (currentAdmins.length >= 3) {
-        toast({ title: "Limit Reached", description: "You can only have up to 3 additional school admins.", variant: "destructive" });
+        toast({ title: "Limit Reached", description: "You can only have up to 3 additional school hub admins.", variant: "destructive" });
       } else {
         await updateTeam(schoolHub.id, { schoolAdminIds: [...currentAdmins, newAdminId] });
-        toast({ title: "Admin Added", description: "They now have School Hub access." });
+        toast({ title: "Admin Added", description: "They now have Hub access." });
         setNewAdminEmail('');
       }
     } catch (e) {
       console.error(e);
-      toast({ title: "Error", description: "Failed to add admin", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to add hub admin", variant: "destructive" });
     }
     setIsAddingAdmin(false);
   };
@@ -350,9 +350,9 @@ export default function ClubManagementPage() {
           <div className="space-y-3">
             <Badge className="bg-primary text-white border-none font-black uppercase tracking-[0.2em] text-[10px] h-7 px-4 shadow-lg">Institutional Command</Badge>
             <h1 className="text-4xl md:text-6xl font-black tracking-tighter uppercase leading-[0.8] text-white">
-              {user?.clubName || 'Club Command'}
+              {user?.clubName || (isSchoolMode ? 'School Hub' : 'Club Hub')}
             </h1>
-            <p className="text-white/60 font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Master Governance Hub</p>
+            <p className="text-white/60 font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Master Governance {isSchoolMode ? 'School Hub' : 'Club Hub'}</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <Button variant="outline" className="h-14 px-8 rounded-2xl border-white/20 bg-white/10 text-white hover:bg-white hover:text-black transition-all font-black uppercase text-xs" onClick={() => setIsEditOpen(true)}>
@@ -566,7 +566,7 @@ export default function ClubManagementPage() {
                       onClick={handleAddAdmin}
                     >
                       {isAddingAdmin ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <UserPlus className="h-5 w-5 mr-2" />}
-                      Add Admin
+                      Add Hub Admin
                     </Button>
                   </div>
                 )}

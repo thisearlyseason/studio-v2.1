@@ -218,6 +218,7 @@ export type Member = {
   gpa?: string;
   school?: string;
   phone?: string;
+  email?: string;
   skills?: string[];
   achievements?: string[];
   schoolId?: string;
@@ -728,6 +729,7 @@ interface TeamContextType {
   updateGame: (gameId: string, data: any) => Promise<void>;
   getMember: (id: string | null | undefined) => Member | undefined;
   getTeamByCode: (code: string, leagueId?: string) => Promise<any>;
+  getLeagueMembers: (leagueId: string) => Promise<Member[]>;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -903,6 +905,34 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   
   const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
   const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
+
+  const householdMembersQuery = useMemoFirebase(() => (db && firebaseUser?.uid && isAuthResolved) ? query(collectionGroup(db, 'members'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid, isAuthResolved]);
+  const { data: householdMembersData } = useCollection<Member>(householdMembersQuery);
+  const householdBalance = useMemo(() => (householdMembersData || []).reduce((acc, m) => acc + (m.amountOwed || 0), 0), [householdMembersData]);
+
+  const getLeagueMembers = useCallback(async (leagueId: string): Promise<Member[]> => {
+    if (!db || !leagueId) return [];
+    try {
+      const leagueSnap = await getDoc(doc(db, 'leagues', leagueId));
+      if (!leagueSnap.exists()) return [];
+      const leagueData = leagueSnap.data();
+      const teamIds = Object.keys(leagueData.teams || {});
+      if (teamIds.length === 0) return [];
+      
+      const allMembers: Member[] = [];
+      const memberPromises = teamIds.map(async (teamId) => {
+        const membersSnap = await getDocs(collection(db, 'teams', teamId, 'members'));
+        membersSnap.forEach((m) => {
+          allMembers.push({ id: m.id, ...m.data() } as Member);
+        });
+      });
+      await Promise.all(memberPromises);
+      return allMembers;
+    } catch (error) {
+      console.error('Error fetching league members:', error);
+      return [];
+    }
+  }, [db]);
 
   const isSuperAdmin = useMemo(() => {
     if (!firebaseUser?.uid) return false;
@@ -2428,7 +2458,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     isPrimaryClubAuthority,
     isEliteAccount,
     isSchoolMode,
-    isSchoolAdmin, householdEvents: householdEvents || [], activeTeamEvents, games, householdBalance: 0, myChildren, plans, isPlansLoading, proQuotaStatus,
+    isSchoolAdmin, householdEvents: householdEvents || [], activeTeamEvents, games, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus,
     deleteFundraisingOpportunity, addGame, updateGame, canAddProTeam: (proQuotaStatus.remaining > 0),
     isPaywallOpen, setIsPaywallOpen, purchasePro,
     hasFeature, alerts, unreadAlertsCount,
@@ -2459,7 +2489,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
     addRegistration, addLeaguePayment, updateLeagueGlobalFees,
 
-    getMember, firebaseUser, getTeamByCode, deleteMessage
+    getMember, firebaseUser, getTeamByCode, deleteMessage, getLeagueMembers
   }), [
     db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser,
     isStaff, isPro, isStarter, householdEvents, activeTeamEvents, games, myChildren, plans, isPlansLoading, isPaywallOpen,
@@ -2490,7 +2520,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
     addRegistration, purchasePro, addLeaguePayment, updateLeagueGlobalFees,
-    getMember, getTeamByCode, deleteMessage
+    getMember, getTeamByCode, deleteMessage, getLeagueMembers
   ]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;

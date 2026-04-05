@@ -99,10 +99,26 @@ export default function PublicScoutPortalPage() {
   }, [evals]);
 
   const playerName = useMemo(() => {
-    if (!player) return loading ? "" : 'Elite Prospect';
-    const combined = [player.firstName, player.lastName].filter(Boolean).join(' ');
-    return combined || player.name || 'Elite Prospect';
-  }, [player, loading]);
+    if (loading) return "";
+    
+    // Check profile first as it's the primary source for the portal
+    const profileName = profile ? [profile.firstName, profile.lastName].filter(Boolean).join(' ') : null;
+    if (profileName) return profileName;
+    if (profile?.fullName) return profile.fullName;
+    
+    // Then check player object
+    const playerFull = player ? [player.firstName, player.lastName].filter(Boolean).join(' ') : null;
+    if (playerFull) return playerFull;
+    if (player?.name) return player.name;
+    if (player?.displayName) return player.displayName;
+    if (player?.fullName) return player.fullName;
+    
+    // If still nothing, use the playerId as a fallback so scouts know who it is
+    if (playerId) return `Athlete ${playerId.toString().slice(-4).toUpperCase()}`;
+    if (player) return "Institutional Athlete";
+    
+    return 'Playmaker Prospect'; // Less generic fallback
+  }, [player, profile, loading, playerId]);
 
   useEffect(() => {
     if (playerName) {

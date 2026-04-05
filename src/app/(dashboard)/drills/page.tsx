@@ -42,7 +42,13 @@ const getYoutubeThumbnail = (url: string) => {
   if (!url) return null;
   const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?\s*v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
-  return (match && match[2].length === 11) ? `https://img.youtube.com/vi/${match[2]}/maxresdefault.jpg` : null;
+  
+  // Return early if no match
+  if (!match || match[2].length !== 11) return null;
+  
+  const videoId = match[2];
+  // hqdefault is the most reliable fallback across all youtube videos
+  return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 };
 
 export default function PlaybookAndGamePlayPage() {
@@ -74,13 +80,15 @@ export default function PlaybookAndGamePlayPage() {
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newUrl, setNewUrl] = useState('');
-  const [newMediaUrls, setNewMediaUrls] = useState<string[]>([]);
+  const [newCoverUrl, setNewCoverUrl] = useState('');
+  const [newMedia, setNewMedia] = useState<{url: string, description: string}[]>([]);
   const [newTime, setNewTime] = useState('');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [expandedDrillIds, setExpandedDrillIds] = useState<Set<string>>(new Set());
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const filteredDrills = useMemo(() => drills.filter(d => d.title.toLowerCase().includes(searchTerm.toLowerCase())), [drills, searchTerm]);
   const filteredFiles = useMemo(() => teamFiles.filter(f => ['Game Tape', 'Practice Session', 'Highlights'].includes(f.category) && f.name.toLowerCase().includes(searchTerm.toLowerCase())), [teamFiles, searchTerm]);
@@ -103,7 +111,8 @@ export default function PlaybookAndGamePlayPage() {
           title: newTitle,
           description: newDesc,
           videoUrl: newUrl,
-          additionalMedia: newMediaUrls.filter(Boolean),
+          coverImageUrl: newCoverUrl,
+          additionalMedia: newMedia.filter(m => m.url),
           estimatedTime: newTime
         });
         toast({ title: "Drill Updated", description: "Strategic protocol modified." });
@@ -112,7 +121,8 @@ export default function PlaybookAndGamePlayPage() {
           title: newTitle, 
           description: newDesc, 
           videoUrl: newUrl, 
-          additionalMedia: newMediaUrls.filter(Boolean),
+          coverImageUrl: newCoverUrl,
+          additionalMedia: newMedia.filter(m => m.url),
           estimatedTime: newTime,
           createdAt: new Date().toISOString(), 
           comments: [] 
@@ -120,7 +130,7 @@ export default function PlaybookAndGamePlayPage() {
         toast({ title: "Drill Published", description: "Strategic execution protocol active." });
       }
       setIsAddDrillOpen(false);
-      setNewTitle(''); setNewDesc(''); setNewUrl(''); setNewMediaUrls([]); setNewTime(''); setEditingItemId(null);
+      setNewTitle(''); setNewDesc(''); setNewUrl(''); setNewCoverUrl(''); setNewMedia([]); setNewTime(''); setEditingItemId(null);
     } catch(err) {
       toast({ title: "Operation Failed", variant: "destructive" });
     }
@@ -153,7 +163,8 @@ export default function PlaybookAndGamePlayPage() {
     setNewTitle(drill.title || '');
     setNewDesc(drill.description || '');
     setNewUrl(drill.videoUrl || '');
-    setNewMediaUrls(drill.additionalMedia || []);
+    setNewCoverUrl(drill.coverImageUrl || '');
+    setNewMedia(drill.additionalMedia || []);
     setNewTime(drill.estimatedTime || '');
     setEditingItemId(drill.id);
     setIsAddDrillOpen(true);
@@ -188,13 +199,21 @@ export default function PlaybookAndGamePlayPage() {
 
   const handleAddComment = async (id: string, currentComments: any[], type: 'drills' | 'files') => {
     if (!commentText || !activeTeam || !db) return;
-    const parts = commentTime.split(':');
-    const secs = parts.length === 2 ? parseInt(parts[0]) * 60 + parseInt(parts[1]) : undefined;
+    const parts = commentTime.split(':').map(p => parseInt(p));
+    let secs = undefined;
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      secs = parts[0] * 60 + parts[1];
+    } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      secs = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    } else if (parts.length === 1 && !isNaN(parts[0])) {
+      secs = parts[0];
+    }
     const newC = {
       id: `c_${Date.now()}`,
       text: commentText,
       timestamp: secs ?? null,
-      authorName: user?.name || 'Staff',
+      authorName: user?.name || 'Teammate',
+      authorId: user?.id,
       createdAt: new Date().toISOString()
     };
     const updated = [...(currentComments || []), newC];
@@ -209,10 +228,39 @@ export default function PlaybookAndGamePlayPage() {
     toast({ title: "Mark Saved" });
   };
 
+  const handleDeleteComment = async (id: string, commentId: string, currentComments: any[], type: 'drills' | 'files') => {
+    if (!activeTeam || !db) return;
+    const updated = currentComments.filter(c => c.id !== commentId);
+    if (type === 'drills') {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'drills', id), { comments: updated });
+      setSelectedDrill((prev: any) => ({ ...prev, comments: updated }));
+    } else {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'files', id), { comments: updated });
+      setSelectedFile((prev: any) => ({ ...prev, comments: updated }));
+    }
+    toast({ title: "Comment Cleared" });
+  };
+
+  const handleEditComment = async (id: string, commentId: string, currentComments: any[], newText: string, type: 'drills' | 'files') => {
+    if (!activeTeam || !db || !newText) return;
+    const updated = currentComments.map(c => c.id === commentId ? { ...c, text: newText, updatedAt: new Date().toISOString() } : c);
+    if (type === 'drills') {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'drills', id), { comments: updated });
+      setSelectedDrill((prev: any) => ({ ...prev, comments: updated }));
+    } else {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'files', id), { comments: updated });
+      setSelectedFile((prev: any) => ({ ...prev, comments: updated }));
+    }
+    setEditingCommentId(null);
+    setEditingCommentText('');
+    toast({ title: "Mark Updated" });
+  };
+
   const seekTo = (seconds: number | undefined) => {
-    if (seconds == null || !iframeRef.current) return;
-    const isYt = iframeRef.current.src.includes('youtube.com');
-    if (isYt) {
+    if (seconds == null) return;
+    
+    // Handle YouTube
+    if (iframeRef.current && iframeRef.current.src.includes('youtube.com')) {
       iframeRef.current.contentWindow?.postMessage(JSON.stringify({
         event: 'command',
         func: 'seekTo',
@@ -223,8 +271,16 @@ export default function PlaybookAndGamePlayPage() {
         func: 'playVideo',
         args: []
       }), '*');
+    } 
+    // Handle local/uploaded video
+    else if (videoRef.current) {
+      videoRef.current.currentTime = seconds;
+      videoRef.current.play();
     }
   };
+
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
 
   if (isDrillsLoading || isFilesLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Tactical Hub...</p></div>;
 
@@ -321,7 +377,9 @@ export default function PlaybookAndGamePlayPage() {
             {viewMode === 'drills' ? filteredDrills.map(drill => (
               <Card key={drill.id} className="rounded-[2.5rem] overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedDrill(drill)}>
                 <div className="aspect-video bg-black relative overflow-hidden">
-                  {drill.videoUrl && getYoutubeThumbnail(drill.videoUrl) ? (
+                  {drill.coverImageUrl ? (
+                    <img src={drill.coverImageUrl} alt={drill.title} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                  ) : drill.videoUrl && getYoutubeThumbnail(drill.videoUrl) ? (
                     <img src={getYoutubeThumbnail(drill.videoUrl)!} alt={drill.title} className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity" />
                   ) : null}
                   {drill.videoUrl ? (
@@ -373,9 +431,15 @@ export default function PlaybookAndGamePlayPage() {
               </Card>
             )) : filteredFiles.map(file => (
               <Card key={file.id} className="rounded-[2.5rem] overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedFile(file)}>
-                <div className="aspect-video bg-black flex items-center justify-center relative">
-                  <Play className="h-12 w-12 text-white fill-current opacity-40 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100" />
-                  <Badge className="absolute top-4 left-4 bg-black/50 border-none font-black text-[8px] uppercase">{file.category}</Badge>
+                <div className="aspect-video bg-black flex items-center justify-center relative overflow-hidden">
+                  {file.url && (file.url.includes('youtube.com') || file.url.includes('youtu.be/')) && getYoutubeThumbnail(file.url) ? (
+                    <img src={getYoutubeThumbnail(file.url)!} alt={file.name} className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity" />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                      <Play className="h-12 w-12 text-white fill-current opacity-40 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100" />
+                    </div>
+                  )}
+                  <Badge className="absolute top-4 left-4 bg-black/60 border-none font-black text-[8px] uppercase">{file.category}</Badge>
                 </div>
                 <CardContent className="p-6 space-y-2">
                   <div className="flex justify-between items-start gap-4">
@@ -423,30 +487,89 @@ export default function PlaybookAndGamePlayPage() {
               <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Strategic Instructions</Label>
               <Textarea placeholder="Describe the drill setup, reps, and coaching cues..." className="rounded-2xl border-2 font-medium min-h-[120px] p-4 resize-none" value={newDesc} onChange={e => setNewDesc(e.target.value)} />
             </div>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Additional Media (Images/Videos)</Label>
-                <Button variant="ghost" size="sm" className="h-7 text-[8px] font-black uppercase" onClick={() => setNewMediaUrls([...newMediaUrls, ''])}>
-                  <Plus className="h-3 w-3 mr-1" /> Add Slot
-                </Button>
-              </div>
-              <div className="space-y-3">
-                <Input placeholder="Primary Video URL (YouTube/Vimeo)" className="h-12 rounded-xl border-2 font-bold" value={newUrl} onChange={e => setNewUrl(e.target.value)} />
-                {newMediaUrls.map((url, i) => (
-                  <div key={i} className="flex gap-2">
-                    <Input placeholder="Additional Image/Video URL" className="h-10 rounded-xl border font-bold text-xs" value={url} onChange={e => {
-                      const next = [...newMediaUrls];
-                      next[i] = e.target.value;
-                      setNewMediaUrls(next);
-                    }} />
-                    <Button variant="ghost" size="icon" className="h-10 w-10 text-red-500" onClick={() => setNewMediaUrls(newMediaUrls.filter((_, idx) => idx !== i))}>
-                      <Trash2 className="h-4 w-4" />
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Additional Media (Images/Videos)</Label>
+                  <Button variant="ghost" size="sm" className="h-7 text-[8px] font-black uppercase" onClick={() => setNewMedia([...newMedia, {url: '', description: ''}])}>
+                    <Plus className="h-3 w-3 mr-1" /> Add New Slot
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Input placeholder="Cover Photo URL (Image Only)" className="h-12 rounded-xl border-2 font-bold" value={newCoverUrl} onChange={e => setNewCoverUrl(e.target.value)} />
+                  <Button variant="outline" className="h-12 rounded-xl" title="Upload Cover Image" onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = 'image/*';
+                      input.onchange = (e: any) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (ev) => setNewCoverUrl(ev.target?.result as string);
+                          reader.readAsDataURL(file);
+                        }
+                      };
+                      input.click();
+                    }}>
+                      <Upload className="h-4 w-4" />
                     </Button>
                   </div>
-                ))}
+                </div>
+                
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Primary Video URL (YouTube/Vimeo)</Label>
+                  <Input placeholder="Strategy Video URL" className="h-12 rounded-xl border-2 font-bold" value={newUrl} onChange={e => setNewUrl(e.target.value)} />
+                </div>
+
+                <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                  {newMedia.map((m, i) => (
+                    <div key={i} className="space-y-3 p-5 bg-muted/30 rounded-2xl border-2 border-dashed">
+                      <div className="flex items-center justify-between mb-1">
+                        <Label className="text-[8px] font-black uppercase tracking-widest">Media Slot {i + 1}</Label>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-50" onClick={() => setNewMedia(newMedia.filter((_, idx) => idx !== i))}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <div className="flex gap-2">
+                        <Input placeholder="Image/Video URL" className="h-11 rounded-xl border font-bold text-xs flex-1" value={m.url} onChange={e => {
+                          const next = [...newMedia];
+                          next[i] = { ...next[i], url: e.target.value };
+                          setNewMedia(next);
+                        }} />
+                        <Button variant="outline" className="h-11 rounded-xl px-4 hover:bg-primary/5 hover:text-primary transition-colors shrink-0" onClick={() => {
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.accept = 'image/*,video/*';
+                          input.onchange = (e: any) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const next = [...newMedia];
+                                next[i] = { ...next[i], url: ev.target?.result as string };
+                                setNewMedia(next);
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          };
+                          input.click();
+                        }}>
+                          <Upload className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <Input 
+                        placeholder="Add sub-text or internal description for this media..." 
+                        className="h-10 rounded-xl border font-black text-[9px] uppercase tracking-widest placeholder:opacity-50" 
+                        value={m.description} 
+                        onChange={e => {
+                          const next = [...newMedia];
+                          next[i] = { ...next[i], description: e.target.value };
+                          setNewMedia(next);
+                        }} 
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          </div>
           <DialogFooter className="p-8 pt-0 flex flex-col sm:flex-row gap-3">
             <Button variant="ghost" onClick={() => { setIsAddDrillOpen(false); setEditingItemId(null); }} className="rounded-2xl h-14 font-black uppercase text-[10px] flex-1">Abort</Button>
             <Button onClick={handleAddDrill} disabled={!newTitle || !newDesc} className="rounded-2xl h-14 font-black uppercase text-[10px] flex-1 shadow-xl shadow-primary/20">{editingItemId ? 'Commit Updates' : 'Commit to Playbook'}</Button>
@@ -493,9 +616,7 @@ export default function PlaybookAndGamePlayPage() {
             <Button onClick={handleAddFilm} disabled={!newTitle || (!newUrl && !fileInputRef.current?.files?.length)} className="w-full h-16 rounded-[2rem] font-black uppercase text-xs shadow-xl shadow-primary/20">Enshrine in Vault</Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
+      </Dialog>      <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
         <DialogContent className="rounded-[4rem] sm:max-w-6xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
           {(selectedDrill || selectedFile) && (() => {
@@ -504,38 +625,86 @@ export default function PlaybookAndGamePlayPage() {
             const type = selectedDrill ? 'drills' : 'files';
             
             return (
-              <div className="flex flex-col lg:flex-row h-full max-h-[90vh]"> {/* Forced Sync */}
-                <div className="flex-1 bg-black relative flex items-center justify-center min-h-[400px]">
-                  {url && url !== '#' ? (
-                    <iframe
-                      ref={iframeRef}
-                      src={`${url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/').split('&')[0]}?enablejsapi=1`}
-                      className="absolute inset-0 w-full h-full"
-                      allow="autoplay; fullscreen"
-                      allowFullScreen
-                    />
-                  ) : (
-                    <div className="text-center opacity-30 text-white space-y-4">
-                      <Video className="h-20 w-20 mx-auto" />
-                      <p className="font-black uppercase tracking-widest text-sm">Visual Archive Not Linked</p>
+              <div className="flex flex-col lg:flex-row h-full max-h-[90vh] overflow-hidden">
+                {/* Left Side: Video and Additional Media */}
+                <div className="flex-1 overflow-y-auto bg-black p-4 lg:p-8 custom-scrollbar">
+                  <div className="aspect-video bg-neutral-900 rounded-[2.5rem] overflow-hidden shadow-2xl relative group mb-8">
+                    {url && (url.includes('youtube.com') || url.includes('youtu.be/')) ? (
+                      <iframe
+                        ref={iframeRef}
+                        src={`https://www.youtube.com/embed/${url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|u\/\w\/))([^\?&"'>]+)/)?.[1]}?enablejsapi=1&autoplay=1`}
+                        className="w-full h-full border-none"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    ) : url ? (
+                      <video
+                        ref={videoRef}
+                        src={url}
+                        controls
+                        autoPlay
+                        className="w-full h-full"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-muted/10">
+                        <Video className="h-20 w-20 text-white/5 animate-pulse" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Additional Media Section */}
+                  {data.additionalMedia && data.additionalMedia.length > 0 && (
+                    <div className="space-y-6 pt-4">
+                      <div className="flex items-center gap-4 mb-6">
+                        <div className="h-px flex-1 bg-white/10" />
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40">Strategic Archive</h4>
+                        <div className="h-px flex-1 bg-white/10" />
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        {data.additionalMedia.map((media: any, idx: number) => (
+                          <div key={idx} className="space-y-3 group/media">
+                            <div className="aspect-video bg-neutral-900 rounded-3xl overflow-hidden ring-1 ring-white/10 group-hover/media:ring-primary/50 transition-all shadow-lg relative">
+                              {media.url && (media.url.includes('youtube.com') || media.url.includes('youtu.be/')) ? (
+                                <iframe
+                                  src={`https://www.youtube.com/embed/${media.url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|u\/\w\/))([^\?&"'>]+)/)?.[1]}`}
+                                  className="w-full h-full border-none"
+                                />
+                              ) : media.url && (media.url.includes('mp4') || media.url.includes('mov') || media.url.startsWith('data:video')) ? (
+                                <video src={media.url} controls className="w-full h-full" />
+                              ) : media.url ? (
+                                <div className="relative w-full h-full">
+                                  <img 
+                                    src={media.url} 
+                                    alt={`Ref ${idx + 1}`} 
+                                    className="w-full h-full object-cover transition-transform duration-700 group-hover/media:scale-110" 
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover/media:opacity-100 transition-opacity" />
+                                </div>
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <Package className="h-8 w-8 text-white/10" />
+                                </div>
+                              )}
+                              <Badge className="absolute top-4 left-4 bg-black/60 backdrop-blur-md text-white border-white/10 font-bold text-[8px] uppercase">Asset {idx + 1}</Badge>
+                            </div>
+                            {media.description && (
+                              <div className="px-2">
+                                <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest leading-relaxed line-clamp-2 italic group-hover/media:text-white/80 transition-colors">
+                                  {media.description}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
-                  {selectedDrill && selectedDrill.additionalMedia?.length > 0 && (
-                    <div className="absolute bottom-6 left-6 right-6 flex gap-4 overflow-x-auto pb-2 custom-scrollbar no-scrollbar">
-                      {selectedDrill.additionalMedia.map((mediaUrl: string, idx: number) => (
-                        <div key={idx} className="h-20 aspect-video rounded-xl overflow-hidden bg-white/10 border border-white/20 shrink-0 group/media cursor-pointer hover:border-primary transition-all">
-                          <img src={mediaUrl} className="w-full h-full object-cover opacity-60 group-hover/media:opacity-100" />
-                        </div>
-                      ))}
-                    </div>
-                   )}
-                  <div className="absolute top-6 left-6">
-                    <Badge className="bg-primary text-white border-none font-black text-[10px] uppercase h-7 px-4 shadow-lg">{selectedDrill ? 'Tactical Drill' : data.category}</Badge>
-                  </div>
                 </div>
 
-                <div className="w-full lg:w-[400px] flex flex-col bg-white border-l divide-y">
-                  <div className="p-8 space-y-4">
+                {/* Right Side: Info and Comments */}
+                <div className="w-full lg:w-[400px] flex flex-col bg-white border-l divide-y overflow-hidden">
+                  <div className="p-8 space-y-4 shrink-0 bg-white">
                     <div className="flex items-start justify-between">
                       <div className="min-w-0">
                         <h3 className="font-black text-2xl tracking-tighter uppercase leading-none truncate">{data.title || data.name}</h3>
@@ -543,21 +712,31 @@ export default function PlaybookAndGamePlayPage() {
                       </div>
                       {isStaff && (
                         <div className="flex items-center gap-2 shrink-0">
-                          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-black hover:bg-black/5 rounded-xl shrink-0" onClick={(e) => {
-                            if (selectedDrill) {
-                              openEditDrill(e, selectedDrill);
-                              setSelectedDrill(null);
-                            } else {
-                              openEditFile(e, selectedFile);
-                              setSelectedFile(null);
-                            }
-                          }}>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-muted-foreground hover:text-black hover:bg-black/5 rounded-xl shrink-0" 
+                            onClick={(e) => {
+                              if (selectedDrill) {
+                                openEditDrill(e, selectedDrill);
+                                setSelectedDrill(null);
+                              } else {
+                                openEditFile(e, selectedFile);
+                                setSelectedFile(null);
+                              }
+                            }}
+                          >
                             <Edit2 className="h-5 w-5" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50 rounded-xl shrink-0" onClick={() => { 
-                            selectedDrill ? deleteDrill(data.id) : deleteFile(data.id); 
-                            setSelectedDrill(null); setSelectedFile(null);
-                          }}>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-red-500 hover:bg-red-50 rounded-xl shrink-0" 
+                            onClick={() => { 
+                              selectedDrill ? deleteDrill(data.id) : deleteFile(data.id); 
+                              setSelectedDrill(null); setSelectedFile(null);
+                            }}
+                          >
                             <Trash2 className="h-5 w-5" />
                           </Button>
                         </div>
@@ -569,7 +748,7 @@ export default function PlaybookAndGamePlayPage() {
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-muted/5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between sticky top-0 bg-transparent z-10 pb-2">
                       <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Coach Marks</h4>
                       <Badge variant="outline" className="h-5 text-[8px] font-black uppercase border-primary/20 text-primary">{(data.comments || []).length} Points</Badge>
                     </div>
@@ -579,40 +758,123 @@ export default function PlaybookAndGamePlayPage() {
                         <div className="text-center py-10 opacity-30 italic text-xs font-black uppercase">No tactical marks archived.</div>
                       ) : (
                         (data.comments || []).map((c: any) => (
-                          <div key={c.id} className={cn("bg-white p-4 rounded-2xl shadow-sm border space-y-2 hover:ring-1 hover:ring-primary transition-all", c.timestamp != null && "cursor-pointer hover:bg-primary/5")} onClick={() => seekTo(c.timestamp)}>
-                            <div className="flex justify-between items-center">
-                              {c.timestamp != null && (
-                                <Badge className="bg-primary/5 text-primary border-none text-[8px] font-black uppercase h-5">
-                                  {Math.floor(c.timestamp / 60)}:{String(c.timestamp % 60).padStart(2, '0')}
-                                </Badge>
-                              )}
-                              <span className="text-[8px] font-black uppercase text-muted-foreground">{c.authorName}</span>
+                          <div 
+                            key={c.id} 
+                            className={cn(
+                              "bg-white p-5 rounded-3xl shadow-sm border space-y-3 group/cmt hover:ring-2 hover:ring-primary/20 transition-all",
+                              c.timestamp != null && "cursor-pointer hover:bg-primary/5"
+                            )} 
+                            onClick={() => seekTo(c.timestamp)}
+                          >
+                            <div className="flex justify-between items-start">
+                              <div className="flex items-center gap-2">
+                                {c.timestamp != null && (
+                                  <Badge className="bg-primary text-white border-none text-[8px] font-black uppercase h-5 shadow-lg shadow-primary/20">
+                                    {Math.floor(c.timestamp / 60)}:{String(c.timestamp % 60).padStart(2, '0')}
+                                  </Badge>
+                                )}
+                                <span className="text-[9px] font-black uppercase text-primary tracking-widest">{c.authorName}</span>
+                              </div>
+                              <div className="flex items-center gap-1 opacity-0 group-hover/cmt:opacity-100 transition-opacity">
+                                {(c.authorId === user?.id || isStaff) && (
+                                  <>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="h-6 w-6 text-muted-foreground hover:bg-muted/10" 
+                                      onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        setEditingCommentId(c.id); 
+                                        setEditingCommentText(c.text); 
+                                      }}
+                                    >
+                                      <Edit2 className="h-3 w-3" />
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="h-6 w-6 text-red-500 hover:bg-red-50" 
+                                      onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        handleDeleteComment(data.id, c.id, data.comments, type); 
+                                      }}
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
                             </div>
-                            <p className="text-xs font-bold leading-tight">{c.text}</p>
+                            {editingCommentId === c.id ? (
+                              <div className="space-y-2" onClick={e => e.stopPropagation()}>
+                                <Textarea 
+                                  value={editingCommentText} 
+                                  onChange={e => setEditingCommentText(e.target.value)}
+                                  className="rounded-xl border-2 font-bold text-xs min-h-[60px]"
+                                  autoFocus
+                                />
+                                <div className="flex gap-2">
+                                  <Button size="sm" className="h-7 text-[8px] font-black uppercase" onClick={() => handleEditComment(data.id, c.id, data.comments, editingCommentText, type)}>Save</Button>
+                                  <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase" onClick={() => setEditingCommentId(null)}>Cancel</Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-xs font-bold leading-relaxed">{c.text}</p>
+                            )}
+                            <p className="text-[7px] font-black text-muted-foreground uppercase">
+                              {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(c.createdAt).toLocaleDateString()}
+                            </p>
                           </div>
                         ))
                       )}
                     </div>
                   </div>
 
-                  {isStaff && (
-                    <div className="p-8 space-y-4 bg-white">
-                      <div className="flex gap-2">
-                        <Input placeholder="Time (1:24)" className="w-24 h-12 rounded-xl border-2 font-bold text-xs text-center" value={commentTime} onChange={e => setCommentTime(e.target.value)} />
-                        <Input placeholder="Tactical note..." className="flex-1 h-12 rounded-xl border-2 font-bold text-xs" value={commentText} onChange={e => setCommentText(e.target.value)} />
-                      </div>
-                      <Button className="w-full h-12 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={() => handleAddComment(data.id, data.comments, type)} disabled={!commentText}>
-                        <Bookmark className="h-4 w-4 mr-2" /> Commit Tactical Mark
+                  <div className="p-8 space-y-4 bg-white border-t shrink-0">
+                    <div className="flex gap-2">
+                      <Input 
+                        placeholder="0:00" 
+                        className="w-20 h-12 rounded-xl border-2 font-black text-xs text-center border-primary/10 shadow-inner" 
+                        value={commentTime} 
+                        onChange={e => setCommentTime(e.target.value)} 
+                      />
+                      <Input 
+                        placeholder="Add coaching cue..." 
+                        className="flex-1 h-12 rounded-xl border-2 font-bold text-xs border-primary/10 shadow-inner px-4" 
+                        value={commentText} 
+                        onChange={e => setCommentText(e.target.value)} 
+                      />
+                      <Button 
+                        variant="ghost" 
+                        className="h-12 w-12 rounded-xl bg-muted/30 p-0 text-muted-foreground hover:bg-black/5" 
+                        onClick={() => {
+                          if (videoRef.current) {
+                            const s = Math.floor(videoRef.current.currentTime);
+                            setCommentTime(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+                          } else {
+                            toast({ title: "YouTube Timestamp", description: "For YouTube, please enter the time manually (e.g. 1:24)" });
+                          }
+                        }}
+                        title="Capture timestamp from video"
+                      >
+                        <Clock className="h-4 w-4" />
                       </Button>
                     </div>
-                  )}
+                    <Button 
+                      className="w-full h-12 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-black/5 bg-black text-white hover:scale-[1.02] transition-all" 
+                      onClick={() => handleAddComment(data.id, data.comments, type)} 
+                      disabled={!commentText}
+                    >
+                      <Bookmark className="h-3 w-3 mr-2" /> Publish Mark
+                    </Button>
+                  </div>
                 </div>
               </div>
             );
           })()}
         </DialogContent>
       </Dialog>
-    </div>
-    </div>
+        </div>
+      </div>
   );
 }

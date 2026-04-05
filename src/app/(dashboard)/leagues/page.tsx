@@ -108,7 +108,8 @@ function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { fa
 
 function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: League, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
   const { user: authUser } = useUser();
-  const { db, updateLeagueSchedule, hasFeature } = useTeam();
+  const { db, updateLeagueSchedule, hasFeature, isSchoolMode } = useTeam();
+  const leagueLabel = isSchoolMode ? 'Program' : 'League';
   const [isProcessing, setIsProcessing] = useState(false);
   const [config, setConfig] = useState({
     startDate: format(new Date(), 'yyyy-MM-dd'),
@@ -150,7 +151,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     }
 
     if (league.requiredSquads && leagueTeams.length < league.requiredSquads) {
-      const confirmProceed = window.confirm(`League requires ${league.requiredSquads} squads, but only ${leagueTeams.length} are enrolled. The generated schedule will be incomplete. Proceed anyway?`);
+      const confirmProceed = window.confirm(`${leagueLabel} requires ${league.requiredSquads} squads, but only ${leagueTeams.length} are enrolled. The generated schedule will be incomplete. Proceed anyway?`);
       if (!confirmProceed) return;
     }
     setIsProcessing(true);
@@ -217,7 +218,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
               <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Settings className="h-6 w-6" /></div>
               <div>
                 <DialogTitle className="text-3xl font-black uppercase tracking-tight">Season Architect</DialogTitle>
-                <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Precision League Deployment Engine</DialogDescription>
+                <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Precision {leagueLabel} Deployment Engine</DialogDescription>
               </div>
             </div>
           </DialogHeader>
@@ -229,11 +230,11 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase ml-1">Season Start</Label>
-                    <Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 font-black px-4 [&::-webkit-calendar-picker-indicator]:p-1" />
+                    <Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 font-black px-4 pr-10 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:mr-1" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase ml-1">Season End</Label>
-                    <Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 font-black px-4 [&::-webkit-calendar-picker-indicator]:p-1" />
+                    <Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 font-black px-4 pr-10 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:mr-1" />
                   </div>
                 </div>
                 <div className="space-y-3">
@@ -343,7 +344,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                     <div className="bg-primary p-2 rounded-xl"><CalendarIcon className="h-4 w-4 text-white" /></div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-primary">Blackout Calendar</p>
                   </div>
-                  <p className="text-[10px] font-medium text-white/60 leading-relaxed italic">Select dates where no league matches should be scheduled.</p>
+                  <p className="text-[10px] font-medium text-white/60 leading-relaxed italic">Select dates where no {leagueLabel.toLowerCase()} matches should be scheduled.</p>
                   <div className="bg-white rounded-2xl p-2 text-black flex justify-center">
                     <Calendar 
                       mode="multiple" 
@@ -364,7 +365,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                       <ShieldAlert className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
                       <div>
                         <p className="text-[9px] font-black uppercase text-red-600 leading-tight">Incomplete Deployment Warning</p>
-                        <p className="text-[10px] font-bold text-red-500 leading-tight mt-1">League requires {league.requiredSquads} squads. Current enrollment ({leagueTeams.length}) will result in an undersized season.</p>
+                        <p className="text-[10px] font-bold text-red-500 leading-tight mt-1">{leagueLabel} requires {league.requiredSquads} squads. Current enrollment ({leagueTeams.length}) will result in an undersized season.</p>
                       </div>
                     </div>
                   )}
@@ -781,12 +782,15 @@ export default function LeaguesPage() {
   const { 
     activeTeam, createLeague, isStaff, isPro, purchasePro, 
     teams, removeTeamFromLeague, updateLeagueTeamDetails,
-    isPrimaryClubAuthority, updateLeaguePin
+    isPrimaryClubAuthority, updateLeaguePin, isSchoolMode
   } = useTeam();
   const db = useFirestore();
   const { user: authUser, isAuthResolved } = useUser();
   const router = useRouter();
   
+  const leagueLabel = isSchoolMode ? 'Program' : 'League';
+  const leaguesLabel = isSchoolMode ? 'Programs' : 'Leagues';
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSeasonOpen, setIsSeasonOpen] = useState(false);
   const [isManualGameOpen, setIsManualGameOpen] = useState(false);
@@ -1060,7 +1064,7 @@ export default function LeaguesPage() {
         blackoutDaysOfWeek: editLeagueForm.blackoutDaysOfWeek
       });
       setIsEditLeagueOpen(false);
-      toast({ title: "League Profile Updated" });
+      toast({ title: `${leagueLabel} Profile Updated` });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: 'destructive' });
     } finally {
@@ -1074,7 +1078,7 @@ export default function LeaguesPage() {
     try {
       await createLeague(leagueName);
       setIsCreateOpen(false); setLeagueName('');
-      toast({ title: "League Established" });
+      toast({ title: `${leagueLabel} Established` });
     } finally { setIsProcessing(false); }
   };
 
@@ -1125,11 +1129,11 @@ export default function LeaguesPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Master Hub</Badge>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Leagues</h1>
+          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">{leaguesLabel}</h1>
         </div>
         {!activeLeague && isPrimaryClubAuthority && (
           <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
-            <Plus className="h-5 w-5 mr-2" /> Launch League Architect
+            <Plus className="h-5 w-5 mr-2" /> Launch {leagueLabel} Architect
           </Button>
         )}
       </div>
@@ -1175,7 +1179,7 @@ export default function LeaguesPage() {
                 onClick={() => setIsCreateOpen(true)}
               >
                 <Plus className="h-12 w-12 text-muted-foreground group-hover:text-primary transition-all mb-4" />
-                <p className="text-xs font-black uppercase text-muted-foreground group-hover:text-primary">New League Hub</p>
+                <p className="text-xs font-black uppercase text-muted-foreground group-hover:text-primary">New {leagueLabel} Hub</p>
               </Card>
             </div>
           )}
@@ -1374,7 +1378,7 @@ export default function LeaguesPage() {
                                     title: p.name, 
                                     signer: p.name, 
                                     signedAt: p.signedAt!, 
-                                    waiverText: 'Official League Participation Waiver',
+                                    waiverText: `Official ${leagueLabel} Participation Waiver`,
                                     registrationId: (activeLeague as any).id || selectedLeagueId || '',
                                     answers: { name: p.name, email: p.email, phone: p.phone, status: p.status, type: 'individual' }, 
                                     type: 'individual' 
@@ -1509,7 +1513,7 @@ export default function LeaguesPage() {
           <div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl"><Shield className="h-10 w-10 text-primary opacity-20" /></div>
           <div className="space-y-2">
             <h3 className="text-2xl font-black uppercase">No Competitive Enrollment</h3>
-            <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto leading-relaxed">Initialize your own league architect to begin the competitive season.</p>
+            <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto leading-relaxed">Initialize your own {leagueLabel.toLowerCase()} architect to begin the competitive season.</p>
           </div>
           {isStaff && (
             <Button onClick={() => setIsCreateOpen(true)} variant="outline" className="rounded-full px-10 h-12 border-2 font-black uppercase text-xs">Initialize Hub</Button>
@@ -1521,9 +1525,9 @@ export default function LeaguesPage() {
         <DialogContent className="rounded-[2.5rem] sm:max-w-md p-0 overflow-hidden bg-white text-foreground">
           <div className="h-2 bg-primary w-full" />
           <div className="p-10 space-y-8">
-            <DialogHeader><DialogTitle className="text-3xl font-black uppercase">League Architect</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle className="text-3xl font-black uppercase">{leagueLabel} Architect</DialogTitle></DialogHeader>
             <div className="space-y-4">
-              <Label className="text-[10px] font-black uppercase">League Title</Label>
+              <Label className="text-[10px] font-black uppercase">{leagueLabel} Title</Label>
               <Input placeholder="e.g. State Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl border-2 font-black" />
             </div>
             <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreateLeague} disabled={isProcessing}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Hub"}</Button></DialogFooter>
@@ -1614,7 +1618,7 @@ export default function LeaguesPage() {
           <div className="h-3 bg-black w-full" />
           <div className="p-8 lg:p-12 space-y-8">
             <DialogHeader>
-              <DialogTitle className="text-3xl font-black uppercase tracking-tight">League Profile</DialogTitle>
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight">{leagueLabel} Profile</DialogTitle>
               <DialogDescription className="font-bold text-[10px] uppercase tracking-widest mt-2">{activeLeague?.name} • Public Context</DialogDescription>
             </DialogHeader>
             <div className="space-y-6">
@@ -1632,7 +1636,7 @@ export default function LeaguesPage() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">League Name</Label>
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">{leagueLabel} Name</Label>
                     <Input value={editLeagueForm.name} onChange={e => setEditLeagueForm({...editLeagueForm, name: e.target.value})} className="h-12 rounded-xl border-2 font-black" />
                   </div>
                   <div className="space-y-2">
@@ -1642,16 +1646,16 @@ export default function LeaguesPage() {
                 </div>
                <div className="space-y-2">
                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Description</Label>
-                 <Textarea value={editLeagueForm.description} onChange={e => setEditLeagueForm({...editLeagueForm, description: e.target.value})} className="rounded-2xl border-2 font-medium min-h-[100px]" placeholder="Detailed description of the league..." />
+                 <Textarea value={editLeagueForm.description} onChange={e => setEditLeagueForm({...editLeagueForm, description: e.target.value})} className="rounded-2xl border-2 font-medium min-h-[100px]" placeholder={`Detailed description of the ${leagueLabel.toLowerCase()}...`} />
                </div>
                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                  <div className="space-y-2 col-span-2 md:col-span-1">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label>
-                    <Input type="date" value={editLeagueForm.startDate} onChange={e => setEditLeagueForm({...editLeagueForm, startDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold px-4 [&::-webkit-calendar-picker-indicator]:p-1" />
+                    <Input type="date" value={editLeagueForm.startDate} onChange={e => setEditLeagueForm({...editLeagueForm, startDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold px-4 [&::-webkit-calendar-picker-indicator]:p-1 [&::-webkit-calendar-picker-indicator]:mr-3 sm:[&::-webkit-calendar-picker-indicator]:mr-2" />
                   </div>
                   <div className="space-y-2 col-span-2 md:col-span-1">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label>
-                    <Input type="date" value={editLeagueForm.endDate} onChange={e => setEditLeagueForm({...editLeagueForm, endDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold px-4 [&::-webkit-calendar-picker-indicator]:p-1" />
+                    <Input type="date" value={editLeagueForm.endDate} onChange={e => setEditLeagueForm({...editLeagueForm, endDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold px-4 [&::-webkit-calendar-picker-indicator]:p-1 [&::-webkit-calendar-picker-indicator]:mr-3 sm:[&::-webkit-calendar-picker-indicator]:mr-2" />
                   </div>
                  <div className="space-y-2 col-span-2 md:col-span-1">
                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Ages / Divisions</Label>
@@ -1688,7 +1692,7 @@ export default function LeaguesPage() {
             </div>
             <DialogFooter className="pt-6">
               <Button disabled={isProcessing} className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSaveLeague}>
-                {isProcessing ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Commit League Profile'}
+                {isProcessing ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : `Commit ${leagueLabel} Profile`}
               </Button>
             </DialogFooter>
           </div>

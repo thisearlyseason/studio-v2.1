@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useTeam, TeamDocument, Member, PlayerProfile, RecruitingProfile, AthleticMetrics, PlayerStat, PlayerEvaluation, RecruitingContact, PlayerVideo, VideoComment, TeamIncident } from '@/components/providers/team-provider';
+import { EmailExportDialog } from '@/components/team/EmailExportDialog';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { 
   Plus, 
@@ -1624,8 +1625,12 @@ function SafetyHub() {
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function CoachesCornerPage() {
-  const { activeTeam, isStaff, isPro, isStarter, createTeamDocument, updateTeamDocument, db, members, createAlert, isSchoolMode, user, teams } = useTeam();
+  const { activeTeam, isStaff, isPro, isStarter, createTeamDocument, updateTeamDocument, db, members, createAlert, isSchoolMode, user, teams, getLeagueMembers } = useTeam();
   
+  const isPartOfLeague = useMemo(() => {
+    return activeTeam?.leagueIds && Object.keys(activeTeam.leagueIds).length > 0;
+  }, [activeTeam]);
+
   // School-wide staff logic: prioritize schoolId filtering if available, fallback to ownerUserId
   const currentSchoolId = activeTeam?.schoolId || (activeTeam?.type === 'school' ? activeTeam?.id : null);
   
@@ -1707,8 +1712,16 @@ export default function CoachesCornerPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest">Command Hub</Badge>
-          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
             <h1 className="text-4xl font-black uppercase tracking-tight text-foreground">Coaches Corner</h1>
+            {isStaff && activeTeam && (
+              <EmailExportDialog 
+                members={members} 
+                teamName={activeTeam.name} 
+                getLeagueMembers={getLeagueMembers}
+                leagueIds={activeTeam.leagueIds}
+              />
+            )}
             <Badge className={cn(
               "rounded-xl font-black uppercase text-[10px] px-3 h-7 border-none",
               isPro ? "bg-black text-white shadow-xl shadow-black/10" : "bg-primary text-white shadow-lg shadow-primary/20"
@@ -1831,7 +1844,7 @@ export default function CoachesCornerPage() {
                       <div className="flex items-center justify-between mb-4">
                         <div className="bg-primary/5 p-3 rounded-2xl shadow-sm border"><CheckCircle2 className={cn("h-5 w-5", isActive ? "text-primary" : "text-muted-foreground/30")} /></div>
                         <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => setEditingWaiver(activeDoc || { ...proto, content: 'Enter legal text here...', isActive: true, assignedTo: ['all'] } as TeamDocument)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => setEditingWaiver(activeDoc || { ...proto, content: '', isActive: true, assignedTo: ['all'] } as TeamDocument)}>
                             <Edit3 className="h-4 w-4" />
                           </Button>
                           <Switch checked={isActive} onCheckedChange={async (v) => {
@@ -1843,7 +1856,7 @@ export default function CoachesCornerPage() {
                               ...proto, 
                               isActive: v, 
                               assignedTo: ['all'], 
-                              content: existing?.content || (proto.id === 'default_universal_hub' ? defaultContent : 'Enter legal text here...') 
+                              content: existing?.content || (proto.id === 'default_universal_hub' ? defaultContent : '') 
                             });
                             
                             if (v) {

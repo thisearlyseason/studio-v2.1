@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTeam, Member, TeamDocument } from '@/components/providers/team-provider';
+import { EmailExportDialog } from '@/components/team/EmailExportDialog';
 import { 
   Dialog, 
   DialogContent, 
@@ -87,7 +88,7 @@ const POSITION_OPTIONS = [
 ];
 
 export default function RosterPage() {
-  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro } = useTeam();
+  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro, getLeagueMembers } = useTeam();
   const db = useFirestore();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
@@ -100,6 +101,10 @@ export default function RosterPage() {
   const [isEditPositionOpen, setIsEditPositionOpen] = useState(false);
   const [newPosition, setNewPosition] = useState('');
   const [customPosition, setCustomPosition] = useState('');
+
+  const isPartOfLeague = useMemo(() => {
+    return activeTeam?.leagueIds && Object.keys(activeTeam.leagueIds).length > 0;
+  }, [activeTeam]);
 
   // Fetch team protocols to see what's "turned on"
   const docsQuery = useMemoFirebase(() => (db && activeTeam?.id) ? query(collection(db, 'teams', activeTeam.id, 'documents')) : null, [db, activeTeam?.id]);
@@ -315,6 +320,14 @@ export default function RosterPage() {
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Squad Directory & Intelligence</p>
           </div>
           <div className="flex gap-2">
+            {isStaff && (
+              <EmailExportDialog 
+                members={members} 
+                teamName={activeTeam.name} 
+                getLeagueMembers={getLeagueMembers}
+                leagueIds={activeTeam.leagueIds}
+              />
+            )}
             {isStaff && (
               <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
                 <DialogTrigger asChild>
