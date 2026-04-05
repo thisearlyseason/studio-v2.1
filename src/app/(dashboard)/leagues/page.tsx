@@ -60,6 +60,7 @@ import { collection, query, orderBy, where, doc, updateDoc, limit } from 'fireba
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { generateLeagueSchedule } from '@/lib/scheduler-utils';
+import { addSquadBranding } from '@/lib/pdf-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format, isSameDay, startOfDay, endOfDay } from 'date-fns';
 import { DateRange } from 'react-day-picker';
@@ -885,10 +886,9 @@ export default function LeaguesPage() {
   const exportStandings = useCallback(() => {
     if (!activeLeague || sortedStandings.length === 0) return;
     const doc = new jsPDF();
+    addSquadBranding(doc, "OFFICIAL STANDINGS", `${activeLeague.name.toUpperCase()} COMPETITIVE HUB`);
+    
     const pageWidth = doc.internal.pageSize.getWidth();
-    doc.setFillColor(0, 0, 0); doc.rect(0, 0, pageWidth, 50, 'F');
-    doc.setTextColor(255, 255, 255); doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text("OFFICIAL STANDINGS", 20, 30);
-    doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.text(`${activeLeague.name.toUpperCase()} COMPETITIVE HUB`, 20, 38);
     doc.setTextColor(0, 0, 0); doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text("COMPETITIVE LOG: " + activeLeague.id.slice(-8), 20, 70);
     doc.setFillColor(245, 245, 245); doc.rect(20, 80, pageWidth - 40, 10, 'F');
     doc.setTextColor(100, 100, 100); doc.setFontSize(8); doc.text("RANK", 25, 86.5); doc.text("SQUAD", 45, 86.5); doc.text("WINS", 110, 86.5); doc.text("LOSSES", 135, 86.5); doc.text("POINTS", pageWidth - 30, 86.5, { align: 'right' });
@@ -905,10 +905,9 @@ export default function LeaguesPage() {
     const recruits = Object.entries(activeLeague.individualRecruits);
     if (recruits.length === 0) return;
     const doc = new jsPDF();
+    addSquadBranding(doc, "INSTITUTIONAL PERSONNEL LOG", "PERSONNEL & PORTAL PIPELINE");
+    
     const pageWidth = doc.internal.pageSize.getWidth();
-    doc.setFillColor(30,30,30); doc.rect(0, 0, pageWidth, 50, 'F');
-    doc.setTextColor(255, 255, 255); doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text("INSTITUTIONAL PERSONNEL LOG", 20, 30);
-    doc.setFontSize(9); doc.text("PERSONNEL & PORTAL PIPELINE", 20, 38);
     doc.setTextColor(0, 0, 0); doc.setFontSize(14); doc.text(`Participating Members: ${recruits.length}`, 20, 70);
     doc.setFillColor(245, 245, 245); doc.rect(20, 80, pageWidth - 40, 10, 'F');
     doc.setTextColor(100, 100, 100); doc.setFontSize(8); doc.text("NAME", 25, 86.5); doc.text("EMAIL", 85, 86.5); doc.text("STATUS", 150, 86.5); doc.text("VERIFIED", pageWidth - 25, 86.5, { align: 'right' });
@@ -922,13 +921,9 @@ export default function LeaguesPage() {
 
   const exportWaiver = useCallback((waiver: LeagueArchiveWaiver) => {
     const doc = new jsPDF();
+    addSquadBranding(doc, "WAIVER & AGREEMENT", "OFFICIAL COMPETITIVE RECORD");
+    
     const pageWidth = doc.internal.pageSize.getWidth();
-    
-    // Header
-    doc.setFillColor(0, 0, 0); doc.rect(0, 0, pageWidth, 40, 'F');
-    doc.setTextColor(255, 255, 255); doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.text("OFFICIAL WAIVER & AGREEMENT", 20, 25);
-    
-    // Content
     doc.setTextColor(0, 0, 0); doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.text(`DOCUMENT ID: ${waiver.id}`, 20, 55);
     doc.setFont("helvetica", "normal"); doc.text(`SIGNED AT: ${format(new Date(waiver.signedAt), 'MMMM d, yyyy @ h:mm a')}`, 20, 62);
     doc.text(`TYPE: ${waiver.type.toUpperCase()}`, 20, 69);
@@ -955,7 +950,11 @@ export default function LeaguesPage() {
       doc.text(splitValue, 65, y);
       
       y += (splitValue.length * 5) + 3;
-      if (y > 270) { doc.addPage(); y = 20; }
+      if (y > 270) { 
+        doc.addPage(); 
+        addSquadBranding(doc, "WAIVER & AGREEMENT", "OFFICIAL COMPETITIVE RECORD");
+        y = 60; 
+      }
     });
     
     y = Math.min(y + 15, 275);
@@ -973,12 +972,8 @@ export default function LeaguesPage() {
     
     waivers.forEach((waiver, index) => {
       if (index > 0) doc.addPage();
+      addSquadBranding(doc, "WAIVER ARCHIVE", waiver.title.toUpperCase());
       
-      // Header
-      doc.setFillColor(0, 0, 0); doc.rect(0, 0, pageWidth, 40, 'F');
-      doc.setTextColor(255, 255, 255); doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.text("OFFICIAL WAIVER & AGREEMENT", 20, 25);
-      
-      // Content
       doc.setTextColor(0, 0, 0); doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.text(`DOCUMENT ID: ${waiver.id}`, 20, 55);
       doc.setFont("helvetica", "normal"); doc.text(`SIGNED AT: ${format(new Date(waiver.signedAt), 'MMMM d, yyyy @ h:mm a')}`, 20, 62);
       doc.text(`TYPE: ${waiver.type.toUpperCase()}`, 20, 69);
@@ -1001,7 +996,11 @@ export default function LeaguesPage() {
         const splitValue = doc.splitTextToSize(String(cleanValue), pageWidth - 85);
         doc.text(splitValue, 65, y);
         y += (splitValue.length * 5) + 3;
-        if (y > 270) { doc.addPage(); y = 20; }
+        if (y > 270) { 
+          doc.addPage(); 
+          addSquadBranding(doc, "WAIVER ARCHIVE", waiver.title.toUpperCase());
+          y = 60; 
+        }
       });
       
       y = Math.min(y + 15, 275);

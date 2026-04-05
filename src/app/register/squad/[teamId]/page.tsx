@@ -63,9 +63,21 @@ function RapidJoinForm() {
     return age < 18;
   }, [formData.dateOfBirth]);
 
-  const totalSteps = useMemo(() => {
-    return isUnder18 ? 3 : 2; // Identity -> Guardian (if <18) -> Compliance
-  }, [isUnder18]);
+  const activeWaiver = protocols?.find(p => p.type === 'waiver' || p.id.startsWith('default_')) || protocols?.[0];
+
+  const activeSteps = useMemo(() => {
+    const steps = [{ id: 'identity', label: 'Personal Data', icon: Users }];
+    if (isUnder18) {
+      steps.push({ id: 'guardian', label: 'Guardian Info', icon: ShieldCheck });
+    }
+    if (activeWaiver) {
+      steps.push({ id: 'compliance', label: 'Compliance', icon: FileSignature });
+    }
+    return steps;
+  }, [isUnder18, activeWaiver]);
+
+  const totalSteps = activeSteps.length;
+  const currentStepId = useMemo(() => activeSteps[step - 1]?.id || 'identity', [activeSteps, step]);
 
   useEffect(() => {
     if (user) {
@@ -73,17 +85,14 @@ function RapidJoinForm() {
     }
   }, [user]);
 
-  const activeWaiver = protocols?.find(p => p.type === 'waiver' || p.id.startsWith('default_')) || protocols?.[0];
-
-  const handleNextStep = () => {
-    if (step === 1 && isUnder18) {
-      setStep(2);
-    } else if (step === 1 && !isUnder18) {
-      setStep(2);
-    } else if (step === 2 && isUnder18) {
-      setStep(3);
+  const handleNextStep = (e?: React.MouseEvent) => {
+    if (step < totalSteps) {
+      setStep(step + 1);
     } else {
-      setStep(prev => Math.min(prev + 1, totalSteps));
+      // If we're at the last step, we should trigger form submission
+      // Since our button is type="button", we call handleSubmit manually
+      const mockEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(mockEvent);
     }
   };
 
@@ -95,7 +104,7 @@ function RapidJoinForm() {
     e.preventDefault();
     if (!team || isSubmitting) return;
 
-    if (activeWaiver && (!waiverAgreed || !signature.trim())) {
+    if (activeWaiver && (currentStepId === 'compliance') && (!waiverAgreed || !signature.trim())) {
       toast({ title: "Compliance Required", description: "Please sign the required documentation.", variant: "destructive" });
       return;
     }

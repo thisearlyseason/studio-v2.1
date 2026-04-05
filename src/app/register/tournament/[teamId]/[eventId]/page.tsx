@@ -80,32 +80,50 @@ function RegistrationForm() {
     return age < 18;
   }, [answers['dateOfBirth'], answers['dob']]);
 
-  const totalSteps = useMemo(() => {
+  const activeSteps = useMemo(() => {
+    if (!config) return [];
+    
     if (isPlayerPipeline) {
+      const steps = [{ id: 'identity', label: 'Identity', icon: Target }];
+      
       const hasGuardianFields = formSchema.some(f => f.step === 'guardian');
+      if (hasGuardianFields && isUnder18) {
+        steps.push({ id: 'guardian', label: 'Guardian', icon: Users });
+      }
+      
       const hasTeamCodeFields = formSchema.some(f => f.step === 'team_code');
-      let steps = 1; // Identity
-      if (hasGuardianFields && isUnder18) steps++; // Guardian
-      if (hasTeamCodeFields) steps++; // Team Code
-      steps++; // Compliance
+      if (hasTeamCodeFields) {
+        steps.push({ id: 'team_code', label: 'Team Code', icon: Zap });
+      }
+      
+      const hasCompliance = (config.require_default_waiver || 
+                             (config.custom_waiver_text && config.custom_waiver_text.trim() !== '') || 
+                             (config.team_waivers_content && (config.team_waivers_content?.length ?? 0) > 0));
+      if (hasCompliance) {
+        steps.push({ id: 'compliance', label: 'Compliance', icon: FileSignature });
+      }
+      return steps;
+    } else {
+      // Team Pipeline
+      const steps = [{ id: 'details', label: 'Team Details', icon: ShieldCheck }];
+      
+      const hasAdditionalFields = formSchema.some(f => f.step === 'additional' || !f.step);
+      if (hasAdditionalFields) {
+        steps.push({ id: 'additional', label: 'Additional Info', icon: Sparkles });
+      }
+      
+      const hasCompliance = (config.require_default_waiver || 
+                             (config.custom_waiver_text && config.custom_waiver_text.trim() !== '') || 
+                             (config.team_waivers_content && (config.team_waivers_content?.length ?? 0) > 0));
+      if (hasCompliance) {
+        steps.push({ id: 'compliance', label: 'Compliance', icon: FileSignature });
+      }
       return steps;
     }
-    return 3; // Team: Team Details, Additional Info, Compliance
-  }, [isPlayerPipeline, formSchema, isUnder18]);
+  }, [config, isPlayerPipeline, formSchema, isUnder18]);
 
-  const currentStepInfo = useMemo(() => {
-    if (isPlayerPipeline) {
-      let stepNum = 1;
-      if (step === stepNum++) return { label: 'Identity', icon: Target };
-      if (isUnder18 && formSchema.some(f => f.step === 'guardian') && step === stepNum++) return { label: 'Guardian', icon: Users };
-      if (formSchema.some(f => f.step === 'team_code') && step === stepNum++) return { label: 'Team Code', icon: Zap };
-      return { label: 'Compliance', icon: FileSignature };
-    }
-    const stepLabels = ['Team Details', 'Additional Info', 'Compliance'];
-    const stepIcons = [ShieldCheck, Sparkles, FileSignature];
-    const idx = Math.min(step - 1, 2);
-    return { label: stepLabels[idx], icon: stepIcons[idx] };
-  }, [step, isPlayerPipeline, isUnder18, formSchema]);
+  const totalSteps = activeSteps.length;
+  const currentStepInfo = useMemo(() => activeSteps[step - 1] || activeSteps[0], [activeSteps, step]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,7 +285,7 @@ function RegistrationForm() {
               </div>
               <div>
                 <CardTitle className="text-3xl font-black uppercase tracking-tighter">
-                  {isPlayerPipeline ? currentStepInfo.label : (step === 1 ? 'Team Details' : step === 2 ? 'Additional Info' : 'Compliance')}
+                  {currentStepInfo.label}
                 </CardTitle>
                 <CardDescription className="text-[10px] font-black uppercase tracking-[0.2em] mt-1">Step {step} of {totalSteps}</CardDescription>
               </div>
@@ -283,79 +301,50 @@ function RegistrationForm() {
             <CardContent className="p-10 lg:p-12 space-y-10 flex-1">
               <ScrollArea className="h-full pr-4">
                 <div className="space-y-10 animate-in fade-in slide-in-from-right-4 duration-500">
-                  {isPlayerPipeline ? (
-                    <>
-                      {step === 1 && (
-                        <div className="space-y-8">
-                          <div className="space-y-3">
-                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Full Name <span className="text-primary">*</span></Label>
-                            <Input 
-                              placeholder="e.g. Marcus Thompson" 
-                              value={answers['fullName'] || ''} 
-                              onChange={e => handleInputChange('fullName', e.target.value)} 
-                              className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all shadow-inner" 
-                              required
-                            />
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-3">
-                              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Email <span className="text-primary">*</span></Label>
-                              <Input 
-                                type="email"
-                                placeholder="player@email.com" 
-                                value={answers['email'] || ''} 
-                                onChange={e => handleInputChange('email', e.target.value)} 
-                                className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
-                                required
-                              />
-                            </div>
-                            <div className="space-y-3">
-                              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth <span className="text-primary">*</span></Label>
-                              <Input 
-                                type="date"
-                                value={answers['dateOfBirth'] || ''} 
-                                onChange={e => handleInputChange('dateOfBirth', e.target.value)} 
-                                className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
-                                required
-                              />
-                            </div>
-                          </div>
-                          {formSchema.filter(f => f.step === 'identity' || !f.step).map(field => (
-                            <div key={field.id} className="space-y-3">
-                              {field.type === 'header' ? (
-                                <div className="pt-6 border-b-2 pb-2 mb-4 text-primary"><h3 className="font-black text-xl uppercase tracking-tighter">{field.label}</h3></div>
-                              ) : (
-                                <>
-                                  <div className="flex justify-between items-end px-1"><Label className="text-[10px] font-black uppercase tracking-widest">{field.label} {field.required && <span className="text-primary">*</span>}</Label></div>
-                                  {field.type === 'short_text' && (
-                                    <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-lg shadow-inner" />
-                                  )}
-                                  {field.type === 'dropdown' && (
-                                    <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
-                                      <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select..." /></SelectTrigger>
-                                      <SelectContent className="rounded-2xl">
-                                        {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold text-[10px] uppercase">{opt}</SelectItem>)}
-                                      </SelectContent>
-                                    </Select>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          ))}
+                  {currentStepInfo.id === 'identity' && (
+                    <div className="space-y-8">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Full Name <span className="text-primary">*</span></Label>
+                        <Input 
+                          placeholder="e.g. Marcus Thompson" 
+                          value={answers['fullName'] || ''} 
+                          onChange={e => handleInputChange('fullName', e.target.value)} 
+                          className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all shadow-inner" 
+                          required
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-3">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Email <span className="text-primary">*</span></Label>
+                          <Input 
+                            type="email"
+                            placeholder="player@email.com" 
+                            value={answers['email'] || ''} 
+                            onChange={e => handleInputChange('email', e.target.value)} 
+                            className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
+                            required
+                          />
                         </div>
-                      )}
-
-                      {step === 2 && isUnder18 && formSchema.some(f => f.step === 'guardian') && (
-                        <div className="space-y-8">
-                          <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border-2 border-amber-200">
-                            <ShieldCheck className="h-6 w-6 text-amber-600" />
-                            <p className="text-sm font-bold text-amber-800">Guardian Information Required (Under 18)</p>
-                          </div>
-                          {formSchema.filter(f => f.step === 'guardian').map(field => (
-                            <div key={field.id} className="space-y-3">
+                        <div className="space-y-3">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth <span className="text-primary">*</span></Label>
+                          <Input 
+                            type="date"
+                            value={answers['dateOfBirth'] || ''} 
+                            onChange={e => handleInputChange('dateOfBirth', e.target.value)} 
+                            className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
+                            required
+                          />
+                        </div>
+                      </div>
+                      {formSchema.filter(f => f.step === 'identity' || !f.step).map(field => (
+                        <div key={field.id} className="space-y-3">
+                          {field.type === 'header' ? (
+                            <div className="pt-6 border-b-2 pb-2 mb-4 text-primary"><h3 className="font-black text-xl uppercase tracking-tighter">{field.label}</h3></div>
+                          ) : (
+                            <>
                               <div className="flex justify-between items-end px-1"><Label className="text-[10px] font-black uppercase tracking-widest">{field.label} {field.required && <span className="text-primary">*</span>}</Label></div>
                               {field.type === 'short_text' && (
-                                <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all shadow-inner" />
+                                <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-lg shadow-inner" />
                               )}
                               {field.type === 'dropdown' && (
                                 <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
@@ -365,166 +354,189 @@ function RegistrationForm() {
                                   </SelectContent>
                                 </Select>
                               )}
-                            </div>
-                          ))}
+                            </>
+                          )}
                         </div>
-                      )}
-
-                      {step === 3 && formSchema.some(f => f.step === 'team_code') && (
-                        <div className="space-y-8">
-                          <div className="space-y-3">
-                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Recruit Code <span className="text-primary">*</span></Label>
-                            <Input 
-                              placeholder="Enter code from coach" 
-                              value={answers['teamCode'] || ''} 
-                              onChange={e => handleInputChange('teamCode', e.target.value)} 
-                              className="h-16 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-xl shadow-inner text-center uppercase tracking-widest" 
-                              required
-                            />
-                          </div>
-                          {formSchema.filter(f => f.step === 'team_code').map(field => (
-                            <div key={field.id} className="space-y-3">
-                              <div className="flex justify-between items-end px-1"><Label className="text-[10px] font-black uppercase tracking-widest">{field.label} {field.required && <span className="text-primary">*</span>}</Label></div>
-                              {field.type === 'short_text' && (
-                                <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all shadow-inner" />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {step === 1 && (
-                        <div className="space-y-8">
-                          <div className="space-y-3">
-                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Official Team Name <span className="text-primary">*</span></Label>
-                            <Input 
-                              placeholder="e.g. Phoenix Elite Academy" 
-                              value={answers['teamName'] || ''} 
-                              onChange={e => handleInputChange('teamName', e.target.value)} 
-                              className="h-16 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-xl shadow-inner" 
-                              required
-                            />
-                          </div>
-                          <div className="space-y-3">
-                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Origin Organization / City</Label>
-                            <Input 
-                              placeholder="e.g. Chicago, IL" 
-                              value={answers['teamOrigin'] || ''} 
-                              onChange={e => handleInputChange('teamOrigin', e.target.value)} 
-                              className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
-                            />
-                          </div>
-                          <div className="space-y-3">
-                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Competitive Experience</Label>
-                            <Select value={answers['experience'] || ''} onValueChange={v => handleInputChange('experience', v)}>
-                              <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select Level..." /></SelectTrigger>
-                              <SelectContent className="rounded-2xl">
-                                <SelectItem value="Elite" className="font-bold text-[10px] uppercase">Elite / National</SelectItem>
-                                <SelectItem value="Advanced" className="font-bold text-[10px] uppercase">Advanced / Regional</SelectItem>
-                                <SelectItem value="Intermediate" className="font-bold text-[10px] uppercase">Intermediate</SelectItem>
-                                <SelectItem value="Developmental" className="font-bold text-[10px] uppercase">Developmental</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      )}
-
-                      {step === 2 && (
-                        <div className="space-y-8">
-                          <div className="space-y-3">
-                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Head Coach Full Name <span className="text-primary">*</span></Label>
-                            <Input 
-                              placeholder="e.g. Marcus Thompson" 
-                              value={answers['name'] || ''} 
-                              onChange={e => handleInputChange('name', e.target.value)} 
-                              className="h-16 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-xl shadow-inner" 
-                              required
-                            />
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-3">
-                              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Direct Email <span className="text-primary">*</span></Label>
-                              <Input 
-                                type="email"
-                                placeholder="coach@team.com" 
-                                value={answers['email'] || ''} 
-                                onChange={e => handleInputChange('email', e.target.value)} 
-                                className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
-                                required
-                              />
-                            </div>
-                            <div className="space-y-3">
-                              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Cell Phone Number</Label>
-                              <Input 
-                                type="tel"
-                                placeholder="(555) 000-0000" 
-                                value={answers['phone'] || ''} 
-                                onChange={e => handleInputChange('phone', e.target.value)} 
-                                className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
-                              />
-                            </div>
-                          </div>
-                          {formSchema.filter(f => f.step === 'additional' || !f.step).map(field => (
-                            <div key={field.id} className="space-y-3">
-                              {field.type === 'header' ? (
-                                <div className="pt-6 border-b-2 pb-2 mb-4 text-primary"><h3 className="font-black text-xl uppercase tracking-tighter">{field.label}</h3></div>
-                              ) : (
-                                <>
-                                  <div className="flex justify-between items-end px-1"><Label className="text-[10px] font-black uppercase tracking-widest">{field.label} {field.required && <span className="text-primary">*</span>}</Label></div>
-                                  {field.type === 'short_text' && (
-                                    <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-lg shadow-inner" />
-                                  )}
-                                  {field.type === 'long_text' && (
-                                    <Textarea required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="rounded-2xl min-h-[120px] border-2 font-medium bg-muted/5 focus:bg-white transition-all p-5 shadow-inner" />
-                                  )}
-                                  {field.type === 'dropdown' && (
-                                    <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
-                                      <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select Choice..." /></SelectTrigger>
-                                      <SelectContent className="rounded-2xl">
-                                        {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold text-[10px] uppercase">{opt}</SelectItem>)}
-                                      </SelectContent>
-                                    </Select>
-                                  )}
-                                  {field.type === 'radio' && (
-                                    <RadioGroup required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)} className="flex flex-col gap-3 py-2">
-                                      {field.options?.map((opt: string) => (
-                                        <div key={opt} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2 cursor-pointer hover:bg-white transition-all">
-                                          <RadioGroupItem value={opt} id={`${field.id}_${opt}`} />
-                                          <Label htmlFor={`${field.id}_${opt}`} className="font-black text-[10px] uppercase cursor-pointer flex-1">{opt}</Label>
-                                        </div>
-                                      ))}
-                                    </RadioGroup>
-                                  )}
-                                  {field.type === 'checkbox' && (
-                                    <div className="flex flex-col gap-3 py-2">
-                                      {field.options?.map((opt: string) => (
-                                        <div key={opt} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2 hover:bg-white transition-all">
-                                          <Checkbox 
-                                            id={`${field.id}_${opt}`} 
-                                            checked={(answers[field.id] || []).includes(opt)} 
-                                            onCheckedChange={(checked) => {
-                                              const current = Array.isArray(answers[field.id]) ? answers[field.id] : [];
-                                              const updated = checked ? [...current, opt] : current.filter((i: string) => i !== opt);
-                                              handleInputChange(field.id, updated);
-                                            }} 
-                                          />
-                                          <Label htmlFor={`${field.id}_${opt}`} className="font-black text-[10px] uppercase cursor-pointer flex-1">{opt}</Label>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
+                      ))}
+                    </div>
                   )}
 
-                  {step === totalSteps && (
+                  {currentStepInfo.id === 'details' && (
+                    <div className="space-y-8">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Official Team Name <span className="text-primary">*</span></Label>
+                        <Input 
+                          placeholder="e.g. Phoenix Elite Academy" 
+                          value={answers['teamName'] || ''} 
+                          onChange={e => handleInputChange('teamName', e.target.value)} 
+                          className="h-16 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-xl shadow-inner" 
+                          required
+                        />
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Origin Organization / City</Label>
+                        <Input 
+                          placeholder="e.g. Chicago, IL" 
+                          value={answers['teamOrigin'] || ''} 
+                          onChange={e => handleInputChange('teamOrigin', e.target.value)} 
+                          className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
+                        />
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Competitive Experience</Label>
+                        <Select value={answers['experience'] || ''} onValueChange={v => handleInputChange('experience', v)}>
+                          <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select Level..." /></SelectTrigger>
+                          <SelectContent className="rounded-2xl">
+                            <SelectItem value="Elite" className="font-bold text-[10px] uppercase">Elite / National</SelectItem>
+                            <SelectItem value="Advanced" className="font-bold text-[10px] uppercase">Advanced / Regional</SelectItem>
+                            <SelectItem value="Intermediate" className="font-bold text-[10px] uppercase">Intermediate</SelectItem>
+                            <SelectItem value="Developmental" className="font-bold text-[10px] uppercase">Developmental</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+
+                  {currentStepInfo.id === 'guardian' && (
+                    <div className="space-y-8">
+                      <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border-2 border-amber-200">
+                        <ShieldCheck className="h-6 w-6 text-amber-600" />
+                        <p className="text-sm font-bold text-amber-800">Guardian Information Required (Under 18)</p>
+                      </div>
+                      {formSchema.filter(f => f.step === 'guardian').map(field => (
+                        <div key={field.id} className="space-y-3">
+                          <div className="flex justify-between items-end px-1"><Label className="text-[10px] font-black uppercase tracking-widest">{field.label} {field.required && <span className="text-primary">*</span>}</Label></div>
+                          {field.type === 'short_text' && (
+                            <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all shadow-inner" />
+                          )}
+                          {field.type === 'dropdown' && (
+                            <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
+                              <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select..." /></SelectTrigger>
+                              <SelectContent className="rounded-2xl">
+                                {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold text-[10px] uppercase">{opt}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {currentStepInfo.id === 'team_code' && (
+                    <div className="space-y-8">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Recruit Code <span className="text-primary">*</span></Label>
+                        <Input 
+                          placeholder="Enter code from coach" 
+                          value={answers['teamCode'] || ''} 
+                          onChange={e => handleInputChange('teamCode', e.target.value)} 
+                          className="h-16 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-xl shadow-inner text-center uppercase tracking-widest" 
+                          required
+                        />
+                      </div>
+                      {formSchema.filter(f => f.step === 'team_code').map(field => (
+                        <div key={field.id} className="space-y-3">
+                          <div className="flex justify-between items-end px-1"><Label className="text-[10px] font-black uppercase tracking-widest">{field.label} {field.required && <span className="text-primary">*</span>}</Label></div>
+                          {field.type === 'short_text' && (
+                            <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all shadow-inner" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {currentStepInfo.id === 'additional' && (
+                    <div className="space-y-8">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Head Coach Full Name <span className="text-primary">*</span></Label>
+                        <Input 
+                          placeholder="e.g. Marcus Thompson" 
+                          value={answers['name'] || ''} 
+                          onChange={e => handleInputChange('name', e.target.value)} 
+                          className="h-16 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-xl shadow-inner" 
+                          required
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-3">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Direct Email <span className="text-primary">*</span></Label>
+                          <Input 
+                            type="email"
+                            placeholder="coach@team.com" 
+                            value={answers['email'] || ''} 
+                            onChange={e => handleInputChange('email', e.target.value)} 
+                            className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
+                            required
+                          />
+                        </div>
+                        <div className="space-y-3">
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Cell Phone Number</Label>
+                          <Input 
+                            type="tel"
+                            placeholder="(555) 000-0000" 
+                            value={answers['phone'] || ''} 
+                            onChange={e => handleInputChange('phone', e.target.value)} 
+                            className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" 
+                          />
+                        </div>
+                      </div>
+                      {formSchema.filter(f => f.step === 'additional' || !f.step).map(field => (
+                        <div key={field.id} className="space-y-3">
+                          {field.type === 'header' ? (
+                            <div className="pt-6 border-b-2 pb-2 mb-4 text-primary"><h3 className="font-black text-xl uppercase tracking-tighter">{field.label}</h3></div>
+                          ) : (
+                            <>
+                              <div className="flex justify-between items-end px-1"><Label className="text-[10px] font-black uppercase tracking-widest">{field.label} {field.required && <span className="text-primary">*</span>}</Label></div>
+                              {field.type === 'short_text' && (
+                                <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-lg shadow-inner" />
+                              )}
+                              {field.type === 'long_text' && (
+                                <Textarea required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="rounded-2xl min-h-[120px] border-2 font-medium bg-muted/5 focus:bg-white transition-all p-5 shadow-inner" />
+                              )}
+                              {field.type === 'dropdown' && (
+                                <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
+                                  <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select Choice..." /></SelectTrigger>
+                                  <SelectContent className="rounded-2xl">
+                                    {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold text-[10px] uppercase">{opt}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                              {field.type === 'radio' && (
+                                <RadioGroup required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)} className="flex flex-col gap-3 py-2">
+                                  {field.options?.map((opt: string) => (
+                                    <div key={opt} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2 cursor-pointer hover:bg-white transition-all">
+                                      <RadioGroupItem value={opt} id={`${field.id}_${opt}`} />
+                                      <Label htmlFor={`${field.id}_${opt}`} className="font-black text-[10px] uppercase cursor-pointer flex-1">{opt}</Label>
+                                    </div>
+                                  ))}
+                                </RadioGroup>
+                              )}
+                              {field.type === 'checkbox' && (
+                                <div className="flex flex-col gap-3 py-2">
+                                  {field.options?.map((opt: string) => (
+                                    <div key={opt} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2 hover:bg-white transition-all">
+                                      <Checkbox 
+                                        id={`${field.id}_${opt}`} 
+                                        checked={(answers[field.id] || []).includes(opt)} 
+                                        onCheckedChange={(checked) => {
+                                          const current = Array.isArray(answers[field.id]) ? answers[field.id] : [];
+                                          const updated = checked ? [...current, opt] : current.filter((i: string) => i !== opt);
+                                          handleInputChange(field.id, updated);
+                                        }} 
+                                      />
+                                      <Label htmlFor={`${field.id}_${opt}`} className="font-black text-[10px] uppercase cursor-pointer flex-1">{opt}</Label>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {currentStepInfo.id === 'compliance' && (
                     <div className="space-y-10">
                       {(config.require_default_waiver || config.custom_waiver_text || (config.team_waivers_content && config.team_waivers_content.length > 0)) ? (
                         <div className="space-y-8">

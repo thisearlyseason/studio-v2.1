@@ -1859,14 +1859,6 @@ export default function CoachesCornerPage() {
                       </div>
                       <div className="space-y-1 mb-4"><p className="font-black text-sm uppercase text-foreground">{proto.title}</p><p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">System Mandate</p></div>
                       
-                      {/* Display Waiver Content if Active */}
-                      {isActive && activeDoc?.content && (
-                        <div className="mt-4 p-4 bg-muted/30 rounded-xl border border-dashed border-muted-foreground/20">
-                          <p className="text-[10px] font-medium text-muted-foreground line-clamp-3">
-                            {activeDoc.content}
-                          </p>
-                        </div>
-                      )}
                     </Card>
                   );
                 })}

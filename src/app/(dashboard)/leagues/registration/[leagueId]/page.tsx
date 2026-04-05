@@ -57,7 +57,8 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
+import { addSquadBranding, generateBrandedPDF } from '@/lib/pdf-utils';
 import { format } from 'date-fns';
 
 // CRITICAL BUILD FIX: Prevent static generation failures for dynamic enrollment routes
@@ -147,50 +148,70 @@ export default function LeagueRegistrationAdminPage() {
       return;
     }
     const pdf = new jsPDF();
-    pdf.setFontSize(22);
-    pdf.text(`Official Waiver Archive: ${activeLeague?.name || 'League'}`, 20, 20);
+    
+    // Initial Page
+    addSquadBranding(pdf, "Waiver Archive", activeLeague?.name || "League Record");
+    pdf.setFontSize(14);
+    pdf.setTextColor(0);
+    pdf.text("ARCHIVE SUMMARY", 20, 60);
     pdf.setFontSize(10);
-    pdf.text(`Generated: ${new Date().toLocaleString()}`, 20, 30);
-    pdf.setFontSize(12);
-    pdf.text(`Total Records: ${archivedWaivers.length}`, 20, 38);
-    pdf.setDrawColor(200);
-    pdf.line(20, 45, 190, 45);
+    pdf.setTextColor(80);
+    pdf.text(`League: ${activeLeague?.name || 'Unknown'}`, 20, 70);
+    pdf.text(`Total Records: ${archivedWaivers.length}`, 20, 78);
+    pdf.text(`Business Entity: SQUAD INTELLIGENCE`, 20, 86);
+    
+    pdf.setDrawColor(230);
+    pdf.line(20, 95, 190, 95);
 
     archivedWaivers.forEach((waiver) => {
       pdf.addPage();
-      pdf.setFontSize(24);
-      pdf.setTextColor(0, 0, 0);
-      pdf.text("WAIVER RECORD", 20, 30);
-      pdf.setFontSize(10);
-      pdf.setTextColor(100);
-      pdf.text(`UID: ${waiver.id}`, 20, 38);
+      addSquadBranding(pdf, "WAIVER RECORD", `UID: ${waiver.id}`);
       
-      pdf.setDrawColor(0);
-      pdf.setLineWidth(0.5);
-      pdf.line(20, 45, 190, 45);
-
       pdf.setFontSize(14);
       pdf.setTextColor(0);
       pdf.text("PARTICIPANT INFO", 20, 60);
-      pdf.setFontSize(11);
-      pdf.text(`Name: ${waiver.signer}`, 20, 70);
-      pdf.text(`Affiliation: ${waiver.teamName || 'Independent'}`, 20, 78);
-      pdf.text(`Signed At: ${format(new Date(waiver.signedAt), 'PPP p')}`, 20, 86);
-      pdf.text(`Type: ${waiver.type.toUpperCase()}`, 20, 94);
+      
+      pdf.setDrawColor(200);
+      pdf.setLineWidth(0.1);
+      pdf.line(20, 63, 65, 63);
 
+      pdf.setFontSize(11);
+      pdf.text(`Name:`, 20, 72);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(waiver.signer, 50, 72);
+      
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Affiliation:`, 20, 80);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(waiver.teamName || 'Independent', 50, 80);
+      
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Signed At:`, 20, 88);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(format(new Date(waiver.signedAt), 'PPP p'), 50, 88);
+      
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Type:`, 20, 96);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(waiver.type.toUpperCase(), 50, 96);
+
+      pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(14);
       pdf.text("WAIVER TEXT", 20, 115);
+      pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(8);
       pdf.setTextColor(50);
       const splitWaiver = pdf.splitTextToSize(waiver.waiverText, 170);
       pdf.text(splitWaiver, 20, 125);
 
       pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(0);
       const lastLine = 125 + (splitWaiver.length * 3.5);
       pdf.text("EXECUTION LOG", 20, lastLine + 15);
+      pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(9);
-      pdf.text(`The user ${waiver.signer} confirmed their identity and agreed to the above terms via electronic signature on ${format(new Date(waiver.signedAt), 'PPP p')}.`, 20, lastLine + 25, { maxWidth: 170 });
+      pdf.text(`The user ${waiver.signer} confirmed their identity and agreed to the above terms via electronic signature on ${format(new Date(waiver.signedAt), 'PPP p')}. This record is cryptographically timestamped and archived by SQUAD INTELLIGENCE Secure Hub.`, 20, lastLine + 25, { maxWidth: 170 });
     });
 
     pdf.save(`${activeLeague?.name || 'League'}_Waiver_Archive.pdf`);
@@ -1026,14 +1047,51 @@ export default function LeagueRegistrationAdminPage() {
                                  <p className="text-[9px] font-bold text-green-600/60 uppercase tracking-widest mt-1">Signed {format(new Date(w.signedAt), 'PPP')}</p>
                                </div>
                              </div>
-                             <Button variant="ghost" size="sm" className="h-8 rounded-lg font-black uppercase text-[8px] text-green-700 hover:bg-green-100 border border-green-200" onClick={() => {
-                                const doc = new jsPDF();
-                                doc.text("COMPLIANCE VERIFICATION", 20, 20);
-                                doc.text(`Signer: ${w.signer}`, 20, 30);
-                                doc.text(`Date: ${new Date(w.signedAt).toLocaleString()}`, 20, 40);
-                                doc.text(w.waiverText, 20, 60, { maxWidth: 170 });
-                                doc.save(`Waiver_${w.id}.pdf`);
-                             }}>View Record</Button>
+                              <Button variant="outline" size="sm" className="rounded-xl h-10 px-4 font-black uppercase text-[10px]" onClick={() => {
+                                generateBrandedPDF({
+                                  title: "Compliance Verification",
+                                  subtitle: `Signed Waiver Record • ID: ${w.id}`,
+                                  filename: `Waiver_${w.id}`,
+                                  businessName: "SQUAD INTELLIGENCE"
+                                }, (doc, startY) => {
+                                  doc.setFontSize(14);
+                                  doc.setFont('helvetica', 'bold');
+                                  doc.text("PARTICIPANT INFO", 20, startY);
+                                  
+                                  doc.setFontSize(10);
+                                  doc.setFont('helvetica', 'normal');
+                                  doc.text(`Signer: ${w.signer}`, 20, startY + 10);
+                                  doc.text(`Affiliation: ${w.teamName || 'Independent'}`, 20, startY + 18);
+                                  doc.text(`Date Verified: ${format(new Date(w.signedAt), 'PPP p')}`, 20, startY + 26);
+                                  doc.text(`Pipeline Type: ${w.type.toUpperCase()}`, 20, startY + 34);
+
+                                  doc.setFontSize(14);
+                                  doc.setFont('helvetica', 'bold');
+                                  doc.text("AGREEMENT TERMS", 20, startY + 55);
+                                  
+                                  doc.setFontSize(8);
+                                  doc.setFont('helvetica', 'normal');
+                                  doc.setTextColor(60);
+                                  const splitWaiverText = doc.splitTextToSize(w.waiverText, 170);
+                                  doc.text(splitWaiverText, 20, startY + 65);
+                                  
+                                  const currentY = startY + 65 + (splitWaiverText.length * 3.5);
+                                  doc.setDrawColor(240);
+                                  doc.line(20, currentY + 10, 190, currentY + 10);
+
+                                  doc.setFontSize(12);
+                                  doc.setFont('helvetica', 'bold');
+                                  doc.setTextColor(0);
+                                  doc.text("ELECTRONIC SEAL", 20, currentY + 25);
+                                  doc.setFontSize(9);
+                                  doc.setFont('helvetica', 'normal');
+                                  doc.text(`This document serves as proof of legal agreement. SQUAD INTELLIGENCE confirms that the identity associated with ${w.signer} successfully completed the verification pipeline and agreed to the above terms on ${format(new Date(w.signedAt), 'PPP p')}.`, 20, currentY + 35, { maxWidth: 170 });
+
+                                  return currentY + 60;
+                                });
+                              }}>
+                                <Download className="h-3.5 w-3.5 mr-2" /> Download Audit
+                              </Button>
                           </div>
                         ))
                       ) : (

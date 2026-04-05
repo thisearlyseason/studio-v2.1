@@ -113,10 +113,8 @@ function RegistrationForm() {
     const type = config.type || (protocolId === 'team_config' ? 'team' : protocolId === 'waiver_config' ? 'waiver' : 'player');
 
     return REQUIRED_STEPS.filter(step => {
-      // Identity is always the starting point
       if (step.id === 'identity') return true;
       
-      // Compliance is required if there are waivers to sign
       if (step.id === 'compliance') {
         return (config.require_default_waiver || 
                 (config.custom_waiver_text && config.custom_waiver_text.trim() !== '') || 
@@ -128,20 +126,28 @@ function RegistrationForm() {
 
       // 2. Team Pipeline: Identity + Contact + Additional + Compliance
       if (type === 'team') {
-        return step.id === 'contact' || step.id === 'additional';
+        if (step.id === 'contact' || step.id === 'additional') {
+          return formSchema.some(f => f.step === step.id);
+        }
+        return false;
       }
 
       // 3. Player Pipeline: Full logic
       if (type === 'player') {
         // Guardian only if minor
         if (step.id === 'guardian') return isUnder18;
-        // Additional only if there are fields for it
-        if (step.id === 'additional') {
-          return formSchema.some(f => f.step === 'additional');
+        
+        // Contact, Medical, Additional only if there are fields for it
+        if (step.id === 'contact' || step.id === 'medical' || step.id === 'additional') {
+          return formSchema.some(f => f.step === step.id);
         }
-        return true;
-      }
 
+        // Team Code always for players (core mechanic)
+        if (step.id === 'team_code') return true;
+
+        return false;
+      }
+      
       return true;
     });
   }, [config, isUnder18, protocolId, formSchema]);
