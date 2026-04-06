@@ -1,0 +1,396 @@
+
+> nextn@0.1.0 dev
+> next dev -p 9002
+
+   ▲ Next.js 15.5.9
+   - Local:        http://localhost:9002
+   - Network:      http://10.203.255.167:9002
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 1002ms
+ ✓ Compiled /middleware in 78ms (157 modules)
+ ○ Compiling / ...
+ ✓ Compiled / in 1322ms (1182 modules)
+ GET / 200 in 1661ms
+ ✓ Compiled in 197ms (438 modules)
+ GET / 200 in 53ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 920ms (1413 modules)
+ GET /dashboard?seed_demo=squad_pro 200 in 1180ms
+ ✓ Compiled /club in 433ms (1971 modules)
+ GET /club 200 in 536ms
+ GET /dashboard 200 in 271ms
+ ○ Compiling /files ...
+ ✓ Compiled /files in 531ms (1998 modules)
+ GET /files 200 in 594ms
+ ○ Compiling /coaches-corner ...
+ ✓ Compiled /coaches-corner in 667ms (2003 modules)
+ GET /coaches-corner 200 in 768ms
+ ✓ Compiled /login in 445ms (2001 modules)
+ GET /login?reason=expired 200 in 755ms
+ GET / 200 in 65ms
+ GET /dashboard?seed_demo=squad_pro 200 in 111ms
+ ✓ Compiled /club in 221ms (1209 modules)
+ GET /club 200 in 312ms
+ GET /dashboard 200 in 249ms
+ GET /coaches-corner 200 in 53ms
+ ✓ Compiled /roster in 468ms (2031 modules)
+ GET /roster 200 in 535ms
+ GET /login?reason=expired 200 in 297ms
+ ⨯ ./src/components/providers/team-provider.tsx
+Error:   [31mx[0m Expected ';', '}' or <eof>
+      ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/components/providers/team-provider.tsx[0m:1418:1]
+ [2m1415[0m |        email: userProfile.email || firebaseUser.email || null, 
+ [2m1416[0m |        parentEmail: isChild ? firebaseUser.email : null
+ [2m1417[0m |      })); 
+ [2m1418[0m | 1417: 
+      : [35;1m^^|^[0m[33;1m^[0m
+      :   [35;1m`-- [35;1mThis is the expression part of an expression statement[0m[0m
+ [2m1419[0m | 1418:     // Hardening: Explicitly link team to child record for Family Hub visibility
+ [2m1420[0m | 1419:     if (isChild) {
+ [2m1421[0m | 1420:       batch.update(doc(db, 'players', playerId), {
+      `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/components/providers/team-provider.tsx
+./src/app/(dashboard)/layout.tsx
+ ⨯ ./src/components/providers/team-provider.tsx
+Error:   [31mx[0m Expected ';', '}' or <eof>
+      ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/components/providers/team-provider.tsx[0m:1418:1]
+ [2m1415[0m |        email: userProfile.email || firebaseUser.email || null, 
+ [2m1416[0m |        parentEmail: isChild ? firebaseUser.email : null
+ [2m1417[0m |      })); 
+ [2m1418[0m | 1417: 
+      : [35;1m^^|^[0m[33;1m^[0m
+      :   [35;1m`-- [35;1mThis is the expression part of an expression statement[0m[0m
+ [2m1419[0m | 1418:     // Hardening: Explicitly link team to child record for Family Hub visibility
+ [2m1420[0m | 1419:     if (isChild) {
+ [2m1421[0m | 1420:       batch.update(doc(db, 'players', playerId), {
+      `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/components/providers/team-provider.tsx
+./src/app/(dashboard)/layout.tsx
+ ○ Compiling /_error ...
+ GET /login?reason=expired 500 in 1040ms
+ GET /login?reason=expired 500 in 580ms
+ GET /login?reason=expired 500 in 588ms
+ GET /login?reason=expired 500 in 10ms
+ GET /login?reason=expired 500 in 10ms
+ ⨯ ./src/components/providers/team-provider.tsx
+Error:   [31mx[0m Expected ';', '}' or <eof>
+      ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/components/providers/team-provider.tsx[0m:1418:1]
+ [2m1415[0m |        email: userProfile.email || firebaseUser.email || null, 
+ [2m1416[0m |        parentEmail: isChild ? firebaseUser.email : null
+ [2m1417[0m |      })); 
+ [2m1418[0m | 1417: 
+      : [35;1m^^|^[0m[33;1m^[0m
+      :   [35;1m`-- [35;1mThis is the expression part of an expression statement[0m[0m
+ [2m1419[0m | 1418:     // Hardening: Explicitly link team to child record for Family Hub visibility
+ [2m1420[0m | 1419:     if (isChild) {
+ [2m1421[0m | 1420:       batch.update(doc(db, 'players', playerId), {
+      `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/components/providers/team-provider.tsx
+./src/app/(dashboard)/layout.tsx
+ ⨯ ./src/components/providers/team-provider.tsx
+Error:   [31mx[0m Expected ';', '}' or <eof>
+      ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/components/providers/team-provider.tsx[0m:1418:1]
+ [2m1415[0m |        email: userProfile.email || firebaseUser.email || null, 
+ [2m1416[0m |        parentEmail: isChild ? firebaseUser.email : null
+ [2m1417[0m |      })); 
+ [2m1418[0m | 1417: 
+      : [35;1m^^|^[0m[33;1m^[0m
+      :   [35;1m`-- [35;1mThis is the expression part of an expression statement[0m[0m
+ [2m1419[0m | 1418:     // Hardening: Explicitly link team to child record for Family Hub visibility
+ [2m1420[0m | 1419:     if (isChild) {
+ [2m1421[0m | 1420:       batch.update(doc(db, 'players', playerId), {
+      `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/components/providers/team-provider.tsx
+./src/app/(dashboard)/layout.tsx
+ ⨯ ./src/components/providers/team-provider.tsx
+Error:   [31mx[0m Unexpected token `memberName`. Expected ... , *,  (, [, :, , ?, =, an identifier, public, protected, private, readonly, <.
+      ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/components/providers/team-provider.tsx[0m:1403:1]
+ [2m1400[0m | 
+ [2m1401[0m |     // Write primary membership record to the team's directory
+ [2m1402[0m |     batch.set(doc(db, 'teams', tid, 'members', memberId), clean({ 
+ [2m1403[0m | let memberName = firebaseUser.displayName || userProfile.name;
+      : [35;1m    ^^^^^^^^^^[0m
+ [2m1404[0m | let memberAvatar = userProfile?.avatar || '';
+ [2m1405[0m | 
+ [2m1406[0m | if (isChild) {
+      `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/components/providers/team-provider.tsx
+./src/app/(dashboard)/layout.tsx
+ GET /login?reason=expired 500 in 28ms
+ ⨯ ./src/components/providers/team-provider.tsx
+Error:   [31mx[0m Unexpected token `memberName`. Expected ... , *,  (, [, :, , ?, =, an identifier, public, protected, private, readonly, <.
+      ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/components/providers/team-provider.tsx[0m:1403:1]
+ [2m1400[0m | 
+ [2m1401[0m |     // Write primary membership record to the team's directory
+ [2m1402[0m |     batch.set(doc(db, 'teams', tid, 'members', memberId), clean({ 
+ [2m1403[0m | let memberName = firebaseUser.displayName || userProfile.name;
+      : [35;1m    ^^^^^^^^^^[0m
+ [2m1404[0m | let memberAvatar = userProfile?.avatar || '';
+ [2m1405[0m | 
+ [2m1406[0m | if (isChild) {
+      `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/components/providers/team-provider.tsx
+./src/app/(dashboard)/layout.tsx
+ ⨯ ./src/components/providers/team-provider.tsx
+Error:   [31mx[0m Unexpected token `memberName`. Expected ... , *,  (, [, :, , ?, =, an identifier, public, protected, private, readonly, <.
+      ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/components/providers/team-provider.tsx[0m:1403:1]
+ [2m1400[0m | 
+ [2m1401[0m |     // Write primary membership record to the team's directory
+ [2m1402[0m |     batch.set(doc(db, 'teams', tid, 'members', memberId), clean({ 
+ [2m1403[0m | let memberName = firebaseUser.displayName || userProfile.name;
+      : [35;1m    ^^^^^^^^^^[0m
+ [2m1404[0m | let memberAvatar = userProfile?.avatar || '';
+ [2m1405[0m | 
+ [2m1406[0m | if (isChild) {
+      `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/components/providers/team-provider.tsx
+./src/app/(dashboard)/layout.tsx
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled /_not-found in 1176ms (2373 modules)
+ GET /login?reason=expired 200 in 71ms
+ GET /login?reason=expired 200 in 70ms
+ GET /login?reason=expired 200 in 44ms
+ GET /login?reason=expired 200 in 45ms
+ ✓ Compiled in 313ms (2387 modules)
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /login?reason=expired 200 in 140ms
+ GET /login?reason=expired 200 in 141ms
+ GET /login?reason=expired 200 in 247ms
+ GET /login?reason=expired 200 in 247ms
+ GET /dashboard?seed_demo=squad_pro 200 in 126ms
+ ○ Compiling /club ...
+ ✓ Compiled /club in 505ms (1399 modules)
+ GET /club 200 in 663ms
+ GET /dashboard 200 in 276ms
+ GET /coaches-corner 200 in 50ms
+ ✓ Compiled in 505ms (2365 modules)
+ GET /login?reason=expired 200 in 118ms
+ GET /coaches-corner 200 in 120ms
+ ✓ Compiled in 427ms (2365 modules)
+ GET /login?reason=expired 200 in 105ms
+ GET /coaches-corner 200 in 106ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ✓ Compiled in 450ms (2365 modules)
+ GET /login?reason=expired 200 in 575ms
+ GET /coaches-corner 200 in 581ms
+ GET /login?reason=expired 200 in 740ms
+ GET /coaches-corner 200 in 695ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ✓ Compiled in 709ms (2365 modules)
+ GET /login?reason=expired 200 in 601ms
+ GET /login?reason=expired 200 in 840ms
+ GET /coaches-corner 200 in 609ms
+ GET /coaches-corner 200 in 842ms
+ ✓ Compiled in 469ms (2365 modules)
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /login?reason=expired 200 in 146ms
+ GET /coaches-corner 200 in 150ms
+ GET /login?reason=expired 200 in 333ms
+ GET /coaches-corner 200 in 334ms
+ ✓ Compiled in 330ms (2365 modules)
+ GET /login?reason=expired 200 in 79ms
+ GET /coaches-corner 200 in 80ms
+ GET /coaches-corner 200 in 257ms
+ ✓ Compiled /favicon.ico in 197ms (1404 modules)
+ GET /favicon.ico 200 in 293ms
+ ✓ Compiled / in 344ms (1396 modules)
+ GET / 200 in 714ms
+ GET /dashboard?seed_demo=squad_pro 200 in 95ms
+ ✓ Compiled /club in 430ms (1408 modules)
+ GET /club 200 in 512ms
+ GET /dashboard 200 in 220ms
+ GET /coaches-corner 200 in 40ms
+ ○ Compiling /chats ...
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled /chats in 845ms (2371 modules)
+ GET /roster 200 in 633ms
+ GET /chats 200 in 1191ms
+ GET /coaches-corner 200 in 412ms
+ ✓ Compiled /favicon.ico in 200ms (1420 modules)
+ GET /favicon.ico 200 in 288ms
+ GET /favicon.ico 200 in 7ms
+ ✓ Compiled in 687ms (2366 modules)
+ GET /login?reason=expired 200 in 186ms
+ GET /coaches-corner 200 in 187ms
+ GET /roster 200 in 187ms
+ ✓ Compiled in 671ms (2366 modules)
+ GET /login?reason=expired 200 in 119ms
+ GET /roster 200 in 121ms
+ GET /coaches-corner 200 in 120ms
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled in 542ms (2366 modules)
+ ✓ Compiled in 0ms (1384 modules)
+ ✓ Compiled in 0ms (1384 modules)
+ ✓ Compiled in 0ms (1384 modules)
+ GET /roster 200 in 1006ms
+ GET /login?reason=expired 200 in 982ms
+ GET /coaches-corner 200 in 982ms
+ ✓ Compiled /favicon.ico in 263ms (1401 modules)
+ GET /favicon.ico 200 in 342ms
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 890ms (2374 modules)
+ GET /roster 404 in 818ms
+ GET /login?reason=expired 200 in 58ms
+ GET /coaches-corner 200 in 58ms
+ GET /favicon.ico 200 in 13ms
+ ✓ Compiled in 705ms (2388 modules)
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /login?reason=expired 200 in 189ms
+ GET /coaches-corner 200 in 193ms
+ GET /roster 200 in 203ms
+ GET /login?reason=expired 200 in 351ms
+ GET /coaches-corner 200 in 362ms
+ GET /roster 200 in 336ms
+ GET /favicon.ico 200 in 23ms
+ GET /favicon.ico 200 in 14ms
+ ✓ Compiled in 748ms (2366 modules)
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /login?reason=expired 200 in 269ms
+ GET /roster 200 in 273ms
+ GET /coaches-corner 200 in 452ms
+ GET /login?reason=expired 200 in 330ms
+ GET /roster 200 in 364ms
+ GET /coaches-corner 200 in 339ms
+ ✓ Compiled /favicon.ico in 148ms (1401 modules)
+ GET /favicon.ico 200 in 233ms
+ GET /favicon.ico 200 in 7ms
+ ✓ Compiled in 377ms (2383 modules)
+ GET /login?reason=expired 200 in 112ms
+ GET /coaches-corner 200 in 113ms
+ GET /roster 200 in 113ms
+ ✓ Compiled in 1195ms (2366 modules)
+ GET /login?reason=expired 200 in 164ms
+ GET /coaches-corner 200 in 165ms
+ GET /roster 200 in 166ms
+ ✓ Compiled in 727ms (2366 modules)
+ GET /login?reason=expired 200 in 109ms
+ GET /coaches-corner 200 in 111ms
+ GET /roster 200 in 110ms
+ ✓ Compiled in 384ms (2366 modules)
+ GET /login?reason=expired 200 in 97ms
+ GET /roster 200 in 99ms
+ GET /coaches-corner 200 in 98ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ✓ Compiled in 473ms (2366 modules)
+ GET /login?reason=expired 200 in 567ms
+ GET /roster 200 in 575ms
+ GET /coaches-corner 200 in 583ms
+ GET /login?reason=expired 200 in 819ms
+ GET /coaches-corner 200 in 730ms
+ GET /roster 200 in 731ms
+ ✓ Compiled /favicon.ico in 253ms (1401 modules)
+ GET /favicon.ico 200 in 344ms
+ GET /favicon.ico 200 in 11ms
+ GET /coaches-corner 200 in 74ms
+ GET /login?reason=expired 200 in 240ms
+ ✓ Compiled in 668ms (2352 modules)
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET /coaches-corner 200 in 267ms
+ ✓ Compiled /favicon.ico in 135ms (1401 modules)
+ GET /favicon.ico 200 in 208ms
+ GET /login 200 in 91ms
+ ✓ Compiled in 233ms (2369 modules)
+ ✓ Compiled in 203ms (2369 modules)
+ GET /dashboard?seed_demo=squad_pro 200 in 298ms
+ ○ Compiling /club ...
+ ✓ Compiled /club in 575ms (1396 modules)
+ GET /club 200 in 754ms
+ GET /dashboard 200 in 170ms
+ GET /coaches-corner 200 in 45ms
+ GET /roster 200 in 34ms
+ GET /coaches-corner 200 in 17ms
+ GET /roster 200 in 16ms
+ ✓ Compiled in 477ms (2352 modules)
+ ✓ Compiled in 900ms (2366 modules)
+ GET /login 200 in 108ms
+ GET /login?reason=expired 200 in 107ms
+ GET /roster 200 in 109ms
+ ✓ Compiled in 349ms (2366 modules)
+ GET /login 200 in 71ms
+ GET /login?reason=expired 200 in 72ms
+ GET /roster 200 in 73ms
+ ✓ Compiled in 485ms (2366 modules)
+ GET /login 200 in 61ms
+ GET /login?reason=expired 200 in 87ms
+ GET /roster 200 in 87ms
+ GET /coaches-corner 200 in 37ms
+ ✓ Compiled in 607ms (2352 modules)
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET /login 200 in 315ms
+ GET /coaches-corner 200 in 318ms
+ ✓ Compiled /favicon.ico in 262ms (1401 modules)
+ GET /favicon.ico 200 in 457ms
+ GET /login 200 in 372ms
+ GET /dashboard?seed_demo=squad_pro 200 in 261ms
+ ○ Compiling /club ...
+ ✓ Compiled /club in 529ms (1396 modules)
+ GET /club 200 in 665ms
+ GET /dashboard 200 in 153ms
+ GET /coaches-corner 200 in 45ms
+ GET /roster 200 in 42ms
+ GET /coaches-corner 200 in 21ms
+ ✓ Compiled in 1130ms (2368 modules)
+ GET /login?reason=expired 200 in 94ms
+ GET /login 200 in 95ms
+ GET /coaches-corner 200 in 97ms
+ GET /roster 200 in 49ms
+ ✓ Compiled in 582ms (2366 modules)
+ GET /login?reason=expired 200 in 142ms
+ GET /login 200 in 143ms
+ GET /roster 200 in 144ms
+ ✓ Compiled in 300ms (2366 modules)
+ GET /login?reason=expired 200 in 74ms
+ GET /login 200 in 75ms
+ GET /roster 200 in 76ms

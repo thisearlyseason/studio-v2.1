@@ -28,7 +28,7 @@ interface EmailExportDialogProps {
 
 export function EmailExportDialog({ members, teamName, getLeagueMembers, leagueIds }: EmailExportDialogProps) {
   const [includePlayers, setIncludePlayers] = useState(true);
-  const [includeParents, setIncludeParents] = useState(false);
+  const [includeParents, setIncludeParents] = useState(true);
   const [scope, setScope] = useState<'team' | 'league'>('team');
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -49,32 +49,47 @@ export function EmailExportDialog({ members, teamName, getLeagueMembers, leagueI
     }
   }, [scope, isPartOfLeague, getLeagueMembers, leagueIds]);
 
-  const getEmails = () => {
-    const emailSet = new Set<string>();
-    const relevantMembers = scope === 'league' && leagueMembers.length > 0 ? leagueMembers : members;
+  const getContacts = () => {
+    const contacts: { name: string; email: string; type: string }[] = [];
+    const isLeagueScope = scope === 'league';
+    const relevantMembers = isLeagueScope ? leagueMembers : members;
 
     relevantMembers.forEach(member => {
-      const isCoach = member.position?.toLowerCase().includes('coach');
+      const position = (member.position || '').toLowerCase();
+      const isCoach = 
+        position.includes('coach') || 
+        position.includes('trainer') || 
+        position.includes('staff') ||
+        position.includes('manager') ||
+        position.includes('director') ||
+        member.role === 'Admin';
+        
       const isAdmin = member.role === 'Admin';
       
       if (isCoach || isAdmin) {
-        if (member.parentEmail) emailSet.add(member.parentEmail.toLowerCase().trim());
-        if (member.email) emailSet.add(member.email.toLowerCase().trim());
+        if (member.email) contacts.push({ name: member.name, email: member.email.toLowerCase().trim(), type: 'Staff/Coach' });
+        if (member.parentEmail) contacts.push({ name: `${member.name} (Alt)`, email: member.parentEmail.toLowerCase().trim(), type: 'Staff/Coach' });
       } else {
-        if (includePlayers && member.parentEmail) {
-          emailSet.add(member.parentEmail.toLowerCase().trim());
+        if (includePlayers && member.email) {
+          contacts.push({ name: member.name, email: member.email.toLowerCase().trim(), type: 'Athlete' });
         }
-        if (includePlayers && member.email && !member.parentEmail) {
-             emailSet.add(member.email.toLowerCase().trim());
+        
+        if (includeParents && member.parentEmail) {
+          contacts.push({ name: `${member.name} Guardian`, email: member.parentEmail.toLowerCase().trim(), type: 'Parent' });
         }
       }
     });
 
-    return Array.from(emailSet).filter(Boolean);
+    // Remove duplicates by email and sort
+    const uniqueContacts = Array.from(new Map(contacts.map(c => [c.email, c])).values())
+      .filter(c => !!c.email)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return uniqueContacts;
   };
 
-  const emailList = getEmails();
-  const scopeLabel = scope === 'league' ? 'League-wide' : 'Team';
+  const contactList = getContacts();
+  const emailList = contactList.map(c => c.email);
 
   const handleCopy = () => {
     const emails = emailList.join(', ');
@@ -82,14 +97,14 @@ export function EmailExportDialog({ members, teamName, getLeagueMembers, leagueI
       navigator.clipboard.writeText(emails);
       setCopied(true);
       toast({
-        title: "Emails Copied",
-        description: `${emailList.length} email addresses copied to clipboard (Gmail compatible).`,
+        title: "Success: Emails Copied",
+        description: `Exported ${emailList.length} unique addresses. Ready for BCC in Gmail/Outlook.`,
       });
       setTimeout(() => setCopied(false), 2000);
     } else {
       toast({
-        title: "No Emails Found",
-        description: "There are no email addresses to copy based on your selection.",
+        title: "No Contacts Exported",
+        description: "Zero valid email addresses found. Check if roster profiles have email values populated.",
         variant: "destructive"
       });
     }
@@ -99,26 +114,27 @@ export function EmailExportDialog({ members, teamName, getLeagueMembers, leagueI
     const emails = emailList.join('\n');
     if (!emails) {
       toast({
-        title: "No Emails Found",
-        description: "There are no email addresses to download.",
+        title: "Export Failed",
+        description: "Cannot generate file: No email addresses discovered with current filters.",
         variant: "destructive"
       });
       return;
     }
 
+    const scopeLabel = scope === 'league' ? 'League' : 'Team';
     const blob = new Blob([emails], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${scopeLabel}_${teamName.replace(/\s+/g, '_')}_emails.txt`;
+    a.download = `${scopeLabel}_Manifest_${Date.now()}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
     toast({
-      title: "Emails Downloaded",
-      description: `File saved as ${scopeLabel}_${teamName.replace(/\s+/g, '_')}_emails.txt`,
+      title: "Manifest Downloaded",
+      description: `Contact list exported as ${scopeLabel}_Manifest_${Date.now()}.txt`,
     });
   };
 
@@ -178,7 +194,7 @@ export function EmailExportDialog({ members, teamName, getLeagueMembers, leagueI
                   className="rounded-lg border-2 h-6 w-6 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                 />
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between border-b border-black/5 pb-4">
                 <Label htmlFor="parents" className="text-[10px] font-black uppercase tracking-widest cursor-pointer text-foreground">Include Guardians</Label>
                 <Checkbox 
                   id="parents" 
@@ -187,22 +203,40 @@ export function EmailExportDialog({ members, teamName, getLeagueMembers, leagueI
                   className="rounded-lg border-2 h-6 w-6 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                 />
               </div>
+
+              <div className="flex items-center justify-between">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Validated Contacts ({contactList.length})</Label>
+                <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-3 uppercase tracking-widest">Staff Included</Badge>
+              </div>
               
-              <div className="pt-4 border-t border-black/5 flex items-center justify-between">
-                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Staff & Hub Admins</span>
-                <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-3 uppercase tracking-widest">Always Included</Badge>
+              <div className="max-h-[200px] overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-primary/20">
+                {contactList.length > 0 ? contactList.map((contact, idx) => (
+                  <div key={idx} className="flex flex-col bg-white/50 p-3 rounded-xl border border-black/5 shadow-sm">
+                    <div className="flex items-center justify-between gap-2 text-foreground">
+                      <span className="text-[11px] font-black uppercase tracking-tight truncate max-w-[150px]">{contact.name}</span>
+                      <Badge className="bg-black/5 text-black/60 border-none font-bold text-[8px] h-4 px-2 uppercase tracking-wide shrink-0">
+                        {contact.type}
+                      </Badge>
+                    </div>
+                    <span className="text-[10px] font-medium text-muted-foreground truncate">{contact.email}</span>
+                  </div>
+                )) : (
+                  <div className="text-center py-8 text-black/30">
+                    <Mail className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                    <p className="text-[10px] font-bold uppercase tracking-widest">No contacts discovered</p>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="p-8 bg-primary/5 rounded-[2.5rem] text-center space-y-2 border-2 border-dashed border-primary/20">
-              <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">
-                {isLoading ? 'Loading...' : 'Validated Contacts'}
-              </p>
-              <p className="text-5xl font-black text-primary tracking-tight">{isLoading ? '...' : emailList.length}</p>
-              <p className="text-[9px] font-medium text-muted-foreground italic leading-relaxed px-4">
-                {scope === 'league' 
-                  ? 'All teams in the league included.'
-                  : 'Current team roster only.'}
+            {/* U18 Parental Features Notice */}
+            <div className="p-6 bg-amber-50 rounded-3xl border-2 border-dashed border-amber-200/50 space-y-2">
+              <div className="flex items-center gap-2">
+                <Globe className="h-4 w-4 text-amber-600" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-amber-800">U18 Safety Protocol</span>
+              </div>
+              <p className="text-[10px] font-bold text-amber-800/80 leading-relaxed">
+                For Under 18 teams, parental features MUST be explicitly initiated for all athletes. Ensure every player under 18 has a guardian account linked to their roster profile.
               </p>
             </div>
           </div>

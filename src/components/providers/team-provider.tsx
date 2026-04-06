@@ -23,7 +23,8 @@ import {
   serverTimestamp,
   deleteField,
   arrayRemove,
-  or
+  or,
+  documentId
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { useRouter, usePathname } from 'next/navigation';
@@ -852,8 +853,64 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeamMembership, activeTeamDoc]);
 
   const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
-  const { data: membersData, isLoading: isMembersLoading } = useCollection<Member>(membersQuery);
-  const members = useMemo(() => membersData || [], [membersData]);
+  const { data: membersData, isLoading: isMembersInitialLoading } = useCollection<Member>(membersQuery);
+  const [hydratedMembers, setHydratedMembers] = useState<Member[]>([]);
+  const [isHydrating, setIsHydrating] = useState(false);
+
+  const hydrateEmails = useCallback(async (membersList: Member[]): Promise<Member[]> => {
+    if (!db || !membersList || membersList.length === 0) return membersList || [];
+    const userIdsToFetch = new Set<string>();
+    membersList.forEach(m => {
+      const uid = m.userId || m.id;
+      if (uid && uid.length > 10) userIdsToFetch.add(uid);
+      if (m.parentId) userIdsToFetch.add(m.parentId);
+    });
+    if (userIdsToFetch.size === 0) return membersList;
+    const ids = Array.from(userIdsToFetch).filter(Boolean);
+    const userMap: Record<string, string> = {};
+    try {
+      for (let i = 0; i < ids.length; i += 30) {
+         const batch = ids.slice(i, i + 30);
+        const q = query(collection(db, 'users'), where(documentId(), 'in', batch));
+        const snap = await getDocs(q);
+        snap.forEach(d => {
+          const ud = d.data();
+          if (ud.email) userMap[d.id] = ud.email;
+        });
+      }
+    } catch (e) {
+      console.warn("[TeamProvider] Hydration partial failure:", e);
+    }
+    return membersList.map(m => {
+      const uid = m.userId || m.id;
+      const loginEmail = uid ? userMap[uid] : null;
+      const pEmail = m.parentId ? userMap[m.parentId] : null;
+      return {
+        ...m,
+        email: loginEmail || m.email,
+        parentEmail: pEmail || m.parentEmail
+      };
+    });
+  }, [db]);
+
+  useEffect(() => {
+    if (membersData) {
+      setHydratedMembers(membersData);
+      const doHydrate = async () => {
+        setIsHydrating(true);
+        const results = await hydrateEmails(membersData);
+        setHydratedMembers(results);
+        setIsHydrating(false);
+      };
+      doHydrate();
+    } else {
+      setHydratedMembers([]);
+    }
+  }, [membersData, hydrateEmails]);
+
+  const members = hydratedMembers;
+  const isMembersLoading = isMembersInitialLoading || isHydrating;
+
   const getMember = useCallback((id: string | null | undefined) => {
     if (!id) return undefined;
     return members.find(m => m.id === id || m.userId === id);
@@ -917,17 +974,68 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!leagueSnap.exists()) return [];
       const leagueData = leagueSnap.data();
       const teamIds = Object.keys(leagueData.teams || {});
-      if (teamIds.length === 0) return [];
       
       const allMembers: Member[] = [];
+      
+      // 1. Collect all members from the 'members' subcollection of each actual team
       const memberPromises = teamIds.map(async (teamId) => {
+        // Skip placeholders that don't have a real team document
+        if (teamId.startsWith('manual_') || teamId.startsWith('recruit_')) return;
+        
         const membersSnap = await getDocs(collection(db, 'teams', teamId, 'members'));
         membersSnap.forEach((m) => {
           allMembers.push({ id: m.id, ...m.data() } as Member);
         });
       });
       await Promise.all(memberPromises);
-      return allMembers;
+
+      // 2. Add coaches from placeholder/manual teams in the league record itself
+      Object.entries(leagueData.teams || {}).forEach(([tid, t]: [string, any]) => {
+        if (t.coachEmail) {
+          // Check if this coach is already in the list to avoid duplicates
+          const alreadyAdded = allMembers.some(m => m.email?.toLowerCase() === t.coachEmail.toLowerCase());
+          if (!alreadyAdded) {
+            allMembers.push({
+              id: `coach_${tid}`,
+              userId: `u_${tid}`,
+              playerId: `p_${tid}`,
+              name: t.coachName || t.teamName || 'Team Coach',
+              email: t.coachEmail,
+              role: 'Admin',
+              position: 'Coach',
+              teamId: tid,
+              teamName: t.teamName,
+              joinedAt: t.createdAt || new Date().toISOString(),
+              avatar: '',
+              jersey: ''
+            } as Member);
+          }
+        }
+      });
+
+      // 3. Add individual recruits if they have emails
+      if (leagueData.individualRecruits) {
+        Object.entries(leagueData.individualRecruits).forEach(([rid, r]: [string, any]) => {
+          if (r.email) {
+            allMembers.push({
+              id: rid,
+              userId: rid,
+              playerId: `p_${rid}`,
+              name: r.name || 'Recruit',
+              email: r.email,
+              phone: r.phone,
+              role: 'Member',
+              position: 'Recruit',
+              teamId: '',
+              joinedAt: r.signedAt || new Date().toISOString(),
+              avatar: '',
+              jersey: ''
+            } as Member);
+          }
+        });
+      }
+
+      return await hydrateEmails(allMembers);
     } catch (error) {
       console.error('Error fetching league members:', error);
       return [];
@@ -1306,10 +1414,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     
     batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ 
       id: firebaseUser.uid, userId: firebaseUser.uid, playerId: `p_${firebaseUser.uid}`, 
-      name: firebaseUser.displayName, role: 'Admin', position: pos, 
+      name: firebaseUser.displayName || userProfile?.name, role: 'Admin', position: pos, 
       joinedAt: new Date().toISOString(), avatar: userProfile?.avatar || '',
       ownerUserId: resolvedOwnerId, teamId: tid,
-      schoolId: schoolIdToUse
+      schoolId: schoolIdToUse,
+      email: firebaseUser.email || userProfile?.email
     })); 
     
     if (coachName && coachEmail) {
@@ -1411,7 +1520,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       avatar: memberAvatar, 
       ownerUserId: ownerId, 
       teamId: tid,
-      schoolId: teamDoc.data().schoolId || null
+      schoolId: teamDoc.data().schoolId || null,
+      email: userProfile.email || firebaseUser.email || null, 
+      parentEmail: isChild ? firebaseUser.email : null
     })); 
 
     // Hardening: Explicitly link team to child record for Family Hub visibility

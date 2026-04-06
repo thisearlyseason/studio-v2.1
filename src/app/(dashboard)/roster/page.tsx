@@ -38,8 +38,13 @@ import {
   Plus,
   Bookmark,
   MessageSquare,
-  Shield
+  Shield,
+  Mail,
+  Users,
+  Phone,
+  ArrowRight
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useTeam, Member, TeamDocument } from '@/components/providers/team-provider';
 import { EmailExportDialog } from '@/components/team/EmailExportDialog';
@@ -88,13 +93,15 @@ const POSITION_OPTIONS = [
 ];
 
 export default function RosterPage() {
-  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro, getLeagueMembers } = useTeam();
+  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro, getLeagueMembers, createChat } = useTeam();
   const db = useFirestore();
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   
-  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const selectedMember = useMemo(() => members.find(m => m.id === selectedMemberId) || null, [members, selectedMemberId]);
   const [staffNote, setStaffNote] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [isSavingPosition, setIsSavingPosition] = useState(false);
@@ -194,13 +201,61 @@ export default function RosterPage() {
       const finalPosition = newPosition === 'Custom' ? customPosition : newPosition;
       if (!finalPosition) return;
       await updateMember(selectedMember.id, { position: finalPosition });
-      setSelectedMember(prev => prev ? { ...prev, position: finalPosition } : null);
       setIsEditPositionOpen(false);
       toast({ title: "Role Provisioned", description: `${selectedMember.name} has been assigned as ${finalPosition}` });
     } catch (e) {
       toast({ title: "Provisioning Error", variant: "destructive" });
     } finally {
       setIsSavingPosition(false);
+    }
+  };
+
+  const parents = useMemo(() => {
+    const pMap = new Map<string, { email: string; name: string; children: string[]; parentId?: string; phone?: string }>();
+    members.forEach(m => {
+      if (m.parentEmail) {
+        const key = m.parentEmail.toLowerCase();
+        if (!pMap.has(key)) {
+          pMap.set(key, {
+            email: m.parentEmail,
+            name: `Guardian of ${m.name}`,
+            children: [m.name],
+            parentId: m.parentId,
+            phone: m.phone // This might be the player's phone, but we'll use it as contact if available
+          });
+        } else {
+          const p = pMap.get(key)!;
+          if (!p.children.includes(m.name)) {
+            p.children.push(m.name);
+            if (p.children.length > 2) {
+              p.name = `Guardian of ${p.children[0]}, ${p.children[1]} +${p.children.length - 2}`;
+            } else {
+              p.name = `Guardian of ${p.children.join(' & ')}`;
+            }
+          }
+        }
+      }
+    });
+    return Array.from(pMap.values());
+  }, [members]);
+
+  const handleChatWithParent = async (parent: any) => {
+    if (!parent.parentId) {
+      toast({ 
+        title: "Strategic Restriction", 
+        description: "This guardian has not yet initialized their account. They must join the squad to enable direct messaging.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+    try {
+      const chatId = await createChat(`Direct: ${parent.name}`, [parent.parentId]);
+      if (chatId) {
+        router.push(`/messages?chatId=${chatId}`);
+        toast({ title: "Secure Channel Established", description: `You are now in a direct encrypted chat with ${parent.name}.` });
+      }
+    } catch (e) {
+      toast({ title: "Communication Error", description: "Failed to establish secure channel.", variant: "destructive" });
     }
   };
 
@@ -409,11 +464,25 @@ export default function RosterPage() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search squad roster..." className="pl-11 bg-muted/50 border-none rounded-2xl h-12 shadow-inner font-black text-sm text-foreground" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
+
+        {activeTeam.type === 'youth' && (
+          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200/50 flex items-start gap-3 shadow-sm">
+            <div className="p-2 bg-amber-100 rounded-xl shrink-0">
+              <ShieldAlert className="h-4 w-4 text-amber-600" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-900">U18 Safety Protocol Active</p>
+              <p className="text-[11px] font-medium text-amber-800 leading-relaxed">
+                This is classified as an Under 18 team. Parental features **must** be initiated for all athletes. Ensure every student has a verified guardian linked to their roster profile for compliance and safety.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-3">
         {filteredRoster.map((member) => (
-          <Card key={member.id} className="overflow-hidden border-none shadow-sm transition-all duration-300 ring-1 ring-black/5 rounded-[2rem] cursor-pointer group hover:shadow-md bg-white" onClick={() => setSelectedMember(member)}>
+          <Card key={member.id} className="overflow-hidden border-none shadow-sm transition-all duration-300 ring-1 ring-black/5 rounded-[2rem] cursor-pointer group hover:shadow-md bg-white" onClick={() => setSelectedMemberId(member.id)}>
             <CardContent className="p-4 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <Avatar className="h-14 w-14 rounded-2xl border-2 border-background shadow-md">
@@ -444,7 +513,60 @@ export default function RosterPage() {
         ))}
       </div>
 
-      <Dialog open={!!selectedMember} onOpenChange={(open) => !open && setSelectedMember(null)}>
+      {/* Parents & Guardians Section */}
+      {isStaff && parents.length > 0 && (
+        <div className="space-y-6 pt-12 pb-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+               <div className="h-12 w-12 rounded-[1.25rem] bg-primary/10 flex items-center justify-center text-primary shadow-inner">
+                 <Users className="h-6 w-6" />
+               </div>
+               <div>
+                 <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tight">Parents & Guardians</h2>
+                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5 opacity-70">Logistical Support & Emergency Coordination</p>
+               </div>
+            </div>
+            <Badge variant="outline" className="rounded-full px-4 border-primary/20 text-primary font-black text-[10px] uppercase">
+              {parents.length} Active Guardians
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
+            {parents.map((parent, idx) => (
+              <Card key={idx} className="overflow-hidden border-none shadow-sm transition-all duration-300 ring-1 ring-black/5 rounded-[2rem] cursor-pointer group hover:shadow-md bg-white" onClick={() => handleChatWithParent(parent)}>
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <Avatar className="h-14 w-14 rounded-2xl border-2 border-background shadow-md">
+                      <AvatarFallback className="rounded-2xl font-black bg-primary/5 text-primary text-xs flex flex-col items-center justify-center">
+                        <Users className="h-6 w-6" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <h3 className="font-black truncate text-lg tracking-tight group-hover:text-primary transition-colors text-foreground">{parent.name}</h3>
+                        <Badge variant="outline" className="text-[9px] h-5 border-primary/20 text-primary font-black uppercase">Guardian</Badge>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest truncate">
+                          {parent.children.length > 2 ? `Guardian of ${parent.children[0]}, ${parent.children[1]} +${parent.children.length-2}` : `Guardian of ${parent.children.join(' & ')}`}
+                        </p>
+                        {parent.parentId && (
+                          <Badge variant="outline" className="h-4 px-1 text-primary border-none bg-primary/5 -mt-0.5" title="Direct Messaging Enabled">
+                            <MessageSquare className="h-3 w-3" />
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className={cn("h-5 w-5 text-primary transition-all", parent.parentId ? "opacity-20 group-hover:opacity-100" : "opacity-5")} />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <Dialog open={!!selectedMemberId} onOpenChange={(open) => !open && setSelectedMemberId(null)}>
         <DialogContent className="rounded-[3rem] sm:max-w-5xl border-none shadow-2xl p-0 flex flex-col bg-white overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
           <DialogTitle className="sr-only">Player Profile: {selectedMember?.name}</DialogTitle>
           <DialogDescription className="sr-only">Detailed athletic portfolio and personnel evaluation for {selectedMember?.name}</DialogDescription>
@@ -462,13 +584,29 @@ export default function RosterPage() {
                   <div className="space-y-2">
                     <Badge className="bg-primary text-white border-none font-black text-[10px] uppercase h-6 px-4 mb-2">Verified Athlete</Badge>
                     <h2 className="text-4xl font-black tracking-tighter leading-none uppercase">{selectedMember.name}</h2>
-                    <div className="flex items-center gap-2">
-                      <p className="text-primary font-black uppercase tracking-[0.2em] text-sm">{selectedMember.position} • #{selectedMember.jersey}</p>
-                      {activeTeam.role === 'Admin' && (
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-white/40 hover:text-white" onClick={() => setIsEditPositionOpen(true)}>
-                          <Settings className="h-3 w-3" />
-                        </Button>
-                      )}
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <p className="text-primary font-black uppercase tracking-[0.2em] text-sm">{selectedMember.position} • #{selectedMember.jersey}</p>
+                        {activeTeam?.role === 'Admin' && (
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-white/40 hover:text-white shrink-0" onClick={() => setIsEditPositionOpen(true)}>
+                            <Settings className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-2 text-white/60 text-[10px] font-bold uppercase tracking-widest">
+                        {selectedMember.email && (
+                          <div className="flex items-center gap-2">
+                            <Mail className="h-3 w-3" />
+                            <span>{selectedMember.email}</span>
+                          </div>
+                        )}
+                        {selectedMember.parentEmail && (
+                          <div className="flex items-center gap-2">
+                            <Users className="h-3 w-3" />
+                            <span>Guardian: {selectedMember.parentEmail}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 

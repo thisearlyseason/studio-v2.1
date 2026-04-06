@@ -40,8 +40,12 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
 
   return {
     members: [
-      { id: `m1_${teamId}`, userId: `u1_${teamId}`, playerId: `p_u1_${teamId}`, name: `Jordan Smith ${teamSuffix}`, role: 'Member', position: 'Forward', jersey: '10', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, avatar: `https://picsum.photos/seed/m1${teamId}/150/150`, gradYear: '2026', gpa: '3.9', school: 'Metro Academy' },
-      { id: `m2_${teamId}`, userId: `u2_${teamId}`, playerId: `p_u2_${teamId}`, name: `Alex Rivera ${teamSuffix}`, role: 'Member', position: 'Midfield', jersey: '22', medicalClearance: true, amountOwed: 450, feesPaid: false, totalFees: 1250, avatar: `https://picsum.photos/seed/m2${teamId}/150/150`, gradYear: '2027', gpa: '3.7', school: 'Heights High' }
+      { id: `m1_${teamId}`, userId: `u1_${teamId}`, playerId: `p_u1_${teamId}`, name: `Jordan Smith`, role: 'Member', position: 'Forward', jersey: '10', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'j.smith@example.com', parentEmail: 'parent.smith@example.com', avatar: `https://picsum.photos/seed/m1${teamId}/150/150`, gradYear: '2026', gpa: '3.9', school: 'Metro Academy' },
+      { id: `m2_${teamId}`, userId: `u2_${teamId}`, playerId: `p_u2_${teamId}`, name: `Alex Rivera`, role: 'Member', position: 'Midfield', jersey: '22', medicalClearance: true, amountOwed: 450, feesPaid: false, totalFees: 1250, email: 'a.rivera@example.com', parentEmail: 'parent.rivera@example.com', avatar: `https://picsum.photos/seed/m2${teamId}/150/150`, gradYear: '2027', gpa: '3.7', school: 'Heights High' },
+      { id: `m3_${teamId}`, userId: `u3_${teamId}`, playerId: `p_u3_${teamId}`, name: `Taylor Chen`, role: 'Member', position: 'Guard', jersey: '05', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 't.chen@example.com', parentEmail: 'parent.chen@example.com', avatar: `https://picsum.photos/seed/m3${teamId}/150/150`, gradYear: '2025', gpa: '4.0', school: 'Metro Academy' },
+      { id: `m4_${teamId}`, userId: `u4_${teamId}`, playerId: `p_u4_${teamId}`, name: `Casey Morgan`, role: 'Member', position: 'Defense', jersey: '44', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'c.morgan@example.com', parentEmail: 'parent.morgan@example.com', avatar: `https://picsum.photos/seed/m4${teamId}/150/150`, gradYear: '2026', gpa: '3.5', school: 'Westside Prep' },
+      { id: `m5_${teamId}`, userId: `u5_${teamId}`, playerId: `p_u5_${teamId}`, name: `Sam Wilson`, role: 'Member', position: 'Goalkeeper', jersey: '01', medicalClearance: true, amountOwed: 100, feesPaid: false, totalFees: 1250, email: 's.wilson@example.com', parentEmail: 'parent.wilson@example.com', avatar: `https://picsum.photos/seed/m5${teamId}/150/150`, gradYear: '2027', gpa: '3.8', school: 'Heights High' },
+      { id: `m6_${teamId}`, userId: `u6_${teamId}`, playerId: `p_u6_${teamId}`, name: `Coach Miller`, role: 'Admin', position: 'Assistant Coach', jersey: '-', medicalClearance: true, email: 'miller@thesquad.pro', avatar: `https://picsum.photos/seed/m6${teamId}/150/150` }
     ],
     games: [
       { id: `g1_${teamId}`, opponent: 'Tigers', date: yesterday, myScore: 12, opponentScore: 8, result: 'Win', location: 'City Arena' },
@@ -224,11 +228,13 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
     // Local Member Profile
     batch.set(doc(db, 'teams', teamId, 'members', userId), clean({
-      id: userId, userId, teamId, playerId: `p_${userId}_${teamId}`, name: `Guest ${pos}`, role, position: pos, jersey: '22',
+      id: userId, userId, teamId, playerId: `p_${userId}_${teamId}`, 
+      name: `Guest ${pos}`, role, position: pos, jersey: '22',
       joinedAt: now, isDemo: true, avatar: `https://picsum.photos/seed/${userId}/150/150`,
       ownerUserId: userId,
       medicalClearance: true,
-      schoolId: schoolId || primarySchoolId
+      schoolId: schoolId || primarySchoolId,
+      email: `${userRole}@thesquad.pro`
     }));
 
     // Add Coaches for School Hub and Squads
@@ -280,8 +286,23 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     
     if (variant || isPrimary) {
        // Population Data
-       const data = GET_DEMO_DATA(teamId, userId, variant || 'Principal');
-       data.members.forEach(m => batch.set(doc(db, 'teams', teamId, 'members', m.id), clean({ ...m, teamId, ownerUserId: userId, medicalClearance: true })));
+        const data = GET_DEMO_DATA(teamId, userId, variant || (isSchoolDemo ? 'Program' : ''));
+       data.members.forEach(m => {
+         // Create local member record
+         batch.set(doc(db, 'teams', teamId, 'members', m.id), clean({ ...m, teamId, ownerUserId: userId, medicalClearance: true }));
+         
+         // Simulated Login: Create a user record so TeamProvider's hydration finds the "login" email
+         if (m.userId) {
+           batch.set(doc(db, 'users', m.userId), clean({
+             id: m.userId,
+             fullName: m.name,
+             email: m.email,
+             role: m.role === 'Admin' ? 'coach' : 'youth_player',
+             isDemo: true,
+             createdAt: now
+           }), { merge: true });
+         }
+       });
        data.games.forEach(g => batch.set(doc(db, 'teams', teamId, 'games', g.id), clean(g)));
        
        // Force a match, meeting, and practice for EVERY squad

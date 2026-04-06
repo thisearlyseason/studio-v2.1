@@ -54,7 +54,8 @@ import {
   Link2,
   Copy,
   Camera,
-  MapPin
+  MapPin,
+  Mail
 } from 'lucide-react';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where } from 'firebase/firestore';
@@ -425,6 +426,29 @@ function RecruitingProfileManager({ member }: { member: Member }) {
               <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tighter text-zinc-900 leading-[1.1] break-words">
                 {member.name}
               </h3>
+              
+              <div className="flex flex-col gap-1.5 mt-2">
+                {member.email && (
+                  <div className="flex items-center gap-2 group/contact">
+                    <div className="bg-primary/5 p-1 rounded-md text-primary/60 group-hover/contact:text-primary transition-colors">
+                      <Mail className="h-3 w-3" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 group-hover/contact:text-zinc-900 transition-colors">
+                      {member.email}
+                    </span>
+                  </div>
+                )}
+                {member.parentEmail && (
+                  <div className="flex items-center gap-2 group/contact">
+                    <div className="bg-amber-500/5 p-1 rounded-md text-amber-500/60 group-hover/contact:text-amber-500 transition-colors">
+                      <Users className="h-3 w-3" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 group-hover/contact:text-zinc-900 transition-colors">
+                      <span className="text-amber-500/60 mr-1">GUARDIAN:</span> {member.parentEmail}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-8 gap-y-4 pt-2">
