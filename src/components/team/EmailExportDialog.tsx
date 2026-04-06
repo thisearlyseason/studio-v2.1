@@ -144,7 +144,7 @@ export function EmailExportDialog({ members, teamName, getLeagueMembers, leagueI
         <Button 
           variant="outline" 
           size="sm" 
-          className="rounded-full px-5 font-black uppercase text-[10px] h-10 lg:h-11 tracking-widest border-2 border-primary/20 hover:border-primary hover:bg-primary/5 transition-all group"
+          className="rounded-full px-5 font-black uppercase text-[10px] h-10 lg:h-11 tracking-widest border-2 border-primary/20 text-primary hover:text-white hover:border-primary hover:bg-primary transition-all group"
         >
           <Mail className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" />
           Export Emails

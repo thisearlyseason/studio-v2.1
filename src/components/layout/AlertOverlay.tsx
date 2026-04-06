@@ -24,6 +24,11 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
+import { 
+  Tooltip, 
+  TooltipContent, 
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Megaphone, Bell, History, Clock, X, Lock, Users, ShieldAlert, GraduationCap, Baby, Trash2, Zap, Shield, CheckCircle2 } from 'lucide-react';
 import { useTeam, TeamAlert } from '@/components/providers/team-provider';
 import { formatDistanceToNow } from 'date-fns';
@@ -268,71 +273,89 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
                           isUnread ? "opacity-100" : "opacity-0 group-hover:opacity-40"
                         )}>
                           {isUnread && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 rounded-xl bg-white/80 hover:bg-primary hover:text-white shadow-sm border border-black/5" 
-                              disabled={processingIds.includes(alert.id)}
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                setProcessingIds(prev => [...prev, alert.id]);
-                                toast({ 
-                                  title: "Broadcast Archived", 
-                                  description: "Notification moved to history." 
-                                });
-                                await markAlertAsSeen(alert.id);
-                                setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
-                              }}
-                              title="Archive broadcast"
-                            >
-                              <CheckCircle2 className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
-                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-8 w-8 rounded-xl bg-white/80 hover:bg-primary hover:text-white shadow-sm border border-black/5" 
+                                  disabled={processingIds.includes(alert.id)}
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    setProcessingIds(prev => [...prev, alert.id]);
+                                    toast({ 
+                                      title: "Broadcast Archived", 
+                                      description: "Notification moved to history." 
+                                    });
+                                    await markAlertAsSeen(alert.id);
+                                    setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
+                                  }}
+                                >
+                                  <CheckCircle2 className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-primary text-white border-none font-black uppercase text-[8px] tracking-widest">
+                                Archive broadcast
+                              </TooltipContent>
+                            </Tooltip>
                           )}
                           {isUnread && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 rounded-xl bg-white/80 hover:bg-black hover:text-white shadow-sm border border-black/5" 
-                              disabled={processingIds.includes(alert.id)}
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                setProcessingIds(prev => [...prev, alert.id]);
-                                toast({ 
-                                  title: "Notification Removed", 
-                                  description: "Moved to archive history." 
-                                });
-                                await markAlertAsSeen(alert.id);
-                                setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
-                              }}
-                              title="Remove from inbox"
-                            >
-                              <X className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
-                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-8 w-8 rounded-xl bg-white/80 hover:bg-black hover:text-white shadow-sm border border-black/5" 
+                                  disabled={processingIds.includes(alert.id)}
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    setProcessingIds(prev => [...prev, alert.id]);
+                                    toast({ 
+                                      title: "Notification Removed", 
+                                      description: "Moved to archive history." 
+                                    });
+                                    await markAlertAsSeen(alert.id);
+                                    setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
+                                  }}
+                                >
+                                  <X className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-black text-white border-none font-black uppercase text-[8px] tracking-widest">
+                                Remove from inbox
+                              </TooltipContent>
+                            </Tooltip>
                           )}
                           {isStaff && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 rounded-xl bg-white/80 hover:bg-destructive hover:text-white shadow-sm border border-black/5" 
-                              disabled={processingIds.includes(alert.id)}
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                setProcessingIds(prev => [...prev, alert.id]);
-                                toast({ 
-                                  title: "Broadcast Deleted", 
-                                  description: "Permanently removed from team history.",
-                                  variant: "destructive"
-                                });
-                                await deleteAlert(alert.id);
-                                setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
-                              }}
-                              title="Permantently delete (Admin)"
-                            >
-                              <Trash2 className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
-                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-8 w-8 rounded-xl bg-white/80 hover:bg-destructive hover:text-white shadow-sm border border-black/5" 
+                                  disabled={processingIds.includes(alert.id)}
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    setProcessingIds(prev => [...prev, alert.id]);
+                                    toast({ 
+                                      title: "Broadcast Deleted", 
+                                      description: "Permanently removed from team history.",
+                                      variant: "destructive"
+                                    });
+                                    await deleteAlert(alert.id);
+                                    setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
+                                  }}
+                                >
+                                  <Trash2 className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-destructive text-white border-none font-black uppercase text-[8px] tracking-widest">
+                                Permanently delete (Admin)
+                              </TooltipContent>
+                            </Tooltip>
                           )}
                         </div>
                       </div>

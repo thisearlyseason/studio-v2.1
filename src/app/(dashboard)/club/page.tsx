@@ -62,6 +62,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { 
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -500,7 +506,16 @@ export default function ClubManagementPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/5" onClick={() => setTeamToDelete(team)}><Trash2 className="h-5 w-5" /></Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/5" onClick={() => setTeamToDelete(team)}>
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="bg-destructive">
+                        Decommission Squad
+                      </TooltipContent>
+                    </Tooltip>
                     <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] text-foreground border-2 hover:bg-black hover:text-white transition-all" onClick={() => { setActiveTeam(team); router.push('/team'); }}>Command Access <ArrowUpRight className="ml-2 h-4 w-4" /></Button>
                   </div>
                 </div>
@@ -524,9 +539,16 @@ export default function ClubManagementPage() {
                           <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{coach.position} • {teams.find(t => t.id === coach.teamId)?.name}</p>
                        </div>
                        <div className="ml-auto flex items-center gap-2">
-                         <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 bg-muted/20 hover:bg-primary hover:text-white rounded-xl transition-all">
-                           <ChevronRight className="h-4 w-4" />
-                         </Button>
+                         <Tooltip>
+                           <TooltipTrigger asChild>
+                             <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 bg-muted/20 hover:bg-primary hover:text-white rounded-xl transition-all">
+                               <ChevronRight className="h-4 w-4" />
+                             </Button>
+                           </TooltipTrigger>
+                           <TooltipContent>
+                             View Personnel Dossier
+                           </TooltipContent>
+                         </Tooltip>
                        </div>
                      </div>
                    </Card>
@@ -609,9 +631,16 @@ export default function ClubManagementPage() {
                         </div>
                       </div>
                       {schoolHub.ownerUserId === user?.id && (
-                        <Button variant="ghost" size="icon" onClick={() => handleRemoveAdmin(admin.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:bg-destructive/10">
-                          <XCircle className="h-5 w-5" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" onClick={() => handleRemoveAdmin(admin.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:bg-destructive/10">
+                              <XCircle className="h-5 w-5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-destructive">
+                            Revoke Admin Credentials
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                     </div>
                   ))}

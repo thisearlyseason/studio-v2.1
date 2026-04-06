@@ -45,6 +45,11 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Lock as LockIcon } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 export default function VolunteerHubPage() {
   const { 
@@ -229,9 +234,14 @@ export default function VolunteerHubPage() {
                       <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest border-primary/20 text-primary">Assignment</Badge>
                       <div className="flex gap-1">
                         {opp.isShareable && (
-                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/5 text-primary" onClick={() => handleCopyLink(opp.id)}>
-                            <Share2 className="h-4 w-4" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/5 text-primary" onClick={() => handleCopyLink(opp.id)}>
+                                <Share2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Copy Enrollment Portal Link</TooltipContent>
+                          </Tooltip>
                         )}
                         {hasSignedUp && <Badge className="bg-green-500 text-white font-black text-[8px] px-2 h-5 border-none uppercase">Enrolled</Badge>}
                       </div>
@@ -259,12 +269,22 @@ export default function VolunteerHubPage() {
                           {hasSignedUp ? "Enrolled" : "Sign Up"}
                         </Button>
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-14 w-14 rounded-2xl text-primary hover:bg-primary/5" onClick={() => { setEditingOpp(opp); setIsEditOpen(true); }}>
-                            <Zap className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-14 w-14 rounded-2xl text-destructive hover:bg-destructive/5" onClick={() => deleteVolunteerOpportunity(opp.id)}>
-                            <Trash2 className="h-5 w-5" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-14 w-14 rounded-2xl text-primary hover:bg-primary/5" onClick={() => { setEditingOpp(opp); setIsEditOpen(true); }}>
+                                <Zap className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Edit Assignment</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-14 w-14 rounded-2xl text-destructive hover:bg-destructive/5" onClick={() => deleteVolunteerOpportunity(opp.id)}>
+                                <Trash2 className="h-5 w-5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Purge from Ledger</TooltipContent>
+                          </Tooltip>
                         </div>
                       </div>
                     ) : (
@@ -299,9 +319,14 @@ export default function VolunteerHubPage() {
                         <td className="px-10 py-6"><p className="font-black text-sm uppercase tracking-tight">{signup.userName}</p><p className="text-[10px] font-bold text-muted-foreground uppercase">{signup.email || 'Internal Member'}</p></td>
                         <td className="px-6 py-6"><p className="text-xs font-bold uppercase">{opp.title}</p></td>
                         <td className="px-6 py-6 text-center">
-                          <button onClick={() => confirmVolunteerAttendance(opp.id, signup.userId, !signup.isConfirmed)} className={cn("h-8 w-8 rounded-lg flex items-center justify-center mx-auto transition-all", signup.isConfirmed ? "bg-green-500 text-white" : "bg-muted text-muted-foreground/30")}>
-                            <CheckCircle2 className="h-4 w-4" />
-                          </button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button onClick={() => confirmVolunteerAttendance(opp.id, signup.userId, !signup.isConfirmed)} className={cn("h-8 w-8 rounded-lg flex items-center justify-center mx-auto transition-all", signup.isConfirmed ? "bg-green-500 text-white" : "bg-muted text-muted-foreground/30")}>
+                                <CheckCircle2 className="h-4 w-4" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>Verify Field Attendance</TooltipContent>
+                          </Tooltip>
                         </td>
                         <td className="px-6 py-6 text-center"><Badge className={cn("border-none font-black text-[8px] uppercase", signup.status === 'verified' ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700")}>{signup.status}</Badge></td>
                         <td className="px-10 py-6 text-right">{signup.status === 'verified' ? (<span className="font-black text-primary text-sm">+{signup.verifiedHours} HOURS</span>) : (<Button size="sm" className="rounded-xl h-10 px-6 font-black uppercase text-[10px]" onClick={() => verifyVolunteerHours(opp.id, signup.userId, opp.hoursPerSlot)}><ShieldCheck className="h-3 w-3 mr-2" /> Verify {opp.hoursPerSlot}h</Button>)}</td>

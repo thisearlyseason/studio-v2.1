@@ -93,8 +93,13 @@ export default function TeamProfilePage() {
     sport: '',
     description: '',
     contactEmail: '',
-    contactPhone: ''
+    contactPhone: '',
+    schoolId: ''
   });
+
+  const availableSchools = useMemo(() => {
+    return teams.filter(t => t.type === 'school');
+  }, [teams]);
 
   useEffect(() => {
     setMounted(true);
@@ -104,7 +109,8 @@ export default function TeamProfilePage() {
         sport: activeTeam.sport || '',
         description: activeTeam.description || '',
         contactEmail: activeTeam.contactEmail || '',
-        contactPhone: activeTeam.contactPhone || ''
+        contactPhone: activeTeam.contactPhone || '',
+        schoolId: activeTeam.schoolId || ''
       });
       setSelectedPlanId(activeTeam.planId || 'starter_squad');
     }
@@ -492,6 +498,22 @@ export default function TeamProfilePage() {
               <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Squad Bio</Label>
               <Textarea className="rounded-xl min-h-[120px] border-2 font-bold resize-none" placeholder="Brief history or goals..." value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} />
             </div>
+            {availableSchools.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">School Hub</Label>
+                <Select value={editForm.schoolId} onValueChange={(v) => setEditForm(p => ({ ...p, schoolId: v }))}>
+                  <SelectTrigger className="h-12 rounded-xl border-2 font-bold">
+                    <SelectValue placeholder="Select school hub" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="">None</SelectItem>
+                    {availableSchools.map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label>

@@ -129,7 +129,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   
   const actualPlanId = (isParentDemo || isPlayerDemo) ? 'squad_pro' : (isSchoolDemo ? 'squad_organization' : planId);
   const userRole = isSchoolDemo ? 'admin' : (isParentDemo ? 'parent' : (isPlayerDemo ? 'adult_player' : 'coach'));
-  const pos = isParentDemo ? 'Parent' : (isPlayerDemo ? 'Player' : (isSchoolDemo ? 'Principal' : 'Coach'));
+  const pos = isParentDemo ? 'Parent' : (isPlayerDemo ? 'Player' : (isSchoolDemo ? 'Athletic Director' : 'Coach'));
   const role = (isParentDemo || isPlayerDemo) ? 'Member' : 'Admin';
 
   const batch = writeBatch(db);
@@ -138,7 +138,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   // 1. Core Profile Reset
   batch.set(doc(db, 'users', userId), clean({
     id: userId, 
-    fullName: `Guest ${pos}`, 
+    fullName: isSchoolDemo ? 'Guest Admin' : `Guest ${pos}`, 
     email: `${userRole}@thesquad.pro`,
     role: userRole, 
     activePlanId: actualPlanId, 
@@ -229,7 +229,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     // Local Member Profile
     batch.set(doc(db, 'teams', teamId, 'members', userId), clean({
       id: userId, userId, teamId, playerId: `p_${userId}_${teamId}`, 
-      name: `Guest ${pos}`, role, position: pos, jersey: '22',
+      name: isSchoolDemo ? 'Guest Admin' : `Guest ${pos}`, role, position: pos, jersey: '22',
       joinedAt: now, isDemo: true, avatar: `https://picsum.photos/seed/${userId}/150/150`,
       ownerUserId: userId,
       medicalClearance: true,
@@ -296,7 +296,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
            batch.set(doc(db, 'users', m.userId), clean({
              id: m.userId,
              fullName: m.name,
-             email: m.email,
+             email: m.email.replace('@example.com', `_${teamId.slice(-4)}@thesquad.pro`),
              role: m.role === 'Admin' ? 'coach' : 'youth_player',
              isDemo: true,
              createdAt: now

@@ -57,6 +57,12 @@ import { Badge } from '@/components/ui/badge';
 import { useFirestore, useDoc, useMemoFirebase, useCollection } from '@/firebase';
 import { collection, query, orderBy, limit, doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { Checkbox } from '@/components/ui/checkbox';
+import { 
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { updateDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 export default function ChatRoomPage() {
@@ -197,9 +203,16 @@ export default function ChatRoomPage() {
     <div className="flex flex-col h-[calc(100vh-160px)] md:h-[calc(100vh-130px)] -mt-4 md:-mt-4 -mx-4 overflow-hidden bg-muted/5">
       <div className="flex flex-col p-4 border-b bg-white sticky top-0 z-20 shadow-sm gap-3">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.push('/chats')} className="rounded-xl h-10 w-10 shrink-0">
-            <ChevronLeft className="h-6 w-6" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" onClick={() => router.push('/chats')} className="rounded-xl h-10 w-10 shrink-0">
+                <ChevronLeft className="h-6 w-6" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Withdraw to Communications Hub
+            </TooltipContent>
+          </Tooltip>
           <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
             <Hash className="h-5 w-5 stroke-[3px]" />
           </div>
@@ -211,15 +224,29 @@ export default function ChatRoomPage() {
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary" onClick={() => setIsMembersDialogOpen(true)}>
-              <Users className="h-5 w-5" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary" onClick={() => setIsMembersDialogOpen(true)}>
+                  <Users className="h-5 w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                View Squad Enrollment
+              </TooltipContent>
+            </Tooltip>
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary">
-                  <MoreVertical className="h-5 w-5" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary">
+                      <MoreVertical className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Channel Parameters
+                  </TooltipContent>
+                </Tooltip>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 rounded-2xl p-2 shadow-2xl">
                 <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsRenameDialogOpen(true)}>
@@ -336,9 +363,16 @@ export default function ChatRoomPage() {
           {chatImage && (
             <div className="relative inline-block animate-in zoom-in duration-300">
               <img src={chatImage} className="h-24 w-auto rounded-[1.5rem] border-4 border-white shadow-xl ring-1 ring-black/10" alt="Preview" />
-              <Button variant="destructive" size="icon" className="absolute -top-3 -right-3 h-8 w-8 rounded-full shadow-lg border-2 border-white" onClick={() => setChatImage(undefined)}>
-                <X className="h-4 w-4" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="destructive" size="icon" className="absolute -top-3 -right-3 h-8 w-8 rounded-full shadow-lg border-2 border-white" onClick={() => setChatImage(undefined)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-destructive">
+                  Purge Attached Media
+                </TooltipContent>
+              </Tooltip>
             </div>
           )}
           <div className="flex items-end gap-3">
@@ -356,12 +390,26 @@ export default function ChatRoomPage() {
                   } 
                 }} 
               />
-              <Button variant="outline" size="icon" className="rounded-2xl shrink-0 h-12 w-12 border-muted hover:bg-primary/5 hover:border-primary/20 text-muted-foreground hover:text-primary transition-all shadow-sm" onClick={() => fileInputRef.current?.click()}>
-                <ImageIcon className="h-5 w-5" />
-              </Button>
-              <Button variant="outline" size="icon" className="rounded-2xl shrink-0 h-12 w-12 border-muted hover:bg-primary/5 hover:border-primary/20 text-muted-foreground hover:text-primary transition-all shadow-sm" onClick={() => setIsPollDialogOpen(true)}>
-                <BarChart2 className="h-5 w-5" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon" className="rounded-2xl shrink-0 h-12 w-12 border-muted hover:bg-primary/5 hover:border-primary/20 text-muted-foreground hover:text-primary transition-all shadow-sm" onClick={() => fileInputRef.current?.click()}>
+                    <ImageIcon className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Attach Visual Intel
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon" className="rounded-2xl shrink-0 h-12 w-12 border-muted hover:bg-primary/5 hover:border-primary/20 text-muted-foreground hover:text-primary transition-all shadow-sm" onClick={() => setIsPollDialogOpen(true)}>
+                    <BarChart2 className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Initialize Consensus Poll
+                </TooltipContent>
+              </Tooltip>
             </div>
             
             <div className="flex-1 relative">
@@ -372,14 +420,21 @@ export default function ChatRoomPage() {
                 onChange={e => setInput(e.target.value)} 
                 onKeyDown={e => e.key === 'Enter' && handleSendMessage()} 
               />
-              <Button 
-                size="icon" 
-                className="absolute right-1.5 top-1.5 rounded-2xl h-9 w-9 shadow-lg shadow-primary/30 hover:scale-105 active:scale-95 transition-all" 
-                onClick={handleSendMessage}
-                disabled={!input.trim() && !chatImage}
-              >
-                <Send className="h-4 w-4" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    size="icon" 
+                    className="absolute right-1.5 top-1.5 rounded-2xl h-9 w-9 shadow-lg shadow-primary/30 hover:scale-105 active:scale-95 transition-all" 
+                    onClick={handleSendMessage}
+                    disabled={!input.trim() && !chatImage}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Transmit Tactical Data
+                </TooltipContent>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -450,14 +505,21 @@ export default function ChatRoomPage() {
                             <p className="text-[8px] font-bold text-muted-foreground uppercase">{m.position}</p>
                           </div>
                         </div>
-                        <Button 
-                          size="sm" 
-                          variant="ghost" 
-                          className="h-8 w-8 rounded-xl p-0 hover:bg-destructive hover:text-destructive-foreground transition-all" 
-                          onClick={() => handleAddMember(m.userId)}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="h-8 w-8 rounded-xl p-0 hover:bg-destructive hover:text-destructive-foreground transition-all" 
+                              onClick={() => handleAddMember(m.userId)}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Recruit to Collective
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     ))}
                   </div>

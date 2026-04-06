@@ -394,3 +394,285 @@ Import trace for requested module:
  GET /login?reason=expired 200 in 74ms
  GET /login 200 in 75ms
  GET /roster 200 in 76ms
+ GET /login?reason=expired 200 in 194ms
+ GET /login 200 in 11ms
+ GET / 200 in 79ms
+ GET /dashboard?seed_demo=squad_pro 200 in 104ms
+ ✓ Compiled /club in 339ms (1396 modules)
+ GET /club 200 in 541ms
+ GET /dashboard 200 in 173ms
+ GET /login 200 in 91ms
+ GET /login?reason=expired 200 in 114ms
+ GET /login?reason=expired 200 in 55ms
+ ✓ Compiled /favicon.ico in 396ms (1401 modules)
+ GET /favicon.ico 200 in 507ms
+ GET /dashboard?seed_demo=squad_pro 200 in 191ms
+ ✓ Compiled /club in 152ms (1413 modules)
+ GET /club 200 in 225ms
+ GET /dashboard 200 in 160ms
+ GET /dashboard 200 in 44ms
+ GET /favicon.ico 200 in 19ms
+ GET /coaches-corner 200 in 54ms
+ ✓ Compiled in 598ms (2352 modules)
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET /coaches-corner 200 in 327ms
+ GET /login 200 in 23ms
+ ✓ Compiled /favicon.ico in 124ms (1401 modules)
+ GET /favicon.ico 200 in 222ms
+ GET /favicon.ico 200 in 10ms
+ ✓ Compiled in 923ms (2353 modules)
+ GET /login?reason=expired 200 in 105ms
+ GET /login 200 in 106ms
+ ✓ Compiled in 542ms (2367 modules)
+ GET /login?reason=expired 200 in 55ms
+ GET /login 200 in 55ms
+ ✓ Compiled in 408ms (2367 modules)
+ GET /login 200 in 42ms
+ GET /login?reason=expired 200 in 42ms
+ ✓ Compiled in 139ms (982 modules)
+ GET /login?reason=expired 200 in 24ms
+ GET /login 200 in 25ms
+ ✓ Compiled in 523ms (2367 modules)
+ GET /login?reason=expired 200 in 76ms
+ GET /login 200 in 77ms
+ ✓ Compiled in 130ms (982 modules)
+ GET /login 200 in 21ms
+ GET /login?reason=expired 200 in 22ms
+ ✓ Compiled in 123ms (982 modules)
+ GET /login?reason=expired 200 in 20ms
+ GET /login 200 in 21ms
+ ✓ Compiled in 123ms (982 modules)
+ GET /login?reason=expired 200 in 29ms
+ GET /login 200 in 23ms
+ ✓ Compiled in 147ms (982 modules)
+ GET /login 200 in 21ms
+ GET /login?reason=expired 200 in 20ms
+ ✓ Compiled in 115ms (982 modules)
+ GET /login 200 in 27ms
+ GET /login?reason=expired 200 in 28ms
+ ✓ Compiled in 403ms (2367 modules)
+ GET /login?reason=expired 200 in 42ms
+ GET /login 200 in 42ms
+ GET /dashboard?seed_demo=squad_pro 200 in 254ms
+ ○ Compiling /club ...
+ ✓ Compiled /club in 569ms (1397 modules)
+ GET /club 200 in 637ms
+ GET /login?reason=expired 200 in 15ms
+ GET /dashboard 200 in 182ms
+ GET /login 200 in 25ms
+ GET /club 200 in 33ms
+ GET /login 200 in 13ms
+ GET /dashboard?seed_demo=squad_pro 200 in 41ms
+ GET /club 200 in 17ms
+ GET /dashboard 200 in 33ms
+ GET /coaches-corner 200 in 52ms
+ GET /login?reason=expired 200 in 75ms
+ GET /dashboard?seed_demo=squad_pro 200 in 41ms
+ GET /club 200 in 15ms
+ GET /dashboard 200 in 41ms
+ GET /coaches-corner 200 in 27ms
+ ○ Compiling /recruit/player/[playerId] ...
+ ✓ Compiled /recruit/player/[playerId] in 983ms (2378 modules)
+ GET /recruit/player/p_u1_demo_squad_pro_i4h1 200 in 1504ms
+ ✓ Compiled in 1110ms (2372 modules)
+ GET /login?reason=expired 200 in 96ms
+ GET /coaches-corner 200 in 97ms
+ ✓ Compiled in 404ms (2372 modules)
+ GET /login?reason=expired 200 in 53ms
+ GET /coaches-corner 200 in 54ms
+ ✓ Compiled in 532ms (2372 modules)
+ GET /login?reason=expired 200 in 133ms
+ GET /coaches-corner 200 in 135ms
+ ✓ Compiled in 274ms (2372 modules)
+ GET /login?reason=expired 200 in 88ms
+ GET /coaches-corner 200 in 93ms
+ ✓ Compiled in 682ms (2372 modules)
+ GET /login?reason=expired 200 in 49ms
+ GET /coaches-corner 200 in 51ms
+ ✓ Compiled in 114ms (987 modules)
+ GET /login?reason=expired 200 in 22ms
+ GET /coaches-corner 200 in 26ms
+ GET /login?reason=expired 200 in 209ms
+ GET /dashboard?seed_demo=squad_pro 200 in 89ms
+ ○ Compiling /club ...
+ ✓ Compiled /club in 548ms (1397 modules)
+ GET /club 200 in 613ms
+ GET /dashboard 200 in 149ms
+ GET /coaches-corner 200 in 25ms
+ GET / 200 in 49ms
+ GET / 200 in 29ms
+ GET /roster 200 in 81ms
+ GET /login 200 in 14ms
+ GET /login?reason=expired 200 in 78ms
+ ✓ Compiled in 733ms (2372 modules)
+ GET /login 200 in 215ms
+ GET /login?reason=expired 200 in 217ms
+ GET /login?reason=expired 200 in 216ms
+ ✓ Compiled in 131ms (987 modules)
+ GET /login 200 in 44ms
+ GET /login?reason=expired 200 in 44ms
+ GET /login?reason=expired 200 in 38ms
+ ✓ Compiled in 719ms (2372 modules)
+ GET /login?reason=expired 200 in 190ms
+ GET /login 200 in 189ms
+ GET /login?reason=expired 200 in 189ms
+ ✓ Compiled in 752ms (2372 modules)
+ GET /login 200 in 44ms
+ GET /login?reason=expired 200 in 45ms
+ GET /login?reason=expired 200 in 45ms
+ ✓ Compiled in 367ms (2372 modules)
+ GET /login 200 in 52ms
+ GET /login?reason=expired 200 in 53ms
+ GET /login?reason=expired 200 in 54ms
+ ✓ Compiled in 317ms (987 modules)
+ GET /login?reason=expired 200 in 163ms
+ GET /login?reason=expired 200 in 164ms
+ GET /login 200 in 163ms
+ ✓ Compiled in 134ms (987 modules)
+ GET /login 200 in 35ms
+ GET /login?reason=expired 200 in 38ms
+ GET /login?reason=expired 200 in 38ms
+ ✓ Compiled in 143ms (987 modules)
+ GET /login?reason=expired 200 in 34ms
+ GET /login 200 in 36ms
+ GET /login?reason=expired 200 in 31ms
+ ✓ Compiled in 123ms (987 modules)
+ GET /login?reason=expired 200 in 35ms
+ GET /login?reason=expired 200 in 35ms
+ GET /login 200 in 36ms
+ GET /dashboard?seed_demo=squad_pro 200 in 224ms
+ ○ Compiling /club ...
+ ✓ Compiled /club in 662ms (1397 modules)
+ GET /club 200 in 726ms
+ GET /dashboard 200 in 178ms
+ ✓ Compiled /chats in 379ms (1404 modules)
+ GET /chats 200 in 436ms
+ GET /login?reason=expired 200 in 37ms
+ GET /login?reason=expired 200 in 39ms
+ GET /chats 200 in 24ms
+ ✓ Compiled in 147ms (987 modules)
+ GET /login?reason=expired 200 in 42ms
+ GET /login?reason=expired 200 in 43ms
+ GET /chats 200 in 51ms
+ ✓ Compiled in 144ms (987 modules)
+ GET /login?reason=expired 200 in 38ms
+ GET /login?reason=expired 200 in 38ms
+ GET /chats 200 in 41ms
+ ✓ Compiled in 103ms (987 modules)
+ GET /login?reason=expired 200 in 33ms
+ GET /login?reason=expired 200 in 33ms
+ GET /chats 200 in 33ms
+ ✓ Compiled in 110ms (987 modules)
+ GET /login?reason=expired 200 in 37ms
+ GET /login?reason=expired 200 in 38ms
+ GET /chats 200 in 39ms
+ ✓ Compiled in 113ms (987 modules)
+ GET /login?reason=expired 200 in 48ms
+ GET /login?reason=expired 200 in 48ms
+ GET /chats 200 in 51ms
+ ✓ Compiled in 129ms (987 modules)
+ GET /login?reason=expired 200 in 37ms
+ GET /login?reason=expired 200 in 38ms
+ GET /chats 200 in 39ms
+ GET / 200 in 122ms
+ ✓ Compiled in 123ms (987 modules)
+ GET /login?reason=expired 200 in 31ms
+ GET /login?reason=expired 200 in 31ms
+ GET / 200 in 32ms
+ ✓ Compiled in 762ms (2355 modules)
+ GET /login?reason=expired 200 in 67ms
+ GET /login?reason=expired 200 in 68ms
+ GET / 200 in 68ms
+ GET / 200 in 124ms
+ ✓ Compiled /favicon.ico in 191ms (1385 modules)
+ GET /favicon.ico 200 in 369ms
+ GET /dashboard?seed_demo=squad_pro 200 in 183ms
+ ✓ Compiled /club in 204ms (1417 modules)
+ GET /club 200 in 297ms
+ GET /dashboard 200 in 149ms
+ ✓ Compiled /coaches-corner in 152ms (1421 modules)
+ GET /coaches-corner 200 in 204ms
+ ✓ Compiled /recruit/player/[playerId] in 385ms (1429 modules)
+ GET /recruit/player/p_u1_demo_squad_pro_lA02 200 in 526ms
+ GET /roster 200 in 36ms
+ ○ Compiling /drills ...
+ ✓ Compiled /drills in 1063ms (2382 modules)
+ GET /drills 200 in 1348ms
+ ✓ Compiled in 812ms (2372 modules)
+ GET /login?reason=expired 200 in 168ms
+ GET /login?reason=expired 200 in 168ms
+ GET /drills 200 in 169ms
+ ✓ Compiled in 379ms (2372 modules)
+ GET /login?reason=expired 200 in 81ms
+ GET /login?reason=expired 200 in 81ms
+ GET /drills 200 in 82ms
+ ✓ Compiled in 299ms (2372 modules)
+ GET /login?reason=expired 200 in 68ms
+ GET /login?reason=expired 200 in 67ms
+ GET /drills 200 in 69ms
+ ✓ Compiled in 116ms (992 modules)
+ GET /login?reason=expired 200 in 40ms
+ GET /login?reason=expired 200 in 41ms
+ GET /drills 200 in 42ms
+ ✓ Compiled in 875ms (2372 modules)
+ GET /login?reason=expired 200 in 163ms
+ GET /login?reason=expired 200 in 164ms
+ GET /drills 200 in 167ms
+ GET /login?reason=expired 200 in 234ms
+ ✓ Compiled in 1273ms (2372 modules)
+ GET /login?reason=expired 200 in 92ms
+ GET /login?reason=expired 200 in 94ms
+ GET /login?reason=expired 200 in 101ms
+ ✓ Compiled in 351ms (2372 modules)
+ GET /login?reason=expired 200 in 59ms
+ GET /login?reason=expired 200 in 59ms
+ GET /login?reason=expired 200 in 21ms
+ ✓ Compiled in 328ms (2372 modules)
+ GET /login?reason=expired 200 in 58ms
+ GET /login?reason=expired 200 in 63ms
+ GET /login?reason=expired 200 in 21ms
+ ✓ Compiled / in 433ms (1389 modules)
+ GET / 200 in 481ms
+ GET /drills 200 in 278ms
+ GET /login 200 in 24ms
+ GET /drills 200 in 36ms
+ GET /login 200 in 25ms
+ GET /login 200 in 62ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 702ms (1395 modules)
+ GET /dashboard?seed_demo=squad_pro 200 in 922ms
+ ✓ Compiled /club in 233ms (1407 modules)
+ GET /club 200 in 388ms
+ GET /dashboard 200 in 136ms
+ GET /drills 200 in 45ms
+ GET /coaches-corner 200 in 107ms
+ GET /login?reason=expired 200 in 77ms
+ GET /dashboard?seed_demo=squad_pro 200 in 44ms
+ GET /club 200 in 19ms
+ GET /dashboard 200 in 44ms
+ ○ Compiling /leagues ...
+ ✓ Compiled /leagues in 1563ms (4381 modules)
+ GET /leagues 200 in 1636ms
+ GET /coaches-corner 200 in 31ms
+ ○ Compiling /facilities ...
+ ✓ Compiled /facilities in 592ms (4382 modules)
+ GET /facilities 200 in 640ms
+ ○ Compiling /equipment ...
+ ✓ Compiled /equipment in 501ms (4400 modules)
+ GET /equipment 200 in 550ms
+ GET /coaches-corner 200 in 28ms
+ ○ Compiling /team ...
+ ✓ Compiled /team in 567ms (4414 modules)
+ GET /team 200 in 620ms
+ ✓ Compiled in 1117ms (4390 modules)
+ GET /team 200 in 82ms
+ ✓ Compiled in 332ms (4390 modules)
+ GET /team 200 in 50ms
+ GET /team 200 in 206ms
+ ✓ Compiled /favicon.ico in 466ms (2397 modules)
+ GET /favicon.ico 200 in 578ms
+ ○ Compiling /teams/join ...
+ ✓ Compiled /teams/join in 561ms (4402 modules)
+ GET /teams/join 200 in 730ms
+ GET /coaches-corner 200 in 42ms
+ GET /team 200 in 39ms

@@ -41,6 +41,11 @@ import { Progress } from '@/components/ui/progress';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useTeam } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, limit, doc, increment, arrayUnion, arrayRemove, getDoc, updateDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
@@ -80,7 +85,14 @@ function CommentList({ postId, teamId, isAdmin, currentUserId, canComment }: { p
               <div className="flex items-center gap-2">
                 <span className="text-[9px] text-muted-foreground whitespace-nowrap">{formatDistanceToNow(new Date(comment.createdAt))} ago</span>
                 {(isAdmin || comment.authorId === currentUserId) && (
-                  <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity text-destructive" onClick={() => deleteDocumentNonBlocking(doc(db, 'teams', teamId, 'feedPosts', postId, 'comments', comment.id))}><Trash2 className="h-3 w-3" /></Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity text-destructive" onClick={() => deleteDocumentNonBlocking(doc(db, 'teams', teamId, 'feedPosts', postId, 'comments', comment.id))}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Purge Comment</TooltipContent>
+                  </Tooltip>
                 )}
               </div>
             </div>
@@ -338,9 +350,14 @@ export default function FeedPage() {
                   {imageUrl && (
                     <div className="relative mt-2 rounded-2xl overflow-hidden group/img">
                       <img src={imageUrl} className="w-full h-auto max-h-[300px] object-cover border" alt="Upload preview" />
-                      <Button variant="destructive" size="icon" className="absolute top-2 right-2 h-8 w-8 rounded-full shadow-lg opacity-0 group-hover/img:opacity-100 transition-opacity" onClick={() => setImageUrl(undefined)}>
-                        <X className="h-4 w-4" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="destructive" size="icon" className="absolute top-2 right-2 h-8 w-8 rounded-full shadow-lg opacity-0 group-hover/img:opacity-100 transition-opacity" onClick={() => setImageUrl(undefined)}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Withdraw Visual Intel</TooltipContent>
+                      </Tooltip>
                     </div>
                   )}
 
@@ -352,8 +369,22 @@ export default function FeedPage() {
                         reader.readAsDataURL(e.target.files[0]);
                       }
                     }} />
-                    <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => fileInputRef.current?.click()}><ImagePlus className="h-4 w-4 lg:h-5 lg:w-5" /></Button>
-                    <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => setIsPollDialogOpen(true)}><BarChart2 className="h-4 w-4 lg:h-5 lg:w-5" /></Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => fileInputRef.current?.click()}>
+                          <ImagePlus className="h-4 w-4 lg:h-5 lg:w-5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Attach Tactical Imagery</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => setIsPollDialogOpen(true)}>
+                          <BarChart2 className="h-4 w-4 lg:h-5 lg:w-5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Initialize Tactical Poll</TooltipContent>
+                    </Tooltip>
                     <Button disabled={!newPostContent.trim() && !imageUrl} onClick={handlePost} className="ml-auto rounded-full px-6 lg:px-8 h-10 lg:h-12 font-black uppercase text-[9px] lg:text-[11px] tracking-widest shadow-lg lg:shadow-xl shadow-primary/20">Post to Squad</Button>
                   </div>
                 </div>
@@ -378,7 +409,14 @@ export default function FeedPage() {
                   </div>
                 </div>
                 {(isAdmin || post.authorId === user?.id) && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 lg:h-10 lg:w-10 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:bg-destructive/10 rounded-full" onClick={() => deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'feedPosts', post.id))}><Trash2 className="h-4 w-4 lg:h-5 lg:w-5" /></Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 lg:h-10 lg:w-10 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:bg-destructive/10 rounded-full" onClick={() => deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'feedPosts', post.id))}>
+                        <Trash2 className="h-4 w-4 lg:h-5 lg:w-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Purge Intelligence Report</TooltipContent>
+                  </Tooltip>
                 )}
               </CardHeader>
               <CardContent className="pt-2 pb-4 lg:pb-6 px-6 lg:px-8 space-y-4">
@@ -429,14 +467,19 @@ export default function FeedPage() {
                     onChange={(e) => setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))} 
                     onKeyDown={(e) => e.key === 'Enter' && commentInputs[post.id]?.trim() && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts', post.id, 'comments'), { postId: post.id, content: commentInputs[post.id], authorId: user?.id, authorName: user?.name, createdAt: new Date().toISOString() }).then(() => setCommentInputs(p => ({ ...p, [post.id]: '' })))} 
                   />
-                  <Button 
-                    size="icon" 
-                    disabled={!canComment}
-                    className="rounded-xl lg:rounded-2xl h-10 w-10 lg:h-12 lg:w-12 shrink-0 shadow-lg lg:shadow-xl shadow-primary/20" 
-                    onClick={() => commentInputs[post.id]?.trim() && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts', post.id, 'comments'), { postId: post.id, content: commentInputs[post.id], authorId: user?.id, authorName: user?.name, createdAt: new Date().toISOString() }).then(() => setCommentInputs(p => ({ ...p, [post.id]: '' })))}
-                  >
-                    <Send className="h-4 w-4 lg:h-5 lg:w-5" />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        size="icon" 
+                        disabled={!canComment}
+                        className="rounded-xl lg:rounded-2xl h-10 w-10 lg:h-12 lg:w-12 shrink-0 shadow-lg lg:shadow-xl shadow-primary/20" 
+                        onClick={() => commentInputs[post.id]?.trim() && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts', post.id, 'comments'), { postId: post.id, content: commentInputs[post.id], authorId: user?.id, authorName: user?.name, createdAt: new Date().toISOString() }).then(() => setCommentInputs(p => ({ ...p, [post.id]: '' })))}
+                      >
+                        <Send className="h-4 w-4 lg:h-5 lg:w-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Transmit Mark</TooltipContent>
+                  </Tooltip>
                 </div>
               </CardFooter>
             </Card>
@@ -474,7 +517,14 @@ export default function FeedPage() {
                     {pollOptions.map((opt, i) => (
                       <div key={i} className="flex gap-2 lg:gap-3 animate-in fade-in slide-in-from-left-2">
                         <Input placeholder={`Option ${i+1}`} value={opt.text} onChange={e => { const n = [...pollOptions]; n[i].text = e.target.value; setPollOptions(n); }} className="rounded-xl h-10 lg:h-11 bg-muted/30 focus:bg-background" />
-                        <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-11 lg:w-11 rounded-xl bg-muted/20" onClick={() => { activeOptionIdxRef.current = i; optionImageInputRef.current?.click(); }}><ImageIcon className="h-4 w-4" /></Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-11 lg:w-11 rounded-xl bg-muted/20" onClick={() => { activeOptionIdxRef.current = i; optionImageInputRef.current?.click(); }}>
+                              <ImageIcon className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Enroll Reference Graphic</TooltipContent>
+                        </Tooltip>
                       </div>
                     ))}
                   </div>

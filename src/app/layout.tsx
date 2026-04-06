@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   description: 'Unite your team and coordinate like pros with The Squad.',
 };
 
+import { TooltipProvider } from "@/components/ui/tooltip";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -25,13 +27,16 @@ export default function RootLayout({
       <body className="font-body antialiased min-h-screen bg-background text-foreground selection:bg-primary/20" suppressHydrationWarning>
         <FirebaseClientProvider>
           <Suspense fallback={null}>
-            <TeamProvider>
-              {children}
-              <Toaster />
-            </TeamProvider>
+            <TooltipProvider delayDuration={0}>
+              <TeamProvider>
+                {children}
+                <Toaster />
+              </TeamProvider>
+            </TooltipProvider>
           </Suspense>
         </FirebaseClientProvider>
       </body>
     </html>
   );
 }
+

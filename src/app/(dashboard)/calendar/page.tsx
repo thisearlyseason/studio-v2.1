@@ -63,6 +63,11 @@ import {
   DialogTitle
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { WeatherPulse } from '@/components/WeatherPulse';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
@@ -533,9 +538,27 @@ export default function MasterCalendarPage() {
             <h2 className="text-2xl font-black uppercase tracking-tight">{format(currentDate, 'MMMM yyyy')}</h2>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="text-white hover:bg-white/10 rounded-full"><ChevronLeft className="h-6 w-6" /></Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="text-white hover:bg-white/10 rounded-full">
+                  <ChevronLeft className="h-6 w-6" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Acknowledge Previous Month
+              </TooltipContent>
+            </Tooltip>
             <Button variant="ghost" size="sm" onClick={() => { setCurrentDate(new Date()); setSelectedDay(new Date()); }} className="text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest px-4 rounded-full">Today</Button>
-            <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="text-white hover:bg-white/10 rounded-full"><ChevronRight className="h-6 w-6" /></Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="text-white hover:bg-white/10 rounded-full">
+                  <ChevronRight className="h-6 w-6" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Advance to Next Month
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
@@ -562,16 +585,21 @@ export default function MasterCalendarPage() {
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {dayEvents.map(event => (
-                          <div 
-                            key={event.id} 
-                            className={cn(
-                              "p-1 rounded-md flex items-center justify-center shrink-0 border border-white/10",
-                              EVENT_TYPE_COLORS[event.eventType as EventType || 'other']
-                            )}
-                            title={`${event.startTime} - ${event.title}`}
-                          >
-                            {event.isTournament ? <Trophy className="h-3 w-3" /> : (event.eventType === 'game' ? <Activity className="h-3 w-3" /> : <div className="h-3 w-3 rounded-full border-2 border-white/50" />)}
-                          </div>
+                          <Tooltip key={event.id}>
+                            <TooltipTrigger asChild>
+                              <div 
+                                className={cn(
+                                  "p-1 rounded-md flex items-center justify-center shrink-0 border border-white/10",
+                                  EVENT_TYPE_COLORS[event.eventType as EventType || 'other']
+                                )}
+                              >
+                                {event.isTournament ? <Trophy className="h-3 w-3" /> : (event.eventType === 'game' ? <Activity className="h-3 w-3" /> : <div className="h-3 w-3 rounded-full border-2 border-white/50" />)}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {event.startTime} - {event.title}
+                            </TooltipContent>
+                          </Tooltip>
                         ))}
                       </div>
                     </div>

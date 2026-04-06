@@ -37,6 +37,11 @@ import { collection, query, orderBy, doc, limit, updateDoc } from 'firebase/fire
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 const getYoutubeThumbnail = (url: string) => {
   if (!url) return null;
@@ -76,13 +81,13 @@ export default function PlaybookAndGamePlayPage() {
   const [selectedDrill, setSelectedDrill] = useState<any>(null);
   const [selectedFile, setSelectedFile] = useState<TeamFile | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [uploadCat, setUploadCat] = useState('Game Tape');
-  const [newTitle, setNewTitle] = useState('');
-  const [newDesc, setNewDesc] = useState('');
-  const [newUrl, setNewUrl] = useState('');
-  const [newCoverUrl, setNewCoverUrl] = useState('');
+  const [uploadCat, setUploadCat] = useState<string>('Game Tape');
+  const [newTitle, setNewTitle] = useState<string>('');
+  const [newDesc, setNewDesc] = useState<string>('');
+  const [newUrl, setNewUrl] = useState<string>('');
+  const [newCoverUrl, setNewCoverUrl] = useState<string>('');
   const [newMedia, setNewMedia] = useState<{url: string, description: string}[]>([]);
-  const [newTime, setNewTime] = useState('');
+  const [newTime, setNewTime] = useState<string>('');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [expandedDrillIds, setExpandedDrillIds] = useState<Set<string>>(new Set());
   
@@ -194,8 +199,8 @@ export default function PlaybookAndGamePlayPage() {
     }
   };
 
-  const [commentText, setCommentText] = useState('');
-  const [commentTime, setCommentTime] = useState('');
+  const [commentText, setCommentText] = useState<string>('');
+  const [commentTime, setCommentTime] = useState<string>('');
 
   const handleAddComment = async (id: string, currentComments: any[], type: 'drills' | 'files') => {
     if (!commentText || !activeTeam || !db) return;
@@ -280,7 +285,7 @@ export default function PlaybookAndGamePlayPage() {
   };
 
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [editingCommentText, setEditingCommentText] = useState('');
+  const [editingCommentText, setEditingCommentText] = useState<string>('');
 
   if (isDrillsLoading || isFilesLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Tactical Hub...</p></div>;
 
@@ -361,7 +366,7 @@ export default function PlaybookAndGamePlayPage() {
           <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
             <div className="relative flex-1 w-full">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder={`Search ${viewMode}...`} className="pl-11 h-14 rounded-2xl bg-muted/50 border-none shadow-inner font-black text-sm text-foreground" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <Input placeholder={`Search ${viewMode}...`} className="pl-11 h-14 rounded-2xl bg-muted/50 border-none shadow-inner font-black text-sm text-foreground" value={searchTerm ?? ""} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             {isStaff && (
               <Button onClick={() => {
@@ -403,12 +408,22 @@ export default function PlaybookAndGamePlayPage() {
                       <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase">{(drill.comments?.length || 0)} MARKS</Badge>
                       {isStaff && (
                         <div className="flex bg-muted/50 rounded-xl overflow-hidden shadow-inner">
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditDrill(e, drill); }}>
-                            <Edit2 className="h-3 w-3" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteDrill(drill.id); }}>
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditDrill(e, drill); }}>
+                                <Edit2 className="h-3 w-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Modify Protocol</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteDrill(drill.id); }}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Purge from Playbook</TooltipContent>
+                          </Tooltip>
                         </div>
                       )}
                     </div>
@@ -448,12 +463,22 @@ export default function PlaybookAndGamePlayPage() {
                       <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase">{(file.comments?.length || 0)} MARKS</Badge>
                       {isStaff && (
                         <div className="flex bg-muted/50 rounded-xl overflow-hidden shadow-inner">
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditFile(e, file); }}>
-                            <Edit2 className="h-3 w-3" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteFile(file.id); }}>
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditFile(e, file); }}>
+                                <Edit2 className="h-3 w-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Update Film Metadata</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteFile(file.id); }}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Purge Archive</TooltipContent>
+                          </Tooltip>
                         </div>
                       )}
                     </div>
@@ -476,16 +501,16 @@ export default function PlaybookAndGamePlayPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               <div className="sm:col-span-2 space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Drill Title</Label>
-                <Input placeholder="e.g. 5-4-3 Double Play Rotation" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+                <Input placeholder="e.g. 5-4-3 Double Play Rotation" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle ?? ""} onChange={e => setNewTitle(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1 flex items-center gap-1"><Clock className="h-3 w-3" /> Time</Label>
-                <Input placeholder="e.g. 15 mins" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTime} onChange={e => setNewTime(e.target.value)} />
+                <Input placeholder="e.g. 15 mins" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTime ?? ""} onChange={e => setNewTime(e.target.value)} />
               </div>
             </div>
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Strategic Instructions</Label>
-              <Textarea placeholder="Describe the drill setup, reps, and coaching cues..." className="rounded-2xl border-2 font-medium min-h-[120px] p-4 resize-none" value={newDesc} onChange={e => setNewDesc(e.target.value)} />
+              <Textarea placeholder="Describe the drill setup, reps, and coaching cues..." className="rounded-2xl border-2 font-medium min-h-[120px] p-4 resize-none" value={newDesc ?? ""} onChange={e => setNewDesc(e.target.value)} />
             </div>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -495,29 +520,36 @@ export default function PlaybookAndGamePlayPage() {
                   </Button>
                 </div>
                 <div className="flex gap-2">
-                  <Input placeholder="Cover Photo URL (Image Only)" className="h-12 rounded-xl border-2 font-bold" value={newCoverUrl} onChange={e => setNewCoverUrl(e.target.value)} />
-                  <Button variant="outline" className="h-12 rounded-xl" title="Upload Cover Image" onClick={() => {
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.accept = 'image/*';
-                      input.onchange = (e: any) => {
-                        const file = e.target.files[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onload = (ev) => setNewCoverUrl(ev.target?.result as string);
-                          reader.readAsDataURL(file);
-                        }
-                      };
-                      input.click();
-                    }}>
-                      <Upload className="h-4 w-4" />
-                    </Button>
+                  <Input placeholder="Cover Photo URL (Image Only)" className="h-12 rounded-xl border-2 font-bold" value={newCoverUrl ?? ""} onChange={e => setNewCoverUrl(e.target.value)} />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="outline" className="h-12 rounded-xl" onClick={() => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*';
+                        input.onchange = (e: any) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => setNewCoverUrl(ev.target?.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                        };
+                        input.click();
+                      }}>
+                        <Upload className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-lg">
+                      Upload Cover Image
+                    </TooltipContent>
+                  </Tooltip>
                   </div>
                 </div>
                 
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Primary Video URL (YouTube/Vimeo)</Label>
-                  <Input placeholder="Strategy Video URL" className="h-12 rounded-xl border-2 font-bold" value={newUrl} onChange={e => setNewUrl(e.target.value)} />
+                  <Input placeholder="Strategy Video URL" className="h-12 rounded-xl border-2 font-bold" value={newUrl ?? ""} onChange={e => setNewUrl(e.target.value)} />
                 </div>
 
                 <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
@@ -525,12 +557,17 @@ export default function PlaybookAndGamePlayPage() {
                     <div key={i} className="space-y-3 p-5 bg-muted/30 rounded-2xl border-2 border-dashed">
                       <div className="flex items-center justify-between mb-1">
                         <Label className="text-[8px] font-black uppercase tracking-widest">Media Slot {i + 1}</Label>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-50" onClick={() => setNewMedia(newMedia.filter((_, idx) => idx !== i))}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-50" onClick={() => setNewMedia(newMedia.filter((_, idx) => idx !== i))}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Remove Media Slot</TooltipContent>
+                        </Tooltip>
                       </div>
                       <div className="flex gap-2">
-                        <Input placeholder="Image/Video URL" className="h-11 rounded-xl border font-bold text-xs flex-1" value={m.url} onChange={e => {
+                        <Input placeholder="Image/Video URL" className="h-11 rounded-xl border font-bold text-xs flex-1" value={m.url ?? ""} onChange={e => {
                           const next = [...newMedia];
                           next[i] = { ...next[i], url: e.target.value };
                           setNewMedia(next);
@@ -559,7 +596,7 @@ export default function PlaybookAndGamePlayPage() {
                       <Input 
                         placeholder="Add sub-text or internal description for this media..." 
                         className="h-10 rounded-xl border font-black text-[9px] uppercase tracking-widest placeholder:opacity-50" 
-                        value={m.description} 
+                        value={m.description ?? ""} 
                         onChange={e => {
                           const next = [...newMedia];
                           next[i] = { ...next[i], description: e.target.value };
@@ -586,7 +623,7 @@ export default function PlaybookAndGamePlayPage() {
           <div className="p-8 space-y-6">
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Tape Title</Label>
-              <Input placeholder="e.g. Regional Finals vs Lancers" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+              <Input placeholder="e.g. Regional Finals vs Lancers" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle ?? ""} onChange={e => setNewTitle(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-[0.1em] ml-1">Archive Category</Label>
@@ -601,7 +638,7 @@ export default function PlaybookAndGamePlayPage() {
             </div>
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Video Source (URL)</Label>
-              <Input placeholder="https://youtu.be/..." className="h-12 rounded-xl border-2 font-bold" value={newUrl} onChange={e => setNewUrl(e.target.value)} />
+              <Input placeholder="https://youtu.be/..." className="h-12 rounded-xl border-2 font-bold" value={newUrl ?? ""} onChange={e => setNewUrl(e.target.value)} />
               <div className="relative py-4 text-center">
                 <div className="absolute inset-0 flex items-center"><div className="w-full border-t"></div></div>
                 <span className="relative bg-white px-4 text-[9px] font-black text-muted-foreground uppercase">OR UPLOAD RAW FILE</span>
@@ -712,33 +749,43 @@ export default function PlaybookAndGamePlayPage() {
                       </div>
                       {isStaff && (
                         <div className="flex items-center gap-2 shrink-0">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-muted-foreground hover:text-black hover:bg-black/5 rounded-xl shrink-0" 
-                            onClick={(e) => {
-                              if (selectedDrill) {
-                                openEditDrill(e, selectedDrill);
-                                setSelectedDrill(null);
-                              } else {
-                                openEditFile(e, selectedFile);
-                                setSelectedFile(null);
-                              }
-                            }}
-                          >
-                            <Edit2 className="h-5 w-5" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-red-500 hover:bg-red-50 rounded-xl shrink-0" 
-                            onClick={() => { 
-                              selectedDrill ? deleteDrill(data.id) : deleteFile(data.id); 
-                              setSelectedDrill(null); setSelectedFile(null);
-                            }}
-                          >
-                            <Trash2 className="h-5 w-5" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="text-muted-foreground hover:text-black hover:bg-black/5 rounded-xl shrink-0" 
+                                onClick={(e) => {
+                                  if (selectedDrill) {
+                                    openEditDrill(e, selectedDrill);
+                                    setSelectedDrill(null);
+                                  } else {
+                                    openEditFile(e, selectedFile);
+                                    setSelectedFile(null);
+                                  }
+                                }}
+                              >
+                                <Edit2 className="h-5 w-5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Quick Modify</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="text-red-500 hover:bg-red-50 rounded-xl shrink-0" 
+                                onClick={() => { 
+                                  selectedDrill ? deleteDrill(data.id) : deleteFile(data.id); 
+                                  setSelectedDrill(null); setSelectedFile(null);
+                                }}
+                              >
+                                <Trash2 className="h-5 w-5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Erase from Vault</TooltipContent>
+                          </Tooltip>
                         </div>
                       )}
                     </div>
@@ -778,29 +825,39 @@ export default function PlaybookAndGamePlayPage() {
                               <div className="flex items-center gap-1 opacity-0 group-hover/cmt:opacity-100 transition-opacity">
                                 {(c.authorId === user?.id || isStaff) && (
                                   <>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="h-6 w-6 text-muted-foreground hover:bg-muted/10" 
-                                      onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        setEditingCommentId(c.id); 
-                                        setEditingCommentText(c.text); 
-                                      }}
-                                    >
-                                      <Edit2 className="h-3 w-3" />
-                                    </Button>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="h-6 w-6 text-red-500 hover:bg-red-50" 
-                                      onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        handleDeleteComment(data.id, c.id, data.comments, type); 
-                                      }}
-                                    >
-                                      <Trash2 className="h-3 w-3" />
-                                    </Button>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button 
+                                          variant="ghost" 
+                                          size="icon" 
+                                          className="h-6 w-6 text-muted-foreground hover:bg-muted/10" 
+                                          onClick={(e) => { 
+                                            e.stopPropagation(); 
+                                            setEditingCommentId(c.id); 
+                                            setEditingCommentText(c.text); 
+                                          }}
+                                        >
+                                          <Edit2 className="h-3 w-3" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Edit Mark</TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button 
+                                          variant="ghost" 
+                                          size="icon" 
+                                          className="h-6 w-6 text-red-500 hover:bg-red-50" 
+                                          onClick={(e) => { 
+                                            e.stopPropagation(); 
+                                            handleDeleteComment(data.id, c.id, data.comments, type); 
+                                          }}
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Delete Mark</TooltipContent>
+                                    </Tooltip>
                                   </>
                                 )}
                               </div>
@@ -808,7 +865,7 @@ export default function PlaybookAndGamePlayPage() {
                             {editingCommentId === c.id ? (
                               <div className="space-y-2" onClick={e => e.stopPropagation()}>
                                 <Textarea 
-                                  value={editingCommentText} 
+                                  value={editingCommentText ?? ""} 
                                   onChange={e => setEditingCommentText(e.target.value)}
                                   className="rounded-xl border-2 font-bold text-xs min-h-[60px]"
                                   autoFocus
@@ -835,30 +892,36 @@ export default function PlaybookAndGamePlayPage() {
                       <Input 
                         placeholder="0:00" 
                         className="w-20 h-12 rounded-xl border-2 font-black text-xs text-center border-primary/10 shadow-inner" 
-                        value={commentTime} 
+                        value={commentTime ?? ""} 
                         onChange={e => setCommentTime(e.target.value)} 
                       />
                       <Input 
                         placeholder="Add coaching cue..." 
                         className="flex-1 h-12 rounded-xl border-2 font-bold text-xs border-primary/10 shadow-inner px-4" 
-                        value={commentText} 
+                        value={commentText ?? ""} 
                         onChange={e => setCommentText(e.target.value)} 
                       />
-                      <Button 
-                        variant="ghost" 
-                        className="h-12 w-12 rounded-xl bg-muted/30 p-0 text-muted-foreground hover:bg-black/5" 
-                        onClick={() => {
-                          if (videoRef.current) {
-                            const s = Math.floor(videoRef.current.currentTime);
-                            setCommentTime(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
-                          } else {
-                            toast({ title: "YouTube Timestamp", description: "For YouTube, please enter the time manually (e.g. 1:24)" });
-                          }
-                        }}
-                        title="Capture timestamp from video"
-                      >
-                        <Clock className="h-4 w-4" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            className="h-12 w-12 rounded-xl bg-muted/30 p-0 text-muted-foreground hover:bg-black/5" 
+                            onClick={() => {
+                              if (videoRef.current) {
+                                const s = Math.floor(videoRef.current.currentTime);
+                                setCommentTime(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+                              } else {
+                                toast({ title: "YouTube Timestamp", description: "For YouTube, please enter the time manually (e.g. 1:24)" });
+                              }
+                            }}
+                          >
+                            <Clock className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-lg">
+                          Capture timestamp from video
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                     <Button 
                       className="w-full h-12 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-black/5 bg-black text-white hover:scale-[1.02] transition-all" 

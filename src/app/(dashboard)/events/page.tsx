@@ -42,6 +42,12 @@ import {
   DialogDescription, 
   DialogFooter
 } from '@/components/ui/dialog';
+import { 
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -241,7 +247,16 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                   </Button>
                   <div className="flex gap-2">
                     <Button variant="secondary" className="flex-1 rounded-2xl h-12 font-black uppercase text-[10px]" onClick={() => onEdit(event)}>Edit Activity</Button>
-                    <Button variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-lg shadow-red-600/10" onClick={() => onDelete(event.id)}><Trash2 className="h-5 w-5" /></Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-lg shadow-red-600/10" onClick={() => onDelete(event.id)}>
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="bg-destructive">
+                        Destroy Activity Log
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
               )}

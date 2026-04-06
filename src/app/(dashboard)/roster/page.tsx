@@ -72,6 +72,11 @@ import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, where, onSnapshot } from 'firebase/firestore';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { format, differenceInYears } from 'date-fns';
 
 const STANDARD_WAIVERS = [
@@ -444,7 +449,16 @@ export default function RosterPage() {
                         <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Recruitment Pipeline Link</Label>
                         <div className="flex gap-2">
                           <Input value={recruitmentUrl} readOnly className="h-12 rounded-xl bg-muted/30 border-none font-bold text-xs truncate text-foreground" />
-                          <Button size="icon" variant="outline" className="rounded-xl h-12 w-12 shrink-0 border-2" onClick={handleCopyRecruitmentUrl}><LinkIcon className="h-4 w-4" /></Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="icon" variant="outline" className="rounded-xl h-12 w-12 shrink-0 border-2" onClick={handleCopyRecruitmentUrl}>
+                                <LinkIcon className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Copy Recruitment Link
+                            </TooltipContent>
+                          </Tooltip>
                         </div>
                         <p className="text-[9px] font-medium text-muted-foreground italic px-1 leading-relaxed">
                           {activeTeam.registrationProtocolId 
@@ -494,15 +508,29 @@ export default function RosterPage() {
                     <h3 className="font-black truncate text-lg tracking-tight group-hover:text-primary transition-colors text-foreground">{member.name}</h3>
                     {member.jersey !== 'HQ' && <Badge variant="outline" className="text-[9px] h-5 border-primary/20 text-primary font-black uppercase">#{member.jersey}</Badge>}
                     {member.medicalClearance && (
-                      <div className="bg-green-500 rounded-full h-1.5 w-1.5 animate-pulse shrink-0" title="Squad Protocol: Cleared" />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="bg-green-500 rounded-full h-1.5 w-1.5 animate-pulse shrink-0" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Squad Protocol: Cleared
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
                     <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest truncate">{member.position}</p>
                     {member.medicalClearance && (
-                      <Badge variant="outline" className="h-4 px-1 text-primary border-none bg-primary/5 -mt-0.5" title="Execution Confirmed">
-                        <FileSignature className="h-3 w-3" />
-                      </Badge>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="outline" className="h-4 px-1 text-primary border-none bg-primary/5 -mt-0.5">
+                            <FileSignature className="h-3 w-3" />
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Execution Confirmed
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 </div>
@@ -551,9 +579,16 @@ export default function RosterPage() {
                           {parent.children.length > 2 ? `Guardian of ${parent.children[0]}, ${parent.children[1]} +${parent.children.length-2}` : `Guardian of ${parent.children.join(' & ')}`}
                         </p>
                         {parent.parentId && (
-                          <Badge variant="outline" className="h-4 px-1 text-primary border-none bg-primary/5 -mt-0.5" title="Direct Messaging Enabled">
-                            <MessageSquare className="h-3 w-3" />
-                          </Badge>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge variant="outline" className="h-4 px-1 text-primary border-none bg-primary/5 -mt-0.5">
+                                <MessageSquare className="h-3 w-3" />
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Direct Messaging Enabled
+                            </TooltipContent>
+                          </Tooltip>
                         )}
                       </div>
                     </div>
@@ -585,14 +620,21 @@ export default function RosterPage() {
                     <Badge className="bg-primary text-white border-none font-black text-[10px] uppercase h-6 px-4 mb-2">Verified Athlete</Badge>
                     <h2 className="text-4xl font-black tracking-tighter leading-none uppercase">{selectedMember.name}</h2>
                     <div className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <p className="text-primary font-black uppercase tracking-[0.2em] text-sm">{selectedMember.position} • #{selectedMember.jersey}</p>
-                        {activeTeam?.role === 'Admin' && (
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-white/40 hover:text-white shrink-0" onClick={() => setIsEditPositionOpen(true)}>
-                            <Settings className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-primary font-black uppercase tracking-[0.2em] text-sm">{selectedMember.position} • #{selectedMember.jersey}</p>
+                          {activeTeam?.role === 'Admin' && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-white/40 hover:text-white shrink-0" onClick={() => setIsEditPositionOpen(true)}>
+                                  <Settings className="h-3 w-3" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                Provision New Role
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
                       <div className="flex flex-col gap-2 text-white/60 text-[10px] font-bold uppercase tracking-widest">
                         {selectedMember.email && (
                           <div className="flex items-center gap-2">
@@ -614,7 +656,16 @@ export default function RosterPage() {
                     <div className="w-full pt-4 border-t border-white/10 space-y-4">
                       <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-white/40">
                         <span>Recruiting Portfolio</span>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/10" onClick={handleExportPortfolio}><Download className="h-4 w-4" /></Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/10" onClick={handleExportPortfolio}>
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Export Intelligence Report
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                       <Button className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] shadow-xl hover:bg-white/90" onClick={handleExportPortfolio}>Generate Recruiting Pack</Button>
                     </div>

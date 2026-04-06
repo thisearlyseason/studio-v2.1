@@ -41,6 +41,12 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { ScrollArea } from '@/components/ui/scroll-area';
 import BrandLogo from '@/components/BrandLogo';
 import { toast } from '@/hooks/use-toast';
@@ -223,7 +229,14 @@ function RegistrationForm() {
             <div className="pt-4 border-t border-black/5 grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Venue</p>
-                <p className="font-bold text-sm uppercase truncate" title={event.location}>{event.location || 'TBA'}</p>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className="font-bold text-sm uppercase truncate cursor-help" title={undefined}>{event.location || 'TBA'}</p>
+                  </TooltipTrigger>
+                  <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-lg">
+                    {event.location}
+                  </TooltipContent>
+                </Tooltip>
               </div>
               <div className="space-y-1">
                 <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Timeline</p>

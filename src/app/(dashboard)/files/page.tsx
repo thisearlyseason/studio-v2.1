@@ -76,6 +76,11 @@ import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: any, onSign: (id: string, sig: string, mid: string) => Promise<boolean>, members: Member[], onComplete: () => void }) {
   const [signature, setSignature] = useState('');
@@ -504,7 +509,16 @@ export default function FilesPage() {
                 <Button className="flex-1 h-10 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-95" onClick={() => window.open(file.url, '_blank')}>
                   View Resource
                 </Button>
-                {isStaff && <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5 transition-colors" onClick={() => setFileToDelete(file.id)}><Trash2 className="h-4 w-4" /></Button>}
+                {isStaff && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5 transition-colors" onClick={() => setFileToDelete(file.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Purge from Repository</TooltipContent>
+                  </Tooltip>
+                )}
               </CardFooter>
             </Card>
           ))}

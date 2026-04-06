@@ -53,6 +53,11 @@ import {
   DialogClose
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -524,7 +529,16 @@ export default function LeagueRegistrationAdminPage() {
                               <div className="flex flex-col gap-2">
                                 <span className="text-[11px] font-black uppercase flex items-center gap-2">
                                   {f.label}
-                                  {f.required && <span className="h-1.5 w-1.5 rounded-full bg-rose-500" title="Required" />}
+                                  {f.required && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="h-1.5 w-1.5 rounded-full bg-rose-500 cursor-help" />
+                                      </TooltipTrigger>
+                                      <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-lg">
+                                        Required Field
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
                                 </span>
                                 <Badge className="w-fit bg-indigo-600 text-white hover:bg-indigo-600 border-none text-[8px] font-black uppercase h-5 px-2">
                                   {f.type === 'signature' ? 'Digital Signature' : f.type.replace('_', ' ')}
@@ -906,7 +920,16 @@ export default function LeagueRegistrationAdminPage() {
                         <div className="flex flex-col gap-2">
                           <span className="text-[11px] font-black uppercase flex items-center gap-2">
                             {f.label}
-                            {f.required && <span className="h-1.5 w-1.5 rounded-full bg-rose-500" title="Required" />}
+                            {f.required && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500 cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-lg">
+                                  Required Field
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
                           </span>
                           <Badge className="w-fit bg-green-600 text-white hover:bg-indigo-600 border-none text-[8px] font-black uppercase h-5 px-2">
                             {f.type.replace('_', ' ')}

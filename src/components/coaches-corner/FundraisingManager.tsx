@@ -15,6 +15,11 @@ import { Plus, Edit3, Trash2, Loader2, DollarSign, Target, Calendar, Link as Lin
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export function FundraisingManager() {
   const { activeTeam, db, addFundraisingOpportunity, updateFundraisingOpportunity, deleteFundraisingOpportunity } = useTeam();
@@ -100,12 +105,27 @@ export function FundraisingManager() {
             <div className="flex justify-between items-start">
               <div className="bg-primary/10 p-3 rounded-2xl text-primary"><DollarSign className="h-6 w-6" /></div>
               <div className="flex gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => handleEdit(opp)}>
-                  <Edit3 className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-red-50 text-red-500" onClick={() => handleDelete(opp.id)}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => handleEdit(opp)}>
+                      <Edit3 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="bg-black text-white border-none font-black uppercase text-[10px] tracking-widest">
+                    Edit Campaign
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-red-50 text-red-500" onClick={() => handleDelete(opp.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="bg-destructive text-white border-none font-black uppercase text-[10px] tracking-widest">
+                    Delete Campaign
+                  </TooltipContent>
+                </Tooltip>
               </div>
             </div>
             

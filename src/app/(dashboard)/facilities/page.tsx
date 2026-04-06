@@ -35,6 +35,11 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 function FacilityFieldManager({ facility }: { facility: Facility }) {
   const { addField, deleteField, isSuperAdmin, user } = useTeam();
@@ -69,9 +74,14 @@ function FacilityFieldManager({ facility }: { facility: Facility }) {
           <div key={field.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-xl border border-transparent hover:border-primary/10 transition-all group">
             <span className="text-xs font-black uppercase truncate">{field.name}</span>
             {(facility.clubId === user?.id || isSuperAdmin) && (
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={() => deleteField(facility.id, field.id)}>
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={() => deleteField(facility.id, field.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Destroy Resource</TooltipContent>
+              </Tooltip>
             )}
           </div>
         ))}
@@ -211,9 +221,14 @@ export default function FacilityManagementPage() {
                   <MapPin className="h-10 w-10" />
                 </div>
                 {(facility.clubId === user?.id || isSuperAdmin) && (
-                  <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/5 rounded-xl h-10 w-10" onClick={() => deleteFacility(facility.id)}>
-                    <Trash2 className="h-5 w-5" />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/5 rounded-xl h-10 w-10" onClick={() => deleteFacility(facility.id)}>
+                        <Trash2 className="h-5 w-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Decommission Facility</TooltipContent>
+                  </Tooltip>
                 )}
               </div>
               
