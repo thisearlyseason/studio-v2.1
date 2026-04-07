@@ -64,7 +64,7 @@ function safeAge(dob: string): number | null {
 
 // --- Edit Child Modal ---
 function EditChildModal({ child, onClose }: { child: PlayerProfile; onClose: () => void }) {
-  const { updateChild } = useTeam();
+  const { updateChild, sendChildInvite, user } = useTeam();
   const [form, setForm] = useState({
     firstName: child.firstName || '',
     lastName: child.lastName || '',
@@ -77,6 +77,7 @@ function EditChildModal({ child, onClose }: { child: PlayerProfile; onClose: () 
     gradYear: child.gradYear || '',
     notes: child.notes || '',
     sportPositions: child.sportPositions || {},
+    pendingInviteEmail: child.pendingInviteEmail || '',
   });
   const [sports, setSports] = useState<string[]>(child.sports || []);
   const [isSaving, setIsSaving] = useState(false);
@@ -141,6 +142,22 @@ function EditChildModal({ child, onClose }: { child: PlayerProfile; onClose: () 
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Age Group / Division</Label>
                 <Input placeholder="e.g. U14, 10U, Bantam" value={form.ageGroup} onChange={e => setForm(f => ({ ...f, ageGroup: e.target.value }))} className="h-12 rounded-xl border-2 font-bold" />
+              </div>
+            </div>
+            <div className="space-y-3 p-4 bg-primary/5 rounded-2xl border border-dashed border-primary/20">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Athlete Email (Teen Independent Login)</Label>
+              <Input 
+                type="email" 
+                placeholder="athlete@email.com" 
+                value={form.pendingInviteEmail} 
+                onChange={e => setForm(f => ({ ...f, pendingInviteEmail: e.target.value }))} 
+                className="h-12 rounded-xl border-2 font-bold focus-visible:ring-primary/20" 
+              />
+              <div className="flex gap-2">
+                <Info className="h-4 w-4 text-primary shrink-0" />
+                <p className="text-[9px] font-bold text-muted-foreground uppercase leading-relaxed">
+                  Required for teens to activate their own login and recruitment dashboard.
+                </p>
               </div>
             </div>
           </div>
@@ -657,11 +674,18 @@ function MasterSquadWall({ consolidatedTeams }: { consolidatedTeams: { team: Tea
   );
 }
 
-// --- Main Page ---
-export default function FamilyDashboardPage() {
-  const {
-    user, myChildren, registerChild, teams, joinTeamWithCode,
-    householdEvents, householdBalance, isParent
+// --- Family Page ---
+export default function FamilyPage() {
+  const { 
+    myChildren, 
+    registerChild, 
+    joinTeamWithCode, 
+    teams, 
+    householdEvents, 
+    householdBalance, 
+    isParent,
+    user,
+    sendChildInvite
   } = useTeam();
 
   const db = useFirestore();
@@ -669,7 +693,7 @@ export default function FamilyDashboardPage() {
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [newChild, setNewChild] = useState({ firstName: '', lastName: '', dob: '', teamCode: '' });
+  const [newChild, setNewChild] = useState({ firstName: '', lastName: '', dob: '', teamCode: '', email: '' });
 
   const sigsQuery = useMemoFirebase(() => {
     if (!db || !user?.id) return null;
@@ -684,8 +708,27 @@ export default function FamilyDashboardPage() {
     }
     setIsProcessing(true);
     try {
-      const cid = await registerChild(newChild.firstName, newChild.lastName, newChild.dob);
+      const cid = await registerChild(newChild.firstName, newChild.lastName, newChild.dob, newChild.email);
       
+      if (cid && newChild.email) {
+        // If it's a teen (>= 13), automatically trigger an invite
+        const age = safeAge(newChild.dob);
+        if (age !== null && age >= 13) {
+           await sendChildInvite({ 
+             id: cid, 
+             firstName: newChild.firstName, 
+             lastName: newChild.lastName,
+             dateOfBirth: newChild.dob,
+             isMinor: true,
+             parentId: user?.id,
+             joinedTeamIds: [],
+             userId: null,
+             hasLogin: false,
+             createdAt: new Date().toISOString()
+           } as PlayerProfile, newChild.email);
+        }
+      }
+
       if (cid && newChild.teamCode.trim()) {
         const joinSuccess = await joinTeamWithCode(newChild.teamCode.trim().toUpperCase(), cid, 'Player');
         if (joinSuccess) {
@@ -698,7 +741,7 @@ export default function FamilyDashboardPage() {
       }
 
       setIsAddOpen(false);
-      setNewChild({ firstName: '', lastName: '', dob: '', teamCode: '' });
+      setNewChild({ firstName: '', lastName: '', dob: '', teamCode: '', email: '' });
     } finally {
       setIsProcessing(false);
     }
@@ -731,12 +774,22 @@ export default function FamilyDashboardPage() {
 
   const upcomingEvents = useMemo(() => {
     if (!householdEvents || !Array.isArray(householdEvents)) return [];
-    return householdEvents.filter(e => {
+    
+    const events = householdEvents.filter(e => {
       if (!e.date) return false;
-      const d = new Date(e.date);
-      if (isNaN(d.getTime())) return false;
-      return isFuture(d) || isToday(d);
-    }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).slice(0, 5);
+      const d = parseISO(e.date);
+      if (!isValid(d)) return false;
+      
+      // Inclusion logic: Future or Today (local time check)
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const eventDate = new Date(d);
+      eventDate.setHours(0, 0, 0, 0);
+      
+      return eventDate >= now;
+    }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).slice(0, 8);
+    
+    return events;
   }, [householdEvents]);
 
   if (!isParent) {
@@ -780,6 +833,22 @@ export default function FamilyDashboardPage() {
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Date of Birth</Label>
                   <Input type="date" value={newChild.dob} onChange={e => setNewChild({ ...newChild, dob: e.target.value })} className="h-12 rounded-xl border-2 font-black" />
+                </div>
+                <div className="space-y-3 p-4 bg-primary/5 rounded-2xl border border-dashed border-primary/20">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Athlete Email (Recommended for Teens)</Label>
+                  <Input 
+                    type="email" 
+                    placeholder="athlete@email.com" 
+                    value={newChild.email} 
+                    onChange={e => setNewChild({ ...newChild, email: e.target.value })} 
+                    className="h-12 rounded-xl border-2 font-bold focus-visible:ring-primary/20" 
+                  />
+                  <div className="flex gap-2">
+                    <Info className="h-4 w-4 text-primary shrink-0" />
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase leading-relaxed">
+                      Athletes aged 13+ can use this email to create their own secure login, manage their recruitment profile, and view their schedule independently.
+                    </p>
+                  </div>
                 </div>
                 {/* Immediate Join Integration */}
                 <div className="space-y-2 pt-4 border-t border-dashed">

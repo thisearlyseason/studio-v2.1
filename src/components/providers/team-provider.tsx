@@ -738,7 +738,7 @@ interface TeamContextType {
   deleteAccount: () => Promise<void>;
   markMediaAsViewed: (fileId: string) => Promise<void>;
   upgradeChildToLogin: (childId: string) => Promise<void>;
-  registerChild: (first: string, last: string, dob: string) => Promise<string | null>;
+  registerChild: (first: string, last: string, dob: string, email?: string) => Promise<string | null>;
   updateChild: (childId: string, updates: Partial<PlayerProfile>) => Promise<void>;
   sendChildInvite: (child: PlayerProfile, email: string) => Promise<string | null>;
   assignManualPlan: (uid: string, planId: string, limit: number) => Promise<void>;
@@ -2289,7 +2289,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
 
   const upgradeChildToLogin = useCallback(async (childId: string) => { if (db) await updateDoc(doc(db, 'players', childId), { hasLogin: true }); }, [db]);
-  const registerChild = useCallback(async (first: string, last: string, dob: string) => { 
+  const registerChild = useCallback(async (first: string, last: string, dob: string, email?: string) => { 
     if (!firebaseUser || !db) return null; 
     const cid = `child_${Date.now()}`; 
     await setDoc(doc(db, 'players', cid), clean({ 
@@ -2300,6 +2300,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       isMinor: true, 
       parentId: firebaseUser.uid, 
       joinedTeamIds: [], 
+      pendingInviteEmail: email || null,
       createdAt: new Date().toISOString() 
     }));
     return cid;

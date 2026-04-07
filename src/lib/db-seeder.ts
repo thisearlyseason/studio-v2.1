@@ -52,12 +52,12 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
       { id: `g2_${teamId}`, opponent: 'Hawks', date: weekAgo, myScore: 5, opponentScore: 10, result: 'Loss', location: 'Home Field' }
     ],
     events: [
-      { id: `e1_${teamId}`, teamId, title: `Tourney Invitational`, eventType: 'tournament', isTournament: true, date: tomorrow, endDate: later, startTime: '09:00 AM', endTime: '5:00 PM', location: 'Regional Sports Complex', description: 'Two-day institutional tournament.', tournamentTeams: [`Team ${teamSuffix}`, 'Tigers', 'Hawks', 'Lions'] },
-      { id: `e2_${teamId}`, teamId, title: `Academy Training`, eventType: 'practice', date: later, startTime: '3:30 PM', location: 'Main Training Facility', description: 'Drill-focused training session.' },
-      { id: `e2b_${teamId}`, teamId, title: `Tactical Lab`, eventType: 'practice', date: tomorrow, startTime: '4:00 PM', location: 'Performance Gym', description: 'Strength and conditioning.' },
-      { id: `e3_${teamId}`, teamId, title: `Squad Strategy Review`, eventType: 'meeting', date: later, startTime: '7:00 PM', location: 'Meeting Room A', description: 'Film study and strategy review.' },
-      { id: `e4_${teamId}`, teamId, title: `League Match (A)`, eventType: 'game', date: tomorrow, startTime: '6:00 PM', location: 'Home Stadium', description: 'Primary season match.' },
-      { id: `e4b_${teamId}`, teamId, title: `Exhibition Game`, eventType: 'game', date: later, startTime: '12:00 PM', location: 'City Park', description: 'Friendly match.' }
+      { id: `e1_${teamId}`, teamId, title: `Regional Spring Invitational`, eventType: 'tournament', isTournament: true, date: tomorrow, endDate: later, startTime: '08:00 AM', endTime: '6:00 PM', location: 'State Sports Complex', description: 'Elite multi-day tournament for top-tier squads.', tournamentTeams: [`Team ${teamSuffix}`, 'Thunder', 'Storm', 'Shadows'] },
+      { id: `e2_${teamId}`, teamId, title: `Team Tactical Session`, eventType: 'practice', date: later, startTime: '3:30 PM', location: 'West Fields', description: 'Drill-focused training session.' },
+      { id: `e2b_${teamId}`, teamId, title: `Conditioning Lab`, eventType: 'practice', date: tomorrow, startTime: '4:00 PM', location: 'Field 4', description: 'Strength and focus drills.' },
+      { id: `e3_${teamId}`, teamId, title: `Strategy Review`, eventType: 'meeting', date: later, startTime: '7:00 PM', location: 'Clubhouse', description: 'Film study and strategy review.' },
+      { id: `e4_${teamId}`, teamId, title: `League Match vs Bears`, eventType: 'game', date: tomorrow, startTime: '6:00 PM', location: 'Memorial Field', description: 'Primary season league match.' },
+      { id: `e4b_${teamId}`, teamId, title: `League Match vs Eagles`, eventType: 'game', date: later, startTime: '12:00 PM', location: 'City Park', description: 'Second league fixture of the week.' }
     ],
     eventBrackets: [
       {
@@ -133,7 +133,12 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const role = (isParentDemo || isPlayerDemo) ? 'Member' : 'Admin';
 
   const batch = writeBatch(db);
-  const now = new Date().toISOString();
+  const nowObj = new Date();
+  const now = nowObj.toISOString();
+  const tomorrow = new Date(nowObj.getTime() + 86400000).toISOString();
+  const later = new Date(nowObj.getTime() + 172800000).toISOString();
+  const yesterday = new Date(nowObj.getTime() - 86400000).toISOString();
+  const weekAgo = new Date(nowObj.getTime() - 604800000).toISOString();
 
   // 1. Core Profile Reset
   batch.set(doc(db, 'users', userId), clean({
@@ -162,210 +167,204 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   ];
   plans.forEach(p => batch.set(doc(db, 'plans', p.id), clean(p), { merge: true }));
 
-  // 2. Identify Primary Demo Suffixes
-  const teamVariants = isEliteDemo ? ['North', 'South', 'Academy'] : (isSchoolDemo ? ['Springfield High', 'Varsity', 'Junior Varsity', 'Freshman'] : ['']);
-  
-  let primarySchoolId = '';
+    // --- Specialized Parent Demo Data ---
+    if (isParentDemo) {
+        const strikerId = `demo_${planId}_${userId.slice(-4)}_strikers`;
+        const lakerId = `demo_${planId}_${userId.slice(-4)}_lakers`;
+        const leagueId = `demo_league_${userId.slice(-4)}`;
+        const tids = [strikerId, lakerId];
 
-  for (let i = 0; i < teamVariants.length; i++) {
-    const variant = teamVariants[i];
-    const isPrimary = i === 0;
-    
-    let teamId = '';
-    let name = '';
-    let teamType = 'youth';
-    let schoolId = undefined;
-
-    if (isSchoolDemo) {
-        if (isPrimary) {
-            teamId = `demo_${planId}_${userId.slice(-4)}`;
-            name = 'Springfield High School';
-            teamType = 'school';
-            primarySchoolId = teamId;
-        } else {
-            teamId = `demo_${planId}_${userId.slice(-4)}_${variant.toLowerCase().replace(' ', '')}`;
-            name = `Springfield ${variant}`;
-            teamType = 'school_squad';
-            schoolId = primarySchoolId;
-        }
-    } else {
-        teamId = `demo_${planId}_${userId.slice(-4)}${variant ? '_' + variant.toLowerCase() : ''}`;
-        name = variant ? `Elite Squad - ${variant}` : (isProTier ? 'Elite Demo Squad' : 'Grassroots Demo');
-    }
-
-    // Squad Identity
-    batch.set(doc(db, 'teams', teamId), clean({ 
-      id: teamId, 
-      teamName: name, 
-      code: teamId.slice(-6).toUpperCase(),
-      teamCode: teamId.slice(-6).toUpperCase(),
-      ownerUserId: userId, 
-      isPro: isProTier || isSchoolDemo, 
-      planId: actualPlanId, 
-      sport: isSchoolDemo ? 'Basketball' : 'Multi-Sport', 
-      isDemo: true,
-      type: teamType,
-      schoolId: schoolId,
-      createdAt: now, 
-      createdBy: userId,
-      heroImageUrl: `https://picsum.photos/seed/${teamId}hero/1200/400`,
-      teamLogoUrl: `https://picsum.photos/seed/${teamId}logo/200/200`
-    }));
-
-    // User Membership
-    batch.set(doc(db, 'users', userId, 'teamMemberships', teamId), clean({
-      teamId, 
-      name, 
-      role, 
-      isPro: isProTier || isSchoolDemo, 
-      planId: actualPlanId, 
-      isDemo: true, 
-      joinedAt: now,
-      ownerUserId: userId, 
-      type: teamType,
-      schoolId: schoolId
-    }));
-
-    // Local Member Profile
-    batch.set(doc(db, 'teams', teamId, 'members', userId), clean({
-      id: userId, userId, teamId, playerId: `p_${userId}_${teamId}`, 
-      name: isSchoolDemo ? 'Guest Admin' : `Guest ${pos}`, role, position: pos, jersey: '22',
-      joinedAt: now, isDemo: true, avatar: `https://picsum.photos/seed/${userId}/150/150`,
-      ownerUserId: userId,
-      medicalClearance: true,
-      schoolId: schoolId || primarySchoolId,
-      email: `${userRole}@thesquad.pro`
-    }));
-
-    // Add Coaches for School Hub and Squads
-    if (isSchoolDemo) {
-        if (isPrimary) {
-            // Add Primary Coaches to School Hub
-            const coaches = [
-                { id: `coach_ad_${teamId}`, name: 'Marcus Miller', pos: 'Athletic Director', email: 'ad@springfield.edu' },
-                { id: `coach_head_${teamId}`, name: 'Sarah Thompson', pos: 'Head Coach', email: 'varsity@springfield.edu' },
-                { id: `coach_asst_${teamId}`, name: 'David Chen', pos: 'Assistant Coach', email: 'asst@springfield.edu' }
-            ];
-            coaches.forEach(c => {
-                batch.set(doc(db, 'teams', teamId, 'members', c.id), clean({
-                    id: c.id, userId: c.id, teamId, playerId: null, name: c.name, role: 'Member', position: c.pos, jersey: '-',
-                    joinedAt: now, isDemo: true, ownerUserId: userId, email: c.email, avatar: `https://picsum.photos/seed/coach${c.id}/150/150`,
-                    schoolId: primarySchoolId
-                }));
-            });
-        } else {
-            // Add Squad Specific Coaches
-            const coachId = `coach_${teamId}`;
-            batch.set(doc(db, 'teams', teamId, 'members', coachId), clean({
-                id: coachId, userId: coachId, teamId, playerId: null, name: `${variant} Coach`, role: 'Member', position: 'Coach', jersey: '10',
-                joinedAt: now, isDemo: true, ownerUserId: userId, email: `${variant.toLowerCase()}@springfield.edu`,
-                schoolId: schoolId || primarySchoolId
-            }));
-            
-            // Link back to hub: All squads should be visible in Hub's roster or specific lists
-            // (Assumes TeamProvider handles discovery via schoolId or membership)
-        }
-    }
-
-    // Create Sample Programs for School Squads
-    if (isSchoolDemo && !isPrimary) {
-        const lid = `prog_${teamId}_2024`;
-        batch.set(doc(db, 'leagues', lid), clean({
-            id: lid,
-            name: `${name} Fall Program 2024`,
-            creatorId: userId,
-            sport: 'Basketball',
-            teams: { [teamId]: { teamName: name, wins: 0, losses: 0, ties: 0, points: 0, status: 'accepted' } },
-            memberTeamIds: [teamId],
-            finances: {},
-            inviteCode: lid.slice(-6).toUpperCase(),
+        // 1. Create a Global League Document
+        batch.set(doc(db, 'leagues', leagueId), clean({
+            id: leagueId,
+            name: 'Elite Youth League',
+            description: 'The premier circuit for local talent.',
+            createdBy: userId,
+            isDemo: true,
+            status: 'active',
+            teams: {
+                [strikerId]: { teamName: 'Strikers', coachName: 'Marcus Miller', coachEmail: 'm.miller@example.com', wins: 2, losses: 1, points: 6 },
+                [lakerId]: { teamName: 'Lakers', coachName: 'Sarah Thompson', coachEmail: 's.thompson@example.com', wins: 3, losses: 0, points: 9 }
+            },
+            schedule: [
+              { id: 'lg1', team1: 'Strikers', team1Id: strikerId, team2: 'Lakers', team2Id: lakerId, date: tomorrow, time: '10:00 AM', location: 'Court A', status: 'scheduled' },
+              { id: 'lg2', team1: 'Strikers', team1Id: strikerId, team2: 'Hawks', team2Id: 'hawks_id', date: later, time: '12:00 PM', location: 'Court B', status: 'scheduled' },
+              { id: 'lg3', team1: 'Lakers', team1Id: lakerId, team2: 'Tigers', team2Id: 'tigers_id', date: later, time: '02:00 PM', location: 'Court A', status: 'scheduled' }
+            ],
             createdAt: now
         }));
-        batch.update(doc(db, 'teams', teamId), { [`leagueIds.${lid}`]: true });
-    } 
-    
-    if (variant || isPrimary) {
-       // Population Data
-        const data = GET_DEMO_DATA(teamId, userId, variant || (isSchoolDemo ? 'Program' : ''));
-       data.members.forEach(m => {
-         // Create local member record
-         batch.set(doc(db, 'teams', teamId, 'members', m.id), clean({ ...m, teamId, ownerUserId: userId, medicalClearance: true }));
-         
-         // Simulated Login: Create a user record so TeamProvider's hydration finds the "login" email
-         if (m.userId) {
-           batch.set(doc(db, 'users', m.userId), clean({
-             id: m.userId,
-             fullName: m.name,
-             email: m.email.replace('@example.com', `_${teamId.slice(-4)}@thesquad.pro`),
-             role: m.role === 'Admin' ? 'coach' : 'youth_player',
-             isDemo: true,
-             createdAt: now
-           }), { merge: true });
-         }
-       });
-       data.games.forEach(g => batch.set(doc(db, 'teams', teamId, 'games', g.id), clean(g)));
-       
-       // Force a match, meeting, and practice for EVERY squad
-       data.events.forEach(e => {
-         let shouldAdd = false;
-         
-         if (isSchoolDemo) {
-            // All squads MUST have at least one match, one meeting, and one practice
-            if (e.eventType === 'game' || e.eventType === 'practice' || e.eventType === 'meeting') {
-                shouldAdd = true;
-            }
-            // Tournaments are for squads. Varsity gets the 2-day invitational.
-            if (e.isTournament && variant === 'Varsity') {
-                shouldAdd = true;
-            }
-         } else {
-            // Non-school demo logic
-            if (e.isTournament) {
-               if (variant !== 'Academy' && !isEliteDemo) return;
-            }
-            shouldAdd = true;
-         }
-         
-         if (shouldAdd) {
-            batch.set(doc(db, 'teams', teamId, 'events', e.id), clean(e));
-         }
-       });
 
-       data.eventBrackets.forEach(eb => {
-         // Only add brackets for those that got the tournament
-         if (variant === 'Varsity' || (!isSchoolDemo && eb.eventId.includes('e1'))) {
-            eb.brackets.forEach(b => batch.set(doc(db, 'teams', teamId, 'events', eb.eventId, 'brackets', b.id), clean(b)));
-         }
-       });
-       
-       data.drills.forEach(d => batch.set(doc(db, 'teams', teamId, 'drills', d.id), clean(d)));
-       data.feed.forEach(p => batch.set(doc(db, 'teams', teamId, 'feedPosts', p.id), clean(p)));
-       data.documents.forEach(d => batch.set(doc(db, 'teams', teamId, 'documents', d.id), clean({ ...d, ownerUserId: userId })));
-       data.alerts.forEach(a => batch.set(doc(db, 'teams', teamId, 'alerts', a.id), clean(a)));
-       
-       // New Feature Demo Data
-       data.facilities.forEach(f => batch.set(doc(db, 'facilities', f.id), clean(f)));
-       data.facilityFields.forEach(ff => batch.set(doc(db, 'facilities', ff.facilityId, 'fields', ff.id), clean(ff)));
-       data.incidents.forEach(inc => batch.set(doc(db, 'teams', teamId, 'incidents', inc.id), clean({ ...inc, ownerUserId: userId, teamName: name })));
-       data.volunteers.forEach(v => batch.set(doc(db, 'teams', teamId, 'volunteers', v.id), clean(v)));
-       data.fundraising.forEach(f => batch.set(doc(db, 'teams', teamId, 'fundraising', f.id), clean(f)));
-       data.chats.forEach(c => {
-         batch.set(doc(db, 'teams', teamId, 'groupChats', c.id), clean({ id: c.id, name: c.name, createdBy: c.createdBy, memberIds: c.memberIds, isDeleted: c.isDeleted, teamId: c.teamId, createdAt: c.createdAt }));
-         c.messages.forEach(m => batch.set(doc(db, 'teams', teamId, 'groupChats', c.id, 'messages', m.id), clean(m)));
-       });
+        // 2. Create the Teams (Strikers & Lakers)
+        const variants = [
+            { id: strikerId, name: 'Strikers', logo: 'https://picsum.photos/seed/strikers/200/200' },
+            { id: lakerId, name: 'Lakers', logo: 'https://picsum.photos/seed/lakers/200/200' }
+        ];
+
+        variants.forEach(v => {
+            batch.set(doc(db, 'teams', v.id), clean({
+                id: v.id,
+                teamName: v.name,
+                code: v.id.slice(-6).toUpperCase(),
+                teamCode: v.id.slice(-6).toUpperCase(),
+                ownerUserId: userId,
+                isPro: true,
+                planId: 'squad_pro',
+                sport: 'Basketball',
+                isDemo: true,
+                type: 'youth',
+                leagueId: leagueId,
+                createdAt: now,
+                heroImageUrl: `https://picsum.photos/seed/${v.id}hero/1200/400`,
+                teamLogoUrl: v.logo
+            }));
+
+            // Parent membership
+            batch.set(doc(db, 'users', userId, 'teamMemberships', v.id), clean({
+                teamId: v.id, name: v.name, role: 'parent', isPro: true, planId: 'squad_pro', isDemo: true, joinedAt: now
+            }));
+
+            // Parent member record
+            batch.set(doc(db, 'teams', v.id, 'members', userId), clean({
+                id: userId, userId, teamId: v.id, name: 'Guest Parent', role: 'parent', position: 'Guardian', joinedAt: now, isDemo: true
+            }));
+
+            // Events for this team
+            const data = GET_DEMO_DATA(v.id, userId, v.name);
+            data.events.forEach(e => {
+                batch.set(doc(db, 'teams', v.id, 'events', e.id), clean({ ...e, teamId: v.id }));
+            });
+        });
+
+        // 3. Children Profiles
+        const juniorId = `c1_${userId}`;
+        const juniorDob = new Date(nowObj.getFullYear() - 9, 5, 15).toISOString().split('T')[0]; // 9 years old
+        batch.set(doc(db, 'players', juniorId), clean({
+            id: juniorId, firstName: 'Junior', lastName: 'Guest', isMinor: true, parentId: userId, userId: null,
+            dateOfBirth: juniorDob,
+            hasLogin: false, createdAt: now, joinedTeamIds: tids, ageGroup: 'U10', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=junior',
+            sports: ['Basketball'], primaryPosition: 'Point Guard'
+        }));
+
+        const alexId = `c2_${userId}`;
+        const alexDob = new Date(nowObj.getFullYear() - 16, 2, 20).toISOString().split('T')[0]; // 16 years old
+        const alexEmail = `alex.guest_${userId.slice(-4)}@thesquad.pro`;
+        batch.set(doc(db, 'players', alexId), clean({
+            id: alexId, firstName: 'Alex', lastName: 'Guest', isMinor: true, parentId: userId, userId: alexId,
+            dateOfBirth: alexDob,
+            hasLogin: true, pendingInviteEmail: alexEmail, createdAt: now, joinedTeamIds: tids, ageGroup: 'U17', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=alex',
+            sports: ['Basketball', 'Soccer', 'Cross Country'], primaryPosition: 'Striker'
+        }));
+
+        // Mock teen user
+        batch.set(doc(db, 'users', alexId), clean({
+            id: alexId, fullName: 'Alex Guest', email: alexEmail, role: 'youth_player', isDemo: true, createdAt: now
+        }), { merge: true });
+
+        // Link kids to teams as members
+        tids.forEach(tid => {
+            batch.set(doc(db, 'teams', tid, 'members', juniorId), clean({
+                id: juniorId, teamId: tid, name: 'Junior Guest', role: 'Member', position: 'Player', joinedAt: now, isDemo: true, parentId: userId
+            }));
+            batch.set(doc(db, 'teams', tid, 'members', alexId), clean({
+                id: alexId, teamId: tid, name: 'Alex Guest', role: 'Member', position: 'Player', joinedAt: now, isDemo: true, parentId: userId, email: alexEmail
+            }));
+
+            // Sync the league games into team events for immediate visibility
+            const leagueGames = [
+              { id: `lg_${leagueId}_lg1`, teamId: tid, title: `Conference Match vs ${tid === strikerId ? 'Lakers' : 'Strikers'}`, eventType: 'game', isLeagueGame: true, date: tomorrow, startTime: '10:00 AM', location: 'City Arena', description: 'National broadcast game.' },
+              { id: `lg_${leagueId}_lg2`, teamId: tid, title: `Division Rival Match vs ${tid === strikerId ? 'Hawks' : 'Tigers'}`, eventType: 'game', isLeagueGame: true, date: later, startTime: tid === strikerId ? '12:00 PM' : '02:00 PM', location: tid === strikerId ? 'Field 7' : 'Field 2', description: 'Critical seeding match.' },
+              { id: `lg_${leagueId}_lg3`, teamId: tid, title: `Regional Qualifier`, eventType: 'game', isLeagueGame: true, date: new Date(nowObj.getTime() + 432000000).toISOString(), startTime: '03:30 PM', location: 'State Complex', description: 'Qualifier for states.' },
+              { id: `lg_${leagueId}_lg4`, teamId: tid, title: `Pre-Season Scrimmage`, eventType: 'game', isLeagueGame: true, date: yesterday, startTime: '04:00 PM', location: 'Home Stadium', description: 'Early season tune-up.' },
+              { id: `lg_${leagueId}_lg5`, teamId: tid, title: `Mid-Season Invitational`, eventType: 'game', isLeagueGame: true, date: new Date(nowObj.getTime() + 604800000).toISOString(), startTime: '11:00 AM', location: 'Summit Center', description: 'League-wide showcase event.' }
+            ];
+            leagueGames.forEach(lg => {
+              batch.set(doc(db, 'teams', tid, 'events', lg.id), clean(lg));
+            });
+
+            // Multi-day Tournament (3 Days)
+            const tournamentId = `tourn_${tid}_${userId.slice(-4)}`;
+            const day2 = new Date(nowObj.getTime() + 172800000).toISOString();
+            const day3 = new Date(nowObj.getTime() + 259200000).toISOString();
+            batch.set(doc(db, 'teams', tid, 'events', tournamentId), clean({
+              id: tournamentId,
+              teamId: tid,
+              title: tid === strikerId ? 'City Championship Tournament' : 'Lakers Spring Showcase',
+              eventType: 'tournament',
+              isTournament: true,
+              date: tomorrow,
+              endDate: day3,
+              location: 'Premier Sports Park',
+              description: 'The final 3-day showdown for the regional title.',
+              tournamentTeams: ['Strikers', 'Lakers', 'Hawks', 'Tigers', 'Eagles', 'Panthers'],
+              status: 'active',
+              multiDaySchedule: [
+                { day: 1, title: 'Opening Rounds', date: tomorrow },
+                { day: 2, title: 'Semi-Finals', date: day2 },
+                { day: 3, title: 'Finals Day', date: day3 }
+              ]
+            }));
+
+            // Regular practices
+            const practices = [
+              { id: `prac1_${tid}`, teamId: tid, title: 'Tactical Drill Session', eventType: 'practice', date: tomorrow, startTime: '04:00 PM', location: 'Practice Court A' },
+              { id: `prac2_${tid}`, teamId: tid, title: 'Conditioning & Skills', eventType: 'practice', date: later, startTime: '05:30 PM', location: 'Main Gym' }
+            ];
+            practices.forEach(p => batch.set(doc(db, 'teams', tid, 'events', p.id), clean(p)));
+        });
+        
+        await batch.commit();
+        return strikerId;
     }
-  }
 
-  // 3. Specialized Parent Demo Data
-  if (isParentDemo) {
-    const childId = `c_${userId}`;
-    batch.set(doc(db, 'players', childId), clean({
-      id: childId, firstName: 'Junior', lastName: 'Guest', isMinor: true, parentId: userId, userId: null,
-      hasLogin: false, createdAt: now, joinedTeamIds: [`demo_${planId}_${userId.slice(-4)}`],
-      medicalClearance: true
-    }));
-  }
+    // Default loop for other demos (Guest Coach, Pro, etc.)
+    const teamVariants = isEliteDemo ? ['North', 'South', 'Academy'] : (isSchoolDemo ? ['Springfield High', 'Varsity', 'Junior Varsity', 'Freshman'] : ['']);
+    
+    for (let i = 0; i < teamVariants.length; i++) {
+        const variant = teamVariants[i];
+        const isPrimary = i === 0;
+        let teamId = isPrimary ? `demo_${planId}_${userId.slice(-4)}` : `demo_${planId}_${userId.slice(-4)}_${variant.toLowerCase().replace(' ', '')}`;
+        let name = isSchoolDemo ? (isPrimary ? 'Springfield High School' : `Springfield ${variant}`) : (variant ? `Elite Squad - ${variant}` : (isProTier ? 'Elite Demo Squad' : 'Grassroots Demo'));
+        let teamType = isSchoolDemo ? (isPrimary ? 'school' : 'school_squad') : 'youth';
+        let schoolId = isSchoolDemo ? (isPrimary ? teamId : `demo_${planId}_${userId.slice(-4)}`) : undefined;
 
-  await batch.commit();
-  return isSchoolDemo ? primarySchoolId : `demo_${planId}_${userId.slice(-4)}${teamVariants[0] ? '_' + teamVariants[0].toLowerCase() : ''}`;
+        batch.set(doc(db, 'teams', teamId), clean({ 
+            id: teamId, teamName: name, code: teamId.slice(-6).toUpperCase(), teamCode: teamId.slice(-6).toUpperCase(),
+            ownerUserId: userId, isPro: isProTier || isSchoolDemo, planId: actualPlanId, sport: isSchoolDemo ? 'Basketball' : 'Multi-Sport', 
+            isDemo: true, type: teamType, schoolId, createdAt: now, heroImageUrl: `https://picsum.photos/seed/${teamId}hero/1200/400`,
+            teamLogoUrl: `https://picsum.photos/seed/${teamId}logo/200/200`
+        }));
+
+        batch.set(doc(db, 'users', userId, 'teamMemberships', teamId), clean({
+            teamId, name, role, isPro: isProTier || isSchoolDemo, planId: actualPlanId, isDemo: true, joinedAt: now, ownerUserId: userId, type: teamType, schoolId
+        }));
+
+        batch.set(doc(db, 'teams', teamId, 'members', userId), clean({
+            id: userId, userId, teamId, playerId: `p_${userId}_${teamId}`, 
+            name: isSchoolDemo ? 'Guest Admin' : `Guest ${pos}`, role, position: pos, jersey: '22',
+            joinedAt: now, isDemo: true, avatar: `https://picsum.photos/seed/${userId}/150/150`,
+            ownerUserId: userId, email: `${userRole}@thesquad.pro`
+        }));
+
+        const data = GET_DEMO_DATA(teamId, userId, variant);
+        data.events.forEach(e => batch.set(doc(db, 'teams', teamId, 'events', e.id), clean(e)));
+        data.eventBrackets.forEach(eb => {
+            if (variant === 'Varsity' || (!isSchoolDemo && eb.eventId.includes('e1'))) {
+                eb.brackets.forEach(b => batch.set(doc(db, 'teams', teamId, 'events', eb.eventId, 'brackets', b.id), clean(b)));
+            }
+        });
+        data.drills.forEach(d => batch.set(doc(db, 'teams', teamId, 'drills', d.id), clean(d)));
+        data.feed.forEach(p => batch.set(doc(db, 'teams', teamId, 'feedPosts', p.id), clean(p)));
+        data.documents.forEach(d => batch.set(doc(db, 'teams', teamId, 'documents', d.id), clean({ ...d, ownerUserId: userId })));
+        data.alerts.forEach(a => batch.set(doc(db, 'teams', teamId, 'alerts', a.id), clean(a)));
+        data.incidents.forEach(inc => batch.set(doc(db, 'teams', teamId, 'incidents', inc.id), clean({ ...inc, ownerUserId: userId, teamName: name })));
+        data.volunteers.forEach(v => batch.set(doc(db, 'teams', teamId, 'volunteers', v.id), clean(v)));
+        data.fundraising.forEach(f => batch.set(doc(db, 'teams', teamId, 'fundraising', f.id), clean(f)));
+        data.chats.forEach(c => {
+            batch.set(doc(db, 'teams', teamId, 'groupChats', c.id), clean({ id: c.id, name: c.name, createdBy: c.createdBy, memberIds: c.memberIds, isDeleted: c.isDeleted, teamId: c.teamId, createdAt: c.createdAt }));
+            c.messages.forEach(m => batch.set(doc(db, 'teams', teamId, 'groupChats', c.id, 'messages', m.id), clean(m)));
+        });
+    }
+
+    await batch.commit();
+    return `demo_${planId}_${userId.slice(-4)}`;
 }
