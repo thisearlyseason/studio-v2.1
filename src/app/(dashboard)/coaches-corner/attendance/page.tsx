@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   ChevronLeft, 
+  ChevronRight,
   MapPin, 
   Clock, 
   Filter, 
@@ -47,6 +48,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
+import { 
+  Dialog, 
+  DialogContent,
+  DialogTitle
+} from '@/components/ui/dialog';
 
 const RSVP_STATUSES = [
   { id: 'going', label: 'Going', icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-500/10' },
@@ -61,7 +67,18 @@ export default function AttendanceTrackingPage() {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'attendance'>('name');
-  const [filterType, setFilterType] = useState<'all' | 'game' | 'practice'>('game');
+  const [filterType, setFilterType] = useState<'all' | 'game' | 'practice'>('all');
+  type AthleteWithStats = Member & {
+    stats: {
+      going: number;
+      maybe: number;
+      declined: number;
+      noResponse: number;
+      rate: number;
+    }
+  };
+
+  const [selectedAthlete, setSelectedAthlete] = useState<AthleteWithStats | null>(null);
   const [includePast, setIncludePast] = useState(false);
 
   // Tactical data pipeline: Filter events to games only (or all if selected) and sort by proximity
@@ -168,24 +185,19 @@ export default function AttendanceTrackingPage() {
               className="h-12 w-[240px] pl-11 rounded-[1.25rem] border-2 font-black text-xs uppercase"
             />
           </div>
-          <div className="bg-white/50 p-1 rounded-2xl border-2 flex items-center shadow-sm">
-             <Button 
-               variant={filterType === 'game' ? 'default' : 'ghost'} 
-               size="sm" 
-               className="h-10 px-6 rounded-xl font-black text-[10px] uppercase transition-all"
-               onClick={() => setFilterType('game')}
-             >
-               <Trophy className="h-3.5 w-3.5 mr-2" /> Games
-             </Button>
-             <Button 
-               variant={filterType === 'practice' ? 'default' : 'ghost'} 
-               size="sm" 
-               className="h-10 px-6 rounded-xl font-black text-[10px] uppercase transition-all"
-               onClick={() => setFilterType('practice')}
-             >
-               <Activity className="h-3.5 w-3.5 mr-2" /> Drills
-             </Button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-10 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest bg-white/50">
+                <Filter className="h-4 w-4 mr-2" />
+                {filterType === 'all' ? 'All Activities' : filterType === 'game' ? 'Games Only' : 'Drills Only'}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="rounded-2xl border-none shadow-2xl p-2 min-w-[150px]">
+              <DropdownMenuItem onClick={() => setFilterType('all')} className="rounded-xl font-black text-[10px] uppercase px-3 h-10 cursor-pointer">All Feed</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setFilterType('game')} className="rounded-xl font-black text-[10px] uppercase px-3 h-10 cursor-pointer">Games</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setFilterType('practice')} className="rounded-xl font-black text-[10px] uppercase px-3 h-10 cursor-pointer">Practices</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -352,52 +364,138 @@ export default function AttendanceTrackingPage() {
 
       {/* Mobile Cards View */}
       <div className="md:hidden space-y-4 px-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-black uppercase tracking-tight">Team Attendance</h3>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => setSortBy(s => s === 'name' ? 'attendance' : 'name')}>
-            <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Squad Readiness</h3>
+          <Button variant="ghost" size="sm" className="h-8 rounded-lg font-black text-[10px] uppercase" onClick={() => setSortBy(s => s === 'name' ? 'attendance' : 'name')}>
+            <ArrowUpDown className="h-3 w-3 mr-2" /> {sortBy}
           </Button>
         </div>
-        {athletesWithStats.map((athlete) => (
-          <Card key={athlete.id} className="rounded-2xl border shadow-sm overflow-hidden">
-            <div className="p-4 flex items-center gap-4">
-              <Avatar className="h-14 w-14 rounded-xl border-2 border-white shadow">
-                <AvatarImage src={athlete.avatar} />
-                <AvatarFallback className="font-black text-sm">{athlete.name[0]}</AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="font-black text-sm uppercase truncate">{athlete.name}</p>
-                <p className="text-[10px] text-muted-foreground uppercase">{athlete.position || 'Recruit'}</p>
+        {athletesWithStats.map((athlete) => {
+          const nextEvent = trackedEvents[0];
+          const rsvp = nextEvent?.userRsvps?.[athlete.id] || 'no_response';
+          const statusObj = RSVP_STATUSES.find(s => (s.id === 'declined' && rsvp === 'no') || s.id === rsvp) || RSVP_STATUSES[3];
+          
+          return (
+            <Card 
+              key={athlete.id} 
+              className="rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white active:scale-95 transition-all"
+              onClick={() => setSelectedAthlete(athlete)}
+            >
+              <div className="p-5 flex items-center gap-4">
+                <div className="relative">
+                  <Avatar className="h-14 w-14 rounded-2xl border-2 border-white shadow-lg">
+                    <AvatarImage src={athlete.avatar} />
+                    <AvatarFallback className="font-black text-sm">{athlete.name[0]}</AvatarFallback>
+                  </Avatar>
+                  <div className={cn("absolute -bottom-1 -right-1 h-5 w-5 rounded-full border-2 border-white shadow-sm flex items-center justify-center", statusObj.bg)}>
+                    <statusObj.icon className={cn("h-3 w-3", statusObj.color)} />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-sm uppercase truncate leading-none mb-1">{athlete.name}</p>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className={cn("text-[9px] font-black uppercase px-2 h-5 border-none shadow-sm", statusObj.bg, statusObj.color)}>
+                      {statusObj.label === 'No Response' ? 'PENDING' : statusObj.label.toUpperCase()}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className={cn("text-2xl font-black tracking-tighter leading-none", athlete.stats.rate > 80 ? "text-green-500" : athlete.stats.rate > 50 ? "text-amber-500" : "text-red-500")}>
+                    {Math.round(athlete.stats.rate)}%
+                  </p>
+                  <p className="text-[8px] text-muted-foreground uppercase font-bold tracking-widest mt-1">Impact</p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className={cn("text-2xl font-black tracking-tighter", athlete.stats.rate > 80 ? "text-green-500" : athlete.stats.rate > 50 ? "text-amber-500" : "text-red-500")}>{Math.round(athlete.stats.rate)}%</p>
-                <p className="text-[8px] text-muted-foreground uppercase tracking-widest">Attendance</p>
-              </div>
-            </div>
-            <div className="h-1.5 bg-muted/20">
-              <div className={cn("h-full transition-all", athlete.stats.rate > 80 ? "bg-green-500" : athlete.stats.rate > 50 ? "bg-amber-400" : "bg-red-500")} style={{ width: `${athlete.stats.rate}%` }} />
-            </div>
-            <div className="p-3 bg-muted/10 grid grid-cols-4 gap-2 text-center">
-              <div className="space-y-1">
-                <p className="text-[10px] font-black text-green-500">{athlete.stats.going}</p>
-                <p className="text-[7px] text-muted-foreground uppercase">Going</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-black text-amber-500">{athlete.stats.maybe}</p>
-                <p className="text-[7px] text-muted-foreground uppercase">Maybe</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-black text-red-500">{athlete.stats.declined}</p>
-                <p className="text-[7px] text-muted-foreground uppercase">Declined</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-black text-muted-foreground">{athlete.stats.noResponse}</p>
-                <p className="text-[7px] text-muted-foreground uppercase">No RSP</p>
-              </div>
-            </div>
-          </Card>
-        ))}
+              {nextEvent && (
+                <div className="px-5 pb-5 pt-0">
+                  <div className="bg-muted/30 rounded-2xl p-3 flex items-center justify-between group">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white rounded-xl shadow-sm"><Calendar className="h-3.5 w-3.5 text-primary" /></div>
+                      <div className="min-w-0">
+                        <p className="text-[8px] font-black text-primary uppercase tracking-[0.2em] leading-none mb-1">Next Deployment</p>
+                        <p className="text-[10px] font-black uppercase truncate max-w-[150px]">{nextEvent.title}</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground/30 group-active:translate-x-1 transition-all" />
+                  </div>
+                </div>
+              )}
+            </Card>
+          );
+        })}
       </div>
+
+      {/* Athlete History Dialog */}
+      <Dialog open={!!selectedAthlete} onOpenChange={(open: boolean) => !open && setSelectedAthlete(null)}>
+        <DialogContent className="sm:max-w-2xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-hidden flex flex-col max-h-[90vh]">
+          <DialogTitle className="sr-only">Athlete Attendance History</DialogTitle>
+          {selectedAthlete && (
+            <>
+              <div className="p-8 bg-black text-white relative flex items-center gap-6 overflow-hidden">
+                <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none">
+                  <HistoryIcon className="h-32 w-32" />
+                </div>
+                <Avatar className="h-20 w-20 rounded-[2rem] border-2 border-primary ring-4 ring-primary/20">
+                  <AvatarImage src={selectedAthlete.avatar} />
+                  <AvatarFallback className="text-xl font-black">{selectedAthlete.name[0]}</AvatarFallback>
+                </Avatar>
+                <div className="relative z-10">
+                  <p className="text-[10px] font-black uppercase text-primary tracking-[0.3em] mb-1">Combat History</p>
+                  <h2 className="text-3xl font-black uppercase italic tracking-tighter">{selectedAthlete.name}</h2>
+                  <div className="flex items-center gap-4 mt-2">
+                    <Badge className="bg-white/10 text-white border-white/20 font-black uppercase text-[9px]">#{selectedAthlete.jersey || '00'}</Badge>
+                    <span className="text-[10px] font-bold text-white/60 uppercase tracking-widest">{selectedAthlete.position}</span>
+                  </div>
+                </div>
+              </div>
+              <ScrollArea className="flex-1 p-8">
+                <div className="space-y-6">
+                  <div className="grid grid-cols-4 gap-4">
+                    {RSVP_STATUSES.map(status => {
+                      const count = selectedAthlete.stats[status.id === 'going' ? 'going' : status.id === 'maybe' ? 'maybe' : status.id === 'declined' ? 'declined' : 'noResponse'];
+                      return (
+                        <div key={status.id} className="text-center p-4 bg-muted/20 rounded-2xl border-2 border-dashed">
+                          <p className={cn("text-xl font-black leading-none mb-1", status.color)}>{count}</p>
+                          <p className="text-[7px] font-black uppercase text-muted-foreground tracking-widest">{status.label === 'No Response' ? 'Pending' : status.label}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  <div className="space-y-4 pt-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-primary">Deployment Records</p>
+                    <div className="space-y-3">
+                      {trackedEvents.map(event => {
+                        const rsvp = event.userRsvps?.[selectedAthlete.id] || 'no_response';
+                        const statusObj = RSVP_STATUSES.find(s => (s.id === 'declined' && rsvp === 'no') || s.id === rsvp) || RSVP_STATUSES[3];
+                        return (
+                          <div key={event.id} className="flex items-center justify-between p-4 rounded-2xl border-2 border-muted/50 bg-white group hover:border-primary/20 transition-all">
+                            <div className="flex items-center gap-4">
+                              <div className={cn("p-2 rounded-xl", statusObj.bg)}>
+                                <statusObj.icon className={cn("h-4 w-4", statusObj.color)} />
+                              </div>
+                              <div>
+                                <p className="text-[11px] font-black uppercase leading-none mb-1">{event.title}</p>
+                                <p className="text-[8px] font-bold text-muted-foreground uppercase">{format(new Date(event.date), 'MMM dd, yyyy')}</p>
+                              </div>
+                            </div>
+                            <Badge className={cn("text-[8px] font-black uppercase border-none px-3 h-6", statusObj.bg, statusObj.color)}>
+                              {statusObj.label === 'No Response' ? 'PENDING' : statusObj.label.toUpperCase()}
+                            </Badge>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </ScrollArea>
+              <div className="p-6 border-t bg-muted/10 flex justify-end">
+                <Button className="rounded-xl font-black uppercase text-[10px] h-10 px-8" onClick={() => setSelectedAthlete(null)}>Close Intel</Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Global Intelligence Export */}
       <div className="flex justify-center">

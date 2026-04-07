@@ -102,13 +102,13 @@ export default function ChatRoomPage() {
     if (!activeTeam || !db || !chatId) return null;
     return query(
       collection(db, 'teams', activeTeam.id, 'groupChats', chatId as string, 'messages'),
-      orderBy('createdAt', 'asc'),
+      orderBy('createdAt', 'desc'),
       limit(100)
     );
   }, [activeTeam?.id, db, chatId]);
 
   const { data: rawMessages, isLoading: isMessagesLoading } = useCollection<Message>(messagesQuery);
-  const messages = useMemo(() => rawMessages || [], [rawMessages]);
+  const messages = useMemo(() => (rawMessages ? [...rawMessages].reverse() : []), [rawMessages]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -317,7 +317,7 @@ export default function ChatRoomPage() {
                         <BarChart2 className="h-8 w-8 text-primary opacity-20" />
                       </div>
                       <div className="p-6 space-y-4">
-                        {msg.poll?.options.map((opt: any, i: number) => {
+                        {msg.poll?.options.map((opt, i: number) => {
                           const percentage = msg.poll!.totalVotes > 0 ? (opt.votes / msg.poll!.totalVotes) * 100 : 0;
                           return (
                             <button 
