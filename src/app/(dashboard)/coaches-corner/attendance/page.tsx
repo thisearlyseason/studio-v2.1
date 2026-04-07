@@ -225,8 +225,8 @@ export default function AttendanceTrackingPage() {
         })}
       </div>
 
-      {/* Main Matrix Vault */}
-    <Card className="rounded-[3rem] border-none shadow-2xl bg-white overflow-hidden ring-1 ring-black/5 mx-auto max-w-full lg:max-w-6xl">
+      {/* Main Matrix Vault - Desktop Table */}
+      <Card className="hidden md:block rounded-[3rem] border-none shadow-2xl bg-white overflow-hidden ring-1 ring-black/5 mx-auto max-w-full lg:max-w-6xl">
         <div className="p-0 border-none relative">
           <ScrollArea className="w-full">
             <div className="min-w-max">
@@ -349,6 +349,55 @@ export default function AttendanceTrackingPage() {
           </ScrollArea>
         </div>
       </Card>
+
+      {/* Mobile Cards View */}
+      <div className="md:hidden space-y-4 px-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-black uppercase tracking-tight">Team Attendance</h3>
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => setSortBy(s => s === 'name' ? 'attendance' : 'name')}>
+            <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
+          </Button>
+        </div>
+        {athletesWithStats.map((athlete) => (
+          <Card key={athlete.id} className="rounded-2xl border shadow-sm overflow-hidden">
+            <div className="p-4 flex items-center gap-4">
+              <Avatar className="h-14 w-14 rounded-xl border-2 border-white shadow">
+                <AvatarImage src={athlete.avatar} />
+                <AvatarFallback className="font-black text-sm">{athlete.name[0]}</AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="font-black text-sm uppercase truncate">{athlete.name}</p>
+                <p className="text-[10px] text-muted-foreground uppercase">{athlete.position || 'Recruit'}</p>
+              </div>
+              <div className="text-right">
+                <p className={cn("text-2xl font-black tracking-tighter", athlete.stats.rate > 80 ? "text-green-500" : athlete.stats.rate > 50 ? "text-amber-500" : "text-red-500")}>{Math.round(athlete.stats.rate)}%</p>
+                <p className="text-[8px] text-muted-foreground uppercase tracking-widest">Attendance</p>
+              </div>
+            </div>
+            <div className="h-1.5 bg-muted/20">
+              <div className={cn("h-full transition-all", athlete.stats.rate > 80 ? "bg-green-500" : athlete.stats.rate > 50 ? "bg-amber-400" : "bg-red-500")} style={{ width: `${athlete.stats.rate}%` }} />
+            </div>
+            <div className="p-3 bg-muted/10 grid grid-cols-4 gap-2 text-center">
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-green-500">{athlete.stats.going}</p>
+                <p className="text-[7px] text-muted-foreground uppercase">Going</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-amber-500">{athlete.stats.maybe}</p>
+                <p className="text-[7px] text-muted-foreground uppercase">Maybe</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-red-500">{athlete.stats.declined}</p>
+                <p className="text-[7px] text-muted-foreground uppercase">Declined</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-muted-foreground">{athlete.stats.noResponse}</p>
+                <p className="text-[7px] text-muted-foreground uppercase">No RSP</p>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
 
       {/* Global Intelligence Export */}
       <div className="flex justify-center">

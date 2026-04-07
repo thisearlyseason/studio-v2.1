@@ -305,139 +305,232 @@ function TrackingMatrix({ members, protocols, volunteerOpps, events }: { members
       </div>
 
       <ScrollArea className="h-[600px] w-full">
-        <div className="md:hidden flex items-center justify-center p-3 bg-muted/20 text-[8px] font-black uppercase tracking-[0.2em] text-primary space-x-2 border-b">
-          <span>Swipe to view registry</span>
-          <ChevronRight className="h-3 w-3 animate-bounce-x" />
-        </div>
-        <div className="min-w-[800px]">
-          <Table>
-            <TableHeader className="bg-muted/30 sticky top-0 z-20">
-              <TableRow className="hover:bg-transparent border-none">
-                <TableHead className="w-[280px] h-16 font-black uppercase text-[10px] tracking-widest pl-8 text-primary/60">Personnel</TableHead>
-                {view === 'compliance' ? protocols.map(p => (
-                  <TableHead key={p.id} className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">{p.title}</TableHead>
-                )) : (
-                  <>
-                    <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Total Points</TableHead>
-                    <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Assignments</TableHead>
-                    <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Status</TableHead>
-                    <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Readiness</TableHead>
-                  </>
-                )}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {members.map((m, idx) => {
-                const signatures = m.signatures || {};
-                
-                // Calculate mobilization metrics
-                let totalPoints = 0;
-                let activeAssignmentsCount = 0;
-                
-                // 1. Volunteer Opportunities (Include parent contributions)
-                volunteerOpps.forEach(opp => {
-                  const signup = (m.userId && opp.signups?.[m.userId]) || 
-                                (m.parentId && opp.signups?.[m.parentId]);
-                  if (signup) {
-                    if (signup.status === 'verified') {
-                      totalPoints += (opp.points || 0);
-                    } else {
-                      activeAssignmentsCount++;
-                    }
-                  }
-                });
-
-                // 2. Event Assignments (Include parent contributions)
-                events.forEach(ev => {
-                  (ev.assignments || []).forEach((a: any) => {
-                    const isAssignedToMember = (m.userId && a.assigneeId === m.userId) || 
-                                              (m.parentId && a.assigneeId === m.parentId);
-                    if (isAssignedToMember) {
-                      if (a.status === 'completed' || a.status === 'verified') {
-                        totalPoints += (a.points || 25);
+        {/* Desktop Table View */}
+        <div className="hidden md:block">
+          <div className="min-w-[800px]">
+            <Table>
+              <TableHeader className="bg-muted/30 sticky top-0 z-20">
+                <TableRow className="hover:bg-transparent border-none">
+                  <TableHead className="w-[280px] h-16 font-black uppercase text-[10px] tracking-widest pl-8 text-primary/60">Personnel</TableHead>
+                  {view === 'compliance' ? protocols.map(p => (
+                    <TableHead key={p.id} className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">{p.title}</TableHead>
+                  )) : (
+                    <>
+                      <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Total Points</TableHead>
+                      <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Assignments</TableHead>
+                      <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Status</TableHead>
+                      <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Readiness</TableHead>
+                    </>
+                  )}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {members.map((m, idx) => {
+                  const signatures = m.signatures || {};
+                  
+                  // Calculate mobilization metrics
+                  let totalPoints = 0;
+                  let activeAssignmentsCount = 0;
+                  
+                  // 1. Volunteer Opportunities (Include parent contributions)
+                  volunteerOpps.forEach(opp => {
+                    const signup = (m.userId && opp.signups?.[m.userId]) || 
+                                  (m.parentId && opp.signups?.[m.parentId]);
+                    if (signup) {
+                      if (signup.status === 'verified') {
+                        totalPoints += (opp.points || 0);
                       } else {
                         activeAssignmentsCount++;
                       }
                     }
                   });
-                });
 
-                return (
-                  <TableRow 
-                    key={m.id} 
-                    className={cn("hover:bg-muted/5 transition-colors border-b-2 border-muted/20 cursor-pointer", idx % 2 === 1 && "bg-muted/5")}
-                    onClick={() => setSelectedMember(m)}
-                  >
-                    <TableCell className="py-5 pl-8">
-                      <div className="flex items-center gap-4">
-                        <Avatar className="h-10 w-10 rounded-xl border-2 border-white shadow-sm hover:scale-110 transition-transform">
-                          <AvatarImage src={m.avatar} />
-                          <AvatarFallback className="font-black text-xs">{m.name[0]}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="font-black text-xs uppercase tracking-tight truncate leading-none mb-1">{m.name}</p>
-                          <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-                            {m.position} • {m.role}
-                          </p>
-                        </div>
-                      </div>
-                    </TableCell>
+                  // 2. Event Assignments (Include parent contributions)
+                  events.forEach(ev => {
+                    (ev.assignments || []).forEach((a: any) => {
+                      const isAssignedToMember = (m.userId && a.assigneeId === m.userId) || 
+                                                (m.parentId && a.assigneeId === m.parentId);
+                      if (isAssignedToMember) {
+                        if (a.status === 'completed' || a.status === 'verified') {
+                          totalPoints += (a.points || 25);
+                        } else {
+                          activeAssignmentsCount++;
+                        }
+                      }
+                    });
+                  });
 
-                    {view === 'compliance' ? protocols.map(p => {
-                      const isSigned = !!signatures[p.id];
-                      return (
-                        <TableCell key={p.id} className="text-center">
-                          <div className="flex justify-center">
-                            <div className={cn(
-                              "h-10 w-10 rounded-xl flex items-center justify-center border-2 transition-all shadow-sm",
-                              isSigned ? "bg-green-50 border-green-200 text-green-600 shadow-green-600/5 rotate-0" : "bg-red-50/50 border-red-100 text-red-300 opacity-40 grayscale"
-                            )}>
-                              {isSigned ? <Check className="h-5 w-5" strokeWidth={3} /> : <AlertCircle className="h-5 w-5" />}
-                            </div>
+                  return (
+                    <TableRow 
+                      key={m.id} 
+                      className={cn("hover:bg-muted/5 transition-colors border-b-2 border-muted/20 cursor-pointer", idx % 2 === 1 && "bg-muted/5")}
+                      onClick={() => setSelectedMember(m)}
+                    >
+                      <TableCell className="py-5 pl-8">
+                        <div className="flex items-center gap-4">
+                          <Avatar className="h-10 w-10 rounded-xl border-2 border-white shadow-sm hover:scale-110 transition-transform">
+                            <AvatarImage src={m.avatar} />
+                            <AvatarFallback className="font-black text-xs">{m.name[0]}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <p className="font-black text-xs uppercase tracking-tight truncate leading-none mb-1">{m.name}</p>
+                            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+                              {m.position} • {m.role}
+                            </p>
                           </div>
-                        </TableCell>
-                      );
-                    }) : (
-                      <>
-                        <TableCell className="text-center">
-                          <Badge className="bg-primary/10 text-primary border-none font-black text-xs px-4 h-8 rounded-lg shadow-sm">
-                            {totalPoints} PTS
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <span className="text-xs font-black uppercase tracking-widest opacity-60">{activeAssignmentsCount} Active</span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge className={cn(
-                            "border-none font-black text-[8px] uppercase px-3 h-6",
-                            totalPoints >= 100 ? "bg-green-100 text-green-700" : totalPoints > 0 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
-                          )}>
-                            {totalPoints >= 300 ? 'Commander' : totalPoints >= 150 ? 'Elite Tier' : totalPoints >= 50 ? 'Engaged' : totalPoints > 0 ? 'Recruit' : 'Cold'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {(() => {
-                            const isCompliant = protocols.every(p => !!signatures[p.id]);
-                            const isMobilized = totalPoints >= 50;
-                            const status = (isCompliant && isMobilized) ? 'READY' : (isCompliant || isMobilized) ? 'PARTIAL' : 'NOT READY';
-                            
-                            return (
-                              <Badge className={cn(
-                                "border-none font-black text-[8px] uppercase px-3 h-6",
-                                status === 'READY' ? "bg-green-500 text-white" : status === 'PARTIAL' ? "bg-amber-500 text-white" : "bg-destructive text-white"
+                        </div>
+                      </TableCell>
+
+                      {view === 'compliance' ? protocols.map(p => {
+                        const isSigned = !!signatures[p.id];
+                        return (
+                          <TableCell key={p.id} className="text-center">
+                            <div className="flex justify-center">
+                              <div className={cn(
+                                "h-10 w-10 rounded-xl flex items-center justify-center border-2 transition-all shadow-sm",
+                                isSigned ? "bg-green-50 border-green-200 text-green-600 shadow-green-600/5 rotate-0" : "bg-red-50/50 border-red-100 text-red-300 opacity-40 grayscale"
                               )}>
-                                {status}
-                              </Badge>
-                            );
-                          })()}
-                        </TableCell>
-                      </>
-                    )}
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                                {isSigned ? <Check className="h-5 w-5" strokeWidth={3} /> : <AlertCircle className="h-5 w-5" />}
+                              </div>
+                            </div>
+                          </TableCell>
+                        );
+                      }) : (
+                        <>
+                          <TableCell className="text-center">
+                            <Badge className="bg-primary/10 text-primary border-none font-black text-xs px-4 h-8 rounded-lg shadow-sm">
+                              {totalPoints} PTS
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span className="text-xs font-black uppercase tracking-widest opacity-60">{activeAssignmentsCount} Active</span>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge className={cn(
+                              "border-none font-black text-[8px] uppercase px-3 h-6",
+                              totalPoints >= 100 ? "bg-green-100 text-green-700" : totalPoints > 0 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
+                            )}>
+                              {totalPoints >= 300 ? 'Commander' : totalPoints >= 150 ? 'Elite Tier' : totalPoints >= 50 ? 'Engaged' : totalPoints > 0 ? 'Recruit' : 'Cold'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {(() => {
+                              const isCompliant = protocols.every(p => !!signatures[p.id]);
+                              const isMobilized = totalPoints >= 50;
+                              const status = (isCompliant && isMobilized) ? 'READY' : (isCompliant || isMobilized) ? 'PARTIAL' : 'NOT READY';
+                              
+                              return (
+                                <Badge className={cn(
+                                  "border-none font-black text-[8px] uppercase px-3 h-6",
+                                  status === 'READY' ? "bg-green-500 text-white" : status === 'PARTIAL' ? "bg-amber-500 text-white" : "bg-destructive text-white"
+                                )}>
+                                  {status}
+                                </Badge>
+                              );
+                            })()}
+                          </TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="md:hidden space-y-3 p-4">
+          {members.map((m) => {
+            const signatures = m.signatures || {};
+            let totalPoints = 0;
+            let activeAssignmentsCount = 0;
+            
+            volunteerOpps.forEach(opp => {
+              const signup = (m.userId && opp.signups?.[m.userId]) || (m.parentId && opp.signups?.[m.parentId]);
+              if (signup) {
+                if (signup.status === 'verified') {
+                  totalPoints += (opp.points || 0);
+                } else {
+                  activeAssignmentsCount++;
+                }
+              }
+            });
+
+            events.forEach(ev => {
+              (ev.assignments || []).forEach((a: any) => {
+                const isAssignedToMember = (m.userId && a.assigneeId === m.userId) || (m.parentId && a.assigneeId === m.parentId);
+                if (isAssignedToMember) {
+                  if (a.status === 'completed' || a.status === 'verified') {
+                    totalPoints += (a.points || 25);
+                  } else {
+                    activeAssignmentsCount++;
+                  }
+                }
+              });
+            });
+
+            return (
+              <Card key={m.id} className="rounded-2xl overflow-hidden" onClick={() => setSelectedMember(m)}>
+                <div className="p-4 flex items-center gap-3">
+                  <Avatar className="h-12 w-12 rounded-xl border-2 border-white shadow-sm">
+                    <AvatarImage src={m.avatar} />
+                    <AvatarFallback className="font-black text-sm">{m.name[0]}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-black text-sm uppercase truncate">{m.name}</p>
+                    <p className="text-[10px] text-muted-foreground uppercase">{m.position} • {m.role}</p>
+                  </div>
+                  {view === 'volunteers' && (
+                    <div className="text-right">
+                      <p className="text-lg font-black text-primary">{totalPoints}</p>
+                      <p className="text-[8px] text-muted-foreground uppercase tracking-widest">PTS</p>
+                    </div>
+                  )}
+                </div>
+                
+                {view === 'compliance' ? (
+                  <div className="px-4 pb-4">
+                    <div className="flex flex-wrap gap-2">
+                      {protocols.map(p => {
+                        const isSigned = !!signatures[p.id];
+                        return (
+                          <div key={p.id} className={cn(
+                            "h-8 w-8 rounded-lg flex items-center justify-center border",
+                            isSigned ? "bg-green-50 border-green-200 text-green-600" : "bg-red-50/50 border-red-100 text-red-300 opacity-40 grayscale"
+                          )}>
+                            {isSigned ? <Check className="h-4 w-4" strokeWidth={3} /> : <AlertCircle className="h-4 w-4" />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="px-4 pb-4 flex items-center gap-2">
+                    <Badge className={cn(
+                      "border-none font-black text-[8px] uppercase px-2 h-6",
+                      totalPoints >= 100 ? "bg-green-100 text-green-700" : totalPoints > 0 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
+                    )}>
+                      {totalPoints >= 300 ? 'Commander' : totalPoints >= 150 ? 'Elite Tier' : totalPoints >= 50 ? 'Engaged' : totalPoints > 0 ? 'Recruit' : 'Cold'}
+                    </Badge>
+                    {(() => {
+                      const isCompliant = protocols.every(p => !!signatures[p.id]);
+                      const isMobilized = totalPoints >= 50;
+                      const status = (isCompliant && isMobilized) ? 'READY' : (isCompliant || isMobilized) ? 'PARTIAL' : 'NOT READY';
+                      return (
+                        <Badge className={cn(
+                          "border-none font-black text-[8px] uppercase px-2 h-6",
+                          status === 'READY' ? "bg-green-500 text-white" : status === 'PARTIAL' ? "bg-amber-500 text-white" : "bg-destructive text-white"
+                        )}>
+                          {status}
+                        </Badge>
+                      );
+                    })()}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
         </div>
       </ScrollArea>
 
