@@ -47,6 +47,7 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format, isPast } from 'date-fns';
 import { Lock as LockIcon } from 'lucide-react';
+import { DatePicker } from "@/components/ui/date-picker";
 
 function DonationAuditLedger({ fundId }: { fundId: string }) {
   const { activeTeam, confirmExternalDonation } = useTeam();
@@ -393,7 +394,12 @@ export default function FundraisingPage() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Deadline</Label>
-                  <Input type="date" value={newFund.deadline} onChange={e => setNewFund({...newFund, deadline: e.target.value})} className="h-14 rounded-2xl border-2 font-black text-foreground" />
+                  <DatePicker 
+                    date={newFund.deadline} 
+                    setDate={d => setNewFund({...newFund, deadline: d})} 
+                    placeholder="Campaign Deadline"
+                    className="h-14 rounded-2xl border-2 font-black bg-white"
+                  />
                 </div>
               </div>
               
@@ -475,7 +481,12 @@ export default function FundraisingPage() {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Deadline</Label>
-                    <Input type="date" value={editingFund.deadline} onChange={e => setEditingFund({...editingFund, deadline: e.target.value})} className="h-14 rounded-2xl border-2 font-black text-foreground" />
+                    <DatePicker 
+                      date={editingFund.deadline} 
+                      setDate={d => setEditingFund({...editingFund, deadline: d})} 
+                      placeholder="Campaign Deadline"
+                      className="h-14 rounded-2xl border-2 font-black bg-white"
+                    />
                   </div>
                 </div>
                 

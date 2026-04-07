@@ -16,7 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { 
   HandHelping, 
   Plus, 
-  Calendar, 
+  Calendar as CalendarIcon, 
   MapPin, 
   Users, 
   ShieldCheck, 
@@ -34,8 +34,11 @@ import {
   Star,
   Edit3,
   Check,
-  Database
+  Database,
+  Users2
 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { 
   Dialog, 
   DialogContent, 
@@ -49,6 +52,7 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Lock as LockIcon } from 'lucide-react';
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Tooltip,
   TooltipContent,
@@ -211,23 +215,22 @@ export default function VolunteerHubPage() {
       )}
 
       <div className={cn("space-y-12 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-700", !isPro && "blur-[4px] pointer-events-none grayscale opacity-30 select-none")}>
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
-        <div className="space-y-3">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-[0.3em] text-[10px] h-7 px-4 rounded-full shadow-sm">Squad Support Hub</Badge>
-          <h1 className="text-5xl md:text-7xl font-black tracking-tighter uppercase leading-[0.85] italic">Volunteer<br />Intelligence</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-[0.3em] text-[11px] ml-2 mt-2 opacity-50">Operational Support & Contribution Ledger</p>
+      <header className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-1000">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="h-2 w-12 bg-primary rounded-full" />
+              <span className="text-xs font-black uppercase tracking-[0.4em] text-primary/60">Tactical Mobilization</span>
+            </div>
+            <h1 className="text-4xl md:text-7xl font-black uppercase tracking-tight leading-[0.85] italic">Volunteer Intelligence</h1>
+          </div>
+          {isStaff && (
+            <Button onClick={() => setIsAddOpen(true)} className="h-16 md:h-20 px-8 md:px-12 rounded-[2rem] bg-black text-white hover:bg-black/90 font-black uppercase text-xs tracking-[0.2em] shadow-2xl transition-all active:scale-95 group shrink-0">
+              <Plus className="h-4 w-4 md:h-5 md:w-5 mr-3 group-hover:rotate-90 transition-transform" /> Deploy Mission
+            </Button>
+          )}
         </div>
-
-        {isStaff && (
-          <Button 
-            onClick={() => setIsAddOpen(true)} 
-            className="h-16 px-10 rounded-[2rem] text-lg font-black shadow-2xl shadow-primary/20 active:scale-95 transition-all bg-black hover:bg-primary group"
-          >
-            <Plus className="h-6 w-6 mr-3 group-hover:rotate-90 transition-transform" />
-            Deploy Mission
-          </Button>
-        )}
-      </div>
+      </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <Card className="rounded-[3rem] border-none shadow-2xl bg-primary text-white overflow-hidden group hover:scale-[1.02] transition-transform">
@@ -268,15 +271,15 @@ export default function VolunteerHubPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="available" className="space-y-10">
-        <div className="flex items-center justify-between">
-           <TabsList className="bg-muted/30 rounded-2xl p-1.5 h-14 inline-flex border-2 border-black/5 backdrop-blur-sm">
-            <TabsTrigger value="available" className="rounded-xl font-black text-[10px] uppercase tracking-[0.2em] px-10 data-[state=active]:bg-primary data-[state=active]:text-white transition-all shadow-sm">Mission Board</TabsTrigger>
-            {isStaff && <TabsTrigger value="ledger" className="rounded-xl font-black text-[10px] uppercase tracking-[0.2em] px-10 data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-sm">Tactical Audit</TabsTrigger>}
+      <Tabs defaultValue="board" className="space-y-10">
+        <div className="overflow-x-auto pb-4 -mx-4 px-4 no-scrollbar">
+          <TabsList className="bg-muted/50 p-1.5 rounded-[2rem] h-auto border-2 border-black/5 inline-flex">
+            <TabsTrigger value="board" className="rounded-2xl px-6 md:px-10 py-3 md:py-4 font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-lg transition-all">Mission Board</TabsTrigger>
+            <TabsTrigger value="ledger" className="rounded-2xl px-6 md:px-10 py-3 md:py-4 font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-lg transition-all">Audit Terminal</TabsTrigger>
           </TabsList>
         </div>
 
-        <TabsContent value="available" className="mt-0 outline-none">
+        <TabsContent value="board" className="mt-0 outline-none">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {allTasks.map((task) => {
               const signups = Object.values(task.signups || {});
@@ -457,9 +460,14 @@ export default function VolunteerHubPage() {
                 <Input value={newOpp.title} onChange={e => setNewOpp({...newOpp, title: e.target.value})} className="h-16 rounded-2xl border-2 font-black text-lg shadow-sm focus:ring-primary" placeholder="e.g. Tactical Logistics Officer" />
               </div>
               <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Operational Date</Label>
-                  <Input type="date" value={newOpp.date} onChange={e => setNewOpp({...newOpp, date: e.target.value})} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
+                <div className="space-y-3">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Deployment Date</Label>
+                  <DatePicker 
+                    date={newOpp.date} 
+                    setDate={d => setNewOpp({ ...newOpp, date: d })} 
+                    placeholder="Select Date"
+                    className="h-14 rounded-2xl border-2 px-6 italic font-black uppercase tracking-widest bg-white"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Personnel Limit</Label>
@@ -510,7 +518,12 @@ export default function VolunteerHubPage() {
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Operational Date</Label>
-                    <Input type="date" value={editingOpp.date} onChange={e => setEditingOpp({...editingOpp, date: e.target.value})} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
+                    <DatePicker 
+                      date={editingOpp.date} 
+                      setDate={d => setEditingOpp({...editingOpp, date: d})} 
+                      placeholder="Operational Date"
+                      className="h-14 rounded-2xl border-2 font-black bg-white"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Personnel Limit</Label>

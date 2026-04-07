@@ -290,7 +290,8 @@ export type TeamAlert = {
   id: string;
   title: string;
   message: string;
-  audience: 'everyone' | 'coaches' | 'players' | 'parents';
+  audience: 'everyone' | 'coaches' | 'players' | 'parents' | string;
+  targetUserId?: string;
   createdAt: string;
   createdBy: string;
 };
@@ -332,9 +333,11 @@ export type VolunteerOpportunity = {
   title: string;
   description: string;
   date: string;
+  endDate?: string;
   location: string;
   spots: number;
   points: number;
+  hoursPerSlot?: number;
   isShareable?: boolean;
   signups: Record<string, any>;
   eventId?: string;
@@ -1213,30 +1216,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         }
       }
     }
-
     return null;
   }, [db]);
-
-  const isStarter = useMemo(() => {
-    return activeTeam?.planId === 'starter_squad' || userProfile?.activePlanId === 'starter_squad';
-  }, [activeTeam?.planId, userProfile?.activePlanId]);
 
   const isSchoolAdmin = useMemo(() => {
     if (!userProfile) return false;
     
-    // Check specific Position (Athletic Director in any school team)
     const activeStaff = teams.some(t => {
-      if (t.type !== 'school' && t.type !== 'school_squad') return false;
-      const m = getMember(userProfile.id);
-      return m?.position === 'Athletic Director' || m?.position === 'Staff';
+      const membership = getMember(t.id);
+      return membership?.position === 'Athletic Director' || membership?.position === 'Director of Athletics' || membership?.position === 'Staff';
     });
-    if (activeStaff) return true;
     
-    // Check if user is an admin of any 'school' type team
-    return (userProfile?.schoolAdminIds?.includes(userProfile.id)) || teams.some((t: any) => 
-      t.type === 'school' && 
-      (t.ownerUserId === userProfile.id || t.schoolAdminIds?.includes(userProfile.id))
-    );
+    return activeStaff;
   }, [teams, userProfile, getMember]);
 
   const isPro = useMemo(() => {
@@ -1274,6 +1265,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
            ['elite_teams', 'elite_league', 'squad_organization', 'squad_pro', 'squad_pro_demo'].includes(activeTeam?.planId || '');
   }, [activeTeam, clubData, userProfile, isSuperAdmin, isSchoolAdmin, teams]);
 
+  const isStarter = useMemo(() => {
+    if (isPro) return false;
+    return !activeTeam?.planId || activeTeam?.planId === 'starter_squad' || userProfile?.activePlanId === 'starter_squad';
+  }, [activeTeam?.planId, userProfile?.activePlanId, isPro]);
+
   const isSchoolMode = useMemo(() => {
     return activeTeam?.type === 'school' || activeTeam?.type === 'school_squad';
   }, [activeTeam?.type]);
@@ -1296,6 +1292,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [db, activeTeam?.id]);
 
+  const createTeamDocument = useCallback(async (docData: Partial<TeamDocument>) => {
+    if (!db || !activeTeam?.id) return;
+    const docRef = docData.id ? doc(db, 'teams', activeTeam.id, 'documents', docData.id) : doc(collection(db, 'teams', activeTeam.id, 'documents'));
+    await setDoc(docRef, {
+      ...docData,
+      id: docRef.id,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  }, [db, activeTeam?.id]);
 
   const hasFeature = useCallback((featureId: string) => {
     if (isSuperAdmin) return true;
@@ -1641,7 +1647,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await batch.commit(); 
     return true; 
   }, [db, activeTeam, firebaseUser, members, userProfile]);
-  const createTeamDocument = useCallback(async (data: any) => { 
+  const addTeamDocument = useCallback(async (data: any) => { 
     if (!isStaff) {
       toast({ title: "Vault Access Denied", description: "Only staff can archive new organizational documents.", variant: "destructive" });
       return;
@@ -1787,7 +1793,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const deleteVolunteerOpportunity = useCallback(async (oppId: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId)); }, [activeTeam, db]);
   const publicSignUpForVolunteer = useCallback(async (teamId: string, oppId: string, data: any) => { if (db) await updateDoc(doc(db, 'teams', teamId, 'volunteers', oppId), { [`signups.${data.name.replace(/\s+/g, '')}_${Date.now()}`]: { userId: `public_${Date.now()}`, userName: data.name, email: data.email, phone: data.phone, isConfirmed: false, status: 'pending', createdAt: new Date().toISOString() } }); }, [db]);
   const signUpForVolunteer = useCallback(async (oppId: string) => { if (activeTeam?.id && firebaseUser && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${firebaseUser.uid}`]: { userId: firebaseUser.uid, userName: userProfile?.name, email: firebaseUser.email, isConfirmed: false, status: 'pending', createdAt: new Date().toISOString() } }); }, [activeTeam, firebaseUser, db, userProfile]);
-  const verifyVolunteerPoints = useCallback(async (oppId: string, userId: string, points: number) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${userId}.status`]: 'verified', [`signups.${userId}.verifiedPoints`]: points }); }, [activeTeam, db]);
+  const verifyVolunteerPoints = useCallback(async (oppId: string, userId: string, points: number) => { 
+    if (activeTeam?.id && db) {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { 
+        [`signups.${userId}.status`]: 'verified', 
+        [`signups.${userId}.verifiedPoints`]: points 
+      });
+      
+      // Also update the member document if it exists for persistent point tracking
+      const memberQuery = query(collection(db, 'teams', activeTeam.id, 'members'), where('userId', '==', userId), limit(1));
+      const memberSnap = await getDocs(memberQuery);
+      if (!memberSnap.empty) {
+        await updateDoc(doc(db, 'teams', activeTeam.id, 'members', memberSnap.docs[0].id), {
+          volunteerPoints: increment(points)
+        });
+      }
+    }
+  }, [activeTeam, db]);
   const confirmVolunteerAttendance = useCallback(async (oppId: string, userId: string, confirmed: boolean) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${userId}.isConfirmed`]: confirmed }); }, [activeTeam, db]);
 
   const addFundraisingOpportunity = useCallback(async (data: any) => { if (activeTeam?.id && db) await addDoc(collection(db, 'teams', activeTeam.id, 'fundraising'), clean({ ...data, currentAmount: 0, finances: {} })); }, [activeTeam, db]);
@@ -2447,12 +2469,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       });
     }
   }, [firebaseUser, db, alerts, isStaff, isPlayer, isParent]);
-  const createAlert = useCallback(async (t: string, m: string, a: any) => { 
+  const createAlert = useCallback(async (t: string, m: string, a: TeamAlert['audience'], targetUserId?: string) => { 
     if (!isStaff) {
       toast({ title: "Broadcast Access Denied", description: "Only staff members can issue squad-wide intelligence alerts.", variant: "destructive" });
       return;
     }
-    if (activeTeam?.id && db && firebaseUser) await addDoc(collection(db, 'teams', activeTeam.id, 'alerts'), clean({ title: t, message: m, audience: a, createdAt: new Date().toISOString(), createdBy: firebaseUser.uid })); 
+    if (activeTeam?.id && db && firebaseUser) {
+      await addDoc(collection(db, 'teams', activeTeam.id, 'alerts'), clean({ 
+        title: t, 
+        message: m, 
+        audience: a, 
+        targetUserId: targetUserId || null,
+        createdAt: new Date().toISOString(), 
+        createdBy: firebaseUser.uid 
+      })); 
+    }
   }, [activeTeam, db, firebaseUser, isStaff]);
 
   const deleteAlert = useCallback(async (id: string) => { 

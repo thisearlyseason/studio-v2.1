@@ -30,6 +30,7 @@ import {
 import { Line, LineChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DatePicker } from "@/components/ui/date-picker";
 
 const chartConfig = {
   myScore: { label: "Our Score", color: "hsl(var(--primary))" },
@@ -302,7 +303,12 @@ export default function GamesPage() {
               </div>
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase ml-1">Match Date</Label>
-                <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-12 rounded-xl border-2 font-black" />
+                <DatePicker 
+                  date={date} 
+                  setDate={setDate} 
+                  placeholder="Select Match Date"
+                  className="h-12 rounded-xl border-2 font-black bg-white"
+                />
               </div>
             </div>
             <DialogFooter>

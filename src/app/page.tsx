@@ -68,6 +68,15 @@ import {
   DialogDescription, 
   DialogFooter
 } from '@/components/ui/dialog';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+  SheetDescription
+} from '@/components/ui/sheet';
+import { Menu } from 'lucide-react';
 
 const DEMO_OPTIONS = [
   { id: 'starter_squad', name: 'Starter Plan Demo', icon: Users, desc: 'Grassroots essentials' },
@@ -176,7 +185,7 @@ export default function LandingPage() {
             <a href="#pricing" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>Pricing</a>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="hidden md:flex items-center gap-4">
             <Link href="/login">
               <Button variant="ghost" className={cn("font-bold", isScrolled ? "text-foreground" : "text-white hover:bg-white/10")}>
                 Log In
@@ -187,6 +196,50 @@ export default function LandingPage() {
                 Join Now
               </Button>
             </Link>
+          </div>
+
+          <div className="md:hidden flex items-center gap-2">
+            {!isScrolled && (
+              <Link href="/login">
+                <Button variant="ghost" size="sm" className="font-bold text-white text-[10px] uppercase tracking-widest px-2 h-8">
+                  Log In
+                </Button>
+              </Link>
+            )}
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className={cn("rounded-xl h-10 w-10", isScrolled ? "text-foreground" : "text-white hover:bg-white/10")}>
+                  <Menu className="h-6 w-6" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[300px] sm:w-[400px] border-none p-0 bg-white">
+                <SheetHeader className="p-8 pb-4 text-left">
+                  <div className="h-1 bg-primary w-12 rounded-full mb-6" />
+                  <SheetTitle className="text-3xl font-black uppercase tracking-tighter">Tactical Menu</SheetTitle>
+                  <SheetDescription className="text-primary font-black uppercase text-[10px] tracking-widest pt-1">
+                    Squad Control Protocols
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="px-8 flex flex-col gap-6 pt-10">
+                  <a href="#features" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Features</a>
+                  <a href="#roles" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Roles</a>
+                  <a href="#comparison" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Market Intel</a>
+                  <a href="#pricing" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Pricing</a>
+                  <div className="flex flex-col gap-4 mt-12 pt-6">
+                    <Link href="/signup" className="w-full">
+                      <Button className="w-full h-14 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-primary/20">
+                        Join Now
+                      </Button>
+                    </Link>
+                    <Link href="/login" className="w-full">
+                      <Button variant="outline" className="w-full h-14 rounded-2xl font-black uppercase tracking-widest text-xs border-2">
+                        Log In
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
           </div>
         </div>
       </nav>
@@ -349,9 +402,15 @@ export default function LandingPage() {
               Legacy tools are for hobbyists. The Squad is built for organizations that demand absolute operational visibility and high-performance metrics.
             </p>
           </div>
-
-          <div className="relative overflow-x-auto rounded-[3rem] border-2 shadow-2xl bg-white">
-            <table className="w-full text-left border-collapse min-w-[800px]">
+          
+          <div className="relative group">
+            <div className="absolute inset-0 bg-primary/5 blur-[100px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+            <div className="relative overflow-x-auto rounded-[2rem] md:rounded-[3.5rem] border-2 shadow-2xl bg-white scrollbar-hide">
+              <div className="md:hidden flex items-center justify-center p-3 bg-muted/20 text-[8px] font-black uppercase tracking-[0.2em] text-primary space-x-2 border-b">
+                <span>Swipe to compare</span>
+                <ChevronRight className="h-3 w-3 animate-bounce-x" />
+              </div>
+              <table className="w-full text-left border-collapse min-w-[700px] md:min-w-[1000px]">
               <thead>
                 <tr className="bg-black text-white">
                   <th className="py-8 px-8 text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Capabilities</th>
@@ -414,7 +473,8 @@ export default function LandingPage() {
             </table>
           </div>
         </div>
-      </section>
+      </div>
+    </section>
 
       <section className="py-32 bg-black text-white overflow-hidden relative">
         <div className="container mx-auto px-6 relative z-10">
@@ -624,8 +684,8 @@ export default function LandingPage() {
               </Card>
             </div>
 
-            {/* Row 2: 2 cards centered */}
-            <div className="flex justify-center gap-6 items-stretch">
+            {/* Row 2: 2 cardscentered on desktop, stacked on mobile */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch max-w-5xl mx-auto">
               {/* Elite League */}
               <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden flex flex-col bg-white ring-1 ring-black/5 w-full max-w-[400px]">
                 <CardHeader className="p-8 pb-4 space-y-4">

@@ -55,6 +55,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { useTeam, TeamEvent, EventType, Member, EventAssignment } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { format, isPast, isSameDay, startOfDay } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -622,8 +624,56 @@ export default function EventsPage() {
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date *</Label><Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-12 rounded-xl border-2 font-black px-4 pr-10" /></div>
-                  <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date (Opt)</Label><Input type="date" value={newEndDate} onChange={e => setNewEndDate(e.target.value)} className="h-12 rounded-xl border-2 font-black px-4 pr-10" /></div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date *</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant={"outline"}
+                          className={cn(
+                            "h-12 w-full justify-start text-left font-black rounded-xl border-2 px-4 italic uppercase tracking-widest bg-white hover:bg-muted/50 transition-all",
+                            !newDate && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4 text-primary" />
+                          {newDate ? format(new Date(newDate), "PPP") : <span>Pick Date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={newDate ? new Date(newDate) : undefined}
+                          onSelect={(date) => setNewDate(date ? format(date, "yyyy-MM-dd") : '')}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date (Opt)</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant={"outline"}
+                          className={cn(
+                            "h-12 w-full justify-start text-left font-black rounded-xl border-2 px-4 italic uppercase tracking-widest bg-white hover:bg-muted/50 transition-all",
+                            !newEndDate && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4 text-primary" />
+                          {newEndDate ? format(new Date(newEndDate), "PPP") : <span>Pick Date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={newEndDate ? new Date(newEndDate) : undefined}
+                          onSelect={(date) => setNewEndDate(date ? format(date, "yyyy-MM-dd") : '')}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Time *</Label><Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black px-4 pr-10" />

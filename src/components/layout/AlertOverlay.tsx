@@ -40,7 +40,7 @@ import { useToast } from '@/hooks/use-toast';
  * respecting the target audience.
  */
 export function AlertOverlay() {
-  const { alerts, seenAlertIds, markAlertAsSeen, isStaff, isPlayer, isParent } = useTeam();
+  const { alerts, seenAlertIds, markAlertAsSeen, isStaff, isPlayer, isParent, user } = useTeam();
   const [currentAlertId, setCurrentAlertId] = useState<string | null>(null);
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [locallyAcknowledgedIds, setLocallyAcknowledgedIds] = useState<string[]>([]);
@@ -48,6 +48,9 @@ export function AlertOverlay() {
   // Tactical logic to find the next unread alert
   const findNextAlert = useCallback(() => {
     const myAlerts = (alerts || []).filter(alert => {
+      // If targetUserId is set, it MUST match the current user
+      if (alert.targetUserId && alert.targetUserId !== user?.id) return false;
+      
       if (alert.audience === 'everyone') return true;
       if (alert.audience === 'coaches' && isStaff) return true;
       if (alert.audience === 'players' && isPlayer) return true;
@@ -163,7 +166,7 @@ function QuoteIcon({ className }: { className?: string }) {
 }
 
 export function AlertsHistoryDialog({ children }: { children: React.ReactNode }) {
-  const { alerts, markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isStaff, isPlayer, isParent, deleteAlert } = useTeam();
+  const { alerts, markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isStaff, isPlayer, isParent, deleteAlert, user } = useTeam();
   const [isOpen, setIsOpen] = useState(false);
   const { toast } = useToast();
 
@@ -172,6 +175,9 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
 
   const filteredAlerts = useMemo(() => {
     return (alerts || []).filter(alert => {
+      // If targetUserId is set, it MUST match the current user
+      if (alert.targetUserId && alert.targetUserId !== user?.id) return false;
+
       if (alert.audience === 'everyone') return true;
       if (alert.audience === 'coaches' && isStaff) return true;
       if (alert.audience === 'players' && isPlayer) return true;

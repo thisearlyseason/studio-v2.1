@@ -20,6 +20,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export function FundraisingManager() {
   const { activeTeam, db, addFundraisingOpportunity, updateFundraisingOpportunity, deleteFundraisingOpportunity } = useTeam();
@@ -198,7 +199,12 @@ export function FundraisingManager() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase ml-1">Deadline Date</Label>
-                  <Input type="date" value={form.deadline ?? ''} onChange={e => setForm({...form, deadline: e.target.value})} className="h-12 border-2 rounded-xl font-bold" />
+                  <DatePicker 
+                    date={form.deadline ?? ''} 
+                    setDate={d => setForm({...form, deadline: d})} 
+                    placeholder="Campaign Deadline"
+                    className="h-12 border-2 rounded-xl font-bold bg-white"
+                  />
                 </div>
               </div>
 

@@ -54,11 +54,16 @@ import {
   Zap,
   Link2,
   Copy,
+  Package,
+  Upload,
+  Lock,
+  Edit2,
   Camera,
   MapPin,
   Mail,
   LayoutGrid,
-  Check
+  Check,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where, getDocs } from 'firebase/firestore';
@@ -89,6 +94,15 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { FundraisingManager } from '@/components/coaches-corner/FundraisingManager';
 
 const DEFAULT_PROTOCOLS = [
@@ -111,24 +125,38 @@ function MemberDetailsDialog({ member, protocols, volunteerOpps, events, isOpen,
 }) {
   const signatures = member.signatures || {};
   
-  // Calculate verified volunteer missions
-  const missionHistory = volunteerOpps.filter(opp => opp.signups?.[member.userId]).map(opp => ({
-    title: opp.title,
-    date: opp.date,
-    points: opp.points,
-    status: opp.signups[member.userId].status,
-    id: opp.id,
-    type: 'volunteer'
-  }));
+  // Calculate verified volunteer missions (include parent's work for family tracking)
+  const missionHistory = volunteerOpps
+    .filter(opp => {
+      const signup = (member.userId && opp.signups?.[member.userId]) || 
+                    (member.parentId && opp.signups?.[member.parentId]);
+      return !!signup;
+    })
+    .map(opp => {
+      const signup = (member.userId && opp.signups?.[member.userId]) || 
+                    (member.parentId && opp.signups?.[member.parentId]);
+      return {
+        title: opp.title,
+        date: opp.date,
+        endDate: opp.endDate,
+        points: opp.points,
+        status: signup.status,
+        id: opp.id,
+        type: 'volunteer'
+      };
+    });
 
   // Calculate event assignments
   const assignmentHistory = events.flatMap(ev => 
     (ev.assignments || [])
-      .filter((a: any) => a.assigneeId === member.userId)
+      .filter((a: any) => 
+        (member.userId && a.assigneeId === member.userId) || 
+        (member.parentId && a.assigneeId === member.parentId)
+      )
       .map((a: any) => ({
         title: `${ev.title}: ${a.title}`,
         date: ev.date,
-        points: 25, // Default points for event tasks
+        points: a.points || 25, // Default points for event tasks
         status: a.status,
         id: a.id,
         type: 'assignment'
@@ -214,7 +242,9 @@ function MemberDetailsDialog({ member, protocols, volunteerOpps, events, isOpen,
                     <div key={`${h.id}-${i}`} className="bg-white p-4 rounded-xl shadow-sm flex items-center justify-between">
                       <div className="min-w-0">
                         <p className="text-[10px] font-black uppercase tracking-tight truncate leading-none mb-1">{h.title}</p>
-                        <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">{h.date} • {h.type === 'volunteer' ? 'Mission' : 'Event Task'}</p>
+                        <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">
+                          {h.date}{(h as any).endDate && (h as any).endDate !== h.date ? ` - ${(h as any).endDate}` : ''} • {h.type === 'volunteer' ? 'Mission' : 'Event Task'}
+                        </p>
                       </div>
                       <Badge className={cn(
                         "border-none font-black text-[8px] uppercase px-2 h-5 shrink-0",
@@ -275,6 +305,10 @@ function TrackingMatrix({ members, protocols, volunteerOpps, events }: { members
       </div>
 
       <ScrollArea className="h-[600px] w-full">
+        <div className="md:hidden flex items-center justify-center p-3 bg-muted/20 text-[8px] font-black uppercase tracking-[0.2em] text-primary space-x-2 border-b">
+          <span>Swipe to view registry</span>
+          <ChevronRight className="h-3 w-3 animate-bounce-x" />
+        </div>
         <div className="min-w-[800px]">
           <Table>
             <TableHeader className="bg-muted/30 sticky top-0 z-20">
@@ -287,6 +321,7 @@ function TrackingMatrix({ members, protocols, volunteerOpps, events }: { members
                     <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Total Points</TableHead>
                     <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Assignments</TableHead>
                     <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Status</TableHead>
+                    <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Readiness</TableHead>
                   </>
                 )}
               </TableRow>
@@ -299,9 +334,10 @@ function TrackingMatrix({ members, protocols, volunteerOpps, events }: { members
                 let totalPoints = 0;
                 let activeAssignmentsCount = 0;
                 
-                // 1. Volunteer Opportunities
+                // 1. Volunteer Opportunities (Include parent contributions)
                 volunteerOpps.forEach(opp => {
-                  const signup = opp.signups?.[m.userId];
+                  const signup = (m.userId && opp.signups?.[m.userId]) || 
+                                (m.parentId && opp.signups?.[m.parentId]);
                   if (signup) {
                     if (signup.status === 'verified') {
                       totalPoints += (opp.points || 0);
@@ -311,12 +347,14 @@ function TrackingMatrix({ members, protocols, volunteerOpps, events }: { members
                   }
                 });
 
-                // 2. Event Assignments (Default 25 points per completed task)
+                // 2. Event Assignments (Include parent contributions)
                 events.forEach(ev => {
                   (ev.assignments || []).forEach((a: any) => {
-                    if (a.assigneeId === m.userId) {
+                    const isAssignedToMember = (m.userId && a.assigneeId === m.userId) || 
+                                              (m.parentId && a.assigneeId === m.parentId);
+                    if (isAssignedToMember) {
                       if (a.status === 'completed' || a.status === 'verified') {
-                        totalPoints += 25;
+                        totalPoints += (a.points || 25);
                       } else {
                         activeAssignmentsCount++;
                       }
@@ -377,6 +415,22 @@ function TrackingMatrix({ members, protocols, volunteerOpps, events }: { members
                             {totalPoints >= 300 ? 'Commander' : totalPoints >= 150 ? 'Elite Tier' : totalPoints >= 50 ? 'Engaged' : totalPoints > 0 ? 'Recruit' : 'Cold'}
                           </Badge>
                         </TableCell>
+                        <TableCell className="text-center">
+                          {(() => {
+                            const isCompliant = protocols.every(p => !!signatures[p.id]);
+                            const isMobilized = totalPoints >= 50;
+                            const status = (isCompliant && isMobilized) ? 'READY' : (isCompliant || isMobilized) ? 'PARTIAL' : 'NOT READY';
+                            
+                            return (
+                              <Badge className={cn(
+                                "border-none font-black text-[8px] uppercase px-3 h-6",
+                                status === 'READY' ? "bg-green-500 text-white" : status === 'PARTIAL' ? "bg-amber-500 text-white" : "bg-destructive text-white"
+                              )}>
+                                {status}
+                              </Badge>
+                            );
+                          })()}
+                        </TableCell>
                       </>
                     )}
                   </TableRow>
@@ -413,6 +467,7 @@ function VolunteerOpportunityManager() {
   const [form, setForm] = useState({
     title: '',
     date: format(new Date(), 'yyyy-MM-dd'),
+    endDate: format(new Date(), 'yyyy-MM-dd'),
     startTime: '09:00',
     location: '',
     points: 50,
@@ -429,7 +484,7 @@ function VolunteerOpportunityManager() {
       setIsAdding(false);
     }
     toast({ title: "Intelligence Updated", description: "Volunteer mission deployed successfully." });
-    setForm({ title: '', date: format(new Date(), 'yyyy-MM-dd'), startTime: '09:00', location: '', points: 50, spots: 2, description: '' });
+    setForm({ title: '', date: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd'), startTime: '09:00', location: '', points: 50, spots: 2, description: '' });
   };
 
   if (isLoading) return <div className="flex justify-center p-20"><Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" /></div>;
@@ -476,11 +531,13 @@ function VolunteerOpportunityManager() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-4 bg-muted/20 rounded-2xl space-y-1">
-                  <p className="text-[7px] font-black uppercase text-muted-foreground">Logistics</p>
-                  <p className="text-[10px] font-black uppercase truncate">{opp.date}</p>
+                  <p className="text-[7px] font-black uppercase text-muted-foreground">Logistics (Date Range)</p>
+                  <p className="text-[10px] font-black uppercase truncate">
+                    {opp.date}{opp.endDate && opp.endDate !== opp.date ? ` - ${opp.endDate}` : ''}
+                  </p>
                 </div>
                 <div className="p-4 bg-muted/20 rounded-2xl space-y-1">
-                  <p className="text-[7px] font-black uppercase text-muted-foreground">Intelligence</p>
+                  <p className="text-[7px] font-black uppercase text-muted-foreground">Intelligence (Start Time)</p>
                   <p className="text-[10px] font-black uppercase truncate">{opp.startTime}</p>
                 </div>
               </div>
@@ -556,8 +613,22 @@ function VolunteerOpportunityManager() {
                   <Input type="number" value={form.points} onChange={e => setForm({ ...form, points: parseInt(e.target.value) })} className="h-14 rounded-2xl border-2 font-black text-base shadow-sm" />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Deployment Date</Label>
-                  <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="h-14 rounded-2xl border-2 font-black text-base shadow-sm" />
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label>
+                  <DatePicker 
+                    date={form.date} 
+                    setDate={d => setForm({ ...form, date: d })} 
+                    placeholder="Select Start Date"
+                    className="h-14 rounded-2xl border-2 px-6 italic font-black uppercase tracking-widest bg-white"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label>
+                  <DatePicker 
+                    date={form.endDate} 
+                    setDate={d => setForm({ ...form, endDate: d })} 
+                    placeholder="Select End Date"
+                    className="h-14 rounded-2xl border-2 px-6 italic font-black uppercase tracking-widest bg-white"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Capacity (Spots)</Label>
@@ -2076,7 +2147,15 @@ function SafetyHub() {
               </div>
               
               <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Date</Label><Input type="date" value={form.date ?? ''} onChange={e => setForm({...form, date: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase ml-1">Date</Label>
+                  <DatePicker 
+                    date={form.date ?? ''} 
+                    setDate={d => setForm({ ...form, date: d })} 
+                    placeholder="Select Date"
+                    className="h-12 rounded-xl border-2 px-4 font-bold bg-white"
+                  />
+                </div>
                 <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Time</Label><Input type="time" value={form.time ?? ''} onChange={e => setForm({...form, time: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
               </div>
 
@@ -2372,8 +2451,8 @@ export default function CoachesCornerPage() {
 
       <Tabs value={activeTab} className="mt-0">
         <TabsContent value="recruiting" className="space-y-8 mt-0 animate-in fade-in duration-500">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-            <aside className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8">
+            <aside className="space-y-6 md:col-span-1">
               <div className="flex items-center gap-2 px-2"><Users className="h-4 w-4 text-primary" /><h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Select Athlete</h3></div>
               <ScrollArea className="h-[600px] border-2 rounded-[2.5rem] bg-muted/10 p-2 shadow-inner">
                 <div className="space-y-1.5">
@@ -2389,7 +2468,7 @@ export default function CoachesCornerPage() {
                 </div>
               </ScrollArea>
             </aside>
-            <div className="lg:col-span-3">
+            <div className="md:col-span-2 lg:col-span-3">
               {selectedMember ? (
                 <RecruitingProfileManager member={selectedMember} />
               ) : (

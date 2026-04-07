@@ -9,6 +9,16 @@ export interface PDFBrandingOptions {
   filename?: string;
 }
 
+export const exportImageToPDF = async (element: HTMLElement, options: PDFBrandingOptions) => {
+  const doc = new jsPDF();
+  addSquadBranding(doc, options.title, options.subtitle);
+  
+  if (options.filename) {
+    doc.save(`${options.filename}.pdf`);
+  }
+  return doc;
+};
+
 export const addSquadBranding = (doc: jsPDF, title: string, subtitle?: string) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   

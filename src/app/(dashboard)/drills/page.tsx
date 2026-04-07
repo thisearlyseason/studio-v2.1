@@ -20,7 +20,8 @@ import {
   Upload,
   Lock,
   Edit2,
-  Clock
+  Clock,
+  ChevronRight
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -343,8 +344,8 @@ export default function PlaybookAndGamePlayPage() {
           </div>
         </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        <aside className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8">
+        <aside className="space-y-6 md:col-span-1">
           <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 p-8 bg-black text-white relative group overflow-hidden">
             <Package className="absolute -right-4 -bottom-4 h-32 w-32 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
             <div className="relative z-10 space-y-4">
@@ -362,7 +363,7 @@ export default function PlaybookAndGamePlayPage() {
           </div>
         </aside>
 
-        <div className="lg:col-span-3 space-y-8">
+        <div className="md:col-span-2 lg:col-span-3 space-y-8">
           <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
             <div className="relative flex-1 w-full">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -698,6 +699,10 @@ export default function PlaybookAndGamePlayPage() {
                         <div className="h-px flex-1 bg-white/10" />
                       </div>
                       
+                      <div className="md:hidden flex items-center justify-center p-3 bg-white/10 rounded-2xl text-[8px] font-black uppercase tracking-[0.2em] text-primary space-x-2 border border-white/5 mb-4">
+                        <span>Swipe tactical assets</span>
+                        <ChevronRight className="h-3 w-3 animate-bounce-x" />
+                      </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         {data.additionalMedia.map((media: any, idx: number) => (
                           <div key={idx} className="space-y-3 group/media">
