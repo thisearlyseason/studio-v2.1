@@ -52,7 +52,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useTeam, TeamEvent, EventType, Member } from '@/components/providers/team-provider';
+import { useTeam, TeamEvent, EventType, Member, EventAssignment } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { format, isPast, isSameDay, startOfDay } from 'date-fns';
@@ -82,7 +82,7 @@ const formatDateRange = (start: string | Date, end?: string | Date) => {
 };
 
 function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, children, members }: { event: TeamEvent, updateRSVP: (eventId: string, status: string, teamId?: string, userId?: string) => Promise<void>, isAdmin: boolean, onEdit: any, onDelete: any, children: React.ReactNode, members: Member[] }) {
-  const { user, exportAttendanceCSV, myChildren, isParent, teams, getMember, games, isStaff } = useTeam();
+  const { user, exportAttendanceCSV, myChildren, isParent, teams, getMember, games, isStaff, claimAssignment } = useTeam();
   const router = useRouter();
   
   const linkedGame = useMemo(() => {
@@ -267,9 +267,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
           <div className="flex-1 bg-white overflow-hidden flex flex-col h-full">
             <Tabs defaultValue="attendance" className="flex flex-col h-full">
               <div className="px-8 pt-8 shrink-0">
-                <TabsList className="grid w-full grid-cols-3 bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14">
+                <TabsList className="grid w-full grid-cols-4 bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14">
                   <TabsTrigger value="attendance" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Squad Pulse</TabsTrigger>
                   <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md" disabled={!event.isTournament}>Matches</TabsTrigger>
+                  <TabsTrigger value="assignments" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Logistics</TabsTrigger>
                   <TabsTrigger value="intel" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Intel</TabsTrigger>
                 </TabsList>
               </div>
@@ -377,6 +378,64 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
 
                   <WeatherPulse location={event.location} />
                 </TabsContent>
+
+                <TabsContent value="assignments" className="mt-0 space-y-6 animate-in fade-in duration-300">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-primary/10 p-2 rounded-xl text-primary"><Activity className="h-5 w-5" /></div>
+                      <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Operational Logistics</h3>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4">
+                    {event.assignments?.map((assignment, idx) => {
+                      const isClaimed = !!assignment.assigneeId;
+                      const isMe = assignment.assigneeId === user?.id;
+                      const assigneeMebmer = isClaimed ? getMember(assignment.assigneeId!) : null;
+
+                      return (
+                        <Card key={assignment.id} className={cn("rounded-2xl border-none shadow-sm ring-1 ring-black/5 p-6 transition-all", isMe ? "bg-primary text-white" : "bg-white text-foreground")}>
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge className={cn("text-[8px] font-black uppercase border-none", isMe ? "bg-white text-primary" : (isClaimed ? "bg-muted text-muted-foreground" : "bg-emerald-100 text-emerald-700"))}>
+                                  {isClaimed ? 'CLAIMED' : 'OPEN ASSIGNMENT'}
+                                </Badge>
+                                {isMe && <Badge className="text-[8px] font-black uppercase bg-black text-white border-none">Your Task</Badge>}
+                              </div>
+                              <h4 className="text-sm font-black uppercase tracking-tight truncate">{assignment.title}</h4>
+                              {isClaimed && (
+                                <p className={cn("text-[9px] font-bold uppercase mt-1", isMe ? "text-white/60" : "text-muted-foreground")}>
+                                  Assigned to: {assigneeMebmer?.name || assignment.assigneeName || 'Squad Member'}
+                                </p>
+                              )}
+                            </div>
+                            
+                            {!isClaimed ? (
+                              <Button 
+                                size="sm" 
+                                className="h-10 px-6 rounded-xl font-black uppercase text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"
+                                onClick={() => claimAssignment(event.id, assignment.id)}
+                              >
+                                Claim Task
+                              </Button>
+                            ) : (
+                              <div className="h-10 w-10 bg-black/5 rounded-xl flex items-center justify-center">
+                                <CheckCircle2 className={cn("h-5 w-5", isMe ? "text-white" : "text-emerald-500")} />
+                              </div>
+                            )}
+                          </div>
+                        </Card>
+                      );
+                    })}
+                    {(!event.assignments || event.assignments.length === 0) && (
+                      <div className="text-center py-20 bg-muted/10 rounded-[2.5rem] border-2 border-dashed opacity-30 flex flex-col items-center">
+                        <Activity className="h-12 w-12 mb-4" />
+                        <p className="text-[10px] font-black uppercase tracking-widest italic">No logistics assignments deployed for this mission.</p>
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
               </div>
             </Tabs>
           </div>
@@ -387,7 +446,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
 }
 
 export default function EventsPage() {
-  const { activeTeamEvents, updateRSVP, isSuperAdmin, isStaff, addEvent, updateEvent, deleteEvent, members } = useTeam();
+  const { activeTeamEvents, updateRSVP, isSuperAdmin, isStaff, addEvent, updateEvent, deleteEvent, members, createAlert } = useTeam();
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<TeamEvent | null>(null);
@@ -400,6 +459,19 @@ export default function EventsPage() {
   const [newDescription, setNewDescription] = useState('');
   const [eventType, setEventType] = useState<EventType>('game');
   const [opponent, setOpponent] = useState('');
+  const [assignments, setAssignments] = useState<{ id: string; title: string, assigneeId: string | null, assigneeName?: string | null }[]>([]);
+
+  const addAssignmentField = () => {
+    setAssignments([...assignments, { id: `as_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, title: '', assigneeId: null }]);
+  };
+
+  const updateAssignmentField = (id: string, updates: any) => {
+    setAssignments(assignments.map(a => a.id === id ? { ...a, ...updates } : a));
+  };
+
+  const removeAssignmentField = (id: string) => {
+    setAssignments(assignments.filter(a => a.id !== id));
+  };
 
   const filteredEvents = useMemo(() => { 
     const nowStart = startOfDay(new Date()); 
@@ -428,15 +500,38 @@ export default function EventsPage() {
         date: new Date(newDate).toISOString(), 
         endDate: newEndDate ? new Date(newEndDate).toISOString() : new Date(newDate).toISOString(),
         startTime: newTime, location: newLocation, description: newDescription,
-        opponent: eventType === 'game' ? opponent : '' 
+        opponent: eventType === 'game' ? opponent : '',
+        assignments: assignments.map(a => ({
+          ...a,
+          status: a.assigneeId ? 'claimed' : 'open'
+        }))
       }; 
       const success = editingEvent ? await updateEvent(editingEvent.id, payload) : await addEvent(payload); 
-      if (success) { setIsCreateOpen(false); resetForm(); }
+      
+      if (success) {
+        // Notify new assignees
+        const currentAssignments = editingEvent?.assignments || [];
+        for (const task of assignments) {
+          if (task.assigneeId) {
+            const wasAlreadyAssigned = currentAssignments.some(a => a.id === task.id && a.assigneeId === task.assigneeId);
+            if (!wasAlreadyAssigned) {
+              await createAlert(
+                "New Task Assigned",
+                `You have been assigned to: ${task.title} for ${newTitle || payload.title}`,
+                task.assigneeId as any
+              );
+            }
+          }
+        }
+        
+        setIsCreateOpen(false); 
+        resetForm(); 
+      }
     } catch (e) { toast({ title: "Deployment Error", variant: "destructive" }); }
   };
 
   const resetForm = () => {
-    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null);
+    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null); setAssignments([]);
   };
 
   const handleEdit = (event: TeamEvent) => { 
@@ -448,6 +543,7 @@ export default function EventsPage() {
     setNewTime(event.startTime); 
     setNewLocation(event.location); 
     setNewDescription(event.description); 
+    setAssignments(event.assignments || []);
     setOpponent(event.opponent || '');
     setIsCreateOpen(true); 
   };
@@ -536,7 +632,68 @@ export default function EventsPage() {
             </div>
             <div className="flex-1 p-10 space-y-6 bg-white">
               <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Location</Label><Input value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-12 rounded-xl border-2 font-bold" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Event Brief</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[150px] border-2 font-medium" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Event Brief</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[100px] border-2 font-medium" /></div>
+              
+              <div className="pt-6 border-t space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Logistics Assignments</Label>
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase ml-1">Deploy tasks to squad members or volunteers</p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={addAssignmentField} className="rounded-xl h-9 px-4 font-black uppercase text-[9px] border-2">+ Add Task</Button>
+                </div>
+
+                <div className="space-y-3">
+                  {assignments.map((as, idx) => (
+                    <div key={as.id} className="p-4 bg-muted/20 rounded-2xl border-2 border-dashed space-y-3 animate-in slide-in-from-right-2 duration-300">
+                      <div className="flex items-center gap-3">
+                        <Input 
+                          placeholder="Task Title (e.g. Bring Hydration)" 
+                          value={as.title} 
+                          onChange={e => updateAssignmentField(as.id, { title: e.target.value })}
+                          className="h-10 rounded-xl font-bold bg-white text-[11px]"
+                        />
+                        <Button variant="ghost" size="icon" onClick={() => removeAssignmentField(as.id)} className="h-10 w-10 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-1/2">
+                          <Select 
+                            value={as.assigneeId || 'open'} 
+                            onValueChange={(v) => {
+                              if (v === 'open') {
+                                updateAssignmentField(as.id, { assigneeId: null, assigneeName: null });
+                              } else {
+                                const m = members.find(m => m.userId === v || m.id === v);
+                                updateAssignmentField(as.id, { assigneeId: v, assigneeName: m?.name || 'Selected Member' });
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-9 rounded-lg bg-white text-[10px] font-bold">
+                              <SelectValue placeholder="Assign To" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                              <SelectItem value="open" className="text-[10px] font-bold uppercase">Open for Pickup</SelectItem>
+                              {members.map(m => (
+                                <SelectItem key={m.id} value={m.userId || m.id} className="text-[10px] font-bold">{m.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <p className="text-[9px] font-black uppercase opacity-40 italic">
+                          {as.assigneeId ? 'Pre-Assigned' : 'Volunteer Requested'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {assignments.length === 0 && (
+                    <div className="text-center py-6 border-2 border-dashed rounded-2xl opacity-30 italic text-[9px] font-black uppercase tracking-widest">
+                      No logistics tasks defined.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
           <div className="p-8 bg-background border-t shrink-0 flex items-center justify-end gap-4">

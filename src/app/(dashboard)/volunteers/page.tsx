@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { useTeam, VolunteerOpportunity } from '@/components/providers/team-provider';
+import { useTeam, VolunteerOpportunity, TeamEvent } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -30,7 +30,11 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  Zap
+  Zap,
+  Star,
+  Edit3,
+  Check,
+  Database
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -60,9 +64,10 @@ export default function VolunteerHubPage() {
     addVolunteerOpportunity, 
     updateVolunteerOpportunity,
     signUpForVolunteer, 
-    verifyVolunteerHours, 
     deleteVolunteerOpportunity, 
-    confirmVolunteerAttendance, 
+    confirmVolunteerAttendance,
+    verifyVolunteerPoints,
+    claimAssignment,
     isPro, 
     purchasePro 
   } = useTeam();
@@ -72,30 +77,71 @@ export default function VolunteerHubPage() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingOpp, setEditingOpp] = useState<VolunteerOpportunity | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [newOpp, setNewOpp] = useState({ title: '', description: '', date: '', location: '', slots: '5', hoursPerSlot: '2', isShareable: false });
+  const [newOpp, setNewOpp] = useState({ title: '', description: '', date: '', location: '', spots: 2, points: 50, startTime: '09:00', isShareable: false });
 
   const oppsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
     return query(collection(db, 'teams', activeTeam.id, 'volunteers'), orderBy('date', 'asc'));
   }, [activeTeam?.id, db]);
 
-  const { data: rawOpps, isLoading } = useCollection<VolunteerOpportunity>(oppsQuery);
+  const { data: rawOpps, isLoading: isOppsLoading } = useCollection<VolunteerOpportunity>(oppsQuery);
   const opportunities = useMemo(() => rawOpps || [], [rawOpps]);
 
-  const isLimitReached = !isPro && opportunities.length >= 2;
+  const eventsQuery = useMemoFirebase(() => {
+    if (!activeTeam || !db) return null;
+    return query(collection(db, 'teams', activeTeam.id, 'events'));
+  }, [activeTeam?.id, db]);
+
+  const { data: rawEvents, isLoading: isEventsLoading } = useCollection<TeamEvent>(eventsQuery);
+
+  const isLoading = isOppsLoading || isEventsLoading;
+
+  const allTasks = useMemo(() => {
+    const opps = opportunities.map(o => ({ ...o, entryType: 'opportunity' as const }));
+    const eventTasks = (rawEvents || []).flatMap(e => 
+      (e.assignments || []).map((a: any) => ({
+        id: a.id,
+        eventId: e.id,
+        assignmentId: a.id,
+        title: a.title,
+        description: `Strategic role for event: ${e.title}`,
+        date: e.date,
+        location: e.location,
+        spots: 1,
+        points: a.points || 25,
+        startTime: e.startTime || 'TBD',
+        signups: a.assigneeId ? { [a.assigneeId]: { userId: a.assigneeId, userName: a.assigneeName, status: 'claimed' } } : {},
+        entryType: 'event_assignment' as const,
+        eventTitle: e.title
+      }))
+    );
+    return [...opps, ...eventTasks].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [opportunities, rawEvents]);
+
+  const totalPoints = useMemo(() => {
+    let total = 0;
+    opportunities.forEach(opp => {
+      Object.values(opp.signups || {}).forEach(s => {
+        if (s.userId === user?.id && s.status === 'verified') {
+          total += opp.points || 0;
+        }
+      });
+    });
+    return total;
+  }, [opportunities, user?.id]);
 
   const handleAddOpportunity = async () => {
     if (!newOpp.title || !newOpp.date) return;
     setIsProcessing(true);
     await addVolunteerOpportunity({
       ...newOpp,
-      slots: parseInt(newOpp.slots),
-      hoursPerSlot: parseFloat(newOpp.hoursPerSlot)
+      spots: parseInt(String(newOpp.spots)),
+      points: parseInt(String(newOpp.points))
     });
     setIsAddOpen(false);
     setIsProcessing(false);
-    setNewOpp({ title: '', description: '', date: '', location: '', slots: '5', hoursPerSlot: '2', isShareable: false });
-    toast({ title: "Opportunity Published" });
+    setNewOpp({ title: '', description: '', date: '', location: '', spots: 2, points: 50, startTime: '09:00', isShareable: false });
+    toast({ title: "Mission Published", description: "The squad has been notified of the new deployment." });
   };
 
   const handleEditOpportunity = async () => {
@@ -103,38 +149,26 @@ export default function VolunteerHubPage() {
     setIsProcessing(true);
     await updateVolunteerOpportunity(editingOpp.id, {
       ...editingOpp,
-      slots: parseInt(String(editingOpp.slots)),
-      hoursPerSlot: parseFloat(String(editingOpp.hoursPerSlot))
+      spots: parseInt(String(editingOpp.spots)),
+      points: parseInt(String(editingOpp.points))
     });
     setIsEditOpen(false);
     setIsProcessing(false);
     setEditingOpp(null);
-    toast({ title: "Opportunity Updated" });
+    toast({ title: "Mission Updated" });
   };
-
-  const totalVerifiedHours = useMemo(() => {
-    let total = 0;
-    opportunities.forEach(opp => {
-      Object.values(opp.signups || {}).forEach(s => {
-        if (s.userId === user?.id && s.status === 'verified') {
-          total += s.verifiedHours || 0;
-        }
-      });
-    });
-    return total;
-  }, [opportunities, user?.id]);
 
   const handleCopyLink = (oppId: string) => {
     const url = `${window.location.origin}/public/volunteer/${activeTeam?.id}/${oppId}`;
     navigator.clipboard.writeText(url);
-    toast({ title: "Public Link Copied", description: "Share this with external volunteers." });
+    toast({ title: "Portal Link Copied", description: "External signup link ready for dispatch." });
   };
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Opening Support Hub...</p>
+      <div className="flex flex-col items-center justify-center py-40 gap-4">
+        <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground animate-pulse">Syncing Mission Intelligence...</p>
       </div>
     );
   }
@@ -146,150 +180,182 @@ export default function VolunteerHubPage() {
           className="absolute inset-x-[-2rem] inset-y-[-2rem] z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
           style={{ 
             background: 'radial-gradient(circle at center, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.8) 100%)',
-            backdropFilter: 'blur(8px)'
+            backdropFilter: 'blur(12px)'
           }}
         >
-          <Card className="max-w-md w-full rounded-[3rem] border-none shadow-[0_30px_60px_-15px_rgba(0,0,0,0.1)] bg-white overflow-hidden ring-1 ring-black/5">
+          <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-3xl bg-white overflow-hidden ring-1 ring-black/5">
             <div className="h-2 bg-primary w-full" />
-            <CardHeader className="p-10 text-center space-y-6">
-              <div className="bg-primary/10 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto shadow-inner">
-                <LockIcon className="h-10 w-10 text-primary" />
+            <CardHeader className="p-12 text-center space-y-8">
+              <div className="bg-primary/10 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto shadow-inner group">
+                <LockIcon className="h-12 w-12 text-primary group-hover:scale-110 transition-transform" />
               </div>
-              <div className="space-y-2">
-                <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[10px] h-6 px-4 mb-2 mx-auto">Elite Access Protocol</Badge>
-                <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none">Volunteer Hub Locked</CardTitle>
-                <CardDescription className="font-bold uppercase tracking-widest text-[10px] text-muted-foreground/60">Institutional Logistics Terminal</CardDescription>
+              <div className="space-y-3">
+                <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[10px] h-7 px-5 mb-2 mx-auto rounded-full shadow-sm">Elite Intelligence Hub</Badge>
+                <CardTitle className="text-4xl font-black uppercase tracking-tight leading-none">Logistics Locked</CardTitle>
+                <CardDescription className="font-bold uppercase tracking-[0.2em] text-[10px] text-muted-foreground/60">Institutional Performance Tracking</CardDescription>
               </div>
-              <p className="text-xs font-medium text-muted-foreground leading-relaxed">
-                The Volunteer Hub is an <span className="text-primary font-black uppercase">Elite Pro</span> feature. Unlock unlimited logistics coordination, automated hour audit trails, and public enrollment portals.
+              <p className="text-xs font-semibold text-muted-foreground leading-relaxed px-4">
+                The Volunteer Intel Hub is an <span className="text-primary font-black uppercase underline underline-offset-4">Elite Pro</span> feature. Unlock unlimited mission coordination, automated point audits, and public enrollment portals.
               </p>
             </CardHeader>
-            <CardFooter className="p-10 pt-0">
+            <CardFooter className="p-12 pt-0">
               <Button 
                 onClick={purchasePro}
-                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all bg-primary"
+                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-2xl shadow-primary/30 active:scale-95 transition-all bg-black hover:bg-primary"
               >
-                Upgrade to Pro
+                Unlock Pro Access
               </Button>
             </CardFooter>
           </Card>
         </div>
       )}
 
-      <div className={cn("space-y-10 pb-20 animate-in fade-in duration-500", !isPro && "blur-[2px] pointer-events-none grayscale opacity-40")}>
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Squad Support</Badge>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">Volunteer Hub</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Parental Coordination Ledger</p>
+      <div className={cn("space-y-12 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-700", !isPro && "blur-[4px] pointer-events-none grayscale opacity-30 select-none")}>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
+        <div className="space-y-3">
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-[0.3em] text-[10px] h-7 px-4 rounded-full shadow-sm">Squad Support Hub</Badge>
+          <h1 className="text-5xl md:text-7xl font-black tracking-tighter uppercase leading-[0.85] italic">Volunteer<br />Intelligence</h1>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.3em] text-[11px] ml-2 mt-2 opacity-50">Operational Support & Contribution Ledger</p>
         </div>
 
         {isStaff && (
           <Button 
-            onClick={() => isLimitReached ? null : setIsAddOpen(true)} 
-            className={cn("h-14 px-8 rounded-2xl text-lg font-black shadow-xl transition-all", isLimitReached ? "bg-muted text-muted-foreground cursor-not-allowed" : "shadow-primary/20 active:scale-95")}
+            onClick={() => setIsAddOpen(true)} 
+            className="h-16 px-10 rounded-[2rem] text-lg font-black shadow-2xl shadow-primary/20 active:scale-95 transition-all bg-black hover:bg-primary group"
           >
-            {isLimitReached ? <AlertCircle className="h-5 w-5 mr-2 text-red-600" /> : <Plus className="h-5 w-5 mr-2" />}
-            Dispatch Request
+            <Plus className="h-6 w-6 mr-3 group-hover:rotate-90 transition-transform" />
+            Deploy Mission
           </Button>
         )}
       </div>
 
-      {isLimitReached && (
-        <div className="bg-red-50 p-6 rounded-[2.5rem] border-2 border-dashed border-red-200 flex flex-col sm:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="bg-red-100 p-3 rounded-2xl text-red-600 shadow-sm"><AlertCircle className="h-6 w-6" /></div>
-            <div>
-              <p className="font-black uppercase text-sm">Starter Limit Reached</p>
-              <p className="text-xs font-medium text-red-600/80">Upgrade to Pro for unlimited volunteer coordination and public sharing.</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <Card className="rounded-[3rem] border-none shadow-2xl bg-primary text-white overflow-hidden group hover:scale-[1.02] transition-transform">
+          <CardContent className="p-10 space-y-4">
+            <div className="flex justify-between items-start">
+              <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-md shadow-inner"><Star className="h-8 w-8 text-white" /></div>
+              <Badge className="bg-white/20 text-white border-none font-black text-[9px] uppercase tracking-widest px-4 h-7 rounded-full">Personal Rank</Badge>
             </div>
-          </div>
-          <Button onClick={purchasePro} size="sm" className="bg-black text-white h-10 px-6 font-black uppercase text-[10px] rounded-xl">Unlock Pro Seats</Button>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 bg-primary text-white overflow-hidden"><CardContent className="p-8 space-y-2"><div className="flex justify-between items-start"><Timer className="h-10 w-10 text-white/40" /><Badge className="bg-white/20 text-white border-none font-black text-[8px] uppercase tracking-widest px-2">Audit</Badge></div><div><p className="text-4xl font-black leading-none">{totalVerifiedHours}</p><p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Your Verified Hours</p></div></CardContent></Card>
-        <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden"><CardContent className="p-8 space-y-2"><div className="flex justify-between items-start"><Users className="h-10 w-10 text-primary/40" /><Badge className="bg-primary/5 text-primary font-black text-[8px] uppercase tracking-widest px-2">Active</Badge></div><div><p className="text-4xl font-black leading-none text-primary">{opportunities.length}</p><p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Open Assignments</p></div></CardContent></Card>
-        <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 bg-black text-white overflow-hidden"><CardContent className="p-8 space-y-2"><div className="flex justify-between items-start"><HandHelping className="h-10 w-10 text-white/40" /><Badge className="bg-white/20 text-white font-black text-[8px] uppercase tracking-widest px-2">Status</Badge></div><div><p className="text-xl font-black leading-tight uppercase truncate">{user?.name}</p><p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Verified Contributor</p></div></CardContent></Card>
+            <div>
+              <p className="text-6xl font-black leading-none tracking-tighter">{totalPoints}</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.3em] opacity-60 mt-2">Earned Contribution Points</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-[3rem] border-none shadow-2xl bg-white overflow-hidden ring-1 ring-black/5 group hover:scale-[1.02] transition-transform">
+          <CardContent className="p-10 space-y-4">
+            <div className="flex justify-between items-start">
+              <div className="bg-primary/5 p-4 rounded-2xl shadow-inner"><Users className="h-8 w-8 text-primary" /></div>
+              <Badge className="bg-primary/5 text-primary border-none font-black text-[9px] uppercase tracking-widest px-4 h-7 rounded-full">Live Operations</Badge>
+            </div>
+            <div>
+              <p className="text-6xl font-black leading-none tracking-tighter text-primary">{opportunities.length}</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.3em] text-muted-foreground mt-2">Open Squad Assignments</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-[3rem] border-none shadow-2xl bg-black text-white overflow-hidden group hover:scale-[1.02] transition-transform">
+          <CardContent className="p-10 space-y-4">
+            <div className="flex justify-between items-start">
+              <div className="bg-white/10 p-4 rounded-2xl backdrop-blur-md shadow-inner"><ShieldCheck className="h-8 w-8 text-white" /></div>
+              <Badge className="bg-white/10 text-white border-none font-black text-[9px] uppercase tracking-widest px-4 h-7 rounded-full">Officer Status</Badge>
+            </div>
+            <div>
+              <p className="text-2xl font-black leading-tight uppercase tracking-tight truncate">{user?.name}</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.3em] opacity-60 mt-2">Verified Contributor</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <Tabs defaultValue="available" className="space-y-8">
-        <TabsList className="bg-muted/50 rounded-xl p-1 h-12 inline-flex border-2">
-          <TabsTrigger value="available" className="rounded-lg font-black text-xs uppercase tracking-widest px-8 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">Support Board</TabsTrigger>
-          {isStaff && <TabsTrigger value="ledger" className="rounded-lg font-black text-xs uppercase tracking-widest px-8 data-[state=active]:bg-black data-[state=active]:text-white transition-all">Audit Ledger</TabsTrigger>}
-        </TabsList>
+      <Tabs defaultValue="available" className="space-y-10">
+        <div className="flex items-center justify-between">
+           <TabsList className="bg-muted/30 rounded-2xl p-1.5 h-14 inline-flex border-2 border-black/5 backdrop-blur-sm">
+            <TabsTrigger value="available" className="rounded-xl font-black text-[10px] uppercase tracking-[0.2em] px-10 data-[state=active]:bg-primary data-[state=active]:text-white transition-all shadow-sm">Mission Board</TabsTrigger>
+            {isStaff && <TabsTrigger value="ledger" className="rounded-xl font-black text-[10px] uppercase tracking-[0.2em] px-10 data-[state=active]:bg-black data-[state=active]:text-white transition-all shadow-sm">Tactical Audit</TabsTrigger>}
+          </TabsList>
+        </div>
 
-        <TabsContent value="available" className="mt-0">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {opportunities.map((opp) => {
-              const signups = Object.values(opp.signups || {});
-              const hasSignedUp = opp.signups?.[user?.id || ''];
-              const isFull = signups.length >= opp.slots;
+        <TabsContent value="available" className="mt-0 outline-none">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {allTasks.map((task) => {
+              const signups = Object.values(task.signups || {});
+              const hasSignedUp = !!(task.signups as Record<string, any>)?.[user?.id || ''];
+              const isFull = task.entryType === 'opportunity' ? signups.length >= (task as any).spots : !!task.signups && Object.keys(task.signups).length > 0;
+              const isEventTask = task.entryType === 'event_assignment';
 
               return (
-                <Card key={opp.id} className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group">
-                  <CardHeader className="p-8 pb-4 space-y-4">
-                    <div className="flex justify-between items-start">
-                      <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest border-primary/20 text-primary">Assignment</Badge>
-                      <div className="flex gap-1">
-                        {opp.isShareable && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/5 text-primary" onClick={() => handleCopyLink(opp.id)}>
-                                <Share2 className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Copy Enrollment Portal Link</TooltipContent>
-                          </Tooltip>
+                <Card key={task.id} className="rounded-[4rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group hover:shadow-3xl transition-all duration-500 relative">
+                  {hasSignedUp && (
+                    <div className="absolute top-8 right-8 z-20">
+                      <div className="bg-green-500 text-white p-2 rounded-full shadow-lg shadow-green-500/20"><CheckCircle2 className="h-5 w-5" /></div>
+                    </div>
+                  )}
+                  
+                  <CardHeader className="p-10 pb-6 space-y-6">
+                    <div className="flex justify-between items-center">
+                      <Badge variant="outline" className={cn("font-black uppercase text-[8px] tracking-[0.3em] border-primary/20 text-primary py-1.5 px-4 rounded-full", isEventTask && "border-black text-black")}>
+                        {isEventTask ? 'Logistics Protocol' : 'Squad Assignment'}
+                      </Badge>
+                      <div className="flex gap-2">
+                        {task.entryType === 'opportunity' && (task as any).isShareable && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-primary/5 text-primary" onClick={() => handleCopyLink(task.id)}>
+                            <Share2 className="h-4 w-4" />
+                          </Button>
                         )}
-                        {hasSignedUp && <Badge className="bg-green-500 text-white font-black text-[8px] px-2 h-5 border-none uppercase">Enrolled</Badge>}
                       </div>
                     </div>
-                    <CardTitle className="text-2xl font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{opp.title}</CardTitle>
-                    <CardDescription className="text-[10px] font-bold uppercase tracking-widest">{opp.description || 'General support assignment for the upcoming event.'}</CardDescription>
+                    <div className="space-y-2">
+                      <CardTitle className="text-3xl font-black uppercase tracking-tighter leading-[0.9] group-hover:text-primary transition-colors">{task.title}</CardTitle>
+                      <CardDescription className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 line-clamp-2">{task.description}</CardDescription>
+                    </div>
                   </CardHeader>
-                  <CardContent className="p-8 pt-0 flex-1 space-y-6">
-                    <div className="space-y-3 pt-4 border-t">
-                      <div className="flex items-center gap-3 text-[11px] font-bold uppercase text-muted-foreground"><Calendar className="h-4 w-4 text-primary" /> {format(new Date(opp.date), 'MMM d, yyyy')}</div>
-                      <div className="flex items-center gap-3 text-[11px] font-bold uppercase text-muted-foreground"><MapPin className="h-4 w-4 text-primary" /> {opp.location || 'TBD'}</div>
-                      <div className="flex items-center justify-between pt-2">
-                        <div className="flex items-center gap-2">
-                          <Users className="h-4 w-4 text-primary" />
-                          <span className="text-[10px] font-black uppercase">{signups.length} / {opp.slots} Enrolled</span>
-                        </div>
-                        <span className="text-[10px] font-black uppercase text-primary bg-primary/5 px-2 py-1 rounded-lg">{opp.hoursPerSlot} Hours</span>
+
+                  <CardContent className="p-10 pt-0 flex-1 space-y-6 border-b border-black/5 bg-muted/5">
+                    <div className="grid grid-cols-2 gap-4 pt-6">
+                      <div className="space-y-1">
+                        <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest">Rewards</p>
+                        <p className="text-xl font-black text-primary italic">+{task.points} PTS</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest">Logistics</p>
+                        <p className="text-[10px] font-black uppercase truncate">{format(new Date(task.date), 'MMM d, yyyy')}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center px-1">
+                        <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest">Personnel Capacity</p>
+                        <p className="text-[9px] font-black uppercase">{signups.length} / {task.spots} SECURED</p>
+                      </div>
+                      <div className="h-2 w-full bg-muted/30 rounded-full overflow-hidden">
+                        <div className={cn("h-full rounded-full transition-all duration-700", isFull ? "bg-green-500" : "bg-primary")} style={{ width: `${Math.min(100, (signups.length / task.spots) * 100)}%` }} />
                       </div>
                     </div>
                   </CardContent>
-                  <CardFooter className="p-8 pt-0">
+
+                  <CardFooter className="p-10 flex flex-col gap-4">
                     {isStaff ? (
                       <div className="flex gap-2 w-full">
-                        <Button className={cn("flex-1 h-14 rounded-2xl font-black uppercase shadow-lg", hasSignedUp ? "bg-muted text-muted-foreground" : "bg-black text-white hover:bg-primary")} onClick={() => signUpForVolunteer(opp.id)} disabled={hasSignedUp || isFull}>
-                          {hasSignedUp ? "Enrolled" : "Sign Up"}
+                        <Button className={cn("flex-1 h-14 rounded-[1.5rem] font-black uppercase text-[10px] tracking-widest shadow-xl transition-all", hasSignedUp ? "bg-muted text-muted-foreground" : "bg-black text-white hover:bg-primary shadow-black/10")} onClick={() => signUpForVolunteer(task.id)} disabled={hasSignedUp || isFull}>
+                          {hasSignedUp ? "Deployment Confirmed" : isFull ? "Target Met" : "Claim Mission"}
                         </Button>
-                        <div className="flex gap-1">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-14 w-14 rounded-2xl text-primary hover:bg-primary/5" onClick={() => { setEditingOpp(opp); setIsEditOpen(true); }}>
-                                <Zap className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Edit Assignment</TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-14 w-14 rounded-2xl text-destructive hover:bg-destructive/5" onClick={() => deleteVolunteerOpportunity(opp.id)}>
-                                <Trash2 className="h-5 w-5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Purge from Ledger</TooltipContent>
-                          </Tooltip>
-                        </div>
+                        {task.entryType === 'opportunity' && (
+                          <Button variant="outline" size="icon" className="h-14 w-14 rounded-[1.5rem] border-2 group-hover:border-primary/20 transition-all" onClick={() => { setEditingOpp(task as any); setIsEditOpen(true); }}>
+                            <Edit3 className="h-5 w-5" />
+                          </Button>
+                        )}
                       </div>
                     ) : (
-                      <Button className={cn("w-full h-14 rounded-2xl font-black uppercase shadow-lg", hasSignedUp ? "bg-muted text-muted-foreground" : "bg-black text-white hover:bg-primary shadow-black/20")} onClick={() => signUpForVolunteer(opp.id)} disabled={hasSignedUp || isFull || !isParent}>
-                        {hasSignedUp ? "Deployment Confirmed" : isFull ? "Full Strength" : !isParent ? "Parents Only" : "Claim Assignment"}
+                      <Button 
+                        disabled={hasSignedUp || isFull || !isParent}
+                        className={cn("w-full h-16 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl transition-all active:scale-95", hasSignedUp ? "bg-green-100 text-green-700 shadow-none ring-2 ring-green-500/20" : isFull ? "bg-muted text-muted-foreground grayscale" : "bg-primary text-white shadow-primary/30 hover:bg-black")} 
+                        onClick={() => {
+                          if (isEventTask) claimAssignment((task as any).eventId!, (task as any).assignmentId!);
+                          else signUpForVolunteer(task.id);
+                        }}
+                      >
+                        {hasSignedUp ? "Deployment Confirmed" : isFull ? "Mission Staffed" : !isParent ? "Parents Only" : "Accept Assignment"}
                       </Button>
                     )}
                   </CardFooter>
@@ -299,41 +365,77 @@ export default function VolunteerHubPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="ledger" className="mt-0">
-          <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white">
-            <CardHeader className="bg-black text-white p-10">
-              <div className="flex items-center gap-6">
-                <div className="bg-primary p-4 rounded-2xl shadow-xl shadow-primary/20"><ClipboardList className="h-8 w-8 text-white" /></div>
-                <div><CardTitle className="text-3xl font-black uppercase tracking-tight">Support Audit</CardTitle><CardDescription className="text-white/60 font-bold uppercase tracking-widest text-[10px] mt-2">Verify parent contributions & verify hours</CardDescription></div>
+        <TabsContent value="ledger" className="mt-0 outline-none">
+          <Card className="rounded-[4rem] border-none shadow-3xl overflow-hidden ring-1 ring-black/5 bg-white">
+            <CardHeader className="bg-black text-white p-12">
+              <div className="flex items-center gap-8">
+                <div className="bg-primary p-5 rounded-3xl shadow-xl shadow-primary/20"><ClipboardList className="h-10 w-10 text-white" /></div>
+                <div>
+                  <CardTitle className="text-4xl font-black uppercase tracking-tight">Audit Terminal</CardTitle>
+                  <CardDescription className="text-white/60 font-bold uppercase tracking-[0.3em] text-[10px] mt-3">Personnel Contribution Analysis & Verification</CardDescription>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b">
-                    <tr><th className="px-10 py-6">Contributor</th><th className="px-6 py-6">Assignment</th><th className="px-6 py-6 text-center">Confirmed</th><th className="px-6 py-6 text-center">Status</th><th className="px-10 py-6 text-right">Verification</th></tr>
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left min-w-[800px]">
+                  <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground border-b-2 border-black/5">
+                    <tr>
+                      <th className="px-12 py-8">Active Personnel</th>
+                      <th className="px-8 py-8">Strategic Assignment</th>
+                      <th className="px-8 py-8 text-center">Deployment</th>
+                      <th className="px-8 py-8 text-center">Intelligence Status</th>
+                      <th className="px-12 py-8 text-right">Action Protocol</th>
+                    </tr>
                   </thead>
-                  <tbody className="divide-y divide-muted/50">
+                  <tbody className="divide-y divide-black/5">
                     {opportunities.flatMap(opp => Object.values(opp.signups || {}).map(signup => (
-                      <tr key={`${opp.id}_${signup.userId}`} className="hover:bg-primary/5 transition-colors group">
-                        <td className="px-10 py-6"><p className="font-black text-sm uppercase tracking-tight">{signup.userName}</p><p className="text-[10px] font-bold text-muted-foreground uppercase">{signup.email || 'Internal Member'}</p></td>
-                        <td className="px-6 py-6"><p className="text-xs font-bold uppercase">{opp.title}</p></td>
-                        <td className="px-6 py-6 text-center">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button onClick={() => confirmVolunteerAttendance(opp.id, signup.userId, !signup.isConfirmed)} className={cn("h-8 w-8 rounded-lg flex items-center justify-center mx-auto transition-all", signup.isConfirmed ? "bg-green-500 text-white" : "bg-muted text-muted-foreground/30")}>
-                                <CheckCircle2 className="h-4 w-4" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>Verify Field Attendance</TooltipContent>
-                          </Tooltip>
+                      <tr key={`${opp.id}_${signup.userId}`} className="hover:bg-primary/5 transition-all group">
+                        <td className="px-12 py-8">
+                          <div className="flex items-center gap-4">
+                            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center font-black text-xs text-muted-foreground">{signup.userName?.charAt(0)}</div>
+                            <div>
+                              <p className="font-black text-sm uppercase tracking-tight">{signup.userName}</p>
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{signup.email || 'INTERNAL SQUAD'}</p>
+                            </div>
+                          </div>
                         </td>
-                        <td className="px-6 py-6 text-center"><Badge className={cn("border-none font-black text-[8px] uppercase", signup.status === 'verified' ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700")}>{signup.status}</Badge></td>
-                        <td className="px-10 py-6 text-right">{signup.status === 'verified' ? (<span className="font-black text-primary text-sm">+{signup.verifiedHours} HOURS</span>) : (<Button size="sm" className="rounded-xl h-10 px-6 font-black uppercase text-[10px]" onClick={() => verifyVolunteerHours(opp.id, signup.userId, opp.hoursPerSlot)}><ShieldCheck className="h-3 w-3 mr-2" /> Verify {opp.hoursPerSlot}h</Button>)}</td>
+                        <td className="px-8 py-8"><Badge variant="outline" className="font-black text-[9px] uppercase border-black/10">{opp.title}</Badge></td>
+                        <td className="px-8 py-8 text-center">
+                          <button 
+                            onClick={() => confirmVolunteerAttendance(opp.id, signup.userId, !signup.isConfirmed)} 
+                            className={cn("h-10 w-10 rounded-2xl flex items-center justify-center mx-auto transition-all shadow-sm ring-2", signup.isConfirmed ? "bg-green-500 text-white ring-green-500/20" : "bg-white text-muted-foreground/30 ring-black/5 hover:bg-muted/10")}
+                          >
+                            <Check className="h-5 w-5" strokeWidth={3} />
+                          </button>
+                        </td>
+                        <td className="px-8 py-8 text-center">
+                          <Badge className={cn("border-none font-black text-[9px] uppercase h-7 px-4 rounded-full", signup.status === 'verified' ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700")}>
+                            {signup.status === 'verified' ? 'Verified Intel' : 'Pending Verification'}
+                          </Badge>
+                        </td>
+                        <td className="px-12 py-8 text-right">
+                          {signup.status === 'verified' ? (
+                            <div className="flex flex-col items-end">
+                              <span className="font-black text-primary text-base italic">+{opp.points} PTS</span>
+                              <span className="text-[8px] font-black uppercase text-muted-foreground opacity-40">Intelligence Confirmed</span>
+                            </div>
+                          ) : (
+                            <Button size="sm" className="rounded-xl h-12 px-8 font-black uppercase text-[10px] tracking-widest bg-black text-white hover:bg-primary shadow-xl shadow-black/5 group" onClick={() => verifyVolunteerPoints(opp.id, signup.userId, 1)}>
+                              <ShieldCheck className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" /> Verify & Award
+                            </Button>
+                          )}
+                        </td>
                       </tr>
                     )))}
                   </tbody>
                 </table>
+                {opportunities.flatMap(o => Object.values(o.signups || {})).length === 0 && (
+                  <div className="py-40 text-center flex flex-col items-center justify-center space-y-6 opacity-20 italic">
+                    <Database className="h-20 w-20" />
+                    <p className="text-xs font-black uppercase tracking-[0.4em]">Contribution Registry Vacant</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -341,82 +443,99 @@ export default function VolunteerHubPage() {
       </Tabs>
 
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+        <DialogContent className="rounded-[4rem] sm:max-w-xl p-0 border-none shadow-3xl overflow-hidden bg-white">
           <div className="h-2 bg-primary w-full" />
-          <div className="p-8 lg:p-12 space-y-8">
-            <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">New Assignment</DialogTitle></DialogHeader>
+          <div className="p-12 space-y-10">
+            <div className="space-y-2">
+              <Badge className="bg-primary/10 text-primary border-none font-black text-[9px] px-4 rounded-full">Strategic Deployment</Badge>
+              <DialogHeader><DialogTitle className="text-4xl font-black uppercase tracking-tighter italic">Create Mission</DialogTitle></DialogHeader>
+            </div>
+            
             <div className="space-y-6">
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Assignment Title</Label><Input value={newOpp.title} onChange={e => setNewOpp({...newOpp, title: e.target.value})} className="h-12 border-2" /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Date</Label><Input type="date" value={newOpp.date} onChange={e => setNewOpp({...newOpp, date: e.target.value})} className="h-12 border-2" /></div>
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Slots</Label><Input type="number" value={newOpp.slots} onChange={e => setNewOpp({...newOpp, slots: e.target.value})} className="h-12 border-2" /></div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Assignment Descriptor</Label>
+                <Input value={newOpp.title} onChange={e => setNewOpp({...newOpp, title: e.target.value})} className="h-16 rounded-2xl border-2 font-black text-lg shadow-sm focus:ring-primary" placeholder="e.g. Tactical Logistics Officer" />
               </div>
-              <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border">
-                <div><p className="text-xs font-black uppercase">Shareable Opportunity</p><p className="text-[8px] font-bold text-muted-foreground uppercase">Enable public signups via shared link</p></div>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Operational Date</Label>
+                  <Input type="date" value={newOpp.date} onChange={e => setNewOpp({...newOpp, date: e.target.value})} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Personnel Limit</Label>
+                  <Input type="number" value={newOpp.spots} onChange={e => setNewOpp({...newOpp, spots: parseInt(e.target.value)})} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                 <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Mission Reward (Pts)</Label>
+                  <Input type="number" value={newOpp.points} onChange={e => setNewOpp({...newOpp, points: parseInt(e.target.value)})} className="h-14 rounded-2xl border-2 font-black shadow-sm text-primary" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Intelligence (Start Time)</Label>
+                  <Input type="time" value={newOpp.startTime} onChange={e => setNewOpp({...newOpp, startTime: e.target.value})} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-6 bg-muted/20 rounded-[2rem] border-2 border-transparent hover:border-black/5 transition-all">
+                <div className="space-y-1">
+                  <p className="text-xs font-black uppercase tracking-tight leading-none">Public Outreach</p>
+                  <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60">Allow external enrollment via secure portal</p>
+                </div>
                 <Switch checked={newOpp.isShareable} onCheckedChange={v => setNewOpp({...newOpp, isShareable: v})} />
               </div>
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Description</Label><Textarea value={newOpp.description} onChange={e => setNewOpp({...newOpp, description: e.target.value})} className="min-h-[100px] border-2" /></div>
             </div>
-            <DialogFooter><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleAddOpportunity} disabled={isProcessing}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Publish Request"}</Button></DialogFooter>
+            <DialogFooter>
+              <Button className="w-full h-20 rounded-[2.5rem] text-xl font-black shadow-3xl shadow-primary/30 active:scale-[0.98] transition-all bg-black hover:bg-primary" onClick={handleAddOpportunity} disabled={isProcessing}>
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy to Squad Ledger"}
+              </Button>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+        <DialogContent className="rounded-[4rem] sm:max-w-xl p-0 border-none shadow-3xl overflow-hidden bg-white">
           <div className="h-2 bg-primary w-full" />
-          <div className="p-8 lg:p-12 space-y-8">
-            <DialogHeader>
-              <div className="flex items-center gap-4">
-                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Zap className="h-6 w-6" /></div>
-                <div>
-                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">Edit Assignment</DialogTitle>
-                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest text-foreground">Modify existing logistics coordination request</DialogDescription>
-                </div>
-              </div>
-            </DialogHeader>
+          <div className="p-12 space-y-10">
+            <div className="space-y-2">
+              <Badge className="bg-primary/10 text-primary border-none font-black text-[9px] px-4 rounded-full">Refine Deployment</Badge>
+              <DialogHeader><DialogTitle className="text-4xl font-black uppercase tracking-tighter italic">Edit Mission</DialogTitle></DialogHeader>
+            </div>
             {editingOpp && (
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase ml-1">Assignment Title</Label>
-                  <Input value={editingOpp.title} onChange={e => setEditingOpp({...editingOpp, title: e.target.value})} className="h-12 border-2" />
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Mission Title</Label>
+                  <Input value={editingOpp.title} onChange={e => setEditingOpp({...editingOpp, title: e.target.value})} className="h-16 rounded-2xl border-2 font-black text-lg focus:ring-primary shadow-sm" />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Date</Label>
-                    <Input type="date" value={editingOpp.date} onChange={e => setEditingOpp({...editingOpp, date: e.target.value})} className="h-12 border-2" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Operational Date</Label>
+                    <Input type="date" value={editingOpp.date} onChange={e => setEditingOpp({...editingOpp, date: e.target.value})} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Slots</Label>
-                    <Input type="number" value={editingOpp.slots} onChange={e => setEditingOpp({...editingOpp, slots: parseInt(e.target.value)})} className="h-12 border-2" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Hours/Slot</Label>
-                    <Input type="number" step="0.5" value={editingOpp.hoursPerSlot} onChange={e => setEditingOpp({...editingOpp, hoursPerSlot: parseFloat(e.target.value)})} className="h-12 border-2" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Location</Label>
-                    <Input value={editingOpp.location || ''} onChange={e => setEditingOpp({...editingOpp, location: e.target.value})} className="h-12 border-2" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Personnel Limit</Label>
+                    <Input type="number" value={editingOpp.spots} onChange={e => setEditingOpp({...editingOpp, spots: parseInt(String(e.target.value))})} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
                   </div>
                 </div>
-                <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border">
-                  <div>
-                    <p className="text-xs font-black uppercase">Shareable Opportunity</p>
-                    <p className="text-[8px] font-bold text-muted-foreground uppercase">Enable public signups via shared link</p>
+                <div className="grid grid-cols-2 gap-6">
+                   <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Tactical Points</Label>
+                    <Input type="number" value={editingOpp.points || 50} onChange={e => setEditingOpp({...editingOpp, points: parseInt(e.target.value)})} className="h-14 rounded-2xl border-2 font-black shadow-sm text-primary" />
                   </div>
-                  <Switch checked={editingOpp.isShareable} onCheckedChange={v => setEditingOpp({...editingOpp, isShareable: v})} />
+                   <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Start Intelligence</Label>
+                    <Input type="time" value={(editingOpp as any).startTime || '09:00'} onChange={e => setEditingOpp({...editingOpp, startTime: e.target.value} as any)} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase ml-1">Description</Label>
-                  <Textarea value={editingOpp.description || ''} onChange={e => setEditingOpp({...editingOpp, description: e.target.value})} className="min-h-[100px] border-2" />
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Operational Protocol</Label>
+                  <Textarea value={editingOpp.description || ''} onChange={e => setEditingOpp({...editingOpp, description: e.target.value})} className="min-h-[120px] rounded-3xl border-2 font-medium p-6 resize-none shadow-sm" />
                 </div>
               </div>
             )}
             <DialogFooter>
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleEditOpportunity} disabled={isProcessing || !editingOpp?.title}>
-                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Update Request"}
+              <Button className="w-full h-20 rounded-[2.5rem] text-xl font-black shadow-3xl shadow-primary/30 active:scale-[0.98] transition-all bg-black hover:bg-primary" onClick={handleEditOpportunity} disabled={isProcessing || !editingOpp?.title}>
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Authorize Refinements"}
               </Button>
             </DialogFooter>
           </div>

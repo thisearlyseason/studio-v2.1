@@ -676,3 +676,864 @@ Import trace for requested module:
  GET /teams/join 200 in 730ms
  GET /coaches-corner 200 in 42ms
  GET /team 200 in 39ms
+ ✓ Compiled / in 470ms (2388 modules)
+ GET / 200 in 864ms
+ ✓ Compiled in 2.1s (4386 modules)
+ ✓ Compiled in 146ms (2013 modules)
+ ✓ Compiled in 452ms (4529 modules)
+ ✓ Compiled in 348ms (4386 modules)
+ GET / 200 in 345ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 645ms (2388 modules)
+ GET /dashboard?seed_demo=squad_pro 200 in 813ms
+ ✓ Compiled /club in 452ms (2400 modules)
+ GET /club 200 in 515ms
+ GET /dashboard 200 in 128ms
+ GET /coaches-corner 200 in 30ms
+ ○ Compiling /coaches-corner/attendance ...
+ ✓ Compiled /coaches-corner/attendance in 1156ms (4415 modules)
+ GET /coaches-corner/attendance 200 in 1206ms
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled in 864ms (4386 modules)
+ GET /coaches-corner/attendance 200 in 617ms
+ ✓ Compiled /favicon.ico in 196ms (2384 modules)
+ GET /favicon.ico 200 in 398ms
+ ✓ Compiled /teams/join in 278ms (2390 modules)
+ GET /teams/join 200 in 543ms
+ ✓ Compiled in 345ms (4409 modules)
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET /coaches-corner/attendance 200 in 200ms
+ GET /favicon.ico 200 in 27ms
+ GET /teams/join 200 in 99ms
+ ✓ Compiled in 556ms (3133 modules)
+ GET /teams/join 200 in 41ms
+ ○ Compiling /coaches-corner ...
+ ✓ Compiled /coaches-corner in 565ms (1409 modules)
+ GET /coaches-corner 200 in 631ms
+ GET /coaches-corner/attendance 200 in 36ms
+ GET /coaches-corner/attendance 200 in 25ms
+ ○ Compiling /events ...
+ ✓ Compiled /events in 611ms (3439 modules)
+ GET /events 200 in 659ms
+ GET /coaches-corner 200 in 40ms
+ GET /coaches-corner/attendance 200 in 30ms
+ ✓ Compiled in 717ms (3428 modules)
+ GET /coaches-corner/attendance 200 in 155ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ✓ Compiled in 1139ms (3420 modules)
+ GET /coaches-corner 200 in 536ms
+ GET /coaches-corner 200 in 881ms
+ ✓ Compiled /favicon.ico in 130ms (1408 modules)
+ GET /favicon.ico 200 in 209ms
+ ✓ Compiled in 362ms (3437 modules)
+ GET /coaches-corner 200 in 82ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /coaches-corner 200 in 377ms
+ GET /favicon.ico 200 in 12ms
+ ✓ Compiled in 452ms (3437 modules)
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /coaches-corner 200 in 335ms
+ GET /coaches-corner 200 in 141ms
+ GET /favicon.ico 200 in 10ms
+ ✓ Compiled in 395ms (3437 modules)
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /coaches-corner 200 in 71ms
+ GET /coaches-corner 200 in 362ms
+ GET /favicon.ico 200 in 10ms
+ ✓ Compiled in 1181ms (3437 modules)
+ GET /coaches-corner 200 in 50ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 843ms (1397 modules)
+ GET /login?reason=expired 200 in 1115ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ✓ Compiled in 898ms (3412 modules)
+ GET /login?reason=expired 200 in 406ms
+ GET /login?reason=expired 200 in 611ms
+ ✓ Compiled /favicon.ico in 133ms (1400 modules)
+ GET /favicon.ico 200 in 213ms
+ ⨯ ./src/app/(dashboard)/coaches-corner/page.tsx
+Error:   [31mx[0m Return statement is not allowed here
+     ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/app/(dashboard)/coaches-corner/page.tsx[0m:361:1]
+ [2m358[0m |     toast({ title: "Film Archived", description: `${filmTitle || 'Clip'} added to highlight reel.` });
+ [2m359[0m |   };
+ [2m360[0m | 
+ [2m361[0m |   if (loading) return <div className="p-12 text-center animate-pulse"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /><p className="text-[10px] font-black uppercase mt-4">Opening Tactical Folder...</p></div>;
+     : [35;1m               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+ [2m362[0m | 
+ [2m363[0m |   if (!member.playerId) {
+ [2m364[0m |     return (
+     `----
+  [31mx[0m Return statement is not allowed here
+     ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/app/(dashboard)/coaches-corner/page.tsx[0m:364:1]
+ [2m361[0m |       if (loading) return <div className="p-12 text-center animate-pulse"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /><p className="text-[10px] font-black uppercase mt-4">Opening Tactical Folder...</p></div>;
+ [2m362[0m |     
+ [2m363[0m |       if (!member.playerId) {
+ [2m364[0m | [35;1m,[0m[35;1m-[0m[35;1m>[0m     return (
+ [2m365[0m | [35;1m|[0m         <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center space-y-6 bg-muted/10 border-2 border-dashed rounded-[3rem] p-10">
+ [2m366[0m | [35;1m|[0m           <ShieldAlert className="h-16 w-16 text-destructive opacity-40" />
+ [2m367[0m | [35;1m|[0m           <div>
+ [2m368[0m | [35;1m|[0m             <h3 className="text-xl font-black uppercase">Identity Link Missing</h3>
+ [2m369[0m | [35;1m|[0m             <p className="text-xs font-bold uppercase tracking-widest mt-1 text-muted-foreground max-w-xs mx-auto">
+ [2m370[0m | [35;1m|[0m               This member does not have a linked player profile. Ensure they joined via a valid recruitment link.
+ [2m371[0m | [35;1m|[0m             </p>
+ [2m372[0m | [35;1m|[0m           </div>
+ [2m373[0m | [35;1m|[0m         </div>
+ [2m374[0m | [35;1m`[0m[35;1m-[0m[35;1m>[0m     );
+ [2m375[0m |       }
+ [2m376[0m |     
+ [2m377[0m |       const activeSport = profile.typeOfSport || 'Baseball';
+     `----
+  [31mx[0m Return statement is not allowed here
+      ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/app/(dashboard)/coaches-corner/page.tsx[0m:524:1]
+ [2m 521[0m |         }
+ [2m 522[0m |       };
+ [2m 523[0m |     
+ [2m 524[0m | [35;1m,[0m[35;1m-[0m[35;1m>[0m   return (
+ [2m 525[0m | [35;1m|[0m       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-5 duration-700">
+ [2m 526[0m | [35;1m|[0m         <header className="grid grid-cols-1 xl:grid-cols-12 items-center gap-10 bg-white p-10 lg:p-14 rounded-[3.5rem] lg:rounded-[4.5rem] border-2 border-black/[0.03] shadow-2xl shadow-black/5 relative overflow-hidden group">
+ [2m 527[0m | [35;1m|[0m           <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none group-hover:rotate-12 transition-transform duration-1000">
+ [2m 528[0m | [35;1m|[0m             <Star className="h-64 w-64 text-zinc-900" />
+ [2m 529[0m | [35;1m|[0m           </div>
+ [2m 530[0m | [35;1m|[0m           
+ [2m 531[0m | [35;1m|[0m           <div className="xl:col-span-8 flex flex-col md:flex-row items-center gap-10 lg:gap-14 relative z-10">
+ [2m 532[0m | [35;1m|[0m             <div className="relative shrink-0">
+ [2m 533[0m | [35;1m|[0m               <Avatar className="h-44 w-44 lg:h-52 lg:w-52 rounded-[3.5rem] lg:rounded-[4rem] ring-[12px] ring-primary/5 shadow-2xl overflow-hidden border-4 border-white transition-transform duration-500 group-hover:scale-[1.02]">
+ [2m 534[0m | [35;1m|[0m                 <AvatarImage src={profile.photoURL || member.avatar} className="object-cover" />
+ [2m 535[0m | [35;1m|[0m                 <AvatarFallback className="font-black text-5xl bg-zinc-50 text-zinc-300">{member.name[0]}</AvatarFallback>
+ [2m 536[0m | [35;1m|[0m               </Avatar>
+ [2m 537[0m | [35;1m|[0m               <div className="absolute -bottom-2 -right-2 lg:-bottom-4 lg:-right-4 bg-black text-white h-14 w-14 lg:h-16 lg:w-16 rounded-2xl lg:rounded-3xl flex items-center justify-center shadow-2xl border-[6px] border-white font-black text-lg lg:text-xl transform rotate-3">
+ [2m 538[0m | [35;1m|[0m                 #{profile.jerseyNumber || member.jersey || '00'}
+ [2m 539[0m | [35;1m|[0m               </div>
+ [2m 540[0m | [35;1m|[0m             </div>
+ [2m 541[0m | [35;1m|[0m   
+ [2m 542[0m | [35;1m|[0m             <div className="space-y-5 text-center md:text-left flex-1 min-w-0">
+ [2m 543[0m | [35;1m|[0m               <div className="space-y-3">
+ [2m 544[0m | [35;1m|[0m                 <div className="flex flex-col md:flex-row md:items-center gap-4">
+ [2m 545[0m | [35;1m|[0m                   <Badge className="bg-primary text-white border-none font-black text-[10px] tracking-widest px-5 h-8 w-fit mx-auto md:mx-0 shadow-lg shadow-primary/20">ATHLETE CORE</Badge>
+ [2m 546[0m | [35;1m|[0m                   <div className="flex items-center justify-center md:justify-start gap-3">
+ [2m 547[0m | [35;1m|[0m                      <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-pulse" />
+ [2m 548[0m | [35;1m|[0m                      <p className="text-[11px] font-black uppercase text-zinc-400 tracking-[0.35em]">
+ [2m 549[0m | [35;1m|[0m                        {activeSport} <span className="mx-2 text-zinc-200">/</span> {profile.status === 'committed' ? 'COMMITTED' : 'ACTIVE PROSPECT'}
+ [2m 550[0m | [35;1m|[0m                      </p>
+ [2m 551[0m | [35;1m|[0m                   </div>
+ [2m 552[0m | [35;1m|[0m                 </div>
+ [2m 553[0m | [35;1m|[0m                 <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tighter text-zinc-900 leading-[1.1] break-words">
+ [2m 554[0m | [35;1m|[0m                   {member.name}
+ [2m 555[0m | [35;1m|[0m                 </h3>
+ [2m 556[0m | [35;1m|[0m                 
+ [2m 557[0m | [35;1m|[0m                 <div className="flex flex-col gap-1.5 mt-2">
+ [2m 558[0m | [35;1m|[0m                   {member.email && (
+ [2m 559[0m | [35;1m|[0m                     <div className="flex items-center gap-2 group/contact">
+ [2m 560[0m | [35;1m|[0m                       <div className="bg-primary/5 p-1 rounded-md text-primary/60 group-hover/contact:text-primary transition-colors">
+ [2m 561[0m | [35;1m|[0m                         <Mail className="h-3 w-3" />
+ [2m 562[0m | [35;1m|[0m                       </div>
+ [2m 563[0m | [35;1m|[0m                       <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 group-hover/contact:text-zinc-900 transition-colors">
+ [2m 564[0m | [35;1m|[0m                         {member.email}
+ [2m 565[0m | [35;1m|[0m                       </span>
+ [2m 566[0m | [35;1m|[0m                     </div>
+ [2m 567[0m | [35;1m|[0m                   )}
+ [2m 568[0m | [35;1m|[0m                   {member.parentEmail && (
+ [2m 569[0m | [35;1m|[0m                     <div className="flex items-center gap-2 group/contact">
+ [2m 570[0m | [35;1m|[0m                       <div className="bg-amber-500/5 p-1 rounded-md text-amber-500/60 group-hover/contact:text-amber-500 transition-colors">
+ [2m 571[0m | [35;1m|[0m                         <Users className="h-3 w-3" />
+ [2m 572[0m | [35;1m|[0m                       </div>
+ [2m 573[0m | [35;1m|[0m                       <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 group-hover/contact:text-zinc-900 transition-colors">
+ [2m 574[0m | [35;1m|[0m                         <span className="text-amber-500/60 mr-1">GUARDIAN:</span> {member.parentEmail}
+ [2m 575[0m | [35;1m|[0m                       </span>
+ [2m 576[0m | [35;1m|[0m                     </div>
+ [2m 577[0m | [35;1m|[0m                   )}
+ [2m 578[0m | [35;1m|[0m                 </div>
+ [2m 579[0m | [35;1m|[0m               </div>
+ [2m 580[0m | [35;1m|[0m   
+ [2m 581[0m | [35;1m|[0m               <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-8 gap-y-4 pt-2">
+ [2m 582[0m | [35;1m|[0m                 <div className="flex items-center gap-3 group/item">
+ [2m 583[0m | [35;1m|[0m                   <div className="h-9 w-9 rounded-2xl bg-zinc-50 flex items-center justify-center text-primary border border-black/[0.03] shadow-sm transition-colors group-hover/item:bg-primary/10">
+ [2m 584[0m | [35;1m|[0m                     <Target className="h-4.5 w-4.5" />
+ [2m 585[0m | [35;1m|[0m                   </div>
+ [2m 586[0m | [35;1m|[0m                   <p className="text-[13px] font-black text-zinc-700 uppercase tracking-widest">{profile.primaryPosition || member.position || 'Athlete'}</p>
+ [2m 587[0m | [35;1m|[0m                 </div>
+ [2m 588[0m | [35;1m|[0m                 <div className="flex items-center gap-3 group/item">
+ [2m 589[0m | [35;1m|[0m                   <div className="h-9 w-9 rounded-2xl bg-zinc-50 flex items-center justify-center text-primary border border-black/[0.03] shadow-sm transition-colors group-hover/item:bg-primary/10">
+ [2m 590[0m | [35;1m|[0m                     <ShieldCheck className="h-4.5 w-4.5" />
+ [2m 591[0m | [35;1m|[0m                   </div>
+ [2m 592[0m | [35;1m|[0m                   <p className="text-[13px] font-black text-primary uppercase tracking-widest">{activeTeam}</p>
+ [2m 593[0m | [35;1m|[0m                 </div>
+ [2m 594[0m | [35;1m|[0m                 <div className="flex items-center gap-3 text-zinc-400 group/item">
+ [2m 595[0m | [35;1m|[0m                   <div className="h-9 w-9 rounded-2xl bg-zinc-50 flex items-center justify-center transition-colors group-hover/item:bg-zinc-100">
+ [2m 596[0m | [35;1m|[0m                     <MapPin className="h-4.5 w-4.5" />
+ [2m 597[0m | [35;1m|[0m                   </div>
+ [2m 598[0m | [35;1m|[0m                   <p className="text-[13px] font-bold uppercase tracking-widest">{profile.hometown || 'Location TBD'}</p>
+ [2m 599[0m | [35;1m|[0m                 </div>
+ [2m 600[0m | [35;1m|[0m               </div>
+ [2m 601[0m | [35;1m|[0m             </div>
+ [2m 602[0m | [35;1m|[0m           </div>
+ [2m 603[0m | [35;1m|[0m   
+ [2m 604[0m | [35;1m|[0m           <div className="xl:col-span-4 flex flex-col sm:flex-row xl:flex-col items-stretch gap-4 w-full relative z-10 xl:pl-8">
+ [2m 605[0m | [35;1m|[0m             <Button 
+ [2m 606[0m | [35;1m|[0m               variant="outline" 
+ [2m 607[0m | [35;1m|[0m               className="group/btn relative overflow-hidden rounded-[2rem] h-16 xl:h-20 border-2 border-zinc-100 font-black uppercase text-[12px] tracking-[0.1em] hover:bg-zinc-50 hover:text-black transition-all active:scale-[0.98] shadow-sm px-10 bg-white" 
+ [2m 608[0m | [35;1m|[0m               onClick={() => window.open(`/recruit/player/${member.playerId}`, '_blank')}
+ [2m 609[0m | [35;1m|[0m             >
+ [2m 610[0m | [35;1m|[0m               <div className="flex items-center justify-center relative z-10">
+ [2m 611[0m | [35;1m|[0m                 <ExternalLink className="h-5 w-5 mr-3 text-zinc-400 group-hover/btn:text-primary transition-colors" /> 
+ [2m 612[0m | [35;1m|[0m                 Scout Portal
+ [2m 613[0m | [35;1m|[0m               </div>
+ [2m 614[0m | [35;1m|[0m             </Button>
+ [2m 615[0m | [35;1m|[0m             <Button 
+ [2m 616[0m | [35;1m|[0m               className="group/btn relative overflow-hidden rounded-[2rem] h-16 xl:h-20 font-black uppercase text-[12px] tracking-[0.1em] shadow-2xl shadow-primary/20 active:scale-[0.98] transition-all bg-primary hover:bg-primary/95 text-white border-b-4 border-black/10 px-10" 
+ [2m 617[0m | [35;1m|[0m               onClick={() => setIsEditing(true)}
+ [2m 618[0m | [35;1m|[0m             >
+ [2m 619[0m | [35;1m|[0m               <div className="flex items-center justify-center relative z-10">
+ [2m 620[0m | [35;1m|[0m                 <Sparkles className="h-5 w-5 mr-3 text-white/80 group-hover/btn:scale-110 transition-transform" /> 
+ [2m 621[0m | [35;1m|[0m                 Pack Architect
+ [2m 622[0m | [35;1m|[0m               </div>
+ [2m 623[0m | [35;1m|[0m               <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-1000" />
+ [2m 624[0m | [35;1m|[0m             </Button>
+ [2m 625[0m | [35;1m|[0m           </div>
+ [2m 626[0m | [35;1m|[0m         </header>
+ [2m 627[0m | [35;1m|[0m   
+ [2m 628[0m | [35;1m|[0m   
+ [2m 629[0m | [35;1m|[0m         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+ [2m 630[0m | [35;1m|[0m           <section className="md:col-span-2 space-y-8">
+ [2m 631[0m | [35;1m|[0m             <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white">
+ [2m 632[0m | [35;1m|[0m               <CardHeader className="bg-muted/30 p-6 border-b"><CardTitle className="text-xs font-black uppercase tracking-widest">Athletic Pulse</CardTitle></CardHeader>
+ [2m 633[0m | [35;1m|[0m               <CardContent className="p-6 grid grid-cols-2 sm:grid-cols-3 gap-4">
+ [2m 634[0m | [35;1m|[0m                 <div className="bg-muted/20 p-4 rounded-2xl text-center space-y-1">
+ [2m 635[0m | [35;1m|[0m                   <p className="text-[8px] font-black uppercase opacity-40">GPA</p>
+ [2m 636[0m | [35;1m|[0m                   <p className="text-xl font-black text-primary">{profile.academicGPA || '--'}</p>
+ [2m 637[0m | [35;1m|[0m                 </div>
+ [2m 638[0m | [35;1m|[0m                 {getSportFields().map(f => (
+ [2m 639[0m | [35;1m|[0m                   <div key={f.key} className="bg-muted/20 p-4 rounded-2xl text-center space-y-1">
+ [2m 640[0m | [35;1m|[0m                     <p className="text-[8px] font-black uppercase opacity-40">{f.label}</p>
+ [2m 641[0m | [35;1m|[0m                     <p className="text-xl font-black text-primary">{metrics[f.key] || '--'}</p>
+ [2m 642[0m | [35;1m|[0m                   </div>
+ [2m 643[0m | [35;1m|[0m                 ))}
+ [2m 644[0m | [35;1m|[0m                 {customStats.map((cs: any, i: number) => (
+ [2m 645[0m | [35;1m|[0m                   <div key={`cs-${i}`} className="bg-muted/20 p-4 rounded-2xl text-center space-y-1">
+ [2m 646[0m | [35;1m|[0m                     <p className="text-[8px] font-black uppercase opacity-40">{cs.label || 'Custom'}</p>
+ [2m 647[0m | [35;1m|[0m                     <p className="text-xl font-black text-primary">{cs.value || '--'}</p>
+ [2m 648[0m | [35;1m|[0m                   </div>
+ [2m 649[0m | [35;1m|[0m                 ))}
+ [2m 650[0m | [35;1m|[0m               </CardContent>
+ [2m 651[0m | [35;1m|[0m             </Card>
+ [2m 652[0m | [35;1m|[0m   
+ [2m 653[0m | [35;1m|[0m             <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white">
+ [2m 654[0m | [35;1m|[0m               <CardHeader className="bg-muted/30 p-6 border-b flex flex-row items-center justify-between">
+ [2m 655[0m | [35;1m|[0m                 <CardTitle className="text-xs font-black uppercase tracking-widest">Highlight Reel</CardTitle>
+ [2m 656[0m | [35;1m|[0m                 <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase" onClick={() => setIsAddFilmOpen(true)}><Plus className="h-3 w-3 mr-1" /> Add Film</Button>
+ [2m 657[0m | [35;1m|[0m               </CardHeader>
+ [2m 658[0m | [35;1m|[0m               <CardContent className="p-6">
+ [2m 659[0m | [35;1m|[0m                 {videos.length > 0 ? (
+ [2m 660[0m | [35;1m|[0m                   <div className="space-y-3">
+ [2m 661[0m | [35;1m|[0m                     {videos.map(v => (
+ [2m 662[0m | [35;1m|[0m                       <div key={v.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/30 cursor-pointer group" onClick={() => setSelectedVideo(v)}>
+ [2m 663[0m | [35;1m|[0m                         <div className="h-16 w-24 bg-black rounded-xl shrink-0 flex items-center justify-center relative overflow-hidden">
+ [2m 664[0m | [35;1m|[0m                           <Play className="h-6 w-6 text-white fill-current opacity-60" />
+ [2m 665[0m | [35;1m|[0m                           <Badge className="absolute top-1 left-1 bg-primary text-white border-none text-[6px] font-black uppercase px-1.5 h-4">{v.type}</Badge>
+ [2m 666[0m | [35;1m|[0m                         </div>
+ [2m 667[0m | [35;1m|[0m                         <div className="flex-1 min-w-0">
+ [2m 668[0m | [35;1m|[0m                           <p className="font-black text-xs uppercase truncate">{v.title}</p>
+ [2m 669[0m | [35;1m|[0m                           <p className="text-[9px] text-muted-foreground font-bold uppercase mt-0.5">{(v.comments?.length || 0)} coach mark{(v.comments?.length || 0) !== 1 ? 's' : ''}</p>
+ [2m 670[0m | [35;1m|[0m                         </div>
+ [2m 671[0m | [35;1m|[0m                         <MessageSquare className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+ [2m 672[0m | [35;1m|[0m                       </div>
+ [2m 673[0m | [35;1m|[0m                     ))}
+ [2m 674[0m | [35;1m|[0m                   </div>
+ [2m 675[0m | [35;1m|[0m                 ) : (
+ [2m 676[0m | [35;1m|[0m                   <div className="py-12 text-center opacity-20"><Video className="h-10 w-10 mx-auto mb-2" /><p className="text-[10px] font-black uppercase">No film archived.</p></div>
+ [2m 677[0m | [35;1m|[0m                 )}
+ [2m 678[0m | [35;1m|[0m               </CardContent>
+ [2m 679[0m | [35;1m|[0m             </Card>
+ [2m 680[0m | [35;1m|[0m           </section>
+ [2m 681[0m | [35;1m|[0m   
+ [2m 682[0m | [35;1m|[0m           <aside className="space-y-6">
+ [2m 683[0m | [35;1m|[0m             <Card className="rounded-[2.5rem] border-none shadow-md bg-black text-white p-8 space-y-6 relative overflow-hidden">
+ [2m 684[0m | [35;1m|[0m               <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none"><Target className="h-24 w-24" /></div>
+ [2m 685[0m | [35;1m|[0m               <div className="relative z-10 space-y-4">
+ [2m 686[0m | [35;1m|[0m                 <Badge className="bg-primary text-white border-none font-black text-[8px] h-5 px-3">PIPELINE STATUS</Badge>
+ [2m 687[0m | [35;1m|[0m                 <div className="flex items-center gap-3">
+ [2m 688[0m | [35;1m|[0m                   <div className={`h-3 w-3 rounded-full shrink-0 ${
+ [2m 689[0m | [35;1m|[0m                     profile.status === 'active' ? 'bg-green-400 shadow-lg shadow-green-400/50' :
+ [2m 690[0m | [35;1m|[0m                     profile.status === 'committed' ? 'bg-primary shadow-lg shadow-primary/50' :
+ [2m 691[0m | [35;1m|[0m                     'bg-white/20'
+ [2m 692[0m | [35;1m|[0m                   }`} />
+ [2m 693[0m | [35;1m|[0m                   <h4 className="text-xl font-black uppercase tracking-tight">
+ [2m 694[0m | [35;1m|[0m                     {profile.status === 'active' ? 'Active Prospect' :
+ [2m 695[0m | [35;1m|[0m                      profile.status === 'committed' ? 'Committed' :
+ [2m 696[0m | [35;1m|[0m                      profile.status === 'hidden' ? 'Inactive / Private' : 'Not Set'}
+ [2m 697[0m | [35;1m|[0m                   </h4>
+ [2m 698[0m | [35;1m|[0m                 </div>
+ [2m 699[0m | [35;1m|[0m                 <p className="text-[11px] font-bold text-white/40 leading-relaxed uppercase tracking-wider">
+ [2m 700[0m | [35;1m|[0m                   {profile.status === 'hidden' ? 'Scout portal is private.' : 'Scout portal is active.'}
+ [2m 701[0m | [35;1m|[0m                 </p>
+ [2m 702[0m | [35;1m|[0m               </div>
+ [2m 703[0m | [35;1m|[0m             </Card>
+ [2m 704[0m | [35;1m|[0m   
+ [2m 705[0m | [35;1m|[0m             <Card className="rounded-[2.5rem] border-none shadow-md bg-white p-8 space-y-6">
+ [2m 706[0m | [35;1m|[0m               <div className="flex items-center justify-between">
+ [2m 707[0m | [35;1m|[0m                 <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Seasonal Analytics</h4>
+ [2m 708[0m | [35;1m|[0m                 <BarChart2 className="h-4 w-4 text-muted-foreground opacity-30" />
+ [2m 709[0m | [35;1m|[0m               </div>
+ [2m 710[0m | [35;1m|[0m               <div className="space-y-4">
+ [2m 711[0m | [35;1m|[0m                 {stats.length > 0 ? (
+ [2m 712[0m | [35;1m|[0m                   <div className="space-y-2">
+ [2m 713[0m | [35;1m|[0m                     {stats.slice(0, 3).map(s => (
+ [2m 714[0m | [35;1m|[0m                       <div key={s.id} className="flex items-center justify-between py-2 border-b border-zinc-100 last:border-0">
+ [2m 715[0m | [35;1m|[0m                         <p className="text-[10px] font-black uppercase">{s.season}</p>
+ [2m 716[0m | [35;1m|[0m                         <p className="text-[10px] font-black uppercase text-primary">{s.points} PTS • {s.assists} AST</p>
+ [2m 717[0m | [35;1m|[0m                       </div>
+ [2m 718[0m | [35;1m|[0m                     ))}
+ [2m 719[0m | [35;1m|[0m                     {stats.length > 3 && <p className="text-[8px] font-black uppercase text-muted-foreground text-center">+{stats.length - 3} more records</p>}
+ [2m 720[0m | [35;1m|[0m                   </div>
+ [2m 721[0m | [35;1m|[0m                 ) : (
+ [2m 722[0m | [35;1m|[0m                   <div className="text-center py-6 border-2 border-dashed rounded-3xl opacity-20">
+ [2m 723[0m | [35;1m|[0m                     <p className="text-[8px] font-black uppercase">No records found</p>
+ [2m 724[0m | [35;1m|[0m                   </div>
+ [2m 725[0m | [35;1m|[0m                 )}
+ [2m 726[0m | [35;1m|[0m               </div>
+ [2m 727[0m | [35;1m|[0m             </Card>
+ [2m 728[0m | [35;1m|[0m   
+ [2m 729[0m | [35;1m|[0m             <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white p-6 space-y-4">
+ [2m 730[0m | [35;1m|[0m               <div className="flex items-center justify-between">
+ [2m 731[0m | [35;1m|[0m                 <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Strategic Bio</h4>
+ [2m 732[0m | [35;1m|[0m                 <Star className="h-4 w-4 text-primary opacity-20" />
+ [2m 733[0m | [35;1m|[0m               </div>
+ [2m 734[0m | [35;1m|[0m               <p className="text-xs font-medium text-muted-foreground leading-relaxed italic line-clamp-4">"{profile.bio || 'No strategic narrative established for this athlete.'}"</p>
+ [2m 735[0m | [35;1m|[0m             </Card>
+ [2m 736[0m | [35;1m|[0m           </aside>
+ [2m 737[0m | [35;1m|[0m         </div>
+ [2m 738[0m | [35;1m|[0m   
+ [2m 739[0m | [35;1m|[0m   
+ [2m 740[0m | [35;1m|[0m         <Dialog open={isEditing} onOpenChange={setIsEditing}>
+ [2m 741[0m | [35;1m|[0m           <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 overflow-hidden border-none shadow-2xl">
+ [2m 742[0m | [35;1m|[0m             <DialogTitle className="sr-only">Recruiting Pack Architect</DialogTitle>
+ [2m 743[0m | [35;1m|[0m             <div className="h-2 bg-primary w-full" />
+ [2m 744[0m | [35;1m|[0m             <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
+ [2m 745[0m | [35;1m|[0m               <DialogHeader>
+ [2m 746[0m | [35;1m|[0m                 <DialogTitle className="text-3xl font-black uppercase tracking-tight">Pack Architect</DialogTitle>
+ [2m 747[0m | [35;1m|[0m                 <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Institutional Recruiting Portfolio Synchronization</DialogDescription>
+ [2m 748[0m | [35;1m|[0m               </DialogHeader>
+ [2m 749[0m | [35;1m|[0m   
+ [2m 750[0m | [35;1m|[0m               <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 text-foreground">
+ [2m 751[0m | [35;1m|[0m                 <div className="lg:col-span-1 space-y-8">
+ [2m 752[0m | [35;1m|[0m                   <section className="space-y-6">
+ [2m 753[0m | [35;1m|[0m                     <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Identity & Branding</h3>
+ [2m 754[0m | [35;1m|[0m                     <div className="space-y-5">
+ [2m 755[0m | [35;1m|[0m                       <div className="relative group mx-auto w-32 h-32">
+ [2m 756[0m | [35;1m|[0m                         <Avatar className="h-32 w-32 rounded-[2.5rem] ring-4 ring-primary/5 shadow-xl border-4 border-white overflow-hidden">
+ [2m 757[0m | [35;1m|[0m                           <AvatarImage src={profile.photoURL || member.avatar} className="object-cover" />
+ [2m 758[0m | [35;1m|[0m                           <AvatarFallback className="font-black text-2xl text-muted-foreground uppercase">{member.name[0]}</AvatarFallback>
+ [2m 759[0m | [35;1m|[0m                         </Avatar>
+ [2m 760[0m | [35;1m|[0m                       </div>
+ [2m 761[0m | [35;1m|[0m                       <div className="space-y-2">
+ [2m 762[0m | [35;1m|[0m                          <Label className="text-[10px] font-black uppercase ml-1">Recruiting Image URL <span className="opacity-40 normal-case">(Max 5MB)</span></Label>
+ [2m 763[0m | [35;1m|[0m                          <div className="flex gap-2">
+ [2m 764[0m | [35;1m|[0m                            <Input value={profile.photoURL ?? ''} onChange={e => setProfile({...profile, photoURL: e.target.value})} className="h-10 border-2 rounded-xl font-bold text-[10px] flex-1" placeholder="https://image-hosting.com/photo.jpg" />
+ [2m 765[0m | [35;1m|[0m                            <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+ [2m 766[0m | [35;1m|[0m                            <Button type="button" variant="outline" className="h-10 border-2 rounded-xl text-[8px] font-black uppercase transition-all hover:bg-primary hover:text-white" onClick={() => imageInputRef.current?.click()}>
+ [2m 767[0m | [35;1m|[0m                              <Camera className="h-4 w-4 mr-1 text-primary group-hover:text-white" /> Upload
+ [2m 768[0m | [35;1m|[0m                            </Button>
+ [2m 769[0m | [35;1m|[0m                          </div>
+ [2m 770[0m | [35;1m|[0m                       </div>
+ [2m 771[0m | [35;1m|[0m                       <div className="grid grid-cols-1 gap-4">
+ [2m 772[0m | [35;1m|[0m                         <div className="space-y-2">
+ [2m 773[0m | [35;1m|[0m                           <Label className="text-[10px] font-black uppercase ml-1">Type of Sport</Label>
+ [2m 774[0m | [35;1m|[0m                           <Select value={activeSport} onValueChange={(v: any) => setProfile({...profile, typeOfSport: v})}>
+ [2m 775[0m | [35;1m|[0m                             <SelectTrigger className="h-12 border-2 rounded-xl font-bold uppercase text-[10px]"><SelectValue /></SelectTrigger>
+ [2m 776[0m | [35;1m|[0m                             <SelectContent className="rounded-xl">
+ [2m 777[0m | [35;1m|[0m                               {['Baseball', 'Softball', 'Basketball', 'Soccer', 'Football', 'Lacrosse', 'Hockey', 'Custom'].map(s => (
+ [2m 778[0m | [35;1m|[0m                                 <SelectItem key={s} value={s} className="font-bold uppercase text-[10px]">{s}</SelectItem>
+ [2m 779[0m | [35;1m|[0m                               ))}
+ [2m 780[0m | [35;1m|[0m                             </SelectContent>
+ [2m 781[0m | [35;1m|[0m                           </Select>
+ [2m 782[0m | [35;1m|[0m                         </div>
+ [2m 783[0m | [35;1m|[0m                         <div className="space-y-2">
+ [2m 784[0m | [35;1m|[0m                           <Label className="text-[10px] font-black uppercase ml-1">Pipeline Status</Label>
+ [2m 785[0m | [35;1m|[0m                           <Select value={profile.status ?? ''} onValueChange={(v: any) => setProfile({...profile, status: v})}>
+ [2m 786[0m | [35;1m|[0m                             <SelectTrigger className="h-12 border-2 rounded-xl font-bold uppercase text-[10px]"><SelectValue /></SelectTrigger>
+ [2m 787[0m | [35;1m|[0m                             <SelectContent className="rounded-xl">
+ [2m 788[0m | [35;1m|[0m                               <SelectItem value="active" className="font-bold uppercase text-[10px]">Active Prospect</SelectItem>
+ [2m 789[0m | [35;1m|[0m                               <SelectItem value="hidden" className="font-bold uppercase text-[10px]">Inactive/Private</SelectItem>
+ [2m 790[0m | [35;1m|[0m                               <SelectItem value="committed" className="font-bold uppercase text-[10px]">Committed</SelectItem>
+ [2m 791[0m | [35;1m|[0m                             </SelectContent>
+ [2m 792[0m | [35;1m|[0m                           </Select>
+ [2m 793[0m | [35;1m|[0m                         </div>
+ [2m 794[0m | [35;1m|[0m                       </div>
+ [2m 795[0m | [35;1m|[0m                     </div>
+ [2m 796[0m | [35;1m|[0m                   </section>
+ [2m 797[0m | [35;1m|[0m   
+ [2m 798[0m | [35;1m|[0m                   <section className="space-y-6 bg-primary/5 p-8 rounded-[2.5rem] border-2 border-primary/10">
+ [2m 799[0m | [35;1m|[0m                     <div className="flex items-center gap-3">
+ [2m 800[0m | [35;1m|[0m                       <div className="bg-primary p-2 rounded-xl text-white shadow-lg shadow-primary/20"><Target className="h-4 w-4" /></div>
+ [2m 801[0m | [35;1m|[0m                       <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Institutional Pulse</h3>
+ [2m 802[0m | [35;1m|[0m                     </div>
+ [2m 803[0m | [35;1m|[0m                     <div className="space-y-4">
+ [2m 804[0m | [35;1m|[0m                       <p className="text-[9px] font-bold text-muted-foreground uppercase leading-relaxed tracking-wider px-1">
+ [2m 805[0m | [35;1m|[0m                         Provide a strategic overview for recruiters. This narrative is private unless the profile is shared.
+ [2m 806[0m | [35;1m|[0m                       </p>
+ [2m 807[0m | [35;1m|[0m                       <div className="space-y-2">
+ [2m 808[0m | [35;1m|[0m                          <Label className="text-[10px] font-black uppercase ml-1 opacity-60">Institutional Pulse (Coach Narrative)</Label>
+ [2m 809[0m | [35;1m|[0m                          <Textarea 
+ [2m 810[0m | [35;1m|[0m                            value={profile.institutionalPulse ?? ''} 
+ [2m 811[0m | [35;1m|[0m                            onChange={e => setProfile({...profile, institutionalPulse: e.target.value})} 
+ [2m 812[0m | [35;1m|[0m                            className="min-h-[160px] border-2 rounded-2xl font-medium p-5 resize-none text-[13px] bg-white shadow-inner focus:ring-primary/20" 
+ [2m 813[0m | [35;1m|[0m                            placeholder="Institutional overview, coach feedback, or status update..." 
+ [2m 814[0m | [35;1m|[0m                          />
+ [2m 815[0m | [35;1m|[0m                       </div>
+ [2m 816[0m | [35;1m|[0m                     </div>
+ [2m 817[0m | [35;1m|[0m                   </section>
+ [2m 818[0m | [35;1m|[0m                 </div>
+ [2m 819[0m | [35;1m|[0m   
+ [2m 820[0m | [35;1m|[0m                 <div className="lg:col-span-2 space-y-10">
+ [2m 821[0m | [35;1m|[0m                   <Tabs defaultValue="overview" className="w-full">
+ [2m 822[0m | [35;1m|[0m                     <TabsList className="bg-muted opacity-80 p-1 rounded-2xl h-14 w-full justify-start gap-2 px-2">
+ [2m 823[0m | [35;1m|[0m                       <TabsTrigger value="overview" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Athlete Overview</TabsTrigger>
+ [2m 824[0m | [35;1m|[0m                       <TabsTrigger value="athletic" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Athletic Metrics</TabsTrigger>
+ [2m 825[0m | [35;1m|[0m                       <TabsTrigger value="seasonal" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Seasonal Analytics</TabsTrigger>
+ [2m 826[0m | [35;1m|[0m                       <TabsTrigger value="gallery" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Gallery</TabsTrigger>
+ [2m 827[0m | [35;1m|[0m                     </TabsList>
+ [2m 828[0m | [35;1m|[0m   
+ [2m 829[0m | [35;1m|[0m                     <TabsContent value="overview" className="mt-8 space-y-8">
+ [2m 830[0m | [35;1m|[0m                        <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+ [2m 831[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Primary Position</Label><Input placeholder="e.g. RHP / SS" value={profile.primaryPosition ?? ''} onChange={e => setProfile({...profile, primaryPosition: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+ [2m 832[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Secondary Position</Label><Input placeholder="e.g. OF" value={profile.secondaryPosition ?? ''} onChange={e => setProfile({...profile, secondaryPosition: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+ [2m 833[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Height</Label><Input placeholder="e.g. 6'2\" value={profile.height ?? ''} onChange={e => setProfile({...profile, height: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+ [2m 834[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Weight (lbs)</Label><Input placeholder="e.g. 210" value={profile.weight ?? ''} onChange={e => setProfile({...profile, weight: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+ [2m 835[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Dominant Hand</Label>
+ [2m 836[0m | [35;1m|[0m                            <Select value={profile.dominantHand ?? ''} onValueChange={v => setProfile({...profile, dominantHand: v})}>
+ [2m 837[0m | [35;1m|[0m                              <SelectTrigger className="h-12 border-2 rounded-xl font-bold text-[10px] uppercase"><SelectValue /></SelectTrigger>
+ [2m 838[0m | [35;1m|[0m                              <SelectContent>
+ [2m 839[0m | [35;1m|[0m                                <SelectItem value="Right" className="font-bold">RIGHT</SelectItem>
+ [2m 840[0m | [35;1m|[0m                                <SelectItem value="Left" className="font-bold">LEFT</SelectItem>
+ [2m 841[0m | [35;1m|[0m                                <SelectItem value="Ambi" className="font-bold">AMBIDEXTROUS</SelectItem>
+ [2m 842[0m | [35;1m|[0m                              </SelectContent>
+ [2m 843[0m | [35;1m|[0m                            </Select>
+ [2m 844[0m | [35;1m|[0m                          </div>
+ [2m 845[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Institutional Team</Label><Input placeholder="e.g. Elite Baseball" value={profile.teamName ?? ''} onChange={e => setProfile({...profile, teamName: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+ [2m 846[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Graduation Year</Label><Input type="number" placeholder="2024" value={profile.graduationYear ?? ''} onChange={e => setProfile({...profile, graduationYear: parseInt(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
+ [2m 847[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Hometown</Label><Input placeholder="City, State" value={profile.hometown ?? ''} onChange={e => setProfile({...profile, hometown: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+ [2m 848[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Institutional Major</Label><Input placeholder="e.g. Business" value={profile.intendedMajor ?? ''} onChange={e => setProfile({...profile, intendedMajor: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+ [2m 849[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">School</Label><Input placeholder="e.g. Highland High" value={profile.school ?? ''} onChange={e => setProfile({...profile, school: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+ [2m 850[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">GPA</Label><Input type="number" step="0.01" value={profile.academicGPA ?? ''} onChange={e => setProfile({...profile, academicGPA: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
+ [2m 851[0m | [35;1m|[0m                          <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Jersey Number</Label><Input placeholder="e.g. 24" value={profile.jerseyNumber ?? ''} onChange={e => setProfile({...profile, jerseyNumber: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
+ [2m 852[0m | [35;1m|[0m                        </div>
+ [2m 853[0m | [35;1m|[0m                        
+ [2m 854[0m | [35;1m|[0m                        <div className="space-y-4 pt-6 border-t border-dashed">
+ [2m 855[0m | [35;1m|[0m                             <Label className="text-[10px] font-black uppercase ml-1 text-primary">Recruiting Contact Details</Label>
+ [2m 856[0m | [35;1m|[0m                             <div className="grid grid-cols-2 gap-4">
+ [2m 857[0m | [35;1m|[0m                               <div className="space-y-2">
+ [2m 858[0m | [35;1m|[0m                                  <Label className="text-[8px] font-bold uppercase ml-1 opacity-50">Player Email</Label>
+ [2m 859[0m | [35;1m|[0m                                  <Input type="email" placeholder="athlete@example.com" value={contact.playerEmail ?? ''} onChange={e => setContact({...contact, playerEmail: e.target.value})} className="h-10 border-2 rounded-xl font-medium" />
+ [2m 860[0m | [35;1m|[0m                               </div>
+ [2m 861[0m | [35;1m|[0m                               <div className="space-y-2">
+ [2m 862[0m | [35;1m|[0m                                  <Label className="text-[8px] font-bold uppercase ml-1 opacity-50">Parent/Guardian Email</Label>
+ [2m 863[0m | [35;1m|[0m                                  <Input type="email" placeholder="parent@example.com" value={contact.parentEmail ?? ''} onChange={e => setContact({...contact, parentEmail: e.target.value})} className="h-10 border-2 rounded-xl font-medium" />
+ [2m 864[0m | [35;1m|[0m                               </div>
+ [2m 865[0m | [35;1m|[0m                             </div>
+ [2m 866[0m | [35;1m|[0m                         </div>
+ [2m 867[0m | [35;1m|[0m   
+ [2m 868[0m | [35;1m|[0m                        <div className="space-y-2 pt-6">
+ [2m 869[0m | [35;1m|[0m                            <Label className="text-[10px] font-black uppercase ml-1">Athlete Narrative / Bio</Label>
+ [2m 870[0m | [35;1m|[0m                            <Textarea value={profile.bio ?? ''} onChange={e => setProfile({...profile, bio: e.target.value})} className="min-h-[150px] border-2 rounded-[2rem] font-medium p-6 resize-none" placeholder="Athlete recruitment summary..." />
+ [2m 871[0m | [35;1m|[0m                          </div>
+ [2m 872[0m | [35;1m|[0m   
+ [2m 873[0m | [35;1m|[0m                         <div className="space-y-4 pt-6 border-t border-dashed">
+ [2m 874[0m | [35;1m|[0m                           <Label className="text-[10px] font-black uppercase ml-1 text-primary">Institutional Pulse (Coach Notes)</Label>
+ [2m 875[0m | [35;1m|[0m                           <Textarea 
+ [2m 876[0m | [35;1m|[0m                             value={profile.institutionalPulse ?? ''} 
+ [2m 877[0m | [35;1m|[0m                             onChange={e => setProfile({...profile, institutionalPulse: e.target.value})} 
+ [2m 878[0m | [35;1m|[0m                             className="min-h-[120px] border-2 rounded-[2rem] font-medium p-6 resize-none bg-muted/5" 
+ [2m 879[0m | [35;1m|[0m                             placeholder="Institutional overview, coach feedback, or status update..." 
+ [2m 880[0m | [35;1m|[0m                           />
+ [2m 881[0m | [35;1m|[0m                           <p className="text-[9px] font-bold text-muted-foreground uppercase px-2 italic">This field updates the strategic pulse appearing on the public portal.</p>
+ [2m 882[0m | [35;1m|[0m                         </div>
+ [2m 883[0m | [35;1m|[0m                     </TabsContent>
+ [2m 884[0m | [35;1m|[0m   
+ [2m 885[0m | [35;1m|[0m                     <TabsContent value="athletic" className="mt-8 space-y-8">
+ [2m 886[0m | [35;1m|[0m                       <div className="flex items-center justify-between">
+ [2m 887[0m | [35;1m|[0m                         <p className="text-[10px] font-black uppercase tracking-widest text-primary opacity-60">Strategic Performance Metrics</p>
+ [2m 888[0m | [35;1m|[0m                         <Button type="button" size="sm" variant="outline" className="h-8 text-[8px] font-black uppercase rounded-xl border-2" onClick={addCustomStat}><Plus className="h-3 w-3 mr-1" /> Custom Metric</Button>
+ [2m 889[0m | [35;1m|[0m                       </div>
+ [2m 890[0m | [35;1m|[0m                       <div className="grid grid-cols-2 gap-4">
+ [2m 891[0m | [35;1m|[0m                         {getSportFields().map(f => (
+ [2m 892[0m | [35;1m|[0m                           <div key={f.key} className="space-y-2 bg-muted/20 p-5 rounded-3xl border border-black/5">
+ [2m 893[0m | [35;1m|[0m                             <Label className="text-[10px] font-black uppercase ml-1">{f.label}</Label>
+ [2m 894[0m | [35;1m|[0m                             <Input type={f.type} value={metrics[f.key] ?? ''} onChange={e => onChangeMetric(f.key, e.target.value)} className="h-12 border-2 rounded-xl font-black bg-white" />
+ [2m 895[0m | [35;1m|[0m                           </div>
+ [2m 896[0m | [35;1m|[0m                         ))}
+ [2m 897[0m | [35;1m|[0m                       </div>
+ [2m 898[0m | [35;1m|[0m                       
+ [2m 899[0m | [35;1m|[0m                       {customStats.length > 0 && (
+ [2m 900[0m | [35;1m|[0m                         <div className="grid grid-cols-2 gap-4">
+ [2m 901[0m | [35;1m|[0m                           {customStats.map((cs: any, i: number) => (
+ [2m 902[0m | [35;1m|[0m                             <div key={`cs-${i}`} className="flex items-end gap-2 bg-primary/5 p-5 rounded-3xl border border-primary/10">
+ [2m 903[0m | [35;1m|[0m                               <div className="flex-1 space-y-2">
+ [2m 904[0m | [35;1m|[0m                                  <Label className="text-[10px] font-black uppercase ml-1 opacity-50">Label</Label>
+ [2m 905[0m | [35;1m|[0m                                  <Input value={cs.label} onChange={e => updateCustomStat(i, 'label', e.target.value)} className="h-10 border-2 rounded-xl font-bold bg-white" />
+ [2m 906[0m | [35;1m|[0m                               </div>
+ [2m 907[0m | [35;1m|[0m                               <div className="flex-1 space-y-2">
+ [2m 908[0m | [35;1m|[0m                                  <Label className="text-[10px] font-black uppercase ml-1 opacity-50">Value</Label>
+ [2m 909[0m | [35;1m|[0m                                  <Input value={cs.value} onChange={e => updateCustomStat(i, 'value', e.target.value)} className="h-10 border-2 rounded-xl font-bold bg-white" />
+ [2m 910[0m | [35;1m|[0m                               </div>
+ [2m 911[0m | [35;1m|[0m                               <Button type="button" variant="ghost" size="icon" className="h-10 w-10 shrink-0 text-red-500 rounded-xl hover:bg-red-50" onClick={() => removeCustomStat(i)}>
+ [2m 912[0m | [35;1m|[0m                                 <Trash2 className="h-4 w-4" />
+ [2m 913[0m | [35;1m|[0m                               </Button>
+ [2m 914[0m | [35;1m|[0m                             </div>
+ [2m 915[0m | [35;1m|[0m                           ))}
+ [2m 916[0m | [35;1m|[0m                         </div>
+ [2m 917[0m | [35;1m|[0m                       )}
+ [2m 918[0m | [35;1m|[0m                     </TabsContent>
+ [2m 919[0m | [35;1m|[0m   
+ [2m 920[0m | [35;1m|[0m                     <TabsContent value="seasonal" className="mt-8 space-y-8">
+ [2m 921[0m | [35;1m|[0m                       <div className="flex items-center justify-between">
+ [2m 922[0m | [35;1m|[0m                         <p className="text-[10px] font-black uppercase tracking-widest text-primary opacity-60">Verified Seasonal Records</p>
+ [2m 923[0m | [35;1m|[0m                         <Button type="button" size="sm" variant="outline" className="h-8 text-[8px] font-black uppercase rounded-xl border-2" onClick={handleAddStatRow}><Plus className="h-3 w-3 mr-1" /> Add Record</Button>
+ [2m 924[0m | [35;1m|[0m                       </div>
+ [2m 925[0m | [35;1m|[0m                       <div className="space-y-4">
+ [2m 926[0m | [35;1m|[0m                         {stats.map((s, i) => (
+ [2m 927[0m | [35;1m|[0m                           <div key={s.id} className="grid grid-cols-6 gap-3 bg-muted/20 p-5 rounded-3xl border border-black/5 items-end">
+ [2m 928[0m | [35;1m|[0m                              <div className="space-y-1 col-span-1">
+ [2m 929[0m | [35;1m|[0m                                <Label className="text-[8px] font-black uppercase ml-1 opacity-50">Season</Label>
+ [2m 930[0m | [35;1m|[0m                                <Input value={s.season} onChange={e => updateStat(s.id, 'season', e.target.value)} className="h-10 border-2 rounded-xl font-bold text-center bg-white" />
+ [2m 931[0m | [35;1m|[0m                              </div>
+ [2m 932[0m | [35;1m|[0m                              <div className="space-y-1 col-span-1">
+ [2m 933[0m | [35;1m|[0m                                <Label className="text-[8px] font-black uppercase ml-1 opacity-50">GP</Label>
+ [2m 934[0m | [35;1m|[0m                                <Input type="number" value={s.gamesPlayed} onChange={e => updateStat(s.id, 'gamesPlayed', parseInt(e.target.value))} className="h-10 border-2 rounded-xl font-bold text-center bg-white" />
+ [2m 935[0m | [35;1m|[0m                              </div>
+ [2m 936[0m | [35;1m|[0m                              <div className="space-y-1 col-span-1">
+ [2m 937[0m | [35;1m|[0m                                <Label className="text-[8px] font-black uppercase ml-1 opacity-50">PTS</Label>
+ [2m 938[0m | [35;1m|[0m                                <Input type="number" value={s.points} onChange={e => updateStat(s.id, 'points', parseInt(e.target.value))} className="h-10 border-2 rounded-xl font-bold text-center bg-white" />
+ [2m 939[0m | [35;1m|[0m                              </div>
+ [2m 940[0m | [35;1m|[0m                              <div className="space-y-1 col-span-1">
+ [2m 941[0m | [35;1m|[0m                                <Label className="text-[8px] font-black uppercase ml-1 opacity-50">AST</Label>
+ [2m 942[0m | [35;1m|[0m                                <Input type="number" value={s.assists} onChange={e => updateStat(s.id, 'assists', parseInt(e.target.value))} className="h-10 border-2 rounded-xl font-bold text-center bg-white" />
+ [2m 943[0m | [35;1m|[0m                              </div>
+ [2m 944[0m | [35;1m|[0m                              <div className="space-y-1 col-span-1">
+ [2m 945[0m | [35;1m|[0m                                <Label className="text-[8px] font-black uppercase ml-1 opacity-50">EFF</Label>
+ [2m 946[0m | [35;1m|[0m                                <Input type="number" value={s.efficiency} onChange={e => updateStat(s.id, 'efficiency', parseInt(e.target.value))} className="h-10 border-2 rounded-xl font-black text-center bg-zinc-100" />
+ [2m 947[0m | [35;1m|[0m                              </div>
+ [2m 948[0m | [35;1m|[0m                              <div className="flex justify-end p-1">
+ [2m 949[0m | [35;1m|[0m                                 <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500 rounded-lg hover:bg-red-50" onClick={() => handleDeleteStat(s.id)}>
+ [2m 950[0m | [35;1m|[0m                                   <Trash2 className="h-3 w-3" />
+ [2m 951[0m | [35;1m|[0m                                 </Button>
+ [2m 952[0m | [35;1m|[0m                              </div>
+ [2m 953[0m | [35;1m|[0m                           </div>
+ [2m 954[0m | [35;1m|[0m                         ))}
+ [2m 955[0m | [35;1m|[0m                         {stats.length === 0 && (
+ [2m 956[0m | [35;1m|[0m                           <div className="text-center py-12 border-2 border-dashed rounded-[2rem] opacity-30">
+ [2m 957[0m | [35;1m|[0m                              <History className="h-8 w-8 mx-auto mb-2 opacity-20" />
+ [2m 958[0m | [35;1m|[0m                              <p className="text-[10px] font-black uppercase">No seasonal analytics established.</p>
+ [2m 959[0m | [35;1m|[0m                           </div>
+ [2m 960[0m | [35;1m|[0m                         )}
+ [2m 961[0m | [35;1m|[0m                       </div>
+ [2m 962[0m | [35;1m|[0m                     </TabsContent>
+ [2m 963[0m | [35;1m|[0m                       
+ [2m 964[0m | [35;1m|[0m                     <TabsContent value="gallery" className="mt-8 space-y-8">
+ [2m 965[0m | [35;1m|[0m                       <div className="flex items-center justify-between">
+ [2m 966[0m | [35;1m|[0m                         <div className="space-y-1">
+ [2m 967[0m | [35;1m|[0m                           <p className="text-[10px] font-black uppercase tracking-widest text-primary opacity-60">Scouting Photo Gallery</p>
+ [2m 968[0m | [35;1m|[0m                           <p className="text-[8px] font-bold text-muted-foreground uppercase">Upload up to 5 strategic photos for recruiters (Max 5MB each).</p>
+ [2m 969[0m | [35;1m|[0m                         </div>
+ [2m 970[0m | [35;1m|[0m                         <input type="file" id="gallery-upload" className="hidden" accept="image/*" onChange={handleGalleryUpload} disabled={photos.length >= 5} />
+ [2m 971[0m | [35;1m|[0m                         <Button type="button" size="sm" variant="outline" className="h-10 px-6 font-black uppercase text-[10px] rounded-xl border-2" onClick={() => document.getElementById('gallery-upload')?.click()} disabled={photos.length >= 5}>
+ [2m 972[0m | [35;1m|[0m                           <Camera className="h-4 w-4 mr-2" /> Add Photo
+ [2m 973[0m | [35;1m|[0m                         </Button>
+ [2m 974[0m | [35;1m|[0m                       </div>
+ [2m 975[0m | [35;1m|[0m   
+ [2m 976[0m | [35;1m|[0m                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
+ [2m 977[0m | [35;1m|[0m                         {photos.map((url, i) => (
+ [2m 978[0m | [35;1m|[0m                           <div key={i} className="relative group aspect-square rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl ring-1 ring-black/5">
+ [2m 979[0m | [35;1m|[0m                             <img src={url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={`Gallery ${i}`} />
+ [2m 980[0m | [35;1m|[0m                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+ [2m 981[0m | [35;1m|[0m                               <Button type="button" variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-2xl" onClick={() => removePhoto(i)}>
+ [2m 982[0m | [35;1m|[0m                                 <Trash2 className="h-6 w-6" />
+ [2m 983[0m | [35;1m|[0m                               </Button>
+ [2m 984[0m | [35;1m|[0m                             </div>
+ [2m 985[0m | [35;1m|[0m                           </div>
+ [2m 986[0m | [35;1m|[0m                         ))}
+ [2m 987[0m | [35;1m|[0m                         {photos.length === 0 && (
+ [2m 988[0m | [35;1m|[0m                           <div className="col-span-full py-20 text-center border-4 border-dashed rounded-[3rem] opacity-20">
+ [2m 989[0m | [35;1m|[0m                             <Camera className="h-12 w-12 mx-auto mb-4" />
+ [2m 990[0m | [35;1m|[0m                             <p className="text-sm font-black uppercase tracking-widest">No additional scouting photos archived.</p>
+ [2m 991[0m | [35;1m|[0m                           </div>
+ [2m 992[0m | [35;1m|[0m                         )}
+ [2m 993[0m | [35;1m|[0m                       </div>
+ [2m 994[0m | [35;1m|[0m                     </TabsContent>
+ [2m 995[0m | [35;1m|[0m                   </Tabs>
+ [2m 996[0m | [35;1m|[0m                 </div>
+ [2m 997[0m | [35;1m|[0m               </div>
+ [2m 998[0m | [35;1m|[0m   
+ [2m 999[0m | [35;1m|[0m   
+ [2m1000[0m | [35;1m|[0m               <DialogFooter className="pt-6">
+ [2m1001[0m | [35;1m|[0m                 <Button 
+ [2m1002[0m | [35;1m|[0m                   className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" 
+ [2m1003[0m | [35;1m|[0m                   onClick={handleUpdateProfile}
+ [2m1004[0m | [35;1m|[0m                   disabled={isSyncing}
+ [2m1005[0m | [35;1m|[0m                 >
+ [2m1006[0m | [35;1m|[0m                   {isSyncing ? (
+ [2m1007[0m | [35;1m|[0m                     <>
+ [2m1008[0m | [35;1m|[0m                       <Loader2 className="h-5 w-5 animate-spin mr-3" />
+ [2m1009[0m | [35;1m|[0m                       Synchronizing Tactical Folder...
+ [2m1010[0m | [35;1m|[0m                     </>
+ [2m1011[0m | [35;1m|[0m                   ) : (
+ [2m1012[0m | [35;1m|[0m                     "Commit Pack Synchronization"
+ [2m1013[0m | [35;1m|[0m                   )}
+ [2m1014[0m | [35;1m|[0m                 </Button>
+ [2m1015[0m | [35;1m|[0m               </DialogFooter>
+ [2m1016[0m | [35;1m|[0m             </div>
+ [2m1017[0m | [35;1m|[0m           </DialogContent>
+ [2m1018[0m | [35;1m|[0m         </Dialog>
+ [2m1019[0m | [35;1m|[0m   
+ [2m1020[0m | [35;1m|[0m         {/* ── ADD FILM DIALOG ── */}
+ [2m1021[0m | [35;1m|[0m         <Dialog open={isAddFilmOpen} onOpenChange={setIsAddFilmOpen}>
+ [2m1022[0m | [35;1m|[0m           <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white">
+ [2m1023[0m | [35;1m|[0m             <div className="bg-black text-white p-8 space-y-2">
+ [2m1024[0m | [35;1m|[0m               <DialogTitle className="font-black text-xl uppercase tracking-tight">Archive Film</DialogTitle>
+ [2m1025[0m | [35;1m|[0m               <DialogDescription className="text-white/40 text-[10px] font-black uppercase tracking-widest">Add a highlight clip to this athlete&apos;s reel.</DialogDescription>
+ [2m1026[0m | [35;1m|[0m             </div>
+ [2m1027[0m | [35;1m|[0m             <div className="p-8 space-y-5">
+ [2m1028[0m | [35;1m|[0m               <div className="space-y-2">
+ [2m1029[0m | [35;1m|[0m                 <Label className="text-[10px] font-black uppercase tracking-widest">Clip Title</Label>
+ [2m1030[0m | [35;1m|[0m                 <Input placeholder="e.g. Spring Showcase – Pitching" className="h-12 rounded-2xl border-2 font-bold" value={filmTitle} onChange={e => setFilmTitle(e.target.value)} />
+ [2m1031[0m | [35;1m|[0m               </div>
+ [2m1032[0m | [35;1m|[0m               <div className="space-y-2">
+ [2m1033[0m | [35;1m|[0m                 <Label className="text-[10px] font-black uppercase tracking-widest">Video URL</Label>
+ [2m1034[0m | [35;1m|[0m                 <Input placeholder="https://youtu.be/..." className="h-12 rounded-2xl border-2 font-bold" value={filmUrl} onChange={e => setFilmUrl(e.target.value)} />
+ [2m1035[0m | [35;1m|[0m               </div>
+ [2m1036[0m | [35;1m|[0m               <div className="space-y-2">
+ [2m1037[0m | [35;1m|[0m                 <Label className="text-[10px] font-black uppercase tracking-widest">Category</Label>
+ [2m1038[0m | [35;1m|[0m                 <Select value={filmType} onValueChange={setFilmType}>
+ [2m1039[0m | [35;1m|[0m                   <SelectTrigger className="h-12 rounded-2xl border-2 font-bold"><SelectValue /></SelectTrigger>
+ [2m1040[0m | [35;1m|[0m                   <SelectContent>
+ [2m1041[0m | [35;1m|[0m                     <SelectItem value="Highlight">Highlight</SelectItem>
+ [2m1042[0m | [35;1m|[0m                     <SelectItem value="fullGame">Full Game</SelectItem>
+ [2m1043[0m | [35;1m|[0m                     <SelectItem value="skills">Skills / Drills</SelectItem>
+ [2m1044[0m | [35;1m|[0m                     <SelectItem value="practice">Practice</SelectItem>
+ [2m1045[0m | [35;1m|[0m                   </SelectContent>
+ [2m1046[0m | [35;1m|[0m                 </Select>
+ [2m1047[0m | [35;1m|[0m               </div>
+ [2m1048[0m | [35;1m|[0m             </div>
+ [2m1049[0m | [35;1m|[0m             <DialogFooter className="p-8 pt-0 gap-2">
+ [2m1050[0m | [35;1m|[0m               <Button variant="ghost" onClick={() => setIsAddFilmOpen(false)} className="rounded-2xl font-black uppercase text-[10px]">Cancel</Button>
+ [2m1051[0m | [35;1m|[0m               <Button onClick={handleAddFilm} disabled={!filmUrl} className="rounded-2xl font-black uppercase text-[10px] px-8 shadow-lg shadow-primary/20">Archive Film</Button>
+ [2m1052[0m | [35;1m|[0m             </DialogFooter>
+ [2m1053[0m | [35;1m|[0m           </DialogContent>
+ [2m1054[0m | [35;1m|[0m         </Dialog>
+ [2m1055[0m | [35;1m|[0m   
+ [2m1056[0m | [35;1m|[0m         {/* ── VIDEO VIEWER + COMMENT DIALOG ── */}
+ [2m1057[0m | [35;1m|[0m         <Dialog open={!!selectedVideo} onOpenChange={() => setSelectedVideo(null)}>
+ [2m1058[0m | [35;1m|[0m           <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+ [2m1059[0m | [35;1m|[0m             {selectedVideo && (
+ [2m1060[0m | [35;1m|[0m               <>
+ [2m1061[0m | [35;1m|[0m                 <div className="bg-black aspect-video relative flex items-center justify-center">
+ [2m1062[0m | [35;1m|[0m                   {selectedVideo.url ? (
+ [2m1063[0m | [35;1m|[0m                     <iframe
+ [2m1064[0m | [35;1m|[0m                       src={selectedVideo.url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
+ [2m1065[0m | [35;1m|[0m                       className="absolute inset-0 w-full h-full"
+ [2m1066[0m | [35;1m|[0m                       allow="autoplay; fullscreen"
+ [2m1067[0m | [35;1m|[0m                       allowFullScreen
+ [2m1068[0m | [35;1m|[0m                     />
+ [2m1069[0m | [35;1m|[0m                   ) : (
+ [2m1070[0m | [35;1m|[0m                     <div className="flex flex-col items-center gap-3 opacity-30">
+ [2m1071[0m | [35;1m|[0m                       <Video className="h-16 w-16 text-white" />
+ [2m1072[0m | [35;1m|[0m                       <p className="text-white text-xs font-black uppercase">No URL provided</p>
+ [2m1073[0m | [35;1m|[0m                     </div>
+ [2m1074[0m | [35;1m|[0m                   )}
+ [2m1075[0m | [35;1m|[0m                   <div className="absolute top-4 left-4">
+ [2m1076[0m | [35;1m|[0m                     <Badge className="bg-primary text-white border-none font-black text-[8px] uppercase">{selectedVideo.type}</Badge>
+ [2m1077[0m | [35;1m|[0m                   </div>
+ [2m1078[0m | [35;1m|[0m                 </div>
+ [2m1079[0m | [35;1m|[0m                 <div className="grid grid-cols-1 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x max-h-[60vh]">
+ [2m1080[0m | [35;1m|[0m                   <div className="md:col-span-3 p-8 space-y-4 overflow-y-auto">
+ [2m1081[0m | [35;1m|[0m                     <h3 className="font-black text-lg uppercase">{selectedVideo.title}</h3>
+ [2m1082[0m | [35;1m|[0m                     <div className="space-y-3">
+ [2m1083[0m | [35;1m|[0m                       {(selectedVideo.comments || []).length === 0 && (
+ [2m1084[0m | [35;1m|[0m                         <p className="text-xs font-black uppercase opacity-30 py-6 text-center">No coach marks yet.</p>
+ [2m1085[0m | [35;1m|[0m                       )}
+ [2m1086[0m | [35;1m|[0m                       {(selectedVideo.comments || []).map((c: VideoComment, i: number) => (
+ [2m1087[0m | [35;1m|[0m                         <div key={i} className="flex gap-3 p-4 bg-muted/20 rounded-2xl">
+ [2m1088[0m | [35;1m|[0m                           <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+ [2m1089[0m | [35;1m|[0m                             <MessageSquare className="h-4 w-4 text-primary" />
+ [2m1090[0m | [35;1m|[0m                           </div>
+ [2m1091[0m | [35;1m|[0m                           <div className="flex-1 min-w-0">
+ [2m1092[0m | [35;1m|[0m                             {c.timestamp != null && (
+ [2m1093[0m | [35;1m|[0m                               <span className="text-[8px] font-black uppercase bg-primary/10 text-primary px-2 py-0.5 rounded-full mr-2">
+ [2m1094[0m | [35;1m|[0m                                 {Math.floor(c.timestamp / 60)}:{String(c.timestamp % 60).padStart(2, '0')}
+ [2m1095[0m | [35;1m|[0m                               </span>
+ [2m1096[0m | [35;1m|[0m                             )}
+ [2m1097[0m | [35;1m|[0m                             <p className="text-xs font-bold mt-1">{c.text}</p>
+ [2m1098[0m | [35;1m|[0m                             <p className="text-[9px] text-muted-foreground font-black uppercase mt-1">{c.authorName}</p>
+ [2m1099[0m | [35;1m|[0m                           </div>
+ [2m1100[0m | [35;1m|[0m                         </div>
+ [2m1101[0m | [35;1m|[0m                       ))}
+ [2m1102[0m | [35;1m|[0m                     </div>
+ [2m1103[0m | [35;1m|[0m                   </div>
+ [2m1104[0m | [35;1m|[0m                   <div className="md:col-span-2 p-8 space-y-4 bg-muted/10">
+ [2m1105[0m | [35;1m|[0m                     <p className="text-[10px] font-black uppercase tracking-widest text-primary">Add Coach Mark</p>
+ [2m1106[0m | [35;1m|[0m                     <div className="space-y-3">
+ [2m1107[0m | [35;1m|[0m                       <Input
+ [2m1108[0m | [35;1m|[0m                         placeholder="Timestamp (e.g. 1:24)"
+ [2m1109[0m | [35;1m|[0m                         className="h-10 rounded-xl border-2 font-bold text-xs"
+ [2m1110[0m | [35;1m|[0m                         value={commentTimestamp}
+ [2m1111[0m | [35;1m|[0m                         onChange={e => setCommentTimestamp(e.target.value)}
+ [2m1112[0m | [35;1m|[0m                       />
+ [2m1113[0m | [35;1m|[0m                       <Textarea
+ [2m1114[0m | [35;1m|[0m                         placeholder="e.g. Great hip rotation on this swing..."
+ [2m1115[0m | [35;1m|[0m                         className="rounded-xl border-2 font-medium text-xs min-h-[100px] resize-none"
+ [2m1116[0m | [35;1m|[0m                         value={newComment}
+ [2m1117[0m | [35;1m|[0m                         onChange={e => setNewComment(e.target.value)}
+ [2m1118[0m | [35;1m|[0m                       />
+ [2m1119[0m | [35;1m|[0m                       <Button
+ [2m1120[0m | [35;1m|[0m                         className="w-full rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20"
+ [2m1121[0m | [35;1m|[0m                         onClick={async () => {
+ [2m1122[0m | [35;1m|[0m                           if (!newComment || !selectedVideo?.id || !member.playerId) return;
+ [2m1123[0m | [35;1m|[0m                           const parts = commentTimestamp.split(':');
+ [2m1124[0m | [35;1m|[0m                           const secs = parts.length === 2 ? parseInt(parts[0]) * 60 + parseInt(parts[1]) : undefined;
+ [2m1125[0m | [35;1m|[0m                           const newC: VideoComment = {
+ [2m1126[0m | [35;1m|[0m                             id: `c_${Date.now()}`,
+ [2m1127[0m | [35;1m|[0m                             text: newComment,
+ [2m1128[0m | [35;1m|[0m                             timestamp: secs,
+ [2m1129[0m | [35;1m|[0m                             authorName: user?.name || 'Coach',
+ [2m1130[0m | [35;1m|[0m                             createdAt: new Date().toISOString()
+ [2m1131[0m | [35;1m|[0m                           };
+ [2m1132[0m | [35;1m|[0m                           const updated = { ...selectedVideo, comments: [...(selectedVideo.comments || []), newC] };
+ [2m1133[0m | [35;1m|[0m                           await updatePlayerVideo(member.playerId, selectedVideo.id, updated);
+ [2m1134[0m | [35;1m|[0m                           setSelectedVideo(updated);
+ [2m1135[0m | [35;1m|[0m                           setVideos((prev: PlayerVideo[]) => prev.map((v: PlayerVideo) => v.id === selectedVideo.id ? updated : v));
+ [2m1136[0m | [35;1m|[0m                           setNewComment('');
+ [2m1137[0m | [35;1m|[0m                           setCommentTimestamp('');
+ [2m1138[0m | [35;1m|[0m                           toast({ title: "Mark Saved" });
+ [2m1139[0m | [35;1m|[0m                         }}
+ [2m1140[0m | [35;1m|[0m                         disabled={!newComment}
+ [2m1141[0m | [35;1m|[0m                       >
+ [2m1142[0m | [35;1m|[0m                         <Bookmark className="h-3 w-3 mr-2" /> Save Mark
+ [2m1143[0m | [35;1m|[0m                       </Button>
+ [2m1144[0m | [35;1m|[0m                     </div>
+ [2m1145[0m | [35;1m|[0m                   </div>
+ [2m1146[0m | [35;1m|[0m                 </div>
+ [2m1147[0m | [35;1m|[0m               </>
+ [2m1148[0m | [35;1m|[0m             )}
+ [2m1149[0m | [35;1m|[0m           </DialogContent>
+ [2m1150[0m | [35;1m|[0m         </Dialog>
+ [2m1151[0m | [35;1m|[0m       </div>
+ [2m1152[0m | [35;1m`[0m[35;1m-[0m[35;1m>[0m   );
+ [2m1153[0m |     }
+ [2m1154[0m |     
+ [2m1155[0m |     export function IncidentDetailDialog({ incident, isOpen, onOpenChange, onEdit }: { incident: TeamIncident | null, isOpen: boolean, onOpenChange: (o: boolean) => void, onEdit?: () => void }) {
+      `----
+  [31mx[0m Expression expected
+      ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/app/(dashboard)/coaches-corner/page.tsx[0m:1153:1]
+ [2m1150[0m |       </Dialog>
+ [2m1151[0m |     </div>
+ [2m1152[0m |   );
+ [2m1153[0m | }
+      : [35;1m^[0m
+ [2m1154[0m | 
+ [2m1155[0m | export function IncidentDetailDialog({ incident, isOpen, onOpenChange, onEdit }: { incident: TeamIncident | null, isOpen: boolean, onOpenChange: (o: boolean) => void, onEdit?: () => void }) {
+ [2m1156[0m |   const { activeTeam } = useTeam();
+      `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/(dashboard)/coaches-corner/page.tsx
+./src/app/(dashboard)/club/page.tsx
+ ✓ Compiled in 1436ms (3415 modules)
+ GET /login?reason=expired 200 in 49ms
+ ✓ Compiled in 367ms (3412 modules)
+ GET /login?reason=expired 200 in 373ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /login?reason=expired 200 in 146ms
+ ✓ Compiled /favicon.ico in 137ms (1400 modules)
+ GET /favicon.ico 200 in 212ms
+ ✓ Compiled in 1391ms (3412 modules)
+ GET /login?reason=expired 200 in 205ms
+ ✓ Compiled in 257ms (2029 modules)
+ GET /login?reason=expired 200 in 377ms
+ ✓ Compiled in 151ms (2029 modules)
+ GET /login?reason=expired 200 in 17ms
+ ✓ Compiled in 151ms (2029 modules)
+ GET /login?reason=expired 200 in 12ms
+ ✓ Compiled in 983ms (3412 modules)
+ GET /login?reason=expired 200 in 77ms
+ ✓ Compiled in 1064ms (3412 modules)
+ GET /login?reason=expired 200 in 44ms
+ ✓ Compiled in 2.7s (3415 modules)
+ GET /login?reason=expired 200 in 106ms
+ ✓ Compiled in 1036ms (3415 modules)
+ GET /login?reason=expired 200 in 140ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /login?reason=expired 200 in 217ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 622ms (1402 modules)
+ GET /favicon.ico 200 in 754ms
+ ✓ Compiled in 444ms (3432 modules)
+ GET /login?reason=expired 200 in 51ms
+ ✓ Compiled in 285ms (2030 modules)
+ GET /login?reason=expired 200 in 26ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ✓ Compiled in 752ms (3415 modules)
+ ⨯ ReferenceError: verifyVolunteerHours is not defined
+    at TeamProvider (src/components/providers/team-provider.tsx:2670:58)
+  2668 |     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
+  2669 |     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
+> 2670 |     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
+       |                                                          ^
+  2671 |     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, addFundraisingOpportunity, updateFundraisingOpportunity, signUpForFundraising, recordDonation,
+  2672 |     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
+  2673 |     saveLeagueRegistrationConfig, submitRegistrationEntry, {
+  digest: '975288864'
+}
+ GET /login?reason=expired 200 in 435ms
+ GET /login?reason=expired 200 in 801ms
+ ✓ Compiled /favicon.ico in 129ms (1402 modules)
+ GET /favicon.ico 200 in 228ms
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled in 877ms (3432 modules)
+ GET /login?reason=expired 200 in 355ms
+ GET /favicon.ico 200 in 11ms
+ ✓ Compiled in 191ms (2030 modules)
+ GET /login?reason=expired 200 in 19ms
+ ✓ Compiled in 160ms (2030 modules)
+ GET /login?reason=expired 200 in 15ms
+ ✓ Compiled in 3s (3432 modules)
+ GET /login?reason=expired 200 in 34ms
+ ✓ Compiled in 448ms (3432 modules)
+ GET /login?reason=expired 200 in 27ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 1163ms (1399 modules)
+ GET /dashboard?seed_demo=squad_pro 200 in 1512ms
+ ○ Compiling /club ...
+ ✓ Compiled /club in 1063ms (1409 modules)
+ GET /club 200 in 1136ms
+ GET /dashboard 200 in 140ms
+ GET /coaches-corner 200 in 42ms
+ ○ Compiling /volunteers ...
+ ✓ Compiled /volunteers in 2.1s (3426 modules)
+ GET /volunteers 200 in 2211ms
+ GET /coaches-corner 200 in 58ms
+ GET /events 200 in 59ms
+ GET /coaches-corner 200 in 26ms
+ GET /events 200 in 27ms
+ GET /coaches-corner 200 in 23ms
+ ✓ Compiled /coaches-corner/attendance in 344ms (1400 modules)
+ GET /coaches-corner/attendance 200 in 691ms
+ ○ Compiling /feed ...
+ ✓ Compiled /feed in 1658ms (3428 modules)
+ GET /feed 200 in 1717ms
+ ○ Compiling /events ...
+ ✓ Compiled /events in 604ms (1116 modules)
+ GET /events 200 in 670ms
+ ✓ Compiled in 902ms (2042 modules)
+ GET /events 200 in 398ms
+ ✓ Compiled in 264ms (2042 modules)
+ GET /events 200 in 15ms
+ ✓ Compiled in 236ms (2042 modules)
+ GET /events 200 in 40ms
+ GET /login?reason=expired 200 in 244ms
+ GET /login 200 in 7ms
+ ✓ Compiled in 1742ms (3142 modules)
+ GET /login?reason=expired 200 in 58ms
+ ✓ Compiled in 246ms (2042 modules)
+ GET /login?reason=expired 200 in 13ms

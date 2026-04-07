@@ -223,6 +223,8 @@ export type Member = {
   skills?: string[];
   achievements?: string[];
   schoolId?: string;
+  signatures?: Record<string, any>;
+  volunteerPoints?: number;
 };
 
 export interface Plan {
@@ -244,6 +246,14 @@ export interface Feature {
 }
 
 export type EventType = "game" | "practice" | "meeting" | "tournament" | "other" | string;
+
+export type EventAssignment = {
+  id: string;
+  title: string;
+  assigneeId: string | null;
+  assigneeName?: string | null;
+  status: 'open' | 'claimed' | 'completed';
+};
 
 export type TeamEvent = {
   id: string;
@@ -273,6 +283,7 @@ export type TeamEvent = {
   registrationCost?: string;
   paymentInstructions?: string;
   opponent?: string;
+  assignments?: EventAssignment[];
 };
 
 export type TeamAlert = {
@@ -322,10 +333,12 @@ export type VolunteerOpportunity = {
   description: string;
   date: string;
   location: string;
-  slots: number;
-  hoursPerSlot: number;
+  spots: number;
+  points: number;
   isShareable?: boolean;
   signups: Record<string, any>;
+  eventId?: string;
+  assignmentId?: string;
 };
 
 export type FundraisingOpportunity = {
@@ -650,6 +663,7 @@ interface TeamContextType {
   updateEvent: (id: string, data: any) => Promise<boolean>;
   deleteEvent: (id: string) => Promise<void>;
   updateRSVP: (eventId: string, status: string, teamId?: string, userId?: string) => Promise<void>;
+  claimAssignment: (eventId: string, assignmentId: string) => Promise<boolean>;
   addMessage: (chatId: string, author: string, content: string, type: string, img?: string, poll?: any) => Promise<void>;
   deleteMessage: (chatId: string, messageId: string) => Promise<void>;
   createChat: (name: string, members: string[]) => Promise<string>;
@@ -663,7 +677,7 @@ interface TeamContextType {
   deleteVolunteerOpportunity: (oppId: string) => Promise<void>;
   publicSignUpForVolunteer: (teamId: string, oppId: string, data: any) => Promise<void>;
   signUpForVolunteer: (oppId: string) => Promise<void>;
-  verifyVolunteerHours: (oppId: string, userId: string, hours: number) => Promise<void>;
+  verifyVolunteerPoints: (oppId: string, userId: string, points: number) => Promise<void>;
   confirmVolunteerAttendance: (oppId: string, userId: string, confirmed: boolean) => Promise<void>;
   addFundraisingOpportunity: (data: any) => Promise<void>;
   updateFundraisingOpportunity: (fundId: string, updates: any) => Promise<void>;
@@ -1582,6 +1596,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     
     batch.set(doc(db, 'teams', activeTeam.id, 'members', mid, 'signatures', docId), { 
       docId, 
+      teamId: activeTeam.id,
+      memberId: mid,
       signature: finalSignature, 
       signedAt: new Date().toISOString(),
       signedByParent: isParentSigning,
@@ -1691,6 +1707,37 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [db, activeTeam, firebaseUser, isParent, isStaff, myChildren]);
 
+  const claimAssignment = useCallback(async (eventId: string, assignmentId: string) => {
+    if (!activeTeam?.id || !firebaseUser || !db) return false;
+    const eventRef = doc(db, 'teams', activeTeam.id, 'events', eventId);
+    const eventSnap = await getDoc(eventRef);
+    if (!eventSnap.exists()) return false;
+    
+    const eventData = eventSnap.data() as TeamEvent;
+    const assignments = eventData.assignments || [];
+    const updatedAssignments = assignments.map(a => {
+      if (a.id === assignmentId && (!a.assigneeId || a.status === 'open')) {
+        return {
+          ...a,
+          assigneeId: firebaseUser.uid,
+          assigneeName: userProfile?.name || firebaseUser.displayName || 'Anonymous SQUAD Member',
+          status: 'claimed' as const
+        };
+      }
+      return a;
+    });
+
+    await updateDoc(eventRef, { assignments: updatedAssignments });
+    
+    // Notification Logic (Mock for now, normally triggers a push or email)
+    toast({ 
+      title: "Assignment Secured", 
+      description: "You have been deployed for this task. The coaching staff has been notified." 
+    });
+    
+    return true;
+  }, [db, activeTeam, firebaseUser, userProfile]);
+
   const addMessage = useCallback(async (chatId: string, author: string, content: string, type: string, img?: string, poll?: any) => { 
     if (activeTeam?.id && firebaseUser && db) {
       await addDoc(collection(db, 'teams', activeTeam.id, 'groupChats', chatId, 'messages'), {
@@ -1740,7 +1787,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const deleteVolunteerOpportunity = useCallback(async (oppId: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId)); }, [activeTeam, db]);
   const publicSignUpForVolunteer = useCallback(async (teamId: string, oppId: string, data: any) => { if (db) await updateDoc(doc(db, 'teams', teamId, 'volunteers', oppId), { [`signups.${data.name.replace(/\s+/g, '')}_${Date.now()}`]: { userId: `public_${Date.now()}`, userName: data.name, email: data.email, phone: data.phone, isConfirmed: false, status: 'pending', createdAt: new Date().toISOString() } }); }, [db]);
   const signUpForVolunteer = useCallback(async (oppId: string) => { if (activeTeam?.id && firebaseUser && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${firebaseUser.uid}`]: { userId: firebaseUser.uid, userName: userProfile?.name, email: firebaseUser.email, isConfirmed: false, status: 'pending', createdAt: new Date().toISOString() } }); }, [activeTeam, firebaseUser, db, userProfile]);
-  const verifyVolunteerHours = useCallback(async (oppId: string, userId: string, hours: number) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${userId}.status`]: 'verified', [`signups.${userId}.verifiedHours`]: hours }); }, [activeTeam, db]);
+  const verifyVolunteerPoints = useCallback(async (oppId: string, userId: string, points: number) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${userId}.status`]: 'verified', [`signups.${userId}.verifiedPoints`]: points }); }, [activeTeam, db]);
   const confirmVolunteerAttendance = useCallback(async (oppId: string, userId: string, confirmed: boolean) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${userId}.isConfirmed`]: confirmed }); }, [activeTeam, db]);
 
   const addFundraisingOpportunity = useCallback(async (data: any) => { if (activeTeam?.id && db) await addDoc(collection(db, 'teams', activeTeam.id, 'fundraising'), clean({ ...data, currentAmount: 0, finances: {} })); }, [activeTeam, db]);
@@ -2587,8 +2634,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     deleteLeagueInvite, updateLeagueTeamDetails, deleteChat, createLeague,
     hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite,
     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
-    signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
-    deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
+    signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent, claimAssignment,
+    deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerPoints,
     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, signUpForFundraising, recordDonation, addFundraisingOpportunity, updateFundraisingOpportunity,
     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
@@ -2620,7 +2667,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite,
     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
-    deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerHours,
+    deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerPoints,
     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, addFundraisingOpportunity, updateFundraisingOpportunity, signUpForFundraising, recordDonation,
     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,

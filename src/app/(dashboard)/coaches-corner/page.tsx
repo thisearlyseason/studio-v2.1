@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { useTeam, TeamDocument, Member, PlayerProfile, RecruitingProfile, AthleticMetrics, PlayerStat, PlayerEvaluation, RecruitingContact, PlayerVideo, VideoComment, TeamIncident } from '@/components/providers/team-provider';
+import { useRouter } from 'next/navigation';
+import { useTeam, TeamDocument, Member, PlayerProfile, RecruitingProfile, AthleticMetrics, PlayerStat, PlayerEvaluation, RecruitingContact, PlayerVideo, VideoComment, TeamIncident, TeamEvent } from '@/components/providers/team-provider';
 import { EmailExportDialog } from '@/components/team/EmailExportDialog';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { 
@@ -55,10 +56,12 @@ import {
   Copy,
   Camera,
   MapPin,
-  Mail
+  Mail,
+  LayoutGrid,
+  Check
 } from 'lucide-react';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
-import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where } from 'firebase/firestore';
+import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where, getDocs } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,6 +69,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 
 import { 
@@ -95,6 +99,585 @@ const DEFAULT_PROTOCOLS = [
   { id: 'default_tournament', title: 'Tournament Waiver', type: 'tournament_waiver' },
   { id: 'default_universal_hub', title: 'Universal Hub Release', type: 'waiver' }
 ];
+
+
+function MemberDetailsDialog({ member, protocols, volunteerOpps, events, isOpen, onOpenChange }: { 
+  member: Member; 
+  protocols: any[]; 
+  volunteerOpps: any[]; 
+  events: TeamEvent[];
+  isOpen: boolean; 
+  onOpenChange: (open: boolean) => void 
+}) {
+  const signatures = member.signatures || {};
+  
+  // Calculate verified volunteer missions
+  const missionHistory = volunteerOpps.filter(opp => opp.signups?.[member.userId]).map(opp => ({
+    title: opp.title,
+    date: opp.date,
+    points: opp.points,
+    status: opp.signups[member.userId].status,
+    id: opp.id,
+    type: 'volunteer'
+  }));
+
+  // Calculate event assignments
+  const assignmentHistory = events.flatMap(ev => 
+    (ev.assignments || [])
+      .filter((a: any) => a.assigneeId === member.userId)
+      .map((a: any) => ({
+        title: `${ev.title}: ${a.title}`,
+        date: ev.date,
+        points: 25, // Default points for event tasks
+        status: a.status,
+        id: a.id,
+        type: 'assignment'
+      }))
+  );
+
+  const allPointsHistory = [...missionHistory, ...assignmentHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  
+  const totalVerifiedPoints = allPointsHistory
+    .filter(h => (h.status === 'verified' || h.status === 'completed'))
+    .reduce((acc, current) => acc + (current.points || 0), 0);
+
+  const pendingPoints = allPointsHistory
+    .filter(h => h.status === 'pending' || h.status === 'claimed')
+    .reduce((acc, current) => acc + (current.points || 0), 0);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-[3rem] sm:max-w-3xl p-0 overflow-hidden border-none shadow-2xl bg-white">
+        <div className="h-2 bg-primary w-full" />
+        <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
+          <DialogHeader>
+            <div className="flex items-center gap-6 mb-4">
+              <Avatar className="h-20 w-20 rounded-[2rem] border-4 border-white shadow-xl">
+                <AvatarImage src={member.avatar} />
+                <AvatarFallback className="font-black text-2xl">{member.name[0]}</AvatarFallback>
+              </Avatar>
+              <div className="space-y-1">
+                <DialogTitle className="text-4xl font-black uppercase tracking-tight leading-none">{member.name}</DialogTitle>
+                <div className="flex items-center gap-3">
+                  <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[10px] h-6 px-3">{member.position}</Badge>
+                  <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{member.role}</span>
+                </div>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Compliance Section */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 px-2">
+                <ShieldCheck className="h-4 w-4 text-primary" />
+                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Institutional Protocols</h3>
+              </div>
+              <div className="bg-muted/10 rounded-[2.5rem] p-6 space-y-3 shadow-inner border border-black/5">
+                {protocols.map(p => {
+                  const isSigned = !!signatures[p.id];
+                  return (
+                    <div key={p.id} className="flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm">
+                      <p className="text-[10px] font-black uppercase tracking-tight truncate max-w-[180px]">{p.title}</p>
+                      <div className={cn(
+                        "h-8 w-8 rounded-xl flex items-center justify-center border-2 transition-all",
+                        isSigned ? "bg-green-50 border-green-100 text-green-600" : "bg-red-50 border-red-100 text-red-600"
+                      )}>
+                        {isSigned ? <Check className="h-4 w-4" strokeWidth={3} /> : <AlertCircle className="h-4 w-4" />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Points Section */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 px-2">
+                <Trophy className="h-4 w-4 text-primary" />
+                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Strategic Mobilization</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="rounded-[2rem] border-none shadow-md bg-black text-white p-6 space-y-1">
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Verified</p>
+                  <p className="text-3xl font-black">{totalVerifiedPoints} <span className="text-[10px]">PTS</span></p>
+                </Card>
+                <Card className="rounded-[2rem] border-none shadow-md bg-white border border-black/5 p-6 space-y-1">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Pending</p>
+                  <p className="text-3xl font-black text-primary">{pendingPoints} <span className="text-[10px]">PTS</span></p>
+                </Card>
+              </div>
+
+              <ScrollArea className="h-[280px] bg-muted/10 rounded-[2.5rem] p-4 shadow-inner border border-black/5">
+                <div className="space-y-2">
+                  {allPointsHistory.map((h, i) => (
+                    <div key={`${h.id}-${i}`} className="bg-white p-4 rounded-xl shadow-sm flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-tight truncate leading-none mb-1">{h.title}</p>
+                        <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">{h.date} • {h.type === 'volunteer' ? 'Mission' : 'Event Task'}</p>
+                      </div>
+                      <Badge className={cn(
+                        "border-none font-black text-[8px] uppercase px-2 h-5 shrink-0",
+                        (h.status === 'verified' || h.status === 'completed') ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                      )}>
+                        {h.points} PTS
+                      </Badge>
+                    </div>
+                  ))}
+                  {allPointsHistory.length === 0 && (
+                    <div className="py-20 text-center opacity-20 italic text-[10px] font-black uppercase">No mobilization history found.</div>
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-6">
+            <Button onClick={() => onOpenChange(false)} className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest bg-black text-white hover:bg-black/90">Institutional Record Closed</Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TrackingMatrix({ members, protocols, volunteerOpps, events }: { members: Member[], protocols: any[], volunteerOpps: any[], events: TeamEvent[] }) {
+  const [view, setView] = useState<'compliance' | 'volunteers'>('compliance');
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+
+  return (
+    <Card className="rounded-[3rem] border-none shadow-2xl bg-white overflow-hidden">
+      <div className="p-8 border-b bg-muted/5 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+        <div className="space-y-1">
+          <h3 className="text-2xl font-black uppercase tracking-tight">Institutional Tracking</h3>
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Real-time visibility into squad readiness & mobilization</p>
+        </div>
+        <div className="flex bg-muted/20 p-1.5 rounded-2xl border-2 border-primary/5 shadow-inner">
+          <button 
+            onClick={() => setView('compliance')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all",
+              view === 'compliance' ? "bg-primary text-white shadow-lg" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Protocol Sync
+          </button>
+          <button 
+            onClick={() => setView('volunteers')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all",
+              view === 'volunteers' ? "bg-primary text-white shadow-lg" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Volunteer Intel
+          </button>
+        </div>
+      </div>
+
+      <ScrollArea className="h-[600px] w-full">
+        <div className="min-w-[800px]">
+          <Table>
+            <TableHeader className="bg-muted/30 sticky top-0 z-20">
+              <TableRow className="hover:bg-transparent border-none">
+                <TableHead className="w-[280px] h-16 font-black uppercase text-[10px] tracking-widest pl-8 text-primary/60">Personnel</TableHead>
+                {view === 'compliance' ? protocols.map(p => (
+                  <TableHead key={p.id} className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">{p.title}</TableHead>
+                )) : (
+                  <>
+                    <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Total Points</TableHead>
+                    <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Assignments</TableHead>
+                    <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Status</TableHead>
+                  </>
+                )}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {members.map((m, idx) => {
+                const signatures = m.signatures || {};
+                
+                // Calculate mobilization metrics
+                let totalPoints = 0;
+                let activeAssignmentsCount = 0;
+                
+                // 1. Volunteer Opportunities
+                volunteerOpps.forEach(opp => {
+                  const signup = opp.signups?.[m.userId];
+                  if (signup) {
+                    if (signup.status === 'verified') {
+                      totalPoints += (opp.points || 0);
+                    } else {
+                      activeAssignmentsCount++;
+                    }
+                  }
+                });
+
+                // 2. Event Assignments (Default 25 points per completed task)
+                events.forEach(ev => {
+                  (ev.assignments || []).forEach((a: any) => {
+                    if (a.assigneeId === m.userId) {
+                      if (a.status === 'completed' || a.status === 'verified') {
+                        totalPoints += 25;
+                      } else {
+                        activeAssignmentsCount++;
+                      }
+                    }
+                  });
+                });
+
+                return (
+                  <TableRow 
+                    key={m.id} 
+                    className={cn("hover:bg-muted/5 transition-colors border-b-2 border-muted/20 cursor-pointer", idx % 2 === 1 && "bg-muted/5")}
+                    onClick={() => setSelectedMember(m)}
+                  >
+                    <TableCell className="py-5 pl-8">
+                      <div className="flex items-center gap-4">
+                        <Avatar className="h-10 w-10 rounded-xl border-2 border-white shadow-sm hover:scale-110 transition-transform">
+                          <AvatarImage src={m.avatar} />
+                          <AvatarFallback className="font-black text-xs">{m.name[0]}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="font-black text-xs uppercase tracking-tight truncate leading-none mb-1">{m.name}</p>
+                          <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+                            {m.position} • {m.role}
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
+
+                    {view === 'compliance' ? protocols.map(p => {
+                      const isSigned = !!signatures[p.id];
+                      return (
+                        <TableCell key={p.id} className="text-center">
+                          <div className="flex justify-center">
+                            <div className={cn(
+                              "h-10 w-10 rounded-xl flex items-center justify-center border-2 transition-all shadow-sm",
+                              isSigned ? "bg-green-50 border-green-200 text-green-600 shadow-green-600/5 rotate-0" : "bg-red-50/50 border-red-100 text-red-300 opacity-40 grayscale"
+                            )}>
+                              {isSigned ? <Check className="h-5 w-5" strokeWidth={3} /> : <AlertCircle className="h-5 w-5" />}
+                            </div>
+                          </div>
+                        </TableCell>
+                      );
+                    }) : (
+                      <>
+                        <TableCell className="text-center">
+                          <Badge className="bg-primary/10 text-primary border-none font-black text-xs px-4 h-8 rounded-lg shadow-sm">
+                            {totalPoints} PTS
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="text-xs font-black uppercase tracking-widest opacity-60">{activeAssignmentsCount} Active</span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge className={cn(
+                            "border-none font-black text-[8px] uppercase px-3 h-6",
+                            totalPoints >= 100 ? "bg-green-100 text-green-700" : totalPoints > 0 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
+                          )}>
+                            {totalPoints >= 300 ? 'Commander' : totalPoints >= 150 ? 'Elite Tier' : totalPoints >= 50 ? 'Engaged' : totalPoints > 0 ? 'Recruit' : 'Cold'}
+                          </Badge>
+                        </TableCell>
+                      </>
+                    )}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </ScrollArea>
+
+      {selectedMember && (
+        <MemberDetailsDialog 
+          member={selectedMember} 
+          protocols={protocols}
+          volunteerOpps={volunteerOpps}
+          events={events}
+          isOpen={!!selectedMember} 
+          onOpenChange={(o) => !o && setSelectedMember(null)} 
+        />
+      )}
+    </Card>
+  );
+}
+
+function VolunteerOpportunityManager() {
+  const { db, activeTeam, members, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, verifyVolunteerPoints, confirmVolunteerAttendance, createAlert } = useTeam();
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingOpp, setEditingOpp] = useState<any>(null);
+  const [managingOpp, setManagingOpp] = useState<any>(null);
+  
+  const vRef = useMemoFirebase(() => db && activeTeam?.id ? query(collection(db, 'teams', activeTeam.id, 'volunteers'), orderBy('date', 'desc')) : null, [db, activeTeam?.id]);
+  const { data: opportunities, isLoading } = useCollection(vRef);
+
+  const [form, setForm] = useState({
+    title: '',
+    date: format(new Date(), 'yyyy-MM-dd'),
+    startTime: '09:00',
+    location: '',
+    points: 50,
+    spots: 2,
+    description: ''
+  });
+
+  const handleSave = async () => {
+    if (editingOpp) {
+      await updateVolunteerOpportunity(editingOpp.id, form);
+      setEditingOpp(null);
+    } else {
+      await addVolunteerOpportunity(form);
+      setIsAdding(false);
+    }
+    toast({ title: "Intelligence Updated", description: "Volunteer mission deployed successfully." });
+    setForm({ title: '', date: format(new Date(), 'yyyy-MM-dd'), startTime: '09:00', location: '', points: 50, spots: 2, description: '' });
+  };
+
+  if (isLoading) return <div className="flex justify-center p-20"><Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" /></div>;
+
+  return (
+    <div className="space-y-10">
+      <div className="flex items-center justify-between px-2">
+        <div className="flex items-center gap-4">
+          <div className="bg-primary/10 p-4 rounded-[1.5rem] text-primary shadow-xl shadow-primary/5">
+            <LayoutGrid className="h-8 w-8" />
+          </div>
+          <div>
+            <h2 className="text-3xl font-black uppercase tracking-tight">Mission Board</h2>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-[0.2em] mt-1">Deploy Mobilization Opportunities for the Squad</p>
+          </div>
+        </div>
+        <Button onClick={() => setIsAdding(true)} className="h-14 px-8 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-primary/20 transition-all active:scale-95 group">
+          <Plus className="h-4 w-4 mr-2 group-hover:rotate-90 transition-transform" /> Recruit Volunteers
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {opportunities?.map(opp => {
+          const signupsMap = opp.signups || {};
+          const signups = Object.values(signupsMap);
+          const filled = signups.length;
+          const isFull = filled >= opp.spots;
+
+          return (
+            <Card key={opp.id} className="rounded-[2.5rem] border-none shadow-xl bg-white p-8 space-y-6 group hover:shadow-2xl transition-all relative overflow-hidden">
+              {isFull && (
+                <div className="absolute top-4 right-4 z-10">
+                  <Badge className="bg-green-100 text-green-700 border-none font-black text-[8px] uppercase px-3 h-6 rounded-full shadow-sm">Fully Staffed</Badge>
+                </div>
+              )}
+              
+              <div className="space-y-1 relative z-10">
+                <p className="text-[10px] font-bold text-primary uppercase tracking-[0.3em] opacity-40">Tactical Assignment</p>
+                <div className="flex items-start justify-between">
+                  <h3 className="text-2xl font-black uppercase tracking-tighter leading-none truncate pr-4">{opp.title}</h3>
+                  <Badge variant="outline" className="h-6 font-black text-[9px] uppercase tracking-widest bg-primary/5 border-primary/20">{opp.points} PTS</Badge>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-4 bg-muted/20 rounded-2xl space-y-1">
+                  <p className="text-[7px] font-black uppercase text-muted-foreground">Logistics</p>
+                  <p className="text-[10px] font-black uppercase truncate">{opp.date}</p>
+                </div>
+                <div className="p-4 bg-muted/20 rounded-2xl space-y-1">
+                  <p className="text-[7px] font-black uppercase text-muted-foreground">Intelligence</p>
+                  <p className="text-[10px] font-black uppercase truncate">{opp.startTime}</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex justify-between items-center px-1">
+                  <span className="text-[9px] font-black uppercase tracking-widest opacity-40">Deployment Capacity</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest">{filled} / {opp.spots} Secured</span>
+                </div>
+                <div className="h-2.5 w-full bg-muted/30 rounded-full overflow-hidden">
+                  <div className={cn("h-full rounded-full transition-all duration-500", isFull ? "bg-green-500" : "bg-primary")} style={{ width: `${Math.min(100, (filled / opp.spots) * 100)}%` }} />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 min-h-[40px] pt-2">
+                {signups.map((s: any, i) => (
+                  <div key={i} className={cn(
+                    "flex items-center gap-2 pr-3 pl-1.5 py-1 rounded-xl border transition-all",
+                    s.status === 'verified' ? "bg-green-50 border-green-200" : "bg-muted/50 border-muted-foreground/10"
+                  )}>
+                    <CheckCircle2 className={cn("h-3 w-3", s.status === 'verified' ? "text-green-600" : "text-muted-foreground/30")} />
+                    <span className={cn("text-[9px] font-black uppercase", s.status === 'verified' ? "text-green-700" : "text-muted-foreground")}>{s.userName}</span>
+                  </div>
+                ))}
+                {signups.length === 0 && <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/30 italic py-2">Mission unstaffed</p>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-4 border-t-2 border-dashed border-muted/20">
+                <Button onClick={() => setManagingOpp(opp)} className="h-12 rounded-xl text-[10px] font-black uppercase tracking-widest bg-black text-white hover:bg-black/90">Manage Personnel</Button>
+                <div className="grid grid-cols-2 gap-1">
+                  <Button variant="outline" size="icon" onClick={() => { setEditingOpp(opp); setForm(opp); }} className="h-12 rounded-xl border-2"><Edit3 className="h-4 w-4" /></Button>
+                  <Button variant="outline" size="icon" onClick={() => deleteVolunteerOpportunity(opp.id)} className="h-12 rounded-xl border-2 text-red-600 hover:bg-red-50 hover:border-red-100"><Trash2 className="h-4 w-4" /></Button>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+
+        {(!opportunities || opportunities.length === 0) && (
+          <div className="col-span-full py-40 text-center space-y-6 bg-muted/5 border-2 border-dashed rounded-[3.5rem] opacity-30">
+            <LayoutGrid className="h-20 w-20 mx-auto" />
+            <div>
+              <p className="text-xl font-black uppercase tracking-tight">Mission Board Vacant</p>
+              <p className="text-xs font-bold uppercase tracking-widest mt-1">Start deploying volunteer opportunities to mobilize your squad.</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Deployment & Refinement Modal */}
+      <Dialog open={isAdding || !!editingOpp} onOpenChange={(o) => { if(!o) { setIsAdding(false); setEditingOpp(null); } }}>
+        <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 overflow-hidden border-none shadow-2xl bg-white text-foreground">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-10 space-y-8 overflow-y-auto max-h-[90vh] custom-scrollbar">
+            <DialogHeader>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="bg-primary/10 p-4 rounded-2xl text-primary shadow-lg shadow-primary/5"><LayoutGrid className="h-7 w-7" /></div>
+                <div>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">{editingOpp ? 'Refine Mission' : 'Deploy Mission'}</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Define logistics & strategic reward value</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Assignment Title</Label>
+                  <Input placeholder="e.g. Scorekeeping" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="h-14 rounded-2xl border-2 font-black text-base focus:ring-primary shadow-sm" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Reward (Points)</Label>
+                  <Input type="number" value={form.points} onChange={e => setForm({ ...form, points: parseInt(e.target.value) })} className="h-14 rounded-2xl border-2 font-black text-base shadow-sm" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Deployment Date</Label>
+                  <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="h-14 rounded-2xl border-2 font-black text-base shadow-sm" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Capacity (Spots)</Label>
+                  <Input type="number" value={form.spots} onChange={e => setForm({ ...form, spots: parseInt(e.target.value) })} className="h-14 rounded-2xl border-2 font-black text-base shadow-sm" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Operational Description</Label>
+                <Textarea placeholder="Detail the duties and expectations..." value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="min-h-[120px] rounded-3xl border-2 font-medium p-6 resize-none shadow-sm" />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleSave}>
+                <Save className="h-5 w-5 mr-3" /> Commit Mission Deployment
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Personnel Management Modal */}
+      <Dialog open={!!managingOpp} onOpenChange={(o) => { if(!o) setManagingOpp(null); }}>
+        <DialogContent className="rounded-[4rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-3xl bg-[#fafafa]">
+          <div className="p-12 space-y-10">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em]">Mobilization Management</p>
+                <h2 className="text-3xl font-black uppercase tracking-tighter leading-none">{managingOpp?.title}</h2>
+              </div>
+              <Badge className="bg-primary/10 text-primary border-none font-black text-[10px] px-4 h-8 rounded-xl">{managingOpp?.points} PTS REWARD</Badge>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between px-2">
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Personnel Registry</h4>
+                <Select onValueChange={async (uid) => {
+                  const m = members.find(mem => mem.userId === uid);
+                  if (m && managingOpp) {
+                    const newSignups = {
+                      ...(managingOpp.signups || {}),
+                      [uid]: { userId: uid, userName: m.name, status: 'pending', createdAt: new Date().toISOString() }
+                    };
+                    await updateVolunteerOpportunity(managingOpp.id, { signups: newSignups });
+                    await createAlert(
+                      "New Mission Assigned",
+                      `You have been assigned to the volunteer mission: ${managingOpp.title}. Check the Volunteer Board for details.`,
+                      uid as any
+                    );
+                    setManagingOpp({ ...managingOpp, signups: newSignups });
+                    toast({ title: "Personnel Deployed", description: `${m.name} has been assigned to this mission.` });
+                  }
+                }}>
+                  <SelectTrigger className="w-[200px] h-10 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest bg-white">
+                    <SelectValue placeholder="Assign Member" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-2xl border-2">
+                    {members.filter(m => !managingOpp?.signups?.[m.userId]).map(m => (
+                      <SelectItem key={m.id} value={m.userId} className="font-black text-[10px] uppercase">{m.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-3">
+                {Object.values(managingOpp?.signups || {}).map((s: any) => (
+                  <div key={s.userId} className="bg-white rounded-3xl p-5 border-2 border-black/5 flex items-center justify-between shadow-sm group hover:border-primary/20 transition-all">
+                    <div className="flex items-center gap-4">
+                      <div className={cn("h-10 w-10 rounded-2xl flex items-center justify-center shadow-inner", s.status === 'verified' ? "bg-green-500 text-white" : "bg-muted text-muted-foreground/40")}>
+                        {s.status === 'verified' ? <Check className="h-5 w-5" strokeWidth={3} /> : <Users className="h-5 w-5" />}
+                      </div>
+                      <div>
+                        <p className="font-black text-xs uppercase tracking-tight">{s.userName}</p>
+                        <p className={cn("text-[8px] font-black uppercase tracking-widest mt-0.5", s.status === 'verified' ? "text-green-600" : "text-amber-500")}>
+                          {s.status === 'verified' ? 'Points Awarded' : 'Awaiting Intelligence'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {s.status !== 'verified' ? (
+                        <Button onClick={async () => {
+                          await verifyVolunteerPoints(managingOpp.id, s.userId, managingOpp.points);
+                          await createAlert(
+                            "Strategic Points Awarded",
+                            `Your contribution to "${managingOpp.title}" has been verified. ${managingOpp.points} points have been credited to your institutional record.`,
+                            s.userId as any
+                          );
+                          const updated = { ...managingOpp.signups, [s.userId]: { ...s, status: 'verified' } };
+                          setManagingOpp({ ...managingOpp, signups: updated });
+                          toast({ title: "Mission Verified", description: `Intelligence confirmed. Points awarded to ${s.userName}.` });
+                        }} className="h-10 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest bg-green-600 hover:bg-green-700 shadow-lg shadow-green-600/20">Verify & Award</Button>
+                      ) : (
+                         <div className="h-10 flex items-center px-4 rounded-xl border-2 border-green-100 text-green-600 font-black text-[10px] uppercase tracking-widest bg-green-50/50">Completed</div>
+                      )}
+                      <Button variant="ghost" size="icon" onClick={async () => {
+                        const { [s.userId]: _, ...rest } = managingOpp.signups;
+                        await updateVolunteerOpportunity(managingOpp.id, { signups: rest });
+                        setManagingOpp({ ...managingOpp, signups: rest });
+                        toast({ title: "Personnel Relieved", description: "Member removed from mission registry." });
+                      }} className="h-10 w-10 rounded-xl text-red-600 hover:bg-red-50"><X className="h-4 w-4" /></Button>
+                    </div>
+                  </div>
+                ))}
+                {Object.values(managingOpp?.signups || {}).length === 0 && (
+                  <div className="py-12 bg-white rounded-[2.5rem] border-2 border-dashed border-black/5 text-center flex flex-col items-center justify-center space-y-4">
+                    <div className="bg-muted p-4 rounded-2xl opacity-20"><Users className="h-8 w-8" /></div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">Registry Empty. Assign personnel above.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <Button onClick={() => setManagingOpp(null)} variant="outline" className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest border-2">Close Commander View</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 
 function RecruitingProfileManager({ member }: { member: Member }) {
   const { 
@@ -1649,6 +2232,7 @@ function SafetyHub() {
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function CoachesCornerPage() {
+  const router = useRouter();
   const { activeTeam, isStaff, isPro, isStarter, createTeamDocument, updateTeamDocument, db, members, createAlert, isSchoolMode, user, teams, getLeagueMembers } = useTeam();
   
   const isPartOfLeague = useMemo(() => {
@@ -1702,6 +2286,12 @@ export default function CoachesCornerPage() {
 
   const selectedMember = useMemo(() => members.find(m => m.id === selectedMemberId), [members, selectedMemberId]);
 
+  const vRef = useMemoFirebase(() => db && activeTeam?.id ? query(collection(db, 'teams', activeTeam.id, 'volunteers'), orderBy('date', 'desc')) : null, [db, activeTeam?.id]);
+  const { data: volunteerOpps } = useCollection(vRef);
+
+  const eRef = useMemoFirebase(() => db && activeTeam?.id ? query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'desc')) : null, [db, activeTeam?.id]);
+  const { data: events } = useCollection<TeamEvent>(eRef);
+
   const handleSaveProtocolUpdate = async () => {
     if (!editingWaiver || !activeTeam) return;
     
@@ -1739,12 +2329,22 @@ export default function CoachesCornerPage() {
             <div className="flex items-center gap-4 flex-wrap">
             <h1 className="text-4xl font-black uppercase tracking-tight text-foreground">Coaches Corner</h1>
             {isStaff && activeTeam && (
-              <EmailExportDialog 
-                members={members} 
-                teamName={activeTeam.name} 
-                getLeagueMembers={getLeagueMembers}
-                leagueIds={activeTeam.leagueIds}
-              />
+              <>
+                <EmailExportDialog 
+                  members={members} 
+                  teamName={activeTeam.name} 
+                  getLeagueMembers={getLeagueMembers}
+                  leagueIds={activeTeam.leagueIds}
+                />
+                <Button 
+                  variant="outline" 
+                  className="rounded-xl h-10 border-2 font-black uppercase text-[10px] tracking-widest gap-2 bg-white text-foreground hover:bg-muted/50"
+                  onClick={() => router.push('/coaches-corner/attendance')}
+                >
+                  <ClipboardList className="h-4 w-4 text-primary" />
+                  Attendance Tracking
+                </Button>
+              </>
             )}
             <Badge className={cn(
               "rounded-xl font-black uppercase text-[10px] px-3 h-7 border-none",
@@ -1755,12 +2355,14 @@ export default function CoachesCornerPage() {
           </div>
         </div>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full md:w-auto">
-          <TabsList className="bg-muted/50 rounded-xl h-auto p-1 border-2 w-full md:w-auto flex-wrap gap-1 shadow-sm">
-            <TabsTrigger value="recruiting" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Recruiting Hub</TabsTrigger>
+          <TabsList className="mb-0 overflow-x-auto whitespace-nowrap bg-white p-2 rounded-2xl shadow-sm border border-black/5 gap-2 flex-nowrap shrink-0">
+            <TabsTrigger value="recruiting" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Talent Center</TabsTrigger>
             {isSchoolMode && (
               <TabsTrigger value="coaches" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Coaches</TabsTrigger>
             )}
-            <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Compliance</TabsTrigger>
+            <TabsTrigger value="tracking" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Tracking</TabsTrigger>
+            <TabsTrigger value="volunteers" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Volunteers</TabsTrigger>
+            <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Legal Docs</TabsTrigger>
             <TabsTrigger value="archives" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Waiver Library</TabsTrigger>
             <TabsTrigger value="fundraising" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Fundraising</TabsTrigger>
             <TabsTrigger value="safety" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Safety Hub</TabsTrigger>
@@ -1846,6 +2448,30 @@ export default function CoachesCornerPage() {
             </div>
           </TabsContent>
         )}
+
+        <TabsContent value="tracking" className="mt-0 space-y-8 animate-in fade-in duration-500">
+           {!isPro ? <AccessRestricted type="feature" /> : (
+             <>
+               <div className="space-y-2">
+                 <Badge className="bg-primary/5 text-primary border-none font-black uppercase text-[8px] h-5 px-2 tracking-widest">Readiness Hub</Badge>
+                 <h2 className="text-3xl font-black uppercase tracking-tight">Personnel Intelligence</h2>
+                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Institutional Matrix for Compliance & Volunteer Mobilization</p>
+               </div>
+               <TrackingMatrix 
+                  members={members} 
+                  protocols={[...DEFAULT_PROTOCOLS, ...customProtocols]} 
+                  volunteerOpps={volunteerOpps || []}
+                  events={events || []}
+               />
+             </>
+           )}
+        </TabsContent>
+
+        <TabsContent value="volunteers" className="mt-0 space-y-8 animate-in fade-in duration-500">
+           {!isPro ? <AccessRestricted type="feature" /> : (
+             <VolunteerOpportunityManager />
+           )}
+        </TabsContent>
 
         <TabsContent value="compliance" className="space-y-10 mt-0">
           {!isPro ? <AccessRestricted type="feature" /> : (
