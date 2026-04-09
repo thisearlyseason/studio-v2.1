@@ -88,6 +88,7 @@ export default function ChatRoomPage() {
   const [chatImage, setChatImage] = useState<string | undefined>();
   
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasInitializedName = useRef(false);
 
@@ -110,13 +111,12 @@ export default function ChatRoomPage() {
   const { data: rawMessages, isLoading: isMessagesLoading } = useCollection<Message>(messagesQuery);
   const messages = useMemo(() => (rawMessages ? [...rawMessages] : []), [rawMessages]);
 
+  // Scroll to bottom whenever new messages arrive
   useEffect(() => {
-    if (scrollRef.current) {
-      const scrollContainer = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
-      if (scrollContainer) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight;
-      }
-    }
+    // Use requestAnimationFrame to ensure DOM has painted before scrolling
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
   }, [messages.length]);
 
   useEffect(() => {
@@ -273,8 +273,8 @@ export default function ChatRoomPage() {
         </div>
       </div>
 
-      <ScrollArea className="flex-1 px-4 py-6" ref={scrollRef}>
-        <div className="max-w-4xl mx-auto space-y-8 pb-10">
+      <ScrollArea className="flex-1 px-4 py-6">
+        <div className="max-w-4xl mx-auto space-y-8 pb-10" ref={scrollRef}>
           {isMessagesLoading ? (
             <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-primary opacity-20" /></div>
           ) : messages.length > 0 ? (
@@ -355,6 +355,8 @@ export default function ChatRoomPage() {
               <p className="text-sm font-black uppercase tracking-[0.3em]">Channel established. Awaiting tactical orders.</p>
             </div>
           )}
+          {/* Bottom anchor — new messages always appear below previous ones */}
+          <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
 

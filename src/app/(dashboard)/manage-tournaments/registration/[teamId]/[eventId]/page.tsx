@@ -32,7 +32,8 @@ import {
   Sparkles,
   Trophy,
   Target,
-  FileSignature
+  FileSignature,
+  Info
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -435,6 +436,7 @@ export default function TournamentRegistrationAdminPage() {
                             <SelectItem value="checkbox" className="font-bold text-[10px] uppercase">Multi Choice (Check)</SelectItem>
                             <SelectItem value="signature" className="font-bold text-[10px] uppercase">Digital Signature</SelectItem>
                             <SelectItem value="header" className="font-bold text-[10px] uppercase">Section Header</SelectItem>
+                             <SelectItem value="information_box" className="font-bold text-[10px] uppercase">ℹ Information Box</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -461,6 +463,33 @@ export default function TournamentRegistrationAdminPage() {
                           />
                         </div>
                       )}
+                      {editingField?.type === 'information_box' && (
+                        <div className="space-y-4 animate-in slide-in-from-top-2 duration-300 bg-blue-50 p-5 rounded-2xl border-2 border-blue-100">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Info className="h-4 w-4 text-blue-600" />
+                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-700">Information Box Settings</span>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-[10px] uppercase font-black ml-1 text-blue-800">Box Title (displayed as heading)</Label>
+                            <Input 
+                              placeholder="e.g. Important Instructions" 
+                              value={editingField?.label || ''}
+                              onChange={e => setEditingField({ ...editingField, label: e.target.value })}
+                              className="h-10 rounded-xl border-2 font-bold"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-[10px] uppercase font-black ml-1 text-blue-800">Box Content (body text shown to registrants)</Label>
+                            <Textarea
+                              placeholder="Enter the information or instructions you want to display in this section..."
+                              value={editingField?.infoContent || ''}
+                              onChange={e => setEditingField({ ...editingField, infoContent: e.target.value })}
+                              className="rounded-xl border-2 font-medium min-h-[100px] text-sm"
+                            />
+                          </div>
+                          <p className="text-[8px] font-bold text-blue-500 uppercase tracking-widest">This block will be displayed as a styled info panel in your registration form — not a fillable field.</p>
+                        </div>
+                      )}
                     </div>
                     <DialogFooter className="pt-4">
                       <Button className="w-full h-14 rounded-2xl font-black shadow-xl" onClick={handleAddField} disabled={!editingField?.label}>Inject Spec</Button>
@@ -477,8 +506,32 @@ export default function TournamentRegistrationAdminPage() {
                     additional: 'Additional'
                   };
                   return (
-                    <div key={field.id} className="p-8 flex items-center justify-between group hover:bg-muted/10 transition-colors">
-                      <div className="flex items-center gap-6"><div className="text-[10px] font-black text-muted-foreground w-8 opacity-40 text-center">{i + 1}</div><div className="space-y-1"><p className="font-black text-base uppercase tracking-tight">{field.label}</p><div className="flex items-center gap-2"><Badge variant="outline" className="text-[8px] font-black uppercase">{field.type.replace('_', ' ')}</Badge>{field.step && <Badge variant="secondary" className="text-[8px] font-black uppercase bg-primary/10 text-primary border-none">{stepLabels[field.step] || field.step}</Badge>}</div></div></div>
+                    <div key={field.id} className={cn(
+                      "p-8 flex items-center justify-between group hover:bg-muted/10 transition-colors",
+                      field.type === 'information_box' && "bg-blue-50/50 hover:bg-blue-50"
+                    )}>
+                      <div className="flex items-center gap-6">
+                        <div className="text-[10px] font-black text-muted-foreground w-8 opacity-40 text-center">{i + 1}</div>
+                        <div className="space-y-1">
+                          {field.type === 'information_box' ? (
+                            <div className="flex items-start gap-3">
+                              <div className="bg-blue-100 p-2 rounded-xl text-blue-600 mt-0.5 shrink-0">
+                                <Info className="h-4 w-4" />
+                              </div>
+                              <div>
+                                <p className="font-black text-base uppercase tracking-tight text-blue-900">{field.label}</p>
+                                {field.infoContent && <p className="text-xs font-medium text-blue-600 mt-1 line-clamp-2 max-w-xs">{field.infoContent}</p>}
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="font-black text-base uppercase tracking-tight">{field.label}</p>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className={cn("text-[8px] font-black uppercase", field.type === 'information_box' && "border-blue-200 text-blue-700 bg-blue-50")}>{field.type.replace(/_/g, ' ')}</Badge>
+                            {field.step && <Badge variant="secondary" className="text-[8px] font-black uppercase bg-primary/10 text-primary border-none">{stepLabels[field.step] || field.step}</Badge>}
+                          </div>
+                        </div>
+                      </div>
                       <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleUpdateConfig({ form_schema: (localConfig?.form_schema || []).filter(f => f.id !== field.id) }, true)}><Trash2 className="h-5 w-5" /></Button>
                     </div>
                   );

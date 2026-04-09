@@ -508,11 +508,12 @@ export type RegistrationEntry = {
 export type RegistrationFormField = {
   id: string;
   label: string;
-  type: 'short_text' | 'long_text' | 'dropdown' | 'header' | 'radio' | 'checkbox' | 'signature';
+  type: 'short_text' | 'long_text' | 'dropdown' | 'header' | 'radio' | 'checkbox' | 'signature' | 'information_box';
   required: boolean;
   options?: string[];
   step?: 'identity' | 'contact' | 'medical' | 'guardian' | 'team_code' | 'additional' | 'compliance';
   placeholder?: string;
+  infoContent?: string;
 };
 
 
@@ -1756,7 +1757,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         type,
         imageUrl: img || null,
         poll: poll || null,
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString()
       });
     }
   }, [activeTeam, firebaseUser, db]);

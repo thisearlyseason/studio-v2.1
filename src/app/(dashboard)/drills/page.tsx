@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,13 @@ import {
   Lock,
   Edit2,
   Clock,
-  ChevronRight
+  ChevronRight,
+  CheckCircle2,
+  Bell,
+  BellOff,
+  Users,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -43,22 +49,20 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { Switch } from '@/components/ui/switch';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 const getYoutubeThumbnail = (url: string) => {
   if (!url) return null;
   const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?\s*v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
-  
-  // Return early if no match
   if (!match || match[2].length !== 11) return null;
-  
   const videoId = match[2];
-  // hqdefault is the most reliable fallback across all youtube videos
   return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 };
 
 export default function PlaybookAndGamePlayPage() {
-  const { activeTeam, addDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro } = useTeam();
+  const { activeTeam, addDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro, members } = useTeam();
   const db = useFirestore();
 
   const [viewMode, setViewMode] = useState<'drills' | 'gameplay'>('drills');
@@ -91,10 +95,16 @@ export default function PlaybookAndGamePlayPage() {
   const [newTime, setNewTime] = useState<string>('');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [expandedDrillIds, setExpandedDrillIds] = useState<Set<string>>(new Set());
-  
+  const [isWatchersOpen, setIsWatchersOpen] = useState(false);
+  const [watchersDrill, setWatchersDrill] = useState<any>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const watchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const watchStartRef = useRef<number | null>(null);
+  const [watchProgress, setWatchProgress] = useState(0);
+  const [hasCompletedWatch, setHasCompletedWatch] = useState(false);
 
   const filteredDrills = useMemo(() => drills.filter(d => d.title.toLowerCase().includes(searchTerm.toLowerCase())), [drills, searchTerm]);
   const filteredFiles = useMemo(() => teamFiles.filter(f => ['Game Tape', 'Practice Session', 'Highlights'].includes(f.category) && f.name.toLowerCase().includes(searchTerm.toLowerCase())), [teamFiles, searchTerm]);
@@ -131,7 +141,10 @@ export default function PlaybookAndGamePlayPage() {
           additionalMedia: newMedia.filter(m => m.url),
           estimatedTime: newTime,
           createdAt: new Date().toISOString(), 
-          comments: [] 
+          comments: [],
+          mandatoryWatch: false,
+          mandatoryWatchThreshold: 75,
+          watchedBy: {}
         });
         toast({ title: "Drill Published", description: "Strategic execution protocol active." });
       }
@@ -264,8 +277,6 @@ export default function PlaybookAndGamePlayPage() {
 
   const seekTo = (seconds: number | undefined) => {
     if (seconds == null) return;
-    
-    // Handle YouTube
     if (iframeRef.current && iframeRef.current.src.includes('youtube.com')) {
       iframeRef.current.contentWindow?.postMessage(JSON.stringify({
         event: 'command',
@@ -277,18 +288,81 @@ export default function PlaybookAndGamePlayPage() {
         func: 'playVideo',
         args: []
       }), '*');
-    } 
-    // Handle local/uploaded video
-    else if (videoRef.current) {
+    } else if (videoRef.current) {
       videoRef.current.currentTime = seconds;
       videoRef.current.play();
     }
   };
 
+  // Toggle mandatory watch on a drill/film
+  const toggleMandatoryWatch = async (e: React.MouseEvent, item: any, type: 'drills' | 'files') => {
+    e.stopPropagation();
+    if (!activeTeam || !db || !isStaff) return;
+    const newVal = !item.mandatoryWatch;
+    const collName = type === 'drills' ? 'drills' : 'files';
+    await updateDoc(doc(db, 'teams', activeTeam.id, collName, item.id), {
+      mandatoryWatch: newVal,
+      mandatoryWatchThreshold: 75
+    });
+    toast({ title: newVal ? "Mandatory Watch ON" : "Mandatory Watch OFF", description: newVal ? "Roster must watch 75% of this video." : "Mandatory watch requirement removed." });
+  };
+
+  // Track 75% watch progress for current viewer
+  const startWatchTracking = useCallback((drillId: string, duration: number) => {
+    if (!user?.id || !activeTeam || !db) return;
+    watchStartRef.current = Date.now();
+    const requiredMs = duration * 0.75 * 1000;
+    
+    watchTimerRef.current = setTimeout(async () => {
+      try {
+        const watchedBy = { [`${user.id}`]: { userId: user.id, name: user.name || 'Viewer', watchedAt: new Date().toISOString(), percentage: 75 } };
+        await updateDoc(doc(db, 'teams', activeTeam.id, 'drills', drillId), {
+          [`watchedBy.${user.id}`]: watchedBy[user.id]
+        });
+        setHasCompletedWatch(true);
+        toast({ title: "✓ Watch Verified", description: "You've completed 75% of this drill." });
+      } catch (err) {
+        // Silent fail
+      }
+    }, Math.min(requiredMs, 30000)); // Cap at 30s for demo
+  }, [user?.id, user?.name, activeTeam, db]);
+
+  useEffect(() => {
+    return () => {
+      if (watchTimerRef.current) clearTimeout(watchTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedDrill || selectedFile) {
+      setWatchProgress(0);
+      setHasCompletedWatch(false);
+    }
+    return () => {
+      if (watchTimerRef.current) clearTimeout(watchTimerRef.current);
+    };
+  }, [selectedDrill?.id, selectedFile?.id]);
+
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentText, setEditingCommentText] = useState<string>('');
 
   if (isDrillsLoading || isFilesLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Tactical Hub...</p></div>;
+
+  const renderWatchBadge = (item: any) => {
+    if (!item.mandatoryWatch) return null;
+    const watchedCount = Object.keys(item.watchedBy || {}).length;
+    const rosterCount = members?.length || 0;
+    return (
+      <Badge className="bg-amber-500 text-white border-none font-black text-[7px] uppercase flex items-center gap-1">
+        <Eye className="h-2.5 w-2.5" />
+        {watchedCount}/{rosterCount} WATCHED
+      </Badge>
+    );
+  };
+
+  const hasUserWatched = (item: any) => {
+    return user?.id && item.watchedBy && item.watchedBy[user.id];
+  };
 
   return (
     <div className="relative min-h-[calc(100vh-10rem)]">
@@ -356,9 +430,9 @@ export default function PlaybookAndGamePlayPage() {
           </Card>
           
           <div className="bg-muted/30 p-6 rounded-[2.5rem] border-2 border-dashed space-y-4">
-            <div className="flex items-center gap-2"><Info className="h-4 w-4 text-primary" /><span className="text-[10px] font-black uppercase">Staff Tip</span></div>
+            <div className="flex items-center gap-2"><Info className="h-4 w-4 text-primary" /><span className="text-[10px] font-black uppercase">Mandatory Watch</span></div>
             <p className="text-[10px] font-medium text-muted-foreground leading-relaxed italic">
-              Use "Coach Marks" to highlight specific moments in game tape or drills. Teammates can click these marks to jump to the relevant tactical coaching moment.
+              Enable "Mandatory 75% Watch" on any drill or game tape. The coach will see a real-time roster checklist of who has completed at least 75% of the video.
             </p>
           </div>
         </aside>
@@ -401,11 +475,23 @@ export default function PlaybookAndGamePlayPage() {
                   {drill.estimatedTime && (
                     <Badge className="absolute top-4 right-4 bg-black/80 text-white border-none font-black text-[8px] uppercase"><Clock className="h-3 w-3 mr-1 inline" /> {drill.estimatedTime}</Badge>
                   )}
+                  {/* Green checkmark if user watched */}
+                  {hasUserWatched(drill) && (
+                    <div className="absolute bottom-4 right-4 bg-green-500 text-white rounded-full p-1.5 shadow-lg">
+                      <CheckCircle2 className="h-4 w-4" strokeWidth={3} />
+                    </div>
+                  )}
+                  {drill.mandatoryWatch && !hasUserWatched(drill) && (
+                    <div className="absolute bottom-4 right-4 bg-amber-500 text-white rounded-full p-1.5 shadow-lg">
+                      <Bell className="h-4 w-4" />
+                    </div>
+                  )}
                 </div>
                 <CardContent className="p-6 space-y-2">
                   <div className="flex justify-between items-start gap-4">
                     <h3 className="font-black text-lg uppercase truncate tracking-tight text-foreground">{drill.title}</h3>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                      {renderWatchBadge(drill)}
                       <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase">{(drill.comments?.length || 0)} MARKS</Badge>
                       {isStaff && (
                         <div className="flex bg-muted/50 rounded-xl overflow-hidden shadow-inner">
@@ -417,6 +503,24 @@ export default function PlaybookAndGamePlayPage() {
                             </TooltipTrigger>
                             <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Modify Protocol</TooltipContent>
                           </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:bg-amber-50 rounded-none border-l" onClick={(e) => toggleMandatoryWatch(e, drill, 'drills')}>
+                                {drill.mandatoryWatch ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">{drill.mandatoryWatch ? 'Turn Off Mandatory Watch' : 'Turn on Mandatory 75% Watch'}</TooltipContent>
+                          </Tooltip>
+                          {drill.mandatoryWatch && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-primary hover:bg-primary/5 rounded-none border-l" onClick={(e) => { e.stopPropagation(); setWatchersDrill(drill); setIsWatchersOpen(true); }}>
+                                  <Users className="h-3 w-3" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">View Roster Watch Status</TooltipContent>
+                            </Tooltip>
+                          )}
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteDrill(drill.id); }}>
@@ -443,6 +547,17 @@ export default function PlaybookAndGamePlayPage() {
                       {expandedDrillIds.has(drill.id) ? "Minimize Protocol" : "Read Full Protocol"}
                     </button>
                   )}
+                  {isStaff && drill.mandatoryWatch && (
+                    <div className="pt-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setWatchersDrill(drill); setIsWatchersOpen(true); }}
+                        className="text-[9px] font-black text-amber-600 uppercase tracking-widest hover:underline flex items-center gap-1"
+                      >
+                        <Users className="h-2.5 w-2.5" />
+                        {Object.keys(drill.watchedBy || {}).length}/{(members || []).length} Roster Watched
+                      </button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )) : filteredFiles.map(file => (
@@ -456,6 +571,16 @@ export default function PlaybookAndGamePlayPage() {
                     </div>
                   )}
                   <Badge className="absolute top-4 left-4 bg-black/60 border-none font-black text-[8px] uppercase">{file.category}</Badge>
+                  {(file as any).mandatoryWatch && !hasUserWatched(file) && (
+                    <div className="absolute bottom-4 right-4 bg-amber-500 text-white rounded-full p-1.5 shadow-lg">
+                      <Bell className="h-4 w-4" />
+                    </div>
+                  )}
+                  {hasUserWatched(file) && (
+                    <div className="absolute bottom-4 right-4 bg-green-500 text-white rounded-full p-1.5 shadow-lg">
+                      <CheckCircle2 className="h-4 w-4" strokeWidth={3} />
+                    </div>
+                  )}
                 </div>
                 <CardContent className="p-6 space-y-2">
                   <div className="flex justify-between items-start gap-4">
@@ -471,6 +596,14 @@ export default function PlaybookAndGamePlayPage() {
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Update Film Metadata</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:bg-amber-50 rounded-none border-l" onClick={(e) => toggleMandatoryWatch(e, file as any, 'files')}>
+                                {(file as any).mandatoryWatch ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">{(file as any).mandatoryWatch ? 'Turn Off Mandatory Watch' : 'Turn on Mandatory 75% Watch'}</TooltipContent>
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -491,6 +624,54 @@ export default function PlaybookAndGamePlayPage() {
           </div>
         </div>
       </div>
+
+      {/* Roster Watch Status Dialog */}
+      <Dialog open={isWatchersOpen} onOpenChange={setIsWatchersOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 space-y-6">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Roster Watch Status</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">75% mandatory watch compliance for "{watchersDrill?.title}"</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
+              {(members || []).map(m => {
+                const watched = watchersDrill?.watchedBy?.[m.userId || m.id];
+                return (
+                  <div key={m.id} className={cn(
+                    "flex items-center justify-between p-4 rounded-2xl border-2 transition-all",
+                    watched ? "bg-green-50 border-green-100" : "bg-muted/20 border-transparent"
+                  )}>
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-9 w-9 rounded-xl border-2 border-white shadow-sm">
+                        <AvatarImage src={m.avatar} />
+                        <AvatarFallback className="font-black text-xs">{m.name[0]}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-black text-xs uppercase">{m.name}</p>
+                        <p className="text-[8px] font-bold text-muted-foreground uppercase">{m.position}</p>
+                      </div>
+                    </div>
+                    {watched ? (
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-5 w-5 text-green-600" strokeWidth={3} />
+                        <span className="text-[9px] font-black text-green-700 uppercase">Verified 75%</span>
+                      </div>
+                    ) : (
+                      <span className="text-[9px] font-black text-muted-foreground uppercase opacity-40">Not Watched</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary">
+                {Object.keys(watchersDrill?.watchedBy || {}).length}/{(members || []).length} members have completed 75% of this video
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isAddDrillOpen} onOpenChange={setIsAddDrillOpen}>
         <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
@@ -607,11 +788,11 @@ export default function PlaybookAndGamePlayPage() {
                     </div>
                   ))}
                 </div>
-              </div>
           <DialogFooter className="p-8 pt-0 flex flex-col sm:flex-row gap-3">
             <Button variant="ghost" onClick={() => { setIsAddDrillOpen(false); setEditingItemId(null); }} className="rounded-2xl h-14 font-black uppercase text-[10px] flex-1">Abort</Button>
             <Button onClick={handleAddDrill} disabled={!newTitle || !newDesc} className="rounded-2xl h-14 font-black uppercase text-[10px] flex-1 shadow-xl shadow-primary/20">{editingItemId ? 'Commit Updates' : 'Commit to Playbook'}</Button>
           </DialogFooter>
+        </div>
         </DialogContent>
       </Dialog>
 
@@ -654,18 +835,51 @@ export default function PlaybookAndGamePlayPage() {
             <Button onClick={handleAddFilm} disabled={!newTitle || (!newUrl && !fileInputRef.current?.files?.length)} className="w-full h-16 rounded-[2rem] font-black uppercase text-xs shadow-xl shadow-primary/20">Enshrine in Vault</Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>      <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
+      </Dialog>
+      
+      <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
         <DialogContent className="rounded-[4rem] sm:max-w-6xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
           {(selectedDrill || selectedFile) && (() => {
             const data = selectedDrill || selectedFile;
             const url = selectedDrill ? selectedDrill.videoUrl : selectedFile!.url;
             const type = selectedDrill ? 'drills' : 'files';
+            const isMandatory = data.mandatoryWatch;
+            const userHasWatched = hasUserWatched(data);
             
             return (
               <div className="flex flex-col lg:flex-row h-full max-h-[90vh] overflow-hidden">
                 {/* Left Side: Video and Additional Media */}
                 <div className="flex-1 overflow-y-auto bg-black p-4 lg:p-8 custom-scrollbar">
+                  
+                  {/* Mandatory Watch Banner */}
+                  {isMandatory && (
+                    <div className={cn(
+                      "mb-4 px-4 py-3 rounded-2xl flex items-center justify-between",
+                      userHasWatched ? "bg-green-500/20 border border-green-500/30" : "bg-amber-500/20 border border-amber-500/30"
+                    )}>
+                      <div className="flex items-center gap-2">
+                        {userHasWatched ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-400" strokeWidth={3} />
+                        ) : (
+                          <Bell className="h-4 w-4 text-amber-400" />
+                        )}
+                        <span className="text-[10px] font-black uppercase tracking-widest text-white">
+                          {userHasWatched ? "Watch Verified ✓ 75% Complete" : "Mandatory 75% Watch Required"}
+                        </span>
+                      </div>
+                      {isStaff && (
+                        <button
+                          onClick={() => { setWatchersDrill(data); setIsWatchersOpen(true); }}
+                          className="text-[9px] font-black uppercase tracking-widest text-white/60 hover:text-white flex items-center gap-1"
+                        >
+                          <Users className="h-3 w-3" />
+                          {Object.keys(data.watchedBy || {}).length}/{(members || []).length} watched
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   <div className="aspect-video bg-neutral-900 rounded-[2.5rem] overflow-hidden shadow-2xl relative group mb-8">
                     {url && (url.includes('youtube.com') || url.includes('youtu.be/')) ? (
                       <iframe
@@ -674,6 +888,11 @@ export default function PlaybookAndGamePlayPage() {
                         className="w-full h-full border-none"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen
+                        onLoad={() => {
+                          if (isMandatory && !userHasWatched && data.id) {
+                            startWatchTracking(data.id, 300); // assume 5 min video
+                          }
+                        }}
                       />
                     ) : url ? (
                       <video
@@ -682,6 +901,17 @@ export default function PlaybookAndGamePlayPage() {
                         controls
                         autoPlay
                         className="w-full h-full"
+                        onTimeUpdate={(e) => {
+                          const video = e.currentTarget;
+                          const pct = video.duration > 0 ? (video.currentTime / video.duration) * 100 : 0;
+                          setWatchProgress(pct);
+                          if (pct >= 75 && isMandatory && !userHasWatched && user?.id && activeTeam && db) {
+                            updateDoc(doc(db, 'teams', activeTeam.id, 'drills', data.id), {
+                              [`watchedBy.${user.id}`]: { userId: user.id, name: user.name || 'Viewer', watchedAt: new Date().toISOString(), percentage: 75 }
+                            }).catch(() => {});
+                            setHasCompletedWatch(true);
+                          }
+                        }}
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-muted/10">
@@ -698,47 +928,46 @@ export default function PlaybookAndGamePlayPage() {
                         <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40">Strategic Archive</h4>
                         <div className="h-px flex-1 bg-white/10" />
                       </div>
-                      
-                      <div className="md:hidden flex items-center justify-center p-3 bg-white/10 rounded-2xl text-[8px] font-black uppercase tracking-[0.2em] text-primary space-x-2 border border-white/5 mb-4">
-                        <span>Swipe tactical assets</span>
-                        <ChevronRight className="h-3 w-3 animate-bounce-x" />
-                      </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        {data.additionalMedia.map((media: any, idx: number) => (
-                          <div key={idx} className="space-y-3 group/media">
-                            <div className="aspect-video bg-neutral-900 rounded-3xl overflow-hidden ring-1 ring-white/10 group-hover/media:ring-primary/50 transition-all shadow-lg relative">
-                              {media.url && (media.url.includes('youtube.com') || media.url.includes('youtu.be/')) ? (
-                                <iframe
-                                  src={`https://www.youtube.com/embed/${media.url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|u\/\w\/))([^\?&"'>]+)/)?.[1]}`}
-                                  className="w-full h-full border-none"
-                                />
-                              ) : media.url && (media.url.includes('mp4') || media.url.includes('mov') || media.url.startsWith('data:video')) ? (
-                                <video src={media.url} controls className="w-full h-full" />
-                              ) : media.url ? (
-                                <div className="relative w-full h-full">
-                                  <img 
-                                    src={media.url} 
-                                    alt={`Ref ${idx + 1}`} 
-                                    className="w-full h-full object-cover transition-transform duration-700 group-hover/media:scale-110" 
+                        {data.additionalMedia.map((media: any, idx: number) => {
+                          const mediaUrl = typeof media === 'string' ? media : media.url;
+                          const mediaDesc = typeof media === 'object' ? media.description : '';
+                          return (
+                            <div key={idx} className="space-y-3 group/media">
+                              <div className="aspect-video bg-neutral-900 rounded-3xl overflow-hidden ring-1 ring-white/10 group-hover/media:ring-primary/50 transition-all shadow-lg relative">
+                                {mediaUrl && (mediaUrl.includes('youtube.com') || mediaUrl.includes('youtu.be/')) ? (
+                                  <iframe
+                                    src={`https://www.youtube.com/embed/${mediaUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|u\/\w\/))([^\?&"'>]+)/)?.[1]}`}
+                                    className="w-full h-full border-none"
                                   />
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover/media:opacity-100 transition-opacity" />
-                                </div>
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <Package className="h-8 w-8 text-white/10" />
+                                ) : mediaUrl && (mediaUrl.includes('mp4') || mediaUrl.includes('mov') || mediaUrl.startsWith('data:video')) ? (
+                                  <video src={mediaUrl} controls className="w-full h-full" />
+                                ) : mediaUrl ? (
+                                  <div className="relative w-full h-full">
+                                    <img 
+                                      src={mediaUrl} 
+                                      alt={`Ref ${idx + 1}`} 
+                                      className="w-full h-full object-cover transition-transform duration-700 group-hover/media:scale-110" 
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover/media:opacity-100 transition-opacity" />
+                                  </div>
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <Package className="h-8 w-8 text-white/10" />
+                                  </div>
+                                )}
+                                <Badge className="absolute top-4 left-4 bg-black/60 backdrop-blur-md text-white border-white/10 font-bold text-[8px] uppercase">Asset {idx + 1}</Badge>
+                              </div>
+                              {mediaDesc && (
+                                <div className="px-2">
+                                  <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest leading-relaxed line-clamp-2 italic group-hover/media:text-white/80 transition-colors">
+                                    {mediaDesc}
+                                  </p>
                                 </div>
                               )}
-                              <Badge className="absolute top-4 left-4 bg-black/60 backdrop-blur-md text-white border-white/10 font-bold text-[8px] uppercase">Asset {idx + 1}</Badge>
                             </div>
-                            {media.description && (
-                              <div className="px-2">
-                                <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest leading-relaxed line-clamp-2 italic group-hover/media:text-white/80 transition-colors">
-                                  {media.description}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -797,6 +1026,54 @@ export default function PlaybookAndGamePlayPage() {
                     <p className="text-xs font-medium text-muted-foreground leading-relaxed">
                       {selectedDrill ? data.description : (data.description || 'No institutional notes archived.')}
                     </p>
+
+                    {/* Mandatory Watch Toggle in viewer */}
+                    {isStaff && (
+                      <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border-2 border-dashed">
+                        <div className="flex items-center gap-2">
+                          <Bell className="h-4 w-4 text-amber-500" />
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest">Mandatory 75% Watch</p>
+                            <p className="text-[8px] text-muted-foreground">Require roster to watch 75%</p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={!!data.mandatoryWatch}
+                          onCheckedChange={async (checked) => {
+                            if (!activeTeam || !db) return;
+                            const collName = selectedDrill ? 'drills' : 'files';
+                            await updateDoc(doc(db, 'teams', activeTeam.id, collName, data.id), {
+                              mandatoryWatch: checked,
+                              mandatoryWatchThreshold: 75
+                            });
+                            if (selectedDrill) {
+                              setSelectedDrill((prev: any) => ({ ...prev, mandatoryWatch: checked }));
+                            } else {
+                              setSelectedFile((prev: any) => ({ ...prev, mandatoryWatch: checked }));
+                            }
+                            toast({ title: checked ? "Mandatory Watch Enabled" : "Mandatory Watch Disabled" });
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Roster Watch Status (staff only) */}
+                    {isStaff && data.mandatoryWatch && (
+                      <button
+                        onClick={() => { setWatchersDrill(data); setIsWatchersOpen(true); }}
+                        className="w-full flex items-center justify-between p-3 bg-primary/5 rounded-xl border border-primary/10 hover:bg-primary/10 transition-all"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Users className="h-4 w-4 text-primary" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-primary">
+                            Roster Watch Status
+                          </span>
+                        </div>
+                        <Badge className="bg-primary text-white border-none text-[8px] font-black">
+                          {Object.keys(data.watchedBy || {}).length}/{(members || []).length}
+                        </Badge>
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-muted/5">

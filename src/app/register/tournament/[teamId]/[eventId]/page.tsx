@@ -353,6 +353,16 @@ function RegistrationForm() {
                         <div key={field.id} className="space-y-3">
                           {field.type === 'header' ? (
                             <div className="pt-6 border-b-2 pb-2 mb-4 text-primary"><h3 className="font-black text-xl uppercase tracking-tighter">{field.label}</h3></div>
+                          ) : field.type === 'information_box' ? (
+                            <div className="flex items-start gap-4 p-6 bg-blue-50 rounded-[2rem] border-2 border-blue-100 my-4">
+                              <div className="bg-blue-100 p-2.5 rounded-xl text-blue-600 shrink-0 mt-0.5">
+                                <Info className="h-5 w-5" />
+                              </div>
+                              <div className="space-y-1">
+                                <p className="font-black text-sm uppercase tracking-widest text-blue-900">{field.label}</p>
+                                {field.infoContent && <p className="text-sm font-medium text-blue-700 leading-relaxed">{field.infoContent}</p>}
+                              </div>
+                            </div>
                           ) : (
                             <>
                               <div className="flex justify-between items-end px-1"><Label className="text-[10px] font-black uppercase tracking-widest">{field.label} {field.required && <span className="text-primary">*</span>}</Label></div>
@@ -497,6 +507,16 @@ function RegistrationForm() {
                         <div key={field.id} className="space-y-3">
                           {field.type === 'header' ? (
                             <div className="pt-6 border-b-2 pb-2 mb-4 text-primary"><h3 className="font-black text-xl uppercase tracking-tighter">{field.label}</h3></div>
+                          ) : field.type === 'information_box' ? (
+                            <div className="flex items-start gap-4 p-6 bg-blue-50 rounded-[2rem] border-2 border-blue-100 my-4">
+                              <div className="bg-blue-100 p-2.5 rounded-xl text-blue-600 shrink-0 mt-0.5">
+                                <Info className="h-5 w-5" />
+                              </div>
+                              <div className="space-y-1">
+                                <p className="font-black text-sm uppercase tracking-widest text-blue-900">{field.label}</p>
+                                {field.infoContent && <p className="text-sm font-medium text-blue-700 leading-relaxed">{field.infoContent}</p>}
+                              </div>
+                            </div>
                           ) : (
                             <>
                               <div className="flex justify-between items-end px-1"><Label className="text-[10px] font-black uppercase tracking-widest">{field.label} {field.required && <span className="text-primary">*</span>}</Label></div>
