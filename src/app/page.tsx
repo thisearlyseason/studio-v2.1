@@ -747,6 +747,9 @@ export default function LandingPage() {
               </Card>
             </div>
           </div>
+          <div className="mt-8 text-center">
+            <p className="text-[10px] font-black uppercase text-red-600 tracking-widest">All pricing is presented and billed in USD.</p>
+          </div>
         </div>
       </section>
 

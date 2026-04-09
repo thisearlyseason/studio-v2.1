@@ -282,9 +282,12 @@ export default function PricingPage() {
         </DialogContent>
       </Dialog>
       
-      <div className="text-center pt-4 space-y-2 opacity-40">
-        <p className="text-[10px] text-muted-foreground font-black uppercase tracking-[0.2em]">The Squad Coordination Engine v1.0.0</p>
-        <p className="text-[8px] text-muted-foreground font-bold uppercase tracking-[0.1em] italic">All prices listed are current promotional rates and are subject to change without notice.</p>
+      <div className="text-center pt-4 space-y-2">
+        <p className="text-[10px] text-muted-foreground opacity-40 font-black uppercase tracking-[0.2em]">The Squad Coordination Engine v1.0.0</p>
+        <p className="text-[8px] font-bold uppercase tracking-[0.1em] italic">
+          <span className="text-muted-foreground opacity-40">All prices listed are current promotional rates and are subject to change without notice. </span>
+          <span className="text-red-600 font-black">All pricing is presented and billed in USD.</span>
+        </p>
       </div>
     </div>
   );
