@@ -181,9 +181,8 @@ import { AccessRestricted } from '@/components/layout/AccessRestricted';
 export default function FilesPage() {
   const { activeTeam, addFile, deleteFile, user, isPro, purchasePro, isSuperAdmin, isStaff, isPrimaryClubAuthority, members, teams, signTeamDocument } = useTeam();
   
-  // Players and Parents need to access this page to SIGN documents, 
-  // but we gate the full LIBRARY features for non-pro teams.
-  if (!isPro && isStaff) return <AccessRestricted type="tier" />;
+  // Players and Parents need to access this page to SIGN documents.
+  // Starter users now have access, but with a 500mb limit.
   
   const db = useFirestore();
   const [mounted, setMounted] = useState(false);
@@ -311,37 +310,40 @@ export default function FilesPage() {
           <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest opacity-60">Official administrative repository & verified vault</p>
         </div>
         {isStaff && (
-          <div className="flex flex-wrap gap-2">
-            <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button className="rounded-full h-12 px-8 font-black uppercase text-xs shadow-xl shadow-primary/20 active:scale-95 transition-all">
-                  <Upload className="h-4 w-4 mr-2" /> Archive Resource
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0 sm:max-w-xl">
-                <div className="h-2 bg-primary w-full" />
-                <div className="p-8 lg:p-10 space-y-8">
-                  <DialogHeader>
-                    <DialogTitle className="text-2xl font-black uppercase tracking-tight">Archive Resource</DialogTitle>
-                    <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Enroll administrative resources</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-6">
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Resource Category</Label>
-                      <Select value={uploadCategory} onValueChange={setUploadCategory}>
-                        <SelectTrigger className="h-12 rounded-xl border-2 font-bold focus:border-primary/20"><SelectValue /></SelectTrigger>
-                        <SelectContent className="rounded-xl"><SelectItem value="Compliance" className="font-bold">Compliance & Waivers</SelectItem><SelectItem value="Other" className="font-bold">Other Documents</SelectItem></SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tactical Context</Label><Textarea placeholder="Define the purpose of this resource for the squad..." value={uploadDescription} onChange={e => setUploadDescription(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-bold resize-none shadow-inner p-4 focus:bg-white transition-all" /></div>
-                    <div className="p-12 border-2 border-dashed rounded-[2.5rem] bg-muted/20 text-center space-y-4 group cursor-pointer hover:border-primary/20 transition-all" onClick={() => fileInputRef.current?.click()}>
-                      <div className="bg-white w-16 h-16 rounded-[1.5rem] flex items-center justify-center mx-auto shadow-sm group-hover:scale-110 transition-transform"><FileText className="h-8 w-8 text-primary" /></div>
-                      <p className="text-sm font-black uppercase tracking-widest">Select Tactical File</p>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap gap-2">
+              <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button className="rounded-full h-12 px-8 font-black uppercase text-xs shadow-xl shadow-primary/20 active:scale-95 transition-all">
+                    <Upload className="h-4 w-4 mr-2" /> Archive Resource
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0 sm:max-w-xl">
+                  <div className="h-2 bg-primary w-full" />
+                  <div className="p-8 lg:p-10 space-y-8">
+                    <DialogHeader>
+                      <DialogTitle className="text-2xl font-black uppercase tracking-tight">Archive Resource</DialogTitle>
+                      <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Enroll administrative resources</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-6">
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Resource Category</Label>
+                        <Select value={uploadCategory} onValueChange={setUploadCategory}>
+                          <SelectTrigger className="h-12 rounded-xl border-2 font-bold focus:border-primary/20"><SelectValue /></SelectTrigger>
+                          <SelectContent className="rounded-xl"><SelectItem value="Compliance" className="font-bold">Compliance & Waivers</SelectItem><SelectItem value="Other" className="font-bold">Other Documents</SelectItem></SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tactical Context</Label><Textarea placeholder="Define the purpose of this resource for the squad..." value={uploadDescription} onChange={e => setUploadDescription(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-bold resize-none shadow-inner p-4 focus:bg-white transition-all" /></div>
+                      <div className="p-12 border-2 border-dashed rounded-[2.5rem] bg-muted/20 text-center space-y-4 group cursor-pointer hover:border-primary/20 transition-all" onClick={() => fileInputRef.current?.click()}>
+                        <div className="bg-white w-16 h-16 rounded-[1.5rem] flex items-center justify-center mx-auto shadow-sm group-hover:scale-110 transition-transform"><FileText className="h-8 w-8 text-primary" /></div>
+                        <p className="text-sm font-black uppercase tracking-widest">Select Tactical File</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+                </DialogContent>
+              </Dialog>
+            </div>
+            {!isPro && <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-60">Storage Limit: 500MB (Grassroots) <span className="text-primary hover:underline cursor-pointer" onClick={purchasePro}>Upgrade</span></div>}
           </div>
         )}
       </div>

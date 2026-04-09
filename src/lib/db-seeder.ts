@@ -423,6 +423,17 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             const tournamentId = `tourn_${tid}_${userId.slice(-4)}`;
             const day2 = new Date(nowObj.getTime() + 172800000).toISOString();
             const day3 = new Date(nowObj.getTime() + 259200000).toISOString();
+            const tournamentTeamsList = ['Strikers', 'Lakers', 'Hawks', 'Tigers', 'Eagles', 'Panthers'];
+            const tournamentTeamsData = tournamentTeamsList.map((name, i) => ({
+                id: `tt_${i}`, name, coach: `Coach ${name}`, email: `coach@${name.toLowerCase()}.com`, source: 'manual'
+            }));
+            const tournamentGames = [
+                { id: 'tg1', team1: 'Strikers', team2: 'Lakers', score1: 3, score2: 1, isCompleted: true, date: tomorrow, time: '09:00 AM', round: 'Pool A', location: 'Field 1', team1Id: 'tt_0', team2Id: 'tt_1' },
+                { id: 'tg2', team1: 'Hawks', team2: 'Tigers', score1: 0, score2: 0, isCompleted: false, date: tomorrow, time: '10:00 AM', round: 'Pool A', location: 'Field 1', team1Id: 'tt_2', team2Id: 'tt_3' },
+                { id: 'tg3', team1: 'Strikers', team2: 'Panthers', score1: 0, score2: 0, isCompleted: false, date: day2, time: '09:00 AM', round: 'Pool A', location: 'Field 2', team1Id: 'tt_0', team2Id: 'tt_5'},
+                { id: 'tg4', team1: 'Lakers', team2: 'Hawks', score1: 0, score2: 0, isCompleted: false, date: day2, time: '11:00 AM', round: 'Pool A', location: 'Field 2', team1Id: 'tt_1', team2Id: 'tt_2'}
+            ];
+
             batch.set(doc(db, 'teams', tid, 'events', tournamentId), clean({
               id: tournamentId,
               teamId: tid,
@@ -433,13 +444,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
               endDate: day3,
               location: 'Premier Sports Park',
               description: 'The final 3-day showdown for the regional title.',
-              tournamentTeams: ['Strikers', 'Lakers', 'Hawks', 'Tigers', 'Eagles', 'Panthers'],
-              status: 'active',
-              multiDaySchedule: [
-                { day: 1, title: 'Opening Rounds', date: tomorrow },
-                { day: 2, title: 'Semi-Finals', date: day2 },
-                { day: 3, title: 'Finals Day', date: day3 }
-              ]
+              tournamentTeams: tournamentTeamsList,
+              tournamentTeamsData: tournamentTeamsData,
+              tournamentGames: tournamentGames,
+              status: 'active'
             }));
 
             // Regular practices

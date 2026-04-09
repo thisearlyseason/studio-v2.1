@@ -294,7 +294,7 @@ export default function ClubManagementPage() {
 
   const hasSchoolHubAccess = isPrimaryClubAuthority || isSchoolAdmin || !!schoolHub || teams.some(t => t.schoolId);
   // Allow primary owners, school admins, and sub-squad members to access the Hub
-  if (!hasSchoolHubAccess) return <div className="py-24 text-center space-y-6"><div className="bg-muted/30 p-10 rounded-[3rem] opacity-20"><Building className="h-20 w-20 mx-auto" /></div><h1 className="text-3xl font-black uppercase tracking-tight text-foreground">Institutional Hub Locked</h1><p className="text-muted-foreground font-bold uppercase text-xs tracking-widest">Reserved for institutional staff and account owners.</p></div>;
+  if (!hasSchoolHubAccess) return <AccessRestricted type="role" title="Institutional Hub Locked" description="Reserved for institutional staff and account owners." />;
 
   const handleUpdateClub = async () => { await updateUser({ clubName: clubForm.name, clubDescription: clubForm.description }); setIsEditOpen(false); toast({ title: "Club Synchronized" }); };
 
