@@ -33,6 +33,9 @@ import {
   Edit2,
   Mail,
   Copy,
+  Trash2,
+  AlertCircle,
+  Clock,
 } from 'lucide-react';
 import {
   Dialog,
@@ -338,13 +341,14 @@ function LoginEnabledInfoModal() {
 
 // --- Child Card ---
 function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
-  const { sendChildInvite } = useTeam();
+  const { sendChildInvite, revokeChildInvite } = useTeam();
   const router = useRouter();
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLoginInfoOpen, setIsLoginInfoOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [isInviting, setIsInviting] = useState(false);
+  const [isRevoking, setIsRevoking] = useState(false);
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
   const [sharedUrl, setSharedUrl] = useState('');
 
@@ -365,6 +369,22 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
       setIsInviting(false);
     }
   };
+
+  const handleRevokeInvite = async () => {
+    setIsRevoking(true);
+    try {
+      await revokeChildInvite(child.id);
+      toast({ title: 'Invite Revoked', description: 'The invitation has been successfully cancelled.' });
+      setIsInviteOpen(false);
+    } catch (error) {
+      console.error('Error revoking invite:', error);
+      toast({ title: 'Error', description: 'Failed to revoke invitation.', variant: 'destructive' });
+    } finally {
+      setIsRevoking(false);
+    }
+  };
+
+  const isInviteExpired = child.inviteExpiresAt ? !isFuture(parseISO(child.inviteExpiresAt)) : false;
 
   return (
     <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group transition-all hover:ring-primary/20">
@@ -494,13 +514,13 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
                   variant="outline"
                   className={cn(
                     "w-full rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 transition-all",
-                    child.hasLogin ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100" : "hover:border-primary active:scale-95"
+                    child.hasLogin ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100" : child.pendingInviteEmail ? (isInviteExpired ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100" : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100") : "hover:border-primary active:scale-95"
                   )}
                   disabled={child.hasLogin}
                 >
-                  <Key className={cn("h-4 w-4", child.hasLogin ? "text-green-600" : child.pendingInviteEmail ? "text-amber-500" : "text-amber-600")} />
+                  <Key className={cn("h-4 w-4", child.hasLogin ? "text-green-600" : child.pendingInviteEmail ? (isInviteExpired ? "text-red-500" : "text-amber-500") : "text-amber-600")} />
                   <span>
-                    {child.hasLogin ? "Login Access Enabled" : child.pendingInviteEmail ? "Invite Pending" : "Enable Login"}
+                    {child.hasLogin ? "Login Access Enabled" : child.pendingInviteEmail ? (isInviteExpired ? "Invite Expired" : "Invite Pending") : "Enable Login"}
                   </span>
                   {child.pendingInviteEmail && !child.hasLogin && (
                     <span className="text-[7px] font-bold lowercase text-muted-foreground opacity-60">to {child.pendingInviteEmail}</span>
@@ -511,33 +531,86 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
                 <div className="h-2 bg-primary w-full" />
                 <div className="p-8 space-y-6">
                   <DialogHeader>
-                    <DialogTitle className="text-2xl font-black uppercase tracking-tight">Enable Login Access</DialogTitle>
+                    <DialogTitle className="text-2xl font-black uppercase tracking-tight">
+                      {child.pendingInviteEmail ? "Manage Invitation" : "Enable Login Access"}
+                    </DialogTitle>
                     <DialogDescription className="text-[10px] font-black uppercase tracking-widest text-primary">Youth Account Provisioning</DialogDescription>
                   </DialogHeader>
-                  <div className="space-y-4">
-                    <p className="text-sm font-medium text-muted-foreground leading-relaxed">
-                      Enter the email address where your child will receive their invitation link. This will allow them to create their own password and sign in directly.
-                    </p>
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Athlete Email</Label>
-                      <Input 
-                        type="email" 
-                        placeholder="athlete@email.com" 
-                        value={inviteEmail} 
-                        onChange={e => setInviteEmail(e.target.value)}
-                        className="h-12 rounded-xl border-2 font-bold"
-                      />
+
+                  {child.pendingInviteEmail ? (
+                    <div className="space-y-6">
+                      <div className={cn(
+                        "p-4 rounded-2xl border-2 space-y-3",
+                        isInviteExpired ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"
+                      )}>
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            "p-2 rounded-xl",
+                            isInviteExpired ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600"
+                          )}>
+                            {isInviteExpired ? <AlertCircle className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-black uppercase opacity-60">Sent to</p>
+                            <p className="text-sm font-black">{child.pendingInviteEmail}</p>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-black/5">
+                          <p className="text-[10px] font-black uppercase opacity-60">Status</p>
+                          <p className={cn("text-xs font-black uppercase", isInviteExpired ? "text-red-600" : "text-amber-600")}>
+                            {isInviteExpired ? "Link Expired" : `Expires in ${child.inviteExpiresAt ? format(parseISO(child.inviteExpiresAt), 'MMM d, yyyy') : '7 days'}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <Button 
+                          className="w-full h-14 rounded-xl font-black uppercase shadow-xl" 
+                          onClick={() => {
+                            setInviteEmail(child.pendingInviteEmail || '');
+                            handleInviteSubmit();
+                          }}
+                          disabled={isInviting || isRevoking}
+                        >
+                          {isInviting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Resend Invitation"}
+                        </Button>
+                        <Button 
+                          variant="ghost"
+                          className="w-full h-12 rounded-xl font-black uppercase text-red-500 hover:text-red-600 hover:bg-red-50" 
+                          onClick={handleRevokeInvite}
+                          disabled={isInviting || isRevoking}
+                        >
+                          {isRevoking ? <Loader2 className="h-5 w-5 animate-spin" /> : "Revoke & Cancel Invite"}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                  <DialogFooter>
-                    <Button 
-                      className="w-full h-14 rounded-xl font-black uppercase shadow-xl" 
-                      onClick={handleInviteSubmit}
-                      disabled={isInviting || !inviteEmail}
-                    >
-                      {isInviting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Send Invitation Link"}
-                    </Button>
-                  </DialogFooter>
+                  ) : (
+                    <div className="space-y-4">
+                      <p className="text-sm font-medium text-muted-foreground leading-relaxed">
+                        Enter the email address where your child will receive their invitation link. This will allow them to create their own password and sign in directly.
+                      </p>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Athlete Email</Label>
+                        <Input 
+                          type="email" 
+                          placeholder="athlete@email.com" 
+                          value={inviteEmail} 
+                          onChange={e => setInviteEmail(e.target.value)}
+                          className="h-12 rounded-xl border-2 font-bold"
+                        />
+                      </div>
+                      <DialogFooter>
+                        <Button 
+                          className="w-full h-14 rounded-xl font-black uppercase shadow-xl" 
+                          onClick={handleInviteSubmit}
+                          disabled={isInviting || !inviteEmail}
+                        >
+                          {isInviting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Send Invitation Link"}
+                        </Button>
+                      </DialogFooter>
+                    </div>
+                  )}
                 </div>
               </DialogContent>
             </Dialog>

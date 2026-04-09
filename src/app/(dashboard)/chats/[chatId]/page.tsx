@@ -55,7 +55,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { useFirestore, useDoc, useMemoFirebase, useCollection } from '@/firebase';
-import { collection, query, orderBy, limit, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { collection, query, orderBy, limit, doc, updateDoc, arrayUnion, limitToLast } from 'firebase/firestore';
 import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Tooltip,
@@ -102,13 +102,13 @@ export default function ChatRoomPage() {
     if (!activeTeam || !db || !chatId) return null;
     return query(
       collection(db, 'teams', activeTeam.id, 'groupChats', chatId as string, 'messages'),
-      orderBy('createdAt', 'desc'),
-      limit(100)
+      orderBy('createdAt', 'asc'),
+      limitToLast(100)
     );
   }, [activeTeam?.id, db, chatId]);
 
   const { data: rawMessages, isLoading: isMessagesLoading } = useCollection<Message>(messagesQuery);
-  const messages = useMemo(() => (rawMessages ? [...rawMessages].reverse() : []), [rawMessages]);
+  const messages = useMemo(() => (rawMessages ? [...rawMessages] : []), [rawMessages]);
 
   useEffect(() => {
     if (scrollRef.current) {

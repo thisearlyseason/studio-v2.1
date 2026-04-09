@@ -33,83 +33,108 @@ const clean = (obj: any): any => {
  */
 const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') => {
   const now = new Date();
-  const yesterday = new Date(now.getTime() - 86400000).toISOString();
-  const weekAgo = new Date(now.getTime() - 604800000).toISOString();
-  const tomorrow = new Date(now.getTime() + 86400000).toISOString();
-  const later = new Date(now.getTime() + 172800000).toISOString();
+  const day = (d: number) => new Date(now.getTime() + d * 86400000).toISOString();
+  
+  const yesterday = day(-1);
+  const weekAgo = day(-7);
+  const tomorrow = day(1);
+  const later = day(2);
+  const day3 = day(3);
+  const day4 = day(4);
 
   return {
     members: [
-      { id: `m1_${teamId}`, userId: `u1_${teamId}`, playerId: `p_u1_${teamId}`, name: `Jordan Smith`, role: 'Member', position: 'Forward', jersey: '10', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'j.smith@example.com', parentEmail: 'parent.smith@example.com', avatar: `https://picsum.photos/seed/m1${teamId}/150/150`, gradYear: '2026', gpa: '3.9', school: 'Metro Academy' },
-      { id: `m2_${teamId}`, userId: `u2_${teamId}`, playerId: `p_u2_${teamId}`, name: `Alex Rivera`, role: 'Member', position: 'Midfield', jersey: '22', medicalClearance: true, amountOwed: 450, feesPaid: false, totalFees: 1250, email: 'a.rivera@example.com', parentEmail: 'parent.rivera@example.com', avatar: `https://picsum.photos/seed/m2${teamId}/150/150`, gradYear: '2027', gpa: '3.7', school: 'Heights High' },
-      { id: `m3_${teamId}`, userId: `u3_${teamId}`, playerId: `p_u3_${teamId}`, name: `Taylor Chen`, role: 'Member', position: 'Guard', jersey: '05', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 't.chen@example.com', parentEmail: 'parent.chen@example.com', avatar: `https://picsum.photos/seed/m3${teamId}/150/150`, gradYear: '2025', gpa: '4.0', school: 'Metro Academy' },
-      { id: `m4_${teamId}`, userId: `u4_${teamId}`, playerId: `p_u4_${teamId}`, name: `Casey Morgan`, role: 'Member', position: 'Defense', jersey: '44', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'c.morgan@example.com', parentEmail: 'parent.morgan@example.com', avatar: `https://picsum.photos/seed/m4${teamId}/150/150`, gradYear: '2026', gpa: '3.5', school: 'Westside Prep' },
-      { id: `m5_${teamId}`, userId: `u5_${teamId}`, playerId: `p_u5_${teamId}`, name: `Sam Wilson`, role: 'Member', position: 'Goalkeeper', jersey: '01', medicalClearance: true, amountOwed: 100, feesPaid: false, totalFees: 1250, email: 's.wilson@example.com', parentEmail: 'parent.wilson@example.com', avatar: `https://picsum.photos/seed/m5${teamId}/150/150`, gradYear: '2027', gpa: '3.8', school: 'Heights High' },
-      { id: `m6_${teamId}`, userId: `u6_${teamId}`, playerId: `p_u6_${teamId}`, name: `Coach Miller`, role: 'Admin', position: 'Assistant Coach', jersey: '-', medicalClearance: true, email: 'miller@thesquad.pro', avatar: `https://picsum.photos/seed/m6${teamId}/150/150` }
+      { id: `m1_${teamId}`, userId: `u1_${teamId}`, playerId: `p_u1_${teamId}`, name: `Jordan Smith`, role: 'Admin', position: 'Assistant Coach', jersey: 'HQ', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 0, email: 'j.smith@thesquad.pro', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=jordan` },
+      { id: `m2_${teamId}`, userId: `u2_${teamId}`, playerId: `p_u2_${teamId}`, name: `Alex Rivera`, role: 'Member', position: 'Forward', jersey: '10', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'a.rivera@example.com', parentEmail: 'parent.rivera@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=alex`, gradYear: '2026', gpa: '3.9', school: 'Metro Academy' },
+      { id: `m3_${teamId}`, userId: `u3_${teamId}`, playerId: `p_u3_${teamId}`, name: `Taylor Chen`, role: 'Member', position: 'Midfield', jersey: '22', medicalClearance: true, amountOwed: 450, feesPaid: false, totalFees: 1250, email: 't.chen@example.com', parentEmail: 'parent.chen@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=taylor`, gradYear: '2027', gpa: '3.7', school: 'Heights High' },
+      { id: `m4_${teamId}`, userId: `u4_${teamId}`, playerId: `p_u4_${teamId}`, name: `Casey Morgan`, role: 'Member', position: 'Defense', jersey: '44', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'c.morgan@example.com', parentEmail: 'parent.morgan@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=casey`, gradYear: '2025', gpa: '4.0', school: 'Westside Prep' },
+      { id: `m5_${teamId}`, userId: `u5_${teamId}`, playerId: `p_u5_${teamId}`, name: `Sam Wilson`, role: 'Member', position: 'Goalkeeper', jersey: '01', medicalClearance: true, amountOwed: 100, feesPaid: false, totalFees: 1250, email: 's.wilson@example.com', parentEmail: 'parent.wilson@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=sam`, gradYear: '2026', gpa: '3.5', school: 'Heights High' },
+      { id: `m6_${teamId}`, userId: `u6_${teamId}`, playerId: `p_u6_${teamId}`, name: `Riley Jones`, role: 'Member', position: 'Forward', jersey: '15', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'r.jones@example.com', parentEmail: 'parent.jones@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=riley`, gradYear: '2027', gpa: '3.8', school: 'Metro Academy' },
+      { id: `m7_${teamId}`, userId: `u7_${teamId}`, playerId: `p_u7_${teamId}`, name: `Morgan Lee`, role: 'Member', position: 'Defense', jersey: '12', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'm.lee@example.com', parentEmail: 'parent.lee@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=morgan`, gradYear: '2026', gpa: '3.9', school: 'Westside Prep' },
+      { id: `m8_${teamId}`, userId: `u8_${teamId}`, playerId: `p_u8_${teamId}`, name: `Quinn Davis`, role: 'Member', position: 'Midfield', jersey: '08', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'q.davis@example.com', parentEmail: 'parent.davis@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=quinn`, gradYear: '2025', gpa: '4.0', school: 'Metro Academy' },
+      { id: `m9_${teamId}`, userId: `u9_${teamId}`, playerId: `p_u9_${teamId}`, name: `Skyler King`, role: 'Member', position: 'Forward', jersey: '11', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 's.king@example.com', parentEmail: 'parent.king@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=skyler`, gradYear: '2027', gpa: '3.5', school: 'Heights High' },
+      { id: `m10_${teamId}`, userId: `u10_${teamId}`, playerId: `p_u10_${teamId}`, name: `Avery Hall`, role: 'Member', position: 'Guard', jersey: '07', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'a.hall@example.com', parentEmail: 'parent.hall@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=avery`, gradYear: '2026', gpa: '3.8', school: 'Westside Prep' }
     ],
     games: [
-      { id: `g1_${teamId}`, opponent: 'Tigers', date: yesterday, myScore: 12, opponentScore: 8, result: 'Win', location: 'City Arena' },
-      { id: `g2_${teamId}`, opponent: 'Hawks', date: weekAgo, myScore: 5, opponentScore: 10, result: 'Loss', location: 'Home Field' }
+      { id: `g_prev_${teamId}`, opponent: 'Tigers', date: weekAgo, myScore: 12, opponentScore: 8, result: 'Win', location: 'City Arena' },
+      { id: `g_prev2_${teamId}`, opponent: 'Hawks', date: day(-4), myScore: 5, opponentScore: 10, result: 'Loss', location: 'Home Field' }
     ],
     events: [
-      { id: `e1_${teamId}`, teamId, title: `Regional Spring Invitational`, eventType: 'tournament', isTournament: true, date: tomorrow, endDate: later, startTime: '08:00 AM', endTime: '6:00 PM', location: 'State Sports Complex', description: 'Elite multi-day tournament for top-tier squads.', tournamentTeams: [`Team ${teamSuffix}`, 'Thunder', 'Storm', 'Shadows'] },
-      { id: `e2_${teamId}`, teamId, title: `Team Tactical Session`, eventType: 'practice', date: later, startTime: '3:30 PM', location: 'West Fields', description: 'Drill-focused training session.' },
-      { id: `e2b_${teamId}`, teamId, title: `Conditioning Lab`, eventType: 'practice', date: tomorrow, startTime: '4:00 PM', location: 'Field 4', description: 'Strength and focus drills.' },
-      { id: `e3_${teamId}`, teamId, title: `Strategy Review`, eventType: 'meeting', date: later, startTime: '7:00 PM', location: 'Clubhouse', description: 'Film study and strategy review.' },
-      { id: `e4_${teamId}`, teamId, title: `League Match vs Bears`, eventType: 'game', date: tomorrow, startTime: '6:00 PM', location: 'Memorial Field', description: 'Primary season league match.' },
-      { id: `e4b_${teamId}`, teamId, title: `League Match vs Eagles`, eventType: 'game', date: later, startTime: '12:00 PM', location: 'City Park', description: 'Second league fixture of the week.' }
+      { id: `tourn_${teamId}`, teamId, title: `${teamSuffix || 'Regional'} Championship Tournament`, eventType: 'tournament', isTournament: true, date: tomorrow, endDate: day3, location: 'Premier Sports Park', description: 'Elite multi-day tournament for top-tier squads.', tournamentTeams: [`Team ${teamSuffix || 'A'}`, 'Thunder', 'Storm', 'Shadows', 'Lions', 'Eagles'], multiDaySchedule: [
+        { day: 1, title: 'Opening Rounds', date: tomorrow },
+        { day: 2, title: 'Semi-Finals', date: later },
+        { day: 3, title: 'Finals Day', date: day3 }
+      ] },
+      { id: `lg1_${teamId}`, teamId, title: `League Match vs Bears`, eventType: 'game', isLeagueGame: true, date: tomorrow, startTime: '06:00 PM', location: 'Memorial Field', description: 'Primary season league match.' },
+      { id: `lg2_${teamId}`, teamId, title: `League Match vs Eagles`, eventType: 'game', isLeagueGame: true, date: later, startTime: '12:00 PM', location: 'City Park', description: 'Second league fixture of the week.' },
+      { id: `lg3_${teamId}`, teamId, title: `Conference Playoff`, eventType: 'game', isLeagueGame: true, date: day4, startTime: '10:00 AM', location: 'State Complex', description: 'Qualifier for states.' },
+      { id: `prac1_${teamId}`, teamId, title: `Team Tactical Session`, eventType: 'practice', date: later, startTime: '03:30 PM', location: 'West Fields', description: 'Drill-focused training session.' },
+      { id: `prac2_${teamId}`, teamId, title: `Conditioning Lab`, eventType: 'practice', date: tomorrow, startTime: '04:00 PM', location: 'Field 4', description: 'Strength and focus drills.' },
+      { id: `prac3_${teamId}`, teamId, title: `Morning Skills`, eventType: 'practice', date: day3, startTime: '07:30 AM', location: 'Main Gym', description: 'Voluntary skills session.' },
+      { id: `meet_${teamId}`, teamId, title: `Strategy Review`, eventType: 'meeting', date: day(2), startTime: '07:00 PM', location: 'Clubhouse', description: 'Film study and strategy review.' }
     ],
     eventBrackets: [
       {
-        eventId: `e1_${teamId}`,
+        eventId: `tourn_${teamId}`,
         brackets: [
           { id: 'b1', title: 'Championship Bracket', matchups: {
-            "1": { match: 1, round: 1, team1: `Team ${teamSuffix}`, team2: 'Hawks', score1: 15, score2: 12, status: 'Completed', winner: `Team ${teamSuffix}` },
+            "1": { match: 1, round: 1, team1: `${teamSuffix || 'Squad'}`, team2: 'Hawks', score1: 15, score2: 12, status: 'Completed', winner: `${teamSuffix || 'Squad'}` },
             "2": { match: 2, round: 1, team1: 'Tigers', team2: 'Lions', status: 'Scheduled' }
           }}
         ]
       }
     ],
     drills: [
-      { id: `d1_${teamId}`, title: `Zone Defense Protocol ${teamSuffix}`, description: 'Master the 3-2 alignment.', videoUrl: 'https://www.youtube.com/watch?v=Fj2N220hV2Y', additionalMedia: ['https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=800&q=80'], estimatedTime: '15 mins', createdAt: now.toISOString() }
+      { id: `d1_${teamId}`, title: `Zone Defense Protocol`, description: 'Master the 3-2 alignment.', videoUrl: 'https://www.youtube.com/watch?v=Fj2N220hV2Y', additionalMedia: ['https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=800&q=80'], estimatedTime: '15 mins', createdAt: now.toISOString() },
+      { id: `d2_${teamId}`, title: `Fast Break Mechanics`, description: 'Optimizing transition offense.', videoUrl: 'https://www.youtube.com/watch?v=Fj2N220hV2Y', estimatedTime: '10 mins', createdAt: now.toISOString() }
     ],
     feed: [
-      { id: `p1_${teamId}`, type: 'user', content: `Focus for Saturday, ${teamSuffix} squad!`, author: { name: 'Jordan Smith' }, authorId: `u1_${teamId}`, createdAt: yesterday, likes: [userId] }
+      { id: `p1_${teamId}`, type: 'user', content: `Focus for Saturday, ${teamSuffix || 'the'} squad!`, author: { name: 'Jordan Smith' }, authorId: `u1_${teamId}`, createdAt: yesterday, likes: [userId] },
+      { id: `p2_${teamId}`, type: 'user', content: `Great game last night! Highlights are up.`, author: { name: 'Alex Rivera' }, authorId: `u2_${teamId}`, createdAt: day(-2), likes: [userId] }
     ],
     documents: [
-      { id: `w1_${teamId}`, teamId, title: 'Annual Liability Waiver', content: 'Standard liability waiver for the season.', type: 'waiver', isActive: true, assignedTo: ['all'], signatureCount: 0, required: true, createdAt: now.toISOString() },
-      { id: `w2_${teamId}`, teamId, title: 'Media Release Form', content: 'Release for photos/video recording.', type: 'waiver', isActive: true, assignedTo: ['all'], signatureCount: 0, required: false, createdAt: weekAgo }
+      { id: `w1_${teamId}`, teamId, title: 'Annual Liability Waiver', content: 'Standard liability waiver for the season.', type: 'waiver', isActive: true, assignedTo: ['all'], signatureCount: 3, required: true, createdAt: now.toISOString() },
+      { id: `w2_${teamId}`, teamId, title: 'Media Release Form', content: 'Release for photos/video recording.', type: 'waiver', isActive: true, assignedTo: ['all'], signatureCount: 2, required: false, createdAt: weekAgo },
+      { id: `w3_${teamId}`, teamId, title: 'Medical Clearance 2024', content: 'Physical exam verification.', type: 'waiver', isActive: true, assignedTo: ['all'], signatureCount: 5, required: true, createdAt: day(-30) }
     ],
     alerts: [
       { id: `a1_${teamId}`, title: 'Venue Change', message: 'Match moved to Court 4 due to maintenance.', audience: 'everyone', createdAt: yesterday, createdBy: userId }
     ],
-    facilities: [
-      { id: `fac1_${teamId}`, name: `Main Sports Complex`, address: '123 Stadium Dr', type: 'Facility', clubId: userId, notes: 'Primary venue' }
-    ],
-    facilityFields: [
-      { id: `fld1_${teamId}`, facilityId: `fac1_${teamId}`, name: 'Field 1 - Turf' },
-      { id: `fld2_${teamId}`, facilityId: `fac1_${teamId}`, name: 'Field 2 - Grass' }
-    ],
-    incidents: [
-      { id: `inc1_${teamId}`, title: 'Rolled Ankle', date: yesterday, time: '14:30', location: 'Field 1', description: 'Player rolled ankle during standard drill.', severity: 'Minor', treatmentProvided: 'Ice and rest.', reportedBy: 'Coach Default', emergencyServicesCalled: false, createdAt: yesterday }
-    ],
     volunteers: [
-      { id: `vol1_${teamId}`, title: 'Tournament Concessions', description: 'Help run the stand during the multi-day event.', date: tomorrow, startTime: '09:00', endTime: '15:00', slots: 5, hoursPerSlot: 2, pointsPerSlot: 10, signups: { [`u1_${teamId}`]: { userId: `u1_${teamId}`, userName: 'Jordan Smith', status: 'pending', createdAt: yesterday } } }
+      { id: `vol1_${teamId}`, title: 'Tournament Concessions', description: 'Help run the stand during the multi-day event.', date: tomorrow, startTime: '09:00', endTime: '15:00', spots: 5, hoursPerSlot: 2, pointsPerSlot: 10, signups: { [`u2_${teamId}`]: { userId: `u2_${teamId}`, userName: 'Alex Rivera', status: 'pending', createdAt: yesterday } } },
+      { id: `vol2_${teamId}`, title: 'Match Day Photography', description: 'Capture high-quality action shots for the social feed.', date: later, startTime: '18:00', endTime: '20:00', spots: 2, hoursPerSlot: 2, pointsPerSlot: 25, signups: {} }
     ],
     fundraising: [
-      { id: `fund1_${teamId}`, title: 'New Uniform Drive', description: 'Raising money for away kits.', goalAmount: 5000, currentAmount: 1200, deadline: later, finances: {} }
+      { id: `fund1_${teamId}`, title: 'Elite Performance Kits', description: 'Raising money for professional away kits and technical gear.', goalAmount: 5000, currentAmount: 3250, deadline: day(30), finances: {
+        totalCollected: 3250,
+        pendingVerification: 150,
+        donors: [
+          { name: 'Corporate Sponsor A', amount: 1000, date: weekAgo, method: 'external' },
+          { name: 'Smith Family', amount: 250, date: yesterday, method: 'etransfer' }
+        ]
+      } }
+    ],
+    equipment: [
+      { id: `eq1_${teamId}`, name: 'Official Match Balls', category: 'Training Gear', totalQuantity: 30, availableQuantity: 24, status: 'Active', description: 'Institutional grade size 5 match balls. Serialized tracking.', assignments: { [`u2_${teamId}`]: { userId: `u2_${teamId}`, userName: 'Alex Rivera', quantity: 6, date: yesterday } } },
+      { id: `eq2_${teamId}`, name: 'Varsity Travel Jackets', category: 'Uniforms', totalQuantity: 20, availableQuantity: 20, status: 'Active', description: 'Heavyweight weather-resistant travel kits.', assignments: {} },
+      { id: `eq3_${teamId}`, name: 'Field Medical Kit Pro', category: 'Medical', totalQuantity: 2, availableQuantity: 1, status: 'Active', description: 'Fully stocked pitch-side trauma kit.', assignments: { [`u1_${teamId}`]: { userId: `u1_${teamId}`, userName: 'Jordan Smith', quantity: 1, date: now.toISOString() } } }
+    ],
+    incidents: [
+      { id: `inc1_${teamId}`, teamId, title: 'Ankle Sprain - Grade 1', date: yesterday, time: '3:45 PM', location: 'Practice Court B', description: 'Player landed awkwardly after a contested jump. Immediate swelling noted.', emergencyServicesCalled: false, severity: 'minor', treatmentProvided: 'RICE protocol initiated. Assisted to clubhouse. Follow-up with physio required.', witnesses: 'Coach Jordan Smith, Taylor Chen', reportedBy: 'Jordan Smith', followUpRequired: true, weatherConditions: 'Indoors', equipmentInvolved: 'Ankle Brace (Active)' },
+      { id: `inc2_${teamId}`, teamId, title: 'Heat Protocol Precedence', date: weekAgo, time: '11:00 AM', location: 'Field 7', description: 'Extended exposure led to early signs of heat fatigue.', emergencyServicesCalled: false, severity: 'minor', treatmentProvided: 'Mandatory hydration break and shade recovery.', reportedBy: 'Jordan Smith', actionsTaken: 'Scheduled breaks increased for remaining session.' }
     ],
     chats: [
       {
         id: `chat1_${teamId}`,
         name: 'Squad Main Channel',
         createdBy: userId,
-        memberIds: [userId, `u1_${teamId}`, `u2_${teamId}`],
+        memberIds: [userId, `u1_${teamId}`, `u2_${teamId}`, `u3_${teamId}`],
         isDeleted: false,
         teamId: teamId,
         createdAt: weekAgo,
         messages: [
-          { id: `m1`, author: 'Jordan Smith', authorId: `u1_${teamId}`, content: 'Ready for the tourneys this weekend!', type: 'text', createdAt: yesterday }
+          { id: `msg1`, author: 'Jordan Smith', authorId: `u1_${teamId}`, content: 'Ready for the tourneys this weekend! Brackets are live.', type: 'text', createdAt: weekAgo },
+          { id: `msg2`, author: 'Alex Rivera', authorId: `u2_${teamId}`, content: 'Practiced my shot all morning. See you guys there.', type: 'text', createdAt: yesterday }
         ]
       }
     ]
@@ -132,7 +157,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const pos = isParentDemo ? 'Parent' : (isPlayerDemo ? 'Player' : (isSchoolDemo ? 'Athletic Director' : 'Coach'));
   const role = (isParentDemo || isPlayerDemo) ? 'Member' : 'Admin';
 
-  const batch = writeBatch(db);
+  let batch = writeBatch(db);
   const nowObj = new Date();
   const now = nowObj.toISOString();
   const tomorrow = new Date(nowObj.getTime() + 86400000).toISOString();
@@ -152,12 +177,36 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     isDemo: true, 
     seenAlertIds: [],
     avatarUrl: `https://picsum.photos/seed/${userId}/150/150`,
-    clubDescription: isEliteDemo ? 'Precision performance at a professional scale.' : (isSchoolDemo ? 'K-12 Academic & Athletic Program' : undefined),
+    clubDescription: isEliteDemo ? 'Precision performance at a professional scale.' : (isSchoolDemo ? 'Secondary Athletic Program Command' : undefined),
     schoolAdminIds: isSchoolDemo ? [userId] : [],
     isPrimaryClubAuthority: (isProTier || isEliteDemo || isSchoolDemo) && !isPlayerDemo && !isParentDemo,
-    clubName: isSchoolDemo ? 'Springfield High School' : (isEliteDemo ? 'Elite Academy' : 'Squad Sports Hub'),
+    clubName: isSchoolDemo ? 'Springfield High School' : (isEliteDemo ? 'Apex Academy' : 'Squad Sports Hub'),
     isStaff: true
   }), { merge: true });
+
+  // 1.1 Secure Facilities Seeding (Institutional Level)
+  if (isEliteDemo || isSchoolDemo) {
+    const facId = `fac_main_${userId.slice(-4)}`;
+    batch.set(doc(db, 'facilities', facId), clean({
+      id: facId,
+      name: isSchoolDemo ? 'Springfield High Athletic Complex' : 'Apex Performance Center',
+      address: isSchoolDemo ? '456 Education Ave' : '789 Tactical Way',
+      clubId: userId,
+      notes: 'Institutional primary venue. Access codes: 1992# (Staff Only).',
+      isDemo: true
+    }));
+    
+    // Enroll Standard Fields/Courts
+    const fieldResources = ['Main Arena', 'Practice Field A', 'Practice Field B', 'Track & Field'];
+    fieldResources.forEach(fn => {
+      const fid = `res_${fn.toLowerCase().replace(/\s+/g, '_')}`;
+      batch.set(doc(db, 'facilities', facId, 'fields', fid), clean({
+        id: fid,
+        facilityId: facId,
+        name: fn
+      }));
+    });
+  }
 
   // 1.5 Optional: Seed Plan definitions if they don't exist (to unlock features in UI)
   const plans = [
@@ -233,6 +282,12 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             data.events.forEach(e => {
                 batch.set(doc(db, 'teams', v.id, 'events', e.id), clean({ ...e, teamId: v.id }));
             });
+            
+            // Seed sub-resource collections
+            data.volunteers.forEach(vol => batch.set(doc(db, 'teams', v.id, 'volunteers', vol.id), clean(vol)));
+            data.fundraising.forEach(fund => batch.set(doc(db, 'teams', v.id, 'fundraising', fund.id), clean(fund)));
+            data.equipment.forEach(eq => batch.set(doc(db, 'teams', v.id, 'equipment', eq.id), clean(eq)));
+            data.incidents.forEach(inc => batch.set(doc(db, 'teams', v.id, 'incidents', inc.id), clean(inc)));
         });
 
         // 3. Children Profiles
@@ -316,21 +371,35 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         return strikerId;
     }
 
-    // Default loop for other demos (Guest Coach, Pro, etc.)
     const teamVariants = isEliteDemo ? ['North', 'South', 'Academy'] : (isSchoolDemo ? ['Springfield High', 'Varsity', 'Junior Varsity', 'Freshman'] : ['']);
-    
+    const leagueId = `demo_league_${userId.slice(-4)}`;
+
+    // Create a league for non-parent demos to tie everything together
+    if (!isParentDemo) {
+        batch.set(doc(db, 'leagues', leagueId), clean({
+            id: leagueId,
+            name: isSchoolDemo ? 'State Academic Athletic League' : 'Apex Premier Circuit',
+            description: 'The premier circuit for top-tier competitive programs.',
+            createdBy: userId,
+            isDemo: true,
+            status: 'active',
+            createdAt: now
+        }));
+    }
+
     for (let i = 0; i < teamVariants.length; i++) {
         const variant = teamVariants[i];
         const isPrimary = i === 0;
-        let teamId = isPrimary ? `demo_${planId}_${userId.slice(-4)}` : `demo_${planId}_${userId.slice(-4)}_${variant.toLowerCase().replace(' ', '')}`;
-        let name = isSchoolDemo ? (isPrimary ? 'Springfield High School' : `Springfield ${variant}`) : (variant ? `Elite Squad - ${variant}` : (isProTier ? 'Elite Demo Squad' : 'Grassroots Demo'));
+        let teamId = isPrimary && !variant ? `demo_${planId}_${userId.slice(-4)}` : `demo_${planId}_${userId.slice(-4)}_${(variant || 'main').toLowerCase().replace(/\s+/g, '')}`;
+        let name = isSchoolDemo ? (isPrimary ? 'Springfield High School' : `Springfield ${variant}`) : (variant ? `Elite Squad - ${variant}` : (isProTier ? 'Apex Demo Squad' : 'Grassroots Demo'));
         let teamType = isSchoolDemo ? (isPrimary ? 'school' : 'school_squad') : 'youth';
-        let schoolId = isSchoolDemo ? (isPrimary ? teamId : `demo_${planId}_${userId.slice(-4)}`) : undefined;
+        let schoolId = isSchoolDemo ? (isPrimary ? teamId : `demo_${planId}_${userId.slice(-4)}_springfieldhigh`) : undefined;
 
         batch.set(doc(db, 'teams', teamId), clean({ 
             id: teamId, teamName: name, code: teamId.slice(-6).toUpperCase(), teamCode: teamId.slice(-6).toUpperCase(),
             ownerUserId: userId, isPro: isProTier || isSchoolDemo, planId: actualPlanId, sport: isSchoolDemo ? 'Basketball' : 'Multi-Sport', 
-            isDemo: true, type: teamType, schoolId, createdAt: now, heroImageUrl: `https://picsum.photos/seed/${teamId}hero/1200/400`,
+            isDemo: true, type: teamType, schoolId, leagueId: !isParentDemo ? leagueId : undefined,
+            createdAt: now, heroImageUrl: `https://picsum.photos/seed/${teamId}hero/1200/400`,
             teamLogoUrl: `https://picsum.photos/seed/${teamId}logo/200/200`
         }));
 
@@ -340,31 +409,77 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
         batch.set(doc(db, 'teams', teamId, 'members', userId), clean({
             id: userId, userId, teamId, playerId: `p_${userId}_${teamId}`, 
-            name: isSchoolDemo ? 'Guest Admin' : `Guest ${pos}`, role, position: pos, jersey: '22',
-            joinedAt: now, isDemo: true, avatar: `https://picsum.photos/seed/${userId}/150/150`,
+            name: isSchoolDemo ? 'Guest Admin' : `Guest ${pos}`, role, position: pos, jersey: 'H',
+            joinedAt: now, isDemo: true, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=guest`,
             ownerUserId: userId, email: `${userRole}@thesquad.pro`
         }));
 
         const data = GET_DEMO_DATA(teamId, userId, variant);
-        data.events.forEach(e => batch.set(doc(db, 'teams', teamId, 'events', e.id), clean(e)));
-        data.eventBrackets.forEach(eb => {
-            if (variant === 'Varsity' || (!isSchoolDemo && eb.eventId.includes('e1'))) {
-                eb.brackets.forEach(b => batch.set(doc(db, 'teams', teamId, 'events', eb.eventId, 'brackets', b.id), clean(b)));
+        
+        // Seed Roster Members & Player Profiles
+        data.members.forEach(m => {
+            batch.set(doc(db, 'teams', teamId, 'members', m.id), clean({ ...m, teamId, joinedAt: now, isDemo: true }));
+            
+            // For youth teams, seed the actual Player Profile for "verified" feeling
+            if (teamType === 'youth' || teamType === 'school_squad') {
+                batch.set(doc(db, 'players', m.playerId), clean({
+                    id: m.playerId,
+                    firstName: m.name.split(' ')[0],
+                    lastName: m.name.split(' ')[1] || 'Guest',
+                    isMinor: true,
+                    dateOfBirth: new Date(nowObj.getFullYear() - 15, 0, 1).toISOString().split('T')[0],
+                    hasLogin: false,
+                    createdAt: now,
+                    joinedTeamIds: [teamId],
+                    avatar: m.avatar,
+                    school: m.school,
+                    gradYear: m.gradYear,
+                    gpa: m.gpa,
+                    primaryPosition: m.position,
+                    sports: [isSchoolDemo ? 'Basketball' : 'Multi-Sport']
+                }));
+
+                // Add recruiting content to one of the main players to showcase recruiting portal
+                if (m.name === 'Alex Rivera') {
+                    batch.set(doc(db, 'players', m.playerId, 'videos', `vid_${m.id}`), {
+                        id: `vid_${m.id}`,
+                        title: 'Championship Winning Goal',
+                        url: 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+                        thumbnail: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&q=80',
+                        type: 'Highlight',
+                        createdAt: yesterday,
+                        isPublic: true
+                    });
+                }
             }
+        });
+
+        data.events.forEach(e => batch.set(doc(db, 'teams', teamId, 'events', e.id), clean({ ...e, teamId })));
+        data.eventBrackets.forEach(eb => {
+            eb.brackets.forEach(b => batch.set(doc(db, 'teams', teamId, 'events', eb.eventId, 'brackets', b.id), clean(b)));
         });
         data.drills.forEach(d => batch.set(doc(db, 'teams', teamId, 'drills', d.id), clean(d)));
         data.feed.forEach(p => batch.set(doc(db, 'teams', teamId, 'feedPosts', p.id), clean(p)));
         data.documents.forEach(d => batch.set(doc(db, 'teams', teamId, 'documents', d.id), clean({ ...d, ownerUserId: userId })));
         data.alerts.forEach(a => batch.set(doc(db, 'teams', teamId, 'alerts', a.id), clean(a)));
-        data.incidents.forEach(inc => batch.set(doc(db, 'teams', teamId, 'incidents', inc.id), clean({ ...inc, ownerUserId: userId, teamName: name })));
         data.volunteers.forEach(v => batch.set(doc(db, 'teams', teamId, 'volunteers', v.id), clean(v)));
         data.fundraising.forEach(f => batch.set(doc(db, 'teams', teamId, 'fundraising', f.id), clean(f)));
+        data.equipment.forEach(eq => batch.set(doc(db, 'teams', teamId, 'equipment', eq.id), clean(eq)));
+        data.incidents.forEach(inc => batch.set(doc(db, 'teams', teamId, 'incidents', inc.id), clean(inc)));
         data.chats.forEach(c => {
             batch.set(doc(db, 'teams', teamId, 'groupChats', c.id), clean({ id: c.id, name: c.name, createdBy: c.createdBy, memberIds: c.memberIds, isDeleted: c.isDeleted, teamId: c.teamId, createdAt: c.createdAt }));
             c.messages.forEach(m => batch.set(doc(db, 'teams', teamId, 'groupChats', c.id, 'messages', m.id), clean(m)));
         });
+
+        // Avoid batch limit for large organization demos
+        if (i > 0 && i % 2 === 0) {
+            await batch.commit();
+            batch = writeBatch(db);
+        }
     }
 
     await batch.commit();
     return `demo_${planId}_${userId.slice(-4)}`;
+}
+
 }

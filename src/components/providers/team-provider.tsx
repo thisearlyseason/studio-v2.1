@@ -79,6 +79,8 @@ export type PlayerProfile = {
   weight?: string;
   pendingInviteEmail?: string;
   inviteToken?: string;
+  inviteSentAt?: string;
+  inviteExpiresAt?: string;
 };
 
 export type RecruitingProfile = {
@@ -741,6 +743,7 @@ interface TeamContextType {
   registerChild: (first: string, last: string, dob: string, email?: string) => Promise<string | null>;
   updateChild: (childId: string, updates: Partial<PlayerProfile>) => Promise<void>;
   sendChildInvite: (child: PlayerProfile, email: string) => Promise<string | null>;
+  revokeChildInvite: (childId: string) => Promise<void>;
   assignManualPlan: (uid: string, planId: string, limit: number) => Promise<void>;
   deleteFundraisingOpportunity: (id: string) => Promise<void>;
   addGame: (data: any) => Promise<void>;
@@ -2305,16 +2308,42 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }));
     return cid;
   }, [db, firebaseUser]);
-  const updateChild = useCallback(async (childId: string, updates: Partial<PlayerProfile>) => { if (db) await updateDoc(doc(db, 'players', childId), clean(updates)); }, [db]);
+
+  const updateChild = useCallback(async (childId: string, updates: Partial<PlayerProfile>) => { 
+    if (db) await updateDoc(doc(db, 'players', childId), clean(updates)); 
+  }, [db]);
+
+  const revokeChildInvite = useCallback(async (childId: string) => {
+    if (!db) return;
+    try {
+      const playerDoc = await getDoc(doc(db, 'players', childId));
+      if (playerDoc.exists()) {
+        const data = playerDoc.data();
+        if (data.inviteToken) {
+          await deleteDoc(doc(db, 'invites', data.inviteToken));
+        }
+        await updateDoc(doc(db, 'players', childId), {
+          pendingInviteEmail: deleteField(),
+          inviteToken: deleteField(),
+          inviteSentAt: deleteField(),
+          inviteExpiresAt: deleteField()
+        });
+        toast({ title: "Invite Revoked", description: "The invitation has been canceled." });
+      }
+    } catch (err) {
+      console.error('[YouthInvite] Failed to revoke invite:', err);
+      toast({ title: "Error", description: "Failed to revoke invitation.", variant: "destructive" });
+    }
+  }, [db]);
+
   const sendChildInvite = useCallback(async (child: PlayerProfile, email: string): Promise<string | null> => {
     if (!db || !firebaseUser) return null;
     
     // Diagnostic logging to catch permission mismatches
     console.log('[YouthInvite] Initiating invite for child:', child.id);
-    console.log('[YouthInvite] Parent UID:', firebaseUser.uid);
-    console.log('[YouthInvite] Child parentId:', child.parentId);
 
     const token = Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, '0')).join('');
+    const sentAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     try {
@@ -2325,19 +2354,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         childFirstName: child.firstName,
         childLastName: child.lastName,
         parentId: firebaseUser.uid,
-        email,
+        email: email,
+        expiresAt: expiresAt,
         used: false,
-        createdAt: new Date().toISOString(),
-        expiresAt,
+        createdAt: serverTimestamp()
       });
-      console.log('[YouthInvite] Invite document created successfully');
 
       // 2. Attempt to update players record
       await updateDoc(doc(db, 'players', child.id), { 
         pendingInviteEmail: email, 
-        inviteToken: token 
+        inviteToken: token,
+        inviteSentAt: sentAt,
+        inviteExpiresAt: expiresAt
       });
-      console.log('[YouthInvite] Player record updated successfully');
 
       const signupUrl = `${window.location.origin}/signup/youth?token=${token}`;
       return signupUrl;
@@ -2664,7 +2693,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     createChat, signUpForVolunteer, addEquipmentItem, updateEquipmentItem, deleteEquipmentItem, respondToAssignment, assignEntryToTeam, 
     toggleRegistrationPaymentStatus, updateLeague, updateLeagueSchedule, inviteTeamToLeague, manuallyAddTeamToLeague, 
     deleteLeagueInvite, updateLeagueTeamDetails, deleteChat, createLeague,
-    hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite,
+    hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite, revokeChildInvite,
     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent, claimAssignment,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerPoints,
@@ -2696,7 +2725,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     createLeague, signUpForVolunteer, addEquipmentItem, updateEquipmentItem, deleteEquipmentItem, respondToAssignment, assignEntryToTeam, 
     toggleRegistrationPaymentStatus, updateLeague, updateLeagueSchedule, inviteTeamToLeague, manuallyAddTeamToLeague, 
     deleteLeagueInvite, updateLeagueTeamDetails, deleteChat, createChat,
-    hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite,
+    hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite, revokeChildInvite,
     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerPoints,
