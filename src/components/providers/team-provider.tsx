@@ -44,8 +44,12 @@ export type UserProfile = {
   role: UserRole;
   createdAt?: string;
   isDemo?: boolean;
-  activePlanId?: string | null;
-  proTeamLimit?: number | null;
+  plan_type?: 'free' | 'team' | 'elite' | 'league' | 'school' | string | null;
+  team_limit?: number | null;
+  extra_teams?: number | null;
+  subscription_status?: string | null;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
   seenAlertIds?: string[];
   clubName?: string;
   clubDescription?: string;
@@ -630,7 +634,6 @@ interface TeamContextType {
   hasFeature: (id: string) => boolean;
   isSeedingDemo: boolean;
   setIsSeedingDemo: (seeding: boolean) => void;
-  isRCInitialized: boolean;
   totalStorageUsed: number;
 
   
@@ -966,28 +969,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: myChildrenRaw } = useCollection<PlayerProfile>(childrenQuery);
   const myChildren = useMemo(() => myChildrenRaw || [], [myChildrenRaw]);
 
-  const householdEventsQuery = useMemoFirebase(() => {
-    if (!db || !firebaseUser?.uid) return null;
-    
-    // Hardening: Aggregate all team IDs from Parent AND ALL children
-    const myOwnTeamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
-    const childrenTeamIds = (myChildren || []).flatMap(c => c.joinedTeamIds || []);
-    
-    const allTeamIds = Array.from(new Set([...myOwnTeamIds, ...childrenTeamIds])).filter(Boolean);
-    
-    if (allTeamIds.length === 0) return null;
-    
-    // Firestore 'in' query limit is 30. For institutional scales, we slice to the first 30.
-    return query(collectionGroup(db, 'events'), where('teamId', 'in', allTeamIds.slice(0, 30)));
-  }, [db, firebaseUser?.uid, teamsData, myChildren]);
-  
-  const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
-  const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
-
-  const householdMembersQuery = useMemoFirebase(() => (db && firebaseUser?.uid && isAuthResolved) ? query(collectionGroup(db, 'members'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid, isAuthResolved]);
-  const { data: householdMembersData } = useCollection<Member>(householdMembersQuery);
-  const householdBalance = useMemo(() => (householdMembersData || []).reduce((acc, m) => acc + (m.amountOwed || 0), 0), [householdMembersData]);
-
   const getLeagueMembers = useCallback(async (leagueId: string): Promise<Member[]> => {
     if (!db || !leagueId) return [];
     try {
@@ -1122,10 +1103,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   // Plan level check helpers
   const isEliteAccount = useMemo(() => {
-    const elitePlanIds = ['squad_organization', 'elite_teams', 'elite_league'];
-    return elitePlanIds.includes(userProfile?.activePlanId || '') || 
+    const elitePlanIds = ['elite', 'league', 'school'];
+    return elitePlanIds.includes(userProfile?.plan_type || '') || 
            elitePlanIds.includes(activeTeam?.planId || '');
-  }, [userProfile?.activePlanId, activeTeam?.planId]);
+  }, [userProfile?.plan_type, activeTeam?.planId]);
 
   const isPrimaryClubAuthority = useMemo(() => {
     if (isSuperAdmin) return true;
@@ -1134,10 +1115,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (userProfile?.isPrimaryClubAuthority) return true;
 
     // 2. Determine Pro/Authority status (at user level or active team level)
-    // We include squad_pro here because they CAN manage a league hub, 
-    // but the Sidebar specifically gates the "Club Hub" to Elite/School.
-    const authorityPlanIds = ['squad_organization', 'elite_teams', 'elite_league', 'squad_pro'];
-    const hasUserAuthorityPlan = authorityPlanIds.includes(userProfile?.activePlanId || '');
+    const authorityPlanIds = ['school', 'elite', 'league', 'team'];
+    const hasUserAuthorityPlan = authorityPlanIds.includes(userProfile?.plan_type || '');
     const isActiveTeamAuthority = activeTeam?.isPro && authorityPlanIds.includes(activeTeam?.planId || '');
     
     // 3. Check if user is an admin or owner of the active team
@@ -1172,6 +1151,30 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return false;
   }, [teams, userProfile, isSuperAdmin, activeTeam, firebaseUser]);
 
+  // --- HOUSEHOLD & GLOBAL QUERIES (Moved here to avoid initialization order errors) ---
+  const householdEventsQuery = useMemoFirebase(() => {
+    if (!db || !firebaseUser?.uid || (!isParent && !isPlayer)) return null;
+    
+    // Hardening: Aggregate all team IDs from Parent AND ALL children
+    const myOwnTeamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
+    const childrenTeamIds = (myChildren || []).flatMap(c => c.joinedTeamIds || []);
+    
+    const allTeamIds = Array.from(new Set([...myOwnTeamIds, ...childrenTeamIds])).filter(Boolean);
+    
+    if (allTeamIds.length === 0) return null;
+    
+    // Firestore 'in' query limit is 30. For institutional scales, we slice to the first 30.
+    return query(collectionGroup(db, 'events'), where('teamId', 'in', allTeamIds.slice(0, 30)));
+  }, [db, firebaseUser?.uid, teamsData, myChildren, isParent, isPlayer]);
+  
+  const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
+  const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
+
+  const householdMembersQuery = useMemoFirebase(() => (db && firebaseUser?.uid && isAuthResolved && isParent) ? query(collectionGroup(db, 'members'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid, isAuthResolved, isParent]);
+  const { data: householdMembersData } = useCollection<Member>(householdMembersQuery);
+  const householdBalance = useMemo(() => (householdMembersData || []).reduce((acc, m) => acc + (m.amountOwed || 0), 0), [householdMembersData]);
+
+
   
   const isClubManager = useMemo(() => isSuperAdmin || isPrimaryClubAuthority || userProfile?.role === 'admin', [isSuperAdmin, isPrimaryClubAuthority, userProfile?.role]);
 
@@ -1183,10 +1186,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: clubData } = useDoc<Club>(clubRef);
 
   const proQuotaStatus = useMemo(() => {
-    if (!userProfile?.id) return { current: 0, limit: 0, exceeded: false, remaining: 0 };
+    if (!userProfile?.id) return { current: 0, limit: 1, exceeded: false, remaining: 0 };
     const ownedProTeams = teamsRaw.filter(t => t.ownerUserId === userProfile.id && t.isPro);
-    const limit = userProfile.proTeamLimit || 0;
-    return { current: ownedProTeams.length, limit, exceeded: ownedProTeams.length > limit && limit > 0, remaining: Math.max(0, limit - ownedProTeams.length) };
+    const limit = userProfile.team_limit || 1; 
+    return { current: ownedProTeams.length, limit, exceeded: ownedProTeams.length > limit && (limit > 0), remaining: Math.max(0, limit - ownedProTeams.length) };
   }, [teamsRaw, userProfile]);
 
   const getTeamByCode = useCallback(async (code: string, leagueId?: string) => {
@@ -1263,16 +1266,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
     // 5. Legacy User Level Pro (Fallback)
-    return userProfile?.activePlanId === 'squad_pro' || 
-           userProfile?.activePlanId === 'squad_pro_demo' ||
-           userProfile?.activePlanId === 'squad_organization' ||
-           ['elite_teams', 'elite_league', 'squad_organization', 'squad_pro', 'squad_pro_demo'].includes(activeTeam?.planId || '');
+    return userProfile?.plan_type === 'team' || 
+           userProfile?.plan_type === 'elite' ||
+           userProfile?.plan_type === 'league' ||
+           userProfile?.plan_type === 'school' ||
+           userProfile?.plan_type === 'squad_pro_demo' ||
+           ['elite', 'league', 'school', 'team', 'squad_pro', 'squad_pro_demo'].includes(activeTeam?.planId || '');
   }, [activeTeam, clubData, userProfile, isSuperAdmin, isSchoolAdmin, teams]);
 
   const isStarter = useMemo(() => {
     if (isPro) return false;
-    return !activeTeam?.planId || activeTeam?.planId === 'starter_squad' || userProfile?.activePlanId === 'starter_squad';
-  }, [activeTeam?.planId, userProfile?.activePlanId, isPro]);
+    return !activeTeam?.planId || activeTeam?.planId === 'starter_squad' || userProfile?.plan_type === 'free' || !userProfile?.plan_type;
+  }, [activeTeam?.planId, userProfile?.plan_type, isPro]);
 
   const isSchoolMode = useMemo(() => {
     return activeTeam?.type === 'school' || activeTeam?.type === 'school_squad';
@@ -1340,21 +1345,22 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
     if (featureId === 'club_management') {
-      // Only Elite Plans OR School Admins (Squad Pro EXPLICITLY excluded)
-      if (activeTeam?.planId === 'squad_pro' || userProfile?.activePlanId === 'squad_pro') {
-        // Even if they are an owner, Squad Pro doesn't get Club Hub unless they are an actual School Admin
-        return isSchoolAdmin;
-      }
+      // 1. School Admins always have club management
       if (isSchoolAdmin) return true;
+
+      // 2. Elite level accounts (Elite, League, School) have club management
       if (isEliteAccount) return true;
+
+      // 3. Fallback for Explicitly owner-managed clubs
       if (clubData && clubData.subscriptionStatus === 'active' && clubData.ownerUserId === userProfile?.id) return true;
+
       return false;
     }
 
     // General Feature Check
-    const currentPlanId = activeTeam?.planId || userProfile?.activePlanId || 'starter_squad';
+    const currentPlanId = activeTeam?.planId || userProfile?.plan_type || 'free';
     // Fallback mapping for demo plans to their parent features
-    const effectivePlanId = currentPlanId === 'squad_pro_demo' ? 'squad_pro' : currentPlanId;
+    const effectivePlanId = currentPlanId === 'squad_pro_demo' ? 'team' : currentPlanId;
     
     const plan = plans.find(p => p.id === effectivePlanId);
     if (plan) return !!plan.features?.[featureId];
@@ -1394,6 +1400,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => { 
     if (!firebaseUser || !db || !userProfile) return ''; 
+
+    // Enforce Pro Quota if creating a pro team
+    const isTargetPro = planId && planId !== 'free';
+    if (isTargetPro && proQuotaStatus.remaining <= 0) {
+      setIsPaywallOpen(true);
+      throw new Error("Pro team limit reached. Please upgrade or manage features in billing.");
+    }
+
+    // Enforce Free limit (if they already have teams and are on a free plan)
+    if (!isTargetPro && teamsRaw.length >= 1 && (!userProfile.plan_type || userProfile.plan_type === 'free')) {
+      setIsPaywallOpen(true);
+      throw new Error("Free plan limit reached (1 team). Please upgrade to create more squads.");
+    }
+
     const tid = `team_${Date.now()}`; 
     const batch = writeBatch(db); 
     
@@ -1403,6 +1423,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const schoolIdToUse = schoolId || (type === 'school_squad' && activeTeam?.id ? activeTeam.id : null);
     const resolvedOwnerId = overrideOwnerId || firebaseUser.uid;
 
+    const resolvedPlanId = planId || (isSchool ? 'school' : 'free');
+
     batch.set(doc(db, 'teams', tid), clean({ 
       id: tid, 
       teamName: name, 
@@ -1411,8 +1433,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       inviteCode: teamCode, 
       type, sport: isSchool ? 'Basketball' : 'General', 
       description, createdBy: firebaseUser.uid, ownerUserId: resolvedOwnerId, 
-      planId: planId || (isSchool ? 'squad_pro' : 'starter_squad'), 
-      isPro: planId !== 'starter_squad', 
+      planId: resolvedPlanId, 
+      isPro: resolvedPlanId !== 'free', 
       createdAt: new Date().toISOString(),
       schoolId: schoolIdToUse
     })); 
@@ -1430,10 +1452,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       code: teamCode, 
       joinedAt: new Date().toISOString(),
       type,
-      isPro: planId !== 'starter_squad',
-      planId: planId || (isSchool ? 'squad_pro' : 'starter_squad'),
+      isPro: resolvedPlanId !== 'free',
+      planId: resolvedPlanId,
       schoolId: schoolIdToUse,
-      ownerUserId: resolvedOwnerId  // Required for DISTRICT badge in Shell
+      ownerUserId: resolvedOwnerId
     })); 
     
     batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ 
@@ -1444,7 +1466,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       schoolId: schoolIdToUse,
       email: firebaseUser.email || userProfile?.email
     })); 
-    
+
     if (coachName && coachEmail) {
       const dummyId = `member_${Date.now()}`;
       batch.set(doc(db, 'teams', tid, 'members', dummyId), clean({
@@ -1470,9 +1492,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         let hasUpdates = false;
         entriesSnap.forEach(entryDoc => {
           const entry = entryDoc.data();
-          if (!entry.assigned_team_id) {
-            sweepBatch.update(entryDoc.ref, { assigned_team_id: tid, assigned_team_owner_id: firebaseUser.uid, status: 'assigned' });
-            hasUpdates = true;
+          if (!entry.isProcessed) {
+             sweepBatch.update(entryDoc.ref, { isProcessed: true, teamId: tid });
+             hasUpdates = true;
           }
         });
         if (hasUpdates) await sweepBatch.commit();
@@ -1483,7 +1505,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
     toast({ title: "Team Created Successfully!", description: `Your new ${type.replace('_', ' ')} "${name}" is ready.` });
     return tid; 
-  }, [firebaseUser, db, userProfile, activeTeam]);
+  }, [firebaseUser, db, userProfile, proQuotaStatus, teamsRaw, setIsPaywallOpen, activeTeam]);
 
   const joinTeamWithCode = useCallback(async (code: string, playerId: string, position: string) => { 
     if (!firebaseUser || !db || !userProfile) return false; 
@@ -1585,7 +1607,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const updateTeamPlan = useCallback(async (tid: string, pid: string) => { 
     if (!isSuperAdmin && !isPrimaryClubAuthority) return;
-    if(db) await updateDoc(doc(db, 'teams', tid), { planId: pid, isPro: pid !== 'starter_squad' }); 
+    if(db) await updateDoc(doc(db, 'teams', tid), { planId: pid, isPro: pid !== 'free' }); 
+    toast({ title: 'Plan Assignment Updated' });
   }, [db, isSuperAdmin, isPrimaryClubAuthority]);
 
   const signTeamDocument = useCallback(async (docId: string, sig: string, mid: string) => { 
@@ -1892,7 +1915,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const leagueCount = activeTeam.leagueIds ? Object.keys(activeTeam.leagueIds).length : 0;
     
     // School / Squad Organization accounts have higher capacity
-    const isHighCapacity = isSchoolMode || activeTeam?.planId === 'squad_organization' || userProfile?.activePlanId === 'squad_organization';
+    const isHighCapacity = isSchoolMode || activeTeam?.planId === 'school' || userProfile?.plan_type === 'school';
     const limit = isHighCapacity ? 20 : 1;
     
     if (leagueCount >= limit) {
@@ -2651,12 +2674,32 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await updateDoc(doc(db, 'leagues', leagueId), { schedule }); 
   }, [db]);
 
-  const resolveQuota = useCallback(async (selectedTeamIds: string[]) => { if (!db || !userProfile?.id) return; const batch = writeBatch(db); const ownedProTeams = teamsRaw.filter(t => t.ownerUserId === userProfile.id && t.isPro); ownedProTeams.forEach(t => { if (!selectedTeamIds.includes(t.id)) { batch.update(doc(db, 'teams', t.id), { isPro: false, planId: 'starter_squad' }); } }); await batch.commit(); }, [db, userProfile, teamsRaw]);
+  const resolveQuota = useCallback(async (selectedTeamIds: string[]) => { if (!db || !userProfile?.id) return; const batch = writeBatch(db); const ownedProTeams = teamsRaw.filter(t => t.ownerUserId === userProfile.id && t.isPro); ownedProTeams.forEach(t => { if (!selectedTeamIds.includes(t.id)) { batch.update(doc(db, 'teams', t.id), { isPro: false, planId: 'free' }); } }); await batch.commit(); }, [db, userProfile, teamsRaw]);
   const exportAttendanceCSV = useCallback(async (eventId: string) => { if (!db || !activeTeam?.id) return; const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'events', eventId)); if (!snap.exists()) return; const rsvps = snap.data().userRsvps || {}; const rows = [["Name", "Status"]]; members.forEach(m => { rows.push([m.name, rsvps[m.userId] || 'no_response']); }); const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n"); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `attendance_${eventId}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); }, [db, activeTeam, members]);
   const exportTournamentStandingsCSV = useCallback(async (tournamentId: string) => { if (!db || !activeTeam?.id) return; const rows = [["Team", "Wins", "Losses", "Ties", "Points"]]; const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n"); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `standings_${tournamentId}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); }, [db, activeTeam]);
 
   const addRegistration = useCallback(async (teamId: string, eventId: string, data: any) => { if (db) { await addDoc(collection(db, 'teams', teamId, 'events', eventId, 'registrations'), clean(data)); return true; } return false; }, [db]);
-  const manageSubscription = useCallback(async () => { setIsPaywallOpen(true); }, []);
+  const manageSubscription = useCallback(async () => {
+    // If the user already has a Stripe customer, open the billing portal
+    if (userProfile?.id && (userProfile as any).stripe_customer_id) {
+      try {
+        const res = await fetch('/api/stripe/customer-portal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: userProfile.id }),
+        });
+        const data = await res.json();
+        if (data.url) {
+          window.location.href = data.url;
+          return;
+        }
+      } catch (e) {
+        console.warn('[manageSubscription] portal redirect failed, falling back to paywall', e);
+      }
+    }
+    // Fall back to showing the upgrade paywall
+    setIsPaywallOpen(true);
+  }, [userProfile]);
   const purchasePro = useCallback(() => { setIsPaywallOpen(true); }, []);
   const addLeaguePayment = useCallback(async (leagueId: string, teamId: string, data: any) => { if (!db) return; await addDoc(collection(db, 'leagues', leagueId, 'payments'), clean({ ...data, teamId, createdAt: new Date().toISOString() })); await updateDoc(doc(db, 'leagues', leagueId), { [`finances.${teamId}.totalPaid`]: increment(data.amount) }); }, [db]);
   const updateLeagueGlobalFees = useCallback(async (leagueId: string, fees: any) => { if (db) await updateDoc(doc(db, 'leagues', leagueId), { globalFees: clean(fees) }); }, [db]);
@@ -2684,7 +2727,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     hasFeature, alerts, unreadAlertsCount,
 
     markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isSeedingDemo, setIsSeedingDemo,
-    isRCInitialized: true,
     totalStorageUsed,
 
     getRecruitingProfile, updateRecruitingProfile, getAthleticMetrics, updateAthleticMetrics,

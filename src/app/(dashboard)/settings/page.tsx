@@ -28,6 +28,7 @@ import {
   RotateCcw,
   AlertTriangle,
   BookOpen,
+  ShieldCheck,
   User,
   Edit3,
   Save
@@ -60,6 +61,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
+import { PRICING_CONFIG } from '@/lib/pricing';
 
 export default function SettingsPage() {
   const { user, updateUser, members, activeTeam, updateMember, manageSubscription, isPro, resetSquadData } = useTeam();
@@ -290,24 +292,39 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {isPro && (
-          <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden group transition-all hover:ring-4 hover:ring-primary/20">
-            <CardHeader className="p-8 border-b border-white/5">
-              <div className="flex items-center gap-4">
-                <div className="bg-primary/20 p-2.5 rounded-xl text-primary"><BookOpen className="h-5 w-5" /></div>
-                <CardTitle className="text-sm font-black uppercase tracking-widest">Operational Manual</CardTitle>
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
+          <CardHeader className="bg-muted/30 border-b p-8 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="bg-amber-100 p-2.5 rounded-xl text-amber-600"><ShieldCheck className="h-5 w-5" /></div>
+              <CardTitle className="text-sm font-black uppercase tracking-widest">Subscription Intelligence</CardTitle>
+            </div>
+            <Badge className={cn("font-black uppercase text-[8px] tracking-widest", user.subscription_status === 'active' ? "bg-green-100 text-green-700" : "bg-primary/10 text-primary")}>
+              {user.subscription_status || 'Free'}
+            </Badge>
+          </CardHeader>
+          <CardContent className="p-8 space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Active Tier</p>
+                <p className="text-xl font-black text-primary uppercase italic">
+                  {PRICING_CONFIG.find(p => p.id === user.plan_type)?.name || 'Starter Plan'}
+                </p>
               </div>
-            </CardHeader>
-            <CardContent className="p-8 flex items-center justify-between">
-              <p className="text-[10px] font-bold text-white/40 uppercase leading-relaxed max-w-[180px]">
-                Exhaustive tactical guidance for squad coordinators.
+              <div className="text-right space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Squad Quota</p>
+                <p className="text-xl font-black tracking-tighter">{user.team_limit || 1} Seats</p>
+              </div>
+            </div>
+            {user.extra_teams && user.extra_teams > 0 ? (
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-muted/50 p-2 rounded-lg text-center">
+                Includes {user.extra_teams} Extra Add-on Seats
               </p>
-              <Button asChild variant="outline" className="rounded-xl border-white/20 bg-white/5 text-white font-black uppercase text-[9px] h-10 px-6 group-hover:bg-primary group-hover:border-none transition-all">
-                <Link href="/how-to">Launch Manual <ArrowRight className="ml-2 h-3.5 w-3.5" /></Link>
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+            ) : null}
+            <Button asChild variant="outline" className="w-full rounded-2xl border-2 font-black uppercase text-[10px] h-12 hover:bg-black hover:text-white transition-all">
+              <Link href="/dashboard/billing">Manage Infrastructure <ChevronRight className="ml-1 h-4 w-4" /></Link>
+            </Button>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="space-y-4 pt-10 border-t">

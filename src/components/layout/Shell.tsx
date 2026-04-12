@@ -179,16 +179,16 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user }: {
             <div className="flex flex-col min-w-0 flex-1">
               <span className="font-black text-sm truncate uppercase tracking-tight">{team.name}</span>
               <div className="flex items-center gap-1.5 mt-0">
-                {['elite_teams', 'elite_league', 'squad_organization'].includes(team.planId) || team.isPro || team.type === 'school' || team.type === 'school_squad' ? (
-                  <span className="text-[7px] font-black uppercase text-primary tracking-tighter">
-                    {(team.type === 'school' || team.type === 'school_squad' || team.planId === 'squad_organization') ? 'SCHOOL HUB' : 'ELITE PRO'}
-                  </span>
+                {['elite', 'league', 'school'].includes(team.planId) || team.isPro || team.type === 'school' || team.type === 'school_squad' ? (
+                  <Badge className="bg-primary/20 hover:bg-primary/30 text-primary border-primary/20 text-[10px] font-black h-5 px-2 tracking-widest transition-all">
+                    {(team.type === 'school' || team.type === 'school_squad' || team.planId === 'school') ? 'SCHOOL HUB' : 'ELITE PRO'}
+                  </Badge>
                 ) : (
-                  <span className="text-[7px] font-black uppercase text-muted-foreground/60 tracking-tighter">STARTER</span>
+                  <Badge variant="outline" className="text-[10px] font-bold h-5 px-2 border-black/10">STARTER</Badge>
                 )}
-                {team.ownerUserId === user?.id && (team.type === 'school' || team.type === 'school_squad' || ['elite_teams', 'elite_league', 'squad_organization'].includes(team.planId || '')) && (
-                  <Badge variant="outline" className="h-4 px-1.5 border-primary/20 text-primary bg-primary/5 text-[6px] font-black uppercase tracking-tighter flex items-center gap-1">
-                    <Star className="h-2 w-2 fill-current" /> {(team.type === 'school' || team.type === 'school_squad' || team.planId === 'squad_organization') ? 'DISTRICT' : 'PRIMARY'}
+                {team.ownerUserId === user?.id && (team.type === 'school' || team.type === 'school_squad' || ['elite', 'league', 'school'].includes(team.planId || '')) && (
+                  <Badge className="bg-black text-white text-[8px] font-black h-4 px-1.5 tracking-tighter rounded-sm flex items-center gap-1">
+                    <Star className="h-2 w-2 fill-current" /> {(team.type === 'school' || team.type === 'school_squad' || team.planId === 'school') ? 'DISTRICT' : 'PRIMARY'}
                   </Badge>
                 )}
               </div>

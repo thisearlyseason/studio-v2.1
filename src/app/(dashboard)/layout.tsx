@@ -5,7 +5,7 @@ import { AlertOverlay } from '@/components/layout/AlertOverlay';
 import { useUser, useAuth } from '@/firebase';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useRef, Suspense } from 'react';
-import { RevenueCatPaywall } from '@/components/RevenueCatPaywall';
+import { StripePaywall } from '@/components/StripePaywall';
 import { QuotaResolutionOverlay } from '@/components/layout/QuotaResolutionOverlay';
 import { useTeam } from '@/components/providers/team-provider';
 import { Loader2, Timer } from 'lucide-react';
@@ -137,6 +137,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!mounted || isSeedingDemo || isTeamsLoading || !user || isDemoInitializing) return;
     const isSetupPage = pathname === '/dashboard' ||
+                        pathname === '/dashboard/billing' ||
                         pathname === '/teams/new' || 
                         pathname === '/teams/join' || 
                         pathname === '/family' || 
@@ -242,7 +243,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       )}
       <div className="flex-1 flex flex-col relative">
         <AlertOverlay />
-        <RevenueCatPaywall />
+        <StripePaywall />
         <QuotaResolutionOverlay />
         <Shell>{children}</Shell>
       </div>

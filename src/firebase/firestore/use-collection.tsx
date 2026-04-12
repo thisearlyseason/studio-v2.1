@@ -101,17 +101,25 @@ export function useCollection<T = any>(
       },
       (err: FirestoreError) => {
         if (!isMounted) return;
-        // Firestore SDK internal assertion errors (ca9, b815) are benign race
-        // conditions that occur when a listener fires after its target is removed.
-        // Suppress them to avoid crashing the UI.
-        if (err.message?.includes('INTERNAL ASSERTION FAILED')) {
-          console.warn('[useCollection] Suppressed Firestore internal assertion:', err.message.slice(0, 80));
+        
+        // 1. SDK Internal Assertion Crashes (ca9, b815 and similar)
+        // These are SDK bugs that occur during rapid updates or persistence mismatches.
+        // We suppress them globally to keep the app functional.
+        if (err.message?.includes('INTERNAL ASSERTION FAILED') || err.message?.includes('Unexpected state')) {
+          console.warn('[useCollection] Suppressed Firestore internal SDK assertion:', err.message.slice(0, 100));
           setIsLoading(false);
           return;
         }
-        // Only surface permission-denied errors to the error overlay.
-        // Other errors (missing index, network, unavailable, etc.) are
-        // logged but should not block the entire UI.
+
+        // 2. Missing Index Errors (failed-precondition)
+        if (err.code === 'failed-precondition' && err.message?.includes('index')) {
+          console.warn(`[useCollection] INDEX REQUIRED: This query needs a Firestore index. Check details below:\n${err.message}`);
+          setIsLoading(false);
+          setError(err);
+          return;
+        }
+
+        // 3. Permission Errors
         if (err.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
             path: path || 'unknown',
@@ -120,7 +128,7 @@ export function useCollection<T = any>(
           errorEmitter.emit('permission-error', permissionError);
           setError(permissionError);
         } else {
-          console.warn(`[useCollection] Non-permission Firestore error (${err.code}):`, err.message);
+          console.warn(`[useCollection] Firestore error (${err.code}):`, err.message);
           setError(err);
         }
         setData(null);

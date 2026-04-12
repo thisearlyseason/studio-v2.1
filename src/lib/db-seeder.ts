@@ -182,11 +182,37 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
 export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string) {
   const isParentDemo = planId === 'parent_demo';
   const isPlayerDemo = planId === 'player_demo';
-  const isEliteDemo = ['elite_teams', 'elite_league', 'squad_organization'].includes(planId);
+  const isEliteDemo = ['elite_teams', 'elite_league', 'league', 'elite'].includes(planId);
   const isSchoolDemo = planId === 'school_demo' || planId === 'school';
-  const isProTier = planId !== 'starter_squad';
+  const isProTier = planId !== 'starter_squad' && planId !== 'free';
   
-  const actualPlanId = (isParentDemo || isPlayerDemo) ? 'squad_pro' : (isSchoolDemo ? 'squad_organization' : planId);
+  // Map legacy/demo plan IDs to new schema
+  const planTypeMap: Record<string, string> = {
+    'starter_squad': 'free',
+    'squad_pro': 'team',
+    'elite_teams': 'elite',
+    'elite_league': 'league',
+    'squad_organization': 'school',
+    'school_demo': 'school',
+    'free': 'free',
+    'team': 'team',
+    'elite': 'elite',
+    'league': 'league',
+    'school': 'school',
+    'parent_demo': 'team',
+    'player_demo': 'team'
+  };
+
+  const plan_type = planTypeMap[planId] || 'free';
+  const teamLimitMap: Record<string, number> = {
+    'free': 1,
+    'team': 1,
+    'elite': 8,
+    'league': 15,
+    'school': 10
+  };
+  const team_limit = teamLimitMap[plan_type] || 1;
+
   const userRole = isSchoolDemo ? 'admin' : (isParentDemo ? 'parent' : (isPlayerDemo ? 'adult_player' : 'coach'));
   const pos = isParentDemo ? 'Parent' : (isPlayerDemo ? 'Player' : (isSchoolDemo ? 'Athletic Director' : 'Coach'));
   const role = (isParentDemo || isPlayerDemo) ? 'Member' : 'Admin';
@@ -205,8 +231,9 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     fullName: isSchoolDemo ? 'Guest Admin' : `Guest ${pos}`, 
     email: `${userRole}@thesquad.pro`,
     role: userRole, 
-    activePlanId: actualPlanId, 
-    proTeamLimit: (isEliteDemo || isSchoolDemo) ? 20 : 1, 
+    plan_type: plan_type,
+    team_limit: team_limit,
+    subscription_status: 'active',
     createdAt: now, 
     isDemo: true, 
     seenAlertIds: [],
@@ -274,9 +301,11 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
   // 1.5 Optional: Seed Plan definitions if they don't exist (to unlock features in UI)
   const plans = [
-    { id: 'starter_squad', name: 'Starter', features: { live_feed_read: true, basic_scheduling: true } },
-    { id: 'squad_pro', name: 'Pro', isPro: true, features: { feed_post: true, tournaments_view: true, tournaments_manage: true, payments_collect: true, incidents_report: true, volunteers_manage: true, fundraising_manage: true, chats_unlimited: true, roster_unlimited: true, advanced_scheduling: true, media_library: true } },
-    { id: 'squad_organization', name: 'Organization', isPro: true, features: { feed_post: true, tournaments_view: true, tournaments_manage: true, payments_collect: true, incidents_report: true, volunteers_manage: true, fundraising_manage: true, chats_unlimited: true, roster_unlimited: true, advanced_scheduling: true, media_library: true, multi_team_management: true, school_hub: true, facility_management: true } }
+    { id: 'free', name: 'Starter', features: { live_feed_read: true, basic_scheduling: true } },
+    { id: 'team', name: 'Pro', isPro: true, features: { feed_post: true, tournaments_view: true, tournaments_manage: true, payments_collect: true, incidents_report: true, volunteers_manage: true, fundraising_manage: true, chats_unlimited: true, roster_unlimited: true, advanced_scheduling: true, media_library: true } },
+    { id: 'elite', name: 'Elite Teams', isPro: true, features: { feed_post: true, tournaments_view: true, tournaments_manage: true, payments_collect: true, incidents_report: true, volunteers_manage: true, fundraising_manage: true, chats_unlimited: true, roster_unlimited: true, advanced_scheduling: true, media_library: true, multi_team_management: true, club_management: true } },
+    { id: 'league', name: 'Elite League', isPro: true, features: { feed_post: true, tournaments_view: true, tournaments_manage: true, payments_collect: true, incidents_report: true, volunteers_manage: true, fundraising_manage: true, chats_unlimited: true, roster_unlimited: true, advanced_scheduling: true, media_library: true, multi_team_management: true, club_management: true, league_series_architect: true } },
+    { id: 'school', name: 'Organization', isPro: true, features: { feed_post: true, tournaments_view: true, tournaments_manage: true, payments_collect: true, incidents_report: true, volunteers_manage: true, fundraising_manage: true, chats_unlimited: true, roster_unlimited: true, advanced_scheduling: true, media_library: true, multi_team_management: true, school_hub: true, facility_management: true, club_management: true } }
   ];
   plans.forEach(p => batch.set(doc(db, 'plans', p.id), clean(p), { merge: true }));
 
@@ -329,7 +358,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                 teamCode: v.id.slice(-6).toUpperCase(),
                 ownerUserId: userId,
                 isPro: true,
-                planId: 'squad_pro',
+                planId: 'team',
                 sport: 'Basketball',
                 isDemo: true,
                 type: 'youth',
@@ -341,7 +370,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
             // Parent membership
             batch.set(doc(db, 'users', userId, 'teamMemberships', v.id), clean({
-                teamId: v.id, name: v.name, role: 'parent', isPro: true, planId: 'squad_pro', isDemo: true, joinedAt: now
+                teamId: v.id, name: v.name, role: 'parent', isPro: true, planId: 'team', isDemo: true, joinedAt: now
             }));
 
             // Parent member record
@@ -525,14 +554,14 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
         batch.set(doc(db, 'teams', teamId), clean({ 
             id: teamId, teamName: name, code: teamId.slice(-6).toUpperCase(), teamCode: teamId.slice(-6).toUpperCase(),
-            ownerUserId: userId, isPro: isProTier || isSchoolDemo, planId: actualPlanId, sport: isSchoolDemo ? 'Basketball' : 'Multi-Sport', 
+            ownerUserId: userId, isPro: isProTier || isSchoolDemo, planId: plan_type, sport: isSchoolDemo ? 'Basketball' : 'Multi-Sport', 
             isDemo: true, type: teamType, schoolId, leagueId: !isParentDemo ? leagueId : undefined,
             createdAt: now, heroImageUrl: `https://picsum.photos/seed/${teamId}hero/1200/400`,
             teamLogoUrl: `https://picsum.photos/seed/${teamId}logo/200/200`
         }));
 
         batch.set(doc(db, 'users', userId, 'teamMemberships', teamId), clean({
-            teamId, name, role, isPro: isProTier || isSchoolDemo, planId: actualPlanId, isDemo: true, joinedAt: now, ownerUserId: userId, type: teamType, schoolId
+            teamId, name, role, isPro: isProTier || isSchoolDemo, planId: plan_type, isDemo: true, joinedAt: now, ownerUserId: userId, type: teamType, schoolId
         }));
 
         batch.set(doc(db, 'teams', teamId, 'members', userId), clean({

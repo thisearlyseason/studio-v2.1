@@ -28,7 +28,7 @@ function NewTeamForm() {
   const [description, setDescription] = useState('');
   const [type, setType] = useState<"adult" | "youth" | "school" | "school_squad">('adult');
   const [organizerPosition, setOrganizerPosition] = useState('Coach');
-  const [selectedPlan, setSelectedPlan] = useState<'starter_squad' | 'squad_pro'>('starter_squad');
+  const [selectedPlan, setSelectedPlan] = useState<'free' | 'team'>('free');
   const [isProcessing, setIsProcessing] = useState(false);
   const [customWaiverTitle, setCustomWaiverTitle] = useState('');
   const [customWaiverContent, setCustomWaiverContent] = useState('');
@@ -37,7 +37,7 @@ function NewTeamForm() {
     // Pre-select school types if user is a School Admin creating a sub-squad
     if (isSchoolAdmin && activeTeam?.type === 'school') {
       setType('school_squad');
-      setSelectedPlan('squad_pro');
+      setSelectedPlan('team');
     }
   }, [isSchoolAdmin, activeTeam]);
 
@@ -53,12 +53,13 @@ function NewTeamForm() {
       if (isSchoolAdmin && activeTeam?.type === 'school') {
         targetType = 'school_squad';
         targetSchoolId = activeTeam.id;
-        targetPlan = 'squad_pro';
+        targetPlan = 'team';
       }
       
       await createNewTeam(teamName, targetType, organizerPosition, description, targetPlan, customWaiverTitle, customWaiverContent, targetSchoolId);
       router.push('/feed');
-    } catch (e) {
+    } catch (e: any) {
+      console.error(e);
       setIsProcessing(false);
     }
   };
@@ -142,19 +143,19 @@ function NewTeamForm() {
           <div className="space-y-4">
             <h3 className="text-[10px] font-black uppercase tracking-[0.3em] ml-1">Tier Selection</h3>
             <div 
-              className={cn("p-6 rounded-3xl border-2 cursor-pointer transition-all", selectedPlan === 'starter_squad' ? "border-black bg-white ring-4 ring-black/5" : "border-transparent bg-muted/30")}
-              onClick={() => setSelectedPlan('starter_squad')}
+              className={cn("p-6 rounded-3xl border-2 cursor-pointer transition-all", selectedPlan === 'free' ? "border-black bg-white ring-4 ring-black/5" : "border-transparent bg-muted/30")}
+              onClick={() => setSelectedPlan('free')}
             >
               <p className="font-black text-sm uppercase">Starter Squad</p>
               <p className="text-xl font-black mt-1">$0</p>
             </div>
             <div 
-              className={cn("p-6 rounded-3xl border-2 cursor-pointer transition-all relative overflow-hidden", selectedPlan === 'squad_pro' ? "border-primary bg-black text-white shadow-xl" : "border-transparent bg-muted/30")}
-              onClick={() => setSelectedPlan('squad_pro')}
+              className={cn("p-6 rounded-3xl border-2 cursor-pointer transition-all relative overflow-hidden", selectedPlan === 'team' ? "border-primary bg-black text-white shadow-xl" : "border-transparent bg-muted/30")}
+              onClick={() => setSelectedPlan('team')}
             >
               <Zap className="absolute -right-2 -bottom-2 h-16 w-16 opacity-10 -rotate-12" />
               <p className="font-black text-sm uppercase">Elite Pro</p>
-              <p className="text-xl font-black mt-1 text-primary">$12.99</p>
+              <p className="text-xl font-black mt-1 text-primary">Upgrade Required</p>
             </div>
           </div>
 
