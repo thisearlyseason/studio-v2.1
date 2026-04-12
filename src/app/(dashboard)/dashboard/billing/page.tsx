@@ -289,28 +289,34 @@ export default function BillingDashboard() {
                           </div>
                         </div>
                         <div className="flex items-center gap-6">
-                          <button 
+                           <button 
                             onClick={() => setAddonQty(q => Math.max(0, q-1))}
                             className="w-10 h-10 rounded-xl bg-white border shadow-sm flex items-center justify-center hover:bg-black hover:text-white transition-all disabled:opacity-30"
-                            disabled={!isStripeLinked}
                           >
                             <Minus className="h-4 w-4" />
                           </button>
-                          <span className={cn("text-3xl font-black w-8 text-center", !isStripeLinked && "opacity-30")}>{addonQty}</span>
+                          <span className={cn("text-3xl font-black w-8 text-center")}>{addonQty}</span>
                           <button 
                             onClick={() => setAddonQty(q => q+1)}
                             className="w-10 h-10 rounded-xl bg-white border shadow-sm flex items-center justify-center hover:bg-black hover:text-white transition-all disabled:opacity-30"
-                            disabled={!isStripeLinked}
                           >
                             <Plus className="h-4 w-4" />
                           </button>
                           <Button 
-                            variant="default" 
+                            variant={isStripeLinked ? "default" : "outline"}
                             className="h-10 px-6 rounded-xl font-black uppercase text-[10px] tracking-widest"
-                            disabled={addonQty === userProfile.extra_teams || loading === 'addon' || !isStripeLinked}
-                            onClick={() => handleUpdateAddon(addonQty)}
+                            disabled={(isStripeLinked && addonQty === userProfile.extra_teams) || loading === 'addon'}
+                            onClick={() => {
+                              if (!isStripeLinked) {
+                                // Redirect to link billing (checkout for current plan)
+                                const plan = PRICING_CONFIG.find(p => p.id === 'team'); // Default to Pro Team
+                                if (plan) handleUpdatePlan(plan);
+                              } else {
+                                handleUpdateAddon(addonQty);
+                              }
+                            }}
                           >
-                            {loading === 'addon' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Apply Sync'}
+                            {loading === 'addon' ? <Loader2 className="h-4 w-4 animate-spin" /> : (isStripeLinked ? 'Apply Sync' : 'Connect Billing')}
                           </Button>
                         </div>
                     </div>
