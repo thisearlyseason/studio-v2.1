@@ -1185,6 +1185,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db, activeTeam?.clubId]);
   const { data: clubData } = useDoc<Club>(clubRef);
 
+  const isSchoolAdmin = useMemo(() => {
+    if (!userProfile) return false;
+    
+    return teamsRaw.some(t => {
+      // Direct check of position in members if we have them
+      const m = members.find(member => member.teamId === t.id && member.userId === firebaseUser?.uid);
+      return m?.position === 'Athletic Director' || m?.position === 'Director of Athletics' || m?.position === 'Staff';
+    });
+  }, [teamsRaw, userProfile, members, firebaseUser?.uid]);
+
   const proQuotaStatus = useMemo(() => {
     if (!userProfile?.id) return { current: 0, limit: 1, exceeded: false, remaining: 0 };
     const ownedProTeams = teamsRaw.filter(t => t.ownerUserId === userProfile.id && t.isPro);
@@ -1226,17 +1236,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return null;
   }, [db]);
 
-  const isSchoolAdmin = useMemo(() => {
-    if (!userProfile) return false;
-    
-    const activeStaff = teams.some(t => {
-      const membership = getMember(t.id);
-      return membership?.position === 'Athletic Director' || membership?.position === 'Director of Athletics' || membership?.position === 'Staff';
-    });
-    
-    return activeStaff;
-  }, [teams, userProfile, getMember]);
-
   const isPro = useMemo(() => {
     if (isSuperAdmin) return true;
 
@@ -1244,11 +1243,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (activeTeam?.isPro) return true;
 
     // 2. Check Club Level Pro (Elite Subscription)
-    // If team belongs to a club, and club is active, return true
     if (activeTeam?.clubId && clubData?.subscriptionStatus === 'active') return true;
 
     // 3. Check School Level Pro
-    // In school mode, all squads under a school hub, the hub itself, or squads owned by a school admin are Pro
     if (activeTeam?.type === 'school' || activeTeam?.type === 'school_squad' || activeTeam?.schoolId) {
        return true; 
     }
@@ -1259,9 +1256,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
     // 4. Check for Squad Pro Demo / Primary Team Logic
-    // If user owns ANY team that is pro, their first (primary) team is also pro
-    const ownedProTeam = teams.find((t: any) => t.ownerUserId === userProfile?.id && t.isPro);
-    if (ownedProTeam && activeTeam?.id === teams[0]?.id) {
+    const ownedProTeam = teamsRaw.find((t: any) => t.ownerUserId === userProfile?.id && t.isPro);
+    if (ownedProTeam && activeTeam?.id === teamsRaw[0]?.id) {
        return true;
     }
 
@@ -1272,7 +1268,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
            userProfile?.plan_type === 'school' ||
            userProfile?.plan_type === 'squad_pro_demo' ||
            ['elite', 'league', 'school', 'team', 'squad_pro', 'squad_pro_demo'].includes(activeTeam?.planId || '');
-  }, [activeTeam, clubData, userProfile, isSuperAdmin, isSchoolAdmin, teams]);
+  }, [activeTeam, clubData, userProfile, isSuperAdmin, isSchoolAdmin, teamsRaw]);
 
   const isStarter = useMemo(() => {
     if (isPro) return false;
@@ -1482,19 +1478,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       }));
     }
 
-    await batch.commit();
+    await batch.commit(); 
 
+    // Sync state locally immediately for better UX
+    setTeamsRaw(prev => [
+      ...prev, 
+      { id: tid, name, code: teamCode, type, planId: resolvedPlanId, isPro: resolvedPlanId !== 'free', ownerUserId: resolvedOwnerId, schoolId: schoolIdToUse } as Team
+    ]);
+
+    // Identity sweep: If the user has a name/avatar, update all their memberships to match
     try {
-      const qEntries = query(collectionGroup(db, 'registrationEntries'), where('answers.email', '==', firebaseUser.email));
-      const entriesSnap = await getDocs(qEntries);
-      if (!entriesSnap.empty) {
+      const allMemberships = await getDocs(query(collectionGroup(db, 'members'), where('userId', '==', firebaseUser.uid)));
+      if (!allMemberships.empty) {
         const sweepBatch = writeBatch(db);
         let hasUpdates = false;
-        entriesSnap.forEach(entryDoc => {
-          const entry = entryDoc.data();
-          if (!entry.isProcessed) {
-             sweepBatch.update(entryDoc.ref, { isProcessed: true, teamId: tid });
-             hasUpdates = true;
+        allMemberships.docs.forEach(mDoc => {
+          const mData = mDoc.data();
+          if (mData.name !== userProfile.name || mData.avatar !== userProfile.avatar) {
+            sweepBatch.update(mDoc.ref, { name: userProfile.name, avatar: userProfile.avatar });
+            hasUpdates = true;
           }
         });
         if (hasUpdates) await sweepBatch.commit();

@@ -217,12 +217,12 @@ export default function BillingDashboard() {
                   </div>
                 </div>
                 <div className="bg-muted/30 p-6 rounded-3xl space-y-1">
-                  <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Extra Seats</p>
-                  <p className="text-2xl font-black">{userProfile.extra_teams || 0} Add-ons</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Extra Squads</p>
+                  <p className="text-2xl font-black">{userProfile.extra_teams || 0} Squads</p>
                 </div>
               </div>
 
-               {isPro && !isStripeLinked && (
+               {process.env.NODE_ENV === 'development' && isPro && !isStripeLinked && (
                  <div className="bg-amber-50 border border-amber-200 p-6 rounded-[2rem] flex items-start gap-4">
                     <AlertCircle className="h-6 w-6 text-amber-600 shrink-0" />
                     <div className="space-y-1">
@@ -279,9 +279,14 @@ export default function BillingDashboard() {
                     </h3>
                     <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-primary/5 p-6 rounded-[2rem] border border-primary/10">
                         <div className="space-y-1">
-                          <p className="font-black text-sm uppercase tracking-tight">Scale Squad Seats</p>
+                          <p className="font-black text-xl uppercase tracking-tight">Scale Squads</p>
                           <p className="text-[10px] font-bold opacity-60">Instantly provision additional slots to your command hub.</p>
-                          <p className="text-[9px] font-black text-primary uppercase">Price: {billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPrice : EXTRA_TEAM_CONFIG.monthlyPrice} per squad / {billingCycle}</p>
+                          <div className="pt-2 space-y-1">
+                            <p className="text-3xl font-black text-primary uppercase">{billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPrice : EXTRA_TEAM_CONFIG.monthlyPrice} <span className="text-xs opacity-60 italic">/ {billingCycle}</span></p>
+                            <div className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full border border-emerald-100 w-fit">
+                              <p className="text-[9px] font-black uppercase tracking-tight">Note: Discounted add-on squads just for you</p>
+                            </div>
+                          </div>
                         </div>
                         <div className="flex items-center gap-6">
                           <button 

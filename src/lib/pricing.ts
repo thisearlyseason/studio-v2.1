@@ -21,7 +21,7 @@ export interface Plan {
 export const PRICING_CONFIG: Plan[] = [
   {
     id: 'team',
-    name: 'Individual Team',
+    name: 'Pro Team',
     description: 'Perfect for single competitive squads.',
     teamLimit: 1,
     monthlyPrice: '$19.99',
