@@ -5,7 +5,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { EXTRA_TEAM_CONFIG } from '@/lib/pricing';
 
 function getStripeClient(): Stripe {
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy';
   if (!key) throw new Error('STRIPE_SECRET_KEY is not set');
   return new Stripe(key, { apiVersion: '2025-03-31.basil' });
 }
