@@ -59,7 +59,7 @@ import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebas
 import { collection, query, orderBy, where, doc, updateDoc, limit } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
-import { generateLeagueSchedule } from '@/lib/scheduler-utils';
+import { generateIntelligentLeagueSchedule } from '@/lib/intelligent-scheduler';
 import { addSquadBranding } from '@/lib/pdf-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format, isSameDay, startOfDay, endOfDay } from 'date-fns';
@@ -156,7 +156,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     }
     setIsProcessing(true);
     try {
-      const schedule = generateLeagueSchedule({
+      const { games: schedule, report } = generateIntelligentLeagueSchedule({
         teams: leagueTeams,
         fields: config.selectedFields,
         startDate: config.startDate,
@@ -171,6 +171,10 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
         blackoutDates: config.blackoutDates.map(d => d.toISOString()),
         blackoutDaysOfWeek: config.blackoutDaysOfWeek
       });
+      
+      if (report.warnings.length > 0) {
+        toast({ title: 'Schedule Warnings', description: report.warnings[0] });
+      }
       
       if (schedule.length === 0) {
         toast({ title: "Distribution Failure", description: "Could not satisfy scheduling constraints.", variant: "destructive" });

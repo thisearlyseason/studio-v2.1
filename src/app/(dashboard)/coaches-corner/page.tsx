@@ -2403,9 +2403,52 @@ function SafetyHub() {
 
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
+function SignatureAuditDialog({ proto }: { proto: any }) {
+  const { db, activeTeam, members } = useTeam();
+  const q = useMemoFirebase(() => (db && activeTeam?.id && proto?.id) ? query(collection(db, 'teams', activeTeam.id, 'protocol_signatures'), where('protocolId', '==', proto.id)) : null, [db, activeTeam?.id, proto?.id]);
+  const { data: signatures } = useCollection<any>(q);
+  
+  const signedMemberIds = signatures ? signatures.map(s => s.memberId) : [];
+  const assignedMembers = members.filter(m => proto?.assignedTo?.includes('all') || proto?.assignedTo?.includes(m.id));
+  
+  const signedUsers = assignedMembers.filter(m => signedMemberIds.includes(m.id));
+  const unsignedUsers = assignedMembers.filter(m => !signedMemberIds.includes(m.id));
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="w-full mt-4 h-9 text-[10px] uppercase font-black tracking-widest hover:bg-black hover:text-white transition-all">Audit Signatures</Button>
+      </DialogTrigger>
+      <DialogContent className="rounded-3xl border-none shadow-2xl p-0 overflow-hidden bg-white max-w-lg">
+        <div className="h-2 bg-primary w-full" />
+        <div className="p-8 space-y-6">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black uppercase tracking-tight">{proto.title} Audit</DialogTitle>
+            <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-primary">Compliance Status ({signedUsers.length} / {assignedMembers.length})</DialogDescription>
+          </DialogHeader>
+          <Tabs defaultValue="signed" className="w-full">
+            <TabsList className="w-full">
+              <TabsTrigger value="signed" className="flex-1 text-xs font-black uppercase">Signed ({signedUsers.length})</TabsTrigger>
+              <TabsTrigger value="unsigned" className="flex-1 text-xs font-black uppercase">Pending ({unsignedUsers.length})</TabsTrigger>
+            </TabsList>
+            <TabsContent value="signed" className="space-y-2 mt-4 max-h-60 overflow-y-auto">
+              {signedUsers.map(u => <div key={u.id} className="p-3 bg-green-50 text-green-700 text-xs font-bold rounded-lg border border-green-100 flex justify-between"><span className="uppercase">{u.name}</span> <CheckCircle2 className="h-4 w-4" /></div>)}
+              {signedUsers.length === 0 && <div className="text-center p-4 text-xs font-bold text-muted-foreground uppercase opacity-50">No Signatures</div>}
+            </TabsContent>
+            <TabsContent value="unsigned" className="space-y-2 mt-4 max-h-60 overflow-y-auto">
+              {unsignedUsers.map(u => <div key={u.id} className="p-3 bg-red-50 text-red-700 text-xs font-bold rounded-lg border border-red-100 flex justify-between"><span className="uppercase">{u.name}</span> <XCircle className="h-4 w-4" /></div>)}
+              {unsignedUsers.length === 0 && <div className="text-center p-4 text-xs font-bold text-muted-foreground uppercase opacity-50">100% Compliant</div>}
+            </TabsContent>
+          </Tabs>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function CoachesCornerPage() {
   const router = useRouter();
-  const { activeTeam, isStaff, isPro, isStarter, createTeamDocument, updateTeamDocument, db, members, createAlert, isSchoolMode, user, teams, getLeagueMembers } = useTeam();
+  const { activeTeam, isStaff, isPro, isStarter, createTeamDocument, updateTeamDocument, deleteTeamDocument, db, members, createAlert, isSchoolMode, user, teams, getLeagueMembers } = useTeam();
   
   const isPartOfLeague = useMemo(() => {
     return activeTeam?.leagueIds && Object.keys(activeTeam.leagueIds).length > 0;
@@ -2693,7 +2736,7 @@ export default function CoachesCornerPage() {
                         </div>
                       </div>
                       <div className="space-y-1 mb-4"><p className="font-black text-sm uppercase text-foreground">{proto.title}</p><p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">System Mandate</p></div>
-                      
+                      <SignatureAuditDialog proto={proto} />
                     </Card>
                   );
                 })}
@@ -2705,6 +2748,14 @@ export default function CoachesCornerPage() {
                       <div className="flex items-center justify-between mb-4">
                         <div className="bg-primary/5 p-3 rounded-2xl shadow-sm border"><CheckCircle2 className={cn("h-5 w-5", isActive ? "text-primary" : "text-muted-foreground/30")} /></div>
                         <div className="flex items-center gap-2">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-destructive hover:bg-destructive/10" onClick={async () => {
+                            if(confirm('Delete this protocol?')) {
+                              await deleteTeamDocument(proto.id);
+                              toast({ title: 'Protocol Deleted' });
+                            }
+                          }}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => setEditingWaiver(proto)}>
                             <Edit3 className="h-4 w-4" />
                           </Button>
@@ -2722,6 +2773,7 @@ export default function CoachesCornerPage() {
                         </div>
                       </div>
                       <div className="space-y-1 mb-4"><p className="font-black text-sm uppercase text-foreground truncate">{proto.title}</p><p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Custom Mandate</p></div>
+                      <SignatureAuditDialog proto={proto} />
                     </Card>
                   );
                 })}

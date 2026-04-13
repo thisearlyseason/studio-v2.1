@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useAuth } from '@/firebase';
+import { useAuth, useUser, useFirestore } from '@/firebase';
+import { initiateEmailSignIn } from '@/firebase/non-blocking-login';
+import { doc, getDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signInAnonymously, signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import BrandLogo from '@/components/BrandLogo';
@@ -21,14 +23,38 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDemoLoading, setIsDemoLoading] = useState(false);
   const auth = useAuth();
+  const { user, isUserLoading } = useUser();
+  const db = useFirestore();
   const router = useRouter();
+
+  React.useEffect(() => {
+    if (!isUserLoading && user) {
+      const fetchRole = async () => {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            if (data.role === 'admin' || data.role === 'superadmin' || data.isSchoolAdmin) {
+              router.push('/club');
+            } else {
+              router.push('/dashboard');
+            }
+          } else {
+            router.push('/dashboard');
+          }
+        } catch (e) {
+          router.push('/dashboard');
+        }
+      };
+      fetchRole();
+    }
+  }, [user, isUserLoading, db, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      router.push('/dashboard');
+      initiateEmailSignIn(auth, email, password);
     } catch (error: any) {
       toast({
         title: "Login Failed",

@@ -668,6 +668,7 @@ interface TeamContextType {
   signTeamDocument: (docId: string, signatureText: string, targetMemberId: string) => Promise<boolean>;
   createTeamDocument: (data: any) => Promise<void>;
   updateTeamDocument: (docId: string, data: any) => Promise<void>;
+  deleteTeamDocument: (docId: string) => Promise<void>;
   addEvent: (data: any) => Promise<boolean>;
   updateEvent: (id: string, data: any) => Promise<boolean>;
   deleteEvent: (id: string) => Promise<void>;
@@ -1673,6 +1674,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       signedByParent: isParentSigning
     }));
 
+    // Task D: Store signatures as protocolId + userId relation
+    batch.set(doc(db, 'teams', activeTeam.id, 'protocol_signatures', `${docId}_${firebaseUser.uid}_${mid}`), clean({
+      protocolId: docId,
+      userId: firebaseUser.uid,
+      memberId: mid,
+      signedAt: new Date().toISOString(),
+      signerName: finalSignature
+    }));
+
     await batch.commit(); 
     return true; 
   }, [db, activeTeam, firebaseUser, members, userProfile]);
@@ -1687,6 +1697,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateTeamDocument = useCallback(async (docId: string, data: any) => { 
     if (!isStaff) return;
     if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'documents', docId), clean(data)); 
+  }, [db, activeTeam, isStaff]);
+
+  const deleteTeamDocument = useCallback(async (docId: string) => {
+    if (!isStaff) return;
+    if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'documents', docId));
   }, [db, activeTeam, isStaff]);
 
   const addEvent = useCallback(async (data: any) => { 

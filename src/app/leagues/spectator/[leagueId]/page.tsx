@@ -10,6 +10,8 @@ import { League, TournamentGame } from '@/components/providers/team-provider';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { AnimatedScore } from '@/components/ui/animated-score';
+import { AnimatedScore } from '@/components/ui/animated-score';
 import { Trophy, CalendarDays, MapPin, Clock, Loader2, AlertCircle, LayoutGrid, List, ChevronRight } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { format, isAfter, isBefore, isSameDay, parseISO } from 'date-fns';
@@ -150,9 +152,9 @@ export default function PublicLeagueSpectatorHub() {
                     {game.isCompleted && <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2 h-5">FINAL</Badge>}
                   </div>
                   <div className="grid grid-cols-7 items-center gap-4 text-center">
-                    <div className="col-span-3 min-w-0"><p className="font-black text-xs uppercase truncate mb-1">{game.team1}</p><p className={cn("text-3xl font-black", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")}>{game.score1}</p></div>
+                    <div className="col-span-3 min-w-0"><p className="font-black text-xs uppercase truncate mb-1">{game.team1}</p><AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")} value={game.score1} /></div>
                     <div className="col-span-1 opacity-20 font-black text-[10px]">VS</div>
-                    <div className="col-span-3 min-w-0"><p className="font-black text-xs uppercase truncate mb-1">{game.team2}</p><p className={cn("text-3xl font-black", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")}>{game.score2}</p></div>
+                    <div className="col-span-3 min-w-0"><p className="font-black text-xs uppercase truncate mb-1">{game.team2}</p><AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")} value={game.score2} /></div>
                   </div>
                   {game.location && <p className="text-[9px] font-bold text-muted-foreground uppercase text-center flex items-center justify-center gap-1.5 pt-2 border-t"><MapPin className="h-3 w-3 opacity-40" /> {game.location}</p>}
                 </Card>

@@ -31,7 +31,7 @@ const clean = (obj: any): any => {
  * STATIC BLUEPRINTS
  * Using fixed content for stable resets.
  */
-const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') => {
+const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', teamName: string = '') => {
   const now = new Date();
   const day = (d: number) => new Date(now.getTime() + d * 86400000).toISOString();
   
@@ -63,11 +63,45 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '') 
       { id: `g5_${teamId}`, opponent: 'Summit Lions', date: day(-2), myScore: 18, opponentScore: 12, result: 'Win', location: 'Apex Performance Center – Main Arena', notes: 'Great team effort all around.' }
     ],
     events: [
-      { id: `tourn_${teamId}`, teamId, title: `${teamSuffix || 'Regional'} Championship Tournament`, eventType: 'tournament', isTournament: true, date: tomorrow, endDate: day3, location: 'Premier Sports Park', description: 'Elite multi-day tournament for top-tier squads.', tournamentTeams: [`Team ${teamSuffix || 'A'}`, 'Thunder', 'Storm', 'Shadows', 'Lions', 'Eagles'], multiDaySchedule: [
-        { day: 1, title: 'Opening Rounds', date: tomorrow },
-        { day: 2, title: 'Semi-Finals', date: later },
-        { day: 3, title: 'Finals Day', date: day3 }
-      ] },
+      { 
+        id: `tourn_${teamId}`, 
+        teamId, 
+        title: `${teamSuffix || 'Regional'} Championship Tournament`, 
+        eventType: 'tournament', 
+        isTournament: true, 
+        date: tomorrow, 
+        endDate: day3, 
+        location: 'Premier Sports Park', 
+        description: 'Elite multi-day tournament for top-tier squads.', 
+        tournamentTeams: [teamName || `Team ${teamSuffix || 'A'}`, 'Thunder', 'Storm', 'Shadows', 'Lions', 'Eagles'], 
+        multiDaySchedule: [
+          { day: 1, title: 'Opening Rounds', date: tomorrow },
+          { day: 2, title: 'Semi-Finals', date: later },
+          { day: 3, title: 'Finals Day', date: day3 }
+        ],
+        tournamentTeamsData: [
+          { id: `tt_0`, name: teamName || `Team ${teamSuffix || 'A'}`, coach: `Coach ${teamSuffix || 'A'}`, email: 'coach.a@example.com', source: 'manual', complianceStatus: 'verified' },
+          { id: `tt_1`, name: 'Thunder', coach: 'Mike Thunder', email: 'mike@thunder.com', source: 'manual', complianceStatus: 'verified' },
+          { id: `tt_2`, name: 'Storm', coach: 'Sarah Storm', email: 'sarah@storm.com', source: 'manual', complianceStatus: 'pending' },
+          { id: `tt_3`, name: 'Shadows', coach: 'Dave Shadow', email: 'dave@shadows.com', source: 'manual', complianceStatus: 'verified' },
+          { id: `tt_4`, name: 'Lions', coach: 'Tim Lion', email: 'tim@lions.com', source: 'manual', complianceStatus: 'verified' },
+          { id: `tt_5`, name: 'Eagles', coach: 'Jane Eagle', email: 'jane@eagles.com', source: 'manual', complianceStatus: 'verified' },
+        ],
+        tournamentGames: [
+          { id: 'tg1', team1: teamName || `Team ${teamSuffix || 'A'}`, team2: 'Thunder', score1: 3, score2: 1, isCompleted: true, date: tomorrow, time: '09:00 AM', round: 'Pool A', location: 'Field 1', team1Id: 'tt_0', team2Id: 'tt_1' },
+          { id: 'tg2', team1: 'Storm', team2: 'Shadows', score1: 0, score2: 0, isCompleted: false, date: tomorrow, time: '10:00 AM', round: 'Pool A', location: 'Field 1', team1Id: 'tt_2', team2Id: 'tt_3' },
+          { id: 'tg3', team1: teamName || `Team ${teamSuffix || 'A'}`, team2: 'Lions', score1: 0, score2: 0, isCompleted: false, date: later, time: '09:00 AM', round: 'Pool A', location: 'Field 2', team1Id: 'tt_0', team2Id: 'tt_4' },
+          { id: 'tg4', team1: 'Thunder', team2: 'Storm', score1: 0, score2: 0, isCompleted: false, date: later, time: '11:00 AM', round: 'Pool A', location: 'Field 2', team1Id: 'tt_1', team2Id: 'tt_2' },
+          { id: 'tg5', team1: 'Shadows', team2: 'Eagles', score1: 0, score2: 0, isCompleted: false, date: day3, time: '01:00 PM', round: 'Pool B', location: 'Field 3', team1Id: 'tt_3', team2Id: 'tt_5' }
+        ],
+        teamAgreements: {
+          [teamName || `Team ${teamSuffix || 'A'}`]: { signedAt: yesterday, signatureCount: 15, captainName: 'Jordan Smith' },
+          'Thunder': { signedAt: day(-2), signatureCount: 12, captainName: 'Mike Thunder' },
+          'Shadows': { signedAt: day(-3), signatureCount: 14, captainName: 'Dave Shadow' },
+          'Lions': { signedAt: day(-1), signatureCount: 11, captainName: 'Tim Lion' },
+          'Eagles': { signedAt: yesterday, signatureCount: 16, captainName: 'Jane Eagle' }
+        }
+      },
       { id: `lg1_${teamId}`, teamId, title: `League Match vs Bears`, eventType: 'game', isLeagueGame: true, date: tomorrow, startTime: '06:00 PM', location: 'Memorial Field', description: 'Primary season league match.' },
       { id: `lg2_${teamId}`, teamId, title: `League Match vs Eagles`, eventType: 'game', isLeagueGame: true, date: later, startTime: '12:00 PM', location: 'City Park', description: 'Second league fixture of the week.' },
       { id: `lg3_${teamId}`, teamId, title: `Conference Playoff`, eventType: 'game', isLeagueGame: true, date: day4, startTime: '10:00 AM', location: 'State Complex', description: 'Qualifier for states.' },
@@ -379,7 +413,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             }));
 
             // Events for this team
-            const data = GET_DEMO_DATA(v.id, userId, v.name);
+            const data = GET_DEMO_DATA(v.id, userId, v.name, v.name);
             data.events.forEach(e => {
                 batch.set(doc(db, 'teams', v.id, 'events', e.id), clean({ ...e, teamId: v.id }));
             });
@@ -476,6 +510,12 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
               tournamentTeams: tournamentTeamsList,
               tournamentTeamsData: tournamentTeamsData,
               tournamentGames: tournamentGames,
+              teamAgreements: {
+                'Strikers': { signedAt: yesterday, signatureCount: 15, captainName: 'Coach Strikers' },
+                'Lakers': { signedAt: day2, signatureCount: 12, captainName: 'Coach Lakers' },
+                'Hawks': { signedAt: day3, signatureCount: 14, captainName: 'Coach Hawks' },
+                'Tigers': { signedAt: yesterday, signatureCount: 11, captainName: 'Coach Tigers' }
+              },
               status: 'active'
             }));
 
@@ -571,7 +611,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             ownerUserId: userId, email: `${userRole}@thesquad.pro`
         }));
 
-        const data = GET_DEMO_DATA(teamId, userId, variant);
+        const data = GET_DEMO_DATA(teamId, userId, variant, name);
         
         // Seed Roster Members & Player Profiles
         data.members.forEach(m => {

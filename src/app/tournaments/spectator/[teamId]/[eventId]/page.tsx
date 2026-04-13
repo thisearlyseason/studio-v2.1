@@ -17,6 +17,7 @@ import { DateRange } from "react-day-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { AnimatedScore } from '@/components/ui/animated-score';
 
 /**
  * Tactical Scoring Logic:
@@ -235,12 +236,12 @@ export default function PublicSpectatorHub() {
                       <div className="grid grid-cols-7 items-center gap-4 text-center">
                         <div className="col-span-3 min-w-0">
                           <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team1}</p>
-                          <p className={cn("text-3xl font-black", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")}>{game.score1}</p>
+                          <AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")} value={game.score1} />
                         </div>
                         <div className="col-span-1 opacity-20 font-black text-[10px]">VS</div>
                         <div className="col-span-3 min-w-0">
                           <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team2}</p>
-                          <p className={cn("text-3xl font-black", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")}>{game.score2}</p>
+                          <AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")} value={game.score2} />
                         </div>
                       </div>
                       {game.location && (

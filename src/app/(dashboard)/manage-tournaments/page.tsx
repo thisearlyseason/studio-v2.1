@@ -64,7 +64,8 @@ import { cn } from '@/lib/utils';
 import { format, isPast, isSameDay, eachDayOfInterval } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
-import { generateTournamentSchedule, DailyWindow, TeamIdentity } from '@/lib/scheduler-utils';
+import { DailyWindow, TeamIdentity } from '@/lib/scheduler-utils';
+import { generateIntelligentTournamentSchedule } from '@/lib/intelligent-scheduler';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import html2canvas from 'html2canvas';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -262,7 +263,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
       return;
     }
 
-    const schedule = generateTournamentSchedule({
+    const { games: schedule, report } = generateIntelligentTournamentSchedule({
       teams: form.teams,
       fields: form.selectedFields.length > 0 ? form.selectedFields : [form.manualVenue || form.location],
       startDate: form.startDate,
@@ -274,6 +275,10 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
       dailyWindows: form.dailyWindows,
       gamesPerTeam: parseInt(form.gamesPerTeam)
     });
+    
+    if (report.warnings.length > 0) {
+      toast({ title: 'Schedule Warnings', description: report.warnings[0] });
+    }
 
     const success = await addEvent({
       title: form.title,

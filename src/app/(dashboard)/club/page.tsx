@@ -190,42 +190,30 @@ export default function ClubManagementPage() {
     return allTeams.map(t => t.id);
   }, [schoolHub, teams]);
 
-  // Query members for each school team individually - more reliable than collectionGroup
-  const hubMembersQuery = useMemoFirebase(() => {
+  const allMembersQuery = useMemoFirebase(() => {
     if (!db || !schoolHub || schoolTeamIds.length === 0) return null;
-    return query(collection(db, 'teams', schoolTeamIds[0], 'members'), where('ownerUserId', '==', schoolHub.ownerUserId));
+    return query(collectionGroup(db, 'members'), where('ownerUserId', '==', schoolHub.ownerUserId));
   }, [db, schoolHub, schoolTeamIds]);
-  const { data: hubMembers } = useCollection<Member>(hubMembersQuery);
-
-  const squad1MembersQuery = useMemoFirebase(() => {
-    if (!db || !schoolHub || schoolTeamIds.length < 2) return null;
-    return query(collection(db, 'teams', schoolTeamIds[1], 'members'), where('ownerUserId', '==', schoolHub.ownerUserId));
-  }, [db, schoolHub, schoolTeamIds]);
-  const { data: squad1Members } = useCollection<Member>(squad1MembersQuery);
-
-  const squad2MembersQuery = useMemoFirebase(() => {
-    if (!db || !schoolHub || schoolTeamIds.length < 3) return null;
-    return query(collection(db, 'teams', schoolTeamIds[2], 'members'), where('ownerUserId', '==', schoolHub.ownerUserId));
-  }, [db, schoolHub, schoolTeamIds]);
-  const { data: squad2Members } = useCollection<Member>(squad2MembersQuery);
-
-  const squad3MembersQuery = useMemoFirebase(() => {
-    if (!db || !schoolHub || schoolTeamIds.length < 4) return null;
-    return query(collection(db, 'teams', schoolTeamIds[3], 'members'), where('ownerUserId', '==', schoolHub.ownerUserId));
-  }, [db, schoolHub, schoolTeamIds]);
-  const { data: squad3Members } = useCollection<Member>(squad3MembersQuery);
+  const { data: allRawMembers } = useCollection<Member>(allMembersQuery);
 
   // Aggregate all members from all school teams
   const clubMembers = useMemo(() => {
-    const allMembers = [
-      ...(hubMembers || []),
-      ...(squad1Members || []),
-      ...(squad2Members || []),
-      ...(squad3Members || [])
-    ];
-    // Deduplicate by id
-    return Array.from(new Map(allMembers.map(m => [m.id, m])).values());
-  }, [hubMembers, squad1Members, squad2Members, squad3Members]);
+    if (!allRawMembers) return [];
+    
+    // Filter to only include members part of the school network
+    const validMembers = allRawMembers.filter(m => schoolTeamIds.includes(m.teamId));
+    
+    // Deduplicate by userId first, fallback to id for placeholders
+    const uniqueMap = new Map<string, Member>();
+    validMembers.forEach(m => {
+      const key = m.userId || m.id;
+      // Prefer entries with a userId over placeholders if there's a conflict
+      if (!uniqueMap.has(key) || (m.userId && !uniqueMap.get(key)?.userId)) {
+        uniqueMap.set(key, m);
+      }
+    });
+    return Array.from(uniqueMap.values());
+  }, [allRawMembers, schoolTeamIds]);
 
   // Need allMembersRaw for the coaches calculation - use clubMembers
   const allMembersRaw = clubMembers;

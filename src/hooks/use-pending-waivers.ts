@@ -18,25 +18,21 @@ export function usePendingWaivers() {
     );
   }, [members, user]);
 
-  const institutionalFilesQuery = useMemoFirebase(() => {
-    if (!db || !user?.id) return null;
-    return query(collectionGroup(db, 'files'), where('category', '==', 'Signed Certificate'));
-  }, [db, user?.id]);
-
+  // We ONLY want protocols/signatures linked specifically to this team.
+  // Global queries cause duplication and leak signatures across unrelated squads.
   const localFilesQuery = useMemoFirebase(() => {
     if (!db || !activeTeam?.id) return null;
     return query(collection(db, 'teams', activeTeam.id, 'files'), where('category', '==', 'Signed Certificate'));
   }, [db, activeTeam?.id]);
 
-  const { data: globalSignedFiles } = useCollection<TeamFile>(institutionalFilesQuery);
   const { data: localSignedFiles } = useCollection<TeamFile>(localFilesQuery);
 
   const allSignedFilesRaw = useMemo(() => {
-    const combined = [...(globalSignedFiles || []), ...(localSignedFiles || [])];
+    const combined = [...(localSignedFiles || [])];
     const unique = new Map();
     combined.forEach(f => unique.set(f.id, f));
     return Array.from(unique.values());
-  }, [globalSignedFiles, localSignedFiles]);
+  }, [localSignedFiles]);
 
   const docsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;

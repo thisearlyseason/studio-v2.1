@@ -33,6 +33,7 @@ import {
   Loader2,
   Calendar as CalendarIcon
 } from 'lucide-react';
+import { AnimatedScore } from '@/components/ui/animated-score';
 import { 
   Dialog, 
   DialogClose,
@@ -108,21 +109,21 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col h-[90vh] sm:h-auto sm:max-h-[85vh]">
+      <DialogContent className="sm:max-w-4xl w-[95vw] sm:w-[100vw] p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground max-h-[90vh] flex flex-col">
         <DialogTitle className="sr-only">Event Intelligence: {event.title}</DialogTitle>
         <DialogClose asChild>
           <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
             <X className="h-5 w-5" />
           </Button>
         </DialogClose>
-        <div className="flex flex-col lg:flex-row h-full overflow-y-auto lg:overflow-hidden">
+        <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto w-full">
           {/* LEFT PANEL: ELITE STATUS & RSVP */}
-          <div className="w-full lg:w-2/5 flex flex-col text-white bg-black p-8 relative shrink-0 lg:h-full h-auto">
+          <div className="w-full lg:w-2/5 flex flex-col text-white bg-black p-8 relative shrink-0">
             <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none">
               <Zap className="h-48 w-48" />
             </div>
             
-            <div className="space-y-6 relative z-10 lg:overflow-y-auto overflow-visible custom-scrollbar pr-2 h-full flex flex-col">
+            <div className="space-y-6 relative z-10 overflow-visible flex flex-col">
               <div className="flex gap-2 mb-4">
                 <Badge className="uppercase font-black tracking-widest text-[9px] h-6 px-3 bg-primary text-white border-none">{(event.eventType || 'other').toUpperCase()}</Badge>
                 {event.isLeagueGame && (
@@ -273,7 +274,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
           </div>
 
           {/* RIGHT PANEL: TABS & INTELLIGENCE */}
-          <div className="flex-1 bg-white lg:overflow-hidden overflow-visible flex flex-col h-auto lg:h-full">
+          <div className="flex-1 bg-white flex flex-col">
             <Tabs defaultValue="attendance" className="flex flex-col h-full">
               <div className="px-8 pt-8 shrink-0">
                 <TabsList className="grid w-full grid-cols-4 bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14">
@@ -284,7 +285,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                 </TabsList>
               </div>
 
-              <div className="flex-1 lg:overflow-y-auto overflow-visible custom-scrollbar px-8 pb-8 pt-4">
+              <div className="flex-1 px-8 pb-8 pt-4">
                 <TabsContent value="attendance" className="mt-0 space-y-6 animate-in fade-in duration-300">
                   <div className="flex items-center gap-3">
                     <div className="bg-primary/10 p-2 rounded-xl text-primary"><Users className="h-5 w-5" /></div>
@@ -347,12 +348,12 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                         <div className="grid grid-cols-7 items-center gap-6 text-center">
                           <div className="col-span-3 min-w-0">
                             <p className="font-black text-[11px] uppercase truncate opacity-50 mb-2 leading-none">{game.team1}</p>
-                            <p className={cn("text-4xl font-black tracking-tighter transition-all", game.isCompleted && game.score1 > game.score2 ? "text-primary scale-110" : "text-foreground")}>{game.score1}</p>
+                            <AnimatedScore className={cn("text-4xl font-black tracking-tighter inline-block transition-all", game.isCompleted && game.score1 > game.score2 ? "text-primary scale-110" : "text-foreground")} value={game.score1} />
                           </div>
                           <div className="col-span-1 opacity-20 font-black text-xs uppercase italic select-none">vs</div>
                           <div className="col-span-3 min-w-0">
                             <p className="font-black text-[11px] uppercase truncate opacity-50 mb-2 leading-none">{game.team2}</p>
-                            <p className={cn("text-4xl font-black tracking-tighter transition-all", game.isCompleted && game.score2 > game.score1 ? "text-primary scale-110" : "text-foreground")}>{game.score2}</p>
+                            <AnimatedScore className={cn("text-4xl font-black tracking-tighter inline-block transition-all", game.isCompleted && game.score2 > game.score1 ? "text-primary scale-110" : "text-foreground")} value={game.score2} />
                           </div>
                         </div>
                         {game.location && (
@@ -455,7 +456,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
 }
 
 export default function EventsPage() {
-  const { activeTeamEvents, updateRSVP, isSuperAdmin, isStaff, addEvent, updateEvent, deleteEvent, members, createAlert } = useTeam();
+  const { activeTeam, activeTeamEvents, updateRSVP, isSuperAdmin, isStaff, addEvent, updateEvent, deleteEvent, members, createAlert } = useTeam();
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<TeamEvent | null>(null);
@@ -497,6 +498,7 @@ export default function EventsPage() {
       if (event.isTournament && event.tournamentGames && event.tournamentGames.length > 0) {
         event.tournamentGames.forEach((game: any, idx: number) => {
           if (!game.date) return;
+          if (activeTeam && game.team1 !== activeTeam.teamName && game.team2 !== activeTeam.teamName && game.team1 !== activeTeam.name && game.team2 !== activeTeam.name) return;
           
           // Synthesize a match event entry
           expandedList.push({
@@ -507,7 +509,7 @@ export default function EventsPage() {
             endDate: game.date,
             startTime: game.time,
             location: game.location || event.location,
-            eventType: 'game', // Force 'game' type for match styling
+            eventType: 'tournament', // Force 'tournament' type for black match styling
             isTournamentMatch: true,
             parentTournamentId: event.id
           } as any);
