@@ -8,12 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { 
-  ChevronLeft,
   Trophy,
-  Sun,
-  Cloud,
-  Wind,
-  Thermometer,
   Zap,
   Activity,
   ArrowUpRight,
@@ -28,8 +23,6 @@ import {
   X,
   Users,
   Info,
-  ExternalLink,
-  FileSignature,
   Loader2,
   Calendar as CalendarIcon
 } from 'lucide-react';

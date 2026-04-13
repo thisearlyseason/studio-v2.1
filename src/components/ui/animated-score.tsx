@@ -1,18 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 
-export function AnimatedScore({ value, className }: { value: number | string, className?: string }) {
+export function AnimatedScore({ value, className }: { value: number | string | null | undefined, className?: string }) {
   const [pulse, setPulse] = useState(false);
-  const [displayValue, setDisplayValue] = useState(value);
+  const [lastValue, setLastValue] = useState(value);
 
   useEffect(() => {
-    if (value !== displayValue) {
+    if (value !== lastValue) {
       setPulse(true);
-      setDisplayValue(value);
+      setLastValue(value);
       const timer = setTimeout(() => setPulse(false), 800);
       return () => clearTimeout(timer);
     }
-  }, [value, displayValue]);
+  }, [value, lastValue]);
 
   return (
     <span
@@ -22,7 +22,7 @@ export function AnimatedScore({ value, className }: { value: number | string, cl
         className
       )}
     >
-      {displayValue}
+      {value ?? '-'}
     </span>
   );
 }
