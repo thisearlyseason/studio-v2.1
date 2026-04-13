@@ -93,8 +93,10 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   }, [games, event.id, event.eventType]);
   
   const team = teams.find(t => t.id === event.teamId);
+  const { isStaff, user: teamUser } = useTeam();
   const relevantParticipants = [
-    { id: user?.id, name: 'You' },
+    // Parents don't need to RSVP for themselves
+    ...(isParent && !isPlayer && !isStaff ? [] : [{ id: user?.id, name: 'You' }]),
     ...(isParent ? (myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId)).map(c => ({ id: c.id, name: c.firstName })) : [])
   ];
 
@@ -106,16 +108,21 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col h-[90vh] sm:h-auto sm:max-h-[85vh]">
+      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col h-[90vh] sm:h-auto sm:max-h-[85vh] relative">
         <DialogTitle className="sr-only">Event Intelligence: {event.title}</DialogTitle>
-        <div className="flex flex-col lg:flex-row h-full overflow-hidden">
+        <DialogClose asChild>
+          <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
+            <X className="h-5 w-5" />
+          </Button>
+        </DialogClose>
+        <div className="flex flex-col lg:flex-row h-full overflow-y-auto lg:overflow-hidden">
           {/* LEFT PANEL: ELITE STATUS & RSVP */}
-          <div className="w-full lg:w-2/5 flex flex-col text-white bg-black p-8 relative shrink-0">
+          <div className="w-full lg:w-2/5 flex flex-col text-white bg-black p-8 relative shrink-0 lg:h-full h-auto">
             <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none">
               <Zap className="h-48 w-48" />
             </div>
             
-            <div className="space-y-6 relative z-10 overflow-y-auto custom-scrollbar pr-2 h-full flex flex-col">
+            <div className="space-y-6 relative z-10 lg:overflow-y-auto overflow-visible custom-scrollbar pr-2 h-full flex flex-col">
               <div className="flex gap-2 mb-4">
                 <Badge className="uppercase font-black tracking-widest text-[9px] h-6 px-3 bg-primary text-white border-none">{(event.eventType || 'other').toUpperCase()}</Badge>
                 {event.isLeagueGame && (
@@ -266,7 +273,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
           </div>
 
           {/* RIGHT PANEL: TABS & INTELLIGENCE */}
-          <div className="flex-1 bg-white overflow-hidden flex flex-col h-full">
+          <div className="flex-1 bg-white lg:overflow-hidden overflow-visible flex flex-col h-auto lg:h-full">
             <Tabs defaultValue="attendance" className="flex flex-col h-full">
               <div className="px-8 pt-8 shrink-0">
                 <TabsList className="grid w-full grid-cols-4 bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14">
@@ -277,7 +284,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                 </TabsList>
               </div>
 
-              <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 pt-4">
+              <div className="flex-1 lg:overflow-y-auto overflow-visible custom-scrollbar px-8 pb-8 pt-4">
                 <TabsContent value="attendance" className="mt-0 space-y-6 animate-in fade-in duration-300">
                   <div className="flex items-center gap-3">
                     <div className="bg-primary/10 p-2 rounded-xl text-primary"><Users className="h-5 w-5" /></div>

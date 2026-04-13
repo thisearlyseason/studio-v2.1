@@ -423,19 +423,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="flex items-center gap-2 md:gap-3">
                 {isStaff && <CreateAlertButton />}
                 <AlertsHistoryDialog>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-10 w-10 md:h-11 md:w-11 rounded-2xl hover:bg-primary/5 text-foreground relative transition-all active:scale-95">
-                        <Bell className="h-5 w-5" />
-                        {unreadAlertsCount > 0 && (
-                          <span className="absolute top-1 right-1 h-4 w-4 bg-primary text-[8px] font-black text-white rounded-full border-2 border-background flex items-center justify-center animate-pulse shadow-[0_0_10px_rgba(255,0,0,0.5)]">
-                            {unreadAlertsCount}
-                          </span>
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Tactical Alerts</TooltipContent>
-                  </Tooltip>
+                  <Button variant="ghost" size="icon" className="h-10 w-10 md:h-11 md:w-11 rounded-2xl hover:bg-primary/5 text-foreground relative transition-all active:scale-95">
+                    <Bell className="h-5 w-5" />
+                    {unreadAlertsCount > 0 && (
+                      <span className="absolute top-1 right-1 h-4 w-4 bg-primary text-[8px] font-black text-white rounded-full border-2 border-background flex items-center justify-center animate-pulse shadow-[0_0_10px_rgba(255,0,0,0.5)]">
+                        {unreadAlertsCount}
+                      </span>
+                    )}
+                  </Button>
                 </AlertsHistoryDialog>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

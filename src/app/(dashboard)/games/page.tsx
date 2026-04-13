@@ -22,6 +22,8 @@ import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, limit, where } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { DialogClose } from '@/components/ui/dialog';
+import { X } from 'lucide-react';
 import {
   ChartConfig,
   ChartContainer,
@@ -38,7 +40,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export default function GamesPage() {
-  const { activeTeam, addGame, updateGame, isSuperAdmin, purchasePro, hasFeature, isStaff, activeTeamEvents } = useTeam();
+  const { activeTeam, addGame, updateGame, isSuperAdmin, purchasePro, hasFeature, isStaff, activeTeamEvents, isPro } = useTeam();
   const db = useFirestore();
   
   const gamesQuery = useMemoFirebase(() => {
@@ -68,6 +70,66 @@ export default function GamesPage() {
   const recordedEventIds = useMemo(() => {
     return new Set(games.map(g => g.eventId).filter(Boolean));
   }, [games]);
+
+  const allScheduleItems = useMemo(() => {
+    const items = games.map(g => ({
+      ...g,
+      isRecorded: true,
+      displayDate: new Date(g.date),
+      time: 'Final' // Recorded games don't strictly need time displayed
+    }));
+
+    (activeTeamEvents || []).forEach(e => {
+      // 1. Standalone unrecorded games
+      if (e.eventType === 'game') {
+        if (!recordedEventIds.has(e.id)) {
+          let opp = e.opponent;
+          if (!opp) {
+            const m = e.title.match(/vs\s+(.*)/i) || e.title.match(/@\s+(.*)/i);
+            opp = m ? m[1].trim() : e.title;
+          }
+          items.push({
+            id: e.id,
+            eventId: e.id,
+            opponent: opp,
+            date: e.date,
+            displayDate: new Date(e.date),
+            isRecorded: false,
+            location: e.location,
+            time: e.startTime,
+            subtitle: e.title
+          });
+        }
+      }
+      
+      // 2. Tournament games
+      if (e.eventType === 'tournament' && e.tournamentGames && e.tournamentGames.length > 0) {
+        e.tournamentGames.forEach((g: any, idx: number) => {
+          const gameId = g.id || `${e.id}_${idx}`;
+          if (!recordedEventIds.has(gameId)) {
+            let usName = activeTeam?.name || 'Us';
+            let opp = g.team2;
+            if (g.team1 !== usName && g.team2 === usName) opp = g.team1;
+            else if (g.team1 !== usName && g.team2 !== usName) opp = `${g.team1} vs ${g.team2}`;
+            
+            items.push({
+              id: gameId,
+              eventId: gameId,
+              opponent: opp,
+              date: g.date || e.date, // Use exact game date if available, otherwise tournament date
+              displayDate: new Date(g.date || e.date),
+              isRecorded: false,
+              location: g.location || e.location,
+              time: g.time,
+              subtitle: `[${e.title}] ${g.round || 'Match'}`
+            });
+          }
+        });
+      }
+    });
+
+    return items.sort((a, b) => b.displayDate.getTime() - a.displayDate.getTime());
+  }, [games, activeTeamEvents, recordedEventIds, activeTeam?.name]);
 
   useEffect(() => {
     const recordEventId = searchParams.get('recordEventId');
@@ -122,7 +184,6 @@ export default function GamesPage() {
   if (isLoading) return <div className="flex flex-col items-center justify-center py-20 animate-pulse"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase mt-4">Syncing Ledger...</p></div>;
 
   const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
-  const isPro = hasFeature?.('stats_basic');
 
   const handleRecordGame = () => {
     if (!opponent || !date || !myScore || !opponentScore) return;
@@ -218,36 +279,57 @@ export default function GamesPage() {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
-        {games.map((game) => (
+        {allScheduleItems.map((game) => (
           <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 overflow-hidden hover:shadow-lg transition-all cursor-pointer bg-white group" onClick={() => {
             if (isAdmin) {
-              setEditingGame(game);
-              setOpponent(game.opponent);
-              setDate(new Date(game.date).toISOString().split('T')[0]);
-              setMyScore(game.myScore.toString());
-              setOpponentScore(game.opponentScore.toString());
-              setLocation(game.location || '');
-              setNotes(game.notes || '');
-              setSelectedEventId(game.eventId || 'manual');
+              if (game.isRecorded) {
+                setEditingGame(game);
+                setOpponent(game.opponent);
+                setDate(new Date(game.date).toISOString().split('T')[0]);
+                setMyScore(game.myScore.toString());
+                setOpponentScore(game.opponentScore.toString());
+                setLocation(game.location || '');
+                setNotes(game.notes || '');
+                setSelectedEventId(game.eventId || 'manual');
+              } else {
+                setEditingGame(null);
+                setOpponent(game.opponent);
+                setDate(new Date(game.date).toISOString().split('T')[0]);
+                setMyScore('');
+                setOpponentScore('');
+                setLocation(game.location || '');
+                setNotes('');
+                setSelectedEventId(game.eventId); // links the created record to the schedule item
+              }
               setIsRecordOpen(true);
             }
           }}>
-            <div className={cn("h-1.5 w-full", game.result === 'Win' ? "bg-green-500" : game.result === 'Loss' ? "bg-red-600" : "bg-muted-foreground/30")} />
+            <div className={cn("h-1.5 w-full", game.isRecorded && game.result === 'Win' ? "bg-green-500" : game.isRecorded && game.result === 'Loss' ? "bg-red-600" : game.isRecorded ? "bg-muted-foreground/30" : "bg-primary/50")} />
             <CardContent className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <Badge className={cn("text-[8px] font-black uppercase px-2 h-5 shadow-sm", game.result === 'Win' ? "bg-green-500" : game.result === 'Loss' ? "bg-red-600" : "bg-muted")}>{game.result}</Badge>
-                <span className="text-[10px] font-black text-muted-foreground uppercase">{format(game.date, 'MMM d, yyyy')}</span>
+                {game.isRecorded ? (
+                  <Badge className={cn("text-[8px] font-black uppercase px-2 h-5 shadow-sm", game.result === 'Win' ? "bg-green-500" : game.result === 'Loss' ? "bg-red-600" : "bg-muted text-black")}>{game.result}</Badge>
+                ) : (
+                  <Badge className="bg-primary/20 text-primary border-none text-[8px] font-black uppercase px-2 h-5 tracking-widest text-black">UPCOMING • {game.time || 'TBD'}</Badge>
+                )}
+                <span className="text-[10px] font-black text-muted-foreground uppercase">{format(new Date(game.displayDate), 'MMM d, yyyy')}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
-                  <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest">Opponent</p>
+                  <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest">{game.isRecorded ? 'Opponent' : (game.subtitle || 'Match')}</p>
                   <h3 className="font-black text-lg uppercase truncate group-hover:text-primary transition-colors">{game.opponent}</h3>
                 </div>
-                <div className="flex items-baseline gap-1 text-right">
-                  <span className={cn("text-3xl font-black", game.result === 'Win' ? "text-green-600" : game.result === 'Loss' ? "text-red-600" : "text-foreground")}>{game.myScore}</span>
-                  <span className="text-muted-foreground font-black px-1">-</span>
-                  <span className="text-xl font-black opacity-40">{game.opponentScore}</span>
-                </div>
+                {game.isRecorded ? (
+                  <div className="flex items-baseline gap-1 text-right shrink-0">
+                    <span className={cn("text-3xl font-black", game.result === 'Win' ? "text-green-600" : game.result === 'Loss' ? "text-red-600" : "text-foreground")}>{game.myScore}</span>
+                    <span className="text-muted-foreground font-black px-1">-</span>
+                    <span className="text-xl font-black opacity-40">{game.opponentScore}</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <Button variant="ghost" size="sm" className="h-8 text-[9px] font-black uppercase border tracking-widest">Score match</Button>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

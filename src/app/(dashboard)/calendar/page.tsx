@@ -149,7 +149,8 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
 
   const team = teams.find(t => t.id === event.teamId);
   const relevantParticipants = [
-    { id: user?.id, name: 'You', isChild: false },
+    // If user is a parent (and not also a player/staff with their own roster spot), they don't RSVP for themselves
+    ...(isParent && !isPlayer && !isStaff ? [] : [{ id: user?.id, name: 'You', isChild: false }]),
     ...(isParent ? (myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId)).map(c => ({ id: c.id, name: c.firstName, isChild: true })) : [])
   ];
 
@@ -160,16 +161,21 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col h-[90vh] sm:h-auto sm:max-h-[85vh]">
+      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col h-[90vh] sm:h-auto sm:max-h-[85vh] relative">
         <DialogTitle className="sr-only">Event Details: {event.title}</DialogTitle>
-        <div className="flex flex-col lg:flex-row h-full overflow-hidden">
+        <DialogClose asChild>
+          <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
+            <X className="h-5 w-5" />
+          </Button>
+        </DialogClose>
+        <div className="flex flex-col lg:flex-row h-full overflow-y-auto lg:overflow-hidden">
           {/* LEFT PANEL: ELITE STATUS & RSVP */}
-          <div className="w-full lg:w-2/5 flex flex-col text-white bg-black p-8 relative shrink-0">
+          <div className="w-full lg:w-2/5 flex flex-col text-white bg-black p-8 relative shrink-0 lg:h-full h-auto">
             <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none">
               <Zap className="h-48 w-48" />
             </div>
             
-            <div className="space-y-6 relative z-10 overflow-y-auto custom-scrollbar pr-2">
+            <div className="space-y-6 relative z-10 lg:overflow-y-auto overflow-visible custom-scrollbar pr-2">
               <div className="flex gap-2 mb-4">
                 <Badge className="uppercase font-black tracking-widest text-[9px] h-6 px-3 bg-primary text-white border-none">{(event.eventType || 'other').toUpperCase()}</Badge>
                 {event.isLeagueGame && (
@@ -265,7 +271,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
           </div>
 
           {/* RIGHT PANEL: TABS & INTELLIGENCE */}
-          <div className="flex-1 bg-white overflow-hidden flex flex-col h-full">
+          <div className="flex-1 bg-white lg:overflow-hidden overflow-visible flex flex-col h-auto lg:h-full min-h-[500px] lg:min-h-0">
             <Tabs defaultValue="brief" className="flex flex-col h-full">
               <div className="px-8 pt-8 shrink-0">
                 <TabsList className="grid w-full grid-cols-3 bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14">
@@ -275,7 +281,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                 </TabsList>
               </div>
 
-              <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 pt-4">
+              <div className="flex-1 lg:overflow-y-auto overflow-visible custom-scrollbar px-8 pb-8 pt-4">
                 <TabsContent value="brief" className="space-y-8 mt-0 animate-in fade-in duration-300">
                   <div className="space-y-4">
                     <div className="flex items-center gap-3">
@@ -400,7 +406,20 @@ export default function MasterCalendarPage() {
 
   const activeDetailedEvent = useMemo(() => {
     if (!activeDetailedEventId) return null;
-    return allEvents.find(e => e.id === activeDetailedEventId) || null;
+    
+    // 1. Check for exact match first (standard events)
+    const exactMatch = allEvents.find(e => e.id === activeDetailedEventId);
+    if (exactMatch) return exactMatch;
+
+    // 2. Check for synthesized tournament match IDs
+    // Format is usually [parentEventId]_match_[idx] or similar
+    const parentEvent = allEvents.find(e => 
+      e.isTournament && 
+      e.tournamentGames && 
+      e.tournamentGames.some((g: any, idx: number) => (g.id === activeDetailedEventId || `${e.id}_match_${idx}` === activeDetailedEventId))
+    );
+
+    return parentEvent || null;
   }, [allEvents, activeDetailedEventId]);
 
   const discoveryTeamIds = useMemo(() => {
@@ -440,12 +459,42 @@ export default function MasterCalendarPage() {
       const dayEnd = endOfDay(day);
 
       filteredEvents.forEach(event => {
+        // Handle standard span of the tournament/event
         const start = startOfDay(new Date(event.date));
         const end = event.endDate ? startOfDay(new Date(event.endDate)) : start;
         
         if (isWithinInterval(dayStart, { start, end }) || isWithinInterval(dayEnd, { start, end })) {
           if (!map[dayKey]) map[dayKey] = [];
-          map[dayKey].push(event);
+          // Avoid duplicate main tournament entries if we already added it (though filteredEvents is unique)
+          if (!map[dayKey].find(e => e.id === event.id)) {
+             map[dayKey].push(event);
+          }
+        }
+
+        // TACTICAL EXPANSION: Extract individual matches for this specific day
+        if (event.isTournament && event.tournamentGames && event.tournamentGames.length > 0) {
+          event.tournamentGames.forEach((game: any, idx: number) => {
+            if (!game.date) return;
+            const gameDate = startOfDay(new Date(game.date));
+            if (isSameDay(gameDate, dayStart)) {
+              if (!map[dayKey]) map[dayKey] = [];
+              // Synthesize a sub-event for the match
+              const matchId = game.id || `${event.id}_match_${idx}`;
+              // Avoid duplicates
+              if (!map[dayKey].find(e => e.id === matchId)) {
+                map[dayKey].push({
+                  ...event, // Inherit teamId, etc.
+                  id: matchId,
+                  title: `[Match] ${game.team1} vs ${game.team2}`,
+                  startTime: game.time,
+                  location: game.location || event.location,
+                  eventType: 'game', // Treat as game for color coding
+                  isTournamentMatch: true,
+                  parentTournamentId: event.id
+                } as any);
+              }
+            }
+          });
         }
       });
     });

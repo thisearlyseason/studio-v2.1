@@ -38,6 +38,8 @@ import {
   DialogFooter
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { DialogClose } from '@/components/ui/dialog';
+import { X } from 'lucide-react';
 import { useTeam, TeamFile } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, doc, limit, updateDoc } from 'firebase/firestore';
@@ -838,8 +840,13 @@ export default function PlaybookAndGamePlayPage() {
       </Dialog>
       
       <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
-        <DialogContent className="rounded-[4rem] sm:max-w-6xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+        <DialogContent className="rounded-[3rem] sm:max-w-6xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground w-[95vw] h-[90vh] relative">
           <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
+          <DialogClose asChild>
+            <Button variant="ghost" size="icon" className="absolute top-6 right-6 z-50 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white/40 hover:text-white transition-all backdrop-blur-md border border-white/10">
+              <X className="h-6 w-6" />
+            </Button>
+          </DialogClose>
           {(selectedDrill || selectedFile) && (() => {
             const data = selectedDrill || selectedFile;
             const url = selectedDrill ? selectedDrill.videoUrl : selectedFile!.url;
@@ -848,7 +855,7 @@ export default function PlaybookAndGamePlayPage() {
             const userHasWatched = hasUserWatched(data);
             
             return (
-              <div className="flex flex-col lg:flex-row h-full max-h-[90vh] overflow-hidden">
+              <div className="flex flex-col lg:flex-row h-full max-h-[85vh] overflow-hidden bg-muted/10">
                 {/* Left Side: Video and Additional Media */}
                 <div className="flex-1 overflow-y-auto bg-black p-4 lg:p-8 custom-scrollbar">
                   
@@ -1078,8 +1085,8 @@ export default function PlaybookAndGamePlayPage() {
 
                   <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-muted/5">
                     <div className="flex items-center justify-between sticky top-0 bg-transparent z-10 pb-2">
-                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Coach Marks</h4>
-                      <Badge variant="outline" className="h-5 text-[8px] font-black uppercase border-primary/20 text-primary">{(data.comments || []).length} Points</Badge>
+                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">{isStaff ? "Coach Marks & Tags" : "Roster Comments"}</h4>
+                      <Badge variant="outline" className="h-5 text-[8px] font-black uppercase border-primary/20 text-primary">{(data.comments || []).length} {isStaff ? "Marks" : "Comments"}</Badge>
                     </div>
 
                     <div className="space-y-4">
@@ -1171,46 +1178,55 @@ export default function PlaybookAndGamePlayPage() {
 
                   <div className="p-8 space-y-4 bg-white border-t shrink-0">
                     <div className="flex gap-2">
+                      {isStaff && (
+                        <Input 
+                          placeholder="0:00" 
+                          className="w-20 h-12 rounded-xl border-2 font-black text-xs text-center border-primary/10 shadow-inner" 
+                          value={commentTime ?? ""} 
+                          onChange={e => setCommentTime(e.target.value)} 
+                        />
+                      )}
                       <Input 
-                        placeholder="0:00" 
-                        className="w-20 h-12 rounded-xl border-2 font-black text-xs text-center border-primary/10 shadow-inner" 
-                        value={commentTime ?? ""} 
-                        onChange={e => setCommentTime(e.target.value)} 
-                      />
-                      <Input 
-                        placeholder="Add coaching cue..." 
+                        placeholder={isStaff ? "Add coaching cue or tag timestamp..." : "Add a comment..."} 
                         className="flex-1 h-12 rounded-xl border-2 font-bold text-xs border-primary/10 shadow-inner px-4" 
                         value={commentText ?? ""} 
                         onChange={e => setCommentText(e.target.value)} 
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && commentText) {
+                            handleAddComment(data.id, data.comments, type);
+                          }
+                        }}
                       />
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button 
-                            variant="ghost" 
-                            className="h-12 w-12 rounded-xl bg-muted/30 p-0 text-muted-foreground hover:bg-black/5" 
-                            onClick={() => {
-                              if (videoRef.current) {
-                                const s = Math.floor(videoRef.current.currentTime);
-                                setCommentTime(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
-                              } else {
-                                toast({ title: "YouTube Timestamp", description: "For YouTube, please enter the time manually (e.g. 1:24)" });
-                              }
-                            }}
-                          >
-                            <Clock className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-lg">
-                          Capture timestamp from video
-                        </TooltipContent>
-                      </Tooltip>
+                      {isStaff && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              className="h-12 w-12 rounded-xl bg-muted/30 p-0 text-muted-foreground hover:bg-black/5" 
+                              onClick={() => {
+                                if (videoRef.current) {
+                                  const s = Math.floor(videoRef.current.currentTime);
+                                  setCommentTime(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+                                } else {
+                                  toast({ title: "YouTube Timestamp", description: "For YouTube, please enter the time manually (e.g. 1:24)" });
+                                }
+                              }}
+                            >
+                              <Clock className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-lg">
+                            Capture timestamp from video
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                     </div>
                     <Button 
                       className="w-full h-12 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-black/5 bg-black text-white hover:scale-[1.02] transition-all" 
                       onClick={() => handleAddComment(data.id, data.comments, type)} 
                       disabled={!commentText}
                     >
-                      <Bookmark className="h-3 w-3 mr-2" /> Publish Mark
+                      <Bookmark className="h-3 w-3 mr-2" /> {isStaff ? "Publish Mark" : "Post Comment"}
                     </Button>
                   </div>
                 </div>

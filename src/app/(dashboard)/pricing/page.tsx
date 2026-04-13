@@ -17,7 +17,8 @@ import {
   Building2,
   Loader2,
   Lock,
-  ArrowRight
+  ArrowRight,
+  Users
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
