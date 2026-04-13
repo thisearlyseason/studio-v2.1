@@ -84,7 +84,7 @@ const formatDateRange = (start: string | Date, end?: string | Date) => {
 };
 
 function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, children, members }: { event: TeamEvent, updateRSVP: (eventId: string, status: string, teamId?: string, userId?: string) => Promise<void>, isAdmin: boolean, onEdit: any, onDelete: any, children: React.ReactNode, members: Member[] }) {
-  const { user, exportAttendanceCSV, myChildren, isParent, teams, getMember, games, isStaff, claimAssignment } = useTeam();
+  const { user, exportAttendanceCSV, myChildren, isParent, isPlayer, teams, getMember, games } = useTeam();
   const router = useRouter();
   
   const linkedGame = useMemo(() => {
@@ -93,10 +93,9 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   }, [games, event.id, event.eventType]);
   
   const team = teams.find(t => t.id === event.teamId);
-  const { isStaff, user: teamUser } = useTeam();
   const relevantParticipants = [
-    // Parents don't need to RSVP for themselves
-    ...(isParent && !isPlayer && !isStaff ? [] : [{ id: user?.id, name: 'You' }]),
+// Parents don't need to RSVP for themselves
+...(isParent && !isPlayer ? [] : [{ id: user?.id, name: 'You' }]),
     ...(isParent ? (myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId)).map(c => ({ id: c.id, name: c.firstName })) : [])
   ];
 

@@ -126,7 +126,7 @@ function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], 
 
 
 function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent | null, isOpen: boolean, onOpenChange: (open: boolean) => void }) {
-  const { updateRSVP, user, myChildren, isParent, members, teams, getMember } = useTeam();
+  const { updateRSVP, user, myChildren, isParent, isPlayer, isStaff, members, teams, getMember } = useTeam();
   const [pendingStatus, setPendingStatus] = useState<Record<string, string>>({});
 
   if (!event) return null;

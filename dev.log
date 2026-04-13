@@ -115,3 +115,52 @@ Module parse failed: Identifier 'isStaff' has already been declared (60:12)
 
 Import trace for requested module:
 ./src/app/(dashboard)/events/page.tsx
+ ⨯ ./src/app/(dashboard)/events/page.tsx
+Module parse failed: Identifier 'isStaff' has already been declared (60:12)
+|     ]);
+|     const team = teams.find((t)=>t.id === event.teamId);
+>     const { isStaff, user: teamUser } = useTeam();
+|     const relevantParticipants = [
+|         // Parents don't need to RSVP for themselves
+
+Import trace for requested module:
+./src/app/(dashboard)/events/page.tsx
+ GET / 500 in 1171ms
+ GET / 500 in 8ms
+ ○ Compiling /_error ...
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled /_error in 910ms (4000 modules)
+ GET / 200 in 550ms
+ ✓ Compiled /favicon.ico in 193ms (2070 modules)
+ GET /favicon.ico 200 in 272ms
+ ✓ Compiled in 187ms (1947 modules)
+ ✓ Compiled in 689ms (4000 modules)
+ ✓ Compiled in 502ms (4000 modules)
+ GET / 200 in 386ms
+ GET / 200 in 35ms
+ ✓ Compiled /favicon.ico in 223ms (2070 modules)
+ GET /favicon.ico 200 in 310ms
+ GET / 200 in 268ms
+ GET /favicon.ico 200 in 8ms
+ GET / 200 in 40ms
+ GET / 200 in 36ms
+ ✓ Compiled in 522ms (4000 modules)
+ ✓ Compiled in 291ms (4000 modules)
+ ⨯ ./src/app/(dashboard)/events/page.tsx
+Error:   [31mx[0m Expected ',', got ')'
+     ,-[[36;1;4m/Users/tylerans/.gemini/antigravity/scratch/studio/src/app/(dashboard)/events/page.tsx[0m:98:1]
+ [2m 95[0m |   const team = teams.find(t => t.id === event.teamId);
+ [2m 96[0m |   const relevantParticipants = [
+ [2m 97[0m | // Parents don't need to RSVP for themselves
+ [2m 98[0m | ...(isParent && !isPlayer ? [] : [{ id: user?.id, name: 'You' }])),
+     : [35;1m                                                                 ^[0m
+ [2m 99[0m |     ...(isParent ? (myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId)).map(c => ({ id: c.id, name: c.firstName })) : [])
+ [2m100[0m |   ];
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/(dashboard)/events/page.tsx
+ ✓ Compiled in 380ms (3986 modules)
