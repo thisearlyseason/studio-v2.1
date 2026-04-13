@@ -161,8 +161,8 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
     for (let i = 0; i < matchPool.length; i++) {
       const { t1, t2 } = matchPool[i];
 
-      const isT1Busy = todaysGames.some(g => g.teamId === t1.id && g.time === timeKey);
-      const isT2Busy = todaysGames.some(g => g.teamId === t2.id && g.time === timeKey);
+      const isT1Busy = todaysGames.some(g => (g.teamId === t1.id || g.name === t1.name) && g.time === timeKey);
+      const isT2Busy = todaysGames.some(g => (g.teamId === t2.id || g.name === t2.name) && g.time === timeKey);
       if (isT1Busy || isT2Busy) continue;
 
       if ((teamGameCounts.get(t1.id) || 0) >= gamesPerTeam || (teamGameCounts.get(t2.id) || 0) >= gamesPerTeam) continue;
@@ -262,6 +262,36 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
     matchups.push({ t1: 'TBD', t2: 'TBD', round: 'IF NECESSARY' });
   }
 
+  // --- Automatic Elimination Bracket for Round Robin (Pool play) ---
+  if (tournamentType === 'round_robin' && teamList.length >= 4) {
+    const semi1Id = `s1_${Date.now()}`;
+    const semi2Id = `s2_${Date.now()}`;
+    const finalId = `f1_${Date.now()}`;
+    
+    matchups.push({ 
+      t1: 'TBD (Seed 1)', t2: 'TBD (Seed 4)', 
+      t1Id: 'tbd', t2Id: 'tbd', 
+      round: 'Semi-Finals', 
+      id: semi1Id, 
+      winnerTo: finalId, 
+      winnerToSlot: 'team1' 
+    });
+    matchups.push({ 
+      t1: 'TBD (Seed 2)', t2: 'TBD (Seed 3)', 
+      t1Id: 'tbd', t2Id: 'tbd', 
+      round: 'Semi-Finals', 
+      id: semi2Id, 
+      winnerTo: finalId, 
+      winnerToSlot: 'team2' 
+    });
+    matchups.push({ 
+      t1: 'TBD (Semi 1 Winner)', t2: 'TBD (Semi 2 Winner)', 
+      t1Id: 'tbd', t2Id: 'tbd', 
+      round: 'Championship', 
+      id: finalId 
+    });
+  }
+
   // --- Optimization: Limit Round Robin matches if gamesPerTeam is set ---
   let finalMatchups = matchups;
   if (tournamentType === 'round_robin' && config.gamesPerTeam) {
@@ -316,13 +346,19 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
       const currentSlotTime = slot.time;
       
       const t1IsBusy = finalGames.some(g => {
-        if (g.team1Id !== id1 && g.team2Id !== id1) return false;
+        const matchT1 = (g.team1Id === id1 || g.team1 === t1);
+        const matchT2 = (g.team2Id === id1 || g.team2 === t1);
+        if (!matchT1 && !matchT2) return false;
+        
         const gTime = parse(g.time, 'h:mm a', parseISO(g.date)); 
         return Math.abs(differenceInMinutes(currentSlotTime, gTime)) < MIN_REST_MINUTES;
       });
 
       const t2IsBusy = finalGames.some(g => {
-        if (g.team1Id !== id2 && g.team2Id !== id2) return false;
+        const matchT1 = (g.team1Id === id2 || g.team1 === t2);
+        const matchT2 = (g.team2Id === id2 || g.team2 === t2);
+        if (!matchT1 && !matchT2) return false;
+        
         const gTime = parse(g.time, 'h:mm a', parseISO(g.date)); 
         return Math.abs(differenceInMinutes(currentSlotTime, gTime)) < MIN_REST_MINUTES;
       });
@@ -364,7 +400,7 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
       const id2 = match.t2Id || match.t2;
 
       finalGames.push({
-        id: `tg_${Date.now()}_${finalGames.length}`,
+        id: match.id || `tg_${Date.now()}_${finalGames.length}`,
         team1: match.t1, team2: match.t2,
         team1Id: match.t1Id || 'tbd', team2Id: match.t2Id || 'tbd',
         score1: 0, score2: 0,
@@ -374,7 +410,11 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
         isCompleted: false,
         updatedAt: new Date().toISOString(),
         round: match.round,
-        stage: match.round.includes('WB') ? 'WB' : match.round.includes('LB') ? 'LB' : 'Main'
+        stage: match.round.includes('WB') ? 'WB' : match.round.includes('LB') ? 'LB' : 'Main',
+        winnerTo: match.winnerTo,
+        winnerToSlot: match.winnerToSlot,
+        loserTo: match.loserTo,
+        loserToSlot: match.loserToSlot
       });
 
       todaysGames.push({ teamId: id1, time: timeKey });

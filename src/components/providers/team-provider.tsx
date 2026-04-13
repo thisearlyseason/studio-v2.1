@@ -550,6 +550,10 @@ export type TournamentGame = {
   round?: string;
   stage?: string;
   reportedBy?: string;
+  winnerTo?: string;
+  winnerToSlot?: 'team1' | 'team2';
+  loserTo?: string;
+  loserToSlot?: 'team1' | 'team2';
 };
 
 export type DocumentSignature = {
@@ -2587,7 +2591,57 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
 
 
-  const submitMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number) => { if (!db) return; const snap = await getDoc(doc(db, 'teams', teamId, 'events', eventId)); if (!snap.exists()) return; const games = snap.data().tournamentGames || []; const idx = games.findIndex((g: any) => g.id === gameId); if (idx === -1) return; games[idx] = { ...games[idx], score1, score2, isCompleted: true, updatedAt: new Date().toISOString() }; await updateDoc(doc(db, 'teams', teamId, 'events', eventId), { tournamentGames: games }); }, [db]);
+  const submitMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number) => { 
+    if (!db) return; 
+    const eventRef = doc(db, 'teams', teamId, 'events', eventId);
+    const snap = await getDoc(eventRef);
+    if (!snap.exists()) return; 
+    
+    const data = snap.data();
+    const games = [...(data.tournamentGames || [])]; 
+    const idx = games.findIndex((g: any) => g.id === gameId); 
+    if (idx === -1) return; 
+    
+    const game = games[idx];
+    const updatedGame = { 
+      ...game, 
+      score1, 
+      score2, 
+      isCompleted: true, 
+      updatedAt: new Date().toISOString() 
+    };
+    games[idx] = updatedGame; 
+
+    // Handle Winner/Loser Progression
+    const winnerName = score1 > score2 ? updatedGame.team1 : updatedGame.team2;
+    const winnerId = score1 > score2 ? updatedGame.team1Id : updatedGame.team2Id;
+    const loserName = score1 > score2 ? updatedGame.team2 : updatedGame.team1;
+    const loserId = score1 > score2 ? updatedGame.team2Id : updatedGame.team1Id;
+
+    if (updatedGame.winnerTo) {
+      const targetIdx = games.findIndex((g: any) => g.id === updatedGame.winnerTo);
+      if (targetIdx !== -1) {
+        if (updatedGame.winnerToSlot === 'team2') {
+          games[targetIdx] = { ...games[targetIdx], team2: winnerName, team2Id: winnerId };
+        } else {
+          games[targetIdx] = { ...games[targetIdx], team1: winnerName, team1Id: winnerId };
+        }
+      }
+    }
+
+    if (updatedGame.loserTo) {
+      const targetIdx = games.findIndex((g: any) => g.id === updatedGame.loserTo);
+      if (targetIdx !== -1) {
+        if (updatedGame.loserToSlot === 'team2') {
+          games[targetIdx] = { ...games[targetIdx], team2: loserName, team2Id: loserId };
+        } else {
+          games[targetIdx] = { ...games[targetIdx], team1: loserName, team1Id: loserId };
+        }
+      }
+    }
+
+    await updateDoc(eventRef, { tournamentGames: games }); 
+  }, [db]);
   
   const submitLeagueMatchScore = useCallback(async (leagueId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => { 
     if (!db) return; 

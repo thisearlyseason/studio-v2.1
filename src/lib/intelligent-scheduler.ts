@@ -64,8 +64,12 @@ export function validateSchedule(
     for (let i = 0; i < dailyGames.length - 1; i++) {
       const g1Time = parse(dailyGames[i].time, 'h:mm a', parseISO(dailyGames[i].date));
       const g2Time = parse(dailyGames[i + 1].time, 'h:mm a', parseISO(dailyGames[i + 1].date));
-      if (differenceInMinutes(g2Time, g1Time) < minRest) {
-        conflicts.push(`Rest violation: Key ${key} has less than ${minRest} min rest between ${dailyGames[i].time} and ${dailyGames[i+1].time}.`);
+      const diff = differenceInMinutes(g2Time, g1Time);
+      
+      if (diff === 0) {
+        conflicts.push(`Team Double Booking: ${dailyGames[i].team1} or ${dailyGames[i].team2} scheduled twice at ${dailyGames[i].time}.`);
+      } else if (diff < minRest) {
+        conflicts.push(`Rest violation: ${key.split(':')[1]} has less than ${minRest} min rest between ${dailyGames[i].time} and ${dailyGames[i+1].time}.`);
       }
     }
   }

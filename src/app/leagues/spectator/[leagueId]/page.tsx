@@ -60,6 +60,15 @@ export default function PublicLeagueSpectatorHub() {
     return Object.entries(league.teams).map(([id, stats]) => ({ id, ...stats })).sort((a, b) => b.points - a.points || b.wins - a.wins);
   }, [league]);
 
+  const gamesByDay = useMemo(() => {
+    return (filteredSchedule as any[]).reduce((acc: any, game: any) => {
+      const day = game.date;
+      if (!acc[day]) acc[day] = [];
+      acc[day].push(game);
+      return acc;
+    }, {});
+  }, [filteredSchedule]);
+
   if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-muted/10"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
   if (!league) return <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10"><Card className="max-w-md text-center p-10"><AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" /><h2 className="text-2xl font-black uppercase">League Not Found</h2></Card></div>;
 
@@ -143,22 +152,46 @@ export default function PublicLeagueSpectatorHub() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredSchedule.map((game) => (
-                <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md">
-                  <div className="flex justify-between items-center">
-                    <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary">{game.date} • {game.time}</Badge>
-                    {game.isCompleted && <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2 h-5">FINAL</Badge>}
+            <div className="space-y-12">
+              {Object.entries(gamesByDay).map(([date, dayGames]: [string, any]) => (
+                <div key={date} className="space-y-6">
+                  <div className="flex items-center gap-4 px-4">
+                    <div className="h-px flex-1 bg-black/5" />
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground bg-white px-6 py-2 rounded-full ring-1 ring-black/5 shadow-sm">
+                      {format(parseISO(date), 'EEEE, MMMM do')}
+                    </h3>
+                    <div className="h-px flex-1 bg-black/5" />
                   </div>
-                  <div className="grid grid-cols-7 items-center gap-4 text-center">
-                    <div className="col-span-3 min-w-0"><p className="font-black text-xs uppercase truncate mb-1">{game.team1}</p><AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")} value={game.score1} /></div>
-                    <div className="col-span-1 opacity-20 font-black text-[10px]">VS</div>
-                    <div className="col-span-3 min-w-0"><p className="font-black text-xs uppercase truncate mb-1">{game.team2}</p><AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")} value={game.score2} /></div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {dayGames.map((game: any) => (
+                      <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md group">
+                        <div className="flex justify-between items-center">
+                          <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary">{game.time}</Badge>
+                          {game.isCompleted && <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2 h-5">FINAL</Badge>}
+                        </div>
+                        <div className="grid grid-cols-7 items-center gap-4 text-center">
+                          <div className="col-span-3 min-w-0">
+                            <p className="font-black text-xs uppercase truncate mb-1">{game.team1}</p>
+                            <AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")} value={game.score1} />
+                          </div>
+                          <div className="col-span-1 opacity-20 font-black text-[10px]">VS</div>
+                          <div className="col-span-3 min-w-0">
+                            <p className="font-black text-xs uppercase truncate mb-1">{game.team2}</p>
+                            <AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")} value={game.score2} />
+                          </div>
+                        </div>
+                        {game.location && (
+                          <p className="text-[9px] font-bold text-muted-foreground uppercase text-center flex items-center justify-center gap-1.5 pt-2 border-t border-muted">
+                            <MapPin className="h-3 w-3 opacity-40" /> {game.location}
+                          </p>
+                        )}
+                      </Card>
+                    ))}
                   </div>
-                  {game.location && <p className="text-[9px] font-bold text-muted-foreground uppercase text-center flex items-center justify-center gap-1.5 pt-2 border-t"><MapPin className="h-3 w-3 opacity-40" /> {game.location}</p>}
-                </Card>
+                </div>
               ))}
-              {filteredSchedule.length === 0 && <div className="col-span-full py-20 text-center opacity-30 italic">No matches found for the selected filters.</div>}
+              {filteredSchedule.length === 0 && <div className="col-span-full py-20 text-center opacity-30 italic uppercase font-black text-xs tracking-widest">No matches found for the selected filters.</div>}
             </div>
           </div>
 

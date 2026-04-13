@@ -117,7 +117,7 @@ export default function TournamentBracket({ games, standalone = false }: Bracket
                         <div className="flex justify-between items-center gap-4">
                           <span className={cn(
                             "text-xs font-black uppercase tracking-tight truncate flex-1",
-                            game.team1.toLowerCase() === 'tbd' ? "text-white/20" : "text-white/80"
+                            game.team1.toLowerCase().includes('tbd') ? "text-white/20" : "text-white/80"
                           )}>
                             {game.team1}
                           </span>
@@ -131,7 +131,7 @@ export default function TournamentBracket({ games, standalone = false }: Bracket
                         <div className="flex justify-between items-center gap-4">
                           <span className={cn(
                             "text-xs font-black uppercase tracking-tight truncate flex-1",
-                            game.team2.toLowerCase() === 'tbd' ? "text-white/20" : "text-white/80"
+                            game.team2.toLowerCase().includes('tbd') ? "text-white/20" : "text-white/80"
                           )}>
                             {game.team2}
                           </span>

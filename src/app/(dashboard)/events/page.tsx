@@ -47,12 +47,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useTeam, TeamEvent, EventType, Member, EventAssignment } from '@/components/providers/team-provider';
+import { useTeam, TeamEvent, EventType, Member, EventAssignment, TournamentGame } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { format, isPast, isSameDay, startOfDay } from 'date-fns';
+import { format, isPast, isSameDay, startOfDay, parseISO } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -98,6 +98,20 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
     const member = getMember(uid);
     return { name: member?.name || 'Unknown', status, avatar: member?.avatar, position: member?.position };
   });
+
+  const gamesByDay = useMemo(() => {
+     if (!event.tournamentGames) return {};
+     const grouped = event.tournamentGames.reduce((acc: any, game: TournamentGame) => {
+       const day = game.date;
+       if (!acc[day]) acc[day] = [];
+       acc[day].push(game);
+       return acc;
+     }, {});
+     
+     return Object.fromEntries(
+       Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b))
+     );
+  }, [event.tournamentGames]);
 
   return (
     <Dialog>
@@ -319,43 +333,79 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="bg-primary/10 p-2 rounded-xl text-primary"><Trophy className="h-5 w-5" /></div>
-                      <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Competition Itinerary</h3>
+                      <div>
+                        <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Competition Itinerary</h3>
+                        <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Full series schedule including TBD bracket slots</p>
+                      </div>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 gap-4">
-                    {event.tournamentGames?.map((game: any) => (
-                      <Card key={game.id} className="rounded-[2.5rem] border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-8 space-y-6 transition-all hover:shadow-md group">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <Badge className="bg-black text-white border-none text-[9px] font-black uppercase px-3 h-7 tracking-widest shadow-xl">{game.time}</Badge>
-                            {game.round && <Badge variant="outline" className="bg-muted text-foreground border-none text-[9px] font-black uppercase px-4 h-6">{game.round}</Badge>}
-                          </div>
-                          {game.isCompleted && (
-                            <div className="flex items-center gap-2">
-                              <div className="h-1.5 w-1.5 rounded-full bg-red-600 animate-pulse" />
-                              <span className="text-[10px] font-black text-foreground uppercase tracking-wider italic">Finalized</span>
-                            </div>
-                          )}
+                    {Object.keys(gamesByDay).length === 0 && (
+                      <div className="text-center py-20 bg-muted/10 rounded-[2.5rem] border-2 border-dashed opacity-30 flex flex-col items-center">
+                        <CalendarIcon className="h-12 w-12 mb-4" />
+                        <p className="text-[10px] font-black uppercase tracking-widest italic">Squad match logistics pending deployment.</p>
+                      </div>
+                    )}
+                    {Object.entries(gamesByDay).map(([date, dayGames]: [string, any]) => (
+                      <div key={date} className="space-y-4">
+                        <div className="flex items-center gap-4 px-2">
+                          <div className="h-px flex-1 bg-muted-foreground/10" />
+                          <Badge variant="outline" className="bg-white border-2 border-primary/10 px-6 h-9 rounded-full text-[10px] font-black uppercase tracking-[0.2em] text-primary shadow-sm">
+                            {format(parseISO(date), 'EEEE, MMMM do')}
+                          </Badge>
+                          <div className="h-px flex-1 bg-muted-foreground/10" />
                         </div>
-                        <div className="grid grid-cols-7 items-center gap-6 text-center">
-                          <div className="col-span-3 min-w-0">
-                            <p className="font-black text-[11px] uppercase truncate opacity-50 mb-2 leading-none">{game.team1}</p>
-                            <AnimatedScore className={cn("text-4xl font-black tracking-tighter inline-block transition-all", game.isCompleted && game.score1 > game.score2 ? "text-primary scale-110" : "text-foreground")} value={game.score1} />
-                          </div>
-                          <div className="col-span-1 opacity-20 font-black text-xs uppercase italic select-none">vs</div>
-                          <div className="col-span-3 min-w-0">
-                            <p className="font-black text-[11px] uppercase truncate opacity-50 mb-2 leading-none">{game.team2}</p>
-                            <AnimatedScore className={cn("text-4xl font-black tracking-tighter inline-block transition-all", game.isCompleted && game.score2 > game.score1 ? "text-primary scale-110" : "text-foreground")} value={game.score2} />
-                          </div>
+                        
+                        <div className="grid grid-cols-1 gap-4">
+                          {dayGames.map((game: any) => {
+                            const isTBD = game.team1.toLowerCase().includes('tbd') || game.team2.toLowerCase().includes('tbd');
+                            return (
+                              <Card key={game.id} className={cn(
+                                "rounded-[2.5rem] border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-8 space-y-6 transition-all hover:shadow-md group",
+                                isTBD && "bg-muted/5 ring-1 ring-dashed ring-black/20 opacity-80"
+                              )}>
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <Badge className={cn("border-none text-[9px] font-black uppercase px-3 h-7 tracking-widest shadow-xl", isTBD ? "bg-muted text-muted-foreground" : "bg-black text-white")}>
+                                      {game.time}
+                                    </Badge>
+                                    {game.round && <Badge variant="outline" className={cn("bg-muted text-foreground border-none text-[9px] font-black uppercase px-4 h-6", isTBD && "italic")}>{game.round}</Badge>}
+                                  </div>
+                                  {game.isCompleted && (
+                                    <div className="flex items-center gap-2">
+                                      <div className="h-1.5 w-1.5 rounded-full bg-red-600 animate-pulse" />
+                                      <span className="text-[10px] font-black text-foreground uppercase tracking-wider italic">Finalized</span>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-7 items-center gap-6 text-center">
+                                  <div className="col-span-3 min-w-0">
+                                    <p className={cn("font-black text-[11px] uppercase truncate opacity-50 mb-2 leading-none", isTBD && game.team1.toLowerCase().includes('tbd') && "italic")}>{game.team1}</p>
+                                    <AnimatedScore className={cn("text-4xl font-black tracking-tighter inline-block transition-all", isTBD ? "opacity-20" : (game.isCompleted && game.score1 > game.score2 ? "text-primary scale-110" : "text-foreground"))} value={isTBD ? 0 : game.score1} />
+                                  </div>
+                                  <div className="col-span-1 opacity-20 font-black text-xs uppercase italic select-none">vs</div>
+                                  <div className="col-span-3 min-w-0">
+                                    <p className={cn("font-black text-[11px] uppercase truncate opacity-50 mb-2 leading-none", isTBD && game.team2.toLowerCase().includes('tbd') && "italic")}>{game.team2}</p>
+                                    <AnimatedScore className={cn("text-4xl font-black tracking-tighter inline-block transition-all", isTBD ? "opacity-20" : (game.isCompleted && game.score2 > game.score1 ? "text-primary scale-110" : "text-foreground"))} value={isTBD ? 0 : game.score2} />
+                                  </div>
+                                </div>
+                                {game.location && (
+                                  <div className="pt-4 border-t border-muted/50 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <MapPin className="h-3 w-3 text-primary opacity-50" />
+                                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{game.location}</span>
+                                    </div>
+                                    {(game.team1Id === event.teamId || game.team2Id === event.teamId) && (
+                                      <Badge className="bg-primary/10 text-primary border-none text-[8px] font-black uppercase h-5 px-2">Your Team</Badge>
+                                    )}
+                                  </div>
+                                )}
+                              </Card>
+                            );
+                          })}
                         </div>
-                        {game.location && (
-                          <div className="pt-4 border-t border-muted/50 flex items-center justify-center gap-2">
-                            <MapPin className="h-3 w-3 text-primary opacity-50" />
-                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">{game.location}</span>
-                          </div>
-                        )}
-                      </Card>
+                      </div>
                     ))}
                     {(!event.tournamentGames || event.tournamentGames.length === 0) && (
                       <div className="text-center py-20 bg-muted/10 rounded-[2.5rem] border-2 border-dashed opacity-30 flex flex-col items-center">
