@@ -164,3 +164,10 @@ Caused by:
 Import trace for requested module:
 ./src/app/(dashboard)/events/page.tsx
  ✓ Compiled in 380ms (3986 modules)
+ GET / 200 in 380ms
+ ✓ Compiled /favicon.ico in 220ms (2070 modules)
+ GET /favicon.ico 200 in 306ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 636ms (3991 modules)
+ GET / 404 in 925ms
+ GET / 200 in 60ms

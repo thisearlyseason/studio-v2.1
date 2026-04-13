@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { 
   Dialog, 
+  DialogClose,
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
@@ -84,7 +85,7 @@ const formatDateRange = (start: string | Date, end?: string | Date) => {
 };
 
 function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, children, members }: { event: TeamEvent, updateRSVP: (eventId: string, status: string, teamId?: string, userId?: string) => Promise<void>, isAdmin: boolean, onEdit: any, onDelete: any, children: React.ReactNode, members: Member[] }) {
-  const { user, exportAttendanceCSV, myChildren, isParent, isPlayer, teams, getMember, games } = useTeam();
+  const { user, exportAttendanceCSV, myChildren, isParent, isPlayer, teams, getMember, games, isStaff, claimAssignment } = useTeam();
   const router = useRouter();
   
   const linkedGame = useMemo(() => {
@@ -107,7 +108,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col h-[90vh] sm:h-auto sm:max-h-[85vh] relative">
+      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col h-[90vh] sm:h-auto sm:max-h-[85vh]">
         <DialogTitle className="sr-only">Event Intelligence: {event.title}</DialogTitle>
         <DialogClose asChild>
           <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
@@ -172,7 +173,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                               "h-12 rounded-2xl font-black text-xs uppercase transition-all tracking-widest border-2", 
                               rsvp === 'going' ? "bg-green-600 border-none text-white shadow-xl shadow-green-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-green-500/50 hover:bg-green-500/5"
                             )} 
-                            onClick={() => updateRSVP(event.id, 'going', undefined, p.id)}
+                            onClick={() => updateRSVP((event as any).parentTournamentId || event.id, 'going', undefined, p.id)}
                           >
                             Going
                           </Button>
@@ -183,7 +184,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                                 "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
                                 rsvp === 'maybe' ? "bg-amber-400 text-black border-none shadow-lg shadow-amber-400/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-amber-400/50 hover:bg-amber-400/5"
                               )} 
-                              onClick={() => updateRSVP(event.id, 'maybe', undefined, p.id)}
+                              onClick={() => updateRSVP((event as any).parentTournamentId || event.id, 'maybe', undefined, p.id)}
                             >
                               Maybe
                             </Button>
@@ -193,7 +194,7 @@ function EventDetailDialog({ event, updateRSVP, isAdmin, onEdit, onDelete, child
                                 "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
                                 (rsvp === 'declined' || rsvp === 'no') ? "bg-red-600 text-white border-none shadow-lg shadow-red-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-red-500/50 hover:bg-red-500/5"
                               )} 
-                              onClick={() => updateRSVP(event.id, 'declined', undefined, p.id)}
+                              onClick={() => updateRSVP((event as any).parentTournamentId || event.id, 'declined', undefined, p.id)}
                             >
                               Decline
                             </Button>
@@ -483,16 +484,48 @@ export default function EventsPage() {
 
   const filteredEvents = useMemo(() => { 
     const nowStart = startOfDay(new Date()); 
-    const list = activeTeamEvents || []; 
-    // SHOW AS LIVE if the event end is today or in the future
+    const baseList = activeTeamEvents || []; 
+
+    // TACTICAL EXPANSION: Flatten tournaments into individual match entries for the itinerary
+    const expandedList: TeamEvent[] = [];
+    
+    baseList.forEach(event => {
+      // 1. Add the main event entry (Tournament or individual activity)
+      expandedList.push(event);
+      
+      // 2. If it's a tournament with games, extract individual game entries
+      if (event.isTournament && event.tournamentGames && event.tournamentGames.length > 0) {
+        event.tournamentGames.forEach((game: any, idx: number) => {
+          if (!game.date) return;
+          
+          // Synthesize a match event entry
+          expandedList.push({
+            ...event,
+            id: game.id || `${event.id}_match_${idx}`,
+            title: `[Match] ${game.team1} vs ${game.team2}`,
+            date: game.date,
+            endDate: game.date,
+            startTime: game.time,
+            location: game.location || event.location,
+            eventType: 'game', // Force 'game' type for match styling
+            isTournamentMatch: true,
+            parentTournamentId: event.id
+          } as any);
+        });
+      }
+    });
+
     if (filterMode === 'live') {
-      return list.filter(e => {
-        const eventEnd = startOfDay(new Date(e.endDate || e.date));
-        return eventEnd >= nowStart;
-      });
+      return expandedList
+        .filter(e => {
+          const eventEnd = startOfDay(new Date(e.endDate || e.date));
+          return eventEnd >= nowStart;
+        })
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     }
-    // SHOW AS PAST if the event end was strictly before today
-    return list
+    
+    // History mode: Show past events and games, sorted most recent first
+    return expandedList
       .filter(e => {
         const eventEnd = startOfDay(new Date(e.endDate || e.date));
         return eventEnd < nowStart;
@@ -780,6 +813,9 @@ export default function EventsPage() {
                             <Badge className={cn("text-[7px] uppercase font-black border-none", event.isHome ? "bg-primary text-white" : "bg-black text-white")}>
                               {event.isHome ? 'HOME' : 'AWAY'}
                             </Badge>
+                          )}
+                          {(event as any).isTournamentMatch && (
+                            <Badge className="text-[7px] uppercase font-black bg-amber-500 text-white border-none">Tournament Match</Badge>
                           )}
                         </div>
                         <h3 className="text-xl font-black tracking-tight leading-none truncate group-hover:text-primary transition-colors uppercase">{event.title}</h3>
