@@ -1972,7 +1972,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateGame = useCallback(async (id: string, data: any) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'games', id), clean(data)); }, [activeTeam, db]);
 
   const addEquipmentItem = useCallback(async (data: any) => { if (activeTeam?.id && db) await addDoc(collection(db, 'teams', activeTeam.id, 'equipment'), clean({ ...data, assignments: {}, status: 'Active', availableQuantity: parseInt(data.totalQuantity), totalQuantity: parseInt(data.totalQuantity) })); }, [activeTeam, db]);
-  const updateEquipmentItem = useCallback(async (id: string, updates: any) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'equipment', id), clean(updates)); }, [activeTeam, db]);
+  const updateEquipmentItem = useCallback(async (id: string, updates: any) => { 
+    if (activeTeam?.id && db) {
+      if ('totalQuantity' in updates) {
+        const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'equipment', id));
+        if (snap.exists()) {
+          const data = snap.data();
+          const currentAssignments = Object.values(data.assignments || {}) as any[];
+          const assignedCount = currentAssignments.reduce((acc, curr: any) => acc + (curr.quantity || 0), 0);
+          updates.availableQuantity = parseInt(updates.totalQuantity) - assignedCount;
+        }
+      }
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'equipment', id), clean(updates)); 
+    }
+  }, [activeTeam, db]);
   const deleteEquipmentItem = useCallback(async (id: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'equipment', id)); }, [activeTeam, db]);
   const assignEquipment = useCallback(async (id: string, uid: string, uname: string, q: number) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'equipment', id), { [`assignments.${uid}`]: { userId: uid, userName: uname, quantity: q, date: new Date().toISOString() }, availableQuantity: increment(-q) }); }, [activeTeam, db]);
   const returnEquipment = useCallback(async (id: string, uid: string) => { if (activeTeam?.id && db) { const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'equipment', id)); if(snap.exists()) { const data = snap.data(); const assignment = data.assignments?.[uid]; if (assignment) { await updateDoc(doc(db, 'teams', activeTeam.id, 'equipment', id), { [`assignments.${uid}`]: deleteField(), availableQuantity: increment(assignment.quantity) }); } } } }, [activeTeam, db]);
