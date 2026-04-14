@@ -1714,7 +1714,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const updateTeamCode = useCallback(async (tid: string, newCode: string) => {
     if (!db) return;
+    
+    // Safety check for cooldown
+    const teamDoc = await getDoc(doc(db, 'teams', tid));
+    if (teamDoc.exists()) {
+      const data = teamDoc.data();
+      const lastUpdate = data.lastCodeEditedAt ? new Date(data.lastCodeEditedAt).getTime() : 0;
+      if ((Date.now() - lastUpdate) < (24 * 60 * 60 * 1000)) {
+        throw new Error('COOLDOWN_ACTIVE: Squad identity codes can only be modified once every 24 hours.');
+      }
+    }
+
     const code = newCode.toUpperCase();
+    
+    // Uniqueness validation
+    const isUnique = await checkCodeUniqueness(code);
+    if (!isUnique) {
+      throw new Error('CODE_TAKEN: This squad identify code is already active in another organization.');
+    }
+
     await updateDoc(doc(db, 'teams', tid), { 
       code, 
       teamCode: code, 
@@ -2040,7 +2058,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           const data = snap.data();
           const currentAssignments = Object.values(data.assignments || {}) as any[];
           const assignedCount = currentAssignments.reduce((acc, curr: any) => acc + (curr.quantity || 0), 0);
-          updates.availableQuantity = parseInt(updates.totalQuantity) - assignedCount;
+          const newTotal = parseInt(updates.totalQuantity);
+          updates.availableQuantity = newTotal - assignedCount;
+          
+          // Re-open if availability restored
+          if (updates.availableQuantity > 0) {
+            updates.status = 'Active';
+          }
         }
       }
       await updateDoc(doc(db, 'teams', activeTeam.id, 'equipment', id), clean(updates)); 

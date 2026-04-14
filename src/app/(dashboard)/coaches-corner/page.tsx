@@ -63,7 +63,8 @@ import {
   Mail,
   LayoutGrid,
   Check,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  XCircle
 } from 'lucide-react';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where, getDocs } from 'firebase/firestore';
@@ -113,6 +114,22 @@ const DEFAULT_PROTOCOLS = [
   { id: 'default_tournament', title: 'Tournament Waiver', type: 'tournament_waiver' },
   { id: 'default_universal_hub', title: 'Universal Hub Release', type: 'waiver' }
 ];
+
+function AccessRestricted({ type }: { type: 'feature' | 'data' }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center space-y-6 bg-muted/5 border-2 border-dashed rounded-[3rem] opacity-60">
+      <div className="bg-primary/10 p-6 rounded-3xl">
+        <Lock className="h-10 w-10 text-primary" />
+      </div>
+      <div className="space-y-2">
+        <h3 className="text-xl font-black uppercase tracking-tight">Access Restricted</h3>
+        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest max-w-xs mx-auto">
+          Upgrade to Squad Pro to unlock advanced institutional {type === 'feature' ? 'capabilities' : 'intelligence'}.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 
 function MemberDetailsDialog({ member, protocols, volunteerOpps, events, isOpen, onOpenChange }: { 
@@ -489,45 +506,9 @@ function TrackingMatrix({ members, protocols, volunteerOpps, events }: { members
                   )}
                 </div>
                 
-                {view === 'compliance' ? (
-                  <div className="px-4 pb-4">
-                    <div className="flex flex-wrap gap-2">
-                      {protocols.map(p => {
-                        const isSigned = !!signatures[p.id];
-                        return (
-                          <div key={p.id} className={cn(
-                            "h-8 w-8 rounded-lg flex items-center justify-center border",
-                            isSigned ? "bg-green-50 border-green-200 text-green-600" : "bg-red-50/50 border-red-100 text-red-300 opacity-40 grayscale"
-                          )}>
-                            {isSigned ? <Check className="h-4 w-4" strokeWidth={3} /> : <AlertCircle className="h-4 w-4" />}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="px-4 pb-4 flex items-center gap-2">
-                    <Badge className={cn(
-                      "border-none font-black text-[8px] uppercase px-2 h-6",
-                      totalPoints >= 100 ? "bg-green-100 text-green-700" : totalPoints > 0 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
-                    )}>
-                      {totalPoints >= 300 ? 'Commander' : totalPoints >= 150 ? 'Elite Tier' : totalPoints >= 50 ? 'Engaged' : totalPoints > 0 ? 'Recruit' : 'Cold'}
-                    </Badge>
-                    {(() => {
-                      const isCompliant = protocols.every(p => !!signatures[p.id]);
-                      const isMobilized = totalPoints >= 50;
-                      const status = (isCompliant && isMobilized) ? 'READY' : (isCompliant || isMobilized) ? 'PARTIAL' : 'NOT READY';
-                      return (
-                        <Badge className={cn(
-                          "border-none font-black text-[8px] uppercase px-2 h-6",
-                          status === 'READY' ? "bg-green-500 text-white" : status === 'PARTIAL' ? "bg-amber-500 text-white" : "bg-destructive text-white"
-                        )}>
-                          {status}
-                        </Badge>
-                      );
-                    })()}
-                  </div>
-                )}
+                <div className="px-4 pb-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-primary/60 italic">Click to view details</p>
+                </div>
               </Card>
             );
           })}
@@ -1218,6 +1199,21 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                 <p className="text-[13px] font-bold uppercase tracking-widest">{profile.hometown || 'Location TBD'}</p>
               </div>
             </div>
+
+            {member.status === 'removed' && (
+              <div className="bg-red-50 p-6 rounded-[2rem] border-2 border-dashed border-red-200 mt-6 space-y-2 animate-in slide-in-from-top duration-500">
+                <div className="flex items-center gap-2 mb-1">
+                  <History className="h-4 w-4 text-red-600" />
+                  <p className="text-[10px] font-black uppercase tracking-widest text-red-700 leading-none">Decommissioned Personnel</p>
+                  <p className="text-[8px] font-bold text-red-400 uppercase tracking-widest ml-auto">
+                    {member.removedAt ? format(new Date(member.removedAt), 'MMM d, yyyy') : 'No Date Logged'}
+                  </p>
+                </div>
+                <p className="text-[11px] font-medium text-red-800 leading-relaxed italic">
+                  "{member.removalReason || 'No removal audit trail established for this athlete record.'}"
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -2405,11 +2401,22 @@ import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 function SignatureAuditDialog({ proto }: { proto: any }) {
   const { db, activeTeam, members } = useTeam();
-  const q = useMemoFirebase(() => (db && activeTeam?.id && proto?.id) ? query(collection(db, 'teams', activeTeam.id, 'protocol_signatures'), where('protocolId', '==', proto.id)) : null, [db, activeTeam?.id, proto?.id]);
+  const q = useMemoFirebase(() => (db && activeTeam?.id && proto?.id) ? 
+    query(
+      collectionGroup(db, 'signatures'), 
+      where('teamId', '==', activeTeam.id), 
+      where('docId', '==', proto.id)
+    ) : null, [db, activeTeam?.id, proto?.id]);
   const { data: signatures } = useCollection<any>(q);
   
   const signedMemberIds = signatures ? signatures.map(s => s.memberId) : [];
-  const assignedMembers = members.filter(m => proto?.assignedTo?.includes('all') || proto?.assignedTo?.includes(m.id));
+  const assignedMembers = members.filter(m => 
+    m.status !== 'removed' && (
+      !proto?.assignedTo || 
+      proto?.assignedTo?.includes('all') || 
+      proto?.assignedTo?.includes(m.id)
+    )
+  );
   
   const signedUsers = assignedMembers.filter(m => signedMemberIds.includes(m.id));
   const unsignedUsers = assignedMembers.filter(m => !signedMemberIds.includes(m.id));
@@ -2592,7 +2599,7 @@ export default function CoachesCornerPage() {
               <div className="flex items-center gap-2 px-2"><Users className="h-4 w-4 text-primary" /><h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Select Athlete</h3></div>
               <ScrollArea className="h-[600px] border-2 rounded-[2.5rem] bg-muted/10 p-2 shadow-inner">
                 <div className="space-y-1.5">
-                  {members.filter(m => !['Coach', 'Assistant Coach', 'Manager', 'Staff', 'Athletic Director'].includes(m.position)).map(m => (
+                  {members.filter(m => m.status !== 'removed' && !['Coach', 'Assistant Coach', 'Manager', 'Staff', 'Athletic Director'].includes(m.position)).map(m => (
                     <button key={m.id} onClick={() => setSelectedMemberId(m.id)} className={cn("w-full flex items-center gap-3 p-3 rounded-2xl transition-all font-black text-xs uppercase", selectedMemberId === m.id ? "bg-primary text-white shadow-lg" : "hover:bg-white text-foreground")}>
                       <Avatar className="h-8 w-8 rounded-xl border shrink-0">
                         <AvatarImage src={m.avatar} />
@@ -2601,6 +2608,24 @@ export default function CoachesCornerPage() {
                       <span className="truncate">{m.name}</span>
                     </button>
                   ))}
+
+                  {members.some(m => m.status === 'removed') && (
+                    <div className="pt-6 space-y-2 border-t mt-6">
+                      <div className="flex items-center gap-2 px-2 py-2">
+                        <History className="h-3 w-3 text-red-500/50" />
+                        <p className="text-[10px] font-black uppercase tracking-widest text-red-500/50">Removed Personnel</p>
+                      </div>
+                      {members.filter(m => m.status === 'removed').map(m => (
+                        <button key={m.id} onClick={() => setSelectedMemberId(m.id)} className={cn("w-full flex items-center gap-3 p-3 rounded-2xl transition-all font-black text-xs uppercase opacity-50 grayscale hover:grayscale-0 hover:opacity-100", selectedMemberId === m.id ? "bg-red-600 text-white shadow-lg grayscale-0 opacity-100" : "bg-white border-dashed border-red-100 text-foreground")}>
+                          <Avatar className="h-8 w-8 rounded-xl border shrink-0 opacity-40">
+                            <AvatarImage src={m.avatar} />
+                            <AvatarFallback className="font-black text-red-600/50">{m.name[0]}</AvatarFallback>
+                          </Avatar>
+                          <span className="truncate">{m.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </ScrollArea>
             </aside>
