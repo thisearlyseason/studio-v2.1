@@ -231,6 +231,9 @@ export type Member = {
   schoolId?: string;
   signatures?: Record<string, any>;
   volunteerPoints?: number;
+  status?: 'active' | 'removed';
+  removalReason?: string;
+  removedAt?: string;
 };
 
 export interface Plan {
@@ -748,6 +751,8 @@ interface TeamContextType {
   deleteTeam: (teamId: string) => Promise<void>;
   deleteAccount: () => Promise<void>;
   markMediaAsViewed: (fileId: string) => Promise<void>;
+  removeMember: (memberId: string, reason?: string) => Promise<void>;
+  reinstateMember: (memberId: string) => Promise<void>;
   upgradeChildToLogin: (childId: string) => Promise<void>;
   registerChild: (first: string, last: string, dob: string, email?: string) => Promise<string | null>;
   updateChild: (childId: string, updates: Partial<PlayerProfile>) => Promise<void>;
@@ -1419,6 +1424,61 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const toggleRecruitingProfile = useCallback(async (playerId: string, enabled: boolean) => { if (!db) return; await setDoc(doc(db, 'players', playerId), { recruitingProfileEnabled: enabled }, { merge: true }); }, [db]);
   const updateStaffEvaluation = useCallback(async (memberId: string, notes: string) => { if (!activeTeam?.id || !db) return; await setDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current'), { notes, updatedAt: new Date().toISOString() }); }, [activeTeam, db]);
   const getStaffEvaluation = useCallback(async (memberId: string) => { if (!activeTeam?.id || !db) return ''; const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current')); return snap.exists() ? (snap.data()?.notes || '') : ''; }, [activeTeam, db]);
+
+  const removeMember = useCallback(async (memberId: string, reason?: string) => {
+    if (!activeTeam?.id || !db) return;
+    try {
+      const memberRef = doc(db, 'teams', activeTeam.id, 'members', memberId);
+      const memberSnap = await getDoc(memberRef);
+      if (memberSnap.exists()) {
+        const mData = memberSnap.data();
+        await updateDoc(memberRef, {
+          status: 'removed',
+          removalReason: reason || null,
+          removedAt: new Date().toISOString()
+        });
+        
+        // Also update their user profile record if they have a userId linked
+        if (mData.userId) {
+          await updateDoc(doc(db, 'users', mData.userId, 'teamMemberships', activeTeam.id), {
+            status: 'removed'
+          }).catch(() => {}); // Secondary record might not exist or be named differently
+        }
+        
+        toast({ title: "Player Removed", description: "Member has been moved to the archived section." });
+      }
+    } catch (e) {
+      console.error("Remove Member Error:", e);
+      toast({ title: "Operation Failed", description: "Failed to remove member from active roster.", variant: "destructive" });
+    }
+  }, [activeTeam, db]);
+
+  const reinstateMember = useCallback(async (memberId: string) => {
+    if (!activeTeam?.id || !db) return;
+    try {
+      const memberRef = doc(db, 'teams', activeTeam.id, 'members', memberId);
+      const memberSnap = await getDoc(memberRef);
+      if (memberSnap.exists()) {
+        const mData = memberSnap.data();
+        await updateDoc(memberRef, {
+          status: 'active',
+          removalReason: deleteField(),
+          removedAt: deleteField()
+        });
+        
+        if (mData.userId) {
+          await updateDoc(doc(db, 'users', mData.userId, 'teamMemberships', activeTeam.id), {
+            status: 'active'
+          }).catch(() => {});
+        }
+        
+        toast({ title: "Player Reinstated", description: "Member is now back on the active roster." });
+      }
+    } catch (e) {
+      console.error("Reinstate Member Error:", e);
+      toast({ title: "Operation Failed", description: "Failed to reinstate member.", variant: "destructive" });
+    }
+  }, [activeTeam, db]);
 
   const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => { 
     if (!firebaseUser || !db || !userProfile) return ''; 
@@ -2907,6 +2967,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, addEvent, updateEvent, claimAssignment,
     deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerPoints,
+    removeMember, reinstateMember,
     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, signUpForFundraising, recordDonation, addFundraisingOpportunity, updateFundraisingOpportunity,
     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
@@ -2950,6 +3011,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
     addRegistration, purchasePro, addLeaguePayment, updateLeagueGlobalFees,
     getMember, getTeamByCode, deleteMessage, getLeagueMembers,
+    removeMember, reinstateMember,
     checkCodeUniqueness, updateTeamCode
   ]);
 

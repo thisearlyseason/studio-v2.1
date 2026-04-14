@@ -469,7 +469,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         batch.set(doc(db, 'players', juniorId), clean({
             id: juniorId, firstName: 'Junior', lastName: 'Guest', isMinor: true, parentId: userId, userId: null,
             dateOfBirth: juniorDob,
-            hasLogin: false, createdAt: now, joinedTeamIds: tids, ageGroup: 'U10', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=junior',
+            hasLogin: false, createdAt: now, joinedTeamIds: [strikerId], ageGroup: 'U10', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=junior',
             sports: ['Basketball'], primaryPosition: 'Point Guard'
         }));
 
@@ -479,7 +479,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         batch.set(doc(db, 'players', alexId), clean({
             id: alexId, firstName: 'Alex', lastName: 'Guest', isMinor: true, parentId: userId, userId: alexId,
             dateOfBirth: alexDob,
-            hasLogin: true, pendingInviteEmail: alexEmail, createdAt: now, joinedTeamIds: tids, ageGroup: 'U17', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=alex',
+            hasLogin: true, pendingInviteEmail: alexEmail, createdAt: now, joinedTeamIds: [lakerId], ageGroup: 'U17', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=alex',
             sports: ['Basketball', 'Soccer', 'Cross Country'], primaryPosition: 'Striker'
         }));
 
@@ -489,14 +489,17 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         }), { merge: true });
 
         // Link kids to teams as members
-        tids.forEach(tid => {
-            batch.set(doc(db, 'teams', tid, 'members', juniorId), clean({
-                id: juniorId, teamId: tid, name: 'Junior Guest', role: 'Member', position: 'Player', joinedAt: now, isDemo: true, parentId: userId
-            }));
-            batch.set(doc(db, 'teams', tid, 'members', alexId), clean({
-                id: alexId, teamId: tid, name: 'Alex Guest', role: 'Member', position: 'Player', joinedAt: now, isDemo: true, parentId: userId, email: alexEmail
-            }));
+        // Junior -> Strikers
+        batch.set(doc(db, 'teams', strikerId, 'members', juniorId), clean({
+            id: juniorId, teamId: strikerId, name: 'Junior Guest', role: 'Member', position: 'Player', joinedAt: now, isDemo: true, parentId: userId
+        }));
 
+        // Alex -> Lakers
+        batch.set(doc(db, 'teams', lakerId, 'members', alexId), clean({
+            id: alexId, teamId: lakerId, name: 'Alex Guest', role: 'Member', position: 'Player', joinedAt: now, isDemo: true, parentId: userId, email: alexEmail
+        }));
+
+        tids.forEach(tid => {
             // Sync the league games into team events for immediate visibility
             const leagueGames = [
               { id: `lg_${leagueId}_lg1`, teamId: tid, title: `Conference Match vs ${tid === strikerId ? 'Lakers' : 'Strikers'}`, eventType: 'game', isLeagueGame: true, date: tomorrow, startTime: '10:00 AM', location: 'City Arena', description: 'National broadcast game.' },

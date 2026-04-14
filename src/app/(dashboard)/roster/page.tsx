@@ -98,7 +98,7 @@ const POSITION_OPTIONS = [
 ];
 
 export default function RosterPage() {
-  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro, getLeagueMembers, createChat } = useTeam();
+  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro, getLeagueMembers, createChat, removeMember } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -217,7 +217,7 @@ export default function RosterPage() {
 
   const parents = useMemo(() => {
     const pMap = new Map<string, { email: string; name: string; children: string[]; parentId?: string; phone?: string }>();
-    members.forEach(m => {
+    members.filter(m => m.status !== 'removed').forEach(m => {
       if (m.parentEmail) {
         const key = m.parentEmail.toLowerCase();
         if (!pMap.has(key)) {
@@ -361,7 +361,10 @@ export default function RosterPage() {
   }
 
   const isPro = activeTeam.isPro;
-  const filteredRoster = members.filter(member => member.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredRoster = members.filter(member => 
+    member.status !== 'removed' && 
+    member.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const handleSaveNote = async () => {
     if (!selectedMember) return;
@@ -623,16 +626,54 @@ export default function RosterPage() {
                         <div className="flex items-center gap-2">
                           <p className="text-primary font-black uppercase tracking-[0.2em] text-sm">{selectedMember.position} • #{selectedMember.jersey}</p>
                           {activeTeam?.role === 'Admin' && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-6 w-6 text-white/40 hover:text-white shrink-0" onClick={() => setIsEditPositionOpen(true)}>
-                                  <Settings className="h-3 w-3" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                Provision New Role
-                              </TooltipContent>
-                            </Tooltip>
+                            <div className="flex gap-2">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-white/40 hover:text-white shrink-0" onClick={() => setIsEditPositionOpen(true)}>
+                                    <Settings className="h-3 w-3" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Provision New Role
+                                </TooltipContent>
+                              </Tooltip>
+
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500/60 hover:text-red-500 shrink-0">
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="rounded-[2.5rem] p-8 border-none bg-white">
+                                  <DialogHeader>
+                                    <DialogTitle className="text-2xl font-black uppercase text-foreground">Decommission Personnel</DialogTitle>
+                                    <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-widest">Archive {selectedMember.name} from the active roster</DialogDescription>
+                                  </DialogHeader>
+                                  <div className="space-y-4 py-4">
+                                     <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-foreground">Reason for Removal (Private Archive)</Label>
+                                        <Textarea 
+                                          placeholder="e.g. Seasonal completion, roster turnover, or voluntary exit..."
+                                          className="h-24 rounded-2xl bg-muted/30 border-none font-bold text-foreground"
+                                          id="removal-reason"
+                                        />
+                                     </div>
+                                  </div>
+                                  <DialogFooter>
+                                    <Button 
+                                      className="h-12 w-full rounded-2xl bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest text-[10px]"
+                                      onClick={async () => {
+                                        const reason = (document.getElementById('removal-reason') as HTMLTextAreaElement)?.value;
+                                        await removeMember(selectedMember.id, reason);
+                                        setSelectedMemberId(null);
+                                      }}
+                                    >
+                                      Authorize Decommission
+                                    </Button>
+                                  </DialogFooter>
+                                </DialogContent>
+                              </Dialog>
+                            </div>
                           )}
                         </div>
                       <div className="flex flex-col gap-2 text-white/60 text-[10px] font-bold uppercase tracking-widest">

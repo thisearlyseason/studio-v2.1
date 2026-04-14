@@ -134,7 +134,7 @@ function TeamComplianceCard({ teams, clubDocs }: { teams: Team[], clubDocs: Team
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function ClubManagementPage() {
-  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, updateTeam, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat } = useTeam();
+  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, updateTeam, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, reinstateMember } = useTeam();
   const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
   
   if (!isPrimaryClubAuthority) {
@@ -236,11 +236,8 @@ export default function ClubManagementPage() {
   const clubDocs = useMemo(() => (allDocsRaw || []), [allDocsRaw]);
 
   // School Logic: Universal Coach & Staff Roster
-  const allCoaches = useMemo(() => {
-    // Broad list of staff-appropriate roles and positions
-    const staffKeywords = ['coach', 'assistant', 'manager', 'director', 'staff', 'lead', 'coordinator', 'trainer', 'admin'];
-    
     return (allMembersRaw || []).filter(m => {
+      if (m.status === 'removed') return false;
       const pos = (m.position || '').toLowerCase();
       const role = (m.role || '').toLowerCase();
       
@@ -512,42 +509,98 @@ export default function ClubManagementPage() {
           <TabsTrigger value="safety" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Safety</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="squads" className="space-y-6 mt-0">
-          <div className="grid grid-cols-1 gap-4">
-            {filteredTeams.map(team => (
-              <Card key={team.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 p-6 hover:shadow-xl transition-all group bg-white">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                  <div className="flex items-center gap-6">
-                    <Avatar className="h-14 w-14 rounded-2xl shadow-lg border-2 border-background shrink-0">
-                      <AvatarImage src={team.teamLogoUrl} className="object-cover" />
-                      <AvatarFallback className="font-black bg-white text-foreground">{team.name[0]}</AvatarFallback>
-                    </Avatar>
-                    <div className="space-y-1 transform group-hover:translate-x-2 transition-transform duration-300">
-                      <h3 className="text-xl font-black uppercase text-foreground group-hover:text-primary transition-colors">{team.name}</h3>
-                      <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">
-                        {team.sport} • {clubMembers.filter(m => m.teamId === team.id).length} Athletes • 
-                        Code: <span className="text-primary font-black ml-1 select-all">{team.code || team.teamCode || team.inviteCode || '---'}</span>
-                      </p>
+        <TabsContent value="squads" className="space-y-12 mt-0">
+          <div className="space-y-6">
+            <div className="flex items-center justify-between px-2">
+              <div className="space-y-1">
+                <h3 className="text-xl font-black uppercase tracking-tight">Active Squads</h3>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Optimized Personnel Layers</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4">
+              {filteredTeams.map(team => (
+                <Card key={team.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 p-6 hover:shadow-xl transition-all group bg-white">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div className="flex items-center gap-6">
+                      <Avatar className="h-14 w-14 rounded-2xl shadow-lg border-2 border-background shrink-0">
+                        <AvatarImage src={team.teamLogoUrl} className="object-cover" />
+                        <AvatarFallback className="font-black bg-white text-foreground">{team.name[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="space-y-1 transform group-hover:translate-x-2 transition-transform duration-300">
+                        <h3 className="text-xl font-black uppercase text-foreground group-hover:text-primary transition-colors">{team.name}</h3>
+                        <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">
+                          {team.sport} • {clubMembers.filter(m => m.teamId === team.id && m.status !== 'removed').length} Active Athletes • 
+                          Code: <span className="text-primary font-black ml-1 select-all">{team.code || team.teamCode || team.inviteCode || '---'}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/5" onClick={() => setTeamToDelete(team)}>
+                            <Trash2 className="h-5 w-5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent className="bg-destructive">
+                          Decommission Squad
+                        </TooltipContent>
+                      </Tooltip>
+                      <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] text-foreground border-2 hover:bg-black hover:text-white transition-all" onClick={() => { setActiveTeam(team); router.push('/team'); }}>Command Access <ArrowUpRight className="ml-2 h-4 w-4" /></Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/5" onClick={() => setTeamToDelete(team)}>
-                          <Trash2 className="h-5 w-5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent className="bg-destructive">
-                        Decommission Squad
-                      </TooltipContent>
-                    </Tooltip>
-                    <Button variant="outline" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] text-foreground border-2 hover:bg-black hover:text-white transition-all" onClick={() => { setActiveTeam(team); router.push('/team'); }}>Command Access <ArrowUpRight className="ml-2 h-4 w-4" /></Button>
-                  </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              ))}
+            </div>
           </div>
+
+          {(clubMembers.some(m => m.status === 'removed')) && (
+            <div className="space-y-6">
+               <div className="flex items-center justify-between px-2 pt-8 border-t">
+                <div className="space-y-1">
+                  <h3 className="text-xl font-black uppercase tracking-tight text-red-600/60">Historical Personnel Archive</h3>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Decommissioned Athletes & Staff</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 opacity-75 grayscale hover:grayscale-0 hover:opacity-100 transition-all">
+                {clubMembers.filter(m => m.status === 'removed').map(member => (
+                  <Card key={member.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 p-6 bg-white/50 border-2 border-dashed border-red-100">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                      <div className="flex items-center gap-6">
+                        <Avatar className="h-14 w-14 rounded-2xl grayscale shrink-0 opacity-40">
+                          <AvatarImage src={member.avatar} className="object-cover" />
+                          <AvatarFallback className="font-black bg-muted text-foreground">{member.name[0]}</AvatarFallback>
+                        </Avatar>
+                        <div className="space-y-1">
+                          <h3 className="text-lg font-black uppercase text-foreground/50">{member.name}</h3>
+                          <div className="flex flex-col gap-1">
+                            <p className="text-[9px] font-black text-red-600 uppercase tracking-widest">
+                               Removed {member.removedAt ? format(new Date(member.removedAt), 'MMM d, yyyy') : 'No Date'}
+                            </p>
+                            {member.removalReason && (
+                              <p className="text-[10px] font-medium text-muted-foreground italic leading-tight max-w-sm">
+                                "{member.removalReason}"
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          variant="outline" 
+                          className="rounded-xl h-9 px-4 font-black uppercase text-[9px] text-primary border-primary/20 hover:bg-primary hover:text-white transition-all"
+                          onClick={() => reinstateMember(member.id)}
+                        >
+                          Reinstate Personnel
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
         </TabsContent>
+nt>
 
         {schoolHub && (
           <TabsContent value="coaches" className="space-y-6 mt-0">
