@@ -15,9 +15,11 @@ if (typeof window !== 'undefined') {
   const isFirestoreInternalError = (msg: string) =>
     msg?.includes('INTERNAL ASSERTION FAILED') ||
     msg?.includes('Unexpected state (ID: ca9)') ||
+    msg?.includes(' Unexpected state (ID: ca9)') ||
     msg?.includes('Unexpected state (ID: b815)') ||
     msg?.includes('ve: -1') ||
     msg?.includes('hc: "Error: FIRESTORE') ||
+    msg?.includes('could not be completed') ||
     (msg?.includes('FIRESTORE') && msg?.includes('INTERNAL'));
 
   const handleError = (event: ErrorEvent) => {

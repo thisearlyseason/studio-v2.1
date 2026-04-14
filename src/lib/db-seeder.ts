@@ -282,6 +282,9 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const later = new Date(nowObj.getTime() + 172800000).toISOString();
   const yesterday = new Date(nowObj.getTime() - 86400000).toISOString();
   const weekAgo = new Date(nowObj.getTime() - 604800000).toISOString();
+  const day2 = new Date(nowObj.getTime() + 2 * 86400000).toISOString();
+  const day3 = new Date(nowObj.getTime() + 3 * 86400000).toISOString();
+  const day4 = new Date(nowObj.getTime() + 4 * 86400000).toISOString();
 
   // 1. Core Profile Reset
   batch.set(doc(db, 'users', userId), clean({
@@ -367,8 +370,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   ];
   plans.forEach(p => batch.set(doc(db, 'plans', p.id), clean(p), { merge: true }));
 
-    // --- Specialized Parent Demo Data ---
-    if (isParentDemo) {
+    // --- Specialized Parent/Player Demo Data ---
+    if (isParentDemo || isPlayerDemo) {
         const strikerId = `demo_${planId}_${userId.slice(-4)}_strikers`;
         const lakerId = `demo_${planId}_${userId.slice(-4)}_lakers`;
         const leagueId = `demo_league_${userId.slice(-4)}`;
