@@ -236,6 +236,8 @@ export default function ClubManagementPage() {
   const clubDocs = useMemo(() => (allDocsRaw || []), [allDocsRaw]);
 
   // School Logic: Universal Coach & Staff Roster
+  const allCoaches = useMemo(() => {
+    const staffKeywords = ['coach', 'director', 'coordinator', 'staff', 'manager', 'trainer'];
     return (allMembersRaw || []).filter(m => {
       if (m.status === 'removed') return false;
       const pos = (m.position || '').toLowerCase();
@@ -600,7 +602,6 @@ export default function ClubManagementPage() {
             </div>
           )}
         </TabsContent>
-nt>
 
         {schoolHub && (
           <TabsContent value="coaches" className="space-y-6 mt-0">

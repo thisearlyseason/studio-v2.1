@@ -64,7 +64,7 @@ import {
   LayoutGrid,
   Check,
   Calendar as CalendarIcon,
-  XCircle
+  AlertHorizontal
 } from 'lucide-react';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where, getDocs } from 'firebase/firestore';
@@ -830,7 +830,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     updateAthleticMetrics, getPlayerStats, addPlayerStat, deletePlayerStat,
     getEvaluations, addEvaluation, getRecruitingContact, updateRecruitingContact,
     getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo, toggleRecruitingProfile,
-    updatePlayerStat
+    updatePlayerStat, getStaffEvaluation
   } = useTeam();
   const { user } = useTeam();
 
@@ -838,6 +838,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const [metrics, setMetrics] = useState<Partial<AthleticMetrics>>({});
   const [stats, setStats] = useState<PlayerStat[]>([]);
   const [evals, setEvaluations] = useState<PlayerEvaluation[]>([]);
+  const [staffNote, setStaffNote] = useState('');
   const [contact, setContact] = useState<Partial<RecruitingContact>>({});
   const [videos, setVideos] = useState<PlayerVideo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -861,13 +862,14 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     }
     setLoading(true);
     try {
-      const [p, m, s, e, c, v] = await Promise.all([
+      const [p, m, s, e, c, v, sn] = await Promise.all([
         getRecruitingProfile(member.playerId),
         getAthleticMetrics(member.playerId),
         getPlayerStats(member.playerId),
         getEvaluations(member.playerId),
         getRecruitingContact(member.playerId),
-        getPlayerVideos(member.playerId)
+        getPlayerVideos(member.playerId),
+        getStaffEvaluation(member.id)
       ]);
       if (p) {
         setProfile(p);
@@ -879,13 +881,14 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       if (c) setContact(c);
       if (e) setEvaluations(e);
       if (v) setVideos(v || []);
+      setStaffNote(sn || '');
       console.log("Loaded contact details:", c);
     } catch (error) {
       console.error("Error loading athlete pack:", error);
     } finally {
       setLoading(false);
     }
-  }, [member.playerId, getRecruitingProfile, getAthleticMetrics, getPlayerStats, getEvaluations, getRecruitingContact, getPlayerVideos]);
+  }, [member.id, member.playerId, getRecruitingProfile, getAthleticMetrics, getPlayerStats, getEvaluations, getRecruitingContact, getPlayerVideos, getStaffEvaluation]);
 
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -897,6 +900,9 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         description: "Athlete identity (playerId) not found. Verify this athlete is correctly assigned in the roster.", 
         variant: "destructive" 
       });
+      if (!getApps().length) {
+        initializeApp(firebaseConfig);
+      }
       console.warn("Recruiting sync failed: No playerId for member", member);
       return;
     }
@@ -1349,6 +1355,16 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             </div>
             <p className="text-xs font-medium text-muted-foreground leading-relaxed italic line-clamp-4">"{profile.bio || 'No strategic narrative established for this athlete.'}"</p>
           </Card>
+
+          {staffNote && (
+            <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-primary/5 p-6 space-y-4 animate-in fade-in duration-700">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Commander's Appraisal</h4>
+                <ShieldAlert className="h-4 w-4 text-primary opacity-40" />
+              </div>
+              <p className="text-xs font-bold text-zinc-900 leading-relaxed italic">"{staffNote}"</p>
+            </Card>
+          )}
         </aside>
       </div>
 
@@ -2442,8 +2458,8 @@ function SignatureAuditDialog({ proto }: { proto: any }) {
               {signedUsers.map(u => <div key={u.id} className="p-3 bg-green-50 text-green-700 text-xs font-bold rounded-lg border border-green-100 flex justify-between"><span className="uppercase">{u.name}</span> <CheckCircle2 className="h-4 w-4" /></div>)}
               {signedUsers.length === 0 && <div className="text-center p-4 text-xs font-bold text-muted-foreground uppercase opacity-50">No Signatures</div>}
             </TabsContent>
-            <TabsContent value="unsigned" className="space-y-2 mt-4 max-h-60 overflow-y-auto">
-              {unsignedUsers.map(u => <div key={u.id} className="p-3 bg-red-50 text-red-700 text-xs font-bold rounded-lg border border-red-100 flex justify-between"><span className="uppercase">{u.name}</span> <XCircle className="h-4 w-4" /></div>)}
+            <TabsContent value="unsigned" className="space-y-2 mt-4 max-h-60 overflow-y-auto text-foreground">
+              {unsignedUsers.map(u => <div key={u.id} className="p-3 bg-red-50 text-red-700 text-xs font-bold rounded-lg border border-red-100 flex justify-between"><span className="uppercase">{u.name}</span> <AlertCircle className="h-4 w-4" /></div>)}
               {unsignedUsers.length === 0 && <div className="text-center p-4 text-xs font-bold text-muted-foreground uppercase opacity-50">100% Compliant</div>}
             </TabsContent>
           </Tabs>

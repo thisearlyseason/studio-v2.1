@@ -15,7 +15,7 @@ import {
   Award,
   GraduationCap,
   CheckCircle2,
-  XCircle,
+  AlertCircle,
   UserPlus,
   Copy,
   FileSignature,
@@ -369,9 +369,14 @@ export default function RosterPage() {
   const handleSaveNote = async () => {
     if (!selectedMember) return;
     setIsSavingNote(true);
-    await updateStaffEvaluation(selectedMember.id, staffNote);
-    setIsSavingNote(false);
-    toast({ title: "Evaluation Synchronized" });
+    try {
+      await updateStaffEvaluation(selectedMember.id, staffNote);
+      toast({ title: "Evaluation Synchronized", description: "This note is now archived in the athlete's institutional dossier." });
+    } catch (e) {
+      toast({ title: "Sync Failed", variant: "destructive" });
+    } finally {
+      setIsSavingNote(false);
+    }
   };
 
   return (
@@ -638,41 +643,7 @@ export default function RosterPage() {
                                 </TooltipContent>
                               </Tooltip>
 
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500/60 hover:text-red-500 shrink-0">
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent className="rounded-[2.5rem] p-8 border-none bg-white">
-                                  <DialogHeader>
-                                    <DialogTitle className="text-2xl font-black uppercase text-foreground">Decommission Personnel</DialogTitle>
-                                    <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-widest">Archive {selectedMember.name} from the active roster</DialogDescription>
-                                  </DialogHeader>
-                                  <div className="space-y-4 py-4">
-                                     <div className="space-y-2">
-                                        <Label className="text-[10px] font-black uppercase text-foreground">Reason for Removal (Private Archive)</Label>
-                                        <Textarea 
-                                          placeholder="e.g. Seasonal completion, roster turnover, or voluntary exit..."
-                                          className="h-24 rounded-2xl bg-muted/30 border-none font-bold text-foreground"
-                                          id="removal-reason"
-                                        />
-                                     </div>
-                                  </div>
-                                  <DialogFooter>
-                                    <Button 
-                                      className="h-12 w-full rounded-2xl bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest text-[10px]"
-                                      onClick={async () => {
-                                        const reason = (document.getElementById('removal-reason') as HTMLTextAreaElement)?.value;
-                                        await removeMember(selectedMember.id, reason);
-                                        setSelectedMemberId(null);
-                                      }}
-                                    >
-                                      Authorize Decommission
-                                    </Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
+                              {/* Decommission UI removed from here, moving to header for better visibility */}
                             </div>
                           )}
                         </div>
@@ -694,21 +665,71 @@ export default function RosterPage() {
                   </div>
 
                   {isPro && (
-                    <div className="w-full pt-4 border-t border-white/10 space-y-4">
+                    <div className="w-full pt-4 border-t border-white/10 space-y-3">
                       <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-white/40">
-                        <span>Recruiting Portfolio</span>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/10" onClick={handleExportPortfolio}>
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Export Intelligence Report
-                          </TooltipContent>
-                        </Tooltip>
+                        <span>Personnel Actions</span>
+                        <div className="flex gap-2">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/10" onClick={handleExportPortfolio}>
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Export Portfolio
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
                       </div>
-                      <Button className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] shadow-xl hover:bg-white/90" onClick={handleExportPortfolio}>Generate Recruiting Pack</Button>
+                      
+                      <div className="grid grid-cols-1 gap-3">
+                        <Button className="w-full h-11 rounded-xl bg-white text-black font-black uppercase text-[10px] shadow-xl hover:bg-white/90" onClick={handleExportPortfolio}>Generate Scouting Pack</Button>
+                        
+                        {activeTeam?.role === 'Admin' && (
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="outline" className="w-full h-11 rounded-xl border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white font-black uppercase text-[10px] transition-all">Decommission Athlete</Button>
+                            </DialogTrigger>
+                            <DialogContent className="rounded-[2.5rem] p-8 border-none bg-white max-w-md text-foreground">
+                              <DialogHeader>
+                                <DialogTitle className="text-2xl font-black uppercase tracking-tight">Personnel Decommission</DialogTitle>
+                                <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-widest">Permanent Archive Request for {selectedMember.name}</DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4 py-6">
+                                <div className="space-y-3">
+                                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Archive Reason <span className="opacity-40 normal-case">(Required for Audit)</span></Label>
+                                  <Textarea 
+                                    id="removal-reason-main"
+                                    placeholder="e.g. Seasonal turnover, voluntary withdrawal..." 
+                                    className="min-h-[100px] bg-muted/20 border-none rounded-2xl font-bold p-4 text-sm text-foreground"
+                                  />
+                                </div>
+                                <div className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-2">
+                                  <p className="text-[10px] font-black text-red-700 uppercase">Warning</p>
+                                  <p className="text-[10px] font-medium text-red-600 leading-relaxed italic">Decommissioned personnel are immediately removed from active rosters and communications. Their profile remains in the administrative archives for 7 years.</p>
+                                </div>
+                              </div>
+                              <DialogFooter>
+                                <Button 
+                                  className="w-full h-14 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest shadow-xl shadow-red-600/20"
+                                  onClick={async () => {
+                                    const reason = (document.getElementById('removal-reason-main') as HTMLTextAreaElement)?.value;
+                                    if (!reason) {
+                                      toast({ title: "Reason Required", description: "Please provide an audit reason for decommissioning.", variant: "destructive" });
+                                      return;
+                                    }
+                                    await removeMember(selectedMember.id, reason);
+                                    setSelectedMemberId(null);
+                                    toast({ title: "Personnel Decommissioned" });
+                                  }}
+                                >
+                                  Authorize Full Decommission
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -788,7 +809,7 @@ export default function RosterPage() {
                                     </>
                                   ) : (
                                     <Badge className="bg-red-100 text-red-700 border-none rounded-xl px-3 py-1 font-black text-[9px] uppercase flex items-center gap-1 shadow-sm">
-                                      <XCircle className="h-3 w-3" /> Pending
+                                      <AlertCircle className="h-3 w-3" /> Pending
                                     </Badge>
                                   )}
                                 </div>
