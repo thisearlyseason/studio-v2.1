@@ -66,6 +66,12 @@ export async function POST(req: NextRequest) {
       proration_behavior: 'always_invoice',
     });
 
+    // IMMEDIATE FIRESTORE SYNC
+    const { updateDoc } = await import('firebase/firestore');
+    await updateDoc(userRef, {
+      extra_teams: quantity
+    });
+
     return NextResponse.json({ success: true, subscription: updatedSubscription });
   } catch (err: any) {
     console.error('[Addon Update Error]:', err);

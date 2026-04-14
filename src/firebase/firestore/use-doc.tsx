@@ -72,6 +72,13 @@ export function useDoc<T = any>(
         setIsLoading(false);
       },
       (error: FirestoreError) => {
+        // Suppress Firestore SDK internal assertion/state errors — these are SDK bugs,
+        // not application errors, triggered during HMR or rapid listener teardown.
+        if (error.message?.includes('INTERNAL ASSERTION FAILED') || error.message?.includes('Unexpected state')) {
+          console.warn('[useDoc] Suppressed Firestore internal SDK assertion:', error.message.slice(0, 80));
+          setIsLoading(false);
+          return;
+        }
         if (error.code === 'permission-denied') {
           const contextualError = new FirestorePermissionError({
             operation: 'get',
@@ -88,7 +95,16 @@ export function useDoc<T = any>(
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      try {
+        unsubscribe();
+      } catch (e: any) {
+        // Suppress Firestore SDK internal assertion errors during cleanup.
+        if (!e?.message?.includes('INTERNAL ASSERTION FAILED') && !e?.message?.includes('Unexpected state')) {
+          console.warn('[useDoc] Error during listener cleanup:', e?.message);
+        }
+      }
+    };
   }, [memoizedDocRef]); // Re-run if the memoizedDocRef changes.
 
   return { data, isLoading, error };

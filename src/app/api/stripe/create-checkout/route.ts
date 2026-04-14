@@ -20,8 +20,8 @@ export async function POST(req: NextRequest) {
     // { priceId: string, userId: string, billingCycle: 'monthly' | 'annual', extraTeamQty?: number }
     const { priceId, userId, billingCycle = 'monthly', extraTeamQty = 0 } = await req.json();
 
-    if (!priceId || !userId) {
-      return NextResponse.json({ error: 'Missing required fields: priceId, userId' }, { status: 400 });
+    if (!userId || (!priceId && extraTeamQty === 0)) {
+      return NextResponse.json({ error: 'Missing required fields: userId and either priceId or extraTeamQty' }, { status: 400 });
     }
 
     const stripe = getStripeClient();
@@ -54,25 +54,33 @@ export async function POST(req: NextRequest) {
     const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:9002';
 
     // Build line items
-    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
-      { price: priceId, quantity: 1 },
-    ];
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+    
+    // Add base plan if provided
+    if (priceId) {
+      lineItems.push({ price: priceId, quantity: 1 });
+    }
 
     // Optionally add extra-team add-on
+    const { EXTRA_TEAM_CONFIG } = await import('@/lib/pricing');
     const extraTeamPriceId = billingCycle === 'annual'
-      ? process.env.STRIPE_PRICE_EXTRA_TEAM_ANNUAL
-      : (process.env.STRIPE_PRICE_EXTRA_TEAM_MONTHLY || process.env.STRIPE_PRICE_EXTRA_TEAM);
+      ? EXTRA_TEAM_CONFIG.annualPriceId
+      : EXTRA_TEAM_CONFIG.monthlyPriceId;
 
     if (extraTeamQty > 0 && extraTeamPriceId) {
       lineItems.push({ price: extraTeamPriceId, quantity: extraTeamQty });
+    }
+
+    if (lineItems.length === 0) {
+      return NextResponse.json({ error: 'No items selected for checkout' }, { status: 400 });
     }
 
     const session = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,
       mode: 'subscription',
       line_items: lineItems,
-      success_url: `${origin}/settings?stripe_success=true`,
-      cancel_url:  `${origin}/settings?stripe_canceled=true`,
+      success_url: `${origin}/dashboard/billing?stripe_success=true`,
+      cancel_url:  `${origin}/dashboard/billing?stripe_canceled=true`,
       metadata: {
         firebase_uid: userId, // Added here for session completion awareness
       },

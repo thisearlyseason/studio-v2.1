@@ -66,3 +66,159 @@
     border-radius: 10px;
   }
 }
+
+/* Institutional PDF Light Mode Architecture */
+.pdf-light-mode {
+  background: white !important;
+  color: black !important;
+  border-color: #e5e7eb !important;
+  box-shadow: none !important;
+}
+
+/* Hardened Visibility Protocol for Capture */
+.pdf-light-mode * {
+  animation: none !important;
+  transition: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.pdf-light-mode .pdf-hide {
+  display: none !important;
+}
+
+.pdf-light-mode .bg-\[\#0a0a0a\],
+.pdf-light-mode.bg-\[\#0a0a0a\] {
+  background: white !important;
+}
+
+.pdf-light-mode .bg-\[\#0F172A\] {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  overflow: visible !important;
+}
+
+.pdf-light-mode .text-white\/30,
+.pdf-light-mode .text-white\/40,
+.pdf-light-mode .text-white\/50 {
+  color: #64748b !important;
+}
+
+.pdf-light-mode .text-white\/90,
+.pdf-light-mode .text-white {
+  color: #0f172a !important;
+}
+
+.pdf-light-mode .border-white\/5,
+.pdf-light-mode .border-white\/10,
+.pdf-light-mode .border-white\/20,
+.pdf-light-mode .border-white\/30 {
+  border-color: #e2e8f0 !important;
+}
+
+.pdf-light-mode .bg-white\/\[0\.02\] {
+  background: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+}
+
+.pdf-light-mode .bg-black\/40 {
+  background: #f1f5f9 !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.pdf-light-mode .bg-\[\#0F172A\]\/50,
+.pdf-light-mode .bg-\[\#0F172A\]\/90 {
+  background: white !important;
+}
+
+.pdf-light-mode .bg-white\/5 {
+  background: #f8fafc !important;
+}
+
+.pdf-light-mode .bg-gradient-to-br,
+.pdf-light-mode .bg-gradient-to-t {
+  background: none !important;
+}
+
+.pdf-light-mode .shadow-2xl,
+.pdf-light-mode .shadow-\[0_0_15px_rgba\(var\(--primary\)\,0\.1\)\] {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+}
+
+.pdf-light-mode .bg-white\/10 {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+.pdf-light-mode .bg-orange-500\/20 {
+  background: #fff7ed !important;
+}
+
+.pdf-light-mode .text-orange-400 {
+  color: #f97316 !important;
+}
+
+.pdf-light-mode .bg-primary\/20 {
+  background: #fef2f2 !important;
+}
+
+.pdf-light-mode .bg-yellow-500\/40 {
+  background: #fefce8 !important;
+}
+
+.pdf-light-mode .bg-primary {
+  background: #dc2626 !important;
+}
+
+.pdf-light-mode .text-primary {
+  color: #dc2626 !important;
+}
+
+.pdf-light-mode .bg-white {
+  background: white !important;
+}
+
+.pdf-light-mode .text-black {
+  color: black !important;
+}
+
+.pdf-light-mode .bg-black {
+  background: black !important;
+}
+
+.pdf-light-mode .ring-white\/10 {
+  --tw-ring-color: #e2e8f0 !important;
+}
+
+.pdf-light-mode .bg-neutral-900 {
+  background: #f1f5f9 !important;
+}
+
+.pdf-light-mode .ring-black\/5 {
+  --tw-ring-color: rgb(0 0 0 / 0.05) !important;
+}
+
+/* Ensure connectors are visible in light mode */
+.pdf-light-mode .bg-white\/20 {
+  background: #94a3b8 !important;
+}
+
+/* Precision Text Rendering for html2canvas */
+.pdf-light-mode .truncate {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+  max-width: none !important;
+}
+
+.pdf-light-mode span, 
+.pdf-light-mode p, 
+.pdf-light-mode div {
+  line-height: normal !important;
+  padding-bottom: 2px !important;
+}
+
+.pdf-light-mode .font-black,
+.pdf-light-mode .font-bold {
+  letter-spacing: 0.025em !important;
+}

@@ -113,7 +113,7 @@ function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
             <Badge variant="outline" className="text-[7px] font-black uppercase px-1.5 h-4 border-none bg-muted/50">{event.eventType}</Badge>
-            <span className="text-[10px] font-bold text-muted-foreground uppercase">{event.startTime}</span>
+            <span className="text-xs font-black text-primary uppercase ml-auto">{event.startTime}</span>
             {event.isLeagueGame && (
               <Badge className={cn("text-[7px] font-black uppercase px-1.5 h-4 border-none", event.isHome ? "bg-primary text-white" : "bg-black text-white")}>
                 {event.isHome ? 'HOME' : 'AWAY'}
@@ -294,9 +294,24 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                       <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Mission Parameters</h3>
                     </div>
                     <div className="bg-muted/30 p-8 rounded-[2.5rem] border-2 border-dashed">
-                      <p className="text-base font-medium text-foreground/80 leading-relaxed italic">
-                        "{event.description || 'No specific coordination notes provided for this deployment.'}"
-                      </p>
+                      {event.isTournamentMatch ? (
+                        <div className="space-y-4">
+                           <div className="flex items-center justify-between border-b pb-4 border-muted">
+                              <span className="text-[10px] font-black uppercase text-primary">Competition Bracket</span>
+                              <span className="text-sm font-black uppercase text-foreground">{event.round || 'Tournament Match'}</span>
+                           </div>
+                           <div className="flex flex-col gap-1">
+                              <span className="text-[10px] font-black uppercase text-muted-foreground">Scout Intel</span>
+                              <p className="text-base font-medium text-foreground/80 leading-relaxed italic">
+                                "Squad is scheduled for high-intensity bracket progression. Review tactical marks."
+                              </p>
+                           </div>
+                        </div>
+                      ) : (
+                        <p className="text-base font-medium text-foreground/80 leading-relaxed italic">
+                          "{event.description || 'No specific coordination notes provided for this deployment.'}"
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -435,9 +450,13 @@ export default function MasterCalendarPage() {
 
   useEffect(() => {
     if (discoveryTeamIds.length > 0 && selectedTeamIds.length === 0) {
-      setSelectedTeamIds(discoveryTeamIds);
+      if (activeTeam?.id && discoveryTeamIds.includes(activeTeam.id)) {
+        setSelectedTeamIds([activeTeam.id]);
+      } else {
+        setSelectedTeamIds(discoveryTeamIds);
+      }
     }
-  }, [discoveryTeamIds, selectedTeamIds.length]);
+  }, [discoveryTeamIds, selectedTeamIds.length, activeTeam?.id]);
 
   const filteredEvents = useMemo(() => {
     return allEvents.filter(event => {
@@ -493,8 +512,9 @@ export default function MasterCalendarPage() {
                   title: `[Match] ${game.team1} vs ${game.team2}`,
                   startTime: game.time,
                   location: game.location || event.location,
-                  eventType: 'game', // Treat as game for color coding
+                  eventType: 'tournament', // Maintain prestige tournament branding
                   isTournamentMatch: true,
+                  round: game.round,
                   parentTournamentId: event.id
                 } as any);
               }

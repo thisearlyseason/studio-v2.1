@@ -108,6 +108,10 @@ export default function PlaybookAndGamePlayPage() {
   const [watchProgress, setWatchProgress] = useState(0);
   const [hasCompletedWatch, setHasCompletedWatch] = useState(false);
 
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [commentMin, setCommentMin] = useState<string>('');
+  const [commentSec, setCommentSec] = useState<string>('');
+
   const filteredDrills = useMemo(() => drills.filter(d => d.title.toLowerCase().includes(searchTerm.toLowerCase())), [drills, searchTerm]);
   const filteredFiles = useMemo(() => teamFiles.filter(f => ['Game Tape', 'Practice Session', 'Highlights'].includes(f.category) && f.name.toLowerCase().includes(searchTerm.toLowerCase())), [teamFiles, searchTerm]);
 
@@ -220,15 +224,14 @@ export default function PlaybookAndGamePlayPage() {
 
   const handleAddComment = async (id: string, currentComments: any[], type: 'drills' | 'files') => {
     if (!commentText || !activeTeam || !db) return;
-    const parts = commentTime.split(':').map(p => parseInt(p));
+    
     let secs = undefined;
-    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-      secs = parts[0] * 60 + parts[1];
-    } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-      secs = parts[0] * 3600 + parts[1] * 60 + parts[2];
-    } else if (parts.length === 1 && !isNaN(parts[0])) {
-      secs = parts[0];
+    const m = parseInt(commentMin) || 0;
+    const s = parseInt(commentSec) || 0;
+    if (commentMin || commentSec) {
+      secs = m * 60 + s;
     }
+
     const newC = {
       id: `c_${Date.now()}`,
       text: commentText,
@@ -245,8 +248,7 @@ export default function PlaybookAndGamePlayPage() {
       await updateDoc(doc(db, 'teams', activeTeam.id, 'files', id), { comments: updated });
       setSelectedFile((prev: any) => ({ ...prev, comments: updated }));
     }
-    setCommentText(''); setCommentTime('');
-    toast({ title: "Mark Saved" });
+    setCommentText(''); setCommentMin(''); setCommentSec('');
   };
 
   const handleDeleteComment = async (id: string, commentId: string, currentComments: any[], type: 'drills' | 'files') => {
@@ -950,14 +952,19 @@ export default function PlaybookAndGamePlayPage() {
                                 ) : mediaUrl && (mediaUrl.includes('mp4') || mediaUrl.includes('mov') || mediaUrl.startsWith('data:video')) ? (
                                   <video src={mediaUrl} controls className="w-full h-full" />
                                 ) : mediaUrl ? (
-                                  <div className="relative w-full h-full">
+                                  <button 
+                                    className="relative w-full h-full cursor-zoom-in group/asset"
+                                    onClick={(e) => { e.stopPropagation(); setLightboxUrl(mediaUrl); }}
+                                  >
                                     <img 
                                       src={mediaUrl} 
                                       alt={`Ref ${idx + 1}`} 
                                       className="w-full h-full object-cover transition-transform duration-700 group-hover/media:scale-110" 
                                     />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover/media:opacity-100 transition-opacity" />
-                                  </div>
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover/media:opacity-100 transition-opacity flex items-center justify-center">
+                                       <Search className="h-8 w-8 text-white opacity-40 group-hover/asset:scale-110 transition-transform" />
+                                    </div>
+                                  </button>
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center">
                                     <Package className="h-8 w-8 text-white/10" />
@@ -1179,12 +1186,21 @@ export default function PlaybookAndGamePlayPage() {
                   <div className="p-8 space-y-4 bg-white border-t shrink-0">
                     <div className="flex gap-2">
                       {isStaff && (
-                        <Input 
-                          placeholder="0:00" 
-                          className="w-20 h-12 rounded-xl border-2 font-black text-xs text-center border-primary/10 shadow-inner" 
-                          value={commentTime ?? ""} 
-                          onChange={e => setCommentTime(e.target.value)} 
-                        />
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Input 
+                            placeholder="M" 
+                            className="w-12 h-12 rounded-xl border-2 font-black text-xs text-center border-primary/10 shadow-inner" 
+                            value={commentMin ?? ""} 
+                            onChange={e => setCommentMin(e.target.value)} 
+                          />
+                          <span className="font-black text-muted-foreground">:</span>
+                          <Input 
+                            placeholder="S" 
+                            className="w-12 h-12 rounded-xl border-2 font-black text-xs text-center border-primary/10 shadow-inner" 
+                            value={commentSec ?? ""} 
+                            onChange={e => setCommentSec(e.target.value)} 
+                          />
+                        </div>
                       )}
                       <Input 
                         placeholder={isStaff ? "Add coaching cue or tag timestamp..." : "Add a comment..."} 
@@ -1206,7 +1222,8 @@ export default function PlaybookAndGamePlayPage() {
                               onClick={() => {
                                 if (videoRef.current) {
                                   const s = Math.floor(videoRef.current.currentTime);
-                                  setCommentTime(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+                                  setCommentMin(Math.floor(s / 60).toString());
+                                  setCommentSec(String(s % 60).padStart(2, '0'));
                                 } else {
                                   toast({ title: "YouTube Timestamp", description: "For YouTube, please enter the time manually (e.g. 1:24)" });
                                 }
@@ -1228,6 +1245,15 @@ export default function PlaybookAndGamePlayPage() {
                     >
                       <Bookmark className="h-3 w-3 mr-2" /> {isStaff ? "Publish Mark" : "Post Comment"}
                     </Button>
+                    
+                    {/* Confirmed Completed Button */}
+                    <Button 
+                      variant="outline"
+                      className="w-full h-12 rounded-xl font-black uppercase text-[10px] border-2 border-emerald-500/20 text-emerald-600 hover:bg-emerald-50 shadow-sm"
+                      onClick={() => { setSelectedDrill(null); setSelectedFile(null); }}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-2" strokeWidth={3} /> Confirmed Completed
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -1235,6 +1261,27 @@ export default function PlaybookAndGamePlayPage() {
           })()}
         </DialogContent>
       </Dialog>
+      
+      {/* Tactical Lightbox */}
+      <Dialog open={!!lightboxUrl} onOpenChange={(o) => !o && setLightboxUrl(null)}>
+        <DialogContent className="max-w-[95vw] max-h-[90vh] p-0 border-none bg-black/90 backdrop-blur-xl overflow-hidden rounded-[2.5rem] flex items-center justify-center">
+          <DialogTitle className="sr-only">Tactical Asset Preview</DialogTitle>
+          <button 
+            className="absolute top-6 right-6 z-[60] h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <X className="h-6 w-6" />
+          </button>
+          {lightboxUrl && (
+            <img 
+              src={lightboxUrl} 
+              alt="Tactical Preview" 
+              className="max-w-full max-h-[85vh] object-contain shadow-2xl animate-in zoom-in duration-300" 
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
         </div>
       </div>
   );

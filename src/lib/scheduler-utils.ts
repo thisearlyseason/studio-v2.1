@@ -35,7 +35,7 @@ export interface ScheduleConfig {
   dailyWindows?: DailyWindow[];
   playDays?: number[];
   blackoutDaysOfWeek?: number[];
-  tournamentType?: 'round_robin' | 'single_elimination' | 'double_elimination';
+  tournamentType?: 'round_robin' | 'pool_play_knockout' | 'single_elimination' | 'double_elimination';
 }
 
 /**
@@ -69,7 +69,10 @@ function parseTime(timeStr: string, referenceDate: Date): Date {
  */
 function parseLocalDate(dateStr: string): Date {
   if (!dateStr) return new Date();
-  const [year, month, day] = dateStr.split('-').map(Number);
+  // Handle full ISO strings by taking only the date part
+  const cleanDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+  const [year, month, day] = cleanDate.split('-').map(Number);
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return new Date();
   return new Date(year, month - 1, day);
 }
 
@@ -205,65 +208,129 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
 
   const matchups: { t1: string; t2: string; t1Id?: string; t2Id?: string; round: string }[] = [];
   
-  if (tournamentType === 'round_robin') {
+  if (tournamentType === 'round_robin' || tournamentType === 'pool_play_knockout') {
     const shuffled = shuffle([...teamList]);
     for (let i = 0; i < shuffled.length; i++) {
       for (let j = i + 1; j < shuffled.length; j++) {
         matchups.push({ t1: shuffled[i].name, t2: shuffled[j].name, t1Id: shuffled[i].id, t2Id: shuffled[j].id, round: 'Pool Play' });
       }
     }
-  } else if (tournamentType === 'single_elimination') {
+  } else if (tournamentType === 'single_elimination' || tournamentType === 'double_elimination') {
+    const isDouble = tournamentType === 'double_elimination';
     const shuffled = shuffle([...teamList]);
     const numTeams = shuffled.length;
-    const numByes = Math.pow(2, Math.ceil(Math.log2(numTeams))) - numTeams;
+    const totalRounds = Math.max(1, Math.ceil(Math.log2(numTeams)));
+    const bracketSize = Math.pow(2, totalRounds);
+
+    const roundMatches: any[][] = Array.from({length: totalRounds}, () => []);
     
-    // First Round matches
-    const firstRoundMatches = (numTeams - numByes) / 2;
-    for (let i = 0; i < firstRoundMatches; i++) {
-      matchups.push({ t1: shuffled[i * 2 + numByes].name, t2: shuffled[i * 2 + numByes + 1].name, t1Id: shuffled[i * 2 + numByes].id, t2Id: shuffled[i * 2 + numByes + 1].id, round: 'Round 1' });
-    }
-    
-    // Future placeholders
-    const totalRounds = Math.ceil(Math.log2(numTeams));
-    for (let r = 2; r <= totalRounds; r++) {
-      const label = r === totalRounds ? 'Championship' : r === totalRounds - 1 ? 'Semi-Finals' : `Round ${r}`;
-      const gamesInRound = Math.pow(2, totalRounds - r);
-      for (let i = 0; i < gamesInRound; i++) {
-        matchups.push({ t1: 'TBD', t2: 'TBD', round: label });
-      }
-    }
-  } else if (tournamentType === 'double_elimination') {
-    // Advanced DE Setup: 
-    // For N teams, we need approximately 2N-1 games.
-    const shuffled = shuffle([...teamList]);
-    const n = shuffled.length;
-    
-    // Winners Bracket R1
-    const wb1Games = Math.floor(n / 2);
-    for (let i = 0; i < wb1Games; i++) {
-      matchups.push({ t1: shuffled[i * 2].name, t2: shuffled[i * 2 + 1].name, t1Id: shuffled[i * 2].id, t2Id: shuffled[i * 2 + 1].id, round: 'WB Round 1' });
-    }
-    
-    // Losers Bracket R1
-    const lb1Games = Math.floor(wb1Games / 2) || 1;
-    for (let i = 0; i < lb1Games; i++) {
-      matchups.push({ t1: 'TBD', t2: 'TBD', round: 'LB Round 1' });
+    // 1. Generate Winners Bracket Topology (Shared by both Single & Double)
+    for (let r = 0; r < totalRounds; r++) {
+       const numMatches = Math.pow(2, totalRounds - r - 1);
+       for (let m = 0; m < numMatches; m++) {
+          const isFinal = r === totalRounds - 1;
+          const isSemi = r === totalRounds - 2;
+          const label = isFinal ? (isDouble ? 'WB Finals' : 'Championship') : isSemi ? (isDouble ? 'WB Semi-Finals' : 'Semi-Finals') : `Round ${r + 1}`;
+          const id = `wb_${Date.now()}_${r}_${m}`;
+          roundMatches[r].push({ id, round: label, t1: 'TBD', t2: 'TBD' });
+       }
     }
 
-    // Subsequent rounds placeholders
-    const totalRounds = Math.ceil(Math.log2(n)) + 1;
-    for (let r = 2; r <= totalRounds; r++) {
-      matchups.push({ t1: 'TBD', t2: 'TBD', round: `WB Round ${r}` });
-      matchups.push({ t1: 'TBD', t2: 'TBD', round: `LB Round ${r}` });
+    // 2. Link Winners Bracket
+    for (let r = 0; r < totalRounds - 1; r++) {
+       for (let m = 0; m < roundMatches[r].length; m++) {
+           const parentMatchIndex = Math.floor(m / 2);
+           const slot = m % 2 === 0 ? 'team1' : 'team2';
+           roundMatches[r][m].winnerTo = roundMatches[r+1][parentMatchIndex].id;
+           roundMatches[r][m].winnerToSlot = slot;
+       }
     }
-    
-    matchups.push({ t1: 'TBD', t2: 'TBD', round: 'Semi-Finals' });
-    matchups.push({ t1: 'TBD', t2: 'TBD', round: 'Championship' });
-    matchups.push({ t1: 'TBD', t2: 'TBD', round: 'IF NECESSARY' });
+
+    // 3. Populate Round 1 Teams
+    const firstRound = roundMatches[0];
+    let teamIdx = 0;
+    for (let i = 0; i < firstRound.length; i++) {
+        firstRound[i].t1 = teamIdx < numTeams ? shuffled[teamIdx].name : 'BYE';
+        firstRound[i].t1Id = teamIdx < numTeams ? shuffled[teamIdx].id : 'bye';
+        teamIdx++;
+        
+        firstRound[i].t2 = teamIdx < numTeams ? shuffled[teamIdx].name : 'BYE';
+        firstRound[i].t2Id = teamIdx < numTeams ? shuffled[teamIdx].id : 'bye';
+        teamIdx++;
+    }
+
+    roundMatches.forEach(rm => rm.forEach(m => matchups.push(m)));
+
+    // 4. Generate Losers Bracket Topology IF Double Elimination
+    if (isDouble) {
+       // High-Fidelity DE Topology for 8-team demo standard:
+       // LB R1: 2 matches (Takes 4 losers from WB R1)
+       // LB R2: 2 matches (Takes 2 winners from LB R1 + 2 losers from WB R2)
+       // LB Finals: 1 match (Takes 2 winners from LB R2)
+       
+       const lbR1 = [
+         { id: `lb_${Date.now()}_1_0`, round: 'LB Round 1', t1: 'TBD', t2: 'TBD' },
+         { id: `lb_${Date.now()}_1_1`, round: 'LB Round 1', t1: 'TBD', t2: 'TBD' }
+       ];
+       const lbR2 = [
+         { id: `lb_${Date.now()}_2_0`, round: 'LB Round 2', t1: 'TBD', t2: 'TBD' },
+         { id: `lb_${Date.now()}_2_1`, round: 'LB Round 2', t1: 'TBD', t2: 'TBD' }
+       ];
+       const lbFinal = { id: `lb_final_${Date.now()}`, round: 'LB Finals', t1: 'TBD', t2: 'TBD' };
+       const grandFinalId = `gf_${Date.now()}`;
+
+       // Link LB R1 -> LB R2
+       lbR1[0].winnerTo = lbR2[0].id; lbR1[0].winnerToSlot = 'team1';
+       lbR1[1].winnerTo = lbR2[1].id; lbR1[1].winnerToSlot = 'team1';
+
+       // Link LB R2 -> LB Finals
+       lbR2[0].winnerTo = lbFinal.id; lbR2[0].winnerToSlot = 'team1';
+       lbR2[1].winnerTo = lbFinal.id; lbR2[1].winnerToSlot = 'team2';
+
+       // Link WB Final (r=2) loser to LB Final
+       const wbFinalMatch = roundMatches[totalRounds - 1][0];
+       wbFinalMatch.loserTo = lbFinal.id;
+       wbFinalMatch.loserToSlot = 'team2';
+
+       // Link LB Final winner to Grand Final
+       lbFinal.winnerTo = grandFinalId;
+       lbFinal.winnerToSlot = 'team2';
+
+       // Link WB Final winner to Grand Final
+       wbFinalMatch.winnerTo = grandFinalId;
+       wbFinalMatch.winnerToSlot = 'team1';
+
+       // Add Grand Final
+       matchups.push({
+           id: grandFinalId,
+           round: 'Championship',
+           t1: 'TBD (WB Winner)',
+           t2: 'TBD (LB Winner)',
+           t1Id: 'tbd', t2Id: 'tbd'
+       });
+
+       // Crossover: WB R1 (4 games) losers drop to LB R1 (2 games)
+       // WB R1 Games 0,1 -> LB R1 Game 0 (slots team1, team2)
+       // WB R1 Games 2,3 -> LB R1 Game 1 (slots team1, team2)
+       roundMatches[0][0].loserTo = lbR1[0].id; roundMatches[0][0].loserToSlot = 'team1';
+       roundMatches[0][1].loserTo = lbR1[0].id; roundMatches[0][1].loserToSlot = 'team2';
+       roundMatches[0][2].loserTo = lbR1[1].id; roundMatches[0][2].loserToSlot = 'team1';
+       roundMatches[0][3].loserTo = lbR1[1].id; roundMatches[0][3].loserToSlot = 'team2';
+
+       // Crossover: WB R2 (2 games) losers drop to LB R2 (2 games)
+       // WB R2 Game 0 -> LB R2 Game 0 (slot team2)
+       // WB R2 Game 1 -> LB R2 Game 1 (slot team2)
+       roundMatches[1][0].loserTo = lbR2[0].id; roundMatches[1][0].loserToSlot = 'team2';
+       roundMatches[1][1].loserTo = lbR2[1].id; roundMatches[1][1].loserToSlot = 'team2';
+
+       lbR1.forEach(m => matchups.push(m));
+       lbR2.forEach(m => matchups.push(m));
+       matchups.push(lbFinal);
+    }
   }
 
-  // --- Automatic Elimination Bracket for Round Robin (Pool play) ---
-  if (tournamentType === 'round_robin' && teamList.length >= 4) {
+  // --- Automatic Elimination Bracket for Pool Play Knockout ---
+  if (tournamentType === 'pool_play_knockout' && teamList.length >= 4) {
     const semi1Id = `s1_${Date.now()}`;
     const semi2Id = `s2_${Date.now()}`;
     const finalId = `f1_${Date.now()}`;
@@ -292,11 +359,26 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
     });
   }
 
+  // Helper to enforce phase dependencies
+  const getRoundTier = (r: string) => {
+    const rLower = r.toLowerCase();
+    if (rLower.includes('pool')) return 0;
+    const m = rLower.match(/round\s+(\d+)/);
+    if (m) return parseInt(m[1]);
+    if (rLower.includes('quarter')) return 80;
+    if (rLower.includes('semi')) return 90;
+    if (rLower.includes('championship') || rLower.includes('final')) return 100;
+    return 10;
+  };
+
   // --- Optimization: Limit Round Robin matches if gamesPerTeam is set ---
   let finalMatchups = matchups;
-  if (tournamentType === 'round_robin' && config.gamesPerTeam) {
+  if ((tournamentType === 'round_robin' || tournamentType === 'pool_play_knockout') && config.gamesPerTeam) {
     const maxGames = Math.ceil((teamList.length * config.gamesPerTeam) / 2);
-    finalMatchups = matchups.slice(0, maxGames);
+    // Keep Semis and Finals from being sliced off if they exist!
+    const poolMatches = matchups.filter(m => m.round === 'Pool Play').slice(0, maxGames);
+    const bracketMatches = matchups.filter(m => m.round !== 'Pool Play');
+    finalMatchups = [...poolMatches, ...bracketMatches];
   }
   
   const startD = parseLocalDate(startDate);
@@ -336,10 +418,18 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
     const todaysGames = dailyTeamUsage.get(dayKey)!;
 
     let foundMatchupIndex = -1;
+    
+    // Determine the minimum active tier we are currently scheduling to enforce chronological phases
+    const minTierInPool = Math.min(...pool.map(m => getRoundTier(m.round)));
+
     for (let i = 0; i < pool.length; i++) {
-      const { t1, t2, t1Id, t2Id } = pool[i];
+      const { t1, t2, t1Id, t2Id, round } = pool[i];
       const id1 = t1Id || t1; // fallback to name if ID missing
       const id2 = t2Id || t2;
+
+      // Phase isolation: never schedule a knockout/later round while early rounds are pending!
+      const currentTier = getRoundTier(round);
+      if (currentTier > minTierInPool) continue;
 
       // 1. Prevent simultaneous games & enforce physical recovery (Rest Period)
       const MIN_REST_MINUTES = config.gameLength + config.breakLength; // Minimum gap between games

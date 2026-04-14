@@ -460,21 +460,42 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
     if (!schedule || schedule.length === 0) return;
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    doc.setFillColor(0, 0, 0); doc.rect(0, 0, pageWidth, 50, 'F');
-    doc.setTextColor(255, 255, 255); doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text(`${league.name.toUpperCase()} SCHEDULE`, 20, 30);
-    doc.setFontSize(9); doc.text("OFFICIAL COMPETITIVE FIXTURES LOG", 20, 38);
-    doc.setTextColor(0, 0, 0); doc.setFontSize(14); doc.text(`Total Fixtures: ${schedule.length}`, 20, 70);
-    doc.setFillColor(245, 245, 245); doc.rect(20, 80, pageWidth - 40, 10, 'F');
-    doc.setTextColor(100, 100, 100); doc.setFontSize(8); doc.text("DATE", 25, 86.5); doc.text("MATCHUP", 60, 86.5); doc.text("LOCATION", 140, 86.5); doc.text("TIME", pageWidth - 25, 86.5, { align: 'right' });
-    let y = 100; doc.setTextColor(30,30,30); doc.setFontSize(9);
+    addSquadBranding(doc, `${league.name} SCHEDULE`, "OFFICIAL COMPETITIVE FIXTURES LOG");
+    
+    doc.setTextColor(0, 0, 0); 
+    doc.setFontSize(14); 
+    doc.setFont("helvetica", "bold");
+    doc.text(`Total Fixtures: ${schedule.length}`, 20, 70);
+    
+    doc.setFillColor(245, 245, 245); 
+    doc.rect(20, 80, pageWidth - 40, 10, 'F');
+    
+    doc.setTextColor(100, 100, 100); 
+    doc.setFontSize(8); 
+    doc.text("DATE", 25, 86.5); 
+    doc.text("MATCHUP", 60, 86.5); 
+    doc.text("LOCATION", 140, 86.5); 
+    doc.text("TIME", pageWidth - 25, 86.5, { align: 'right' });
+    
+    let y = 100; 
+    doc.setTextColor(30, 30, 30); 
+    doc.setFontSize(9);
+    
     schedule.forEach(g => {
-      if (y > 270) { doc.addPage(); y = 20; }
-      doc.setFont("helvetica", "bold"); doc.text(g.date, 25, y);
+      if (y > 260) { 
+        addSquadFooter(doc, null, league.name);
+        doc.addPage(); 
+        addSquadBranding(doc, `${league.name} SCHEDULE`, "OFFICIAL COMPETITIVE FIXTURES LOG");
+        y = 70; 
+      }
+      doc.setFont("helvetica", "bold"); doc.text(format(new Date(g.date), 'MMMM d, yyyy'), 25, y);
       doc.text(`${g.team1.toUpperCase()} vs ${g.team2.toUpperCase()}`, 60, y);
       doc.setFont("helvetica", "normal"); doc.text(g.location || 'TBD', 140, y);
       doc.setFont("helvetica", "bold"); doc.text(g.time, pageWidth - 25, y, { align: 'right' });
       doc.setDrawColor(245, 245, 245); doc.line(25, y + 4, pageWidth - 25, y+4); y += 12;
     });
+    
+    addSquadFooter(doc, null, league.name);
     doc.save(`SCHEDULE_${league.name.replace(/\s+/g, '_')}.pdf`);
     toast({ title: "Fixtures Ledger Exported" });
   }, [league, schedule]);
@@ -525,7 +546,7 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
                     {filteredSchedule.map(game => (
                       <tr key={game.id} className="hover:bg-muted/5 transition-colors group">
                         <td className="px-8 py-6">
-                          <p className="font-black text-xs uppercase">{game.date}</p>
+                          <p className="font-black text-xs uppercase">{format(new Date(game.date), 'MMMM d, yyyy')}</p>
                           <div className="flex items-center gap-2">
                             <p className="text-[10px] font-bold text-muted-foreground">{game.time}</p>
                             {getDoubleHeaderLabel(game) && <Badge className="bg-primary/10 text-primary border-none text-[7px] h-4 font-black">DOUBLE HEADER</Badge>}
@@ -589,7 +610,7 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
           <div className="space-y-4 max-w-4xl mx-auto">
             <div className="flex items-center justify-between px-2">
               <h4 className="text-xl font-black uppercase tracking-tight">
-                {dateRange?.from ? (dateRange.to ? `${format(dateRange.from, 'MMM do')} - ${format(dateRange.to, 'MMM do')}` : format(dateRange.from, 'EEEE, MMMM do')) : 'Select Date Range'}
+                {dateRange?.from ? (dateRange.to ? `${format(dateRange.from, 'MMM d, yyyy')} - ${format(dateRange.to, 'MMM d, yyyy')}` : format(dateRange.from, 'MMMM d, yyyy')) : 'Select Date Range'}
               </h4>
               <Badge variant="outline" className="font-black text-[10px]">{filteredSchedule.length} MATCHES</Badge>
             </div>

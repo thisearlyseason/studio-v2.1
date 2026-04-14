@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTeam } from '@/components/providers/team-provider';
 import { PRICING_CONFIG, EXTRA_TEAM_CONFIG, Plan, BillingCycle } from '@/lib/pricing';
 import { 
@@ -28,8 +29,10 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
 export default function BillingDashboard() {
-  const { user: userProfile, isPro, teams } = useTeam();
+  const { user: userProfile, isPro, teams, proQuotaStatus, updateTeamPlan } = useTeam();
+  const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
+  const [pendingSync, setPendingSync] = useState(false);
   const [addonQty, setAddonQty] = useState(userProfile?.extra_teams || 0);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(userProfile?.subscription_status?.includes('annual') ? 'annual' : 'monthly');
   
@@ -41,9 +44,9 @@ export default function BillingDashboard() {
   const isOverLimit = (teams || []).length > (userProfile?.team_limit || 1);
   const isStripeLinked = !!userProfile?.stripe_subscription_id;
 
-  const handleUpdatePlan = async (newPlan: Plan) => {
+  const handleUpdatePlan = async (newPlan: Plan | null, initialAddons?: number) => {
     if (!userProfile?.id) return;
-    setLoading('plan_' + newPlan.id);
+    setLoading(newPlan ? 'plan_' + newPlan.id : 'addon_init');
 
     // If they DON'T have a subscription yet (Starter plan), they need a checkout session
     if (!isStripeLinked) {
@@ -53,8 +56,9 @@ export default function BillingDashboard() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             userId: userProfile.id,
-            priceId: billingCycle === 'annual' ? newPlan.annualPriceId : newPlan.monthlyPriceId,
-            billingCycle: billingCycle
+            priceId: newPlan ? (billingCycle === 'annual' ? newPlan.annualPriceId : newPlan.monthlyPriceId) : null,
+            billingCycle: billingCycle,
+            extraTeamQty: initialAddons || 0
           })
         });
         const data = await response.json();
@@ -70,23 +74,40 @@ export default function BillingDashboard() {
       return;
     }
 
+    // In-place upgrade: already has a Stripe subscription
+    if (!newPlan) {
+      toast({ title: "Invalid Upgrade", description: "No plan selected for upgrade.", variant: "destructive" });
+      setLoading(null);
+      return;
+    }
+
     try {
+      const newPriceId = billingCycle === 'annual' ? newPlan.annualPriceId : newPlan.monthlyPriceId;
       const response = await fetch('/api/subscription/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: userProfile.id,
-          newPriceId: billingCycle === 'annual' ? newPlan.annualPriceId : newPlan.monthlyPriceId
+          newPriceId
         })
       });
       const data = await response.json();
       if (data.success) {
-        toast({ title: "Success", description: `Upgraded to ${newPlan.name}. Changes processed.` });
+        toast({ 
+          title: "Upgrade Confirmed!", 
+          description: `Switched to ${newPlan.name}. Loading your new features...`
+        });
+        // Use a full navigation after a brief delay.
+        // This creates a clean Firestore connection, prevents the SDK ca9 listener crash,
+        // and guarantees the billing page reads the newly-written plan fresh from Firestore.
+        setTimeout(() => {
+          window.location.href = '/dashboard/billing';
+        }, 1200);
       } else {
         throw new Error(data.error);
       }
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Upgrade Error", description: err.message, variant: "destructive" });
     } finally {
       setLoading(null);
     }
@@ -163,6 +184,50 @@ export default function BillingDashboard() {
       setLoading(null);
     }
   };
+
+  const handleForceSync = async () => {
+    if (!userProfile?.id) return;
+    setLoading('sync');
+    try {
+      const res = await fetch('/api/subscription/sync', {
+        method: 'POST',
+        body: JSON.stringify({ userId: userProfile.id }),
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: "Plan Synchronized", description: "Your plan is now active. Reloading..." });
+        // Full navigation avoids Firestore listener crash and ensures fresh plan state
+        setTimeout(() => {
+          window.location.href = '/dashboard/billing';
+        }, 1000);
+      } else {
+        throw new Error(data.error || data.message || "Failed to sync");
+      }
+    } catch (err: any) {
+      toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  // Phase 1: Detect Stripe success immediately on mount (before userProfile loads)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('stripe_success') === 'true') {
+      setPendingSync(true);
+      // Clean up URL immediately
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  // Phase 2: Execute sync once userProfile is available
+  useEffect(() => {
+    if (pendingSync && userProfile?.id) {
+      setPendingSync(false);
+      handleForceSync();
+    }
+  }, [pendingSync, userProfile?.id]);
 
   if (!userProfile) return <div className="p-20 text-center"><Loader2 className="animate-spin mx-auto h-8 w-8" /></div>;
 
@@ -303,21 +368,55 @@ export default function BillingDashboard() {
                             <Plus className="h-4 w-4" />
                           </button>
                           <Button 
-                            variant={isStripeLinked ? "default" : "outline"}
-                            className="h-10 px-6 rounded-xl font-black uppercase text-[10px] tracking-widest"
-                            disabled={(isStripeLinked && addonQty === userProfile.extra_teams) || loading === 'addon'}
-                            onClick={() => {
-                              if (!isStripeLinked) {
-                                // Redirect to link billing (checkout for current plan)
-                                const plan = PRICING_CONFIG.find(p => p.id === 'team'); // Default to Pro Team
-                                if (plan) handleUpdatePlan(plan);
-                              } else {
-                                handleUpdateAddon(addonQty);
-                              }
-                            }}
-                          >
-                            {loading === 'addon' ? <Loader2 className="h-4 w-4 animate-spin" /> : (isStripeLinked ? 'Apply Sync' : 'Connect Billing')}
-                          </Button>
+                             variant="default"
+                             className="h-10 px-6 rounded-xl font-black uppercase text-[10px] tracking-widest"
+                             disabled={addonQty === (userProfile.extra_teams || 0) || loading === 'addon' || loading === 'addon_init'}
+                             onClick={() => {
+                               const currentQty = userProfile.extra_teams || 0;
+                               if (!isStripeLinked) {
+                                 // No subscription yet — go to checkout with addons
+                                 handleUpdatePlan(null, addonQty);
+                               } else if (addonQty > currentQty) {
+                                 // INCREASING — must go through Stripe Checkout to collect payment
+                                 const diff = addonQty - currentQty;
+                                 const price = billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPrice : EXTRA_TEAM_CONFIG.monthlyPrice;
+                                 if (!confirm(`Add ${diff} extra squad seat${diff > 1 ? 's' : ''} for ${price}/squad per ${billingCycle === 'annual' ? 'year' : 'month'}? You will be taken to Stripe to complete payment.`)) return;
+                                 // Route through checkout so Stripe collects payment
+                                 setLoading('addon_init');
+                                 fetch('/api/stripe/create-checkout', {
+                                   method: 'POST',
+                                   headers: { 'Content-Type': 'application/json' },
+                                   body: JSON.stringify({
+                                     userId: userProfile.id,
+                                     priceId: null,
+                                     billingCycle,
+                                     extraTeamQty: diff
+                                   })
+                                 }).then(r => r.json()).then(data => {
+                                   if (data.url) {
+                                     window.location.href = data.url;
+                                   } else {
+                                     toast({ title: 'Checkout Error', description: data.error, variant: 'destructive' });
+                                     setLoading(null);
+                                   }
+                                 }).catch(e => {
+                                   toast({ title: 'Checkout Error', description: e.message, variant: 'destructive' });
+                                   setLoading(null);
+                                 });
+                               } else {
+                                 // DECREASING — update subscription in-place
+                                 handleUpdateAddon(addonQty);
+                               }
+                             }}
+                           >
+                             {(loading === 'addon' || loading === 'addon_init') ? <Loader2 className="h-4 w-4 animate-spin" /> : (
+                               addonQty > (userProfile.extra_teams || 0)
+                                 ? `Add ${addonQty - (userProfile.extra_teams || 0)} Seat${addonQty - (userProfile.extra_teams || 0) > 1 ? 's' : ''} →`
+                                 : addonQty < (userProfile.extra_teams || 0)
+                                 ? 'Remove Seats'
+                                 : isStripeLinked ? 'No Changes' : 'Connect Billing'
+                             )}
+                           </Button>
                         </div>
                     </div>
                   </div>
@@ -372,8 +471,88 @@ export default function BillingDashboard() {
           </div>
         </div>
 
+
+        {/* Tactical Infrastructure Allocation */}
+        <div className="lg:col-span-3 space-y-6">
+           <div className="flex items-center justify-between ml-2">
+              <div className="space-y-1">
+                 <h3 className="text-xl font-black uppercase tracking-tight">Infrastructure Allocation</h3>
+                 <p className="text-[10px] font-bold opacity-60 uppercase tracking-[0.2em]">Deploy provisioned power to your tactical squads</p>
+              </div>
+              <div className="flex items-center gap-4 bg-muted/50 px-6 py-3 rounded-2xl border">
+                 <div className="text-right">
+                    <p className="text-[9px] font-black uppercase opacity-40">Available Seats</p>
+                    <p className="text-sm font-black text-primary">{proQuotaStatus.remaining} / {proQuotaStatus.limit}</p>
+                 </div>
+                 <div className="h-8 w-px bg-border" />
+                 <Trophy className={cn("h-5 w-5", proQuotaStatus.remaining > 0 ? "text-primary animate-pulse" : "text-muted-foreground")} />
+              </div>
+           </div>
+
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {teams.filter(t => t.ownerUserId === userProfile.id).map(team => (
+                <Card key={team.id} className={cn("rounded-[2rem] border-2 transition-all overflow-hidden", team.isPro ? "border-primary/20 bg-primary/[0.02]" : "border-border/40 bg-white")}>
+                  <CardHeader className="p-6 pb-2">
+                    <div className="flex items-start justify-between">
+                       <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center font-black text-xs uppercase overflow-hidden">
+                          {team.teamLogoUrl ? <img src={team.teamLogoUrl} className="w-full h-full object-cover" /> : team.name.slice(0, 2)}
+                       </div>
+                       {team.isPro ? (
+                         <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[8px] font-black uppercase tracking-widest px-2">Pro Linked</Badge>
+                       ) : (
+                         <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest px-2 opacity-50">Standard</Badge>
+                       )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-6 pt-0 space-y-4">
+                    <div className="space-y-1">
+                      <p className="font-black uppercase text-sm truncate">{team.name}</p>
+                      <p className="text-[9px] font-bold opacity-40 uppercase">{team.type.replace('_', ' ')} ARCHITECTURE</p>
+                    </div>
+                    
+                    {team.isPro ? (
+                       <div className="pt-2 flex items-center gap-2 text-emerald-600">
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span className="text-[9px] font-bold uppercase tracking-tight">Full Capabilities Active</span>
+                       </div>
+                    ) : (
+                       <Button 
+                        disabled={proQuotaStatus.remaining <= 0 || loading === `upgrade_${team.id}`}
+                        onClick={async () => {
+                          setLoading(`upgrade_${team.id}`);
+                          try {
+                            await updateTeamPlan(team.id, 'team');
+                            toast({ title: "Protocol Deployed", description: `${team.name} has been upgraded to Pro status.` });
+                          } catch (e: any) {
+                            toast({ title: "Deployment Failed", description: e.message, variant: "destructive" });
+                          } finally {
+                            setLoading(null);
+                          }
+                        }}
+                        className="w-full rounded-xl font-black uppercase text-[10px] h-9 mt-4 bg-black hover:bg-primary transition-all shadow-lg"
+                       >
+                         {loading === `upgrade_${team.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Deploy Pro Seat \u2192'}
+                       </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+
+              {/* Add New Squad Slot */}
+              <Card className="rounded-[2rem] border-2 border-dashed border-border/60 bg-muted/5 flex flex-col items-center justify-center p-8 gap-4 hover:border-primary/40 hover:bg-primary/[0.01] transition-all cursor-pointer group" onClick={() => router.push('/dashboard')}>
+                 <div className="p-4 rounded-full bg-white shadow-sm border group-hover:scale-110 transition-transform">
+                   <Plus className="h-6 w-6 text-muted-foreground group-hover:text-primary" />
+                 </div>
+                 <div className="text-center space-y-1">
+                    <p className="font-black uppercase text-xs">Initialize New Squad</p>
+                    <p className="text-[9px] font-bold opacity-40 uppercase">Expansion Protocol available</p>
+                 </div>
+              </Card>
+           </div>
+        </div>
+
         {/* Support & Security */}
-        <div className="space-y-8">
+        <div className="lg:col-span-1 space-y-8">
            <Card className="rounded-[2.5rem] bg-black text-white p-8 space-y-6 overflow-hidden relative">
              <Zap className="absolute -right-4 -bottom-4 h-32 w-32 opacity-10 -rotate-12" />
              <div className="space-y-2 relative">

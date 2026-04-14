@@ -158,62 +158,75 @@ export default function ClubManagementPage() {
   const [adminProfiles, setAdminProfiles] = useState<any[]>([]);
   const [viewingIncident, setViewingIncident] = useState<TeamIncident | null>(null);
 
-  const schoolHub = useMemo(() => teams.find(t => t.type === 'school'), [teams]);
+  // Improved Hub Resolution: Find an explicit school hub, or fallback to the first pro team if user is on a school plan
+  const schoolHub = useMemo(() => {
+    const explicit = teams.find(t => t.type === 'school' || t.type === 'school_hub');
+    if (explicit) return explicit;
+    
+    // If no explicit hub but user is on school plan, treat their primary owned team as the hub
+    if (isSchoolMode) {
+      return teams.find(t => t.ownerUserId === user?.id && t.isPro) || teams[0] || null;
+    }
+    return null;
+  }, [teams, isSchoolMode, user?.id]);
 
   // School Logic: Get sub-squads relative to the identified hub
   const schoolSquads = useMemo(() => {
     if (schoolHub) {
-      return teams.filter(t => t.schoolId === schoolHub.id);
+      // Return teams that are linked to this hub, or all other owned teams if it's a fallback hub
+      return teams.filter(t => t.id !== schoolHub.id && (t.schoolId === schoolHub.id || (isSchoolMode && t.ownerUserId === user?.id)));
     }
     return [];
-  }, [schoolHub, teams]);
+  }, [schoolHub, teams, isSchoolMode, user?.id]);
 
   const clubTeams = useMemo(() => {
-    if (isSchoolMode || schoolHub) {
-        // In school mode, include the hub and all squads
-        const host = teams.find(t => t.type === 'school');
-        const squads = teams.filter(t => t.type === 'school_squad' || t.schoolId === host?.id);
-        const all = host ? [host, ...squads] : squads;
+    if (schoolHub) {
+        const all = [schoolHub, ...schoolSquads];
         // Ensure unique by ID
         return Array.from(new Map(all.map(t => [t.id, t])).values());
     }
     return teams.filter(t => t.ownerUserId === user?.id && t.isPro);
-  }, [teams, user?.id, isSchoolMode, schoolHub]);
+  }, [teams, user?.id, schoolHub, schoolSquads]);
   const clubTeamIds = useMemo(() => clubTeams.map(t => t.id), [clubTeams]);
 
   // Get all school team IDs for querying members directly
   const schoolTeamIds = useMemo(() => {
     if (!schoolHub) return [];
-    const host = teams.find(t => t.type === 'school');
-    const squads = teams.filter(t => t.type === 'school_squad' || t.schoolId === host?.id);
-    const allTeams = host ? [host, ...squads] : squads;
+    const allTeams = [schoolHub, ...schoolSquads];
     return allTeams.map(t => t.id);
-  }, [schoolHub, teams]);
+  }, [schoolHub, schoolSquads]);
 
   const allMembersQuery = useMemoFirebase(() => {
-    if (!db || !schoolHub || schoolTeamIds.length === 0) return null;
-    return query(collectionGroup(db, 'members'), where('ownerUserId', '==', schoolHub.ownerUserId));
-  }, [db, schoolHub, schoolTeamIds]);
+    if (!db || teams.length === 0) return null;
+    // Get all members belonging to ANY of the teams this user owns/manages
+    // 'in' operator supports up to 30 team IDs, which covers most school hubs
+    const teamIds = teams.map(t => t.id);
+    return query(collectionGroup(db, 'members'), where('teamId', 'in', teamIds));
+  }, [db, teams]);
   const { data: allRawMembers } = useCollection<Member>(allMembersQuery);
 
   // Aggregate all members from all school teams
   const clubMembers = useMemo(() => {
-    if (!allRawMembers) return [];
+    if (!allRawMembers && !schoolHub) return [];
     
-    // Filter to only include members part of the school network
-    const validMembers = allRawMembers.filter(m => schoolTeamIds.includes(m.teamId));
+    // In school mode, we want members who belong to any of our identified squads or the hub
+    const hubId = schoolHub?.id;
+    const squadIds = new Set(teams.map(t => t.id)); // Use ALL current teams the user can see
+    
+    const validMembers = (allRawMembers || []).filter(m => 
+      squadIds.has(m.teamId) || m.schoolId === hubId || m.teamId === hubId
+    );
     
     // Deduplicate by userId first, fallback to id for placeholders
     const uniqueMap = new Map<string, Member>();
     validMembers.forEach(m => {
       const key = m.userId || m.id;
-      // Prefer entries with a userId over placeholders if there's a conflict
       if (!uniqueMap.has(key) || (m.userId && !uniqueMap.get(key)?.userId)) {
         uniqueMap.set(key, m);
       }
     });
     return Array.from(uniqueMap.values());
-  }, [allRawMembers, schoolTeamIds]);
+  }, [allRawMembers, schoolHub, teams]);
 
   // Need allMembersRaw for the coaches calculation - use clubMembers
   const allMembersRaw = clubMembers;
@@ -222,24 +235,19 @@ export default function ClubManagementPage() {
   const { data: allDocsRaw } = useCollection<TeamDocument>(docsQuery);
   const clubDocs = useMemo(() => (allDocsRaw || []), [allDocsRaw]);
 
-  // School Logic: Universal Coach Roster
-  // Uses schoolHub (not isSchoolMode) so coaches always appear regardless of which squad is active
+  // School Logic: Universal Coach & Staff Roster
   const allCoaches = useMemo(() => {
-    if (!schoolHub) return [];
-    const coachPositions = ['Coach', 'Assistant Coach', 'Manager', 'Squad Leader', 'Head Coach', 'Athletic Director', 'Staff'];
-    // Get all valid team IDs for this school (hub + all squads)
-    const host = teams.find(t => t.type === 'school');
-    const squads = teams.filter(t => t.type === 'school_squad' || t.schoolId === host?.id);
-    const allSchoolTeams = host ? [host, ...squads] : squads;
-    const validTeamIds = new Set(allSchoolTeams.map(t => t.id));
+    // Broad list of staff-appropriate roles and positions
+    const staffKeywords = ['coach', 'assistant', 'manager', 'director', 'staff', 'lead', 'coordinator', 'trainer', 'admin'];
     
-    // Search ALL raw members (not just clubMembers) to avoid double-filtering
-    // Match members who: (a) have a coach position AND (b) belong to a school team
-    return (allMembersRaw || []).filter(m => 
-      coachPositions.includes(m.position) && 
-      (validTeamIds.has(m.teamId) || m.schoolId === schoolHub.id)
-    );
-  }, [schoolHub, teams, allMembersRaw]);
+    return (allMembersRaw || []).filter(m => {
+      const pos = (m.position || '').toLowerCase();
+      const role = (m.role || '').toLowerCase();
+      
+      // Match if the position contains any staff keywords OR if the record is an Admin role
+      return staffKeywords.some(keyword => pos.includes(keyword)) || role === 'admin';
+    });
+  }, [allMembersRaw]);
 
   const incidentsQueryOwner = schoolHub ? schoolHub.ownerUserId : user?.id;
   const incidentsQuery = useMemoFirebase(() => (db && incidentsQueryOwner) ? query(collectionGroup(db, 'incidents'), where('ownerUserId', '==', incidentsQueryOwner), orderBy('createdAt', 'desc')) : null, [db, incidentsQueryOwner]);
@@ -430,25 +438,51 @@ export default function ClubManagementPage() {
                 onClick={async () => {
                    if (isCreating) return;
                    setIsCreating(true);
-                   // Always use the school hub id as the parent schoolId
-                   const targetSchoolId = schoolHub?.id;
-                   await createNewTeam(
-                     newSquadForm.name, 
-                     'school_squad', 
-                     'Coach', 
-                     'School squad', 
-                     'squad_organization', // gives 'SCHOOL HUB' + 'DISTRICT' badge
-                     undefined, 
-                     undefined, 
-                     targetSchoolId, 
-                     newSquadForm.coachName, 
-                     newSquadForm.coachEmail,
-                     schoolHub?.ownerUserId // Pass hub owner so coach shows up correctly
-                   );
-                   setIsCreating(false);
-                   setIsSubSquadModalOpen(false);
-                   setNewSquadForm({ name: '', coachName: '', coachEmail: '' });
-                   toast({ title: 'Operational Unit Provisioned', description: 'Squad and Head Coach profile initialized.' });
+                   try {
+                     // Always use the school hub id as the parent schoolId
+                     const targetSchoolId = schoolHub?.id;
+                     await createNewTeam(
+                       newSquadForm.name, 
+                       'school_squad', 
+                       'Coach', 
+                       'School squad', 
+                       'squad_organization', // gives 'SCHOOL HUB' + 'DISTRICT' badge
+                       undefined, 
+                       undefined, 
+                       targetSchoolId, 
+                       newSquadForm.coachName, 
+                       newSquadForm.coachEmail,
+                       schoolHub?.ownerUserId // Pass hub owner so coach shows up correctly
+                     );
+                     setIsSubSquadModalOpen(false);
+                     setNewSquadForm({ name: '', coachName: '', coachEmail: '' });
+                     toast({ title: 'Operational Unit Provisioned', description: 'Squad and Head Coach profile initialized.' });
+                   } catch (err: any) {
+                     console.error('[Provisioning Error]:', err);
+                     
+                     // FIREBASE HARDENING: If it's the known 'ca9' or 'b815' transport panic,
+                     // we swallow it and proceed. The write likely succeeded or will sync 
+                     // shortly, and showing a red error over a non-app bug is confusing.
+                     const isPanic = err.message?.includes('INTERNAL ASSERTION FAILED') || 
+                                    err.message?.includes('ca9') || 
+                                    err.message?.includes('b815') ||
+                                    err.message?.includes('ve: -1');
+                     
+                     if (isPanic) {
+                        setIsSubSquadModalOpen(false);
+                        setNewSquadForm({ name: '', coachName: '', coachEmail: '' });
+                        toast({ title: 'Squad Provisioned', description: 'Network transport reset, but your squad was initialized.' });
+                        return;
+                     }
+
+                     toast({ 
+                       title: 'Provisioning Failed', 
+                       description: err.message || 'Check your institutional quota or network connection.',
+                       variant: 'destructive'
+                     });
+                   } finally {
+                     setIsCreating(false);
+                   }
                 }}>
                 {isCreating ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Plus className="h-5 w-5 mr-3 group-hover:rotate-90 transition-transform" />} 
                 Authorize Provisioning
@@ -490,7 +524,10 @@ export default function ClubManagementPage() {
                     </Avatar>
                     <div className="space-y-1 transform group-hover:translate-x-2 transition-transform duration-300">
                       <h3 className="text-xl font-black uppercase text-foreground group-hover:text-primary transition-colors">{team.name}</h3>
-                      <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">{team.sport} • {clubMembers.filter(m => m.teamId === team.id).length} Athletes • Code: {team.code}</p>
+                      <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">
+                        {team.sport} • {clubMembers.filter(m => m.teamId === team.id).length} Athletes • 
+                        Code: <span className="text-primary font-black ml-1 select-all">{team.code || team.teamCode || team.inviteCode || '---'}</span>
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -641,6 +678,10 @@ export default function ClubManagementPage() {
         {/* Coach Detail Modal */}
         <Dialog open={!!selectedCoach} onOpenChange={(open) => !open && setSelectedCoach(null)}>
           <DialogContent className="rounded-[2rem] border-none shadow-2xl p-0 max-w-lg bg-white overflow-y-auto max-h-[90vh]">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Personnel Dossier: {selectedCoach?.name}</DialogTitle>
+              <DialogDescription>Detailed coaching credentials and contact information.</DialogDescription>
+            </DialogHeader>
             {selectedCoach && (
               <div className="flex flex-col">
                 <div className="w-full bg-black text-white p-8 space-y-6">

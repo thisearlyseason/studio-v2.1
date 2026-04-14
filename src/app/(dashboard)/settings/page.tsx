@@ -64,7 +64,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
 
 export default function SettingsPage() {
-  const { user, updateUser, members, activeTeam, updateMember, manageSubscription, isPro, resetSquadData } = useTeam();
+  const { user, updateUser, members, activeTeam, updateMember, manageSubscription, isPro, resetSquadData, checkCodeUniqueness, updateTeamCode } = useTeam();
   const auth = useAuth();
   const router = useRouter();
   const [notifications, setNotifications] = useState(true);
@@ -78,6 +78,8 @@ export default function SettingsPage() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   
   const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', position: '', bio: '' });
+  const [isCodeEditOpen, setIsCodeEditOpen] = useState(false);
+  const [newCode, setNewCode] = useState('');
 
   useEffect(() => {
     setMounted(true);
@@ -151,6 +153,32 @@ export default function SettingsPage() {
     }
   };
 
+  const handleCodeUpdate = async () => {
+    if (newCode.length < 6 || newCode.length > 20) {
+      toast({ title: "Incompatible Length", description: "Identity codes must be between 6 and 20 characters.", variant: "destructive" });
+      return;
+    }
+    
+    setIsProcessing(true);
+    try {
+      const isUnique = await checkCodeUniqueness(newCode);
+      if (!isUnique) {
+        toast({ title: "Identity Clash", description: "This code is already reserved by another squad. Try a different combination.", variant: "destructive" });
+        return;
+      }
+      
+      if (activeTeam?.id) {
+        await updateTeamCode(activeTeam.id, newCode);
+        toast({ title: "Identity Formalized", description: "Your unique squad code is now active." });
+        setIsCodeEditOpen(false);
+      }
+    } catch (e) {
+      toast({ title: "Protocol Failure", description: "Failed to broadcast identity update.", variant: "destructive" });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleFinalReset = async () => {
     setIsProcessing(true);
     await resetSquadData(resetOptions);
@@ -159,6 +187,10 @@ export default function SettingsPage() {
     setIsProcessing(false);
     toast({ title: "Season Reset Complete" });
   };
+
+  const lastUpdate = activeTeam?.lastCodeEditedAt ? new Date(activeTeam.lastCodeEditedAt).getTime() : 0;
+  const isLocked = (Date.now() - lastUpdate) < (24 * 60 * 60 * 1000);
+  const hoursLeft = Math.max(0, Math.ceil((24 * 60 * 60 * 1000 - (Date.now() - lastUpdate)) / (60 * 60 * 1000)));
 
   return (
     <div className="space-y-10 pb-20 max-w-4xl mx-auto">
@@ -325,7 +357,79 @@ export default function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
+
+        {isAdmin && (
+          <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden lg:col-span-2">
+            <CardHeader className="bg-primary/5 border-b p-8 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><Edit3 className="h-5 w-5" /></div>
+                <CardTitle className="text-sm font-black uppercase tracking-widest">Squad Identity Architect</CardTitle>
+              </div>
+              {isLocked && (
+                <Badge variant="outline" className="text-muted-foreground font-black uppercase text-[8px] tracking-widest px-3 border-orange-200 bg-orange-50 text-orange-700">Cooling Down ({hoursLeft}h)</Badge>
+              )}
+            </CardHeader>
+            <CardContent className="p-8">
+              <div className="flex flex-col md:flex-row items-center gap-8">
+                <div className="flex-1 space-y-4">
+                  <div className="p-6 bg-muted/20 rounded-[2rem] border-2 border-transparent flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Active Registration Code</p>
+                      <p className="text-3xl font-black text-primary tracking-tighter select-all">{activeTeam?.code}</p>
+                    </div>
+                    {!isLocked && (
+                      <Button onClick={() => setIsCodeEditOpen(true)} className="h-10 rounded-xl font-black text-[10px] uppercase tracking-widest px-6 active:scale-95 transition-all">
+                        Customize
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed px-2">
+                    {isLocked 
+                      ? `Your unique squad identity code is currently cooling down. You can customize it again in approximately ${hoursLeft} hours.`
+                      : "You can personalize your squad code once every 24 hours. Ensure it is unique and memorable for your athletes. Codes must be 6-20 characters."}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      <Dialog open={isCodeEditOpen} onOpenChange={setIsCodeEditOpen}>
+        <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden">
+          <DialogTitle className="sr-only">Customize Squad Identity</DialogTitle>
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 space-y-8">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Finalize Identity</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Customize once every 24 hours</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Proposed Squad Code</Label>
+                <Input 
+                  placeholder="e.g. VARSITY24" 
+                  className="h-14 rounded-2xl border-2 font-black text-xl uppercase tracking-tighter text-center bg-muted/20 focus:bg-white transition-all uppercase"
+                  value={newCode}
+                  maxLength={20}
+                  onChange={e => setNewCode(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+                />
+              </div>
+              <div className="bg-amber-50 p-4 rounded-2xl flex items-start gap-3 border border-amber-100">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-[10px] font-bold text-amber-700 uppercase leading-relaxed">
+                  Changing your code will immediately invalidate the old one. Any athletes using the previous code will need the new one to join.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button className="w-full h-14 rounded-full text-sm font-black uppercase tracking-widest shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCodeUpdate} disabled={isProcessing || newCode.length < 6}>
+                {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Authorize Identity Update"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="space-y-4 pt-10 border-t">
         <h3 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground px-2">Account Logistics</h3>
@@ -371,15 +475,26 @@ export default function SettingsPage() {
               </div>
               <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-widest">Select data categories to wipe for the new season.</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-2">
-              <div className={cn("flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer", resetOptions.includes('games') ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:border-muted")} onClick={() => setResetOptions(prev => prev.includes('games') ? prev.filter(i => i !== 'games') : [...prev, 'games'])}>
-                <span className="text-xs font-black uppercase">Match Ledger</span>
-                <Checkbox checked={resetOptions.includes('games')} onCheckedChange={() => {}} />
-              </div>
-              <div className={cn("flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer", resetOptions.includes('events') ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:border-muted")} onClick={() => setResetOptions(prev => prev.includes('events') ? prev.filter(i => i !== 'events') : [...prev, 'events'])}>
-                <span className="text-xs font-black uppercase">Schedule & Itinerary</span>
-                <Checkbox checked={resetOptions.includes('events')} onCheckedChange={() => {}} />
-              </div>
+            <div className="space-y-3 py-2">
+              {[
+                { id: 'games', label: 'Match Ledger' },
+                { id: 'events', label: 'Schedule & Itinerary' },
+                { id: 'roster', label: 'Roster Clearance' },
+                { id: 'complete', label: 'Complete System Wipe' }
+              ].map((opt) => (
+                <div key={opt.id} className={cn("flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer", resetOptions.includes(opt.id) ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:border-muted")} onClick={() => setResetOptions(prev => prev.includes(opt.id) ? prev.filter(i => i !== opt.id) : [...prev, opt.id])}>
+                  <span className="text-xs font-black uppercase">{opt.label}</span>
+                  <Checkbox checked={resetOptions.includes(opt.id)} onCheckedChange={() => {}} />
+                </div>
+              ))}
+              {resetOptions.includes('complete') && (
+                <div className="bg-red-50 p-4 rounded-2xl flex items-start gap-3 border border-red-100 mt-2">
+                  <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-1" />
+                  <p className="text-[9px] font-black text-red-700 uppercase leading-relaxed">
+                    CRITICAL: A Complete Wipe will delete ALL data including rosters, matches, incidents, and equipment logs. This is irreversible.
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={() => setIsDoubleConfirmOpen(true)} disabled={isProcessing || resetOptions.length === 0}>

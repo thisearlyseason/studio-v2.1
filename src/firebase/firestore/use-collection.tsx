@@ -138,7 +138,16 @@ export function useCollection<T = any>(
 
     return () => {
       isMounted = false;
-      if (unsubscribeSnapshot) unsubscribeSnapshot();
+      try {
+        if (unsubscribeSnapshot) unsubscribeSnapshot();
+      } catch (e: any) {
+        // Suppress Firestore SDK internal assertion errors during cleanup.
+        // These occur when listeners are torn down during HMR or fast navigation
+        // while the WebSocket is mid-stream. They are SDK bugs, not app errors.
+        if (!e?.message?.includes('INTERNAL ASSERTION FAILED') && !e?.message?.includes('Unexpected state')) {
+          console.warn('[useCollection] Error during listener cleanup:', e?.message);
+        }
+      }
     };
   }, [memoizedTargetRefOrQuery]);
 

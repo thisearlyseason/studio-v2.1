@@ -61,8 +61,8 @@ export const PRICING_CONFIG: Plan[] = [
     teamLimit: 18,
     monthlyPrice: '$279',
     annualPrice: '$2,790',
-    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_MONTHLY || 'REQUIRED_CONFIG',
-    annualPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_ANNUAL || 'REQUIRED_CONFIG',
+    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_MONTHLY || process.env.STRIPE_PRICE_ELITE_LEAGUE_MONTHLY || 'price_1TL55yGu1UxxOYbPcQvc6AZV',
+    annualPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_ANNUAL || process.env.STRIPE_PRICE_ELITE_LEAGUE_ANNUAL || 'price_1TL55yGu1UxxOYbPV7zlMKCQ',
     features: [
       'Up to 18 Pro Team Hubs',
       'League Series Architect',
@@ -78,8 +78,8 @@ export const PRICING_CONFIG: Plan[] = [
     teamLimit: 10,
     monthlyPrice: '$175',
     annualPrice: '$1,750',
-    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_MONTHLY || 'REQUIRED_CONFIG',
-    annualPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_ANNUAL || 'REQUIRED_CONFIG',
+    monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_MONTHLY || process.env.STRIPE_PRICE_SCHOOLS_MONTHLY || 'price_1TL58qGu1UxxOYbPOUPCAqdz',
+    annualPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_ANNUAL || process.env.STRIPE_PRICE_SCHOOLS_ANNUAL || 'price_1TL58qGu1UxxOYbPWXLqlsyB',
     features: [
       'Up to 10 Pro Team Hubs',
       'Athletic Director Dashboard',

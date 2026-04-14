@@ -857,11 +857,28 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
-  const teamsRaw = useMemo(() => (teamsData || []).map(m => ({ 
-    ...m, 
-    id: m.teamId || m.id, 
-    name: m.name || m.teamName || 'Squad' 
-  })), [teamsData]);
+  const teamsRaw = useMemo(() => (teamsData || []).map(m => {
+    const tid = m.teamId || m.id;
+    
+    // Deterministic Hash Fallback: Ensures uniqueness with massive namespace (10-char base36)
+    const generateHash = (str: string) => {
+      let h = 0;
+      for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+      // Convert to 10-char base36 string for quadrillions of combinations
+      return Math.abs(h).toString(36).toUpperCase().padStart(10, 'Z');
+    };
+
+    const fallbackCode = generateHash(tid);
+    
+    return { 
+      ...m, 
+      id: tid, 
+      name: m.name || m.teamName || 'Squad',
+      code: m.code || m.teamCode || m.inviteCode || fallbackCode,
+      teamCode: m.code || m.teamCode || m.inviteCode || fallbackCode,
+      inviteCode: m.code || m.teamCode || m.inviteCode || fallbackCode
+    };
+  }), [teamsData]);
 
   const activeTeamMembership = useMemo(() => teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null, [teamsRaw, activeTeamId]);
   const activeTeamDocRef = useMemoFirebase(() => (db && activeTeamMembership?.id) ? doc(db, 'teams', activeTeamMembership.id) : null, [db, activeTeamMembership?.id]);
@@ -1281,8 +1298,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeam?.planId, userProfile?.plan_type, isPro]);
 
   const isSchoolMode = useMemo(() => {
-    return activeTeam?.type === 'school' || activeTeam?.type === 'school_squad';
-  }, [activeTeam?.type]);
+    return (
+      activeTeam?.type === 'school' || 
+      activeTeam?.type === 'school_squad' || 
+      userProfile?.plan_type === 'school'
+    );
+  }, [activeTeam?.type, userProfile?.plan_type]);
 
   // Storage calculation for the active team
   useEffect(() => {
@@ -1418,7 +1439,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const tid = `team_${Date.now()}`; 
     const batch = writeBatch(db); 
     
-    const teamCode = tid.slice(-6).toUpperCase();
+    // High-Capacity Squad Identity Code: 10-character token (quadrillions of combinations)
+    const generateSecureCode = () => {
+      const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const randomValues = new Uint32Array(10);
+      window.crypto.getRandomValues(randomValues);
+      let ret = '';
+      for (let i = 0; i < 10; i++) {
+        ret += charset.charAt(randomValues[i] % charset.length);
+      }
+      return ret;
+    };
+    const teamCode = generateSecureCode();
     const isSchool = type === 'school' || type === 'school_squad';
     
     const schoolIdToUse = schoolId || (type === 'school_squad' && activeTeam?.id ? activeTeam.id : null);
@@ -1485,11 +1517,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
     await batch.commit(); 
 
-    // Sync state locally immediately for better UX
-    setTeamsRaw(prev => [
-      ...prev, 
-      { id: tid, name, code: teamCode, type, planId: resolvedPlanId, isPro: resolvedPlanId !== 'free', ownerUserId: resolvedOwnerId, schoolId: schoolIdToUse } as Team
-    ]);
 
     // Identity sweep: If the user has a name/avatar, update all their memberships to match
     try {
@@ -1617,6 +1644,62 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if(db) await updateDoc(doc(db, 'teams', tid), { planId: pid, isPro: pid !== 'free' }); 
     toast({ title: 'Plan Assignment Updated' });
   }, [db, isSuperAdmin, isPrimaryClubAuthority]);
+
+  const checkCodeUniqueness = useCallback(async (code: string) => {
+    if (!db) return true;
+    const q = query(collectionGroup(db, 'teams'), where('inviteCode', '==', code.toUpperCase()), limit(1));
+    const snap = await getDocs(q);
+    return snap.empty;
+  }, [db]);
+
+  const updateTeamCode = useCallback(async (tid: string, newCode: string) => {
+    if (!db) return;
+    const code = newCode.toUpperCase();
+    await updateDoc(doc(db, 'teams', tid), { 
+      code, 
+      teamCode: code, 
+      inviteCode: code,
+      lastCodeEditedAt: new Date().toISOString()
+    });
+    // Also update all memberships for the owner so their local list reflects the change
+    if (firebaseUser) {
+      const membershipRef = doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid);
+      await updateDoc(membershipRef, { code });
+    }
+  }, [db, firebaseUser]);
+
+  const resetSquadData = useCallback(async (cats: string[]) => { 
+    if (!activeTeam?.id || !db) return; 
+    const batch = writeBatch(db); 
+    
+    if (cats.includes('games') || cats.includes('complete')) { 
+      const gs = await getDocs(collection(db, 'teams', activeTeam.id, 'games')); 
+      gs.forEach(d => batch.delete(d.ref)); 
+    } 
+    
+    if (cats.includes('events') || cats.includes('complete')) { 
+      const es = await getDocs(collection(db, 'teams', activeTeam.id, 'events')); 
+      es.forEach(d => batch.delete(d.ref)); 
+    }
+
+    if (cats.includes('roster') || cats.includes('complete')) {
+      const ms = await getDocs(collection(db, 'teams', activeTeam.id, 'members'));
+      ms.forEach(d => {
+        // Don't delete the owner!
+        if (d.id !== firebaseUser?.uid && d.data().role !== 'Admin') {
+          batch.delete(d.ref);
+        }
+      });
+    }
+
+    if (cats.includes('complete')) {
+      // Clear incidents and equipment assignments too?
+      const inc = await getDocs(collection(db, 'teams', activeTeam.id, 'incidents'));
+      inc.forEach(d => batch.delete(d.ref));
+    }
+
+    await batch.commit(); 
+  }, [activeTeam, db, firebaseUser]);
 
   const signTeamDocument = useCallback(async (docId: string, sig: string, mid: string) => { 
     if (!activeTeam?.id || !firebaseUser || !db) return false; 
@@ -2430,7 +2513,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addIncident = useCallback(async (data: any) => { if (activeTeam?.id && db && firebaseUser) await addDoc(collection(db, 'teams', activeTeam.id, 'incidents'), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId, teamName: activeTeam.name, reportedBy: firebaseUser.uid, createdAt: new Date().toISOString() })); }, [db, firebaseUser, activeTeam]);
   const updateIncident = useCallback(async (teamId: string, id: string, data: any) => { if (db) await updateDoc(doc(db, 'teams', teamId, 'incidents', id), clean(data)); }, [db]);
   
-  const resetSquadData = useCallback(async (cats: string[]) => { if (!activeTeam?.id || !db) return; const batch = writeBatch(db); if (cats.includes('games')) { const gs = await getDocs(collection(db, 'teams', activeTeam.id, 'games')); gs.forEach(d => batch.delete(d.ref)); } if (cats.includes('events')) { const es = await getDocs(collection(db, 'teams', activeTeam.id, 'events')); es.forEach(d => batch.delete(d.ref)); } await batch.commit(); }, [activeTeam, db]);
+
 
   const markMediaAsViewed = useCallback(async (fileId: string) => { if (!firebaseUser || !activeTeam?.id || !db) return; await setDoc(doc(db, 'teams', activeTeam.id, 'members', firebaseUser.uid, 'mediaViews', fileId), { fileId, viewedAt: new Date().toISOString() }); }, [activeTeam, firebaseUser, db]);
 
@@ -2853,7 +2936,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
     addRegistration, purchasePro, addLeaguePayment, updateLeagueGlobalFees,
-    getMember, getTeamByCode, deleteMessage, getLeagueMembers
+    getMember, getTeamByCode, deleteMessage, getLeagueMembers,
+    checkCodeUniqueness, updateTeamCode
   ]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;

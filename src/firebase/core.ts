@@ -43,18 +43,21 @@ export function initializeFirebase() {
 export function getSdks(firebaseApp: FirebaseApp) {
   let firestore;
   
-  // Initialize Firestore with robust multi-tab persistence on the client
+  // Initialize Firestore with settings to mitigate the 'ID: ca9' assertion bug
   if (typeof window !== 'undefined') {
     try {
-      // Use memoryLocalCache to avoid IndexedDB lock and state assertion issues (ca9, b815)
+      // Check if Firestore is already initialized to avoid "Firestore has already been initialized" errors
+      firestore = getFirestore(firebaseApp);
+      console.log('[Firestore] Re-using existing instance');
+    } catch (e) {
+      console.log('[Firestore] Initializing with memory cache and long-polling workaround');
       firestore = initializeFirestore(firebaseApp, {
         localCache: memoryLocalCache(),
-        // Recommended for environments with unstable websockets or complex proxies
-        experimentalForceLongPolling: true 
+        experimentalForceLongPolling: true, // Force long-polling to bypass buggy WebSocket state machine in v11
+        experimentalAutoDetectLongPolling: true, // Additional stability for v11 streams
+        host: 'firestore.googleapis.com',
+        ssl: true
       });
-    } catch (e) {
-      // If already initialized, fallback to getFirestore
-      firestore = getFirestore(firebaseApp);
     }
   } else {
     // On server, initialize without persistence

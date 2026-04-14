@@ -8,6 +8,8 @@ import {
   serverTimestamp,
   setDoc
 } from 'firebase/firestore';
+import { generateTournamentSchedule } from '@/lib/scheduler-utils';
+import { format, parseISO } from 'date-fns';
 
 /**
  * Sanitizes objects for Firestore by removing undefined values recursively.
@@ -73,7 +75,7 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
         endDate: day3, 
         location: 'Premier Sports Park', 
         description: 'Elite multi-day tournament for top-tier squads.', 
-        tournamentTeams: [teamName || `Team ${teamSuffix || 'A'}`, 'Thunder', 'Storm', 'Shadows', 'Lions', 'Eagles'], 
+        tournamentTeams: [teamName || `Team ${teamSuffix || 'A'}`, 'Thunder', 'Storm', 'Shadows', 'Lions', 'Eagles', 'Tigers', 'Bears'], 
         multiDaySchedule: [
           { day: 1, title: 'Opening Rounds', date: tomorrow },
           { day: 2, title: 'Semi-Finals', date: later },
@@ -86,14 +88,36 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
           { id: `tt_3`, name: 'Shadows', coach: 'Dave Shadow', email: 'dave@shadows.com', source: 'manual', complianceStatus: 'verified' },
           { id: `tt_4`, name: 'Lions', coach: 'Tim Lion', email: 'tim@lions.com', source: 'manual', complianceStatus: 'verified' },
           { id: `tt_5`, name: 'Eagles', coach: 'Jane Eagle', email: 'jane@eagles.com', source: 'manual', complianceStatus: 'verified' },
+          { id: `tt_6`, name: 'Tigers', coach: 'Leo Tiger', email: 'leo@tigers.com', source: 'manual', complianceStatus: 'verified' },
+          { id: `tt_7`, name: 'Bears', coach: 'Bear Brown', email: 'bear@bears.com', source: 'manual', complianceStatus: 'verified' },
         ],
-        tournamentGames: [
-          { id: 'tg1', team1: teamName || `Team ${teamSuffix || 'A'}`, team2: 'Thunder', score1: 3, score2: 1, isCompleted: true, date: tomorrow, time: '09:00 AM', round: 'Pool A', location: 'Field 1', team1Id: 'tt_0', team2Id: 'tt_1' },
-          { id: 'tg2', team1: 'Storm', team2: 'Shadows', score1: 0, score2: 0, isCompleted: false, date: tomorrow, time: '10:00 AM', round: 'Pool A', location: 'Field 1', team1Id: 'tt_2', team2Id: 'tt_3' },
-          { id: 'tg3', team1: teamName || `Team ${teamSuffix || 'A'}`, team2: 'Lions', score1: 0, score2: 0, isCompleted: false, date: later, time: '09:00 AM', round: 'Pool A', location: 'Field 2', team1Id: 'tt_0', team2Id: 'tt_4' },
-          { id: 'tg4', team1: 'Thunder', team2: 'Storm', score1: 0, score2: 0, isCompleted: false, date: later, time: '11:00 AM', round: 'Pool A', location: 'Field 2', team1Id: 'tt_1', team2Id: 'tt_2' },
-          { id: 'tg5', team1: 'Shadows', team2: 'Eagles', score1: 0, score2: 0, isCompleted: false, date: day3, time: '01:00 PM', round: 'Pool B', location: 'Field 3', team1Id: 'tt_3', team2Id: 'tt_5' }
-        ],
+        tournamentGames: generateTournamentSchedule({
+          teams: [
+            { id: 'tt_0', name: teamName || `Team ${teamSuffix || 'A'}` },
+            { id: 'tt_1', name: 'Thunder' },
+            { id: 'tt_2', name: 'Storm' },
+            { id: 'tt_3', name: 'Shadows' },
+            { id: 'tt_4', name: 'Lions' },
+            { id: 'tt_5', name: 'Eagles' },
+            { id: 'tt_6', name: 'Tigers' },
+            { id: 'tt_7', name: 'Bears' }
+          ],
+          fields: ['Main Arena', 'Championship Field', 'Field 1'],
+          startDate: tomorrow,
+          endDate: day3,
+          startTime: '08:00',
+          endTime: '20:00',
+          gameLength: 60,
+          breakLength: 15,
+          tournamentType: 'double_elimination'
+        }).map((g, idx) => {
+          // Manually complete a few early games so the bracket looks active
+          if (idx === 0) return { ...g, isCompleted: true, score1: 5, score2: 2 };
+          if (idx === 1) return { ...g, isCompleted: true, score1: 4, score2: 6 };
+          if (idx === 2) return { ...g, isCompleted: true, score1: 8, score2: 1 };
+          if (idx === 3) return { ...g, isCompleted: true, score1: 10, score2: 9 };
+          return g;
+        }),
         teamAgreements: {
           [teamName || `Team ${teamSuffix || 'A'}`]: { signedAt: yesterday, signatureCount: 15, captainName: 'Jordan Smith' },
           'Thunder': { signedAt: day(-2), signatureCount: 12, captainName: 'Mike Thunder' },
@@ -483,19 +507,28 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             });
 
             // Multi-day Tournament (3 Days)
-            const tournamentId = `tourn_${tid}_${userId.slice(-4)}`;
-            const day2 = new Date(nowObj.getTime() + 172800000).toISOString();
-            const day3 = new Date(nowObj.getTime() + 259200000).toISOString();
-            const tournamentTeamsList = ['Strikers', 'Lakers', 'Hawks', 'Tigers', 'Eagles', 'Panthers'];
-            const tournamentTeamsData = tournamentTeamsList.map((name, i) => ({
-                id: `tt_${i}`, name, coach: `Coach ${name}`, email: `coach@${name.toLowerCase()}.com`, source: 'manual'
-            }));
-            const tournamentGames = [
-                { id: 'tg1', team1: 'Strikers', team2: 'Lakers', score1: 3, score2: 1, isCompleted: true, date: tomorrow, time: '09:00 AM', round: 'Pool A', location: 'Field 1', team1Id: 'tt_0', team2Id: 'tt_1' },
-                { id: 'tg2', team1: 'Hawks', team2: 'Tigers', score1: 0, score2: 0, isCompleted: false, date: tomorrow, time: '10:00 AM', round: 'Pool A', location: 'Field 1', team1Id: 'tt_2', team2Id: 'tt_3' },
-                { id: 'tg3', team1: 'Strikers', team2: 'Panthers', score1: 0, score2: 0, isCompleted: false, date: day2, time: '09:00 AM', round: 'Pool A', location: 'Field 2', team1Id: 'tt_0', team2Id: 'tt_5'},
-                { id: 'tg4', team1: 'Lakers', team2: 'Hawks', score1: 0, score2: 0, isCompleted: false, date: day2, time: '11:00 AM', round: 'Pool A', location: 'Field 2', team1Id: 'tt_1', team2Id: 'tt_2'}
+            const tournamentId = `tourn_${tid}_demo`;
+            const tournamentTeamsData = [
+              { id: 'tt_0', name: 'Strikers', coach: 'Mike Strike', email: 'mike@strikers.com', source: 'manual', complianceStatus: 'verified' },
+              { id: 'tt_1', name: 'Lakers', coach: 'Jim Lake', email: 'jim@lakers.com', source: 'manual', complianceStatus: 'verified' },
+              { id: 'tt_2', name: 'Hawks', coach: 'Sarah Hawk', email: 'sarah@hawks.com', source: 'manual', complianceStatus: 'pending' },
+              { id: 'tt_3', name: 'Tigers', coach: 'Leo Tiger', email: 'leo@tigers.com', source: 'manual', complianceStatus: 'verified' },
+              { id: 'tt_4', name: 'Eagles', coach: 'Jane Eagle', email: 'jane@eagles.com', source: 'manual', complianceStatus: 'verified' },
+              { id: 'tt_5', name: 'Panthers', coach: 'Tim Panther', email: 'tim@panthers.com', source: 'manual', complianceStatus: 'verified' },
+              { id: 'tt_6', name: 'Cougars', coach: 'Chris Coug', email: 'chris@cougars.com', source: 'manual', complianceStatus: 'verified' },
+              { id: 'tt_7', name: 'Bears', coach: 'Bear Brown', email: 'bear@bears.com', source: 'manual', complianceStatus: 'verified' }
             ];
+            const tournamentGames = generateTournamentSchedule({
+              teams: tournamentTeamsData,
+              fields: ['Arena 1', 'Main Field'],
+              startDate: tomorrow,
+              endDate: day3,
+              startTime: '08:00',
+              endTime: '20:00',
+              gameLength: 60,
+              breakLength: 15,
+              tournamentType: 'double_elimination'
+            });
 
             batch.set(doc(db, 'teams', tid, 'events', tournamentId), clean({
               id: tournamentId,
@@ -507,7 +540,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
               endDate: day3,
               location: 'Premier Sports Park',
               description: 'The final 3-day showdown for the regional title.',
-              tournamentTeams: tournamentTeamsList,
+              tournamentTeams: tournamentTeamsData.map(t => t.name),
               tournamentTeamsData: tournamentTeamsData,
               tournamentGames: tournamentGames,
               teamAgreements: {

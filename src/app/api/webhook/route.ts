@@ -47,15 +47,27 @@ async function syncSubscriptionToFirestore(subscription: Stripe.Subscription) {
 
   console.log(`[Webhook DEBUG] Subscription items:`, subscription.items.data.map(i => i.price.id));
 
+  // Use a hardcoded map to avoid env var resolution issues in server contexts.
+  const PLAN_PRICE_MAP: Record<string, { id: string; teamLimit: number }> = {
+    'price_1TL4qyGu1UxxOYbPen5QOIJv': { id: 'team', teamLimit: 1 },
+    'price_1TL4qyGu1UxxOYbPxrnZKSd4': { id: 'team', teamLimit: 1 },
+    'price_1TL4vCGu1UxxOYbPc9MX6y8L': { id: 'elite', teamLimit: 8 },
+    'price_1TL4vCGu1UxxOYbPxiAlj9Jc': { id: 'elite', teamLimit: 8 },
+    'price_1TL55yGu1UxxOYbPcQvc6AZV': { id: 'league', teamLimit: 18 },
+    'price_1TL55yGu1UxxOYbPV7zlMKCQ': { id: 'league', teamLimit: 18 },
+    'price_1TL58qGu1UxxOYbPOUPCAqdz': { id: 'school', teamLimit: 10 },
+    'price_1TL58qGu1UxxOYbPWXLqlsyB': { id: 'school', teamLimit: 10 },
+  };
+
   for (const item of subscription.items.data) {
     const priceId = item.price.id;
     
     // Match against primary plans
-    const matchedPlan = PRICING_CONFIG.find(p => p.monthlyPriceId === priceId || p.annualPriceId === priceId);
+    const resolvedPlan = PLAN_PRICE_MAP[priceId];
     
-    if (matchedPlan) {
-      planType = matchedPlan.id;
-      baseLimit = matchedPlan.teamLimit;
+    if (resolvedPlan) {
+      planType = resolvedPlan.id;
+      baseLimit = resolvedPlan.teamLimit;
       console.log(`[Webhook DEBUG] Matched primary plan: ${planType} (Limit: ${baseLimit})`);
     } 
     // Match against add-ons
@@ -84,6 +96,28 @@ async function syncSubscriptionToFirestore(subscription: Stripe.Subscription) {
       extra_teams: extraTeams,
       last_webhook_sync: new Date().toISOString()
     });
+
+    // CASCADE: Update all teams owned by this user to reflect the new plan status
+    try {
+      const teamsRef = collection(firestore, 'teams');
+      const q = query(teamsRef, where('ownerUserId', '==', userId));
+      const teamsSnap = await getDocs(q);
+      
+      if (!teamsSnap.empty) {
+        const batch = writeBatch(firestore);
+        teamsSnap.docs.forEach(teamDoc => {
+          batch.update(teamDoc.ref, {
+            planId: planType,
+            isPro: isActive && planType !== 'free',
+            last_plan_sync: new Date().toISOString()
+          });
+        });
+        await batch.commit();
+        console.log(`[Webhook CASCADE] Updated ${teamsSnap.size} squads for user ${userId}`);
+      }
+    } catch (cascadeErr: any) {
+      console.error('[Webhook CASCADE Error]:', cascadeErr.message);
+    }
   } catch (err: any) {
     console.error(`[Webhook ERROR] Failed to update user doc ${userId}:`, err.message);
     // If updateDoc fails because doc doesn't exist, we skip
