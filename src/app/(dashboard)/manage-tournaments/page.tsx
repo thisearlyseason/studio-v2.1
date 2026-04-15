@@ -373,13 +373,25 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                 
                 {step === 2 && (
                   <div className="space-y-12 animate-in slide-in-from-right-4 duration-500">
-                    <div className="flex items-end justify-between border-b border-white/5 pb-8 mb-8">
-                      <div>
+                    <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-white/5 pb-8 mb-8 gap-6">
+                      <div className="flex-1">
                         <Badge className="bg-primary/20 text-primary border border-primary/30 uppercase font-black tracking-widest text-[8px] mb-4">Phase 2: Roster Matrix</Badge>
                         <h3 className="text-4xl font-black uppercase tracking-tighter mb-2 text-white">Squad Initialization</h3>
                         <p className="text-sm font-bold opacity-40 uppercase tracking-widest">Target and lock competitor slots for the series schedule.</p>
                       </div>
-                      <div className="flex flex-col gap-2">
+                      <div className="flex flex-wrap gap-2 justify-end">
+                         {leagues && leagues.length > 0 && (
+                           <Select onValueChange={importLeagueTeams}>
+                             <SelectTrigger className="bg-white/5 border-white/10 text-white h-10 w-[180px] font-black uppercase text-[9px] tracking-widest">
+                               <SelectValue placeholder="Import League" />
+                             </SelectTrigger>
+                             <SelectContent className="bg-[#0a0a0a] border-white/10 text-white font-black uppercase text-[9px]">
+                               {leagues.map(l => (
+                                 <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                               ))}
+                             </SelectContent>
+                           </Select>
+                         )}
                          <Button className="bg-white text-black hover:bg-white/80 h-10 font-black uppercase tracking-widest text-[9px]" onClick={importPipelineEntries}>Sync Pipelines</Button>
                          <Button className="bg-white text-black hover:bg-white/80 h-10 font-black uppercase tracking-widest text-[9px]" onClick={() => setForm({...form, teams: [...form.teams, {id:`m_${Date.now()}`, name:'', coach:'', email:'', source:'manual'}]})}>Add Direct Asset</Button>
                       </div>

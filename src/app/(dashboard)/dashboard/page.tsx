@@ -25,7 +25,7 @@ import {
   Star
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { format, isFuture, isToday, isSameDay, isSameMonth, startOfDay, isPast } from 'date-fns';
+import { format, isFuture, isToday, isSameDay, isSameMonth, startOfDay, isPast, isAfter, isValid, parseISO } from 'date-fns';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, limit } from 'firebase/firestore';
 import { usePendingWaivers } from '@/hooks/use-pending-waivers';
@@ -44,7 +44,8 @@ import {
 export default function UniversalAccountDashboard() {
   const { 
     user, activeTeam, activeTeamEvents, 
-    householdBalance, isYouth
+    householdBalance, isYouth, isParent,
+    householdEvents, householdGames, myChildren, teams
   } = useTeam();
   const router = useRouter();
   const db = useFirestore();
@@ -90,17 +91,71 @@ export default function UniversalAccountDashboard() {
   const { data: fundraisers } = useCollection(fundQuery);
 
   const upcomingItinerary = useMemo(() => {
-    if (!activeTeamEvents || !Array.isArray(activeTeamEvents)) return [];
-    const nowStart = startOfDay(new Date());
-    const futureEvents = activeTeamEvents.filter(e => {
-        const eventEnd = startOfDay(new Date(e.endDate || e.date));
-        return eventEnd >= nowStart;
-    });
-    if (futureEvents.length > 0) return futureEvents.slice(0, 3);
+    const list = isParent ? (householdEvents || []) : (activeTeamEvents || []);
+    const rawGames = isParent ? (householdGames || []) : [];
     
-    // Fallback to most recent events if no future events exist (useful for demo team)
-    return [...activeTeamEvents].reverse().slice(0, 3);
-  }, [activeTeamEvents]);
+    // Helper to safely convert any date-like field to a Date object
+    const toDateObj = (d: any) => {
+      if (!d) return null;
+      if (d instanceof Date) return d;
+      if (d.toDate && typeof d.toDate === 'function') return d.toDate();
+      try { return parseISO(d); } catch (e) { return new Date(d); }
+    };
+
+    const synthesizedGames = rawGames.map(g => ({
+       ...g,
+       eventType: 'game',
+       title: g.title || `Match: ${g.team1} vs ${g.team2}`,
+       startTime: g.startTime || g.time,
+       id: g.id || `game_${g.date}_${g.time || g.startTime}`
+    }));
+
+    const expandedTournamentMatches: any[] = [];
+    list.forEach(e => {
+      if (e.isTournament && e.tournamentGames && e.tournamentGames.length > 0) {
+        e.tournamentGames.forEach((game: any, idx: number) => {
+          if (!game.date) return;
+          const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
+          if (isTBD) return;
+          expandedTournamentMatches.push({
+            ...e,
+            id: game.id || `${e.id}_match_${idx}`,
+            title: `[Match] ${game.team1} vs ${game.team2}`,
+            date: game.date,
+            startTime: game.time,
+            location: game.location || e.location,
+            eventType: 'tournament',
+            isTournamentMatch: true,
+            round: game.round
+          });
+        });
+      }
+    });
+
+    const allSourceEvents = [...list, ...synthesizedGames, ...expandedTournamentMatches];
+    const now = new Date();
+    const today = startOfDay(now);
+
+    const filteredEvents = allSourceEvents.filter(e => {
+        if (!e.date) return false;
+        const d = toDateObj(e.date);
+        if (!d || !isValid(d)) return false;
+        return isSameDay(d, today) || isAfter(d, today);
+    });
+
+    const uniqueEventsMap = new Map<string, any>();
+    filteredEvents.forEach(e => {
+        if (!uniqueEventsMap.has(e.id)) uniqueEventsMap.set(e.id, e);
+    });
+
+    return Array.from(uniqueEventsMap.values())
+        .sort((a, b) => {
+            const dA = toDateObj(a.date);
+            const dB = toDateObj(b.date);
+            return (dA?.getTime() || 0) - (dB?.getTime() || 0);
+        })
+        .slice(0, 10);
+  }, [isParent, householdEvents, activeTeamEvents, myChildren, teams, householdGames]);
 
   if (!mounted || !user) return (
     <div className="flex flex-col items-center justify-center py-20 animate-pulse">
@@ -173,60 +228,100 @@ export default function UniversalAccountDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
-          <section className="space-y-4">
+          <section className="space-y-6">
             <div className="flex items-center justify-between px-2">
-              <div className="flex items-center gap-3"><CalendarDays className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Mission Itinerary</h3></div>
-              <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest text-foreground" onClick={() => router.push('/calendar')}>Master Calendar <ChevronRight className="h-3 w-3 ml-1" /></Button>
+              <div className="flex items-center gap-3">
+                <CalendarDays className="h-5 w-5 text-primary" />
+                <h3 className="text-xl font-black uppercase text-foreground">
+                  {isParent ? "Household Itinerary" : "Mission Itinerary"}
+                </h3>
+              </div>
+              <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest text-foreground hover:bg-primary/5 hover:text-primary rounded-full px-4" onClick={() => router.push('/calendar')}>
+                Master Schedule <ChevronRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
             </div>
-            {upcomingItinerary.length > 0 ? upcomingItinerary.map((event) => {
-              const startD = new Date(event.date);
-              const endD = event.endDate ? new Date(event.endDate) : startD;
-              const isMultiDay = !isSameDay(startD, endD);
+            
+            <div className="space-y-4">
+              {upcomingItinerary.length > 0 ? upcomingItinerary.map((event) => {
+                const startD = new Date(event.date);
+                const endD = event.endDate ? new Date(event.endDate) : startD;
+                const isMultiDay = !isSameDay(startD, endD);
+                
+                const team = (teams || []).find(t => t.id === event.teamId);
+                const participants = isParent ? [
+                  ...(myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId)).map(c => c.firstName),
+                  ...((teams || []).some(t => t.id === event.teamId) ? ['You'] : [])
+                ] : [];
 
-              return (
-                <Card key={event.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white cursor-pointer" onClick={() => router.push('/calendar')}>
-                  <div className="flex items-stretch h-24">
-                    <div className={cn(
-                      "w-20 bg-muted/30 flex flex-col items-center justify-center border-r shrink-0 transition-colors group-hover:bg-primary/5",
-                      isMultiDay && "w-28"
-                    )}>
-                      {!isSameMonth(startD, endD) ? (
-                        <div className="flex flex-col items-center">
-                          <span className="text-[8px] font-black uppercase opacity-40 text-foreground leading-none">{format(startD, 'MMM')} - {format(endD, 'MMM')}</span>
-                          <div className="flex items-center gap-1 mt-1">
-                            <span className="text-xl font-black text-foreground leading-none">{format(startD, 'dd')}</span>
-                            <span className="text-xs font-black opacity-20">-</span>
-                            <span className="text-xl font-black text-primary leading-none">{format(endD, 'dd')}</span>
+                return (
+                  <Card key={event.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg hover:-translate-y-1 transition-all group overflow-hidden bg-white cursor-pointer" onClick={() => router.push('/calendar')}>
+                    <div className="flex items-stretch h-28">
+                      <div className={cn(
+                        "w-24 bg-muted/30 flex flex-col items-center justify-center border-r shrink-0 transition-colors group-hover:bg-primary/5",
+                        isMultiDay && "w-28"
+                      )}>
+                        {!isSameMonth(startD, endD) ? (
+                          <div className="flex flex-col items-center">
+                            <span className="text-[8px] font-black uppercase opacity-40 text-foreground leading-none">{format(startD, 'MMM')} - {format(endD, 'MMM')}</span>
+                            <div className="flex items-center gap-1 mt-1">
+                              <span className="text-xl font-black text-foreground leading-none">{format(startD, 'dd')}</span>
+                              <span className="text-xs font-black opacity-20">-</span>
+                              <span className="text-xl font-black text-primary leading-none">{format(endD, 'dd')}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-[8px] font-black uppercase opacity-40 text-foreground">{format(startD, 'MMM')}</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-3xl font-black text-foreground">{format(startD, 'dd')}</span>
+                              {isMultiDay && (
+                                <>
+                                  <span className="text-sm font-black opacity-20">-</span>
+                                  <span className="text-3xl font-black text-primary">{format(endD, 'dd')}</span>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex-1 p-6 flex flex-col justify-center min-w-0">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-primary/10 text-primary border-none text-[8px] uppercase font-black px-2 h-5">{event.eventType}</Badge>
+                            <span className="text-[10px] font-black uppercase text-muted-foreground truncate max-w-[120px]">{team?.name || 'Squad Deployment'}</span>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            {participants.map((p, idx) => (
+                              <Badge key={p} className={cn(
+                                "h-4 px-2 text-[7px] border-none font-black uppercase tracking-tighter",
+                                p === 'You' ? "bg-black text-white" : idx % 2 === 0 ? "bg-primary text-white" : "bg-amber-500 text-black"
+                              )}>
+                                {p}
+                              </Badge>
+                            ))}
                           </div>
                         </div>
-                      ) : (
-                        <>
-                          <span className="text-[8px] font-black uppercase opacity-40 text-foreground">{format(startD, 'MMM')}</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-2xl font-black text-foreground">{format(startD, 'dd')}</span>
-                            {isMultiDay && (
-                              <>
-                                <span className="text-xs font-black opacity-20">-</span>
-                                <span className="text-2xl font-black text-primary">{format(endD, 'dd')}</span>
-                              </>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    <div className="flex-1 p-5 flex flex-col justify-center min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <Badge className="bg-primary/10 text-primary border-none text-[7px] uppercase font-black px-1.5 h-4">{event.eventType}</Badge>
-                        <span className="text-[10px] font-bold text-muted-foreground">{event.startTime}</span>
+                        <h4 className="font-black text-base uppercase truncate group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-[10px] font-medium text-muted-foreground flex items-center gap-1 opacity-60">
+                            <MapPin className="h-3 w-3" /> {event.location || 'Tactical HQ'}
+                          </p>
+                          <span className="text-[10px] font-black tracking-tight text-foreground/80">{event.startTime || 'TBD'}</span>
+                        </div>
                       </div>
-                      <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
                     </div>
+                  </Card>
+                );
+              }) : (
+                <div className="flex flex-col items-center justify-center py-16 bg-muted/5 rounded-[2.5rem] border-2 border-dashed border-muted/20 text-center space-y-3 opacity-60">
+                  <CalendarDays className="h-10 w-10 text-muted-foreground opacity-20" />
+                  <div>
+                    <h4 className="text-lg font-black uppercase tracking-tight text-muted-foreground">Tactical Silence</h4>
+                    <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mt-1">No upcoming squad directives found</p>
                   </div>
-                </Card>
-              );
-            }) : (
-              <div className="text-center py-12 bg-muted/10 rounded-3xl border-2 border-dashed opacity-40"><p className="text-xs font-black uppercase tracking-widest text-foreground">No active deployments</p></div>
-            )}
+                </div>
+              )}
+            </div>
           </section>
           <section className="space-y-4">
             <div className="flex items-center gap-3 px-2"><HandHelping className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Community Intelligence</h3></div>

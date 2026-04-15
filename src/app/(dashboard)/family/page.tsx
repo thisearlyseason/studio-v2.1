@@ -48,7 +48,7 @@ import {
   DialogClose
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
-import { format, differenceInYears, isFuture, isToday, isValid, parseISO } from 'date-fns';
+import { format, differenceInYears, isFuture, isToday, isValid, parseISO, isAfter, startOfDay, isSameDay } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -729,7 +729,7 @@ function MasterSquadWall({ consolidatedTeams }: { consolidatedTeams: { team: Tea
               </h4>
               <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em] flex items-center gap-1.5">
                 <Trophy className="h-2 w-2 opacity-50" />
-                {team.sport || 'ATHLETICS'} • {team.code || team.id.slice(-6).toUpperCase()}
+                {team.sport || 'ATHLETICS'} • {team.code || team.teamCode || team.inviteCode || team.id.slice(-6).toUpperCase()}
               </p>
             </div>
           </Card>
@@ -755,6 +755,7 @@ export default function FamilyPage() {
     joinTeamWithCode, 
     teams, 
     householdEvents, 
+    householdGames,
     householdBalance, 
     isParent,
     user,
@@ -846,24 +847,70 @@ export default function FamilyPage() {
   }, [teams, myChildren]);
 
   const upcomingEvents = useMemo(() => {
-    if (!householdEvents || !Array.isArray(householdEvents)) return [];
+    const rawEvents = householdEvents || [];
+    const rawGames = householdGames || [];
     
-    const events = householdEvents.filter(e => {
-      if (!e.date) return false;
-      const d = parseISO(e.date);
-      if (!isValid(d)) return false;
-      
-      // Inclusion logic: Future or Today (local time check)
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      const eventDate = new Date(d);
-      eventDate.setHours(0, 0, 0, 0);
-      
-      return eventDate >= now;
-    }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).slice(0, 8);
-    
-    return events;
-  }, [householdEvents]);
+    // Helper to safely convert any date-like field to a Date object
+    const toDateObj = (d: any) => {
+       if (!d) return null;
+       if (d instanceof Date) return d;
+       if (d.toDate && typeof d.toDate === 'function') return d.toDate();
+       try { return parseISO(d); } catch (e) { return new Date(d); }
+    };
+
+    const synthesizedGames = rawGames.map(g => ({
+       ...g,
+       eventType: 'game',
+       title: g.title || `Match: ${g.team1} vs ${g.team2}`,
+       startTime: g.startTime || g.time,
+       id: g.id || `game_${g.date}_${g.time || g.startTime}`
+    }));
+
+    const expandedTournamentMatches: any[] = [];
+    rawEvents.forEach(e => {
+       if (e.isTournament && e.tournamentGames && e.tournamentGames.length > 0) {
+         e.tournamentGames.forEach((game: any, idx: number) => {
+           if (!game.date) return;
+           const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
+           if (isTBD) return;
+           expandedTournamentMatches.push({
+             ...e,
+             id: game.id || `${e.id}_match_${idx}`,
+             title: `[Match] ${game.team1} vs ${game.team2}`,
+             date: game.date,
+             startTime: game.time,
+             location: game.location || e.location,
+             eventType: 'tournament',
+             isTournamentMatch: true,
+             round: game.round
+           });
+         });
+       }
+    });
+
+    const allSourceEvents = [...rawEvents, ...synthesizedGames, ...expandedTournamentMatches];
+    const now = new Date();
+    const today = startOfDay(now);
+
+    const filteredEvents = allSourceEvents.filter(e => {
+       if (!e.date) return false;
+       const d = toDateObj(e.date);
+       if (!d || !isValid(d)) return false;
+       return isSameDay(d, today) || isAfter(d, today);
+    });
+
+    const uniqueEventsMap = new Map<string, any>();
+    filteredEvents.forEach(e => {
+       if (!uniqueEventsMap.has(e.id)) uniqueEventsMap.set(e.id, e);
+    });
+
+    return Array.from(uniqueEventsMap.values())
+      .sort((a, b) => {
+         const dA = toDateObj(a.date);
+         const dB = toDateObj(b.date);
+         return (dA?.getTime() || 0) - (dB?.getTime() || 0);
+      });
+  }, [householdEvents, householdGames, myChildren, teams]);
 
   if (!isParent) {
     return <AccessRestricted type="role" title="Household Domain Restricted" description="This sector is reserved for Guardians and Household Administrators." />;

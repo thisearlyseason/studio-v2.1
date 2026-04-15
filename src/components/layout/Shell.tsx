@@ -374,7 +374,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <SidebarFooter className="p-4 border-t bg-white space-y-4">
               <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10">
                 <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/60 mb-1">Squad Identity Code</p>
-                <p className="text-xl font-black text-primary tracking-widest">{activeTeam?.teamCode || activeTeam?.code || '---'}</p>
+                <p className="text-xl font-black text-primary tracking-widest">{activeTeam?.code || activeTeam?.teamCode || activeTeam?.inviteCode || '---'}</p>
               </div>
 
               <Link href="/settings">

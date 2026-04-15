@@ -445,10 +445,10 @@ export default function RosterPage() {
                         </div>
                         <p className="text-[9px] font-medium text-muted-foreground italic leading-relaxed"> Define the total number of athletes permitted in the squad personnel pool.</p>
                       </div>
-                      <div className="p-8 bg-primary/5 rounded-[2.5rem] text-center space-y-4 border-2 border-dashed border-primary/20 group cursor-pointer active:scale-95 transition-all" onClick={() => { navigator.clipboard.writeText(activeTeam.code); toast({ title: "Code Copied" }); }}>
+                      <div className="p-8 bg-primary/5 rounded-[2.5rem] text-center space-y-4 border-2 border-dashed border-primary/20 group cursor-pointer active:scale-95 transition-all" onClick={() => { navigator.clipboard.writeText(activeTeam.code || activeTeam.teamCode || activeTeam.inviteCode); toast({ title: "Code Copied" }); }}>
                         <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Squad Identity Code</p>
                         <div className="flex items-center justify-center gap-4">
-                          <p className="text-5xl font-black text-primary tracking-widest">{activeTeam.code}</p>
+                          <p className="text-5xl font-black text-primary tracking-widest">{activeTeam.code || activeTeam.teamCode || activeTeam.inviteCode}</p>
                           <Copy className="h-6 w-6 text-primary opacity-30" />
                         </div>
                       </div>

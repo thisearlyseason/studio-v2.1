@@ -67,6 +67,7 @@ import {
   DialogDescription,
   DialogFooter
 } from '@/components/ui/dialog';
+import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
@@ -404,8 +405,152 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
   );
 }
 
+function CalendarSubscriptionDialog() {
+  const { getCalendarFeedUrl, teams } = useTeam();
+  const { toast } = useToast();
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
+
+  const handleGenerate = async (type: 'user' | 'team' | 'multi') => {
+    setLoading(true);
+    try {
+      const feedUrl = await getCalendarFeedUrl(type, undefined, type === 'multi' ? selectedTeamIds : undefined);
+      if (feedUrl) {
+        setUrl(feedUrl);
+        navigator.clipboard.writeText(feedUrl);
+        toast({ 
+          title: "Secure URL Copied", 
+          description: "The tactical feed link is now on your clipboard. Add it to your device's calendar app." 
+        });
+      }
+    } catch (e) {
+      toast({ 
+        title: "Deployment Failure", 
+        description: "Failed to generate secure calendar token.", 
+        variant: "destructive" 
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleTeamSelection = (id: string) => {
+    setSelectedTeamIds(prev => prev.includes(id) ? prev.filter(tid => tid !== id) : [...prev, id]);
+  };
+
+  return (
+    <Dialog onOpenChange={(open) => { if(!open) { setUrl(null); setMultiSelectMode(false); setSelectedTeamIds([]); } }}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2 text-foreground">
+          <CalendarDays className="h-4 w-4" /> Subscribe
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
+        <div className="h-2 bg-primary w-full" />
+        <div className="p-8 space-y-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-8 opacity-5 -rotate-12 pointer-events-none">
+            <Zap className="h-40 w-40 text-primary" />
+          </div>
+          
+          <DialogHeader className="relative z-10">
+            <DialogTitle className="text-3xl font-black uppercase tracking-tighter leading-none text-foreground">Synchronize Device</DialogTitle>
+            <DialogDescription className="text-[10px] font-black uppercase tracking-widest text-primary pt-2">
+              Cross-Platform Tactical Bridging
+            </DialogDescription>
+            <p className="text-xs font-medium text-muted-foreground leading-relaxed pt-2">
+              Sync your squad's deployment schedule directly into iOS, Google, or Outlook calendars with a high-reliability encrypted feed.
+            </p>
+          </DialogHeader>
+
+        {!multiSelectMode ? (
+          <div className="space-y-6 relative z-10">
+            <div className="grid grid-cols-1 gap-3">
+               <Button onClick={() => handleGenerate('team')} disabled={loading} className="h-14 rounded-2xl bg-black text-white hover:bg-black/90 font-black uppercase text-[10px] tracking-widest shadow-xl shadow-black/10 active:scale-[0.98] transition-all">
+                 {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Subscribe to Current Squad"}
+               </Button>
+               <Button onClick={() => setMultiSelectMode(true)} variant="outline" className="h-14 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest hover:bg-muted/30 active:scale-[0.98] transition-all text-foreground">
+                 Merge Multiple Squads (Family Feed)
+               </Button>
+               <Button onClick={() => handleGenerate('user')} variant="ghost" disabled={loading} className="h-10 font-black uppercase text-[9px] tracking-widest opacity-40 hover:opacity-100 hover:bg-transparent text-foreground">
+                 ALL MY SQUADS MASTER FEED
+               </Button>
+            </div>
+            
+            {url && (
+              <div className="p-4 bg-muted/30 rounded-2xl border space-y-2">
+                <p className="text-[10px] font-black uppercase text-primary">Your Secure Feed URL</p>
+                <p className="text-[10px] font-mono break-all opacity-60 leading-relaxed">{url}</p>
+              </div>
+            )}
+
+            <div className="space-y-4 pt-6 border-t border-dashed">
+              <h4 className="text-[10px] font-black uppercase text-foreground tracking-widest">Tactical Instructions</h4>
+              <div className="space-y-4">
+                {[
+                  { id: '1', text: 'Copy the secure link above.' },
+                  { id: '2', text: 'In Google: Tap "+" next to "Other calendars" → "From URL".' },
+                  { id: '3', text: 'On iOS: Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar.' }
+                ].map((step) => (
+                  <div key={step.id} className="flex gap-4">
+                    <div className="h-6 w-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 text-[10px] font-black">{step.id}</div>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed">{step.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6 relative z-10">
+            <div className="space-y-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Select Squads to Merge</p>
+              <ScrollArea className="h-64 rounded-3xl border-2 p-4 bg-muted/5">
+                <div className="space-y-2">
+                  {teams.map(t => (
+                    <div 
+                      key={t.id} 
+                      onClick={() => toggleTeamSelection(t.id)}
+                      className={cn(
+                        "flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border-2",
+                        selectedTeamIds.includes(t.id) ? "bg-primary/5 border-primary shadow-sm" : "border-transparent hover:bg-muted"
+                      )}
+                    >
+                      <div className="flex items-center gap-4">
+                         <div className={cn("h-5 w-5 rounded-full border-2 flex items-center justify-center", selectedTeamIds.includes(t.id) ? "bg-primary border-primary" : "border-muted-foreground/30")}>
+                           {selectedTeamIds.includes(t.id) && <CheckCircle2 className="h-3 w-3 text-white" />}
+                         </div>
+                         <span className="text-xs font-black uppercase tracking-tight text-foreground">{t.name}</span>
+                      </div>
+                      <Badge variant="outline" className="text-[8px] font-black uppercase border-none bg-muted/50 text-muted-foreground">{t.sport || 'Squad'}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              <Button 
+                onClick={() => handleGenerate('multi')} 
+                disabled={selectedTeamIds.length === 0 || loading}
+                className="h-14 rounded-2xl bg-black text-white font-black uppercase text-[10px] tracking-widest shadow-xl shadow-black/10 active:scale-[0.98] transition-all"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : `Generate Unified Feed (${selectedTeamIds.length})`}
+              </Button>
+              <Button variant="ghost" onClick={() => setMultiSelectMode(false)} className="h-10 rounded-2xl font-black uppercase text-[9px] tracking-widest opacity-40 hover:opacity-100 hover:bg-transparent text-foreground">
+                Return to Single Feed
+              </Button>
+            </div>
+          </div>
+        )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function MasterCalendarPage() {
-  const { teams, householdEvents, activeTeamEvents, isParent, activeTeam, db, updateRSVP } = useTeam();
+  const { teams, householdEvents, householdGames, activeTeamEvents, isParent, activeTeam, db, updateRSVP } = useTeam();
   
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(new Date());
@@ -418,11 +563,54 @@ export default function MasterCalendarPage() {
   // TACTICAL SYNC: Merge household events with the high-reliability active team stream
   const allEvents = useMemo(() => {
     const map = new Map<string, TeamEvent>();
+    
+    // Add standard events
     [...(householdEvents || []), ...(activeTeamEvents || [])].forEach(e => {
       map.set(e.id, e);
     });
+
+    // Synthesis: Include household matches (games)
+    (householdGames || []).forEach(g => {
+      if (!map.has(g.id)) {
+        map.set(g.id, {
+          ...g,
+          eventType: 'game',
+          title: g.title || `Match: ${g.team1} vs ${g.team2}`,
+          startTime: g.startTime || g.time,
+          id: g.id || `game_${g.date}_${g.time || g.startTime}`
+        } as TeamEvent);
+      }
+    });
+
+    // Synthesis: Expand tournament games into individual match entries
+    [...(householdEvents || []), ...(activeTeamEvents || [])].forEach(e => {
+      if (e.isTournament && e.tournamentGames && e.tournamentGames.length > 0) {
+        e.tournamentGames.forEach((game: any, idx: number) => {
+          if (!game.date) return;
+          const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
+          if (isTBD) return;
+
+          const matchId = game.id || `${e.id}_match_${idx}`;
+          if (!map.has(matchId)) {
+            map.set(matchId, {
+              ...e,
+              id: matchId,
+              title: `[Match] ${game.team1} vs ${game.team2}`,
+              date: game.date,
+              startTime: game.time,
+              location: game.location || e.location,
+              eventType: 'tournament',
+              isTournamentMatch: true,
+              round: game.round,
+              parentTournamentId: e.id
+            } as any);
+          }
+        });
+      }
+    });
+
     return Array.from(map.values());
-  }, [householdEvents, activeTeamEvents]);
+  }, [householdEvents, activeTeamEvents, householdGames]);
 
   const activeDetailedEvent = useMemo(() => {
     if (!activeDetailedEventId) return null;
@@ -463,7 +651,11 @@ export default function MasterCalendarPage() {
       const matchesTeam = selectedTeamIds.includes(event.teamId);
       const matchesType = selectedEventTypes.includes(event.eventType as EventType || 'other');
       const matchesSearch = (event.title || '').toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesTeam && matchesType && matchesSearch;
+      
+      // TACTICAL FILTER: Filter out placeholder/TBD matches to ensure only confirmed deployments are visible
+      const isConfirmed = !event.title?.includes('TBD VS TBD');
+      
+      return matchesTeam && matchesType && matchesSearch && isConfirmed;
     });
   }, [allEvents, selectedTeamIds, selectedEventTypes, searchTerm]);
 
@@ -499,6 +691,11 @@ export default function MasterCalendarPage() {
         if (event.isTournament && event.tournamentGames && event.tournamentGames.length > 0) {
           event.tournamentGames.forEach((game: any, idx: number) => {
             if (!game.date) return;
+            
+            // TACTICAL FILTER: Suppress placeholder matches in the high-resolution grid
+            const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
+            if (isTBD) return;
+
             const gameDate = startOfDay(new Date(game.date));
             if (isSameDay(gameDate, dayStart)) {
               if (!map[dayKey]) map[dayKey] = [];
@@ -584,6 +781,7 @@ export default function MasterCalendarPage() {
             <Button variant={viewMode === 'grid' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('grid')} className="h-9 px-4 rounded-lg font-black text-[10px] uppercase"><LayoutGrid className="h-3.5 w-3.5 mr-2" /> Grid</Button>
             <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-4 rounded-lg font-black text-[10px] uppercase"><List className="h-3.5 w-3.5 mr-2" /> Agenda</Button>
           </div>
+          <CalendarSubscriptionDialog />
           <Popover>
             <PopoverTrigger asChild><Button variant="outline" className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2 text-foreground"><Filter className="h-4 w-4" /> Filters</Button></PopoverTrigger>
             <PopoverContent className="w-80 rounded-2xl shadow-2xl p-6" align="end">

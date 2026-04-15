@@ -543,6 +543,10 @@ export default function EventsPage() {
           if (!game.date) return;
           if (activeTeam && game.team1 !== activeTeam.teamName && game.team2 !== activeTeam.teamName && game.team1 !== activeTeam.name && game.team2 !== activeTeam.name) return;
           
+          // TACTICAL FILTER: Skip placeholder/TBD matches in the itinerary stream
+          const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
+          if (isTBD) return;
+          
           // Synthesize a match event entry
           expandedList.push({
             ...event,

@@ -375,7 +375,7 @@ export default function SettingsPage() {
                   <div className="p-6 bg-muted/20 rounded-[2rem] border-2 border-transparent flex items-center justify-between">
                     <div className="space-y-1">
                       <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Active Registration Code</p>
-                      <p className="text-3xl font-black text-primary tracking-tighter select-all">{activeTeam?.code}</p>
+                      <p className="text-3xl font-black text-primary tracking-tighter select-all">{activeTeam?.code || activeTeam?.teamCode || activeTeam?.inviteCode}</p>
                     </div>
                     {!isLocked && (
                       <Button onClick={() => setIsCodeEditOpen(true)} className="h-10 rounded-xl font-black text-[10px] uppercase tracking-widest px-6 active:scale-95 transition-all">
