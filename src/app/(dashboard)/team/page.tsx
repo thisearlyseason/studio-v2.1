@@ -336,9 +336,13 @@ export default function TeamProfilePage() {
               </Badge>
               {activeTeam.isPro && <Badge className="bg-amber-500 text-white border-none font-black uppercase text-[10px] h-6 shadow-lg shadow-amber-500/20">Elite Squad</Badge>}
             </div>
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-6 text-sm font-bold text-muted-foreground uppercase tracking-widest">
-              <div className="flex items-center gap-2"><Hash className="h-4 w-4 text-primary opacity-40" />{activeTeam.code}</div>
-              <div className="flex items-center gap-2"><Globe className="h-4 w-4 text-primary opacity-40" />Active ID: {activeTeam.id.slice(-6)}</div>
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-6 text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+              <div className="flex items-center gap-2 px-3 py-1 bg-muted/20 rounded-full border border-black/5" title="Human-readable code for athlete enrollment">
+                <Hash className="h-3 w-3 text-primary opacity-60" /> Squad: {activeTeam.code}
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1 bg-muted/20 rounded-full border border-black/5" title="Immutable internal database reference">
+                <Globe className="h-3 w-3 text-primary opacity-60" /> Active ID: {activeTeam.id.slice(-6).toUpperCase()}
+              </div>
             </div>
           </div>
 
@@ -450,7 +454,12 @@ export default function TeamProfilePage() {
               <div className="p-6 bg-white/10 rounded-2xl border border-white/10 space-y-3 text-center transition-all group-hover:bg-white/20">
                 <p className="text-[10px] font-black uppercase tracking-widest text-white/50">Squad Identity Code</p>
                 <div className="flex items-center justify-center gap-4">
-                  <p className="text-4xl font-black tracking-[0.2em]">{activeTeam.code}</p>
+                  <p className={cn(
+                    "font-black tracking-[0.2em] flex-1",
+                    (activeTeam.code || "").length > 12 ? "text-xl" : "text-4xl"
+                  )}>
+                    {activeTeam.code}
+                  </p>
                   <button onClick={async () => { await navigator.clipboard.writeText(activeTeam.code); toast({ title: "Code Copied" }); }}>
                     <Copy className="h-5 w-5 text-white/40 hover:text-white" />
                   </button>

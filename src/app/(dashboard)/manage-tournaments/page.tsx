@@ -343,28 +343,28 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                     <div className="grid grid-cols-1 gap-8">
                       <div className="space-y-3">
                         <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Official Series Designation</Label>
-                        <Input placeholder="e.g. 2024 CHAMPIONSHIP INVITATIONAL" value={form.title} onChange={e => setForm({...form, title: e.target.value})} className="h-16 rounded-2xl bg-white/5 border-white/10 font-black text-2xl text-white placeholder:text-white/20 uppercase focus-visible:ring-primary focus-visible:border-primary px-6 transition-all" />
+                        <Input placeholder="e.g. 2024 CHAMPIONSHIP INVITATIONAL" value={form.title} onChange={e => setForm({...form, title: e.target.value})} className="h-16 rounded-2xl bg-white/15 border-white/20 font-black text-2xl text-white placeholder:text-white/30 uppercase focus-visible:ring-primary focus-visible:border-primary px-6 transition-all shadow-inner" />
                       </div>
                       
                       <div className="grid grid-cols-2 gap-8">
                         <div className="space-y-3">
                           <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Commencement Date</Label>
-                          <Input type="date" value={form.startDate} onChange={e => setForm({...form, startDate: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/5 border-white/10 font-bold text-white uppercase focus-visible:ring-primary px-6" />
+                          <Input type="date" value={form.startDate} onChange={e => setForm({...form, startDate: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white uppercase focus-visible:ring-primary px-6 shadow-inner" />
                         </div>
                         <div className="space-y-3">
                           <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Conclusion Date</Label>
-                          <Input type="date" value={form.endDate} onChange={e => setForm({...form, endDate: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/5 border-white/10 font-bold text-white uppercase focus-visible:ring-primary px-6" />
+                          <Input type="date" value={form.endDate} onChange={e => setForm({...form, endDate: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white uppercase focus-visible:ring-primary px-6 shadow-inner" />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-8">
                         <div className="space-y-3">
                           <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Central Hub/Venue</Label>
-                          <Input placeholder="Stadium Name" value={form.location} onChange={e => setForm({...form, location: e.target.value})} className="h-14 rounded-xl bg-white/5 border-white/10 font-bold text-white focus-visible:ring-primary px-6" />
+                          <Input placeholder="Stadium Name" value={form.location} onChange={e => setForm({...form, location: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-6 shadow-inner" />
                         </div>
                         <div className="space-y-3">
                           <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Registration Toll ($)</Label>
-                          <Input type="number" min="0" value={form.registration_cost} onChange={e => setForm({...form, registration_cost: e.target.value})} className="h-14 rounded-xl bg-white/5 border-white/10 font-black text-xl text-primary focus-visible:ring-primary px-6" />
+                          <Input type="number" min="0" value={form.registration_cost} onChange={e => setForm({...form, registration_cost: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-black text-xl text-primary focus-visible:ring-primary px-6 shadow-inner" />
                         </div>
                       </div>
                     </div>
@@ -399,16 +399,26 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                     
                     <div className="space-y-4">
                       {form.teams.map((t, i) => (
-                        <div key={t.id} className="grid grid-cols-12 gap-4 bg-white/5 p-5 rounded-[2rem] border border-white/5 items-center hover:bg-white/10 transition-colors group">
+                        <div key={t.id} className="grid grid-cols-12 gap-4 bg-white/5 p-5 rounded-[2rem] border border-white/5 items-center hover:bg-white/10 transition-colors group relative overflow-hidden">
+                          {t.source && (
+                            <div className={cn(
+                              "absolute top-0 right-12 px-3 py-1 text-[7px] font-black uppercase tracking-widest rounded-b-lg",
+                              t.source === 'league' ? "bg-emerald-500/20 text-emerald-500" :
+                              t.source === 'pipeline' ? "bg-primary/20 text-primary" :
+                              "bg-white/10 text-white/40"
+                            )}>
+                              {t.source}
+                            </div>
+                          )}
                           <div className="col-span-1 text-[10px] font-black opacity-20">T{i+1}</div>
                           <div className="col-span-5">
-                            <Input value={t.name} onChange={e => {const n=[...form.teams]; n[i].name=e.target.value; setForm({...form, teams:n});}} placeholder="Squad Designation" className="h-12 bg-black/40 border-black font-black uppercase rounded-xl text-white" />
+                            <Input value={t.name} onChange={e => {const n=[...form.teams]; n[i].name=e.target.value; setForm({...form, teams:n});}} placeholder="Squad Designation" className="h-12 bg-white/10 border-white/20 font-black uppercase rounded-xl text-white shadow-inner" />
                           </div>
                           <div className="col-span-4">
-                            <Input value={t.coach} onChange={e => {const n=[...form.teams]; n[i].coach=e.target.value; setForm({...form, teams:n});}} placeholder="Operator / Coach" className="h-12 bg-black/40 border-black font-bold text-sm rounded-xl text-white" />
+                            <Input value={t.coach} onChange={e => {const n=[...form.teams]; n[i].coach=e.target.value; setForm({...form, teams:n});}} placeholder="Operator / Coach" className="h-12 bg-white/10 border-white/20 font-bold text-sm rounded-xl text-white shadow-inner" />
                           </div>
                           <div className="col-span-2 flex justify-end">
-                             <Button variant="ghost" size="icon" onClick={() => setForm({...form, teams: form.teams.filter(x => x.id !== t.id)})} className="h-12 w-12 rounded-xl text-white/20 hover:text-red-500 hover:bg-red-500/10"><X className="h-5 w-5" /></Button>
+                             <Button variant="ghost" size="icon" onClick={() => setForm({...form, teams: form.teams.filter(x => x.id !== t.id)})} className="h-12 w-12 rounded-xl text-white/20 hover:text-red-500 hover:bg-red-500/10 transition-all"><X className="h-5 w-5" /></Button>
                           </div>
                         </div>
                       ))}
@@ -454,17 +464,17 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                        
                        <div className="space-y-3">
                           <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Match Duration (Min)</Label>
-                          <Input type="number" value={form.gameLength} onChange={e => setForm({...form, gameLength: e.target.value})} className="h-16 rounded-2xl bg-[#0a0a0a] border-white/10 font-black text-2xl text-white px-6 focus-visible:ring-primary" />
+                          <Input type="number" value={form.gameLength} onChange={e => setForm({...form, gameLength: e.target.value})} className="h-16 rounded-2xl bg-white/10 border-white/15 font-black text-2xl text-white px-6 focus-visible:ring-primary shadow-inner" />
                        </div>
                        
                        <div className="space-y-3">
                           <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Rest / Turnaround Matrix (Min)</Label>
-                          <Input type="number" value={form.breakLength} onChange={e => setForm({...form, breakLength: e.target.value})} className="h-16 rounded-2xl bg-[#0a0a0a] border-white/10 font-black text-2xl text-white px-6 focus-visible:ring-primary" />
+                          <Input type="number" value={form.breakLength} onChange={e => setForm({...form, breakLength: e.target.value})} className="h-16 rounded-2xl bg-white/10 border-white/15 font-black text-2xl text-white px-6 focus-visible:ring-primary shadow-inner" />
                        </div>
 
                        <div className="space-y-3">
                           <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-2 flex items-center gap-2"><Lock className="h-3 w-3" /> Min Games Per Squad</Label>
-                          <Input type="number" value={form.gamesPerTeam} onChange={e => setForm({...form, gamesPerTeam: e.target.value})} className="h-16 rounded-2xl bg-[#0a0a0a] border-primary/30 font-black text-2xl text-primary px-6 focus-visible:ring-primary shadow-inner" />
+                          <Input type="number" value={form.gamesPerTeam} onChange={e => setForm({...form, gamesPerTeam: e.target.value})} className="h-16 rounded-2xl bg-white/10 border-primary/30 font-black text-2xl text-primary px-6 focus-visible:ring-primary shadow-inner" />
                        </div>
                     </div>
 
@@ -591,13 +601,13 @@ function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEven
           <DialogDescription className="text-xs uppercase tracking-widest font-black opacity-50">Modify the identity and timeline of this deployment.</DialogDescription>
         </DialogHeader>
         <div className="space-y-6">
-          <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Series Headline</Label><Input value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="h-14 font-black rounded-xl" /></div>
+          <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Series Headline</Label><Input value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="h-14 font-black rounded-xl bg-slate-50 border-slate-200 focus:bg-white transition-all" /></div>
           <div className="grid grid-cols-2 gap-4">
-             <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Launch Date</Label><Input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="h-12 font-bold rounded-xl" /></div>
-             <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Finale Date</Label><Input type="date" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="h-12 font-bold rounded-xl" /></div>
+             <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Launch Date</Label><Input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="h-12 font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
+             <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Finale Date</Label><Input type="date" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="h-12 font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
           </div>
-          <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Base Location Hub</Label><Input value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="h-12 font-bold rounded-xl" /></div>
-          <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Registration Toll ($)</Label><Input type="number" value={formData.registration_cost} onChange={e => setFormData({...formData, registration_cost: e.target.value})} className="h-12 font-bold rounded-xl" /></div>
+          <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Base Location Hub</Label><Input value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="h-12 font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
+          <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Registration Toll ($)</Label><Input type="number" value={formData.registration_cost} onChange={e => setFormData({...formData, registration_cost: e.target.value})} className="h-12 font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
         </div>
         <DialogFooter className="mt-8">
            <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-xl font-black uppercase">Cancel</Button>
@@ -759,19 +769,32 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
               const score1 = parseInt(formData.get('score1') as string, 10);
               const score2 = parseInt(formData.get('score2') as string, 10);
               
+              const roundName = formData.get('roundName') as string;
+              const explicitWinner = formData.get('explicitWinner') as string;
+              
               const pGames = [...event.tournamentGames];
-              const t1Adv = score1 > score2 ? selectedGame.team1 : selectedGame.team2;
-              const t1AdvId = score1 > score2 ? selectedGame.team1Id : selectedGame.team2Id;
+              
+              // Determine winner: Use explicit selection first, fallback to score comparison
+              let t1Adv = explicitWinner === 'team1' ? selectedGame.team1 : 
+                           explicitWinner === 'team2' ? selectedGame.team2 : 
+                           (score1 > score2 ? selectedGame.team1 : selectedGame.team2);
+              
+              let t1AdvId = explicitWinner === 'team1' ? selectedGame.team1Id : 
+                             explicitWinner === 'team2' ? selectedGame.team2Id : 
+                             (score1 > score2 ? selectedGame.team1Id : selectedGame.team2Id);
+              
+              let t1Los = explicitWinner === 'team1' ? selectedGame.team2 : 
+                           explicitWinner === 'team2' ? selectedGame.team1 : 
+                           (score1 > score2 ? selectedGame.team2 : selectedGame.team1);
+              
+              let t1LosId = explicitWinner === 'team1' ? selectedGame.team2Id : 
+                             explicitWinner === 'team2' ? selectedGame.team1Id : 
+                             (score1 > score2 ? selectedGame.team2Id : selectedGame.team1Id);
 
               try {
-                const t1Adv = score1 > score2 ? selectedGame.team1 : selectedGame.team2;
-                const t1AdvId = score1 > score2 ? selectedGame.team1Id : selectedGame.team2Id;
-                const t1Los = score1 > score2 ? selectedGame.team2 : selectedGame.team1;
-                const t1LosId = score1 > score2 ? selectedGame.team2Id : selectedGame.team1Id;
-
                 const updatedGames = pGames.map(g => {
                    if (g.id === selectedGame.id) {
-                      return { ...g, score1, score2, isCompleted: true, updatedAt: new Date().toISOString() };
+                      return { ...g, score1, score2, round: roundName || g.round, isCompleted: true, updatedAt: new Date().toISOString() };
                    }
                    // Flow winner
                    if (g.id === selectedGame.winnerTo) {
@@ -803,17 +826,31 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                 setScoreDialogOpen(false);
               }
             }} className="space-y-8 pt-4">
-              <div className="flex items-center gap-6 justify-between">
-                 <div className="space-y-3 flex-1 flex flex-col">
-                   <Label className="text-[11px] font-black uppercase tracking-widest text-center truncate max-w-[140px] px-2">{selectedGame.team1}</Label>
-                   <Input name="score1" type="number" defaultValue={selectedGame.score1 || 0} required className="h-20 text-4xl font-black text-center rounded-[2rem] bg-muted/10 border-2" />
-                 </div>
-                 <div className="text-xl font-black opacity-10 pt-8 italic tracking-tighter">VS</div>
-                 <div className="space-y-3 flex-1 flex flex-col">
-                   <Label className="text-[11px] font-black uppercase tracking-widest text-center truncate max-w-[140px] px-2">{selectedGame.team2}</Label>
-                   <Input name="score2" type="number" defaultValue={selectedGame.score2 || 0} required className="h-20 text-4xl font-black text-center rounded-[2rem] bg-muted/10 border-2" />
-                 </div>
-              </div>
+               <div className="space-y-3 pb-4 border-b border-muted/20">
+                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Match Round / Phase</Label>
+                 <Input name="roundName" defaultValue={selectedGame.round || ''} className="h-14 font-black uppercase tracking-widest text-sm bg-slate-50 border-2 rounded-2xl focus:bg-white transition-all shadow-inner" />
+               </div>
+               
+               <div className="flex items-center gap-6 justify-between">
+                  <div className="space-y-3 flex-1 flex flex-col items-center">
+                    <Label className="text-[11px] font-black uppercase tracking-widest text-center truncate max-w-[140px] px-2">{selectedGame.team1}</Label>
+                    <Input name="score1" type="number" defaultValue={selectedGame.score1 || 0} required className="h-20 w-full text-4xl font-black text-center rounded-[2rem] bg-slate-50 border-2 border-slate-200 focus:bg-white focus:border-primary transition-all shadow-inner" />
+                  </div>
+                  <div className="text-xl font-black opacity-10 pt-8 italic tracking-tighter">VS</div>
+                  <div className="space-y-3 flex-1 flex flex-col items-center">
+                    <Label className="text-[11px] font-black uppercase tracking-widest text-center truncate max-w-[140px] px-2">{selectedGame.team2}</Label>
+                    <Input name="score2" type="number" defaultValue={selectedGame.score2 || 0} required className="h-20 w-full text-4xl font-black text-center rounded-[2rem] bg-slate-50 border-2 border-slate-200 focus:bg-white focus:border-primary transition-all shadow-inner" />
+                  </div>
+               </div>
+               
+               <div className="space-y-3 pt-4 border-t border-muted/20">
+                 <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-2 flex items-center gap-2"><Trophy className="h-3 w-3" /> Assign Winner (Overrides Score)</Label>
+                 <select name="explicitWinner" className="w-full h-14 bg-slate-50 border-2 border-slate-200 rounded-2xl px-6 font-black uppercase tracking-widest text-xs focus:ring-primary focus:border-primary">
+                    <option value="auto">Auto-detect from Score</option>
+                    <option value="team1" className="text-emerald-700">{selectedGame.team1} Advances</option>
+                    <option value="team2" className="text-emerald-700">{selectedGame.team2} Advances</option>
+                 </select>
+               </div>
               <DialogFooter className="gap-3 sm:gap-0">
                  <Button type="button" variant="outline" onClick={() => setScoreDialogOpen(false)} className="rounded-full h-14 px-8 border-2 font-black uppercase tracking-widest text-[10px]">Cancel</Button>
                  <Button type="submit" className="rounded-full h-14 px-10 font-black uppercase tracking-widest text-[10px] bg-primary text-white">Commit Score</Button>
@@ -851,9 +888,10 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
           <div className="bg-muted/30 p-8 border-b">
             <TabsList className="bg-white/50 h-auto p-2 rounded-[2rem] border-2 w-full flex-wrap gap-1 shadow-inner">
               <TabsTrigger value="itinerary" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Matches</TabsTrigger>
+              <TabsTrigger value="bracket" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Brackets</TabsTrigger>
+              <TabsTrigger value="portals" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Portals</TabsTrigger>
               <TabsTrigger value="squads" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Teams</TabsTrigger>
               <TabsTrigger value="standings" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Standings</TabsTrigger>
-              <TabsTrigger value="bracket" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Brackets</TabsTrigger>
               <TabsTrigger value="compliance" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Compliance</TabsTrigger>
               <TabsTrigger value="architecture" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-orange-600 data-[state=active]:text-white">Architecture</TabsTrigger>
             </TabsList>
@@ -1000,6 +1038,69 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                  <div className="py-32 text-center opacity-40 font-black uppercase tracking-widest">No match logistics established.</div>
                )}
              </TabsContent>
+              <TabsContent value="portals" className="mt-0 space-y-10">
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <Card className="rounded-[3rem] p-10 border-none shadow-xl bg-white space-y-6 group hover:shadow-2xl transition-all h-full flex flex-col">
+                       <div className="flex items-center justify-between">
+                          <div className="bg-primary/10 p-4 rounded-[1.5rem] text-primary transition-colors group-hover:bg-primary group-hover:text-white"><Zap className="h-6 w-6" /></div>
+                          <Badge className="bg-emerald-500 text-white border-none font-black text-[8px] uppercase tracking-widest px-3 h-6">Live & Public</Badge>
+                       </div>
+                       <div className="flex-1 space-y-2">
+                          <h3 className="text-2xl font-black uppercase tracking-tight italic">Spectator Hub</h3>
+                          <p className="text-xs text-muted-foreground font-medium leading-relaxed uppercase tracking-tight">Public access point for fans to track live scores, schedules, and bracket progression in real-time.</p>
+                       </div>
+                       <Button onClick={() => window.open(`/tournaments/spectator/${activeTeam?.id}/${event.id}`, '_blank')} className="w-full h-14 rounded-2xl bg-black text-white font-black uppercase text-xs tracking-widest shadow-lg hover:bg-black/80 transition-all flex items-center justify-center gap-2">
+                          Launch Spectator Port <ExternalLink className="h-4 w-4" />
+                       </Button>
+                    </Card>
+
+                     {isStaff ? (
+                       <>
+                         <Card className="rounded-[3rem] p-10 border-none shadow-xl bg-white space-y-6 group hover:shadow-2xl transition-all h-full flex flex-col">
+                            <div className="flex items-center justify-between">
+                               <div className="bg-amber-500/10 p-4 rounded-[1.5rem] text-amber-600 transition-colors group-hover:bg-amber-500 group-hover:text-white"><Lock className="h-6 w-6" /></div>
+                               <Badge className="bg-black text-white border-none font-black text-[8px] uppercase tracking-widest px-3 h-6">Secure Access</Badge>
+                            </div>
+                            <div className="flex-1 space-y-2">
+                               <h3 className="text-2xl font-black uppercase tracking-tight italic">Scorekeeper Node</h3>
+                               <p className="text-xs text-muted-foreground font-medium leading-relaxed uppercase tracking-tight">Institutional portal for field marshals and officiating staff to push verified match results to the matrix.</p>
+                            </div>
+                            <Button onClick={() => window.open(`/tournaments/scorekeeper/${activeTeam?.id}/${event.id}`, '_blank')} className="w-full h-14 rounded-2xl border-2 border-black text-black bg-transparent font-black uppercase text-xs tracking-widest hover:bg-black hover:text-white transition-all flex items-center justify-center gap-2">
+                               Initialize Node Port <ExternalLink className="h-4 w-4" />
+                            </Button>
+                         </Card>
+
+                         <Card className="rounded-[3rem] p-10 border-none shadow-xl bg-white space-y-6 group hover:shadow-2xl transition-all h-full flex flex-col">
+                            <div className="flex items-center justify-between">
+                               <div className="bg-blue-500/10 p-4 rounded-[1.5rem] text-blue-600 transition-colors group-hover:bg-blue-500 group-hover:text-white"><FileText className="h-6 w-6" /></div>
+                               <Badge className="bg-blue-500 text-white border-none font-black text-[8px] uppercase tracking-widest px-3 h-6">Public Intake</Badge>
+                            </div>
+                            <div className="flex-1 space-y-2">
+                               <h3 className="text-2xl font-black uppercase tracking-tight italic">Registration Portal</h3>
+                               <p className="text-xs text-muted-foreground font-medium leading-relaxed uppercase tracking-tight">Public URL for squad procurement, custom form intake, and medical/liability waiver synchronization.</p>
+                            </div>
+                            <Button onClick={() => window.open(`/register/tournament/${activeTeam?.id}/${event.id}`, '_blank')} className="w-full h-14 rounded-2xl bg-white text-black border-2 border-black/10 font-black uppercase text-xs tracking-widest hover:bg-muted transition-all flex items-center justify-center gap-2">
+                               Distribute Portal URL <Share2 className="h-4 w-4" />
+                            </Button>
+                         </Card>
+                       </>
+                     ) : (
+                       <Card className="rounded-[3rem] p-10 border-none shadow-xl bg-white space-y-6 group hover:shadow-2xl transition-all h-full flex flex-col">
+                          <div className="flex items-center justify-between">
+                             <div className="bg-red-500/10 p-4 rounded-[1.5rem] text-red-600 transition-colors group-hover:bg-red-500 group-hover:text-white"><ShieldAlert className="h-6 w-6" /></div>
+                             <Badge className="bg-red-500 text-white border-none font-black text-[8px] uppercase tracking-widest px-3 h-6">Action Required</Badge>
+                          </div>
+                          <div className="flex-1 space-y-2">
+                             <h3 className="text-2xl font-black uppercase tracking-tight italic">Participant Waiver</h3>
+                             <p className="text-xs text-muted-foreground font-medium leading-relaxed uppercase tracking-tight">Execute your mandatory release of liability and medical clearance. Required before entering the field of play in this series.</p>
+                          </div>
+                          <Button onClick={() => toast({ title: "Waiver Executed", description: "Your liability clearance has been logged and synchronized." })} className="w-full h-14 rounded-2xl bg-red-600 text-white font-black uppercase text-xs tracking-widest shadow-lg hover:bg-red-700 transition-all flex items-center justify-center gap-2">
+                             Complete Required Waiver
+                          </Button>
+                       </Card>
+                     )}
+                 </div>
+              </TabsContent>
              <TabsContent value="bracket" className="mt-0">
                <TournamentBracket 
                  games={event.tournamentGames || []} 
@@ -1073,7 +1174,14 @@ export default function ManageTournamentsPage() {
               <Badge variant="outline" className="border-2 font-black text-[9px] uppercase tracking-widest bg-white">Tournament Series</Badge>
               <h3 className="text-3xl font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{event.title}</h3>
               <div className="flex flex-col gap-2 pt-4">
-                <div className="flex items-center gap-3 text-muted-foreground"><CalendarDays className="h-4 w-4" /><span className="text-[10px] font-black uppercase tracking-widest">{format(new Date(event.date), 'MMMM do, yyyy')}</span></div>
+                <div className="flex items-center gap-3 text-muted-foreground">
+                   <CalendarDays className="h-4 w-4" />
+                   <span className="text-[10px] font-black uppercase tracking-widest">
+                     {event.endDate && event.endDate !== event.date 
+                       ? `${format(new Date(event.date), 'MMMM do')} - ${format(new Date(event.endDate), 'do, yyyy')}`
+                       : format(new Date(event.date), 'MMMM do, yyyy')}
+                   </span>
+                </div>
                 <div className="flex items-center gap-3 text-muted-foreground"><MapPin className="h-4 w-4" /><span className="text-[10px] font-black uppercase tracking-widest truncate">{event.location}</span></div>
               </div>
             </div>

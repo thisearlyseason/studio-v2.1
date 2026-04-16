@@ -64,7 +64,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
 
 export default function SettingsPage() {
-  const { user, updateUser, members, activeTeam, updateMember, manageSubscription, isPro, resetSquadData, checkCodeUniqueness, updateTeamCode } = useTeam();
+  const { 
+    user, updateUser, members, activeTeam, updateMember, 
+    manageSubscription, isPro, resetSquadData, checkCodeUniqueness, 
+    updateTeamCode, isStaff, isPrimaryClubAuthority 
+  } = useTeam();
   const auth = useAuth();
   const router = useRouter();
   const [notifications, setNotifications] = useState(true);
@@ -109,6 +113,7 @@ export default function SettingsPage() {
 
   const currentMember = activeTeam ? members.find(m => m.userId === user.id) : null;
   const isAdmin = activeTeam?.role === 'Admin';
+  const isDemo = activeTeam?.isDemo || user?.isDemo;
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -154,8 +159,8 @@ export default function SettingsPage() {
   };
 
   const handleCodeUpdate = async () => {
-    if (newCode.length < 6 || newCode.length > 20) {
-      toast({ title: "Incompatible Length", description: "Identity codes must be between 6 and 20 characters.", variant: "destructive" });
+    if (newCode.length < 8 || newCode.length > 20) {
+      toast({ title: "Incompatible Length", description: "Identity codes must be between 8 and 20 characters.", variant: "destructive" });
       return;
     }
     
@@ -181,11 +186,32 @@ export default function SettingsPage() {
 
   const handleFinalReset = async () => {
     setIsProcessing(true);
-    await resetSquadData(resetOptions);
-    setIsResetOpen(false);
-    setIsDoubleConfirmOpen(false);
-    setIsProcessing(false);
-    toast({ title: "Season Reset Complete" });
+    try {
+      await resetSquadData(resetOptions);
+      setIsResetOpen(false);
+      setIsDoubleConfirmOpen(false);
+      
+      // RELIABILITY: Clear all local seeding locks before re-initializing
+      localStorage.removeItem('squad_seeding_lock');
+      localStorage.removeItem('sf_session_team_id');
+      
+      const demoKey = activeTeam?.isDemo || user?.isDemo ? (user?.role === 'parent' ? 'parent_demo' : (user?.role === 'adult_player' ? 'player_demo' : 'elite')) : 'elite';
+      
+      toast({ title: "Season Reset Complete", description: "Re-initializing institutional environment..." });
+      
+      setTimeout(() => {
+        window.location.href = `/dashboard?seed_demo=${demoKey}`;
+      }, 1500); // Increased delay for persistence settlement
+    } catch (e) {
+      console.error("Reset Interface Error:", e);
+      toast({ title: "Reset Halted", description: "Encountered a tactical error during purge. Retrying initialization...", variant: "destructive" });
+      localStorage.removeItem('squad_seeding_lock');
+      setTimeout(() => {
+        window.location.href = `/dashboard?seed_demo=elite`;
+      }, 2000);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const lastUpdate = activeTeam?.lastCodeEditedAt ? new Date(activeTeam.lastCodeEditedAt).getTime() : 0;
@@ -375,7 +401,7 @@ export default function SettingsPage() {
                   <div className="p-6 bg-muted/20 rounded-[2rem] border-2 border-transparent flex items-center justify-between">
                     <div className="space-y-1">
                       <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Active Registration Code</p>
-                      <p className="text-3xl font-black text-primary tracking-tighter select-all">{activeTeam?.code || activeTeam?.teamCode || activeTeam?.inviteCode}</p>
+                      <p className={cn("font-black text-primary tracking-tighter select-all", (activeTeam?.code || activeTeam?.teamCode || "").length > 12 ? "text-2xl" : "text-3xl")}>{activeTeam?.code || activeTeam?.teamCode || activeTeam?.inviteCode}</p>
                     </div>
                     {!isLocked && (
                       <Button onClick={() => setIsCodeEditOpen(true)} className="h-10 rounded-xl font-black text-[10px] uppercase tracking-widest px-6 active:scale-95 transition-all">
@@ -386,7 +412,7 @@ export default function SettingsPage() {
                   <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed px-2">
                     {isLocked 
                       ? `Your unique squad identity code is currently cooling down. You can customize it again in approximately ${hoursLeft} hours.`
-                      : "You can personalize your squad code once every 24 hours. Ensure it is unique and memorable for your athletes. Codes must be 6-20 characters."}
+                      : "You can personalize your squad code once every 24 hours. Ensure it is unique and memorable for your athletes. Codes must be 8-20 characters."}
                   </p>
                 </div>
               </div>
@@ -423,7 +449,7 @@ export default function SettingsPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button className="w-full h-14 rounded-full text-sm font-black uppercase tracking-widest shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCodeUpdate} disabled={isProcessing || newCode.length < 6}>
+              <Button className="w-full h-14 rounded-full text-sm font-black uppercase tracking-widest shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCodeUpdate} disabled={isProcessing || newCode.length < 8}>
                 {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Authorize Identity Update"}
               </Button>
             </DialogFooter>
@@ -447,7 +473,7 @@ export default function SettingsPage() {
           </button>
         )}
 
-        {isAdmin && (
+        {isDemo && (
           <button onClick={() => setIsResetOpen(true)} className="w-full p-6 bg-white rounded-3xl flex items-center justify-between border-2 border-transparent hover:border-red-100 shadow-sm transition-all group">
             <div className="flex items-center gap-4">
               <div className="bg-red-100 p-3 rounded-2xl text-red-600 group-hover:bg-red-600 group-hover:text-white transition-colors"><RotateCcw className="h-6 w-6" /></div>

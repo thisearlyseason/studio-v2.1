@@ -6,7 +6,9 @@ import {
   writeBatch,
   collection,
   serverTimestamp,
-  setDoc
+  setDoc,
+  getDocs,
+  deleteDoc
 } from 'firebase/firestore';
 import { generateTournamentSchedule } from '@/lib/scheduler-utils';
 import { format, parseISO } from 'date-fns';
@@ -93,7 +95,7 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
         ],
         tournamentGames: generateTournamentSchedule({
           teams: [
-            { id: 'tt_0', name: teamName || `Team ${teamSuffix || 'A'}` },
+            { id: teamId, name: teamName || `Team ${teamSuffix || 'A'}` },
             { id: 'tt_1', name: 'Thunder' },
             { id: 'tt_2', name: 'Storm' },
             { id: 'tt_3', name: 'Shadows' },
@@ -111,12 +113,24 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
           breakLength: 15,
           tournamentType: 'double_elimination'
         }).map((g, idx) => {
-          // Manually complete a few early games so the bracket looks active
-          if (idx === 0) return { ...g, isCompleted: true, score1: 5, score2: 2 };
-          if (idx === 1) return { ...g, isCompleted: true, score1: 4, score2: 6 };
-          if (idx === 2) return { ...g, isCompleted: true, score1: 8, score2: 1 };
-          if (idx === 3) return { ...g, isCompleted: true, score1: 10, score2: 9 };
-          return g;
+          let gameDate = tomorrow;
+          const r = (g.round || '').toLowerCase();
+          
+          if (r.includes('semi') || r.includes('round 2') || r.includes('wb final')) {
+            gameDate = later;
+          } else if (r.includes('championship') || r.includes('lb final') || r.includes('grand final')) {
+            gameDate = day3;
+          }
+
+          const completed = idx < 4;
+          return { 
+            ...g, 
+            date: gameDate, 
+            isCompleted: completed, 
+            score1: completed ? [5, 4, 8, 10][idx] : 0, 
+            score2: completed ? [2, 6, 1, 9][idx] : 0,
+            matchTeamIds: [g.team1Id, g.team2Id].filter(Boolean)
+          };
         }),
         teamAgreements: {
           [teamName || `Team ${teamSuffix || 'A'}`]: { signedAt: yesterday, signatureCount: 15, captainName: 'Jordan Smith' },
@@ -126,9 +140,9 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
           'Eagles': { signedAt: yesterday, signatureCount: 16, captainName: 'Jane Eagle' }
         }
       },
-      { id: `lg1_${teamId}`, teamId, title: `League Match vs Bears`, eventType: 'game', isLeagueGame: true, date: tomorrow, startTime: '06:00 PM', location: 'Memorial Field', description: 'Primary season league match.' },
-      { id: `lg2_${teamId}`, teamId, title: `League Match vs Eagles`, eventType: 'game', isLeagueGame: true, date: later, startTime: '12:00 PM', location: 'City Park', description: 'Second league fixture of the week.' },
-      { id: `lg3_${teamId}`, teamId, title: `Conference Playoff`, eventType: 'game', isLeagueGame: true, date: day4, startTime: '10:00 AM', location: 'State Complex', description: 'Qualifier for states.' },
+      { id: `lg1_${teamId}`, teamId, title: `League Match vs Bears`, eventType: 'game', isLeagueGame: true, date: tomorrow, startTime: '06:00 PM', location: 'Memorial Field', description: 'Primary season league match.', matchTeamIds: [teamId, 'tt_7'] },
+      { id: `lg2_${teamId}`, teamId, title: `League Match vs Eagles`, eventType: 'game', isLeagueGame: true, date: later, startTime: '12:00 PM', location: 'City Park', description: 'Second league fixture of the week.', matchTeamIds: [teamId, 'tt_5'] },
+      { id: `lg3_${teamId}`, teamId, title: `Conference Playoff`, eventType: 'game', isLeagueGame: true, date: day4, startTime: '10:00 AM', location: 'State Complex', description: 'Qualifier for states.', matchTeamIds: [teamId, 'tt_1'] },
       { id: `prac1_${teamId}`, teamId, title: `Team Tactical Session`, eventType: 'practice', date: later, startTime: '03:30 PM', location: 'West Fields', description: 'Drill-focused training session.' },
       { id: `prac2_${teamId}`, teamId, title: `Conditioning Lab`, eventType: 'practice', date: tomorrow, startTime: '04:00 PM', location: 'Field 4', description: 'Strength and focus drills.' },
       { id: `prac3_${teamId}`, teamId, title: `Morning Skills`, eventType: 'practice', date: day3, startTime: '07:30 AM', location: 'Main Gym', description: 'Voluntary skills session.' },
@@ -138,10 +152,18 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
       {
         eventId: `tourn_${teamId}`,
         brackets: [
-          { id: 'b1', title: 'Championship Bracket', matchups: {
-            "1": { match: 1, round: 1, team1: `${teamSuffix || 'Squad'}`, team2: 'Hawks', score1: 15, score2: 12, status: 'Completed', winner: `${teamSuffix || 'Squad'}` },
-            "2": { match: 2, round: 1, team1: 'Tigers', team2: 'Lions', status: 'Scheduled' }
-          }}
+          { 
+            id: 'b1', 
+            title: 'Elite Series Bracket', 
+            matchups: {
+              "1": { match: 1, round: 'WB Quarterfinals', team1: teamName || 'Squad', team2: 'Thunder', score1: 5, score2: 2, status: 'Completed', winner: teamName || 'Squad' },
+              "2": { match: 2, round: 'WB Quarterfinals', team1: 'Storm', team2: 'Shadows', score1: 4, score2: 6, status: 'Completed', winner: 'Shadows' },
+              "3": { match: 3, round: 'WB Quarterfinals', team1: 'Lions', team2: 'Eagles', score1: 8, score2: 1, status: 'Completed', winner: 'Lions' },
+              "4": { match: 4, round: 'WB Quarterfinals', team1: 'Tigers', team2: 'Bears', score1: 10, score2: 9, status: 'Completed', winner: 'Tigers' },
+              "5": { match: 5, round: 'WB Semi-Finals', team1: teamName || 'Squad', team2: 'Shadows', status: 'Scheduled' },
+              "6": { match: 6, round: 'WB Semi-Finals', team1: 'Lions', team2: 'Tigers', status: 'Scheduled' }
+            }
+          }
         ]
       }
     ],
@@ -238,12 +260,43 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
  * Ensures a stable, predictable reset for demo users.
  */
 export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string) {
+  const nowObj = new Date();
+  const now = nowObj.toISOString();
+  const day = (d: number) => new Date(nowObj.getTime() + d * 86400000).toISOString();
+  const yesterday = day(-1);
+  const tomorrow = day(1);
+  const later = day(2);
+  const day2 = day(2);
+  const day3 = day(3);
+  const day4 = day(4);
+  const weekAgo = day(-7);
+
   const isParentDemo = planId === 'parent_demo';
   const isPlayerDemo = planId === 'player_demo';
   const isEliteDemo = ['elite_teams', 'elite_league', 'league', 'elite'].includes(planId);
   const isSchoolDemo = planId === 'school_demo' || planId === 'school';
   const isProTier = planId !== 'starter_squad' && planId !== 'free';
-  
+
+  // --- PRE-FLIGHT CLEANUP ROUTINE ---
+  // If the user is running the seeder multiple times, ghost events and overlapping teams pile up.
+  // We wipe their existing team memberships and attached events for a clean slate.
+  try {
+    const membershipsSnapshot = await getDocs(collection(db, 'users', userId, 'teamMemberships'));
+    for (const membershipDoc of membershipsSnapshot.docs) {
+      const existingTeamId = membershipDoc.id;
+      // Wipe all events attached to this team to prevent itinerary overlap
+      const eventsRef = collection(db, 'teams', existingTeamId, 'events');
+      const eventsSnap = await getDocs(eventsRef);
+      for (const eDoc of eventsSnap.docs) {
+        await deleteDoc(doc(db, 'teams', existingTeamId, 'events', eDoc.id));
+      }
+      // Sever the membership
+      await deleteDoc(doc(db, 'users', userId, 'teamMemberships', existingTeamId));
+    }
+  } catch (err) {
+    console.warn("Cleanup routine skipped or failed (safe to ignore if first run): ", err);
+  }
+
   // Map legacy/demo plan IDs to new schema
   const planTypeMap: Record<string, string> = {
     'starter_squad': 'free',
@@ -276,15 +329,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const role = (isParentDemo || isPlayerDemo) ? 'Member' : 'Admin';
 
   let batch = writeBatch(db);
-  const nowObj = new Date();
-  const now = nowObj.toISOString();
-  const tomorrow = new Date(nowObj.getTime() + 86400000).toISOString();
-  const later = new Date(nowObj.getTime() + 172800000).toISOString();
-  const yesterday = new Date(nowObj.getTime() - 86400000).toISOString();
-  const weekAgo = new Date(nowObj.getTime() - 604800000).toISOString();
-  const day2 = new Date(nowObj.getTime() + 2 * 86400000).toISOString();
-  const day3 = new Date(nowObj.getTime() + 3 * 86400000).toISOString();
-  const day4 = new Date(nowObj.getTime() + 4 * 86400000).toISOString();
 
   // 1. Core Profile Reset
   batch.set(doc(db, 'users', userId), clean({
@@ -412,11 +456,13 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         ];
 
         variants.forEach(v => {
+            const uniqueCode = `SQUAD-${v.id.toUpperCase().slice(-14)}`;
             batch.set(doc(db, 'teams', v.id), clean({
                 id: v.id,
                 teamName: v.name,
-                code: v.id.slice(-6).toUpperCase(),
-                teamCode: v.id.slice(-6).toUpperCase(),
+                code: uniqueCode,
+                teamCode: uniqueCode,
+                inviteCode: uniqueCode,
                 ownerUserId: userId,
                 isPro: true,
                 planId: 'team',
@@ -439,13 +485,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                 id: userId, userId, teamId: v.id, name: 'Guest Parent', role: 'parent', position: 'Guardian', joinedAt: now, isDemo: true
             }));
 
-            // Events for this team
+            // Pull rich sub-resources from the static blueprint (NO EVENTS — handled by staggered parent block below)
             const data = GET_DEMO_DATA(v.id, userId, v.name, v.name);
-            data.events.forEach(e => {
-                batch.set(doc(db, 'teams', v.id, 'events', e.id), clean({ ...e, teamId: v.id }));
-            });
-            
-            // Seed sub-resource collections
             data.members.forEach(m => {
               batch.set(doc(db, 'teams', v.id, 'members', m.id), clean({ ...m, teamId: v.id, joinedAt: now, isDemo: true }));
             });
@@ -453,7 +494,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             data.fundraising.forEach(fund => batch.set(doc(db, 'teams', v.id, 'fundraising', fund.id), clean(fund)));
             data.equipment.forEach(eq => batch.set(doc(db, 'teams', v.id, 'equipment', eq.id), clean(eq)));
             data.incidents.forEach(inc => batch.set(doc(db, 'teams', v.id, 'incidents', inc.id), clean(inc)));
-            data.games.forEach(g => batch.set(doc(db, 'teams', v.id, 'games', g.id), clean({ ...g, teamId: v.id, createdAt: now })));
+            data.games.forEach(g => {
+                const matchTeamIds = [v.id, 'mock_opp'].filter(Boolean);
+                batch.set(doc(db, 'teams', v.id, 'games', g.id), clean({ ...g, teamId: v.id, matchTeamIds, createdAt: now }));
+            });
             data.drills.forEach(d => batch.set(doc(db, 'teams', v.id, 'drills', d.id), clean(d)));
             data.documents.forEach(d => batch.set(doc(db, 'teams', v.id, 'documents', d.id), clean({ ...d, ownerUserId: userId, teamId: v.id })));
             data.files.forEach(f => batch.set(doc(db, 'teams', v.id, 'files', f.id), clean({ ...f, teamId: v.id })));
@@ -471,7 +515,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         const juniorDob = new Date(nowObj.getFullYear() - 9, 5, 15).toISOString().split('T')[0]; // 9 years old
         batch.set(doc(db, 'players', juniorId), clean({
             id: juniorId, firstName: 'Junior', lastName: 'Guest', isMinor: true, parentId: userId, userId: null,
-            dateOfBirth: juniorDob,
+            dateOfBirth: juniorDob, isDemo: true,
             hasLogin: false, createdAt: now, joinedTeamIds: [strikerId], ageGroup: 'U10', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=junior',
             sports: ['Basketball'], primaryPosition: 'Point Guard'
         }));
@@ -481,7 +525,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         const alexEmail = `alex.guest_${userId.slice(-4)}@thesquad.pro`;
         batch.set(doc(db, 'players', alexId), clean({
             id: alexId, firstName: 'Alex', lastName: 'Guest', isMinor: true, parentId: userId, userId: alexId,
-            dateOfBirth: alexDob,
+            dateOfBirth: alexDob, isDemo: true,
             hasLogin: true, pendingInviteEmail: alexEmail, createdAt: now, joinedTeamIds: [lakerId], ageGroup: 'U17', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=alex',
             sports: ['Basketball', 'Soccer', 'Cross Country'], primaryPosition: 'Striker'
         }));
@@ -503,13 +547,24 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         }));
 
         tids.forEach(tid => {
+            const isJunior = tid === strikerId;
+            
+            // Stagger timelines: Junior gets Early Tournament & Late League. Alex gets Early League & Late Tournament.
+            const tournOffset = isJunior ? 1 : 11; // Junior starts Day 1, Alex starts Day 11
+            const lgOffset = isJunior ? 7 : 1;     // Junior starts League Day 7, Alex starts League Day 1
+            const pracOffset = isJunior ? 4 : 4;   // Practices start day 4
+
+            const tournStart = new Date(nowObj.getTime() + tournOffset * 86400000).toISOString();
+            const tournEnd = new Date(nowObj.getTime() + (tournOffset + 2) * 86400000).toISOString(); // 3 day duration
+
             // Sync the league games into team events for immediate visibility
+            // IDs are scoped to tid to prevent Strikers/Lakers overwriting each other
             const leagueGames = [
-              { id: `lg_${leagueId}_lg1`, teamId: tid, title: `Conference Match vs ${tid === strikerId ? 'Lakers' : 'Strikers'}`, eventType: 'game', isLeagueGame: true, date: tomorrow, startTime: '10:00 AM', location: 'City Arena', description: 'National broadcast game.' },
-              { id: `lg_${leagueId}_lg2`, teamId: tid, title: `Division Rival Match vs ${tid === strikerId ? 'Hawks' : 'Tigers'}`, eventType: 'game', isLeagueGame: true, date: later, startTime: tid === strikerId ? '12:00 PM' : '02:00 PM', location: tid === strikerId ? 'Field 7' : 'Field 2', description: 'Critical seeding match.' },
-              { id: `lg_${leagueId}_lg3`, teamId: tid, title: `Regional Qualifier`, eventType: 'game', isLeagueGame: true, date: new Date(nowObj.getTime() + 432000000).toISOString(), startTime: '03:30 PM', location: 'State Complex', description: 'Qualifier for states.' },
-              { id: `lg_${leagueId}_lg4`, teamId: tid, title: `Pre-Season Scrimmage`, eventType: 'game', isLeagueGame: true, date: yesterday, startTime: '04:00 PM', location: 'Home Stadium', description: 'Early season tune-up.' },
-              { id: `lg_${leagueId}_lg5`, teamId: tid, title: `Mid-Season Invitational`, eventType: 'game', isLeagueGame: true, date: new Date(nowObj.getTime() + 604800000).toISOString(), startTime: '11:00 AM', location: 'Summit Center', description: 'League-wide showcase event.' }
+              { id: `lg_${tid}_1`, teamId: tid, title: `Conference Match vs ${isJunior ? 'Lakers' : 'Strikers'}`, eventType: 'game', isLeagueGame: true, date: new Date(nowObj.getTime() + (lgOffset) * 86400000).toISOString(), startTime: '10:00 AM', location: 'City Arena', description: 'National broadcast game.', matchTeamIds: [tid, isJunior ? lakerId : strikerId] },
+              { id: `lg_${tid}_2`, teamId: tid, title: `Division Rival Match vs ${isJunior ? 'Hawks' : 'Tigers'}`, eventType: 'game', isLeagueGame: true, date: new Date(nowObj.getTime() + (lgOffset + 2) * 86400000).toISOString(), startTime: isJunior ? '12:00 PM' : '02:00 PM', location: isJunior ? 'Field 7' : 'Field 2', description: 'Critical seeding match.', matchTeamIds: [tid, isJunior ? 'hawks_id' : 'tigers_id'] },
+              { id: `lg_${tid}_3`, teamId: tid, title: `Regional Qualifier`, eventType: 'game', isLeagueGame: true, date: new Date(nowObj.getTime() + (lgOffset + 4) * 86400000).toISOString(), startTime: '03:30 PM', location: 'State Complex', description: 'Qualifier for states.', matchTeamIds: [tid] },
+              { id: `lg_${tid}_4`, teamId: tid, title: `Pre-Season Scrimmage`, eventType: 'game', isLeagueGame: true, date: yesterday, startTime: '04:00 PM', location: 'Home Stadium', description: 'Early season tune-up.', matchTeamIds: [tid] },
+              { id: `lg_${tid}_5`, teamId: tid, title: `Mid-Season Invitational`, eventType: 'game', isLeagueGame: true, date: new Date(nowObj.getTime() + (lgOffset + 8) * 86400000).toISOString(), startTime: '11:00 AM', location: 'Summit Center', description: 'League-wide showcase event.', matchTeamIds: [tid] }
             ];
             leagueGames.forEach(lg => {
               batch.set(doc(db, 'teams', tid, 'events', lg.id), clean(lg));
@@ -518,8 +573,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             // Multi-day Tournament (3 Days)
             const tournamentId = `tourn_${tid}_demo`;
             const tournamentTeamsData = [
-              { id: 'tt_0', name: 'Strikers', coach: 'Mike Strike', email: 'mike@strikers.com', source: 'manual', complianceStatus: 'verified' },
-              { id: 'tt_1', name: 'Lakers', coach: 'Jim Lake', email: 'jim@lakers.com', source: 'manual', complianceStatus: 'verified' },
+              { id: strikerId, name: 'Strikers', coach: 'Mike Strike', email: 'mike@strikers.com', source: 'manual', complianceStatus: 'verified' },
+              { id: lakerId, name: 'Lakers', coach: 'Jim Lake', email: 'jim@lakers.com', source: 'manual', complianceStatus: 'verified' },
               { id: 'tt_2', name: 'Hawks', coach: 'Sarah Hawk', email: 'sarah@hawks.com', source: 'manual', complianceStatus: 'pending' },
               { id: 'tt_3', name: 'Tigers', coach: 'Leo Tiger', email: 'leo@tigers.com', source: 'manual', complianceStatus: 'verified' },
               { id: 'tt_4', name: 'Eagles', coach: 'Jane Eagle', email: 'jane@eagles.com', source: 'manual', complianceStatus: 'verified' },
@@ -530,23 +585,27 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             const tournamentGames = generateTournamentSchedule({
               teams: tournamentTeamsData,
               fields: ['Arena 1', 'Main Field'],
-              startDate: tomorrow,
-              endDate: day3,
+              startDate: tournStart,
+              endDate: tournEnd,
               startTime: '08:00',
               endTime: '20:00',
               gameLength: 60,
               breakLength: 15,
-              tournamentType: 'double_elimination'
-            });
+              tournamentType: isJunior ? 'double_elimination' : 'pool_play_knockout',
+              gamesPerTeam: 3
+            }).map(g => ({
+              ...g,
+              matchTeamIds: [g.team1Id, g.team2Id].filter(Boolean)
+            }));
 
             batch.set(doc(db, 'teams', tid, 'events', tournamentId), clean({
               id: tournamentId,
               teamId: tid,
-              title: tid === strikerId ? 'City Championship Tournament' : 'Lakers Spring Showcase',
+              title: isJunior ? 'City Championship Tournament' : 'Lakers Spring Showcase',
               eventType: 'tournament',
               isTournament: true,
-              date: tomorrow,
-              endDate: day3,
+              date: tournStart,
+              endDate: tournEnd,
               location: 'Premier Sports Park',
               description: 'The final 3-day showdown for the regional title.',
               tournamentTeams: tournamentTeamsData.map(t => t.name),
@@ -563,8 +622,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
             // Regular practices
             const practices = [
-              { id: `prac1_${tid}`, teamId: tid, title: 'Tactical Drill Session', eventType: 'practice', date: tomorrow, startTime: '04:00 PM', location: 'Practice Court A' },
-              { id: `prac2_${tid}`, teamId: tid, title: 'Conditioning & Skills', eventType: 'practice', date: later, startTime: '05:30 PM', location: 'Main Gym' }
+              { id: `prac1_${tid}`, teamId: tid, title: 'Tactical Drill Session', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset) * 86400000).toISOString(), startTime: '04:00 PM', location: 'Practice Court A' },
+              { id: `prac2_${tid}`, teamId: tid, title: 'Strength & Conditioning', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset + 2) * 86400000).toISOString(), startTime: '06:00 PM', location: 'Gymnasium' },
+              { id: `prac3_${tid}`, teamId: tid, title: 'Morning Performance Lab', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset + 3) * 86400000).toISOString(), startTime: '06:30 AM', location: 'West Field' },
+              { id: `prac4_${tid}`, teamId: tid, title: 'Institutional Strategy Review', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset + 4) * 86400000).toISOString(), startTime: '07:00 PM', location: 'Clubhouse' }
             ];
             practices.forEach(p => batch.set(doc(db, 'teams', tid, 'events', p.id), clean(p)));
         });
@@ -634,8 +695,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         let teamType = isSchoolDemo ? (isPrimary ? 'school' : 'school_squad') : 'youth';
         let schoolId = isSchoolDemo ? (isPrimary ? teamId : `demo_${planId}_${userId.slice(-4)}_springfieldhigh`) : undefined;
 
+        const uniqueCode = `SQUAD-${teamId.toUpperCase().slice(-14)}`; 
         batch.set(doc(db, 'teams', teamId), clean({ 
-            id: teamId, teamName: name, code: teamId.slice(-6).toUpperCase(), teamCode: teamId.slice(-6).toUpperCase(),
+            id: teamId, teamName: name, 
+            code: uniqueCode, teamCode: uniqueCode, inviteCode: uniqueCode,
             ownerUserId: userId, isPro: isProTier || isSchoolDemo, planId: plan_type, sport: isSchoolDemo ? 'Basketball' : 'Multi-Sport', 
             isDemo: true, type: teamType, schoolId, leagueId: !isParentDemo ? leagueId : undefined,
             createdAt: now, heroImageUrl: `https://picsum.photos/seed/${teamId}hero/1200/400`,
@@ -706,7 +769,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         data.equipment.forEach(eq => batch.set(doc(db, 'teams', teamId, 'equipment', eq.id), clean(eq)));
         data.incidents.forEach(inc => batch.set(doc(db, 'teams', teamId, 'incidents', inc.id), clean(inc)));
         // Seed game results for Scorekeeping page
-        data.games.forEach(g => batch.set(doc(db, 'teams', teamId, 'games', g.id), clean({ ...g, teamId, createdAt: now })));
+        data.games.forEach(g => {
+            const matchTeamIds = g.matchTeamIds || [teamId, g.opponentId].filter(Boolean);
+            batch.set(doc(db, 'teams', teamId, 'games', g.id), clean({ ...g, teamId, matchTeamIds, createdAt: now }));
+        });
         // Seed files for Library
         data.files.forEach(f => batch.set(doc(db, 'teams', teamId, 'files', f.id), clean({ ...f, teamId })));
         // Seed document signatures for Coaches Corner / Files

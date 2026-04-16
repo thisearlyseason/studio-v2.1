@@ -217,8 +217,9 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
     }
   } else if (tournamentType === 'single_elimination' || tournamentType === 'double_elimination') {
     const isDouble = tournamentType === 'double_elimination';
-    const shuffled = shuffle([...teamList]);
-    const numTeams = shuffled.length;
+    // Instead of shuffling, maintain the competitive ranking index from the submitted setup
+    const seededTeams = [...teamList]; 
+    const numTeams = seededTeams.length;
     const totalRounds = Math.max(1, Math.ceil(Math.log2(numTeams)));
     const bracketSize = Math.pow(2, totalRounds);
 
@@ -246,86 +247,144 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
        }
     }
 
-    // 3. Populate Round 1 Teams
+    // 3. Populate Round 1 Teams using Topological Seeding Math (1v8, 4v5, 2v7, 3v6)
+    let seeds = [0];
+    for (let r = 1; r < totalRounds; r++) {
+       const nextSeeds = [];
+       const sz = Math.pow(2, r);
+       for (const s of seeds) {
+          nextSeeds.push(s);
+          nextSeeds.push(sz - 1 - s);
+       }
+       seeds = nextSeeds;
+    }
+
     const firstRound = roundMatches[0];
-    let teamIdx = 0;
     for (let i = 0; i < firstRound.length; i++) {
-        firstRound[i].t1 = teamIdx < numTeams ? shuffled[teamIdx].name : 'BYE';
-        firstRound[i].t1Id = teamIdx < numTeams ? shuffled[teamIdx].id : 'bye';
-        teamIdx++;
+        const t1Idx = seeds[i * 2];
+        const t2Idx = seeds[i * 2 + 1];
+
+        firstRound[i].t1 = t1Idx !== undefined && t1Idx < numTeams ? seededTeams[t1Idx].name : 'BYE';
+        firstRound[i].t1Id = t1Idx !== undefined && t1Idx < numTeams ? seededTeams[t1Idx].id : 'bye';
         
-        firstRound[i].t2 = teamIdx < numTeams ? shuffled[teamIdx].name : 'BYE';
-        firstRound[i].t2Id = teamIdx < numTeams ? shuffled[teamIdx].id : 'bye';
-        teamIdx++;
+        firstRound[i].t2 = t2Idx !== undefined && t2Idx < numTeams ? seededTeams[t2Idx].name : 'BYE';
+        firstRound[i].t2Id = t2Idx !== undefined && t2Idx < numTeams ? seededTeams[t2Idx].id : 'bye';
     }
 
     roundMatches.forEach(rm => rm.forEach(m => matchups.push(m)));
 
     // 4. Generate Losers Bracket Topology IF Double Elimination
     if (isDouble) {
-       // High-Fidelity DE Topology for 8-team demo standard:
-       // LB R1: 2 matches (Takes 4 losers from WB R1)
-       // LB R2: 2 matches (Takes 2 winners from LB R1 + 2 losers from WB R2)
-       // LB Finals: 1 match (Takes 2 winners from LB R2)
-       
-       const lbR1 = [
-         { id: `lb_${Date.now()}_1_0`, round: 'LB Round 1', t1: 'TBD', t2: 'TBD' },
-         { id: `lb_${Date.now()}_1_1`, round: 'LB Round 1', t1: 'TBD', t2: 'TBD' }
-       ];
-       const lbR2 = [
-         { id: `lb_${Date.now()}_2_0`, round: 'LB Round 2', t1: 'TBD', t2: 'TBD' },
-         { id: `lb_${Date.now()}_2_1`, round: 'LB Round 2', t1: 'TBD', t2: 'TBD' }
-       ];
-       const lbFinal = { id: `lb_final_${Date.now()}`, round: 'LB Finals', t1: 'TBD', t2: 'TBD' };
-       const grandFinalId = `gf_${Date.now()}`;
+      // Dynamic High-Fidelity DE Topology
+      const lbRounds: any[][] = [];
+      const wbLosersPerRound: any[][] = roundMatches.map(rm => rm.map(m => m.id));
+      
+      // We need LB rounds to catch losers from each WB round.
+      // Usually, LB has more rounds because it also includes matches between LB winners.
+      
+      let currentLBRound: any[] = [];
+      const lbMatchups: any[] = [];
 
-       // Link LB R1 -> LB R2
-       lbR1[0].winnerTo = lbR2[0].id; lbR1[0].winnerToSlot = 'team1';
-       lbR1[1].winnerTo = lbR2[1].id; lbR1[1].winnerToSlot = 'team1';
+      // HELPER: Link winner/loser to another match
+      const linkMatch = (source: any, targetId: string, slot: 'team1' | 'team2', isWinner: boolean) => {
+        if (isWinner) {
+          source.winnerTo = targetId;
+          source.winnerToSlot = slot;
+        } else {
+          source.loserTo = targetId;
+          source.loserToSlot = slot;
+        }
+      };
 
-       // Link LB R2 -> LB Finals
-       lbR2[0].winnerTo = lbFinal.id; lbR2[0].winnerToSlot = 'team1';
-       lbR2[1].winnerTo = lbFinal.id; lbR2[1].winnerToSlot = 'team2';
+      // Basic DE Strategy: 
+      // For each WB round 'r', we need to catch its losers.
+      // WB R0 (n games) -> LB R0 (n/2 games)
+      // WB R1 (n/2 games) -> LB R1...
+      
+      // For 8 teams (R0: 4, R1: 2, R2: 1):
+      // LB R1: 2 games (takes WB R0 losers)
+      // LB R2: 2 games (takes LB R1 winners + WB R1 losers)
+      // LB R3: 1 game (takes LB R2 winners)
+      // LB R4: 1 game (takes LB R3 winner + WB R2 loser)
+      // Grand Final
 
-       // Link WB Final (r=2) loser to LB Final
-       const wbFinalMatch = roundMatches[totalRounds - 1][0];
-       wbFinalMatch.loserTo = lbFinal.id;
-       wbFinalMatch.loserToSlot = 'team2';
+      // For 4 teams (R0: 2, R1: 1):
+      // LB R1: 1 game (takes WB R0 losers)
+      // LB R2: 1 game (takes LB R1 winner + WB R1 loser)
+      // Grand Final
 
-       // Link LB Final winner to Grand Final
-       lbFinal.winnerTo = grandFinalId;
-       lbFinal.winnerToSlot = 'team2';
+      if (totalRounds >= 2) {
+        const grandFinalId = `gf_${Date.now()}`;
+        
+        // --- LB PHASE 1: Capture First Round Losers ---
+        const wbR0 = roundMatches[0];
+        const lbr1Count = Math.floor(wbR0.length / 2);
+        const lbr1: any[] = [];
+        for (let i = 0; i < lbr1Count; i++) {
+          const id = `lb_r1_${i}_${Date.now()}`;
+          const m = { id, round: 'LB Round 1', t1: 'TBD', t2: 'TBD' };
+          lbr1.push(m); lbMatchups.push(m);
+        }
+        
+        // Link WB R0 Losers to LB R1
+        for (let i = 0; i < wbR0.length; i++) {
+          const targetIdx = Math.floor(i / 2);
+          const slot = i % 2 === 0 ? 'team1' : 'team2';
+          if (lbr1[targetIdx]) linkMatch(wbR0[i], lbr1[targetIdx].id, slot, false);
+        }
 
-       // Link WB Final winner to Grand Final
-       wbFinalMatch.winnerTo = grandFinalId;
-       wbFinalMatch.winnerToSlot = 'team1';
+        // --- LB PHASE 2+: Catch subsequent losers and progress ---
+        let lastLBRound = lbr1;
+        for (let r = 1; r < totalRounds; r++) {
+          const wbRound = roundMatches[r];
+          const isFinalWB = r === totalRounds - 1;
 
-       // Add Grand Final
-       matchups.push({
-           id: grandFinalId,
-           round: 'Championship',
-           t1: 'TBD (WB Winner)',
-           t2: 'TBD (LB Winner)',
-           t1Id: 'tbd', t2Id: 'tbd'
-       });
+          // Step A: LB Inter-round (WB Losers meet LB winners)
+          const lbrX: any[] = [];
+          for (let i = 0; i < wbRound.length; i++) {
+            const id = `lb_rx_${r}_${i}_${Date.now()}`;
+            const label = isFinalWB ? 'LB Finals' : `LB Round ${r * 2}`;
+            const m = { id, round: label, t1: 'TBD', t2: 'TBD' };
+            lbrX.push(m); lbMatchups.push(m);
+            
+            // Winners of last LB round go to Team 1
+            if (lastLBRound[i]) linkMatch(lastLBRound[i], m.id, 'team1', true);
+            // Losers of current WB round go to Team 2
+            linkMatch(wbRound[i], m.id, 'team2', false);
+          }
 
-       // Crossover: WB R1 (4 games) losers drop to LB R1 (2 games)
-       // WB R1 Games 0,1 -> LB R1 Game 0 (slots team1, team2)
-       // WB R1 Games 2,3 -> LB R1 Game 1 (slots team1, team2)
-       roundMatches[0][0].loserTo = lbR1[0].id; roundMatches[0][0].loserToSlot = 'team1';
-       roundMatches[0][1].loserTo = lbR1[0].id; roundMatches[0][1].loserToSlot = 'team2';
-       roundMatches[0][2].loserTo = lbR1[1].id; roundMatches[0][2].loserToSlot = 'team1';
-       roundMatches[0][3].loserTo = lbR1[1].id; roundMatches[0][3].loserToSlot = 'team2';
+          if (isFinalWB) {
+            // Link LB Final winner to Grand Final
+            linkMatch(lbrX[0], grandFinalId, 'team2', true);
+            // Link WB Final winner to Grand Final
+            linkMatch(wbRound[0], grandFinalId, 'team1', true);
+          } else {
+            // Step B: LB Internal Progression (Winners play each other)
+            const lbrY: any[] = [];
+            const nextCount = Math.floor(lbrX.length / 2);
+            for (let i = 0; i < nextCount; i++) {
+              const id = `lb_ry_${r}_${i}_${Date.now()}`;
+              const m = { id, round: `LB Round ${r * 2 + 1}`, t1: 'TBD', t2: 'TBD' };
+              lbrY.push(m); lbMatchups.push(m);
+              
+              linkMatch(lbrX[i*2], m.id, 'team1', true);
+              linkMatch(lbrX[i*2+1], m.id, 'team2', true);
+            }
+            lastLBRound = lbrY.length > 0 ? lbrY : lbrX;
+          }
+        }
 
-       // Crossover: WB R2 (2 games) losers drop to LB R2 (2 games)
-       // WB R2 Game 0 -> LB R2 Game 0 (slot team2)
-       // WB R2 Game 1 -> LB R2 Game 1 (slot team2)
-       roundMatches[1][0].loserTo = lbR2[0].id; roundMatches[1][0].loserToSlot = 'team2';
-       roundMatches[1][1].loserTo = lbR2[1].id; roundMatches[1][1].loserToSlot = 'team2';
+        // Add Grand Final
+        lbMatchups.push({
+          id: grandFinalId,
+          round: 'Championship',
+          t1: 'TBD (WB Winner)',
+          t2: 'TBD (LB Winner)',
+          t1Id: 'tbd', t2Id: 'tbd'
+        });
+      }
 
-       lbR1.forEach(m => matchups.push(m));
-       lbR2.forEach(m => matchups.push(m));
-       matchups.push(lbFinal);
+      lbMatchups.forEach(m => matchups.push(m));
     }
   }
 
@@ -435,7 +494,10 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
       const MIN_REST_MINUTES = config.gameLength + config.breakLength; // Minimum gap between games
       const currentSlotTime = slot.time;
       
-      const t1IsBusy = finalGames.some(g => {
+      const t1IsTBD = t1.includes('TBD') || id1 === 'tbd';
+      const t2IsTBD = t2.includes('TBD') || id2 === 'tbd';
+
+      const t1IsBusy = !t1IsTBD && finalGames.some(g => {
         const matchT1 = (g.team1Id === id1 || g.team1 === t1);
         const matchT2 = (g.team2Id === id1 || g.team2 === t1);
         if (!matchT1 && !matchT2) return false;
@@ -444,7 +506,7 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
         return Math.abs(differenceInMinutes(currentSlotTime, gTime)) < MIN_REST_MINUTES;
       });
 
-      const t2IsBusy = finalGames.some(g => {
+      const t2IsBusy = !t2IsTBD && finalGames.some(g => {
         const matchT1 = (g.team1Id === id2 || g.team1 === t2);
         const matchT2 = (g.team2Id === id2 || g.team2 === t2);
         if (!matchT1 && !matchT2) return false;
@@ -456,8 +518,8 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
       if (t1IsBusy || t2IsBusy) continue;
 
       // 2. Handle Double Header Logic
-      const t1DailyCount = teamGamesPerDay.get(`${dayKey}:${id1}`) || 0;
-      const t2DailyCount = teamGamesPerDay.get(`${dayKey}:${id2}`) || 0;
+      const t1DailyCount = t1IsTBD ? 0 : (teamGamesPerDay.get(`${dayKey}:${id1}`) || 0);
+      const t2DailyCount = t2IsTBD ? 0 : (teamGamesPerDay.get(`${dayKey}:${id2}`) || 0);
 
       if (config.doubleHeaderOption === 'none') {
         if (t1DailyCount >= 1 || t2DailyCount >= 1) continue;

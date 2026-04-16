@@ -1174,35 +1174,59 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [teams, userProfile, isSuperAdmin, activeTeam, firebaseUser]);
 
   // --- HOUSEHOLD & GLOBAL QUERIES (Moved here to avoid initialization order errors) ---
-  const householdEventsQuery = useMemoFirebase(() => {
-    if (!db || !firebaseUser?.uid || (!isParent && !isPlayer)) return null;
-    
-    // Hardening: Aggregate all team IDs from Parent AND ALL children
+  const [householdEvents, setHouseholdEvents] = useState<TeamEvent[]>([]);
+  const [householdGames, setHouseholdGames] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!db || !firebaseUser?.uid || (!isParent && !isPlayer)) return;
+
     const myOwnTeamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
     const childrenTeamIds = (myChildren || []).flatMap(c => c.joinedTeamIds || []);
     
     const allTeamIds = Array.from(new Set([...myOwnTeamIds, ...childrenTeamIds])).filter(Boolean);
     
-    if (allTeamIds.length === 0) return null;
-    
-    // Firestore 'in' query limit is 30. For institutional scales, we slice to the first 30.
-    return query(collectionGroup(db, 'events'), where('teamId', 'in', allTeamIds.slice(0, 30)));
-  }, [db, firebaseUser?.uid, teamsData, myChildren, isParent, isPlayer]);
-  
-  const { data: householdEventsData } = useCollection<TeamEvent>(householdEventsQuery);
-  const householdEvents = useMemo(() => householdEventsData || [], [householdEventsData]);
+    if (allTeamIds.length === 0) {
+      setHouseholdEvents([]);
+      setHouseholdGames([]);
+      return;
+    }
 
-  const householdGamesQuery = useMemoFirebase(() => {
-    if (!db || !firebaseUser?.uid || (!isParent && !isPlayer)) return null;
-    const myOwnTeamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
-    const childrenTeamIds = (myChildren || []).flatMap(c => c.joinedTeamIds || []);
-    const allTeamIds = Array.from(new Set([...myOwnTeamIds, ...childrenTeamIds])).filter(Boolean);
-    if (allTeamIds.length === 0) return null;
-    return query(collectionGroup(db, 'games'), where('teamId', 'in', allTeamIds.slice(0, 30)));
-  }, [db, firebaseUser?.uid, teamsData, myChildren, isParent, isPlayer]);
+    const unsubscribers: (() => void)[] = [];
+    const eventMaps = new Map<string, TeamEvent[]>();
+    const gameMaps = new Map<string, any[]>();
 
-  const { data: householdGamesData } = useCollection<any>(householdGamesQuery);
-  const householdGames = useMemo(() => householdGamesData || [], [householdGamesData]);
+    const flattenAndSet = () => {
+       const allE: TeamEvent[] = [];
+       eventMaps.forEach(arr => allE.push(...arr));
+       setHouseholdEvents(allE);
+
+       const allG: any[] = [];
+       gameMaps.forEach(arr => allG.push(...arr));
+       setHouseholdGames(allG);
+    };
+
+    allTeamIds.forEach(tid => {
+       const eu = onSnapshot(collection(db, 'teams', tid, 'events'), (snap) => {
+          const docs: TeamEvent[] = [];
+          snap.forEach(d => docs.push({ id: d.id, ...d.data() } as TeamEvent));
+          eventMaps.set(tid, docs);
+          flattenAndSet();
+       }, (err) => console.error("Event Sync Error:", err));
+
+       const gu = onSnapshot(collection(db, 'teams', tid, 'games'), (snap) => {
+          const docs: any[] = [];
+          snap.forEach(d => docs.push({ id: d.id, ...d.data() } as any));
+          gameMaps.set(tid, docs);
+          flattenAndSet();
+       }, (err) => console.error("Game Sync Error:", err));
+
+       unsubscribers.push(eu, gu);
+    });
+
+    return () => {
+       unsubscribers.forEach(fn => fn());
+    };
+  }, [db, firebaseUser?.uid, isParent, isPlayer, teamsData, myChildren]);
 
   const householdMembersQuery = useMemoFirebase(() => (db && firebaseUser?.uid && isAuthResolved && isParent) ? query(collectionGroup(db, 'members'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid, isAuthResolved, isParent]);
   const { data: householdMembersData } = useCollection<Member>(householdMembersQuery);
@@ -1517,7 +1541,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       }
       return ret;
     };
-    const teamCode = generateSecureCode();
+
+    let teamCode = generateSecureCode();
+    // Ensure uniqueness for the new team code
+    let isUnique = await checkCodeUniqueness(teamCode);
+    let attempts = 0;
+    while (!isUnique && attempts < 5) {
+      teamCode = generateSecureCode();
+      isUnique = await checkCodeUniqueness(teamCode);
+      attempts++;
+    }
     const isSchool = type === 'school' || type === 'school_squad';
     
     const schoolIdToUse = schoolId || (type === 'school_squad' && activeTeam?.id ? activeTeam.id : null);
@@ -1714,7 +1747,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const checkCodeUniqueness = useCallback(async (code: string) => {
     if (!db) return true;
-    const q = query(collectionGroup(db, 'teams'), where('inviteCode', '==', code.toUpperCase()), limit(1));
+    const normalized = code.toUpperCase().trim();
+    // Rigorous verification across all identity fields to ensure absolute uniqueness
+    const q = query(
+      collection(db, 'teams'), 
+      or(
+        where('inviteCode', '==', normalized),
+        where('teamCode', '==', normalized),
+        where('code', '==', normalized)
+      ), 
+      limit(1)
+    );
     const snap = await getDocs(q);
     return snap.empty;
   }, [db]);
@@ -1754,36 +1797,35 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db, firebaseUser]);
 
   const resetSquadData = useCallback(async (cats: string[]) => { 
-    if (!activeTeam?.id || !db) return; 
-    const batch = writeBatch(db); 
+    if (!db || !firebaseUser?.uid) return; 
     
-    if (cats.includes('games') || cats.includes('complete')) { 
-      const gs = await getDocs(collection(db, 'teams', activeTeam.id, 'games')); 
-      gs.forEach(d => batch.delete(d.ref)); 
-    } 
-    
-    if (cats.includes('events') || cats.includes('complete')) { 
-      const es = await getDocs(collection(db, 'teams', activeTeam.id, 'events')); 
-      es.forEach(d => batch.delete(d.ref)); 
-    }
+    try {
+      const batch = writeBatch(db); 
+      
+      // 1. Wipe current active team data if exists
+      if (activeTeam?.id) {
+        const paths = ['games', 'events', 'members', 'incidents', 'equipment', 'groupChats', 'feedPosts', 'files', 'documents'];
+        const collections = await Promise.all(
+          paths.map(path => getDocs(collection(db, 'teams', activeTeam.id, path)))
+        );
+        collections.forEach(snap => snap.forEach(d => batch.delete(d.ref)));
+      }
 
-    if (cats.includes('roster') || cats.includes('complete')) {
-      const ms = await getDocs(collection(db, 'teams', activeTeam.id, 'members'));
-      ms.forEach(d => {
-        // Don't delete the owner!
-        if (d.id !== firebaseUser?.uid && d.data().role !== 'Admin') {
-          batch.delete(d.ref);
-        }
-      });
-    }
+      // 2. AGGRESSIVE WIPE: Clear all memberships if doing complete wipe
+      if (cats.includes('complete')) {
+        const memberships = await getDocs(collection(db, 'users', firebaseUser.uid, 'teamMemberships'));
+        memberships.forEach(d => batch.delete(d.ref));
+        
+        // Also clear children to ensure fresh household start
+        const children = await getDocs(query(collection(db, 'players'), where('parentId', '==', firebaseUser.uid)));
+        children.forEach(d => batch.delete(d.ref));
+      }
 
-    if (cats.includes('complete')) {
-      // Clear incidents and equipment assignments too?
-      const inc = await getDocs(collection(db, 'teams', activeTeam.id, 'incidents'));
-      inc.forEach(d => batch.delete(d.ref));
+      await batch.commit(); 
+    } catch (error) {
+      console.error("Reset Failure:", error);
+      throw error;
     }
-
-    await batch.commit(); 
   }, [activeTeam, db, firebaseUser]);
 
   const signTeamDocument = useCallback(async (docId: string, sig: string, mid: string) => { 
@@ -2177,7 +2219,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const batch = writeBatch(db);
     batch.update(leagueRef, { schedule: arrayUnion(newGame) });
 
-    const createEvent = (tid: string, myName: string, oppName: string, isHome: boolean) => {
+    const createEvent = (tid: string, myName: string, oppName: string, isHome: boolean, oppTid?: string) => {
       if (!tid) return;
       const eid = `lg_${lId}_${gameId}`;
       batch.set(doc(db, 'teams', tid, 'events', eid), clean({ 
@@ -2192,12 +2234,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         startTime: game.time, 
         location: game.location, 
         description: `Official season fixture for ${leagueData.name}. Matchup: ${myName} vs ${oppName}`, 
+        matchTeamIds: [tid, oppTid].filter(Boolean),
         createdAt: new Date().toISOString() 
       }));
     };
 
-    if (game.team1Id) createEvent(game.team1Id, game.team1, game.team2, true);
-    if (game.team2Id) createEvent(game.team2Id, game.team2, game.team1, false);
+    if (game.team1Id) createEvent(game.team1Id, game.team1, game.team2, true, game.team2Id);
+    if (game.team2Id) createEvent(game.team2Id, game.team2, game.team1, false, game.team1Id);
 
     await batch.commit();
   }, [db]);
@@ -2213,7 +2256,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     batch.update(doc(db, 'leagues', lId), { schedule: clean(s) }); 
     
     s.forEach(game => {
-      const createEvent = (tid: string, myName: string, oppName: string, isHome: boolean) => {
+      const createEvent = (tid: string, myName: string, oppName: string, isHome: boolean, oppTid?: string) => {
         if (!tid) return;
         const eid = `lg_${lId}_${game.id}`;
         batch.set(doc(db, 'teams', tid, 'events', eid), clean({ 
@@ -2228,11 +2271,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           startTime: game.time, 
           location: game.location, 
           description: `Official season fixture for ${leagueData.name}. Matchup: ${myName} vs ${oppName}`, 
+          matchTeamIds: [tid, oppTid].filter(Boolean),
           createdAt: new Date().toISOString() 
         }));
       };
-      if (game.team1Id) createEvent(game.team1Id, game.team1, game.team2, true);
-      if (game.team2Id) createEvent(game.team2Id, game.team2, game.team1, false);
+      if (game.team1Id) createEvent(game.team1Id, game.team1, game.team2, true, game.team2Id);
+      if (game.team2Id) createEvent(game.team2Id, game.team2, game.team1, false, game.team1Id);
     });
     
     await batch.commit();
@@ -2459,13 +2503,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
             eventType: 'game', isLeagueGame: true, isHome: mySide === 1, leagueId: contextId,
             date: game.date, startTime: game.time, location: game.location,
             description: `Official season fixture for ${leagueData.name}. Matchup: ${activeTeam.name} vs ${oppName}`,
+            matchTeamIds: [activeTeam.id, oppTid].filter(Boolean),
             createdAt: new Date().toISOString()
           }));
 
           if (oppTid && !oppTid.startsWith('recruit_') && !oppTid.startsWith('manual_')) {
             batch.update(doc(db, 'teams', oppTid, 'events', eid), {
               title: `League Match vs ${activeTeam.name}`,
-              description: `Official season fixture for ${leagueData.name}. Matchup: ${oppName} vs ${activeTeam.name}`
+              description: `Official season fixture for ${leagueData.name}. Matchup: ${oppName} vs ${activeTeam.name}`,
+              matchTeamIds: [oppTid, activeTeam.id].filter(Boolean)
             });
           }
 
@@ -2884,7 +2930,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const batch = writeBatch(db);
     batch.update(leagueRef, { schedule, teams }); 
 
-    const syncToTeamHub = (tid: string, myScore: number, oppScore: number, opponentName: string) => {
+    const syncToTeamHub = (tid: string, myScore: number, oppScore: number, opponentName: string, oppTeamId?: string) => {
       if (!tid || tid.startsWith('manual_') || tid.startsWith('recruit_')) return;
       const result = myScore > oppScore ? 'Win' : myScore < oppScore ? 'Loss' : 'Tie';
       const gameRecord = clean({
@@ -2899,13 +2945,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         notes: `Official result from ${leagueData.name}`,
         leagueId, 
         leagueGameId: gameId, 
+        matchTeamIds: [tid, oppTeamId].filter(Boolean),
         createdAt: new Date().toISOString()
       });
       batch.set(doc(db, 'teams', tid, 'games', `lg_${gameId}`), gameRecord);
     };
 
-    if (game.team1Id) syncToTeamHub(game.team1Id, score1, score2, game.team2);
-    if (game.team2Id) syncToTeamHub(game.team2Id, score2, score1, game.team1);
+    if (game.team1Id) syncToTeamHub(game.team1Id, score1, score2, game.team2, game.team2Id);
+    if (game.team2Id) syncToTeamHub(game.team2Id, score2, score1, game.team1, game.team1Id);
 
     await batch.commit();
   }, [db, userProfile]);
@@ -3001,18 +3048,34 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
     const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
+    // Build rich metadata so the Cloud Function can generate enriched ICS events
+    // with athlete names, team labels, and proper SEQUENCE/LAST-MODIFIED for updates.
+    const childrenMeta = (myChildren || []).map(c => ({
+      id: c.id,
+      name: `${c.firstName} ${c.lastName}`.trim(),
+      teamIds: c.joinedTeamIds || [],
+    }));
+
     await setDoc(doc(db, 'calendarFeeds', token), {
       token,
       type,
-      userId: type === 'user' ? firebaseUser?.uid : null,
+      userId: firebaseUser?.uid || null,
+      ownerDisplayName: userProfile?.displayName || userProfile?.name || null,
       teamId: type === 'team' ? finalTargetId : null,
-      teamIds: type === 'multi' ? teamIds!.sort() : null,
+      teamName: type === 'team' ? (activeTeam?.teamName || activeTeam?.name || null) : null,
+      teamIds: type === 'multi' ? teamIds!.sort() : (type === 'user' ? (teamsRaw || []).map(t => t.id) : null),
+      // Children metadata for household/parent feeds — enables "Athlete: Junior Guest" labels
+      childrenMeta: (type === 'user' || type === 'multi') ? childrenMeta : [],
       active: true,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      lastRefreshed: new Date().toISOString(),
+      // App base URL so the Cloud Function can link back to event detail pages  
+      appBaseUrl: typeof window !== 'undefined' ? window.location.origin : 'https://thesquad.pro',
     });
 
     return `https://getcalendarfeed-jscic6vsuq-uc.a.run.app/?token=${token}`;
-  }, [db, activeTeam, firebaseUser]);
+  }, [db, activeTeam, firebaseUser, myChildren, teamsRaw, userProfile]);
 
   const contextValue = useMemo(() => ({
     db, user: userProfile, activeTeam, setActiveTeam, teams: teamsRaw, isTeamsLoading, members, isMembersLoading,

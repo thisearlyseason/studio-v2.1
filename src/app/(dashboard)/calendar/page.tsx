@@ -44,7 +44,9 @@ import {
   ExternalLink,
   FileSignature,
   Loader2,
-  Eye
+  Eye,
+  Check,
+  Copy
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -122,7 +124,18 @@ function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], 
             )}
           </div>
           <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
-          <p className="text-[9px] font-medium text-muted-foreground truncate uppercase flex items-center gap-1 mt-1"><MapPin className="h-2 w-2" /> {event.location}</p>
+          <div className="flex items-center gap-2 mt-1">
+            {event.location && (
+              <p className="text-[9px] font-medium text-muted-foreground truncate uppercase flex items-center gap-1">
+                <MapPin className="h-2 w-2" /> {event.location}
+              </p>
+            )}
+            {team?.name && (
+              <span className="ml-auto shrink-0 text-[8px] font-black uppercase tracking-widest bg-muted/60 text-muted-foreground px-2 py-0.5 rounded-full border">
+                {team.name}
+              </span>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -466,41 +479,137 @@ function CalendarSubscriptionDialog() {
 
         {!multiSelectMode ? (
           <div className="space-y-6 relative z-10">
-            <div className="grid grid-cols-1 gap-3">
-               <Button onClick={() => handleGenerate('team')} disabled={loading} className="h-14 rounded-2xl bg-black text-white hover:bg-black/90 font-black uppercase text-[10px] tracking-widest shadow-xl shadow-black/10 active:scale-[0.98] transition-all">
-                 {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : "Subscribe to Current Squad"}
-               </Button>
-               <Button onClick={() => setMultiSelectMode(true)} variant="outline" className="h-14 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest hover:bg-muted/30 active:scale-[0.98] transition-all text-foreground">
-                 Merge Multiple Squads (Family Feed)
-               </Button>
-               <Button onClick={() => handleGenerate('user')} variant="ghost" disabled={loading} className="h-10 font-black uppercase text-[9px] tracking-widest opacity-40 hover:opacity-100 hover:bg-transparent text-foreground">
-                 ALL MY SQUADS MASTER FEED
-               </Button>
-            </div>
-            
-            {url && (
-              <div className="p-4 bg-muted/30 rounded-2xl border space-y-2">
-                <p className="text-[10px] font-black uppercase text-primary">Your Secure Feed URL</p>
-                <p className="text-[10px] font-mono break-all opacity-60 leading-relaxed">{url}</p>
+            {!url ? (
+              <>
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Choose Your Feed</p>
+                  <div className="grid grid-cols-1 gap-3">
+                    <button
+                      onClick={() => handleGenerate('team')}
+                      disabled={loading}
+                      className="group relative h-16 rounded-2xl bg-black text-white font-black uppercase text-[10px] tracking-widest shadow-xl shadow-black/10 active:scale-[0.98] transition-all flex items-center justify-between px-6 disabled:opacity-50"
+                    >
+                      <div className="flex items-center gap-3">
+                        {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <CalendarDays className="h-5 w-5 text-primary" />}
+                        <div className="text-left">
+                          <p className="text-xs font-black">Current Squad</p>
+                          <p className="text-[8px] font-medium opacity-50 normal-case">Events for your active team only</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 opacity-40 group-hover:opacity-100 transition-opacity" />
+                    </button>
+                    <button
+                      onClick={() => setMultiSelectMode(true)}
+                      className="group h-16 rounded-2xl border-2 border-black/10 font-black uppercase text-[10px] tracking-widest hover:bg-muted/30 active:scale-[0.98] transition-all flex items-center justify-between px-6"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Users className="h-5 w-5 text-muted-foreground" />
+                        <div className="text-left">
+                          <p className="text-xs font-black text-foreground">Family Feed</p>
+                          <p className="text-[8px] font-medium text-muted-foreground normal-case">Merge multiple squads into one feed</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 opacity-40 group-hover:opacity-100 transition-opacity" />
+                    </button>
+                    <button
+                      onClick={() => handleGenerate('user')}
+                      disabled={loading}
+                      className="group h-14 rounded-2xl border-2 border-dashed border-black/10 font-black uppercase text-[10px] tracking-widest hover:bg-muted/10 active:scale-[0.98] transition-all flex items-center justify-between px-6 disabled:opacity-30"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Zap className="h-4 w-4 text-amber-500" />
+                        <span className="text-xs font-black text-foreground/60">All My Squads Master Feed</span>
+                      </div>
+                      <ChevronRight className="h-4 w-4 opacity-20 group-hover:opacity-60 transition-opacity" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-5">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-green-500 flex items-center justify-center shrink-0">
+                    <Check className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black uppercase text-foreground">Feed Ready</p>
+                    <p className="text-[9px] font-medium text-muted-foreground">Tap your calendar app below to sync instantly</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {/* Google Calendar */}
+                  <a
+                    href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(url)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-4 p-4 rounded-2xl border-2 hover:border-primary hover:bg-primary/[0.02] transition-all active:scale-[0.98] cursor-pointer group"
+                  >
+                    <div className="h-10 w-10 rounded-xl bg-white shadow-md flex items-center justify-center shrink-0 border">
+                      <svg viewBox="0 0 24 24" className="h-5 w-5"><path fill="#4285F4" d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12s4.48 10 10 10 10-4.48 10-10z"/><path fill="white" d="M12 6v6l4 2-4-8z" opacity="0"/><path fill="#34A853" d="M16.93 15.4L12 12V6h2v5.58l4.27 2.46-.34.59z" opacity="0"/><rect fill="#4285F4" x="10" y="10" width="4" height="4"/><path fill="#FBBC04" d="M6 8h12v2H6z"/><path fill="#34A853" d="M8 10h8v8H8z" opacity=".3"/><text x="12" y="17" textAnchor="middle" fill="white" fontSize="7" fontWeight="bold">G</text></svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-black uppercase text-foreground">Google Calendar</p>
+                      <p className="text-[9px] text-muted-foreground font-medium">Opens Google Calendar directly — click "Add"</p>
+                    </div>
+                    <ExternalLink className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary transition-colors shrink-0" />
+                  </a>
+
+                  {/* Apple / iOS Calendar */}
+                  <a
+                    href={`webcal://${url.replace(/^https?:\/\//, '')}`}
+                    className="flex items-center gap-4 p-4 rounded-2xl border-2 hover:border-primary hover:bg-primary/[0.02] transition-all active:scale-[0.98] cursor-pointer group"
+                  >
+                    <div className="h-10 w-10 rounded-xl bg-white shadow-md flex items-center justify-center shrink-0 border">
+                      <CalendarDays className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-black uppercase text-foreground">Apple Calendar</p>
+                      <p className="text-[9px] text-muted-foreground font-medium">iOS & macOS — tap "Subscribe" when prompted</p>
+                    </div>
+                    <ExternalLink className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary transition-colors shrink-0" />
+                  </a>
+
+                  {/* Outlook */}
+                  <a
+                    href={`https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(url)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-4 p-4 rounded-2xl border-2 hover:border-primary hover:bg-primary/[0.02] transition-all active:scale-[0.98] cursor-pointer group"
+                  >
+                    <div className="h-10 w-10 rounded-xl bg-white shadow-md flex items-center justify-center shrink-0 border">
+                      <svg viewBox="0 0 24 24" className="h-5 w-5"><path fill="#0078D4" d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18L20 8v8l-8 4-8-4V8l8-3.82z"/><text x="12" y="16" textAnchor="middle" fill="#0078D4" fontSize="8" fontWeight="bold">O</text></svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-black uppercase text-foreground">Outlook Calendar</p>
+                      <p className="text-[9px] text-muted-foreground font-medium">Microsoft Outlook — click "Import" when prompted</p>
+                    </div>
+                    <ExternalLink className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary transition-colors shrink-0" />
+                  </a>
+                </div>
+
+                {/* Manual fallback */}
+                <div className="pt-2 border-t border-dashed">
+                  <p className="text-[9px] font-black uppercase text-muted-foreground mb-2">Or copy URL manually</p>
+                  <div
+                    onClick={() => { navigator.clipboard.writeText(url); toast({ title: "Copied!" }); }}
+                    className="flex items-center gap-2 p-3 bg-muted/30 rounded-xl border cursor-pointer hover:bg-muted/50 transition-colors"
+                  >
+                    <p className="text-[9px] font-mono break-all opacity-60 leading-relaxed flex-1">{url}</p>
+                    <Copy className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setUrl(null)}
+                  className="w-full text-[9px] font-black uppercase text-muted-foreground/60 hover:text-muted-foreground transition-colors pt-2"
+                >
+                  ← Choose a different feed
+                </button>
               </div>
             )}
-
-            <div className="space-y-4 pt-6 border-t border-dashed">
-              <h4 className="text-[10px] font-black uppercase text-foreground tracking-widest">Tactical Instructions</h4>
-              <div className="space-y-4">
-                {[
-                  { id: '1', text: 'Copy the secure link above.' },
-                  { id: '2', text: 'In Google: Tap "+" next to "Other calendars" → "From URL".' },
-                  { id: '3', text: 'On iOS: Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar.' }
-                ].map((step) => (
-                  <div key={step.id} className="flex gap-4">
-                    <div className="h-6 w-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 text-[10px] font-black">{step.id}</div>
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed">{step.text}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
+
         ) : (
           <div className="space-y-6 relative z-10">
             <div className="space-y-3">
@@ -583,34 +692,50 @@ export default function MasterCalendarPage() {
     });
 
     // Synthesis: Expand tournament games into individual match entries
+    const myTeamIds = (teams || []).map(t => t.id);
+    
     [...(householdEvents || []), ...(activeTeamEvents || [])].forEach(e => {
       if (e.isTournament && e.tournamentGames && e.tournamentGames.length > 0) {
-        e.tournamentGames.forEach((game: any, idx: number) => {
-          if (!game.date) return;
-          const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
-          if (isTBD) return;
+          e.tournamentGames.forEach((game: any, idx: number) => {
+            if (!game.date) return;
+            
+            // CRITICAL FILTER: Only expand matches the ACTIVE TEAM is actually playing in
+            const isMyGame = activeTeam && (
+              game.team1Id === activeTeam.id ||
+              game.team2Id === activeTeam.id ||
+              game.team1 === activeTeam.teamName ||
+              game.team2 === activeTeam.teamName
+            );
 
-          const matchId = game.id || `${e.id}_match_${idx}`;
-          if (!map.has(matchId)) {
-            map.set(matchId, {
-              ...e,
-              id: matchId,
-              title: `[Match] ${game.team1} vs ${game.team2}`,
-              date: game.date,
-              startTime: game.time,
-              location: game.location || e.location,
-              eventType: 'tournament',
-              isTournamentMatch: true,
-              round: game.round,
-              parentTournamentId: e.id
-            } as any);
-          }
-        });
+            if (!isMyGame) return;
+
+            const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
+            if (isTBD) return;
+
+            const matchId = game.id || `${e.id}_match_${idx}`;
+            if (!map.has(matchId)) {
+              map.set(matchId, {
+                ...e,
+                id: matchId,
+                title: `[Match] ${game.team1} vs ${game.team2}`,
+                date: game.date,
+                // CRITICAL: Override the parent tournament's endDate so this match only spans its own day
+                endDate: game.date,
+                startTime: game.time,
+                location: game.location || e.location,
+                eventType: 'tournament',
+                isTournamentMatch: true,
+                round: game.round,
+                parentTournamentId: e.id,
+                matchTeamIds: [game.team1Id, game.team2Id].filter(Boolean)
+              } as any);
+            }
+          });
       }
     });
 
     return Array.from(map.values());
-  }, [householdEvents, activeTeamEvents, householdGames]);
+  }, [householdEvents, activeTeamEvents, householdGames, teams]);
 
   const activeDetailedEvent = useMemo(() => {
     if (!activeDetailedEventId) return null;
@@ -692,27 +817,36 @@ export default function MasterCalendarPage() {
           event.tournamentGames.forEach((game: any, idx: number) => {
             if (!game.date) return;
             
-            // TACTICAL FILTER: Suppress placeholder matches in the high-resolution grid
+            // TACTICAL FILTER: Suppress placeholder matches and matches belonging to other squads
             const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
             if (isTBD) return;
+
+            const isMyGame = activeTeam && (
+              game.team1Id === activeTeam.id ||
+              game.team2Id === activeTeam.id ||
+              game.team1 === activeTeam.teamName ||
+              game.team2 === activeTeam.teamName
+            );
+            if (!isMyGame) return;
 
             const gameDate = startOfDay(new Date(game.date));
             if (isSameDay(gameDate, dayStart)) {
               if (!map[dayKey]) map[dayKey] = [];
-              // Synthesize a sub-event for the match
               const matchId = game.id || `${event.id}_match_${idx}`;
-              // Avoid duplicates
               if (!map[dayKey].find(e => e.id === matchId)) {
                 map[dayKey].push({
-                  ...event, // Inherit teamId, etc.
+                  ...event,
                   id: matchId,
                   title: `[Match] ${game.team1} vs ${game.team2}`,
                   startTime: game.time,
                   location: game.location || event.location,
-                  eventType: 'tournament', // Maintain prestige tournament branding
+                  eventType: 'tournament',
                   isTournamentMatch: true,
+                  // Override parent endDate — this match belongs only on its exact game day
+                  endDate: game.date,
                   round: game.round,
-                  parentTournamentId: event.id
+                  parentTournamentId: event.id,
+                  matchTeamIds: [game.team1Id, game.team2Id].filter(Boolean)
                 } as any);
               }
             }

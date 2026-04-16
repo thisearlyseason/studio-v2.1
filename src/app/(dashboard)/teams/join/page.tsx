@@ -119,15 +119,15 @@ export default function JoinTeamPage() {
                 <div className="relative">
                   <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input 
-                    placeholder="6-DIGIT CODE" 
+                    placeholder="8-20 CHARACTER CODE" 
                     value={teamCode}
                     onChange={e => setTeamCode(e.target.value.toUpperCase())}
-                    maxLength={6}
+                    maxLength={20}
                     className="h-14 pl-10 text-xl font-black tracking-widest rounded-2xl border-2 border-primary/20" 
                   />
                 </div>
                 <p className="text-[9px] font-bold text-muted-foreground uppercase italic ml-1">
-                  Provided by your head coach or team lead.
+                  Unique institutional code provided by your team lead.
                 </p>
               </div>
             </div>

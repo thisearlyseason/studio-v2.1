@@ -727,10 +727,13 @@ function MasterSquadWall({ consolidatedTeams }: { consolidatedTeams: { team: Tea
               <h4 className="text-sm font-black uppercase tracking-tight leading-tight group-hover:text-primary transition-colors truncate pr-12">
                 {team.name}
               </h4>
-              <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em] flex items-center gap-1.5">
-                <Trophy className="h-2 w-2 opacity-50" />
-                {team.sport || 'ATHLETICS'} • {team.code || team.teamCode || team.inviteCode || team.id.slice(-6).toUpperCase()}
-              </p>
+              <div className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em] flex items-center gap-1.5 truncate">
+                <Trophy className="h-2 w-2 opacity-50 shrink-0" />
+                <span className="truncate">{team.sport || 'ATHLETICS'} • {team.code || team.teamCode || team.inviteCode || team.id.toUpperCase()}</span>
+                {(team.isDemo || team.id.startsWith('demo_')) && (
+                  <Badge variant="outline" className="text-[6px] h-3 px-1 border-primary/20 text-primary uppercase font-black bg-primary/5 ml-1 shrink-0">DEMO-ID</Badge>
+                )}
+              </div>
             </div>
           </Card>
         ))}
@@ -850,12 +853,19 @@ export default function FamilyPage() {
     const rawEvents = householdEvents || [];
     const rawGames = householdGames || [];
     
-    // Helper to safely convert any date-like field to a Date object
     const toDateObj = (d: any) => {
        if (!d) return null;
        if (d instanceof Date) return d;
-       if (d.toDate && typeof d.toDate === 'function') return d.toDate();
-       try { return parseISO(d); } catch (e) { return new Date(d); }
+       // Handle Firebase Timestamps
+       if (d && typeof d === 'object' && 'toDate' in d) return d.toDate();
+       if (d && typeof d === 'object' && 'seconds' in d) return new Date(d.seconds * 1000);
+       
+       try {
+         const parsed = typeof d === 'string' ? parseISO(d) : new Date(d);
+         return isValid(parsed) ? parsed : null;
+       } catch (e) {
+         return null;
+       }
     };
 
     const synthesizedGames = rawGames.map(g => ({
@@ -866,13 +876,22 @@ export default function FamilyPage() {
        id: g.id || `game_${g.date}_${g.time || g.startTime}`
     }));
 
+    const householdTeamIds = Array.from(new Set([
+      ...(myChildren || []).flatMap(c => c.joinedTeamIds || []),
+      ...(teams || []).map(t => t.id)
+    ]));
+
     const expandedTournamentMatches: any[] = [];
     rawEvents.forEach(e => {
        if (e.isTournament && e.tournamentGames && e.tournamentGames.length > 0) {
          e.tournamentGames.forEach((game: any, idx: number) => {
            if (!game.date) return;
+           const isHouseholdGame = householdTeamIds.includes(game.team1Id) || householdTeamIds.includes(game.team2Id);
+           if (!isHouseholdGame) return;
+
            const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
            if (isTBD) return;
+
            expandedTournamentMatches.push({
              ...e,
              id: game.id || `${e.id}_match_${idx}`,
@@ -882,7 +901,8 @@ export default function FamilyPage() {
              location: game.location || e.location,
              eventType: 'tournament',
              isTournamentMatch: true,
-             round: game.round
+             round: game.round,
+             matchTeamIds: [game.team1Id, game.team2Id]
            });
          });
        }
@@ -893,9 +913,14 @@ export default function FamilyPage() {
     const today = startOfDay(now);
 
     const filteredEvents = allSourceEvents.filter(e => {
-       if (!e.date) return false;
-       const d = toDateObj(e.date);
+       // Support 'date', 'startTime', or nested tournament date
+       const targetDate = e.date || e.startTime;
+       if (!targetDate) return false;
+       
+       const d = toDateObj(targetDate);
        if (!d || !isValid(d)) return false;
+       
+       // Show today's events and future events
        return isSameDay(d, today) || isAfter(d, today);
     });
 
@@ -906,11 +931,103 @@ export default function FamilyPage() {
 
     return Array.from(uniqueEventsMap.values())
       .sort((a, b) => {
-         const dA = toDateObj(a.date);
-         const dB = toDateObj(b.date);
+          const dA = toDateObj(a.date || a.startTime);
+          const dB = toDateObj(b.date || b.startTime);
          return (dA?.getTime() || 0) - (dB?.getTime() || 0);
       });
   }, [householdEvents, householdGames, myChildren, teams]);
+
+  const childItineraries = useMemo(() => {
+    const rawEvents = householdEvents || [];
+    const rawGames = householdGames || [];
+    const today = startOfDay(new Date());
+
+    const toDateObj = (d: any) => {
+       if (!d) return null;
+       if (d instanceof Date) return d;
+       if (d && typeof d === 'object' && 'toDate' in d) return d.toDate();
+       if (d && typeof d === 'object' && 'seconds' in d) return new Date(d.seconds * 1000);
+       try {
+         const parsed = typeof d === 'string' ? parseISO(d) : new Date(d);
+         return isValid(parsed) ? parsed : null;
+       } catch { return null; }
+    };
+
+    return (myChildren || []).map(child => {
+      // Only look at this child's own teams — never the other sibling's teams
+      const childTeamIds = new Set(child.joinedTeamIds || []);
+      if (childTeamIds.size === 0) return { child, events: [] };
+
+      const seen = new Set<string>();
+      const childEvents: any[] = [];
+
+      const addEvent = (e: any) => {
+        if (!seen.has(e.id)) {
+          seen.add(e.id);
+          childEvents.push(e);
+        }
+      };
+
+      // 1. Regular events (practice, game, meeting, tournament header) belonging to child's teams
+      rawEvents.forEach(e => {
+        if (!childTeamIds.has(e.teamId)) return;
+        const d = toDateObj(e.date);
+        if (!d || !isValid(d)) return;
+        if (!isSameDay(d, today) && !isAfter(d, today)) return;
+
+        // For tournament parent events, also expand individual matches only for THIS child's team
+        if (e.isTournament && e.tournamentGames && e.tournamentGames.length > 0) {
+          // Add the tournament header itself
+          addEvent(e);
+
+          // Expand only matches where the child's team participates
+          e.tournamentGames.forEach((game: any, idx: number) => {
+            if (!game.date) return;
+            const isChildGame = childTeamIds.has(game.team1Id) || childTeamIds.has(game.team2Id);
+            if (!isChildGame) return;
+            const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
+            if (isTBD) return;
+            const gDate = toDateObj(game.date);
+            if (!gDate || !isValid(gDate)) return;
+            if (!isSameDay(gDate, today) && !isAfter(gDate, today)) return;
+            addEvent({
+              ...e,
+              id: game.id || `${e.id}_match_${idx}`,
+              title: `[Match] ${game.team1} vs ${game.team2}`,
+              date: game.date,
+              startTime: game.time,
+              location: game.location || e.location,
+              eventType: 'tournament',
+              isTournamentMatch: true,
+              round: game.round,
+              matchTeamIds: [game.team1Id, game.team2Id]
+            });
+          });
+        } else {
+          addEvent(e);
+        }
+      });
+
+      // 2. League games from householdGames
+      rawGames.forEach(g => {
+        const participants = g.matchTeamIds || [];
+        if (!participants.some((tid: string) => childTeamIds.has(tid))) return;
+        const d = toDateObj(g.date);
+        if (!d || !isValid(d)) return;
+        if (!isSameDay(d, today) && !isAfter(d, today)) return;
+        addEvent({ ...g, eventType: 'game', title: g.title || `Match: ${g.team1} vs ${g.team2}`, startTime: g.startTime || g.time });
+      });
+
+      // Sort by date ascending
+      childEvents.sort((a, b) => {
+        const dA = toDateObj(a.date || a.startTime);
+        const dB = toDateObj(b.date || b.startTime);
+        return (dA?.getTime() || 0) - (dB?.getTime() || 0);
+      });
+
+      return { child, events: childEvents.slice(0, 4) };
+    });
+  }, [myChildren, householdEvents, householdGames]);
 
   if (!isParent) {
     return <AccessRestricted type="role" title="Household Domain Restricted" description="This sector is reserved for Guardians and Household Administrators." />;
@@ -1064,58 +1181,54 @@ export default function FamilyPage() {
             </Button>
           </div>
 
-          <div className="space-y-4 scroll-mt-20">
-            {upcomingEvents.length > 0 ? upcomingEvents.map((event) => {
-              const team = (teams || []).find(t => t.id === event.teamId);
-              const participants = [
-                ...(myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId)).map(c => c.firstName),
-                ...((teams || []).some(t => t.id === event.teamId) ? ['You'] : [])
-              ];
-              
-              return (
-                <Card key={event.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 hover:shadow-xl transition-all group overflow-hidden bg-white hover:-translate-y-1 duration-300">
-                  <CardContent className="p-0">
-                    <div className="flex items-stretch h-28">
-                      <div className="w-24 bg-muted/30 flex flex-col items-center justify-center border-r shrink-0 group-hover:bg-primary/5 transition-colors">
-                        <span className="text-[10px] font-black uppercase opacity-40">{event.date ? format(new Date(event.date), 'MMM') : '—'}</span>
-                        <span className="text-3xl font-black">{event.date ? format(new Date(event.date), 'dd') : '—'}</span>
-                      </div>
-                      <div className="flex-1 p-6 flex flex-col justify-center min-w-0">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <Badge className="bg-primary/10 text-primary border-none text-[8px] uppercase font-black px-2 h-5">{event.eventType}</Badge>
-                            <span className="text-[10px] font-black uppercase text-muted-foreground truncate max-w-[150px]">{team?.name || 'Squad Deployment'}</span>
+          <div className="space-y-12">
+            {childItineraries.length > 0 ? childItineraries.map(({ child, events }) => (
+              <div key={child.id} className="space-y-4">
+                <div className="flex items-center gap-3 px-2">
+                   <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-black text-xs uppercase shadow-inner">
+                     {child.firstName[0]}{child.lastName[0]}
+                   </div>
+                   <div>
+                     <h3 className="text-sm font-black uppercase tracking-tight text-foreground">{child.firstName}'s Itinerary</h3>
+                     <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60">Next 4 Active Directives</p>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  {events.length > 0 ? events.map((event) => {
+                    const team = (teams || []).find(t => t.id === event.teamId);
+                    return (
+                      <Card key={event.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white hover:-translate-y-0.5 duration-300">
+                        <CardContent className="p-0">
+                          <div className="flex items-stretch h-20">
+                            <div className="w-16 bg-muted/20 flex flex-col items-center justify-center border-r shrink-0 group-hover:bg-primary/5 transition-colors">
+                              <span className="text-[8px] font-black uppercase opacity-40">{event.date ? format(new Date(event.date), 'MMM') : '—'}</span>
+                              <span className="text-xl font-black">{event.date ? format(new Date(event.date), 'dd') : '—'}</span>
+                            </div>
+                            <div className="flex-1 p-4 flex flex-col justify-center min-w-0">
+                              <div className="flex items-center justify-between gap-2 overflow-hidden">
+                                <h4 className="font-black text-xs uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
+                                <Badge className="bg-primary/10 text-primary border-none text-[7px] uppercase font-black px-2 h-4 shrink-0">{event.eventType}</Badge>
+                              </div>
+                              <div className="flex items-center justify-between mt-1 pt-1 border-t border-black/5">
+                                <p className="text-[9px] font-bold text-muted-foreground flex items-center gap-1.5 truncate">
+                                  <Users className="h-2.5 w-2.5 opacity-40" /> {team?.name || 'Squad'}
+                                </p>
+                                <span className="text-[9px] font-black text-foreground/80 whitespace-nowrap ml-4">{event.startTime || 'TBD'}</span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex gap-1.5 shrink-0">
-                            {participants.map((p, idx) => (
-                              <Badge 
-                                key={p} 
-                                className={cn(
-                                  "h-5 px-3 text-[8px] border-none font-black uppercase tracking-tighter shadow-sm",
-                                  p === 'You' ? "bg-black text-white" : 
-                                  idx % 3 === 0 ? "bg-primary text-white" : 
-                                  idx % 3 === 1 ? "bg-amber-500 text-black" : 
-                                  "bg-green-600 text-white"
-                                )}
-                              >
-                                {p}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                        <h4 className="font-black text-base uppercase truncate group-hover:text-primary transition-colors">{event.title}</h4>
-                        <div className="flex items-center justify-between mt-2">
-                          <p className="text-[10px] font-medium text-muted-foreground flex items-center gap-1.5 truncate">
-                            <MapPin className="h-3 w-3 opacity-40" /> {event.location || 'Tactical HQ'}
-                          </p>
-                          <span className="text-[11px] font-black text-foreground/80 bg-muted/40 px-3 py-1 rounded-lg whitespace-nowrap ml-4">{event.startTime || 'TBD'}</span>
-                        </div>
-                      </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  }) : (
+                    <div className="py-8 text-center rounded-[2rem] border-2 border-dashed border-muted/30 bg-muted/5 opacity-50">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Strategic Silence for {child.firstName}</p>
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            }) : (
+                  )}
+                </div>
+              </div>
+            )) : (
               <div className="p-12 text-center rounded-[3rem] border-4 border-dashed border-muted/30 bg-muted/5">
                 <Calendar className="h-12 w-12 text-muted-foreground opacity-20 mx-auto mb-4" />
                 <h4 className="text-xl font-black uppercase tracking-tight text-muted-foreground">Tactical Silence</h4>
