@@ -4,8 +4,12 @@
  * Hardened for balanced distribution, multi-venue resource mapping, and intelligent double-headers.
  */
 
-import { addMinutes, format, isBefore, parse, addDays, eachDayOfInterval, isAfter, differenceInMinutes, parseISO } from 'date-fns';
+import { addMinutes, format, isBefore, parse, addDays, eachDayOfInterval, isAfter, differenceInMinutes } from 'date-fns';
 import { TournamentGame } from '@/components/providers/team-provider';
+
+// Monotonic counter for collision-safe match IDs (replaces Date.now() in tight loops)
+let _matchIdCounter = 0;
+const nextMatchId = (prefix: string) => `${prefix}_${++_matchIdCounter}_${Math.random().toString(36).slice(2, 6)}`;
 
 export interface DailyWindow {
   date: string;
@@ -201,7 +205,7 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
  * Tournament specific schedule supporting Round Robin, Single Elim, and Double Elim
  */
 export function generateTournamentSchedule(config: ScheduleConfig): TournamentGame[] {
-  const { teams, fields, startDate, endDate, startTime, endTime, gameLength, breakLength, dailyWindows, tournamentType = 'round_robin' } = config;
+  const { teams, fields, startDate, endDate, startTime, endTime, gameLength, breakLength, dailyWindows, tournamentType = 'round_robin', doubleHeaderOption = 'none' } = config;
   
   const teamList = teams.map((t, i) => typeof t === 'string' ? { id: `t_${i}`, name: t } : t);
   if (teamList.length < 2) return [];
@@ -209,10 +213,11 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
   const matchups: { t1: string; t2: string; t1Id?: string; t2Id?: string; round: string }[] = [];
   
   if (tournamentType === 'round_robin' || tournamentType === 'pool_play_knockout') {
-    const shuffled = shuffle([...teamList]);
-    for (let i = 0; i < shuffled.length; i++) {
-      for (let j = i + 1; j < shuffled.length; j++) {
-        matchups.push({ t1: shuffled[i].name, t2: shuffled[j].name, t1Id: shuffled[i].id, t2Id: shuffled[j].id, round: 'Pool Play' });
+    // No shuffle for round robin — preserves deterministic ordering and reproducibility
+    const ordered = [...teamList];
+    for (let i = 0; i < ordered.length; i++) {
+      for (let j = i + 1; j < ordered.length; j++) {
+        matchups.push({ t1: ordered[i].name, t2: ordered[j].name, t1Id: ordered[i].id, t2Id: ordered[j].id, round: 'Pool Play' });
       }
     }
   } else if (tournamentType === 'single_elimination' || tournamentType === 'double_elimination') {
@@ -232,7 +237,7 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
           const isFinal = r === totalRounds - 1;
           const isSemi = r === totalRounds - 2;
           const label = isFinal ? (isDouble ? 'WB Finals' : 'Championship') : isSemi ? (isDouble ? 'WB Semi-Finals' : 'Semi-Finals') : `Round ${r + 1}`;
-          const id = `wb_${Date.now()}_${r}_${m}`;
+          const id = nextMatchId(`wb_r${r}_m${m}`);
           roundMatches[r].push({ id, round: label, t1: 'TBD', t2: 'TBD' });
        }
     }
@@ -314,14 +319,14 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
       // Grand Final
 
       if (totalRounds >= 2) {
-        const grandFinalId = `gf_${Date.now()}`;
+        const grandFinalId = nextMatchId('gf');
         
         // --- LB PHASE 1: Capture First Round Losers ---
         const wbR0 = roundMatches[0];
         const lbr1Count = Math.floor(wbR0.length / 2);
         const lbr1: any[] = [];
         for (let i = 0; i < lbr1Count; i++) {
-          const id = `lb_r1_${i}_${Date.now()}`;
+          const id = nextMatchId(`lb_r1_m${i}`);
           const m = { id, round: 'LB Round 1', t1: 'TBD', t2: 'TBD' };
           lbr1.push(m); lbMatchups.push(m);
         }
@@ -342,12 +347,12 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
           // Step A: LB Inter-round (WB Losers meet LB winners)
           const lbrX: any[] = [];
           for (let i = 0; i < wbRound.length; i++) {
-            const id = `lb_rx_${r}_${i}_${Date.now()}`;
+            const id = nextMatchId(`lb_rx_r${r}_m${i}`);
             const label = isFinalWB ? 'LB Finals' : `LB Round ${r * 2}`;
             const m = { id, round: label, t1: 'TBD', t2: 'TBD' };
             lbrX.push(m); lbMatchups.push(m);
             
-            // Winners of last LB round go to Team 1
+            // FIX MODERATE-1: Guard against lastLBRound being shorter than wbRound
             if (lastLBRound[i]) linkMatch(lastLBRound[i], m.id, 'team1', true);
             // Losers of current WB round go to Team 2
             linkMatch(wbRound[i], m.id, 'team2', false);
@@ -363,12 +368,12 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
             const lbrY: any[] = [];
             const nextCount = Math.floor(lbrX.length / 2);
             for (let i = 0; i < nextCount; i++) {
-              const id = `lb_ry_${r}_${i}_${Date.now()}`;
+              const id = nextMatchId(`lb_ry_r${r}_m${i}`);
               const m = { id, round: `LB Round ${r * 2 + 1}`, t1: 'TBD', t2: 'TBD' };
               lbrY.push(m); lbMatchups.push(m);
               
-              linkMatch(lbrX[i*2], m.id, 'team1', true);
-              linkMatch(lbrX[i*2+1], m.id, 'team2', true);
+              if (lbrX[i*2]) linkMatch(lbrX[i*2], m.id, 'team1', true);
+              if (lbrX[i*2+1]) linkMatch(lbrX[i*2+1], m.id, 'team2', true);
             }
             lastLBRound = lbrY.length > 0 ? lbrY : lbrX;
           }
@@ -376,7 +381,7 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
 
         // Add Grand Final
         lbMatchups.push({
-          id: grandFinalId,
+          id: nextMatchId('gf'),
           round: 'Championship',
           t1: 'TBD (WB Winner)',
           t2: 'TBD (LB Winner)',
@@ -463,7 +468,7 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
   });
 
   const finalGames: TournamentGame[] = [];
-  const dailyTeamUsage = new Map<string, { teamId: string; time: string }[]>();
+  // Unified conflict tracking: only finalGames is used (the old dailyTeamUsage was dead code in tournament mode)
   const teamGamesPerDay = new Map<string, number>(); // key: "date:teamId"
 
   const pool = [...finalMatchups];
@@ -473,8 +478,7 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
 
     const dayKey = format(slot.date, 'yyyy-MM-dd');
     const timeKey = format(slot.time, 'HH:mm');
-    if (!dailyTeamUsage.has(dayKey)) dailyTeamUsage.set(dayKey, []);
-    const todaysGames = dailyTeamUsage.get(dayKey)!;
+    const todayGamesForDedup = finalGames.filter(g => g.date === dayKey);;
 
     let foundMatchupIndex = -1;
     
@@ -502,7 +506,7 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
         const matchT2 = (g.team2Id === id1 || g.team2 === t1);
         if (!matchT1 && !matchT2) return false;
         
-        const gTime = parse(g.time, 'h:mm a', parseISO(g.date)); 
+        const gTime = parse(g.time, 'h:mm a', parseLocalDate(g.date)); // FIX CRITICAL-2: use local-aware parser
         return Math.abs(differenceInMinutes(currentSlotTime, gTime)) < MIN_REST_MINUTES;
       });
 
@@ -511,17 +515,24 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
         const matchT2 = (g.team2Id === id2 || g.team2 === t2);
         if (!matchT1 && !matchT2) return false;
         
-        const gTime = parse(g.time, 'h:mm a', parseISO(g.date)); 
+        const gTime = parse(g.time, 'h:mm a', parseLocalDate(g.date)); // FIX CRITICAL-2: use local-aware parser
         return Math.abs(differenceInMinutes(currentSlotTime, gTime)) < MIN_REST_MINUTES;
       });
 
-      if (t1IsBusy || t2IsBusy) continue;
+      // FIX CRITICAL-1: Field double-booking check — a field can only host one match per timeslot
+      const fieldIsBusy = finalGames.some(g =>
+        g.location === slot.field &&
+        g.date === dayKey &&
+        g.time === format(slot.time, 'h:mm a')
+      );
+
+      if (t1IsBusy || t2IsBusy || fieldIsBusy) continue;
 
       // 2. Handle Double Header Logic
       const t1DailyCount = t1IsTBD ? 0 : (teamGamesPerDay.get(`${dayKey}:${id1}`) || 0);
       const t2DailyCount = t2IsTBD ? 0 : (teamGamesPerDay.get(`${dayKey}:${id2}`) || 0);
 
-      if (config.doubleHeaderOption === 'none') {
+      if (config.doubleHeaderOption === 'none' || doubleHeaderOption === 'none') {
         if (t1DailyCount >= 1 || t2DailyCount >= 1) continue;
       } else if (config.doubleHeaderOption === 'sameTeam') {
         if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
@@ -569,8 +580,6 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
         loserToSlot: match.loserToSlot
       });
 
-      todaysGames.push({ teamId: id1, time: timeKey });
-      todaysGames.push({ teamId: id2, time: timeKey });
       teamGamesPerDay.set(`${dayKey}:${id1}`, (teamGamesPerDay.get(`${dayKey}:${id1}`) || 0) + 1);
       teamGamesPerDay.set(`${dayKey}:${id2}`, (teamGamesPerDay.get(`${dayKey}:${id2}`) || 0) + 1);
     }
