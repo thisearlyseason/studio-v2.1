@@ -103,9 +103,12 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, isPrimaryClubAuthority } = useTeam();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   
   const [mounted, setMounted] = useState(false);
   const [isDemoInitializing, setIsDemoInitializing] = useState(false);
+  const [isSyncingPlan, setIsSyncingPlan] = useState(false);
+  const syncAttempted = useRef(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -198,7 +201,42 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     return `${Math.floor(totalSeconds / 60)}:${(totalSeconds % 60).toString().padStart(2, '0')}`;
   };
 
-  const isLoadingState = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile;
+  useEffect(() => {
+    if (!mounted || !user?.uid) return;
+    const successParam = searchParams.get('success');
+    const stripeSuccessParam = searchParams.get('stripe_success');
+    
+    if ((successParam === 'true' || stripeSuccessParam === 'true') && !isSyncingPlan && !syncAttempted.current) {
+      syncAttempted.current = true;
+      setIsSyncingPlan(true);
+      
+      const doSync = async () => {
+        try {
+          await fetch('/api/subscription/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.uid }),
+          });
+          
+          if (auth.currentUser) {
+            await auth.currentUser.getIdToken(true);
+          }
+        } catch (e) {
+          console.error('[Plan Sync]', e);
+        } finally {
+          setIsSyncingPlan(false);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('success');
+          url.searchParams.delete('stripe_success');
+          window.history.replaceState({}, '', url.pathname + url.search);
+        }
+      };
+      
+      doSync();
+    }
+  }, [mounted, user, searchParams, auth, isSyncingPlan]);
+
+  const isLoadingState = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile || isSyncingPlan;
 
   if (isLoadingState) {
     return (
@@ -219,7 +257,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           </div>
           <div className="text-center space-y-2">
             <p className="text-lg font-black uppercase tracking-widest text-primary">
-              Synchronizing Secure Hub...
+              {isSyncingPlan ? "Synchronizing Upgraded Protocol..." : "Synchronizing Secure Hub..."}
             </p>
           </div>
         </div>
