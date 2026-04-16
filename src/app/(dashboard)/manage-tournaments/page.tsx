@@ -555,9 +555,11 @@ function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEven
   const [formData, setFormData] = useState({ 
     title: event.title, 
     date: event.date ? event.date.split('w')[0].substring(0, 10) : '', // Safety parse
-    endDate: event.endDate ? event.endDate.split('w')[0].substring(0, 10) : '', 
+    endDate: event.endDate ? event.endDate.split('T')[0].substring(0, 10) : '', 
     location: event.location || '', 
-    registration_cost: event.registration_cost || '0' 
+    registration_cost: event.registrationCost || '0',
+    adminEmail1: event.adminEmails && event.adminEmails[0] ? event.adminEmails[0] : '',
+    adminEmail2: event.adminEmails && event.adminEmails[1] ? event.adminEmails[1] : ''
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -568,7 +570,9 @@ function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEven
         date: event.date ? new Date(event.date).toISOString().split('T')[0] : '',
         endDate: event.endDate ? new Date(event.endDate).toISOString().split('T')[0] : '',
         location: event.location || '',
-        registration_cost: event.registration_cost || '0'
+        registration_cost: event.registrationCost || '0',
+        adminEmail1: event.adminEmails && event.adminEmails[0] ? event.adminEmails[0] : '',
+        adminEmail2: event.adminEmails && event.adminEmails[1] ? event.adminEmails[1] : ''
       });
     }
   }, [event, isOpen]);
@@ -582,7 +586,8 @@ function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEven
          date: formData.date ? new Date(formData.date + 'T12:00:00').toISOString() : event.date,
          endDate: formData.endDate ? new Date(formData.endDate + 'T12:00:00').toISOString() : event.endDate,
          location: formData.location,
-         registration_cost: formData.registration_cost
+         registrationCost: formData.registration_cost,
+         adminEmails: [formData.adminEmail1.trim(), formData.adminEmail2.trim()].filter(Boolean)
        });
        onOpenChange(false);
        toast({ title: "Series Configuration Updated" });
@@ -608,6 +613,11 @@ function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEven
           </div>
           <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Base Location Hub</Label><Input value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="h-12 font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
           <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Registration Toll ($)</Label><Input type="number" value={formData.registration_cost} onChange={e => setFormData({...formData, registration_cost: e.target.value})} className="h-12 font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
+          <div className="space-y-4 pt-4 border-t border-slate-100">
+             <div className="flex items-center gap-2 mb-2"><Label className="text-[10px] font-black uppercase text-primary">Tourney Admin Access (Optional)</Label></div>
+             <div className="space-y-2"><Label className="text-[8px] font-bold uppercase text-muted-foreground tracking-widest text-left block">Admin Email 1</Label><Input type="email" placeholder="coach@example.com" value={formData.adminEmail1} onChange={e => setFormData({...formData, adminEmail1: e.target.value})} className="h-10 text-xs font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
+             <div className="space-y-2"><Label className="text-[8px] font-bold uppercase text-muted-foreground tracking-widest text-left block">Admin Email 2</Label><Input type="email" placeholder="staff@example.com" value={formData.adminEmail2} onChange={e => setFormData({...formData, adminEmail2: e.target.value})} className="h-10 text-xs font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
+          </div>
         </div>
         <DialogFooter className="mt-8">
            <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-xl font-black uppercase">Cancel</Button>
@@ -619,7 +629,8 @@ function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEven
 }
 
 function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () => void }) {
-  const { isStaff, activeTeam, db } = useTeam();
+  const { isStaff: isTeamStaff, activeTeam, db, user } = useTeam();
+  const isStaff = isTeamStaff || !!(event.adminEmails && user?.email && event.adminEmails.includes(user.email));
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('itinerary');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -1003,20 +1014,26 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                        return (
                          <Card key={game.id} className={cn(
                            "rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 bg-white p-8 space-y-6 transition-all hover:shadow-2xl hover:ring-primary/20 group relative overflow-hidden",
-                           isTBD && "bg-muted/5 ring-1 ring-dashed ring-black/20"
-                         )}>
+                           isTBD && "bg-muted/5 ring-1 ring-dashed ring-black/20",
+                           isStaff && "cursor-pointer"
+                         )} onClick={() => {
+                           if (isStaff) {
+                             setSelectedGame(game);
+                             setScoreDialogOpen(true);
+                           }
+                         }}>
                            {isTBD && (
                              <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none -rotate-12">
                                <Clock className="h-16 w-16" />
                              </div>
                            )}
                            <div className="flex items-center justify-between">
-                              <Badge className={cn("px-3 h-7 text-[9px] font-black uppercase tracking-widest", isTBD ? "bg-muted text-muted-foreground" : "bg-black text-white")}>
+                              <Badge className={cn("px-3 h-7 text-[9px] font-black uppercase tracking-widest cursor-default", isTBD ? "bg-muted text-muted-foreground" : "bg-black text-white")}>
                                 {game.time}
                               </Badge>
-                              {game.round && <Badge variant="outline" className={cn("text-[9px] font-black uppercase", isTBD ? "border-dashed" : "border-2")}>{game.round}</Badge>}
+                              {game.round && <Badge variant="outline" className={cn("text-[9px] font-black uppercase cursor-default", isTBD ? "border-dashed" : "border-2")}>{game.round}</Badge>}
                            </div>
-                           <div className="grid grid-cols-7 items-center text-center relative z-10">
+                           <div className="grid grid-cols-7 items-center text-center relative z-10 cursor-default">
                               <div className="col-span-3 min-w-0">
                                 <p className={cn("font-black text-[11px] uppercase opacity-40 mb-2 truncate", isTBD && game.team1.toLowerCase().includes('tbd') && "italic")}>{game.team1}</p>
                                 <p className={cn("text-4xl font-black tracking-tighter", isTBD ? "opacity-20" : "")}>{game.score1}</p>
@@ -1027,7 +1044,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                                 <p className={cn("text-4xl font-black tracking-tighter", isTBD ? "opacity-20" : "")}>{game.score2}</p>
                               </div>
                            </div>
-                           {game.location && <div className="pt-4 border-t border-muted/50 flex items-center justify-center gap-2"><MapPin className="h-3 w-3 text-primary opacity-50" /><span className="text-[9px] font-black text-muted-foreground uppercase">{game.location}</span></div>}
+                           {game.location && <div className="pt-4 border-t border-muted/50 flex items-center justify-center gap-2 cursor-default"><MapPin className="h-3 w-3 text-primary opacity-50" /><span className="text-[9px] font-black text-muted-foreground uppercase">{game.location}</span></div>}
                          </Card>
                        );
                      })}

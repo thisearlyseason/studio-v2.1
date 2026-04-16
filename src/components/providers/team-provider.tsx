@@ -278,6 +278,7 @@ export type TeamEvent = {
   isLeagueGame?: boolean;
   isHome?: boolean;
   leagueId?: string;
+  adminEmails?: string[]; // Allowed emails to manage this specific event
   tournamentTeams?: string[];
   tournamentTeamsData?: any[];
   tournamentGames?: any[];
