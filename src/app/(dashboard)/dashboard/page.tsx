@@ -154,7 +154,7 @@ export default function UniversalAccountDashboard() {
             const dB = toDateObj(b.date);
             return (dA?.getTime() || 0) - (dB?.getTime() || 0);
         })
-        .slice(0, 10);
+        .slice(0, 8);
   }, [isParent, householdEvents, activeTeamEvents, myChildren, teams, householdGames]);
 
   if (!mounted || !user) return (
@@ -244,7 +244,8 @@ export default function UniversalAccountDashboard() {
             <div className="space-y-4">
               {upcomingItinerary.length > 0 ? upcomingItinerary.map((event) => {
                 const startD = new Date(event.date);
-                const endD = event.endDate ? new Date(event.endDate) : startD;
+                // For individual tournament match cards, use game.date as a single day — don't inherit the tournament's multi-day endDate
+                const endD = (event.isTournamentMatch || !event.endDate) ? startD : new Date(event.endDate);
                 const isMultiDay = !isSameDay(startD, endD);
                 
                 const team = (teams || []).find(t => t.id === event.teamId);
@@ -322,6 +323,18 @@ export default function UniversalAccountDashboard() {
                 </div>
               )}
             </div>
+
+            {upcomingItinerary.length > 0 && (
+              <div className="flex justify-center pt-2">
+                <Button
+                  variant="outline"
+                  className="rounded-full h-11 px-8 font-black uppercase text-[10px] tracking-widest border-2 hover:bg-primary hover:text-white hover:border-primary transition-all"
+                  onClick={() => router.push('/calendar')}
+                >
+                  <CalendarDays className="h-3.5 w-3.5 mr-2" /> View Master Schedule
+                </Button>
+              </div>
+            )}
           </section>
           <section className="space-y-4">
             <div className="flex items-center gap-3 px-2"><HandHelping className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Community Intelligence</h3></div>

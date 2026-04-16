@@ -660,7 +660,7 @@ function buildEliminationBracket(
 
   // Populate Round 1 with seeded teams (topological seeding: 1v8, 4v5, 2v7, 3v6)
   let seeds = [0];
-  for (let r = 1; r < totalRounds; r++) {
+  for (let r = 1; r <= totalRounds; r++) {
     const next: number[] = [];
     const sz = Math.pow(2, r);
     for (const s of seeds) {
