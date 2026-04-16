@@ -113,10 +113,21 @@ export default function UniversalAccountDashboard() {
     const expandedTournamentMatches: any[] = [];
     list.forEach(e => {
       if (e.isTournament && e.tournamentGames && e.tournamentGames.length > 0) {
+        // Look up the name of the team this event is scoped to
+        const eventTeam = (teams || []).find(t => t.id === e.teamId);
+        const eventTeamName = eventTeam?.name;
+
         e.tournamentGames.forEach((game: any, idx: number) => {
           if (!game.date) return;
           const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
           if (isTBD) return;
+
+          // Only include matches that involve the scoped team for this itinerary
+          const involvesTeam = game.team1Id === e.teamId || game.team2Id === e.teamId || 
+                               (eventTeamName && (game.team1 === eventTeamName || game.team2 === eventTeamName));
+          
+          if (!involvesTeam) return;
+
           expandedTournamentMatches.push({
             ...e,
             id: game.id || `${e.id}_match_${idx}`,
