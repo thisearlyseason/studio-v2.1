@@ -113,21 +113,29 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
           breakLength: 15,
           tournamentType: 'double_elimination'
         }).map((g, idx) => {
-          let gameDate = tomorrow;
+          // Deterministic day assignment across all DE/WB/LB round names.
+          // Day 1 (tomorrow): WB Round 1, LB Round 1, LB Round 2
+          // Day 2 (later):    WB Round 2+, WB Semi-Finals, LB Round 3-4
+          // Day 3 (day3):     WB Finals, LB Finals, Championship, GF, GF Reset
           const r = (g.round || '').toLowerCase();
-          
-          if (r.includes('semi') || r.includes('round 2') || r.includes('wb final')) {
-            gameDate = later;
-          } else if (r.includes('championship') || r.includes('lb final') || r.includes('grand final')) {
-            gameDate = day3;
-          }
+          let gameDate = tomorrow; // Day 1 default (WB R1, LB R1, LB R2)
+
+          const isDay3 = r.includes('championship') || r.includes('lb final')
+            || r.includes('grand final') || r.includes('wb final') || r.includes('reset');
+          const isDay2 = !isDay3 && (
+            r.includes('semi') || r.includes('round 2') || r.includes('round 3')
+            || r.includes('round 4') || r.includes('lb round 3') || r.includes('lb round 4')
+          );
+
+          if (isDay3) gameDate = day3;
+          else if (isDay2) gameDate = later;
 
           const completed = idx < 4;
-          return { 
-            ...g, 
-            date: gameDate, 
-            isCompleted: completed, 
-            score1: completed ? [5, 4, 8, 10][idx] : 0, 
+          return {
+            ...g,
+            date: gameDate,
+            isCompleted: completed,
+            score1: completed ? [5, 4, 8, 10][idx] : 0,
             score2: completed ? [2, 6, 1, 9][idx] : 0,
             matchTeamIds: [g.team1Id, g.team2Id].filter(Boolean)
           };
@@ -554,8 +562,16 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             const lgOffset = isJunior ? 7 : 1;     // Junior starts League Day 7, Alex starts League Day 1
             const pracOffset = isJunior ? 4 : 4;   // Practices start day 4
 
-            const tournStart = new Date(nowObj.getTime() + tournOffset * 86400000).toISOString();
-            const tournEnd = new Date(nowObj.getTime() + (tournOffset + 2) * 86400000).toISOString(); // 3 day duration
+            // Use YYYY-MM-DD strings (not full ISO) so parseLocalDate in the scheduler
+            // treats them as local midnight — prevents UTC offset shifting matches 1 day early.
+            const tournStartDate = new Date(nowObj.getTime() + tournOffset * 86400000);
+            const tournEndDate = new Date(nowObj.getTime() + (tournOffset + 2) * 86400000);
+            const pad = (n: number) => String(n).padStart(2, '0');
+            const toDateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+            const tournStart = tournStartDate.toISOString(); // Keep ISO for event metadata display
+            const tournEnd = tournEndDate.toISOString();
+            const tournStartStr = toDateStr(tournStartDate); // Clean date for scheduler engine
+            const tournEndStr = toDateStr(tournEndDate);
 
             // Sync the league games into team events for immediate visibility
             // IDs are scoped to tid to prevent Strikers/Lakers overwriting each other
@@ -585,8 +601,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             const tournamentGames = generateTournamentSchedule({
               teams: tournamentTeamsData,
               fields: ['Arena 1', 'Main Field'],
-              startDate: tournStart,
-              endDate: tournEnd,
+              startDate: tournStartStr,   // YYYY-MM-DD — no UTC shift
+              endDate: tournEndStr,
               startTime: '08:00',
               endTime: '20:00',
               gameLength: 60,

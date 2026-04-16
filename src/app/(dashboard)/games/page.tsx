@@ -327,7 +327,7 @@ export default function GamesPage() {
                   </div>
                 ) : (
                   <div className="flex flex-col items-end gap-1 shrink-0">
-                    <Button variant="ghost" size="sm" className="h-8 text-[9px] font-black uppercase border tracking-widest">Score match</Button>
+                    {isAdmin && <Button variant="ghost" size="sm" className="h-8 text-[9px] font-black uppercase border tracking-widest">Score match</Button>}
                   </div>
                 )}
               </div>
