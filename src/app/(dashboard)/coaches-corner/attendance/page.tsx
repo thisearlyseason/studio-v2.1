@@ -503,7 +503,32 @@ export default function AttendanceTrackingPage() {
           variant="outline" 
           className="rounded-[2rem] border-2 h-16 px-10 font-black uppercase text-xs tracking-[0.2em] shadow-xl group overflow-hidden relative"
           onClick={() => {
-            toast({ title: "Module Locked", description: "Export capabilities coming in next tactical update." });
+            const getCSVData = () => {
+              const headers = ['Athlete', 'Jersey', 'Position', 'Attendance Rate', ...trackedEvents.map(e => `"${e.title}"`)];
+              const rows = athletesWithStats.map(a => {
+                 return [
+                   `"${a.name}"`, 
+                   `"${a.jersey || ''}"`, 
+                   `"${a.position || ''}"`, 
+                   `"${Math.round(a.stats.rate)}%"`, 
+                   ...trackedEvents.map(e => {
+                      const rsvp = e.userRsvps?.[a.id] || 'no_response';
+                      const status = RSVP_STATUSES.find(s => (s.id === 'declined' && rsvp === 'no') || s.id === rsvp) || RSVP_STATUSES[3];
+                      return `"${status.label}"`;
+                   })
+                 ].join(',');
+              });
+              return [headers.join(','), ...rows].join('\n');
+            };
+            
+            const blob = new Blob([getCSVData()], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `squad_attendance_audit_${format(new Date(), 'yyyy_MM_dd')}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            toast({ title: 'Export Initiated', description: 'Attendance matrix downloading to local drive.' });
           }}
         >
           <div className="absolute inset-0 bg-primary/5 translate-y-full group-hover:translate-y-0 transition-transform duration-500" />

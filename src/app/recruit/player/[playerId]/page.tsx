@@ -3,12 +3,15 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { useFirestore, useDoc, useCollection, useMemoFirebase } from '@/firebase';
-import { doc, collection, getDocs, orderBy, query, getDoc } from 'firebase/firestore';
+import { useFirestore, useDoc, useCollection, useMemoFirebase, useUser } from '@/firebase';
+import { doc, collection, getDocs, orderBy, query, getDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
 import { 
   Trophy, 
   Target, 
@@ -46,6 +49,10 @@ export const dynamic = 'force-dynamic';
 export default function PublicScoutPortalPage() {
   const { playerId } = useParams();
   const db = useFirestore();
+  const { user } = useUser();
+  
+  const [isEvalOpen, setIsEvalOpen] = useState(false);
+  const [newEval, setNewEval] = useState({ athleticism: 5, skillLevel: 5, gameIQ: 5, leadership: 5 });
 
   const playerRef = useMemoFirebase(() => playerId ? doc(db, 'players', playerId as string) : null, [db, playerId]);
   const profileRef = useMemoFirebase(() => playerId ? doc(db, 'players', playerId as string, 'recruitingProfile', 'profile') : null, [db, playerId]);
@@ -127,6 +134,22 @@ export default function PublicScoutPortalPage() {
       document.title = 'Elite Prospect | Institutional Scout Portal';
     }
   }, [playerName]);
+
+  const handleAddEval = async () => {
+    if (!user || (!playerId)) return;
+    try {
+      await addDoc(collection(db, 'players', playerId as string, 'evaluations'), {
+        ...newEval,
+        authorId: user.uid,
+        authorName: user.displayName || user.email || 'Verified Organizer / Scout',
+        createdAt: serverTimestamp()
+      });
+      setIsEvalOpen(false);
+      setNewEval({ athleticism: 5, skillLevel: 5, gameIQ: 5, leadership: 5 });
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-muted/10">
@@ -378,7 +401,17 @@ export default function PublicScoutPortalPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="py-12 text-center opacity-20"><Target className="h-10 w-10 mx-auto mb-2" /><p className="text-[9px] font-black uppercase">Pending Official Review</p></div>
+                  <div className="py-12 text-center opacity-20"><Target className="h-10 w-10 mx-auto mb-2" /><p className="text-[9px] font-black uppercase">Pending Official Review (Awaiting Scouts)</p></div>
+                )}
+                
+                {user ? (
+                  <Button variant="outline" className="w-full mt-4 rounded-xl border-dashed border-2 hover:bg-black hover:text-white transition-colors h-14 font-black uppercase text-[10px]" onClick={() => setIsEvalOpen(true)}>
+                    <Target className="h-4 w-4 mr-2" /> Submit Authorized Evaluation
+                  </Button>
+                ) : (
+                  <Button disabled variant="outline" className="w-full mt-4 rounded-xl border-dashed border-2 opacity-50 h-14 font-black uppercase text-[10px]">
+                    <Lock className="h-4 w-4 mr-2" /> Log In (Scout/Organizer) to Evaluate
+                  </Button>
                 )}
 
                 {profile?.institutionalPulse && (
@@ -432,6 +465,32 @@ export default function PublicScoutPortalPage() {
         <BrandLogo variant="light-background" className="h-6 w-24 mx-auto" />
         <p className="text-[8px] font-black uppercase tracking-[0.3em]">Institutional Recruiting Pipeline v1.0 • verified athletic portfolio</p>
       </footer>
+
+      <Dialog open={isEvalOpen} onOpenChange={setIsEvalOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-md p-8 border-none shadow-2xl bg-white text-black">
+          <DialogHeader className="mb-6">
+            <DialogTitle className="text-2xl font-black uppercase tracking-tight">Post Evaluation</DialogTitle>
+            <DialogDescription className="text-xs uppercase tracking-widest font-black opacity-50">Authorized Scout / Organizer Review</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            {[
+              { key: 'athleticism', label: 'Athleticism' },
+              { key: 'skillLevel', label: 'Skill Level' },
+              { key: 'gameIQ', label: 'Game IQ' },
+              { key: 'leadership', label: 'Leadership' }
+            ].map(m => (
+              <div key={m.key} className="space-y-3">
+                <div className="flex justify-between items-center"><Label className="text-[10px] font-black uppercase">{m.label}</Label><span className="font-black text-primary text-sm">{(newEval as any)[m.key]} / 10</span></div>
+                <Slider min={1} max={10} step={1} value={[(newEval as any)[m.key]]} onValueChange={(val) => setNewEval({...newEval, [m.key]: val[0]})} />
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="mt-8">
+            <Button variant="ghost" className="rounded-xl font-black uppercase text-[10px] h-12 px-6" onClick={() => setIsEvalOpen(false)}>Cancel</Button>
+            <Button onClick={handleAddEval} className="rounded-xl px-8 font-black uppercase text-[10px] bg-primary text-white h-12 shadow-xl shadow-primary/20">Submit Appraisal</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
