@@ -2970,6 +2970,7 @@ export default function CoachesCornerPage() {
                         <SelectTrigger className="h-12 rounded-xl border-2 font-black text-xs uppercase"><SelectValue /></SelectTrigger>
                         <SelectContent className="rounded-xl">
                           <SelectItem value="all" className="font-bold text-xs">Entire Organization</SelectItem>
+                          <SelectItem value="teams" className="font-bold text-xs">Team Based Waiver (Tournaments)</SelectItem>
                           <SelectItem value="players" className="font-bold text-xs">Players Only</SelectItem>
                           <SelectItem value="coaches" className="font-bold text-xs">Coaches / Staff</SelectItem>
                           <SelectItem value="parents" className="font-bold text-xs">Parents / Guardians</SelectItem>

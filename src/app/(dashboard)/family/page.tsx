@@ -341,7 +341,7 @@ function LoginEnabledInfoModal() {
 
 // --- Child Card ---
 function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
-  const { sendChildInvite, revokeChildInvite } = useTeam();
+  const { sendChildInvite, revokeChildInvite, setActiveTeam } = useTeam();
   const router = useRouter();
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLoginInfoOpen, setIsLoginInfoOpen] = useState(false);
@@ -475,7 +475,11 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
           </p>
           <div className="space-y-2">
             {childTeams.map(t => (
-              <div key={t.id} className="flex items-center justify-between p-3 bg-muted/20 rounded-2xl border transition-all hover:bg-white hover:shadow-sm">
+              <div 
+                key={t.id} 
+                onClick={() => { setActiveTeam(t); router.push('/calendar'); }}
+                className="flex items-center justify-between p-3 bg-muted/20 rounded-2xl border transition-all hover:bg-white hover:shadow-sm cursor-pointer"
+              >
                 <div className="flex items-center gap-3">
                   <Users className="h-4 w-4 text-primary" />
                   <span className="text-xs font-black uppercase tracking-tight truncate text-foreground">{t.name}</span>

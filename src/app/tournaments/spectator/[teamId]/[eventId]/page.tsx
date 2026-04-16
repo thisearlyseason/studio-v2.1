@@ -245,28 +245,33 @@ export default function PublicSpectatorHub() {
                         <div className="h-px flex-1 bg-black/5" />
                       </div>
                       
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
                         {dayGames.map((game: any) => (
-                          <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md group">
-                            <div className="flex justify-between items-center">
-                              <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary">{game.time}</Badge>
-                              {game.round && <Badge className="bg-muted text-foreground border-none text-[7px] font-black uppercase px-2 h-4">{game.round}</Badge>}
-                              {game.isCompleted && <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2 h-5">FINAL</Badge>}
+                          <Card key={game.id} className="rounded-xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-3 space-y-2 transition-all hover:shadow-md group">
+                            <div className="flex justify-between items-center pb-2 border-b border-muted">
+                              <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary px-1.5 py-0 h-4">{game.time}</Badge>
+                              {game.round && <Badge className="bg-muted text-foreground border-none text-[7px] font-black uppercase px-1.5 h-4">{game.round}</Badge>}
+                              {game.isCompleted && <Badge className="bg-black text-white border-none text-[7px] font-black uppercase px-1.5 h-4">FINAL</Badge>}
                             </div>
-                            <div className="grid grid-cols-7 items-center gap-4 text-center">
-                              <div className="col-span-3 min-w-0">
-                                <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team1}</p>
-                                <AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")} value={game.score1} />
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex items-center justify-between">
+                                 <div className="flex items-center gap-1.5 overflow-hidden">
+                                   {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-2.5 w-2.5 text-yellow-500 shrink-0" />}
+                                   <p className="font-bold text-[10px] uppercase truncate max-w-[110px]">{game.team1}</p>
+                                 </div>
+                                 <AnimatedScore className={cn("text-lg font-black", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")} value={game.score1} />
                               </div>
-                              <div className="col-span-1 opacity-20 font-black text-[10px]">VS</div>
-                              <div className="col-span-3 min-w-0">
-                                <p className="font-black text-xs uppercase truncate leading-tight mb-1">{game.team2}</p>
-                                <AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")} value={game.score2} />
+                              <div className="flex items-center justify-between">
+                                 <div className="flex items-center gap-1.5 overflow-hidden">
+                                   {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-2.5 w-2.5 text-yellow-500 shrink-0" />}
+                                   <p className="font-bold text-[10px] uppercase truncate max-w-[110px]">{game.team2}</p>
+                                 </div>
+                                 <AnimatedScore className={cn("text-lg font-black", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")} value={game.score2} />
                               </div>
                             </div>
                             {game.location && (
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase text-center flex items-center justify-center gap-1.5 pt-2 border-t border-muted">
-                                <MapPin className="h-3 w-3 opacity-40" /> {game.location}
+                              <p className="text-[8px] font-bold text-muted-foreground uppercase text-left flex items-center gap-1.5 pt-1.5 border-t border-muted">
+                                <MapPin className="h-2.5 w-2.5 opacity-40" /> {game.location}
                               </p>
                             )}
                           </Card>
