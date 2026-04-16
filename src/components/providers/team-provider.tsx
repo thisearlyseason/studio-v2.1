@@ -557,6 +557,12 @@ export type TournamentGame = {
   winnerToSlot?: 'team1' | 'team2';
   loserTo?: string;
   loserToSlot?: 'team1' | 'team2';
+  /** Pool index (0-based) for pool_play_knockout format */
+  pool?: number;
+  /** True for Grand Final Reset match in Double Elimination */
+  isResetMatch?: boolean;
+  /** True for conditional matches that only occur under specific bracket outcomes */
+  isConditional?: boolean;
 };
 
 export type DocumentSignature = {
