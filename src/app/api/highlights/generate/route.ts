@@ -23,7 +23,11 @@ export async function POST(req: NextRequest) {
       CRITICAL SCOUTING DIRECTIVES:
       1. Action Density: Look for high-impact plays (scoring, critical defense, massive momentum shifts).
       2. Player Focus: Isolate movements, off-ball IQ, and technical execution for the requested player/filter.
-      3. Timing: Ensure highlight clips map cleanly to realistic pacing (usually 5 to 12 seconds per clip).
+      3. Timing & Variety: 
+         - Ensure highlight clips map cleanly to realistic pacing (usually 5 to 15 seconds per clip).
+         - MANDATORY: Search the ENTIRE duration of provided metadata/stream.
+         - MANDATORY: Return UNIQUE timestamps. NEVER return the same or nearly identical startTime/endTime for multiple highlights.
+         - If the video is long, space the highlights throughout the game (e.g., 1st half, 2nd half, crunch time).
       4. Professional Terminology: Use elite scouting vocabulary in the descriptions (e.g. "weak-side help", "explosive first step", "verticality", "vision", "anticipation").
 
       Return ONLY a raw JSON array of objects with the exact following keys. Do NOT wrap in markdown formatting blocks (\`\`\`json).
@@ -32,7 +36,7 @@ export async function POST(req: NextRequest) {
       - "title" (short 2-4 word intense title, e.g. "Weak-Side Block")
       - "description" (a 1-2 sentence elite breakdown of the execution and impact)
       
-      Structure the output to simulate 3-5 high-quality findings.
+      Structure the output to simulate 4-6 distinct, diverse, and high-quality findings.
     `;
 
     // Attempting to use a reliable model via Straico proxy

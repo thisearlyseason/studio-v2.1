@@ -1015,13 +1015,27 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         return;
      }
 
-     // IMPROVED: Handle YouTube thumbnails directly since canvas capture is blocked by CORS
+     // IMPROVED: Handle YouTube thumbnails with multiple quality fallbacks to prevent broken images
      if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
         const vidId = videoUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/)?.[1];
         if (vidId) {
-           const thumbUrl = `https://i.ytimg.com/vi/${vidId}/maxresdefault.jpg`;
-           setPhotos(prev => [...prev, thumbUrl]);
-           toast({title: "YouTube Photo Added", description: `Fetched high-res thumbnail from YouTube link.`});
+           // We'll set a placeholder first and use an Image object to verify maxres exists
+           const maxResUrl = `https://i.ytimg.com/vi/${vidId}/maxresdefault.jpg`;
+           const hqResUrl = `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
+           
+           const img = new Image();
+           img.onload = () => {
+              if (img.width === 120 && img.height === 90) {
+                 // YouTube returns a 120x90 placeholder for missing maxres
+                 setPhotos(prev => [...prev, hqResUrl]);
+              } else {
+                 setPhotos(prev => [...prev, maxResUrl]);
+              }
+           };
+           img.onerror = () => setPhotos(prev => [...prev, hqResUrl]);
+           img.src = maxResUrl;
+
+           toast({title: "YouTube Photo Added", description: `Captured strategic thumbnail from YouTube.`});
            return;
         }
         toast({title: "Screenshot Failed", description: "Could not parse YouTube ID from link.", variant: "destructive"});
@@ -2097,7 +2111,19 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                            className="h-8 text-[9px] font-black uppercase tracking-widest gap-2 hover:bg-primary hover:text-white transition-colors"
                            onClick={() => {
                               const v = videos.find(vid => vid.url === aiSelectedVideoUrl);
-                              if(v) setSelectedVideo({ ...v, startAt: hl.startTime, endAt: hl.endTime } as any);
+                              if(v) {
+                                 setSelectedVideo({ ...v, startAt: hl.startTime, endAt: hl.endTime } as any);
+                               } else {
+                                 setSelectedVideo({ 
+                                   id: 'ai-preview',
+                                   title: hl.title,
+                                   url: aiSelectedVideoUrl,
+                                   type: 'Highlight',
+                                   comments: [],
+                                   startAt: hl.startTime,
+                                   endAt: hl.endTime
+                                 } as any);
+                               }
                            }}
                          >
                            <Play className="h-3 w-3" /> View Clip
@@ -2108,7 +2134,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                            className="h-8 text-[9px] font-black uppercase tracking-widest gap-2 hover:bg-black hover:text-white transition-colors"
                            onClick={() => commitAIHighlightToReel(hl)}
                          >
-                           <Plus className="h-3 w-3" /> Add Reel
+                           <Plus className="h-3 w-3" /> + add reel to videos
                          </Button>
                          <Button 
                            variant="outline" 
@@ -2161,7 +2187,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     
                     if (ytMatch) {
                       const videoId = ytMatch[1];
-                      srcUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+                      // ADDED mute=1 and extra allowed parameters to fix playback errors and ensure autoplay
+                      srcUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&showinfo=0`;
                       
                       if ((selectedVideo as any).startAt) {
                         srcUrl += `&start=${Math.floor((selectedVideo as any).startAt)}`;
@@ -2174,7 +2201,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                         <iframe
                           src={srcUrl}
                           className="absolute inset-0 w-full h-full"
-                          allow="autoplay; fullscreen; picture-in-picture"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                           allowFullScreen
                         />
                       );
