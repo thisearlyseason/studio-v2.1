@@ -37,35 +37,58 @@ export async function POST(req: NextRequest) {
 
     // Attempting to use a reliable model via Straico proxy
     const STRAICO_ENDPOINT = 'https://api.straico.com/v1/chat/completions';
-    const MODEL = 'anthropic/claude-3.7-sonnet'; // Guaranteed working model in Straico
+    
+    // We try a list of models for maximum reliability in "Live" environments
+    const MODELS_TO_TRY = [
+      'anthropic/claude-3.5-sonnet',
+      'anthropic/claude-3.7-sonnet',
+      'google/gemini-1.5-pro'
+    ];
 
-    const res = await fetch(STRAICO_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        models: [MODEL],
-        messages: [{ role: 'user', content: aiPrompt }],
-      }),
-    });
+    let textResult = '';
+    let lastError = '';
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.error("[Straico Error Response]:", text);
-      throw new Error(`AI Engine rejected the request. Details: ${text}`);
+    for (const modelId of MODELS_TO_TRY) {
+      try {
+        const res = await fetch(STRAICO_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            models: [modelId],
+            messages: [{ role: 'user', content: aiPrompt }],
+          }),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error(`[Straico Error for ${modelId}]:`, errText);
+          lastError = errText;
+          continue; // Try next model
+        }
+
+        const json = await res.json();
+        
+        // Straico nests the result: data.completions[modelId].completion.choices[0].message.content
+        const content = json?.data?.completions?.[modelId]?.completion?.choices?.[0]?.message?.content;
+        
+        if (content) {
+          textResult = content;
+          break; // Success!
+        } else {
+          console.error(`[Straico Malformed Response for ${modelId}]:`, JSON.stringify(json));
+          lastError = 'Malformed response structure';
+        }
+      } catch (e: any) {
+        console.error(`[Straico Fetch Failure for ${modelId}]:`, e);
+        lastError = e.message;
+      }
     }
 
-    const json = await res.json();
-    let textResult = '';
-
-    // Parse the dynamic response structure from Straico
-    if (json?.data?.completions?.[MODEL]?.completion?.choices?.[0]?.message?.content) {
-       textResult = json.data.completions[MODEL].completion.choices[0].message.content;
-    } else {
-       console.error("Malformed Response:", JSON.stringify(json, null, 2));
-       throw new Error("Analyzed data was returned empty or malformed.");
+    if (!textResult) {
+      throw new Error(`AI Engines rejected the request or were unavailable. Last error: ${lastError}. Please ensure your STRAICO_API_KEY is active and has sufficient credits.`);
     }
 
     // Clean up Markdown JSON blocks if the model accidentally included them
