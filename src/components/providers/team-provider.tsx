@@ -163,6 +163,9 @@ export type PlayerVideo = {
   url: string;
   comments?: VideoComment[];
   createdAt?: any;
+  startAt?: number;
+  endAt?: number;
+  segments?: { start: number; end: number; title: string }[];
 };
 
 export type Team = {

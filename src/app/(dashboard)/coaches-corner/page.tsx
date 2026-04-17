@@ -844,12 +844,22 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [isAddFilmOpen, setIsAddFilmOpen] = useState(false);
+  const [isAIHighlightOpen, setIsAIHighlightOpen] = useState(false);
+  const [aiVideoPrompt, setAiVideoPrompt] = useState('find all offensive highlights');
+  const [aiSelectedVideoUrl, setAiSelectedVideoUrl] = useState('');
+  const [aiHighlights, setAiHighlights] = useState<any[]>([]);
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [filmTitle, setFilmTitle] = useState('');
   const [filmUrl, setFilmUrl] = useState('');
   const [filmType, setFilmType] = useState('Highlight');
   const [selectedVideo, setSelectedVideo] = useState<PlayerVideo | null>(null);
   const [newComment, setNewComment] = useState('');
   const [commentTimestamp, setCommentTimestamp] = useState('');
+  const [selectedAiHighlights, setSelectedAiHighlights] = useState<number[]>([]);
+  const [editingHlIndex, setEditingHlIndex] = useState<number | null>(null);
+  const [editingVideoId, setEditingVideoId] = useState<string | null>(null);
+  const [editingTitleValue, setEditingTitleValue] = useState('');
+  const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [deletedStatIds, setDeletedStatIds] = useState<string[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -964,6 +974,158 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     await loadData();
     toast({ title: "Film Archived", description: `${filmTitle || 'Clip'} added to highlight reel.` });
   };
+
+  const handleGenerateAI = async () => {
+    if (!aiSelectedVideoUrl || !aiVideoPrompt) return;
+    setIsAiProcessing(true);
+    try {
+      const res = await fetch('/api/highlights/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: aiSelectedVideoUrl, prompt: aiVideoPrompt })
+      });
+      const data = await res.json();
+      if (res.ok) setAiHighlights(data);
+      else throw new Error(data.error);
+    } catch (e: any) {
+      toast({ title: "AI Analysis Failed", description: e.message, variant: "destructive" });
+    } finally {
+      setIsAiProcessing(false);
+    }
+  };
+
+  const commitAIHighlightToReel = async (hl: any) => {
+     if (!member.playerId) return;
+     const newVid = {
+        title: `[AI] ${hl.title}`,
+        url: aiSelectedVideoUrl,
+        type: 'Highlight',
+        comments: [],
+        startAt: hl.startTime,
+        endAt: hl.endTime,
+     };
+     await addPlayerVideo(member.playerId, newVid as any);
+     toast({ title: "Highlight Saved", description: "Clip dynamically added to athlete's permanent scout reel (no extra storage used)." });
+     await loadData();
+  };
+
+  const handleExtractScreenshot = async (videoUrl: string, atTime: number) => {
+     if (photos.length >= 5) {
+        toast({title: "Gallery Full", description: "You already have 5 photos in the gallery. Please delete one first."});
+        return;
+     }
+
+     if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
+        toast({title: "Screenshot Failed", description: "Cannot extract direct image from YouTube embedded links directly in browser. Please add photo manually."});
+        return;
+     }
+
+     toast({title: "Extracting Frame", description: "Isolating screenshot from video..."});
+
+     const videoElement = document.createElement('video');
+     videoElement.crossOrigin = "anonymous";
+     videoElement.src = videoUrl;
+     videoElement.muted = true;
+     videoElement.playsInline = true;
+
+     videoElement.onloadeddata = () => {
+         videoElement.currentTime = atTime;
+     };
+
+     videoElement.onseeked = () => {
+         try {
+            const canvas = document.createElement('canvas');
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if(ctx) {
+               ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+               const dataUrl = canvas.toDataURL('image/jpeg', 0.85); 
+               setPhotos(prev => [...prev, dataUrl]);
+               toast({title: "Photo Added", description: `Screenshot isolated at ${Math.floor(atTime)}s and added to gallery.`});
+            }
+         } catch (err) {
+            toast({title: "Extraction Failed", description: "Cross-Origin resource sharing prevented capturing this video frame.", variant: "destructive"});
+         }
+     };
+
+     videoElement.onerror = () => {
+        toast({title: "Extraction Failed", description: "CORS prevented capturing this video frame from external storage.", variant: "destructive"});
+     };
+  };
+
+  const handleCombineSelected = async () => {
+    if (!member.playerId || selectedAiHighlights.length === 0) return;
+    
+    const selected = selectedAiHighlights.map(idx => aiHighlights[idx]);
+    const segments = selected.map(hl => ({
+      start: hl.startTime,
+      end: hl.endTime,
+      title: hl.title
+    }));
+
+    const newVid = {
+      title: `AI Combination: ${selected[0].title} & More`,
+      url: aiSelectedVideoUrl,
+      type: 'Highlight',
+      comments: [],
+      segments
+    };
+
+    await addPlayerVideo(member.playerId, newVid as any);
+    toast({ title: "Reel Combined", description: `${selected.length} segments combined into a single tactical sequence.` });
+    setSelectedAiHighlights([]);
+    await loadData();
+  };
+
+  const handleBatchAddIndividually = async () => {
+    if (!member.playerId || selectedAiHighlights.length === 0) return;
+    
+    const promises = selectedAiHighlights.map(idx => {
+      const hl = aiHighlights[idx];
+      return addPlayerVideo(member.playerId as string, {
+        title: `[AI] ${hl.title}`,
+        url: aiSelectedVideoUrl,
+        type: 'Highlight',
+        comments: [],
+        startAt: hl.startTime,
+        endAt: hl.endTime,
+      } as any);
+    });
+
+    await Promise.all(promises);
+    toast({ title: "Batch Processed", description: `${selectedAiHighlights.length} highlights added to the reel independently.` });
+    setSelectedAiHighlights([]);
+    await loadData();
+  };
+
+  const handleEditHlTitle = (index: number) => {
+    setEditingHlIndex(index);
+    setEditingTitleValue(aiHighlights[index].title);
+  };
+
+  const saveHlTitle = () => {
+    if (editingHlIndex === null) return;
+    const updated = [...aiHighlights];
+    updated[editingHlIndex].title = editingTitleValue;
+    setAiHighlights(updated);
+    setEditingHlIndex(null);
+  };
+
+  const handleEditVideoTitle = (v: PlayerVideo) => {
+    setEditingVideoId(v.id);
+    setEditingTitleValue(v.title);
+  };
+
+  const saveVideoTitle = async (v: PlayerVideo) => {
+    if (!member.playerId) return;
+    await updatePlayerVideo(member.playerId, v.id, { title: editingTitleValue });
+    setEditingVideoId(null);
+    await loadData();
+    toast({ title: 'Title Updated' });
+  };
+
+
 
   if (loading) return <div className="p-12 text-center animate-pulse"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /><p className="text-[10px] font-black uppercase mt-4">Opening Tactical Folder...</p></div>;
 
@@ -1275,7 +1437,12 @@ function RecruitingProfileManager({ member }: { member: Member }) {
           <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white">
             <CardHeader className="bg-muted/30 p-6 border-b flex flex-row items-center justify-between">
               <CardTitle className="text-xs font-black uppercase tracking-widest">Highlight Reel</CardTitle>
-              <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase" onClick={() => setIsAddFilmOpen(true)}><Plus className="h-3 w-3 mr-1" /> Add Film</Button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase text-purple-600 hover:text-purple-700 bg-purple-50 hover:bg-purple-100" onClick={() => setIsAIHighlightOpen(true)}>
+                  <Sparkles className="h-3 w-3 mr-1" /> AI Reel Tool
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase" onClick={() => setIsAddFilmOpen(true)}><Plus className="h-3 w-3 mr-1" /> Add Film</Button>
+              </div>
             </CardHeader>
             <CardContent className="p-6">
               {videos.length > 0 ? (
@@ -1287,7 +1454,26 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                         <Badge className="absolute top-1 left-1 bg-primary text-white border-none text-[6px] font-black uppercase px-1.5 h-4">{v.type}</Badge>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-black text-xs uppercase truncate">{v.title}</p>
+                        {editingVideoId === v.id ? (
+                          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                            <Input 
+                              value={editingTitleValue} 
+                              onChange={e => setEditingTitleValue(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && saveVideoTitle(v)}
+                              className="h-8 text-xs font-black uppercase rounded-lg border-2"
+                              autoFocus
+                            />
+                            <Button size="icon" className="h-8 w-8 rounded-lg" onClick={() => saveVideoTitle(v)}><CheckCircle2 className="h-4 w-4" /></Button>
+                            <Button size="icon" variant="ghost" className="h-8 w-8 rounded-lg" onClick={() => setEditingVideoId(null)}><X className="h-4 w-4" /></Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                             <p className="font-black text-xs uppercase truncate">{v.title}</p>
+                             <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); handleEditVideoTitle(v); }}>
+                               <Edit3 className="h-3 w-3" />
+                             </Button>
+                          </div>
+                        )}
                         <p className="text-[9px] text-muted-foreground font-bold uppercase mt-0.5">{(v.comments?.length || 0)} coach mark{(v.comments?.length || 0) !== 1 ? 's' : ''}</p>
                       </div>
                       <MessageSquare className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
@@ -1697,20 +1883,214 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isAIHighlightOpen} onOpenChange={setIsAIHighlightOpen}>
+        <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl bg-white overflow-hidden">
+          <DialogTitle className="sr-only">AI Highlight Reel Generator</DialogTitle>
+          <div className="bg-purple-600 p-8 text-white relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10 -rotate-12 pointer-events-none"><Sparkles className="h-32 w-32" /></div>
+            <div className="relative z-10 space-y-2">
+              <Badge className="bg-white/20 text-white border-none font-black text-[8px] tracking-widest px-3 h-5 uppercase">Gemini AI Engine</Badge>
+              <h3 className="text-3xl font-black uppercase tracking-tight leading-none">Automated Scout</h3>
+              <p className="text-xs font-bold text-white/70 uppercase tracking-widest">Generate precise highlight clips using an intelligent prompt.</p>
+            </div>
+          </div>
+          <div className="p-8 space-y-6">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Source Video</Label>
+              <Select value={aiSelectedVideoUrl} onValueChange={setAiSelectedVideoUrl}>
+                <SelectTrigger className="h-12 rounded-2xl border-2 font-bold focus:ring-purple-600">
+                  <SelectValue placeholder="Select a full game video from archive" />
+                </SelectTrigger>
+                <SelectContent>
+                  {videos.length === 0 && <SelectItem value="none" disabled>No videos archived</SelectItem>}
+                  {videos.map(v => (
+                    <SelectItem key={v.id} value={v.url}>{v.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Scout Search Prompt</Label>
+              <Input 
+                placeholder="e.g. Find all highlights by player #10..." 
+                className="h-12 rounded-2xl border-2 font-bold focus-visible:ring-purple-600" 
+                value={aiVideoPrompt} 
+                onChange={e => setAiVideoPrompt(e.target.value)} 
+              />
+            </div>
+            
+            {isAiProcessing && (
+              <div className="bg-purple-50 p-6 rounded-[2rem] border-2 border-purple-100 flex flex-col items-center justify-center space-y-4 animate-in fade-in">
+                <Loader2 className="h-8 w-8 text-purple-600 animate-spin" />
+                <div className="text-center">
+                   <p className="text-xs font-black uppercase text-purple-900 tracking-widest">Analyzing Frame Data...</p>
+                   <p className="text-[10px] font-bold text-purple-600/70 uppercase pt-1">Gemini is scrubbing the video for key events. This may take a moment.</p>
+                </div>
+              </div>
+            )}
+            
+            {!isAiProcessing && aiHighlights.length > 0 && (
+              <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Generated Highlights ({aiHighlights.length})</Label>
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                  {aiHighlights.map((hl, i) => (
+                     <div key={i} className={`p-4 rounded-2xl border flex flex-col gap-2 relative group overflow-hidden transition-all ${selectedAiHighlights.includes(i) ? 'bg-purple-100/50 border-purple-300 ring-2 ring-purple-600/10' : 'bg-muted/30 border-transparent hover:border-purple-200'}`}>
+                       <div className="absolute top-4 left-4 z-10">
+                          <input 
+                            type="checkbox" 
+                            className="h-4 w-4 rounded-md border-purple-300 text-purple-600 focus:ring-purple-600 cursor-pointer"
+                            checked={selectedAiHighlights.includes(i)}
+                            onChange={() => {
+                              setSelectedAiHighlights(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]);
+                            }}
+                          />
+                       </div>
+                       <div className="flex items-center justify-between pl-8">
+                         {editingHlIndex === i ? (
+                           <div className="flex items-center gap-2 flex-1">
+                             <Input 
+                               value={editingTitleValue} 
+                               onChange={e => setEditingTitleValue(e.target.value)}
+                               onKeyDown={e => e.key === 'Enter' && saveHlTitle()}
+                               className="h-8 text-xs font-black uppercase rounded-lg border-2 bg-white"
+                               autoFocus
+                             />
+                             <Button size="icon" className="h-8 w-8 rounded-lg bg-purple-600" onClick={saveHlTitle}><CheckCircle2 className="h-4 w-4" /></Button>
+                           </div>
+                         ) : (
+                           <div className="flex items-center gap-2 flex-1 overflow-hidden">
+                             <h4 className="font-black text-xs uppercase tracking-tight text-foreground truncate">{hl.title}</h4>
+                             <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleEditHlTitle(i)}>
+                               <Edit3 className="h-3 w-3" />
+                             </Button>
+                           </div>
+                         )}
+                         <Badge variant="outline" className="text-[8px] font-black shrink-0 ml-2 bg-white/80 backdrop-blur border bg-purple-100 text-purple-700">
+                           {Math.floor(hl.startTime / 60)}:{(Math.floor(hl.startTime % 60)).toString().padStart(2, '0')} - {Math.floor(hl.endTime / 60)}:{(Math.floor(hl.endTime % 60)).toString().padStart(2, '0')}
+                         </Badge>
+                       </div>
+                       <p className="text-[10px] font-medium text-muted-foreground leading-relaxed pl-8">"{hl.description}"</p>
+                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 pl-8">
+                         <Button 
+                           variant="secondary" 
+                           size="sm" 
+                           className="h-8 text-[9px] font-black uppercase tracking-widest gap-2 hover:bg-primary hover:text-white transition-colors"
+                           onClick={() => {
+                              const v = videos.find(vid => vid.url === aiSelectedVideoUrl);
+                              if(v) setSelectedVideo({ ...v, startAt: hl.startTime, endAt: hl.endTime } as any);
+                           }}
+                         >
+                           <Play className="h-3 w-3" /> View Clip
+                         </Button>
+                         <Button 
+                           variant="outline" 
+                           size="sm" 
+                           className="h-8 text-[9px] font-black uppercase tracking-widest gap-2 hover:bg-black hover:text-white transition-colors"
+                           onClick={() => commitAIHighlightToReel(hl)}
+                         >
+                           <Plus className="h-3 w-3" /> Add Reel
+                         </Button>
+                         <Button 
+                           variant="outline" 
+                           size="sm" 
+                           className="h-8 text-[9px] font-black uppercase tracking-widest gap-2 hover:bg-black hover:text-white transition-colors"
+                           onClick={() => handleExtractScreenshot(aiSelectedVideoUrl, hl.startTime + 1)}
+                         >
+                           <Camera className="h-3 w-3" /> Get Photo
+                         </Button>
+                       </div>
+                     </div>
+                  ))}
+                  
+                  {selectedAiHighlights.length > 0 && (
+                    <div className="flex items-center justify-between px-2 py-4 bg-muted/20 rounded-[2rem] animate-in fade-in sticky bottom-0 bg-white/80 backdrop-blur border shadow-sm mt-4 z-20">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-black uppercase text-purple-700">{selectedAiHighlights.length} Selection{selectedAiHighlights.length !== 1 ? 's' : ''}</p>
+                        <p className="text-[8px] font-bold text-muted-foreground uppercase">Execute strategic batch actions across analysis results.</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                         <Button size="sm" variant="outline" className="h-8 rounded-xl text-[9px] font-black uppercase border-2 border-purple-200" onClick={handleBatchAddIndividually}>Indiv. Add All</Button>
+                         <Button size="sm" className="h-8 rounded-xl text-[9px] font-black uppercase bg-purple-600 shadow-lg shadow-purple-600/20 text-white" onClick={handleCombineSelected}>Combine & Add</Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="p-8 pt-0 gap-3 sm:gap-0">
+             <Button variant="ghost" onClick={() => setIsAIHighlightOpen(false)} className="rounded-2xl font-black uppercase text-[10px] h-12 px-6">Close</Button>
+             <Button onClick={handleGenerateAI} disabled={!aiSelectedVideoUrl || !aiVideoPrompt || isAiProcessing} className="rounded-2xl font-black uppercase text-[10px] px-8 h-12 shadow-xl shadow-purple-600/20 bg-purple-600 hover:bg-purple-700 hover:scale-[1.02] transition-transform text-white">
+               {isAiProcessing ? "Scanning Engine..." : "Analyze Video"}
+             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── VIDEO VIEWER + COMMENT DIALOG ── */}
       <Dialog open={!!selectedVideo} onOpenChange={() => setSelectedVideo(null)}>
         <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <DialogTitle className="sr-only">Video Viewer</DialogTitle>
           {selectedVideo && (
             <>
               <div className="bg-black aspect-video relative flex items-center justify-center">
-                {selectedVideo.url ? (
-                  <iframe
-                    src={selectedVideo.url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
-                    className="absolute inset-0 w-full h-full"
-                    allow="autoplay; fullscreen"
-                    allowFullScreen
-                  />
-                ) : (
+                {selectedVideo.url ? (() => {
+                    let srcUrl = selectedVideo.url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/');
+                    if ((selectedVideo as any).startAt) {
+                       if (srcUrl.includes('youtube.com')) {
+                          srcUrl += (srcUrl.includes('?') ? '&' : '?') + `start=${Math.floor((selectedVideo as any).startAt)}`;
+                          if ((selectedVideo as any).endAt) {
+                            srcUrl += `&end=${Math.floor((selectedVideo as any).endAt)}`;
+                          }
+                       }
+                    }
+                    
+                    if (!srcUrl.includes('youtube.com')) {
+                       return (
+                         <video 
+                           src={selectedVideo.url} // Strip url hash components since blob URLs choke on them
+                           className="absolute inset-0 w-full h-full object-contain" 
+                           controls 
+                           autoPlay 
+                           onLoadedMetadata={(e) => {
+                              if (selectedVideo.segments && selectedVideo.segments.length > 0) {
+                                  setCurrentSegmentIndex(0);
+                                  e.currentTarget.currentTime = selectedVideo.segments[0].start;
+                              } else if (selectedVideo.startAt) {
+                                  e.currentTarget.currentTime = selectedVideo.startAt;
+                              }
+                           }}
+                           onTimeUpdate={(e) => {
+                              const v = e.currentTarget;
+                              if (selectedVideo.segments && selectedVideo.segments.length > 0) {
+                                  const seg = selectedVideo.segments[currentSegmentIndex];
+                                  if (v.currentTime >= seg.end) {
+                                      if (currentSegmentIndex < selectedVideo.segments.length - 1) {
+                                          const next = currentSegmentIndex + 1;
+                                          setCurrentSegmentIndex(next);
+                                          v.currentTime = selectedVideo.segments[next].start;
+                                          v.play();
+                                      } else {
+                                          v.pause();
+                                      }
+                                  }
+                              } else if (selectedVideo.endAt && v.currentTime >= selectedVideo.endAt) {
+                                  v.pause();
+                              }
+                           }}
+                         />
+                       );
+                    }
+                    
+                    return (
+                      <iframe
+                        src={srcUrl}
+                        className="absolute inset-0 w-full h-full"
+                        allow="autoplay; fullscreen"
+                        allowFullScreen
+                      />
+                    );
+                })() : (
                   <div className="flex flex-col items-center gap-3 opacity-30">
                     <Video className="h-16 w-16 text-white" />
                     <p className="text-white text-xs font-black uppercase">No URL provided</p>
