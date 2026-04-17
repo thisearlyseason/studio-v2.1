@@ -8,13 +8,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Video URL is required' }, { status: 400 });
     }
 
-    // NEW TACTICAL CHECK: Platform restrictions
-    if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') || videoUrl.includes('vimeo.com')) {
-       return NextResponse.json({ 
-         error: 'Tactical Analysis Restricted: External platform links (YouTube/Vimeo) block direct AI scrubbing. Please upload a local file or use a direct .mp4 link for elite frame-by-frame analysis.' 
-       }, { status: 422 });
-    }
-
     const apiKey = process.env.STRAICO_API_KEY;
     
     if (!apiKey) {
@@ -25,7 +18,9 @@ export async function POST(req: NextRequest) {
     const aiPrompt = `
       You are an elite, professional sports scout operating an advanced video analysis engine.
       Analyze this game video stream: ${videoUrl}
-      Identify key moments and game-changing plays based on this specific directive: "${prompt}"
+      (Tactical Note: If this is an external platform link like YouTube/Vimeo, utilize all available metadata, transcript context, and world knowledge to identify segments. If you cannot access the stream directly, provide your best analysis based on the user's prompt).
+      
+      User Scout Request: "${prompt}"
       
       CRITICAL SCOUTING DIRECTIVES:
       1. Action Density: Look for high-impact plays (scoring, critical defense, massive momentum shifts).
