@@ -2200,13 +2200,14 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       <div className="flex items-center gap-2">
                          <Button size="sm" variant="outline" className="h-8 rounded-xl text-[9px] font-black uppercase border-2 border-purple-200" onClick={handleBatchAddIndividually}>Indiv. Add All</Button>
                          <Button size="sm" className="h-8 rounded-xl text-[9px] font-black uppercase bg-purple-600 shadow-lg shadow-purple-600/20 text-white" onClick={handleCombineSelected}>Combine & Add</Button>
-                      </div>
+                       </div>
                     </div>
                   )}
                 </div>
               </div>
             )}
           </div>
+        </div>
           <DialogFooter className="p-8 pb-10 gap-3 sm:gap-0 border-t bg-zinc-50/50">
              <Button variant="ghost" onClick={() => setIsAIHighlightOpen(false)} className="rounded-2xl font-black uppercase text-[10px] h-12 px-6">Close</Button>
              <Button onClick={handleGenerateAI} disabled={!aiSelectedVideoUrl || !aiVideoPrompt || isAiProcessing} className="rounded-2xl font-black uppercase text-[10px] px-8 h-12 shadow-xl shadow-purple-600/20 bg-purple-600 hover:bg-purple-700 hover:scale-[1.02] transition-transform text-white">
