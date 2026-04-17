@@ -1953,9 +1953,10 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       </Dialog>
 
       <Dialog open={isAIHighlightOpen} onOpenChange={setIsAIHighlightOpen}>
-        <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl bg-white overflow-hidden">
+        <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl bg-white overflow-hidden flex flex-col max-h-[95vh]">
           <DialogTitle className="sr-only">AI Highlight Reel Generator</DialogTitle>
-          <div className="bg-purple-600 p-8 text-white relative overflow-hidden">
+          <div className="overflow-y-auto custom-scrollbar flex-1">
+            <div className="bg-purple-600 p-8 text-white relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10 -rotate-12 pointer-events-none"><Sparkles className="h-32 w-32" /></div>
             <div className="relative z-10 space-y-2">
               <Badge className="bg-white/20 text-white border-none font-black text-[8px] tracking-widest px-3 h-5 uppercase">Gemini AI Engine</Badge>
@@ -2010,7 +2011,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                   </Select>
                 </TabsContent>
 
-                <TabsContent value="url" className="mt-4 animate-in fade-in slide-in-from-top-1">
+                <TabsContent value="url" className="mt-4 animate-in fade-in slide-in-from-top-1 space-y-3">
                   <div className="relative">
                     <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-600" />
                     <Input 
@@ -2019,6 +2020,12 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       value={aiSelectedVideoUrl} 
                       onChange={e => setAiSelectedVideoUrl(e.target.value)} 
                     />
+                  </div>
+                  <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-start gap-3">
+                     <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                     <p className="text-[9px] font-bold text-amber-800 uppercase leading-relaxed">
+                        Notice: Advanced tactical analysis is most accurate with <span className="underline font-black">Direct Uploads</span>. External URLs may be restricted by platform security or AI-sync policies.
+                     </p>
                   </div>
                 </TabsContent>
 
@@ -2200,7 +2207,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
               </div>
             )}
           </div>
-          <DialogFooter className="p-8 pt-0 gap-3 sm:gap-0">
+          <DialogFooter className="p-8 pb-10 gap-3 sm:gap-0 border-t bg-zinc-50/50">
              <Button variant="ghost" onClick={() => setIsAIHighlightOpen(false)} className="rounded-2xl font-black uppercase text-[10px] h-12 px-6">Close</Button>
              <Button onClick={handleGenerateAI} disabled={!aiSelectedVideoUrl || !aiVideoPrompt || isAiProcessing} className="rounded-2xl font-black uppercase text-[10px] px-8 h-12 shadow-xl shadow-purple-600/20 bg-purple-600 hover:bg-purple-700 hover:scale-[1.02] transition-transform text-white">
                {isAiProcessing ? "Scanning Engine..." : "Analyze Video"}

@@ -8,6 +8,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Video URL is required' }, { status: 400 });
     }
 
+    // NEW TACTICAL CHECK: Platform restrictions
+    if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') || videoUrl.includes('vimeo.com')) {
+       return NextResponse.json({ 
+         error: 'Tactical Analysis Restricted: External platform links (YouTube/Vimeo) block direct AI scrubbing. Please upload a local file or use a direct .mp4 link for elite frame-by-frame analysis.' 
+       }, { status: 422 });
+    }
+
     const apiKey = process.env.STRAICO_API_KEY;
     
     if (!apiKey) {
