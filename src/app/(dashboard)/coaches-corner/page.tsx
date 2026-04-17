@@ -861,6 +861,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const [editingVideoId, setEditingVideoId] = useState<string | null>(null);
   const [editingTitleValue, setEditingTitleValue] = useState('');
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
+  const [manualSeekTime, setManualSeekTime] = useState<number | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [deletedStatIds, setDeletedStatIds] = useState<string[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -2219,7 +2221,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       </Dialog>
 
       {/* ── VIDEO VIEWER + COMMENT DIALOG ── */}
-      <Dialog open={!!selectedVideo} onOpenChange={() => setSelectedVideo(null)}>
+      <Dialog open={!!selectedVideo} onOpenChange={() => { setSelectedVideo(null); setManualSeekTime(null); }}>
         <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-hidden bg-white">
           <DialogTitle className="sr-only">Video Viewer</DialogTitle>
           {selectedVideo && (
@@ -2239,7 +2241,9 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       let start = 0;
                       let end = 0;
 
-                      if (selectedVideo.segments && selectedVideo.segments.length > 0) {
+                      if (manualSeekTime !== null) {
+                         start = Math.floor(manualSeekTime);
+                      } else if (selectedVideo.segments && selectedVideo.segments.length > 0) {
                          const seg = selectedVideo.segments[currentSegmentIndex];
                          start = Math.floor(seg.start);
                          end = Math.floor(seg.end);
@@ -2250,14 +2254,13 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                          }
                       }
 
-                      srcUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&enablejsapi=1&origin=${origin}&start=${start}`;
-                      if (end > 0) srcUrl += `&end=${end}`;
+                      const finalSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&enablejsapi=1&origin=${origin}&start=${start}${end > 0 && manualSeekTime === null ? `&end=${end}` : ''}`;
                       
                       return (
                         <div className="absolute inset-0">
                           <iframe
-                            key={`${selectedVideo.id}_${currentSegmentIndex}`}
-                            src={srcUrl}
+                            key={`${selectedVideo.id}_${currentSegmentIndex}_${manualSeekTime}`}
+                            src={finalSrc}
                             className="absolute inset-0 w-full h-full"
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                             allowFullScreen
@@ -2294,12 +2297,15 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     // HTML5 Video Handling (Uploaded Reels)
                     return (
                       <video 
+                        ref={videoRef}
                         src={selectedVideo.url.split('#')[0]} // Strip existing hashes to prevent blob connectivity issues
                         className="absolute inset-0 w-full h-full object-contain" 
                         controls 
                         autoPlay 
                         onLoadedMetadata={(e) => {
-                           if (selectedVideo.segments && selectedVideo.segments.length > 0) {
+                           if (manualSeekTime !== null) {
+                               e.currentTarget.currentTime = manualSeekTime;
+                           } else if (selectedVideo.segments && selectedVideo.segments.length > 0) {
                                setCurrentSegmentIndex(0);
                                e.currentTarget.currentTime = selectedVideo.segments[0].start;
                            } else if (selectedVideo.startAt) {
@@ -2344,20 +2350,35 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       <p className="text-xs font-black uppercase opacity-30 py-6 text-center">No coach marks yet.</p>
                     )}
                     {(selectedVideo.comments || []).map((c: VideoComment, i: number) => (
-                      <div key={i} className="flex gap-3 p-4 bg-muted/20 rounded-2xl">
-                        <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                          <MessageSquare className="h-4 w-4 text-primary" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          {c.timestamp != null && (
-                            <span className="text-[8px] font-black uppercase bg-primary/10 text-primary px-2 py-0.5 rounded-full mr-2">
-                              {Math.floor(c.timestamp / 60)}:{String(c.timestamp % 60).padStart(2, '0')}
-                            </span>
-                          )}
-                          <p className="text-xs font-bold mt-1">{c.text}</p>
-                          <p className="text-[9px] text-muted-foreground font-black uppercase mt-1">{c.authorName}</p>
-                        </div>
-                      </div>
+                       <div 
+                         key={i} 
+                         className="flex gap-3 p-4 bg-muted/20 rounded-2xl cursor-pointer hover:bg-primary/5 transition-colors group relative border border-transparent hover:border-primary/20"
+                         onClick={() => {
+                           if (c.timestamp != null) {
+                             setManualSeekTime(c.timestamp);
+                             if (videoRef.current) {
+                               videoRef.current.currentTime = c.timestamp;
+                               videoRef.current.play();
+                             }
+                           }
+                         }}
+                       >
+                         <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
+                           <Play className="h-4 w-4" />
+                         </div>
+                         <div className="flex-1 min-w-0">
+                           {c.timestamp != null && (
+                             <span className="text-[8px] font-black uppercase bg-primary text-white px-2 py-0.5 rounded-full mr-2">
+                               {Math.floor(c.timestamp / 60)}:{String(c.timestamp % 60).padStart(2, '0')}
+                             </span>
+                           )}
+                           <p className="text-xs font-bold mt-1">{c.text}</p>
+                           <p className="text-[9px] text-muted-foreground font-black uppercase mt-1">{c.authorName}</p>
+                         </div>
+                         <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <p className="text-[8px] font-black uppercase text-primary tracking-widest">Jump to Mark</p>
+                         </div>
+                       </div>
                     ))}
                   </div>
                 </div>
