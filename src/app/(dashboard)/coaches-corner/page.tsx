@@ -1018,7 +1018,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
      // IMPROVED: Handle YouTube thumbnails with multiple quality fallbacks to prevent broken images
      if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
-        const vidId = videoUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/)?.[1];
+        const match = videoUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/);
+        const vidId = match ? match[1] : null;
         if (vidId) {
            const thumbUrl = `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
            setPhotos(prev => [...prev, thumbUrl]);
@@ -2226,10 +2227,11 @@ function RecruitingProfileManager({ member }: { member: Member }) {
               <div className="bg-black aspect-video relative flex items-center justify-center">
                 {selectedVideo.url ? (() => {
                     // IMPROVED YouTube URL parsing to handle variations and connectivity rejections
-                    let srcUrl = selectedVideo.url;
-                    const ytMatch = srcUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/);
+                    const srcUrl = selectedVideo.url;
+                    const isYouTube = srcUrl.includes('youtube.com') || srcUrl.includes('youtu.be');
+                    const ytMatch = isYouTube ? srcUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/) : null;
                     
-                    if (ytMatch) {
+                    if (isYouTube && ytMatch) {
                       const videoId = ytMatch[1];
                       // STABILIZED: Added origin and enablejsapi to resolve "An error occurred" playback bugs
                       // Also added a key based on segment index to force re-loading when a combined reel advances
