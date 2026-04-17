@@ -997,7 +997,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const commitAIHighlightToReel = async (hl: any) => {
      if (!member.playerId) return;
      const newVid = {
-        title: `[AI] ${hl.title}`,
+        title: hl.title,
         url: aiSelectedVideoUrl,
         type: 'Highlight',
         comments: [],
@@ -1088,7 +1088,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     }));
 
     const newVid = {
-      title: `AI Combination: ${selected[0].title} & More`,
+      title: `Combination: ${selected[0].title} & More`,
       url: aiSelectedVideoUrl,
       type: 'Highlight',
       comments: [],
@@ -1107,7 +1107,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     const promises = selectedAiHighlights.map(idx => {
       const hl = aiHighlights[idx];
       return addPlayerVideo(member.playerId as string, {
-        title: `[AI] ${hl.title}`,
+        title: hl.title,
         url: aiSelectedVideoUrl,
         type: 'Highlight',
         comments: [],
