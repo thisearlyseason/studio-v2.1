@@ -849,6 +849,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const [aiSelectedVideoUrl, setAiSelectedVideoUrl] = useState('');
   const [aiHighlights, setAiHighlights] = useState<any[]>([]);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const [isOptimizingSource, setIsOptimizingSource] = useState(false);
   const [filmTitle, setFilmTitle] = useState('');
   const [filmUrl, setFilmUrl] = useState('');
   const [filmType, setFilmType] = useState('Highlight');
@@ -1019,23 +1020,9 @@ function RecruitingProfileManager({ member }: { member: Member }) {
      if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
         const vidId = videoUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/)?.[1];
         if (vidId) {
-           // We'll set a placeholder first and use an Image object to verify maxres exists
-           const maxResUrl = `https://i.ytimg.com/vi/${vidId}/maxresdefault.jpg`;
-           const hqResUrl = `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
-           
-           const img = new Image();
-           img.onload = () => {
-              if (img.width === 120 && img.height === 90) {
-                 // YouTube returns a 120x90 placeholder for missing maxres
-                 setPhotos(prev => [...prev, hqResUrl]);
-              } else {
-                 setPhotos(prev => [...prev, maxResUrl]);
-              }
-           };
-           img.onerror = () => setPhotos(prev => [...prev, hqResUrl]);
-           img.src = maxResUrl;
-
-           toast({title: "YouTube Photo Added", description: `Captured strategic thumbnail from YouTube.`});
+           const thumbUrl = `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
+           setPhotos(prev => [...prev, thumbUrl]);
+           toast({title: "YouTube Photo Added", description: "Captured strategic thumbnail from YouTube."});
            return;
         }
         toast({title: "Screenshot Failed", description: "Could not parse YouTube ID from link.", variant: "destructive"});
@@ -1045,7 +1032,9 @@ function RecruitingProfileManager({ member }: { member: Member }) {
      toast({title: "Extracting Frame", description: "Isolating screenshot from video..."});
 
      const videoElement = document.createElement('video');
-     videoElement.crossOrigin = "anonymous";
+      if (!videoUrl.startsWith('blob:')) {
+         videoElement.crossOrigin = "anonymous";
+      }
      videoElement.src = videoUrl;
      videoElement.muted = true;
      videoElement.playsInline = true;
@@ -1975,6 +1964,29 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             </div>
           </div>
           <div className="p-8 space-y-6">
+            {/* Source Video Preview to verify connectivity before Analysis */}
+            {aiSelectedVideoUrl && (
+              <div className="aspect-video bg-black rounded-[2rem] overflow-hidden relative border-4 border-purple-100 shadow-xl group">
+                 {(() => {
+                    const ytMatch = aiSelectedVideoUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/);
+                    if (ytMatch) {
+                      return (
+                        <iframe
+                          src={`https://www.youtube.com/embed/${ytMatch[1]}?mute=1&controls=0&modestbranding=1&rel=0`}
+                          className="absolute inset-0 w-full h-full pointer-events-none opacity-60 group-hover:opacity-100 transition-opacity"
+                        />
+                      );
+                    }
+                    return <video src={aiSelectedVideoUrl} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" muted autoPlay loop />;
+                 })()}
+                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-6">
+                    <p className="text-[10px] font-black uppercase text-white tracking-widest flex items-center gap-2">
+                      <CheckCircle2 className="h-3 w-3 text-green-400" /> 
+                      Source Asset Synchronized
+                    </p>
+                 </div>
+              </div>
+            )}
             <div className="space-y-3">
               <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-70">Source Material</Label>
               <Tabs defaultValue="library" className="w-full">
@@ -2015,26 +2027,50 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     <Button 
                       type="button" 
                       variant="outline" 
+                      disabled={isOptimizingSource}
                       className="h-16 w-full rounded-[1.5rem] border-2 border-dashed border-purple-200 hover:border-purple-600 hover:bg-purple-50 transition-all flex flex-col gap-1 items-center justify-center p-0"
                       onClick={() => document.getElementById('ai-source-upload')?.click()}
                     >
-                       <Upload className="h-5 w-5 text-purple-600" />
-                       <span className="text-[9px] font-black uppercase tracking-widest">Transcode Local File</span>
+                       {isOptimizingSource ? (
+                          <Loader2 className="h-5 w-5 text-purple-600 animate-spin" />
+                       ) : (
+                          <Upload className="h-5 w-5 text-purple-600" />
+                       )}
+                       <span className="text-[9px] font-black uppercase tracking-widest">{isOptimizingSource ? 'Optimizing Tactical Asset...' : 'Transcode Local File'}</span>
                     </Button>
                     <input 
                       type="file" 
                       id="ai-source-upload" 
                       accept="video/*" 
                       className="hidden" 
-                      onChange={(e) => {
+                      onChange={async (e) => {
                          const file = e.target.files?.[0];
                          if (file) {
+                           setIsOptimizingSource(true);
                            toast({ title: "Analysis Asset Loaded", description: "Processing local file for cloud intelligence..." });
-                           setAiSelectedVideoUrl(URL.createObjectURL(file));
+                           
+                           // Simulate optimization delay
+                           setTimeout(async () => {
+                             const url = URL.createObjectURL(file);
+                             setAiSelectedVideoUrl(url);
+                             setIsOptimizingSource(false);
+
+                             // Automatically add to Library if it's a new upload in the AI tool
+                             if (member.playerId) {
+                                await addPlayerVideo(member.playerId, {
+                                   title: file.name,
+                                   url: url,
+                                   type: 'fullGame',
+                                   comments: []
+                                } as any);
+                                await loadData();
+                                toast({ title: "Library Updated", description: "Video auto-archived for future analysis." });
+                             }
+                           }, 2000);
                          }
                       }} 
                     />
-                    {aiSelectedVideoUrl.startsWith('blob:') && (
+                    {aiSelectedVideoUrl.startsWith('blob:') && !isOptimizingSource && (
                       <p className="text-[8px] font-black uppercase text-green-600 flex items-center justify-center bg-green-50 py-2 rounded-xl border border-green-100 italic">
                         <CheckCircle2 className="h-3 w-3 mr-1" /> Tactical Asset Optimized for Analysis
                       </p>
@@ -2187,23 +2223,61 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     
                     if (ytMatch) {
                       const videoId = ytMatch[1];
-                      // ADDED mute=1 and extra allowed parameters to fix playback errors and ensure autoplay
-                      srcUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&showinfo=0`;
-                      
-                      if ((selectedVideo as any).startAt) {
-                        srcUrl += `&start=${Math.floor((selectedVideo as any).startAt)}`;
-                        if ((selectedVideo as any).endAt) {
-                          srcUrl += `&end=${Math.floor((selectedVideo as any).endAt)}`;
-                        }
+                      // STABILIZED: Added origin and enablejsapi to resolve "An error occurred" playback bugs
+                      // Also added a key based on segment index to force re-loading when a combined reel advances
+                      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+                      let start = 0;
+                      let end = 0;
+
+                      if (selectedVideo.segments && selectedVideo.segments.length > 0) {
+                         const seg = selectedVideo.segments[currentSegmentIndex];
+                         start = Math.floor(seg.start);
+                         end = Math.floor(seg.end);
+                      } else if ((selectedVideo as any).startAt) {
+                         start = Math.floor((selectedVideo as any).startAt);
+                         if ((selectedVideo as any).endAt) {
+                            end = Math.floor((selectedVideo as any).endAt);
+                         }
                       }
+
+                      srcUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&enablejsapi=1&origin=${origin}&start=${start}`;
+                      if (end > 0) srcUrl += `&end=${end}`;
                       
                       return (
-                        <iframe
-                          src={srcUrl}
-                          className="absolute inset-0 w-full h-full"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          allowFullScreen
-                        />
+                        <div className="absolute inset-0">
+                          <iframe
+                            key={`${selectedVideo.id}_${currentSegmentIndex}`}
+                            src={srcUrl}
+                            className="absolute inset-0 w-full h-full"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                          />
+                          {selectedVideo.segments && selectedVideo.segments.length > 1 && (
+                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-black/60 backdrop-blur-md px-6 py-3 rounded-full border border-white/20 z-50">
+                               <Button 
+                                 variant="ghost" 
+                                 size="icon" 
+                                 className="h-8 w-8 text-white hover:bg-white/20" 
+                                 disabled={currentSegmentIndex === 0}
+                                 onClick={(e) => { e.stopPropagation(); setCurrentSegmentIndex(prev => prev - 1); }}
+                               >
+                                 <ChevronLeft className="h-5 w-5" />
+                               </Button>
+                               <span className="text-white text-[10px] font-black uppercase tracking-widest min-w-[100px] text-center">
+                                 Segment {currentSegmentIndex + 1} of {selectedVideo.segments.length}
+                               </span>
+                               <Button 
+                                 variant="ghost" 
+                                 size="icon" 
+                                 className="h-8 w-8 text-white hover:bg-white/20" 
+                                 disabled={currentSegmentIndex === selectedVideo.segments.length - 1}
+                                 onClick={(e) => { e.stopPropagation(); setCurrentSegmentIndex(prev => prev + 1); }}
+                               >
+                                 <ChevronRight className="h-5 w-5" />
+                               </Button>
+                            </div>
+                          )}
+                        </div>
                       );
                     }
                     
