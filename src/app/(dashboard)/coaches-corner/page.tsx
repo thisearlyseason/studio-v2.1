@@ -1015,8 +1015,16 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         return;
      }
 
+     // IMPROVED: Handle YouTube thumbnails directly since canvas capture is blocked by CORS
      if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
-        toast({title: "Screenshot Failed", description: "Cannot extract direct image from YouTube embedded links directly in browser. Please add photo manually."});
+        const vidId = videoUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/)?.[1];
+        if (vidId) {
+           const thumbUrl = `https://i.ytimg.com/vi/${vidId}/maxresdefault.jpg`;
+           setPhotos(prev => [...prev, thumbUrl]);
+           toast({title: "YouTube Photo Added", description: `Fetched high-res thumbnail from YouTube link.`});
+           return;
+        }
+        toast({title: "Screenshot Failed", description: "Could not parse YouTube ID from link.", variant: "destructive"});
         return;
      }
 
@@ -1053,6 +1061,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         toast({title: "Extraction Failed", description: "CORS prevented capturing this video frame from external storage.", variant: "destructive"});
      };
   };
+
 
   const handleCombineSelected = async () => {
     if (!member.playerId || selectedAiHighlights.length === 0) return;
@@ -1476,7 +1485,22 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                         )}
                         <p className="text-[9px] text-muted-foreground font-bold uppercase mt-0.5">{(v.comments?.length || 0)} coach mark{(v.comments?.length || 0) !== 1 ? 's' : ''}</p>
                       </div>
-                      <MessageSquare className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                      <MessageSquare className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-zinc-100 z-20 shrink-0 ml-1 rounded-sm" onClick={(e) => {
+                          e.stopPropagation();
+                          if (v.url.includes('youtube.com') || v.url.includes('youtu.be')) {
+                             toast({ title: "YouTube Download Restricted", description: "Direct YouTube downloads are restricted by the platform. You can view the clip in the player instead.", variant: "default" });
+                             return;
+                          }
+                          const a = document.createElement('a');
+                          a.href = v.url;
+                          a.download = `${v.title}.mp4`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                       }}>
+                          <Download className="h-3 w-3" />
+                       </Button>
                       <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-600 z-20 shrink-0 ml-1 rounded-sm" onClick={async (e) => {
                          e.stopPropagation();
                          if (!member.playerId) return;
@@ -1491,6 +1515,48 @@ function RecruitingProfileManager({ member }: { member: Member }) {
               ) : (
                 <div className="py-12 text-center opacity-20"><Video className="h-10 w-10 mx-auto mb-2" /><p className="text-[10px] font-black uppercase">No film archived.</p></div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* ADDED: Strategic Imagery Gallery to Main Display */}
+          <Card className="rounded-[2.5rem] border-none shadow-md bg-white overflow-hidden">
+            <CardHeader className="p-6 pb-0 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Camera className="h-4 w-4 text-primary" />
+                <h3 className="font-black text-xs uppercase tracking-widest text-zinc-900">Strategic Imagery</h3>
+              </div>
+              <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase" onClick={() => setIsEditing(true)}><Edit3 className="h-3 w-3 mr-1" /> Manage</Button>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="grid grid-cols-2 gap-3">
+                 {photos.map((url, i) => (
+                    <div key={i} className="aspect-square rounded-2xl overflow-hidden relative group border-2 border-zinc-50 shadow-sm">
+                       <img src={url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt="Scouting" />
+                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <Button variant="secondary" size="icon" className="h-8 w-8 rounded-lg shadow-xl bg-white text-black" onClick={(e) => {
+                             e.stopPropagation();
+                             const a = document.createElement('a');
+                             a.href = url;
+                             a.download = `photo_${i}.jpg`;
+                             document.body.appendChild(a);
+                             a.click();
+                             document.body.removeChild(a);
+                          }}>
+                            <Download className="h-4 w-4" />
+                          </Button>
+                          <Button variant="destructive" size="icon" className="h-8 w-8 rounded-lg shadow-xl" onClick={() => removePhoto(i)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                       </div>
+                    </div>
+                 ))}
+                 {photos.length === 0 && (
+                   <div className="col-span-full py-10 text-center border-2 border-dashed rounded-[2rem] opacity-20">
+                      <Camera className="h-8 w-8 mx-auto mb-2" />
+                      <p className="text-[10px] font-black uppercase">No strategic photos archived.</p>
+                   </div>
+                 )}
+              </div>
             </CardContent>
           </Card>
         </section>
@@ -1895,19 +1961,73 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             </div>
           </div>
           <div className="p-8 space-y-6">
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Source Video</Label>
-              <Select value={aiSelectedVideoUrl} onValueChange={setAiSelectedVideoUrl}>
-                <SelectTrigger className="h-12 rounded-2xl border-2 font-bold focus:ring-purple-600">
-                  <SelectValue placeholder="Select a full game video from archive" />
-                </SelectTrigger>
-                <SelectContent>
-                  {videos.length === 0 && <SelectItem value="none" disabled>No videos archived</SelectItem>}
-                  {videos.map(v => (
-                    <SelectItem key={v.id} value={v.url}>{v.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="space-y-3">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-70">Source Material</Label>
+              <Tabs defaultValue="library" className="w-full">
+                <TabsList className="grid grid-cols-3 h-10 rounded-xl bg-muted/50 p-1">
+                  <TabsTrigger value="library" className="rounded-lg text-[9px] font-black uppercase tracking-widest">Library</TabsTrigger>
+                  <TabsTrigger value="url" className="rounded-lg text-[9px] font-black uppercase tracking-widest">URL</TabsTrigger>
+                  <TabsTrigger value="upload" className="rounded-lg text-[9px] font-black uppercase tracking-widest">Upload</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="library" className="mt-4 animate-in fade-in slide-in-from-top-1">
+                  <Select value={aiSelectedVideoUrl} onValueChange={setAiSelectedVideoUrl}>
+                    <SelectTrigger className="h-12 rounded-2xl border-2 font-bold focus:ring-purple-600">
+                      <SelectValue placeholder="Select from athlete archive" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {videos.length === 0 && <SelectItem value="none" disabled>No videos archived</SelectItem>}
+                      {videos.map(v => (
+                        <SelectItem key={v.id} value={v.url}>{v.title}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </TabsContent>
+
+                <TabsContent value="url" className="mt-4 animate-in fade-in slide-in-from-top-1">
+                  <div className="relative">
+                    <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-600" />
+                    <Input 
+                      placeholder="Enter YouTube, Vimeo, or Direct URL" 
+                      className="h-12 rounded-2xl border-2 pl-12 font-bold focus-visible:ring-purple-600" 
+                      value={aiSelectedVideoUrl} 
+                      onChange={e => setAiSelectedVideoUrl(e.target.value)} 
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="upload" className="mt-4 animate-in fade-in slide-in-from-top-1">
+                  <div className="flex flex-col gap-4">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      className="h-16 w-full rounded-[1.5rem] border-2 border-dashed border-purple-200 hover:border-purple-600 hover:bg-purple-50 transition-all flex flex-col gap-1 items-center justify-center p-0"
+                      onClick={() => document.getElementById('ai-source-upload')?.click()}
+                    >
+                       <Upload className="h-5 w-5 text-purple-600" />
+                       <span className="text-[9px] font-black uppercase tracking-widest">Transcode Local File</span>
+                    </Button>
+                    <input 
+                      type="file" 
+                      id="ai-source-upload" 
+                      accept="video/*" 
+                      className="hidden" 
+                      onChange={(e) => {
+                         const file = e.target.files?.[0];
+                         if (file) {
+                           toast({ title: "Analysis Asset Loaded", description: "Processing local file for cloud intelligence..." });
+                           setAiSelectedVideoUrl(URL.createObjectURL(file));
+                         }
+                      }} 
+                    />
+                    {aiSelectedVideoUrl.startsWith('blob:') && (
+                      <p className="text-[8px] font-black uppercase text-green-600 flex items-center justify-center bg-green-50 py-2 rounded-xl border border-green-100 italic">
+                        <CheckCircle2 className="h-3 w-3 mr-1" /> Tactical Asset Optimized for Analysis
+                      </p>
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
             </div>
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Scout Search Prompt</Label>
@@ -2035,59 +2155,64 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             <>
               <div className="bg-black aspect-video relative flex items-center justify-center">
                 {selectedVideo.url ? (() => {
-                    let srcUrl = selectedVideo.url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/');
-                    if ((selectedVideo as any).startAt) {
-                       if (srcUrl.includes('youtube.com')) {
-                          srcUrl += (srcUrl.includes('?') ? '&' : '?') + `start=${Math.floor((selectedVideo as any).startAt)}`;
-                          if ((selectedVideo as any).endAt) {
-                            srcUrl += `&end=${Math.floor((selectedVideo as any).endAt)}`;
-                          }
-                       }
+                    // IMPROVED YouTube URL parsing to handle variations and connectivity rejections
+                    let srcUrl = selectedVideo.url;
+                    const ytMatch = srcUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/);
+                    
+                    if (ytMatch) {
+                      const videoId = ytMatch[1];
+                      srcUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+                      
+                      if ((selectedVideo as any).startAt) {
+                        srcUrl += `&start=${Math.floor((selectedVideo as any).startAt)}`;
+                        if ((selectedVideo as any).endAt) {
+                          srcUrl += `&end=${Math.floor((selectedVideo as any).endAt)}`;
+                        }
+                      }
+                      
+                      return (
+                        <iframe
+                          src={srcUrl}
+                          className="absolute inset-0 w-full h-full"
+                          allow="autoplay; fullscreen; picture-in-picture"
+                          allowFullScreen
+                        />
+                      );
                     }
                     
-                    if (!srcUrl.includes('youtube.com')) {
-                       return (
-                         <video 
-                           src={selectedVideo.url} // Strip url hash components since blob URLs choke on them
-                           className="absolute inset-0 w-full h-full object-contain" 
-                           controls 
-                           autoPlay 
-                           onLoadedMetadata={(e) => {
-                              if (selectedVideo.segments && selectedVideo.segments.length > 0) {
-                                  setCurrentSegmentIndex(0);
-                                  e.currentTarget.currentTime = selectedVideo.segments[0].start;
-                              } else if (selectedVideo.startAt) {
-                                  e.currentTarget.currentTime = selectedVideo.startAt;
-                              }
-                           }}
-                           onTimeUpdate={(e) => {
-                              const v = e.currentTarget;
-                              if (selectedVideo.segments && selectedVideo.segments.length > 0) {
-                                  const seg = selectedVideo.segments[currentSegmentIndex];
-                                  if (v.currentTime >= seg.end) {
-                                      if (currentSegmentIndex < selectedVideo.segments.length - 1) {
-                                          const next = currentSegmentIndex + 1;
-                                          setCurrentSegmentIndex(next);
-                                          v.currentTime = selectedVideo.segments[next].start;
-                                          v.play();
-                                      } else {
-                                          v.pause();
-                                      }
-                                  }
-                              } else if (selectedVideo.endAt && v.currentTime >= selectedVideo.endAt) {
-                                  v.pause();
-                              }
-                           }}
-                         />
-                       );
-                    }
-                    
+                    // HTML5 Video Handling (Uploaded Reels)
                     return (
-                      <iframe
-                        src={srcUrl}
-                        className="absolute inset-0 w-full h-full"
-                        allow="autoplay; fullscreen"
-                        allowFullScreen
+                      <video 
+                        src={selectedVideo.url.split('#')[0]} // Strip existing hashes to prevent blob connectivity issues
+                        className="absolute inset-0 w-full h-full object-contain" 
+                        controls 
+                        autoPlay 
+                        onLoadedMetadata={(e) => {
+                           if (selectedVideo.segments && selectedVideo.segments.length > 0) {
+                               setCurrentSegmentIndex(0);
+                               e.currentTarget.currentTime = selectedVideo.segments[0].start;
+                           } else if (selectedVideo.startAt) {
+                               e.currentTarget.currentTime = selectedVideo.startAt;
+                           }
+                        }}
+                        onTimeUpdate={(e) => {
+                           const v = e.currentTarget;
+                           if (selectedVideo.segments && selectedVideo.segments.length > 0) {
+                               const seg = selectedVideo.segments[currentSegmentIndex];
+                               if (v.currentTime >= seg.end) {
+                                   if (currentSegmentIndex < selectedVideo.segments.length - 1) {
+                                       const next = currentSegmentIndex + 1;
+                                       setCurrentSegmentIndex(next);
+                                       v.currentTime = selectedVideo.segments[next].start;
+                                       v.play();
+                                   } else {
+                                       v.pause();
+                                   }
+                               }
+                           } else if (selectedVideo.endAt && v.currentTime >= selectedVideo.endAt) {
+                               v.pause();
+                           }
+                        }}
                       />
                     );
                 })() : (

@@ -72,6 +72,11 @@ export default function PublicScoutPortalPage() {
   const evals = evalsData || [];
   const videos = videosData || [];
 
+  const [selectedPublicVideo, setSelectedPublicVideo] = useState<any>(null);
+  const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
+
+  const isOwner = user && player && (user.uid === player.userId || user.uid === player.id);
+
   // Failsafe state to break out of loading if Firestore hangs
   const [loadingFailsafe, setLoadingFailsafe] = useState(false);
 
@@ -149,6 +154,20 @@ export default function PublicScoutPortalPage() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const handleDeletePhoto = async (index: number) => {
+    if (!isOwner || !profileRef) return;
+    const newPhotos = [...(profile.photos || [])];
+    newPhotos.splice(index, 1);
+    const { updateDoc } = await import('firebase/firestore');
+    await updateDoc(profileRef, { photos: newPhotos });
+  };
+
+  const handleDeleteVideo = async (videoId: string) => {
+    if (!isOwner || !playerId) return;
+    const { doc, deleteDoc } = await import('firebase/firestore');
+    await deleteDoc(doc(db, 'players', playerId as string, 'videos', videoId));
   };
 
   if (loading) return (
@@ -311,8 +330,26 @@ export default function PublicScoutPortalPage() {
                 <div className="flex items-center gap-3 px-2"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Camera className="h-5 w-5" /></div><h2 className="text-xl font-black uppercase tracking-tight">Scouting Gallery</h2></div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                   {profile.photos.map((url: string, i: number) => (
-                    <div key={i} className="aspect-square rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl ring-1 ring-black/5 group">
+                    <div key={i} className="aspect-square rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl ring-1 ring-black/5 group relative">
                       <img src={url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt="Scouting" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                         <Button variant="secondary" size="icon" className="h-12 w-12 rounded-2xl shadow-2xl bg-white text-black hover:bg-zinc-100" onClick={(e) => {
+                            e.stopPropagation();
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `scouting_photo_${i}.jpg`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                         }}>
+                           <Download className="h-6 w-6" />
+                         </Button>
+                         {isOwner && (
+                           <Button variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-2xl" onClick={() => handleDeletePhoto(i)}>
+                             <Trash2 className="h-6 w-6" />
+                           </Button>
+                         )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -322,11 +359,39 @@ export default function PublicScoutPortalPage() {
             <section className="space-y-6">
               <div className="flex items-center gap-3 px-2"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Video className="h-5 w-5" /></div><h2 className="text-xl font-black uppercase tracking-tight">Highlight Reels</h2></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {videos.length > 0 ? videos.map((v, i) => (
-                  <Card key={i} className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-black group cursor-pointer">
+                {videos.length > 0 ? videos.map((v: any, i) => (
+                  <Card key={i} className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-black group cursor-pointer relative" onClick={() => setSelectedPublicVideo(v)}>
                     <div className="aspect-video relative">
                       <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/20 transition-all"><Play className="h-12 w-12 text-white fill-current shadow-2xl" /></div>
                       <Badge className="absolute top-4 left-4 bg-primary text-white border-none font-black text-[8px] h-6 px-3">{v.type.toUpperCase()}</Badge>
+                      <div className="absolute top-4 right-4 flex gap-2">
+                        <Button 
+                           variant="outline" 
+                           size="icon" 
+                           className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-xl bg-white/90 border-none hover:bg-white"
+                           onClick={(e) => { 
+                             e.stopPropagation(); 
+                             const a = document.createElement('a');
+                             a.href = v.url;
+                             a.download = `${v.title}.mp4`;
+                             document.body.appendChild(a);
+                             a.click();
+                             document.body.removeChild(a);
+                           }}
+                         >
+                            <Download className="h-4 w-4 text-primary" />
+                         </Button>
+                        {isOwner && (
+                           <Button 
+                             variant="destructive" 
+                             size="icon" 
+                             className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-xl"
+                             onClick={(e) => { e.stopPropagation(); handleDeleteVideo(v.id); }}
+                           >
+                              <Trash2 className="h-4 w-4" />
+                           </Button>
+                        )}
+                      </div>
                     </div>
                     <CardFooter className="bg-white p-6 justify-between"><span className="font-black text-xs uppercase">{v.title}</span><ChevronRight className="h-4 w-4 text-primary" /></CardFooter>
                   </Card>
@@ -489,6 +554,74 @@ export default function PublicScoutPortalPage() {
             <Button variant="ghost" className="rounded-xl font-black uppercase text-[10px] h-12 px-6" onClick={() => setIsEvalOpen(false)}>Cancel</Button>
             <Button onClick={handleAddEval} className="rounded-xl px-8 font-black uppercase text-[10px] bg-primary text-white h-12 shadow-xl shadow-primary/20">Submit Appraisal</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!selectedPublicVideo} onOpenChange={() => setSelectedPublicVideo(null)}>
+        <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <DialogTitle className="sr-only">Public Video Viewer</DialogTitle>
+          {selectedPublicVideo && (
+            <div className="flex flex-col">
+              <div className="bg-black aspect-video relative flex items-center justify-center shadow-inner">
+                {selectedPublicVideo.url ? (() => {
+                    let srcUrl = selectedPublicVideo.url;
+                    const ytMatch = srcUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/);
+                    
+                    if (ytMatch) {
+                      const videoId = ytMatch[1];
+                      srcUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+                      if (selectedPublicVideo.startAt) {
+                        srcUrl += `&start=${Math.floor(selectedPublicVideo.startAt)}`;
+                        if (selectedPublicVideo.endAt) srcUrl += `&end=${Math.floor(selectedPublicVideo.endAt)}`;
+                      }
+                      return <iframe src={srcUrl} className="absolute inset-0 w-full h-full" allow="autoplay; fullscreen" allowFullScreen />;
+                    }
+
+                    return (
+                      <video 
+                        src={selectedPublicVideo.url.split('#')[0]} 
+                        className="absolute inset-0 w-full h-full object-contain" 
+                        controls 
+                        autoPlay 
+                        onLoadedMetadata={(e) => {
+                           if (selectedPublicVideo.segments && selectedPublicVideo.segments.length > 0) {
+                               setCurrentSegmentIndex(0);
+                               e.currentTarget.currentTime = selectedPublicVideo.segments[0].start;
+                           } else if (selectedPublicVideo.startAt) {
+                               e.currentTarget.currentTime = selectedPublicVideo.startAt;
+                           }
+                        }}
+                        onTimeUpdate={(e) => {
+                           const v = e.currentTarget;
+                           if (selectedPublicVideo.segments && selectedPublicVideo.segments.length > 0) {
+                               const seg = selectedPublicVideo.segments[currentSegmentIndex];
+                               if (v.currentTime >= seg.end) {
+                                   if (currentSegmentIndex < selectedPublicVideo.segments.length - 1) {
+                                       setCurrentSegmentIndex(currentSegmentIndex + 1);
+                                       v.currentTime = selectedPublicVideo.segments[currentSegmentIndex + 1].start;
+                                       v.play();
+                                   } else { v.pause(); }
+                               }
+                           } else if (selectedPublicVideo.endAt && v.currentTime >= selectedPublicVideo.endAt) {
+                               v.pause();
+                           }
+                        }}
+                      />
+                    );
+                })() : <div className="text-white/20 uppercase font-black text-xs tracking-widest">Resource Offline</div>}
+              </div>
+              <div className="p-8 space-y-2 border-t">
+                <div className="flex items-center justify-between">
+                  <Badge className="bg-primary text-white border-none font-black text-[8px] h-6 px-3">{selectedPublicVideo.type.toUpperCase()}</Badge>
+                  <Button variant="ghost" size="icon" onClick={() => setSelectedPublicVideo(null)} className="rounded-full h-8 w-8"><Zap className="h-4 w-4" /></Button>
+                </div>
+                <h3 className="text-2xl font-black uppercase tracking-tight">{selectedPublicVideo.title}</h3>
+                {selectedPublicVideo.segments && (
+                   <p className="text-[10px] font-black uppercase text-primary tracking-widest">Multi-Segment Highlight Reel Sequence</p>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
