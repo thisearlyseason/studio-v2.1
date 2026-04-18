@@ -2302,15 +2302,29 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                         className="absolute inset-0 w-full h-full object-contain" 
                         controls 
                         autoPlay 
-                        onLoadedMetadata={(e) => {
-                           if (manualSeekTime !== null) {
-                               e.currentTarget.currentTime = manualSeekTime;
-                           } else if (selectedVideo.segments && selectedVideo.segments.length > 0) {
-                               setCurrentSegmentIndex(0);
-                               e.currentTarget.currentTime = selectedVideo.segments[0].start;
-                           } else if (selectedVideo.startAt) {
-                               e.currentTarget.currentTime = selectedVideo.startAt;
-                           }
+                         onLoadedMetadata={(e) => {
+                            const v = e.currentTarget;
+                            let startTime = selectedVideo.startAt || (selectedVideo.segments && selectedVideo.segments.length > 0 ? selectedVideo.segments[0].start : null);
+                            let endTime = selectedVideo.endAt || (selectedVideo.segments && selectedVideo.segments.length > 0 ? selectedVideo.segments[selectedVideo.segments.length - 1].end : null);
+                            let initialTime = e.currentTarget.currentTime;
+
+                            if (manualSeekTime !== null) {
+                                v.currentTime = manualSeekTime;
+                                initialTime = manualSeekTime;
+                            } else if (startTime != null && endTime != null) {
+                                v.currentTime = startTime;
+                                initialTime = startTime;
+                                if (selectedVideo.segments && selectedVideo.segments.length > 0) {
+                                    setCurrentSegmentIndex(0);
+                                }
+                            } else if (selectedVideo.segments && selectedVideo.segments.length > 0) {
+                                setCurrentSegmentIndex(0);
+                                v.currentTime = selectedVideo.segments[0].start;
+                                initialTime = selectedVideo.segments[0].start;
+                            } else if (selectedVideo.startAt) {
+                                v.currentTime = selectedVideo.startAt;
+                                initialTime = selectedVideo.startAt;
+                            }
                         }}
                         onTimeUpdate={(e) => {
                            const v = e.currentTarget;
