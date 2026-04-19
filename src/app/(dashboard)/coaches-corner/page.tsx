@@ -3109,11 +3109,12 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
       {/* ── VIDEO VIEWER + COMMENT DIALOG ── */}
       <Dialog open={!!selectedVideo} onOpenChange={() => { setSelectedVideo(null); setManualSeekTime(null); }}>
-        <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-4xl h-full sm:h-auto sm:max-h-[90vh] p-0 border-none shadow-2xl overflow-hidden bg-white">
+        <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-4xl h-full sm:h-auto sm:max-h-[95vh] p-0 border-none shadow-2xl overflow-hidden bg-white flex flex-col">
           <DialogTitle className="sr-only">Video Viewer</DialogTitle>
           {selectedVideo && (
-            <>
-              <div className="bg-black aspect-video relative flex items-center justify-center">
+            <div className="flex flex-col h-full overflow-hidden">
+              {/* STICKY HEADER FOR MOBILE */}
+              <div className="bg-black aspect-video shrink-0 relative flex items-center justify-center shadow-2xl z-20 sm:rounded-t-[3rem] overflow-hidden">
                 {selectedVideo.url ? (() => {
                     const srcUrl = selectedVideo.url;
                     const isYouTube = srcUrl.includes('youtube.com') || srcUrl.includes('youtu.be');
@@ -3224,8 +3225,9 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                   <Badge className="bg-primary text-white border-none font-black text-[8px] uppercase">{selectedVideo.type}</Badge>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x max-h-[60vh]">
-                <div className="md:col-span-3 p-8 space-y-4 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto custom-scrollbar bg-zinc-50/50">
+                <div className="grid grid-cols-1 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x">
+                  <div className="md:col-span-3 p-6 sm:p-8 space-y-6">
                   <h3 className="font-black text-lg uppercase">{selectedVideo.title}</h3>
                   <div className="space-y-3">
                     {(selectedVideo.comments || []).length === 0 && (

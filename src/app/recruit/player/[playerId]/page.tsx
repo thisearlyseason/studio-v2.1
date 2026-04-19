@@ -717,11 +717,11 @@ export default function PublicScoutPortalPage() {
 
 
       <Dialog open={!!selectedPublicVideo} onOpenChange={() => setSelectedPublicVideo(null)}>
-        <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-4xl h-full sm:h-auto sm:max-h-[90vh] p-0 border-none shadow-2xl overflow-hidden bg-white">
+        <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-4xl h-full sm:h-auto sm:max-h-[95vh] p-0 border-none shadow-2xl overflow-hidden bg-white flex flex-col">
           <DialogTitle className="sr-only">Public Video Viewer</DialogTitle>
           {selectedPublicVideo && (
-            <div className="flex flex-col">
-              <div className="bg-black aspect-video relative flex items-center justify-center shadow-inner">
+            <div className="flex flex-col h-full overflow-hidden">
+              <div className="bg-black aspect-video shrink-0 relative flex items-center justify-center shadow-2xl z-20 sm:rounded-t-[3rem] overflow-hidden">
                 {selectedPublicVideo.url ? (() => {
                     const srcUrl = selectedPublicVideo.url;
                     const isYouTube = srcUrl.includes('youtube.com') || srcUrl.includes('youtu.be');
@@ -858,17 +858,7 @@ export default function PublicScoutPortalPage() {
                     );
                 })() : <div className="text-white/20 uppercase font-black text-xs tracking-widest">Resource Offline</div>}
               </div>
-              <div className="p-8 space-y-4 border-t">
-                {(selectedPublicVideo.url.includes('youtube.com') || selectedPublicVideo.url.includes('youtu.be')) && (
-                  <div className="bg-amber-50/50 border border-amber-200/50 rounded-2xl p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-700">
-                    <ShieldAlert className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-                    <div className="space-y-1">
-                      <p className="text-[9px] font-black uppercase text-amber-900 tracking-tight">External Resource Advisory</p>
-                      <p className="text-[9px] font-medium text-amber-800 leading-tight">High-profile tactical assets (FIFA, NBA, etc.) may require external authentication. If the player above is restricted, please use the button below.</p>
-                    </div>
-                  </div>
-                )}
-
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-6 sm:p-8 space-y-6 bg-zinc-50/50">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Badge className="bg-primary text-white border-none font-black text-[8px] h-6 px-3">{selectedPublicVideo.type.toUpperCase()}</Badge>
@@ -909,13 +899,21 @@ export default function PublicScoutPortalPage() {
                     </Button>
                   </div>
                 </div>
-                <h3 className="text-2xl font-black uppercase tracking-tight">{selectedPublicVideo.title}</h3>
-                {selectedPublicVideo.description && (
-                  <p className="text-sm text-muted-foreground leading-relaxed">{selectedPublicVideo.description}</p>
-                )}
-                {selectedPublicVideo.segments && (
-                   <p className="text-[10px] font-black uppercase text-primary tracking-widest">Multi-Segment Highlight Reel Sequence</p>
-                )}
+
+                <div className="space-y-4">
+                  <h3 className="text-2xl font-black uppercase tracking-tight leading-tight">{selectedPublicVideo.title}</h3>
+                  {selectedPublicVideo.description && (
+                    <p className="text-sm text-muted-foreground leading-relaxed">{selectedPublicVideo.description}</p>
+                  )}
+                  {selectedPublicVideo.segments && (
+                    <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10">
+                      <p className="text-[10px] font-black uppercase text-primary tracking-widest flex items-center gap-2">
+                         <Zap className="h-3 w-3" /> Multi-Segment Scoped Highlight
+                      </p>
+                      <p className="text-[10px] font-bold text-primary/60 uppercase mt-1">This footage has been indexed into {selectedPublicVideo.segments.length} tactical markers.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
