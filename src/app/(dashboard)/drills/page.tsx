@@ -1070,8 +1070,6 @@ export default function PlaybookAndGamePlayPage() {
                         />
                       </div>
                     )}
-
-                    )}
                   </div>
 
                   {/* Right Column: Coach Marks */}
