@@ -3308,6 +3308,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     </Button>
                   </div>
                 </div>
+                </div>
               </div>
             </div>
           )}
