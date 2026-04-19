@@ -3109,7 +3109,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
       {/* ── VIDEO VIEWER + COMMENT DIALOG ── */}
       <Dialog open={!!selectedVideo} onOpenChange={() => { setSelectedVideo(null); setManualSeekTime(null); }}>
-        <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+        <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-4xl h-full sm:h-auto sm:max-h-[90vh] p-0 border-none shadow-2xl overflow-hidden bg-white">
           <DialogTitle className="sr-only">Video Viewer</DialogTitle>
           {selectedVideo && (
             <>

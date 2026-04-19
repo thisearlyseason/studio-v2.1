@@ -717,7 +717,7 @@ export default function PublicScoutPortalPage() {
 
 
       <Dialog open={!!selectedPublicVideo} onOpenChange={() => setSelectedPublicVideo(null)}>
-        <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+        <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-4xl h-full sm:h-auto sm:max-h-[90vh] p-0 border-none shadow-2xl overflow-hidden bg-white">
           <DialogTitle className="sr-only">Public Video Viewer</DialogTitle>
           {selectedPublicVideo && (
             <div className="flex flex-col">
