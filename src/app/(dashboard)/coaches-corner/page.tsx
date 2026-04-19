@@ -3309,7 +3309,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                   </div>
                 </div>
               </div>
-            </>
+            </div>
           )}
         </DialogContent>
       </Dialog>
