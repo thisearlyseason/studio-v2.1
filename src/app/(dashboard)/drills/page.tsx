@@ -843,407 +843,220 @@ export default function PlaybookAndGamePlayPage() {
       
       <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
         <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-6xl h-full sm:h-auto sm:max-h-[95vh] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col">
-          <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
-          {(selectedDrill || selectedFile) && (() => {
-            const data = selectedDrill || selectedFile;
-            const url = selectedDrill ? selectedDrill.videoUrl : selectedFile!.url;
-            const type = selectedDrill ? 'drills' : 'files';
-            const isMandatory = data.mandatoryWatch;
-            const userHasWatched = hasUserWatched(data);
-            
-            return (
-              <div className="flex flex-col h-full overflow-hidden bg-muted/10">
-                {/* STICKY TACTICAL HEADER */}
-                <div className="bg-black shrink-0 relative shadow-2xl z-20 sm:rounded-t-[3rem] overflow-hidden p-0 sm:p-4 lg:p-8">
+          <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTit          {!!(selectedDrill || selectedFile) && (
+            <div className="flex flex-col h-full overflow-hidden bg-muted/10">
+              {/* STICKY TACTICAL HEADER */}
+              <div className="bg-black shrink-0 relative shadow-2xl z-20 sm:rounded-t-[3rem] overflow-hidden p-0 sm:p-4 lg:p-8">
+                {/* 
+                   Harden Data: Direct lookup to avoid IIFE overhead 
+                */}
+                {(() => {
+                  const data = selectedDrill || selectedFile;
+                  if (!data) return null;
+                  const url = selectedDrill ? selectedDrill.videoUrl : selectedFile?.url;
+                  const type = selectedDrill ? 'drills' : 'files';
+                  const isMandatory = data.mandatoryWatch;
+                  const userHasWatched = hasUserWatched(data);
                   
-                  {/* Mandatory Watch Banner */}
-                  {isMandatory && (
-                    <div className={cn(
-                      "mb-4 px-4 py-3 rounded-2xl flex items-center justify-between",
-                      userHasWatched ? "bg-green-500/20 border border-green-500/30" : "bg-amber-500/20 border border-amber-500/30"
-                    )}>
-                      <div className="flex items-center gap-2">
-                        {userHasWatched ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-400" strokeWidth={3} />
-                        ) : (
-                          <Bell className="h-4 w-4 text-amber-400" />
-                        )}
-                        <span className="text-[10px] font-black uppercase tracking-widest text-white">
-                          {userHasWatched ? "Watch Verified ✓ 75% Complete" : "Mandatory 75% Watch Required"}
-                        </span>
-                      </div>
-                      {isStaff && (
-                        <button
-                          onClick={() => { setWatchersDrill(data); setIsWatchersOpen(true); }}
-                          className="text-[9px] font-black uppercase tracking-widest text-white/60 hover:text-white flex items-center gap-1"
-                        >
-                          <Users className="h-3 w-3" />
-                          {Object.keys(data.watchedBy || {}).length}/{(members || []).length} watched
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="aspect-video bg-neutral-900 rounded-[2.5rem] overflow-hidden shadow-2xl relative group mb-8">
-                    {url && (url.includes('youtube.com') || url.includes('youtu.be/')) ? (
-                      <iframe
-                        ref={iframeRef}
-                        src={`https://www.youtube.com/embed/${url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|u\/\w\/))([^\?&"'>]+)/)?.[1]}?enablejsapi=1&autoplay=1`}
-                        className="w-full h-full border-none"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                        onLoad={() => {
-                          if (isMandatory && !userHasWatched && data.id) {
-                            startWatchTracking(data.id, 300); // assume 5 min video
-                          }
-                        }}
-                      />
-                    ) : url ? (
-                      <video
-                        ref={videoRef}
-                        src={url}
-                        controls
-                        autoPlay
-                        className="w-full h-full"
-                        onTimeUpdate={(e) => {
-                          const video = e.currentTarget;
-                          const pct = video.duration > 0 ? (video.currentTime / video.duration) * 100 : 0;
-                          setWatchProgress(pct);
-                          if (pct >= 75 && isMandatory && !userHasWatched && user?.id && activeTeam && db) {
-                            updateDoc(doc(db, 'teams', activeTeam.id, 'drills', data.id), {
-                              [`watchedBy.${user.id}`]: { userId: user.id, name: user.name || 'Viewer', watchedAt: new Date().toISOString(), percentage: 75 }
-                            }).catch(() => {});
-                            setHasCompletedWatch(true);
-                          }
-                        }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-muted/10">
-                        <Video className="h-20 w-20 text-white/5 animate-pulse" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Additional Media Section */}
-                  {data.additionalMedia && data.additionalMedia.length > 0 && (
-                    <div className="space-y-6 pt-4">
-                      <div className="flex items-center gap-4 mb-6">
-                        <div className="h-px flex-1 bg-white/10" />
-                        <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40">Strategic Archive</h4>
-                        <div className="h-px flex-1 bg-white/10" />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        {data.additionalMedia.map((media: any, idx: number) => {
-                          const mediaUrl = typeof media === 'string' ? media : media.url;
-                          const mediaDesc = typeof media === 'object' ? media.description : '';
-                          return (
-                            <div key={idx} className="space-y-3 group/media">
-                              <div className="aspect-video bg-neutral-900 rounded-3xl overflow-hidden ring-1 ring-white/10 group-hover/media:ring-primary/50 transition-all shadow-lg relative">
-                                {mediaUrl && (mediaUrl.includes('youtube.com') || mediaUrl.includes('youtu.be/')) ? (
-                                  <iframe
-                                    src={`https://www.youtube.com/embed/${mediaUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|u\/\w\/))([^\?&"'>]+)/)?.[1]}`}
-                                    className="w-full h-full border-none"
-                                  />
-                                ) : mediaUrl && (mediaUrl.includes('mp4') || mediaUrl.includes('mov') || mediaUrl.startsWith('data:video')) ? (
-                                  <video src={mediaUrl} controls className="w-full h-full" />
-                                ) : mediaUrl ? (
-                                  <button 
-                                    className="relative w-full h-full cursor-zoom-in group/asset"
-                                    onClick={(e) => { e.stopPropagation(); setLightboxUrl(mediaUrl); }}
-                                  >
-                                    <img 
-                                      src={mediaUrl} 
-                                      alt={`Ref ${idx + 1}`} 
-                                      className="w-full h-full object-cover transition-transform duration-700 group-hover/media:scale-110" 
-                                    />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover/media:opacity-100 transition-opacity flex items-center justify-center">
-                                       <Search className="h-8 w-8 text-white opacity-40 group-hover/asset:scale-110 transition-transform" />
-                                    </div>
-                                  </button>
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center">
-                                    <Package className="h-8 w-8 text-white/10" />
-                                  </div>
-                                )}
-                                <Badge className="absolute top-4 left-4 bg-black/60 backdrop-blur-md text-white border-white/10 font-bold text-[8px] uppercase">Asset {idx + 1}</Badge>
-                              </div>
-                              {mediaDesc && (
-                                <div className="px-2">
-                                  <p className="text-[10px] font-bold text-white/50 uppercase tracking-widest leading-relaxed line-clamp-2 italic group-hover/media:text-white/80 transition-colors">
-                                    {mediaDesc}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* SCROLLABLE DATA HUB */}
-                <div className="flex-1 flex flex-col lg:flex-row overflow-hidden divide-y lg:divide-y-0 lg:divide-x bg-white">
-                  {/* Left Column: Descriptions & Extra Media */}
-                  <div className="flex-1 overflow-y-auto p-4 lg:p-10 space-y-10 custom-scrollbar">
-
-                {/* Right Side: Info and Comments */}
-                <div className="w-full lg:w-[400px] flex flex-col bg-white border-l divide-y overflow-hidden">
-                  <div className="p-8 space-y-4 shrink-0 bg-white">
-                    <div className="flex items-start justify-between">
-                      <div className="min-w-0">
-                        <h3 className="font-black text-2xl tracking-tighter uppercase leading-none truncate">{data.title || data.name}</h3>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2">{new Date(data.createdAt || data.date).toLocaleDateString()}</p>
-                      </div>
-                      {isStaff && (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="text-muted-foreground hover:text-black hover:bg-black/5 rounded-xl shrink-0" 
-                                onClick={(e) => {
-                                  if (selectedDrill) {
-                                    openEditDrill(e, selectedDrill);
-                                    setSelectedDrill(null);
-                                  } else {
-                                    openEditFile(e, selectedFile);
-                                    setSelectedFile(null);
-                                  }
-                                }}
-                              >
-                                <Edit2 className="h-5 w-5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Quick Modify</TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="text-red-500 hover:bg-red-50 rounded-xl shrink-0" 
-                                onClick={() => { 
-                                  selectedDrill ? deleteDrill(data.id) : deleteFile(data.id); 
-                                  setSelectedDrill(null); setSelectedFile(null);
-                                }}
-                              >
-                                <Trash2 className="h-5 w-5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Erase from Vault</TooltipContent>
-                          </Tooltip>
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs font-medium text-muted-foreground leading-relaxed">
-                      {selectedDrill ? data.description : (data.description || 'No institutional notes archived.')}
-                    </p>
-
-                    {/* Mandatory Watch Toggle in viewer */}
-                    {isStaff && (
-                      <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border-2 border-dashed">
-                        <div className="flex items-center gap-2">
-                          <Bell className="h-4 w-4 text-amber-500" />
-                          <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest">Mandatory 75% Watch</p>
-                            <p className="text-[8px] text-muted-foreground">Require roster to watch 75%</p>
-                          </div>
-                        </div>
-                        <Switch
-                          checked={!!data.mandatoryWatch}
-                          onCheckedChange={async (checked) => {
-                            if (!activeTeam || !db) return;
-                            const collName = selectedDrill ? 'drills' : 'files';
-                            await updateDoc(doc(db, 'teams', activeTeam.id, collName, data.id), {
-                              mandatoryWatch: checked,
-                              mandatoryWatchThreshold: 75
-                            });
-                            if (selectedDrill) {
-                              setSelectedDrill((prev: any) => ({ ...prev, mandatoryWatch: checked }));
-                            } else {
-                              setSelectedFile((prev: any) => ({ ...prev, mandatoryWatch: checked }));
-                            }
-                            toast({ title: checked ? "Mandatory Watch Enabled" : "Mandatory Watch Disabled" });
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Right Column: Coach Marks */}
-                  <div className="w-full lg:w-[450px] flex flex-col overflow-hidden bg-zinc-50/50">
-                    <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
-                    <div className="flex items-center justify-between sticky top-0 bg-transparent z-10 pb-2">
-                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">{isStaff ? "Coach Marks & Tags" : "Roster Comments"}</h4>
-                      <Badge variant="outline" className="h-5 text-[8px] font-black uppercase border-primary/20 text-primary">{(data.comments || []).length} {isStaff ? "Marks" : "Comments"}</Badge>
-                    </div>
-
-                    <div className="space-y-4">
-                      {(data.comments || []).length === 0 ? (
-                        <div className="text-center py-10 opacity-30 italic text-xs font-black uppercase">No tactical marks archived.</div>
-                      ) : (
-                        (data.comments || []).map((c: any) => (
-                          <div 
-                            key={c.id} 
-                            className={cn(
-                              "bg-white p-5 rounded-3xl shadow-sm border space-y-3 group/cmt hover:ring-2 hover:ring-primary/20 transition-all",
-                              c.timestamp != null && "cursor-pointer hover:bg-primary/5"
-                            )} 
-                            onClick={() => seekTo(c.timestamp)}
-                          >
-                            <div className="flex justify-between items-start">
-                              <div className="flex items-center gap-2">
-                                {c.timestamp != null && (
-                                  <Badge className="bg-primary text-white border-none text-[8px] font-black uppercase h-5 shadow-lg shadow-primary/20">
-                                    {Math.floor(c.timestamp / 60)}:{String(c.timestamp % 60).padStart(2, '0')}
-                                  </Badge>
-                                )}
-                                <span className="text-[9px] font-black uppercase text-primary tracking-widest">{c.authorName}</span>
-                              </div>
-                              <div className="flex items-center gap-1 opacity-0 group-hover/cmt:opacity-100 transition-opacity">
-                                {(c.authorId === user?.id || isStaff) && (
-                                  <>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button 
-                                          variant="ghost" 
-                                          size="icon" 
-                                          className="h-6 w-6 text-muted-foreground hover:bg-muted/10" 
-                                          onClick={(e) => { 
-                                            e.stopPropagation(); 
-                                            setEditingCommentId(c.id); 
-                                            setEditingCommentText(c.text); 
-                                          }}
-                                        >
-                                          <Edit2 className="h-3 w-3" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Edit Mark</TooltipContent>
-                                    </Tooltip>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button 
-                                          variant="ghost" 
-                                          size="icon" 
-                                          className="h-6 w-6 text-red-500 hover:bg-red-50" 
-                                          onClick={(e) => { 
-                                            e.stopPropagation(); 
-                                            handleDeleteComment(data.id, c.id, data.comments, type); 
-                                          }}
-                                        >
-                                          <Trash2 className="h-3 w-3" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Delete Mark</TooltipContent>
-                                    </Tooltip>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                            {editingCommentId === c.id ? (
-                              <div className="space-y-2" onClick={e => e.stopPropagation()}>
-                                <Textarea 
-                                  value={editingCommentText ?? ""} 
-                                  onChange={e => setEditingCommentText(e.target.value)}
-                                  className="rounded-xl border-2 font-bold text-xs min-h-[60px]"
-                                  autoFocus
-                                />
-                                <div className="flex gap-2">
-                                  <Button size="sm" className="h-7 text-[8px] font-black uppercase" onClick={() => handleEditComment(data.id, c.id, data.comments, editingCommentText, type)}>Save</Button>
-                                  <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase" onClick={() => setEditingCommentId(null)}>Cancel</Button>
-                                </div>
-                              </div>
+                  return (
+                    <>
+                      {/* Mandatory Watch Banner */}
+                      {isMandatory && (
+                        <div className={cn(
+                          "mb-4 px-4 py-3 rounded-2xl flex items-center justify-between",
+                          userHasWatched ? "bg-green-500/20 border border-green-500/30" : "bg-amber-500/20 border border-amber-500/30"
+                        )}>
+                          <div className="flex items-center gap-2">
+                            {userHasWatched ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-400" strokeWidth={3} />
                             ) : (
-                              <p className="text-xs font-bold leading-relaxed">{c.text}</p>
+                              <Bell className="h-4 w-4 text-amber-400" />
                             )}
-                            <p className="text-[7px] font-black text-muted-foreground uppercase">
-                              {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(c.createdAt).toLocaleDateString()}
-                            </p>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-white">
+                              {userHasWatched ? "Watch Verified ✓ 75% Complete" : "Mandatory 75% Watch Required"}
+                            </span>
                           </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="p-8 space-y-4 bg-white border-t shrink-0">
-                    <div className="flex gap-2">
-                      {isStaff && (
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Input 
-                            placeholder="M" 
-                            className="w-12 h-12 rounded-xl border-2 font-black text-xs text-center border-primary/10 shadow-inner" 
-                            value={commentMin ?? ""} 
-                            onChange={e => setCommentMin(e.target.value)} 
-                          />
-                          <span className="font-black text-muted-foreground">:</span>
-                          <Input 
-                            placeholder="S" 
-                            className="w-12 h-12 rounded-xl border-2 font-black text-xs text-center border-primary/10 shadow-inner" 
-                            value={commentSec ?? ""} 
-                            onChange={e => setCommentSec(e.target.value)} 
-                          />
+                          {isStaff && (
+                            <button
+                              onClick={() => { setWatchersDrill(data); setIsWatchersOpen(true); }}
+                              className="text-[9px] font-black uppercase tracking-widest text-white/60 hover:text-white flex items-center gap-1"
+                            >
+                              <Users className="h-3 w-3" />
+                              {Object.keys(data.watchedBy || {}).length}/{(members || []).length} watched
+                            </button>
+                          )}
                         </div>
                       )}
-                      <Input 
-                        placeholder={isStaff ? "Add coaching cue or tag timestamp..." : "Add a comment..."} 
-                        className="flex-1 h-12 rounded-xl border-2 font-bold text-xs border-primary/10 shadow-inner px-4" 
-                        value={commentText ?? ""} 
-                        onChange={e => setCommentText(e.target.value)} 
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && commentText) {
-                            handleAddComment(data.id, data.comments, type);
-                          }
-                        }}
-                      />
-                      {isStaff && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              className="h-12 w-12 rounded-xl bg-muted/30 p-0 text-muted-foreground hover:bg-black/5" 
-                              onClick={() => {
-                                if (videoRef.current) {
-                                  const s = Math.floor(videoRef.current.currentTime);
-                                  setCommentMin(Math.floor(s / 60).toString());
-                                  setCommentSec(String(s % 60).padStart(2, '0'));
-                                } else {
-                                  toast({ title: "YouTube Timestamp", description: "For YouTube, please enter the time manually (e.g. 1:24)" });
-                                }
-                              }}
-                            >
-                              <Clock className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-lg">
-                            Capture timestamp from video
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </div>
-                    <Button 
-                      className="w-full h-12 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-black/5 bg-black text-white hover:scale-[1.02] transition-all" 
-                      onClick={() => handleAddComment(data.id, data.comments, type)} 
-                      disabled={!commentText}
-                    >
-                      <Bookmark className="h-3 w-3 mr-2" /> {isStaff ? "Publish Mark" : "Post Comment"}
-                    </Button>
-                    
-                    {/* Confirmed Completed Button */}
-                    <Button 
-                      variant="outline"
-                      className="w-full h-12 rounded-xl font-black uppercase text-[10px] border-2 border-emerald-500/20 text-emerald-600 hover:bg-emerald-50 shadow-sm"
-                      onClick={() => { setSelectedDrill(null); setSelectedFile(null); }}
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5 mr-2" strokeWidth={3} /> Confirmed Completed
-                    </Button>
-                  </div>
-                  </div>
-                </div>
+
+                      <div className="aspect-video bg-neutral-900 rounded-[2.5rem] overflow-hidden shadow-2xl relative group mb-8">
+                        {url && (url.includes('youtube.com') || url.includes('youtu.be/')) ? (
+                          <iframe
+                            ref={iframeRef}
+                            src={`https://www.youtube.com/embed/${url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|u\/\w\/))([^\?&"'>]+)/)?.[1]}?enablejsapi=1&autoplay=1`}
+                            className="w-full h-full border-none"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            onLoad={() => {
+                              if (isMandatory && !userHasWatched && data.id) {
+                                startWatchTracking(data.id, 300); // assume 5 min video
+                              }
+                            }}
+                          />
+                        ) : url ? (
+                          <video
+                            ref={videoRef}
+                            src={url}
+                            controls
+                            autoPlay
+                            className="w-full h-full"
+                            onTimeUpdate={(e) => {
+                              const video = e.currentTarget;
+                              const pct = video.duration > 0 ? (video.currentTime / video.duration) * 100 : 0;
+                              setWatchProgress(pct);
+                              if (pct >= 75 && isMandatory && !userHasWatched && user?.id && activeTeam && db) {
+                                updateDoc(doc(db, 'teams', activeTeam.id, 'drills', data.id), {
+                                  [`watchedBy.${user.id}`]: { userId: user.id, name: user.name || 'Viewer', watchedAt: new Date().toISOString(), percentage: 75 }
+                                }).catch(() => {});
+                                setHasCompletedWatch(true);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-muted/10">
+                            <Video className="h-20 w-20 text-white/5 animate-pulse" />
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
-            );
-          })())}
+
+              {/* SCROLLABLE DATA HUB */}
+              <div className="flex-1 flex flex-col lg:flex-row overflow-hidden divide-y lg:divide-y-0 lg:divide-x bg-white">
+                {(() => {
+                  const data = selectedDrill || selectedFile;
+                  if (!data) return null;
+                  const type = selectedDrill ? 'drills' : 'files';
+
+                  return (
+                    <>
+                      {/* Left Column: Descriptions & Extra Media */}
+                      <div className="flex-1 overflow-y-auto p-4 lg:p-10 space-y-10 custom-scrollbar">
+                        <div className="space-y-4">
+                          <div className="flex items-start justify-between">
+                            <div className="min-w-0">
+                              <h3 className="font-black text-2xl tracking-tighter uppercase leading-none truncate">{data.title || (data as any).name}</h3>
+                              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2">{new Date(data.createdAt || (data as any).date).toLocaleDateString()}</p>
+                            </div>
+                            {isStaff && (
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="text-muted-foreground hover:text-black hover:bg-black/5 rounded-xl shrink-0" 
+                                      onClick={(e) => {
+                                        if (selectedDrill) {
+                                          openEditDrill(e, selectedDrill);
+                                          setSelectedDrill(null);
+                                        } else {
+                                          openEditFile(e, selectedFile);
+                                          setSelectedFile(null);
+                                        }
+                                      }}
+                                    >
+                                      <Edit2 className="h-5 w-5" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Quick Modify</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-xs font-medium text-muted-foreground leading-relaxed">
+                            {selectedDrill ? data.description : ((data as any).description || 'No institutional notes archived.')}
+                          </p>
+
+                          {/* Mandatory Watch Toggle in viewer */}
+                          {isStaff && (
+                            <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border-2 border-dashed">
+                              <div className="flex items-center gap-2">
+                                <Bell className="h-4 w-4 text-amber-500" />
+                                <div>
+                                  <p className="text-[10px] font-black uppercase tracking-widest">Mandatory 75% Watch</p>
+                                  <p className="text-[8px] text-muted-foreground">Require roster to watch 75%</p>
+                                </div>
+                              </div>
+                              <Switch
+                                checked={!!data.mandatoryWatch}
+                                onCheckedChange={async (checked) => {
+                                  if (!activeTeam || !db) return;
+                                  const collName = selectedDrill ? 'drills' : 'files';
+                                  await updateDoc(doc(db, 'teams', activeTeam.id, collName, data.id), {
+                                    mandatoryWatch: checked,
+                                    mandatoryWatchThreshold: 75
+                                  });
+                                  if (selectedDrill) {
+                                    setSelectedDrill((prev: any) => ({ ...prev, mandatoryWatch: checked }));
+                                  } else {
+                                    setSelectedFile((prev: any) => ({ ...prev, mandatoryWatch: checked }));
+                                  }
+                                  toast({ title: checked ? "Mandatory Watch Enabled" : "Mandatory Watch Disabled" });
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Additional Media Content */}
+                        {(data as any).additionalMedia && (data as any).additionalMedia.length > 0 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            {(data as any).additionalMedia.map((media: any, idx: number) => {
+                               const mediaUrl = typeof media === 'string' ? media : media.url;
+                               return (
+                                 <div key={idx} className="aspect-video bg-neutral-900 rounded-3xl overflow-hidden shadow-lg relative cursor-zoom-in" onClick={() => setLightboxUrl(mediaUrl)}>
+                                   <img src={mediaUrl} className="w-full h-full object-cover" />
+                                 </div>
+                               );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right Column: Coach Marks */}
+                      <div className="w-full lg:w-[450px] flex flex-col overflow-hidden bg-zinc-50/50">
+                        <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-6 custom-scrollbar">
+                           <div className="space-y-4">
+                            {(data.comments || []).map((c: any) => (
+                              <div key={c.id} className="bg-white p-5 rounded-3xl shadow-sm border space-y-2 cursor-pointer hover:bg-primary/5 transition-all" onClick={() => seekTo(c.timestamp)}>
+                                <div className="flex items-center gap-2">
+                                  {c.timestamp != null && <Badge className="bg-primary text-white border-none text-[8px] font-black uppercase">{Math.floor(c.timestamp/60)}:{String(c.timestamp%60).padStart(2,'0')}</Badge>}
+                                  <span className="text-[9px] font-black uppercase text-primary">{c.authorName}</span>
+                                </div>
+                                <p className="text-xs font-bold">{c.text}</p>
+                              </div>
+                            ))}
+                           </div>
+                        </div>
+
+                        <div className="p-8 space-y-4 bg-white border-t shrink-0">
+                          <div className="flex gap-2">
+                             <Input placeholder={isStaff ? "Capture Mark..." : "Comment..."} className="flex-1 h-12 rounded-xl border-2 font-bold text-xs" value={commentText} onChange={e => setCommentText(e.target.value)} />
+                             <Button className="h-12 w-12 rounded-xl" onClick={() => handleAddComment(data.id, data.comments, type)} disabled={!commentText}><Bookmark className="h-4 w-4" /></Button>
+                          </div>
+                          <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-[10px] border-emerald-500/20 text-emerald-600" onClick={() => { setSelectedDrill(null); setSelectedFile(null); }}>
+                            <CheckCircle2 className="h-4 w-4 mr-2" /> Mark Complete
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
       
