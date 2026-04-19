@@ -843,7 +843,8 @@ export default function PlaybookAndGamePlayPage() {
       
       <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
         <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-6xl h-full sm:h-auto sm:max-h-[95vh] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col">
-          <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTit          {!!(selectedDrill || selectedFile) && (
+          <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
+          {!!(selectedDrill || selectedFile) && (
             <div className="flex flex-col h-full overflow-hidden bg-muted/10">
               {/* STICKY TACTICAL HEADER */}
               <div className="bg-black shrink-0 relative shadow-2xl z-20 sm:rounded-t-[3rem] overflow-hidden p-0 sm:p-4 lg:p-8">
