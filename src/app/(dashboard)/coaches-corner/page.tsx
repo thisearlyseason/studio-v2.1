@@ -3111,6 +3111,11 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       <Dialog open={!!selectedVideo} onOpenChange={() => { setSelectedVideo(null); setManualSeekTime(null); }}>
         <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-4xl h-full sm:h-auto sm:max-h-[95vh] p-0 border-none shadow-2xl overflow-hidden bg-white flex flex-col">
           <DialogTitle className="sr-only">Video Viewer</DialogTitle>
+          <DialogClose asChild>
+            <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-[60] h-10 w-10 rounded-full bg-black/50 hover:bg-black/70 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all">
+              <X className="h-5 w-5" />
+            </Button>
+          </DialogClose>
           {selectedVideo && (
             <div className="flex flex-col h-full overflow-hidden">
               {/* STICKY HEADER FOR MOBILE */}
