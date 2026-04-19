@@ -842,13 +842,8 @@ export default function PlaybookAndGamePlayPage() {
       </Dialog>
       
       <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
-        <DialogContent className="rounded-[3rem] sm:max-w-6xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground w-[95vw] h-[90vh]">
+        <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-6xl h-full sm:h-auto sm:max-h-[95vh] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col">
           <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
-          <DialogClose asChild>
-            <Button variant="ghost" size="icon" className="absolute top-6 right-6 z-50 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white/40 hover:text-white transition-all backdrop-blur-md border border-white/10">
-              <X className="h-6 w-6" />
-            </Button>
-          </DialogClose>
           {(selectedDrill || selectedFile) && (() => {
             const data = selectedDrill || selectedFile;
             const url = selectedDrill ? selectedDrill.videoUrl : selectedFile!.url;
@@ -857,9 +852,9 @@ export default function PlaybookAndGamePlayPage() {
             const userHasWatched = hasUserWatched(data);
             
             return (
-              <div className="flex flex-col lg:flex-row h-full max-h-[85vh] overflow-hidden bg-muted/10">
-                {/* Left Side: Video and Additional Media */}
-                <div className="flex-1 overflow-y-auto bg-black p-4 lg:p-8 custom-scrollbar">
+              <div className="flex flex-col h-full overflow-hidden bg-muted/10">
+                {/* STICKY TACTICAL HEADER */}
+                <div className="bg-black shrink-0 relative shadow-2xl z-20 sm:rounded-t-[3rem] overflow-hidden p-0 sm:p-4 lg:p-8">
                   
                   {/* Mandatory Watch Banner */}
                   {isMandatory && (
@@ -987,6 +982,11 @@ export default function PlaybookAndGamePlayPage() {
                   )}
                 </div>
 
+                {/* SCROLLABLE DATA HUB */}
+                <div className="flex-1 flex flex-col lg:flex-row overflow-hidden divide-y lg:divide-y-0 lg:divide-x bg-white">
+                  {/* Left Column: Descriptions & Extra Media */}
+                  <div className="flex-1 overflow-y-auto p-4 lg:p-10 space-y-10 custom-scrollbar">
+
                 {/* Right Side: Info and Comments */}
                 <div className="w-full lg:w-[400px] flex flex-col bg-white border-l divide-y overflow-hidden">
                   <div className="p-8 space-y-4 shrink-0 bg-white">
@@ -1071,26 +1071,12 @@ export default function PlaybookAndGamePlayPage() {
                       </div>
                     )}
 
-                    {/* Roster Watch Status (staff only) */}
-                    {isStaff && data.mandatoryWatch && (
-                      <button
-                        onClick={() => { setWatchersDrill(data); setIsWatchersOpen(true); }}
-                        className="w-full flex items-center justify-between p-3 bg-primary/5 rounded-xl border border-primary/10 hover:bg-primary/10 transition-all"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Users className="h-4 w-4 text-primary" />
-                          <span className="text-[10px] font-black uppercase tracking-widest text-primary">
-                            Roster Watch Status
-                          </span>
-                        </div>
-                        <Badge className="bg-primary text-white border-none text-[8px] font-black">
-                          {Object.keys(data.watchedBy || {}).length}/{(members || []).length}
-                        </Badge>
-                      </button>
                     )}
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-muted/5">
+                  {/* Right Column: Coach Marks */}
+                  <div className="w-full lg:w-[450px] flex flex-col overflow-hidden bg-zinc-50/50">
+                    <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
                     <div className="flex items-center justify-between sticky top-0 bg-transparent z-10 pb-2">
                       <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">{isStaff ? "Coach Marks & Tags" : "Roster Comments"}</h4>
                       <Badge variant="outline" className="h-5 text-[8px] font-black uppercase border-primary/20 text-primary">{(data.comments || []).length} {isStaff ? "Marks" : "Comments"}</Badge>
