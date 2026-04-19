@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
-import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc } from '@/firebase';
+import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage } from '@/firebase';
 import { 
   collection, 
   query, 
@@ -612,6 +612,7 @@ export type Message = {
 
 interface TeamContextType {
   db: any;
+  storage: any;
   firebaseUser: any;
   user: UserProfile | null;
   activeTeam: Team | null;
@@ -798,6 +799,7 @@ const clean = (obj: any): any => {
 export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isAuthResolved } = useUser();
   const db = useFirestore();
+  const storage = useStorage();
   const router = useRouter();
   const pathname = usePathname();
   
@@ -3130,9 +3132,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
     addRegistration, addLeaguePayment, updateLeagueGlobalFees,
 
-    getMember, firebaseUser, getTeamByCode, deleteMessage, getLeagueMembers
+    getMember, firebaseUser, getTeamByCode, deleteMessage, getLeagueMembers, storage
   }), [
-    db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser,
+    db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser, storage,
     isStaff, isPro, isStarter, householdEvents, householdGames, activeTeamEvents, games, myChildren, plans, isPlansLoading, isPaywallOpen,
     isSeedingDemo, setIsSeedingDemo, getCalendarFeedUrl,
     seenAlertIds, alerts, unreadAlertsCount, isSuperAdmin, isClubManager, isPrimaryClubAuthority, isEliteAccount, hasFeature, proQuotaStatus,

@@ -84,7 +84,7 @@ export function EventDetailDialog({
   const team = teams.find(t => t.id === event.teamId);
   const relevantParticipants = [
     ...(isParent && !isPlayer ? [] : [{ id: user?.id, name: 'You' }]),
-    ...(isParent ? (myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId)).map(c => ({ id: c.id, name: c.firstName })) : [])
+    ...(isParent ? (myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId || '')).map(c => ({ id: c.id, name: c.firstName })) : [])
   ];
 
   const attendees = Object.entries(event.userRsvps || {}).map(([uid, status]) => {

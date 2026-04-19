@@ -2,9 +2,12 @@
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { loadFFmpeg, trimVideoClip, mergeVideoClips, captureVideoFrame, processHighlightClip, extractFramesForAnalysis } from '@/lib/ffmpeg-processor';
 import { useTeam, TeamDocument, Member, PlayerProfile, RecruitingProfile, AthleticMetrics, PlayerStat, PlayerEvaluation, RecruitingContact, PlayerVideo, VideoComment, TeamIncident, TeamEvent } from '@/components/providers/team-provider';
 import { EmailExportDialog } from '@/components/team/EmailExportDialog';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useStorage } from '@/firebase';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+
 import { 
   Plus, 
   Trash2, 
@@ -57,6 +60,7 @@ import {
   Package,
   Upload,
   Lock,
+  Unlock,
   Edit2,
   Camera,
   MapPin,
@@ -92,6 +96,7 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -830,7 +835,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     updateAthleticMetrics, getPlayerStats, addPlayerStat, deletePlayerStat,
     getEvaluations, addEvaluation, getRecruitingContact, updateRecruitingContact,
     getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo, toggleRecruitingProfile,
-    updatePlayerStat, getStaffEvaluation
+    updatePlayerStat, getStaffEvaluation, storage
   } = useTeam();
   const { user } = useTeam();
 
@@ -847,11 +852,16 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const [isAIHighlightOpen, setIsAIHighlightOpen] = useState(false);
   const [aiVideoPrompt, setAiVideoPrompt] = useState('find all offensive highlights');
   const [aiSelectedVideoUrl, setAiSelectedVideoUrl] = useState('');
+  // NEW: Store the raw File object so FFmpeg WASM can work on it without CORS
+  const [aiSourceFile, setAiSourceFile] = useState<File | null>(null);
   const [aiHighlights, setAiHighlights] = useState<any[]>([]);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const [ffmpegProgress, setFfmpegProgress] = useState<number>(0);
   const [isOptimizingSource, setIsOptimizingSource] = useState(false);
+  const [aiSourceDuration, setAiSourceDuration] = useState<number | null>(null);
   const [filmTitle, setFilmTitle] = useState('');
   const [filmUrl, setFilmUrl] = useState('');
+  const [selectedFilmFile, setSelectedFilmFile] = useState<File | null>(null);
   const [filmType, setFilmType] = useState('Highlight');
   const [selectedVideo, setSelectedVideo] = useState<PlayerVideo | null>(null);
   const [newComment, setNewComment] = useState('');
@@ -863,17 +873,19 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [manualSeekTime, setManualSeekTime] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [ffmpegPhase, setFfmpegPhase] = useState<'extracting' | 'uploading' | 'analyzing' | null>(null);
   const [deletedStatIds, setDeletedStatIds] = useState<string[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [activeTeam] = useState(user?.clubName || 'Elite Academy'); // Fallback for prominent display
-  const [photos, setPhotos] = useState<string[]>([]);
-  const loadData = useCallback(async () => {
+  const [photos, setPhotos] = useState<{id?: string, url: string}[]>([]);
+  const loadData = useCallback(async (isSilent = false) => {
     if (!member.playerId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!isSilent) setLoading(true);
     try {
       const [p, m, s, e, c, v, sn] = await Promise.all([
         getRecruitingProfile(member.playerId),
@@ -886,25 +898,47 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       ]);
       if (p) {
         setProfile(p);
-        setPhotos(p.photos || []);
+        const pPhotos = (p.photos || []).map((url: string) => ({ url }));
+        const subPhotos = (v || []).filter(vid => vid.type === 'photo').map(vid => ({ id: vid.id, url: vid.url }));
+        setPhotos([...pPhotos, ...subPhotos]);
       }
-      if (p) setProfile(p);
       if (m) setMetrics(m);
       setStats(s || []);
       if (c) setContact(c);
       if (e) setEvaluations(e);
       if (v) setVideos(v || []);
       setStaffNote(sn || '');
-      console.log("Loaded contact details:", c);
     } catch (error) {
       console.error("Error loading athlete pack:", error);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, [member.id, member.playerId, getRecruitingProfile, getAthleticMetrics, getPlayerStats, getEvaluations, getRecruitingContact, getPlayerVideos, getStaffEvaluation]);
 
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // EFFECTIVE SEEKING LOGIC: Ensures the video always jumps to the correct highlight/timestamp
+  useEffect(() => {
+    if (selectedVideo && videoRef.current) {
+      const v = videoRef.current;
+      let targetTime = 0;
+
+      if (manualSeekTime !== null) {
+        targetTime = manualSeekTime;
+      } else if (selectedVideo.segments && selectedVideo.segments.length > 0) {
+        targetTime = selectedVideo.segments[currentSegmentIndex].start;
+      } else if (selectedVideo.startAt) {
+        targetTime = selectedVideo.startAt;
+      }
+
+      // Only seek if the difference is meaningful (prevents jitter)
+      if (Math.abs(v.currentTime - targetTime) > 0.5) {
+        v.currentTime = targetTime;
+        v.play().catch(() => {}); // Auto-play on seek if possible
+      }
+    }
+  }, [selectedVideo, manualSeekTime, currentSegmentIndex]);
 
   const handleUpdateProfile = async () => {
     if (!member.playerId) {
@@ -923,11 +957,31 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     setIsSyncing(true);
     console.log("Initiating pack synchronization for player:", member.playerId);
 
+    const safetyTimeoutId = setTimeout(() => {
+      setIsSyncing(prev => {
+        if (prev) {
+          console.warn("Recruiting sync safety timeout triggered.");
+          toast({
+            title: "Synchronization Latency",
+            description: "The cloud update is taking longer than expected. Please verify your connection or try again shortly.",
+            variant: "destructive"
+          });
+          return false;
+        }
+        return false;
+      });
+    }, 15000); // 15s hard reset
+
     try {
       const isEnabled = profile.status === 'active' || profile.status === 'committed';
       
       const updatePromises = [
-        updateRecruitingProfile(member.playerId, { ...profile, photos }),
+        updateRecruitingProfile(member.playerId, { 
+          ...profile, 
+          graduationYear: profile.graduationYear ? Number(profile.graduationYear) : undefined,
+          academicGPA: profile.academicGPA ? Number(profile.academicGPA) : undefined,
+          photos 
+        }),
         updateAthleticMetrics(member.playerId, {
           ...metrics,
           graduationYear: profile.graduationYear ? Number(profile.graduationYear) : undefined,
@@ -947,6 +1001,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       
       await Promise.all(updatePromises);
       
+      clearTimeout(safetyTimeoutId);
       setDeletedStatIds([]);
       console.log("Recruiting pack synchronization successfully persisted.");
       
@@ -956,8 +1011,9 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       });
       
       setIsEditing(false);
-      await loadData();
+      await loadData(true);
     } catch (error: any) {
+      clearTimeout(safetyTimeoutId);
       console.error("Recruiting synchronization failed:", error);
       toast({
         title: "Pack Sync Failed",
@@ -965,154 +1021,750 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         variant: "destructive",
       });
     } finally {
+      clearTimeout(safetyTimeoutId);
       setIsSyncing(false);
+    }
+  };
+
+  const handleCaptureHlScreenshot = async (idx: number) => {
+    if (!aiSourceFile || !member.playerId) {
+      toast({ title: "Capture Unavailable", description: "A local video file is required to snap high-def screenshots. Ensure the video is uploaded or selected from the library.", variant: "destructive" });
+      return;
+    }
+    const hl = aiHighlights[idx];
+    try {
+      toast({ title: "Capturing Frame", description: "Snapping HD tactical screenshot..." });
+      // Capture at AI-detected impact frame OR action mid-point fallback
+      const captureAt = hl.impactFrameTime || (hl.impactFrameTime || (hl.startTime + (hl.endTime - hl.startTime) * 0.4));
+      const screenshotBlob = await captureVideoFrame(aiSourceFile, captureAt);
+      
+      const fileName = `hl_gallery_${Date.now()}_${idx}.jpg`;
+      const fileRef = ref(storage, `players/${member.playerId}/thumbnails/${fileName}`);
+      await uploadBytes(fileRef, screenshotBlob);
+      const url = await getDownloadURL(fileRef);
+      
+      // --- PERSISTENT SUB-COLLECTION STORAGE ---
+      // We save as a separate 'video' document of type 'photo' to bypass the 1MB profile limit
+      await addPlayerVideo(member.playerId, {
+        title: `Tactical Capture ${new Date().toLocaleTimeString()}`,
+        type: "photo",
+        url: url,
+        comments: []
+      });
+
+      // Refetch photos from the sub-collection to update UI
+      const allVideos = await getPlayerVideos(member.playerId);
+      const subPhotos = allVideos.filter(vid => vid.type === 'photo').map(vid => ({ id: vid.id, url: vid.url }));
+      const pPhotos = (profile?.photos || []).map((url: string) => ({ url }));
+      setPhotos([...pPhotos, ...subPhotos]);
+      
+      toast({ title: "Imagery Captured", description: "Strategic screenshot saved to athlete's persistent vault." });
+      return url;
+    } catch (err: any) {
+      console.warn("[Screenshot] Storage blocked, switching to Base64 sub-doc:", err.message);
+      try {
+        const hl = aiHighlights[idx];
+        const captureAt = hl.impactFrameTime || (hl.startTime + (hl.endTime - hl.startTime) * 0.4);
+        const blob = await captureVideoFrame(aiSourceFile, captureAt, 0.6);
+        const reader = new FileReader();
+        const dataUrl = await new Promise<string>((resolve) => {
+           reader.onloadend = () => resolve(reader.result as string);
+           reader.readAsDataURL(blob);
+        });
+
+        await addPlayerVideo(member.playerId, {
+          title: `Tactical Capture ${new Date().toLocaleTimeString()}`,
+          type: "photo",
+          url: dataUrl,
+          createdAt: new Date().toISOString()
+        });
+
+        const allVideos = await getPlayerVideos(member.playerId);
+        const subPhotos = allVideos.filter(vid => vid.type === 'photo').map(vid => ({ id: vid.id, url: vid.url }));
+        const pPhotos = (profile?.photos || []).map((url: string) => ({ url }));
+        setPhotos([...pPhotos, ...subPhotos]);
+        
+        toast({ title: "Captured Locally", description: "HD imagery saved to persistent sub-vault." });
+        return dataUrl;
+      } catch (e) {
+        console.error("[Screenshot] Total failure:", e);
+        return null;
+      }
+    }
+  };
+
+  const handleDeleteVideo = async (videoId: string) => {
+    if (!member.playerId || !confirm("Are you sure you want to delete this clip?")) return;
+    try {
+      await deletePlayerVideo(member.playerId, videoId);
+      setVideos(prev => prev.filter(v => v.id !== videoId));
+      toast({ title: "Clip Deleted", description: "The tactical asset has been removed from the library." });
+    } catch (err: any) {
+      toast({ title: "Delete Failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !member.playerId) return;
+    
+    try {
+      toast({ title: "Uploading Photo", description: "Adding archival asset to pack..." });
+      const fileName = `manual_${Date.now()}_${file.name}`;
+      const fileRef = ref(storage, `players/${member.playerId}/thumbnails/${fileName}`);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+      
+      const newPhotos = [...photos, url];
+      setPhotos(newPhotos);
+      await updateRecruitingProfile(member.playerId, { photos: newPhotos });
+    } catch (err: any) {
+      toast({ title: "Upload Failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleDeletePhoto = async (photoUrl: string) => {
+    if (!member.playerId || !confirm("Delete this photo from the gallery?")) return;
+    try {
+      const newPhotos = photos.filter(p => p !== photoUrl);
+      setPhotos(newPhotos);
+      await updateRecruitingProfile(member.playerId, { photos: newPhotos });
+      
+      // Attempt storage cleanup (optional/best effort)
+      try {
+        const fileRef = ref(storage, photoUrl);
+        await deleteObject(fileRef);
+      } catch (e) {}
+      
+      toast({ title: "Photo Removed", description: "Gallery asset updated successfully." });
+    } catch (err: any) {
+      toast({ title: "Removal Failed", description: err.message, variant: "destructive" });
     }
   };
 
   const handleAddFilm = async () => {
     if (!member.playerId || !filmUrl) return;
-    await addPlayerVideo(member.playerId, { title: filmTitle || 'Untitled', url: filmUrl, type: filmType, comments: [] });
-    setFilmTitle(''); setFilmUrl(''); setFilmType('Highlight');
-    setIsAddFilmOpen(false);
-    await loadData();
-    toast({ title: "Film Archived", description: `${filmTitle || 'Clip'} added to highlight reel.` });
+    
+    setIsSyncing(true);
+    let finalUrl = filmUrl;
+    let thumbnailUrl = null;
+
+    try {
+      // 1. If it's a local file, upload it first
+      if (selectedFilmFile) {
+        toast({ title: "Syncing Video Resource", description: "Archiving high-fidelity tactical asset to cloud storage..." });
+        const fileName = `${Date.now()}_${selectedFilmFile.name}`;
+        const fileRef = ref(storage, `players/${member.playerId}/videos/${fileName}`);
+        await uploadBytes(fileRef, selectedFilmFile);
+        finalUrl = await getDownloadURL(fileRef);
+      } else {
+        // 2. Auto-detect YouTube thumbnail for links
+        const ytMatch = filmUrl.match(/^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]{11}).*/);
+        if (ytMatch && ytMatch[1]) {
+          thumbnailUrl = `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+        }
+      }
+
+      await addPlayerVideo(member.playerId, { 
+        title: filmTitle || 'Untitled', 
+        url: finalUrl, 
+        thumbnailUrl, 
+        type: filmType, 
+        comments: [] 
+      });
+
+      setFilmTitle(''); setFilmUrl(''); setFilmType('Highlight'); setSelectedFilmFile(null);
+      setIsAddFilmOpen(false);
+      await loadData();
+      toast({ title: "Film Archived", description: `${filmTitle || 'Clip'} added to highlight reel.` });
+    } catch (err: any) {
+      toast({ title: "Archival Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleVideoSourceChange = (url: string, file: File | null = null) => {
+    // ── CANCEL STALE REQUEST ──────────────────────────────────────
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    
+    setAiSelectedVideoUrl(url);
+    setAiSourceFile(file || null);
+    
+    // Reset state for new source
+    setAiHighlights([]);
+    setIsAiProcessing(false);
+    setSelectedAiHighlights([]);
+    setFfmpegProgress(0);
+    
+    if (url) {
+       toast({ title: 'New Source Mounted', description: 'Previous AI analysis cancelled. Ready for fresh scouting.' });
+    }
   };
 
   const handleGenerateAI = async () => {
     if (!aiSelectedVideoUrl || !aiVideoPrompt) return;
     setIsAiProcessing(true);
+    setFfmpegPhase('extracting');
+    const uploadedFramePaths: string[] = []; // track for cleanup
+    
+    // Safety timeout: Reset processing state if anything hangs for more than 2 minutes
+    const safetyTimeoutId = setTimeout(() => {
+      if (isAiProcessing) {
+        console.warn('[AI] Safety timeout triggered — forcing reset');
+        setIsAiProcessing(false);
+        setFfmpegPhase(null);
+        toast({ 
+          title: "Analysis Rescue", 
+          description: "Extraction/upload took too long. The link has been reset for safety.",
+          variant: "destructive"
+        });
+      }
+    }, 120000); // 120s max for everything
+
     try {
-      const res = await fetch('/api/highlights/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: aiSelectedVideoUrl, prompt: aiVideoPrompt })
-      });
+      let res: Response;
+
+      if (aiSourceFile && aiSourceDuration) {
+        // ── Step 1: Extract frames via FFmpeg WASM / Canvas ──────────────
+        // SMART DENSITY: Scale frame count based on duration. 
+        // 8-12 for short clips, up to 24 for full games (30m+) to maintain tactical coverage.
+        const frameCount = Math.min(24, Math.max(8, Math.floor(aiSourceDuration / 15)));
+        setFfmpegPhase('extracting');
+        toast({ title: 'Extracting Tactical Frames', description: `Sampling ${frameCount} performance markers from ${Math.round(aiSourceDuration/60)}m footage...` });
+        setFfmpegProgress(0);
+
+        const frames = await extractFramesForAnalysis(
+          aiSourceFile,
+          aiSourceDuration,
+          frameCount,
+          (ratio) => setFfmpegProgress(Math.round(ratio * 100))
+        );
+        setFfmpegProgress(0);
+
+        if (frames.length === 0) {
+          throw new Error('Could not extract any frames from the video. Try a different format (MP4 recommended).');
+        }
+
+        // ── Step 2: Upload frames SEQUENTIALLY → get HTTPS URLs ──────────
+        // Sequential upload prevents network choking and server rate-limiting.
+        let frameUrls: Array<{ timestamp: number; url: string }> = [];
+
+        if (member.playerId) {
+          setFfmpegPhase('uploading');
+          toast({ title: 'Syncing Frames', description: `Uploading ${frames.length} markers to Straico cloud...` });
+          setFfmpegProgress(0);
+
+          // PARALLEL UPLOAD: Fire all frame uploads simultaneously for 10x speed boost.
+          // This prevents minute-long videos from hanging in the sequential loop.
+          const uploadPromises = frames.map(async (frame, i) => {
+            try {
+              const uploadRes = await fetch('/api/highlights/upload-frame', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ base64: frame.base64 }),
+              });
+
+              if (!uploadRes.ok) return null;
+              const { url } = await uploadRes.json();
+              return { timestamp: frame.timestamp, url };
+            } catch (err) {
+              return null;
+            }
+          });
+
+          const results = await Promise.all(uploadPromises);
+          frameUrls = results.filter((r): r is { timestamp: number; url: string } => r !== null);
+          
+          if (frameUrls.length === 0) {
+            console.warn(`[Vision] All frame uploads failed — falling back to text-only mode`);
+          }
+          setFfmpegProgress(0);
+        }
+
+        // ── Step 3: Send frame URLs (or base64 fallback) to analyze route ─
+        if (abortControllerRef.current) abortControllerRef.current.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        setFfmpegPhase('analyzing');
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s total max
+        
+        try {
+          res = await fetch('/api/highlights/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              frameUrls: frameUrls.length > 0 ? frameUrls : undefined,
+              frames: frameUrls.length === 0 ? frames : undefined,
+              prompt: aiVideoPrompt,
+              videoDuration: aiSourceDuration,
+            }),
+            signal: controller.signal,
+          });
+        } catch (fetchErr: any) {
+          if (fetchErr.name === 'AbortError') {
+             // If we aborted because UI was reset, don't show error
+             if (abortControllerRef.current !== controller) return;
+             throw new Error('AI Analysis cancelled or timed out. Try again with a shorter segment.');
+          }
+          throw fetchErr;
+        } finally {
+          clearTimeout(timeoutId);
+          if (abortControllerRef.current === controller) abortControllerRef.current = null;
+        }
+
+        // ── Step 4: Cleanup temp frames from Storage (fire-and-forget) ───
+        if (storage && uploadedFramePaths.length > 0) {
+          Promise.all(
+            uploadedFramePaths.map(path =>
+              deleteObject(ref(storage, path)).catch(() => {})
+            )
+          );
+        }
+      } else {
+        // ⚠️ TEXT-ONLY FALLBACK — URL only, no video file uploaded
+        toast({
+          title: 'URL-Only Mode (Estimated)',
+          description: 'No video file uploaded. Generating estimated timestamps.',
+          className: 'bg-amber-50 border-amber-200 text-amber-900',
+        });
+        res = await fetch('/api/highlights/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoUrl: aiSelectedVideoUrl, prompt: aiVideoPrompt, videoDuration: aiSourceDuration }),
+        });
+      }
+
       const data = await res.json();
-      if (res.ok) setAiHighlights(data);
-      else throw new Error(data.error);
+      if (res.ok) {
+        setAiHighlights(data);
+        toast({
+          title: `${data.length} Highlights Detected`,
+          description: aiSourceFile
+            ? 'Frame-verified analysis complete via Straico vision.'
+            : 'Estimated timestamps generated — upload a video for precision.',
+        });
+      } else {
+        throw new Error(data.error);
+      }
     } catch (e: any) {
-      toast({ title: "AI Analysis Failed", description: e.message, variant: "destructive" });
+      console.error('AI Analysis Error:', e);
+      
+      const isBalanceError = e.message.toLowerCase().includes('not enough coins') || e.message.toLowerCase().includes('balance');
+      
+      if (isBalanceError) {
+        toast({
+          title: 'Straico Balance Exhausted',
+          description: (
+            <div className="space-y-4 pt-2">
+              <p>Your Straico coin balance is empty. You can top up at Straico, or use **Simulation Mode** to generate mock highlights for testing.</p>
+              <div className="flex gap-3">
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="h-8 text-[10px] uppercase font-black"
+                  onClick={() => window.open('https://app.straico.com', '_blank')}
+                >
+                  Top Up at Straico
+                </Button>
+                <Button 
+                  size="sm" 
+                  className="h-8 text-[10px] uppercase font-black bg-primary text-white"
+                  onClick={() => {
+                    const mockData = [
+                      { startTime: 0, endTime: 12, impactFrameTime: 6, title: "[SIM] Dynamic Performance Entry", description: "Simulation: Detected high-intensity lead-off movement with elite body control." },
+                      { startTime: 15, endTime: 28, impactFrameTime: 22, title: "[SIM] Mid-Sequence Tactical Execution", description: "Simulation: Technical mastery during the transition phase showing advanced spatial awareness." },
+                      { startTime: 35, endTime: 50, impactFrameTime: 42, title: "[SIM] Strategic Closing Action", description: "Simulation: Explosive finale with professional-grade follow-through and recovery." },
+                    ];
+                    setAiHighlights(mockData);
+                    toast({ title: "Simulation Active", description: "Generated synthetic scouting data for workflow validation." });
+                  }}
+                >
+                  Use Simulation Mode
+                </Button>
+              </div>
+            </div>
+          ),
+          variant: 'destructive',
+          duration: 10000
+        });
+      } else {
+        toast({
+          title: 'AI Analysis Failed',
+          description: e.message === 'Failed to fetch'
+            ? 'Network error — check your connection and try again.'
+            : e.message,
+          variant: 'destructive',
+        });
+      }
     } finally {
+      clearTimeout(safetyTimeoutId);
       setIsAiProcessing(false);
+      setFfmpegPhase(null);
+      setFfmpegProgress(0);
     }
   };
 
+
+  const getAiStatusText = () => {
+    if (isProcessingClip) return `FFmpeg Processing... ${ffmpegProgress}%`;
+    if (!isAiProcessing) return 'Sending to Straico AI...';
+    
+    if (ffmpegPhase === 'extracting') {
+      return ffmpegProgress > 0 ? `Extracting Vision Frames... ${ffmpegProgress}%` : 'Initializing Vision Engine...';
+    }
+    if (ffmpegPhase === 'uploading') {
+      return ffmpegProgress > 0 ? `Syncing Tactical Markers... ${ffmpegProgress}%` : 'Uploading Tactical Assets...';
+    }
+    return 'Scout Analysis in Progress...';
+  };
+
+  const getAiStatusSubtext = () => {
+    if (isProcessingClip) return 'Trimming video with FFmpeg WASM — do not close this window.';
+    if (ffmpegPhase === 'extracting') return 'Sampling key performance markers from video — this takes a few seconds.';
+    if (ffmpegPhase === 'uploading') return 'Uploading frames to Straico cloud for deep tactical analysis.';
+    return 'Vision model is analyzing your frames. This may take up to 30s.';
+  };
+
+  const handleDownloadScoutReport = () => {
+    if (aiHighlights.length === 0) return;
+    const data = JSON.stringify(aiHighlights, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `SCOUTING_REPORT_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Report Downloaded", description: "Structured tactical data exported successfully." });
+  };
+
+  const [isProcessingClip, setIsProcessingClip] = useState(false);
+
+  /**
+   * FIXED: Uses FFmpeg WASM for real clip trimming — works on local Files/Blobs.
+   * No CORS, no MediaRecorder hacks. Actual physical trim + screenshot at midpoint.
+   */
+  const processAndUploadTacticalClip = async (
+    sourceFile: File | Blob,
+    start: number,
+    end: number,
+    title: string
+  ): Promise<{ url: string; thumbnailUrl: string }> => {
+    if (!storage || !member.playerId) throw new Error('Storage or player context missing.');
+
+    setFfmpegProgress(0);
+
+    // Real trim + screenshot via FFmpeg WASM
+    const { clipBlob, screenshotBlob } = await processHighlightClip(
+      sourceFile,
+      start,
+      end,
+      (ratio) => setFfmpegProgress(Math.round(ratio * 100))
+    );
+
+    // Upload trimmed clip to Firebase Storage
+    const clipFileName = `tactical_clip_${Date.now()}.mp4`;
+    const thumbFileName = `tactical_thumb_${Date.now()}.jpg`;
+
+    const clipRef = ref(storage, `players/${member.playerId}/videos/${clipFileName}`);
+    const thumbRef = ref(storage, `players/${member.playerId}/thumbnails/${thumbFileName}`);
+
+    await uploadBytes(clipRef, clipBlob);
+    const clipUrl = await getDownloadURL(clipRef);
+
+    await uploadBytes(thumbRef, screenshotBlob);
+    const thumbnailUrl = await getDownloadURL(thumbRef);
+
+    setFfmpegProgress(0);
+    return { url: clipUrl, thumbnailUrl };
+  };
+
   const commitAIHighlightToReel = async (hl: any) => {
-     if (!member.playerId) return;
-     const newVid = {
+    if (!member.playerId) return;
+
+    if (!aiSourceFile) {
+      // No raw file available — save as timestamp-linked reference only
+      toast({ title: "Saved as Segment Link", description: "Upload a video file to create a physically trimmed clip.", className: "bg-amber-50 border-amber-200 text-amber-900" });
+      const refVid = {
         title: hl.title,
         url: aiSelectedVideoUrl,
         type: 'Highlight',
-        comments: [],
-        startAt: hl.startTime,
-        endAt: hl.endTime,
-     };
-     await addPlayerVideo(member.playerId, newVid as any);
-     toast({ title: "Highlight Saved", description: "Clip dynamically added to athlete's permanent scout reel (no extra storage used)." });
-     await loadData();
-  };
+        comments: [{ text: hl.description, authorName: 'AI Scout', timestamp: hl.startTime }],
+        startAt: hl.startTime || 0,
+        endAt: hl.endTime || 10,
+        isTacticalClip: true,
+        createdAt: new Date().toISOString()
+      };
+      setVideos(prev => [{ ...refVid, id: 'temp-' + Date.now() } as any, ...prev]);
+      await addPlayerVideo(member.playerId, refVid as any);
+      return;
+    }
 
-  const handleExtractScreenshot = async (videoUrl: string, atTime: number) => {
-     if (photos.length >= 5) {
-        toast({title: "Gallery Full", description: "You already have 5 photos in the gallery. Please delete one first."});
-        return;
-     }
-
-     // IMPROVED: Handle YouTube thumbnails with multiple quality fallbacks to prevent broken images
-     if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
-        const match = videoUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/);
-        const vidId = match ? match[1] : null;
-        if (vidId) {
-           const thumbUrl = `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
-           setPhotos(prev => [...prev, thumbUrl]);
-           toast({title: "YouTube Photo Added", description: "Captured strategic thumbnail from YouTube."});
-           return;
-        }
-        toast({title: "Screenshot Failed", description: "Could not parse YouTube ID from link.", variant: "destructive"});
-        return;
-     }
-
-     toast({title: "Extracting Frame", description: "Isolating screenshot from video..."});
-
-     const videoElement = document.createElement('video');
-      if (!videoUrl.startsWith('blob:')) {
-         videoElement.crossOrigin = "anonymous";
-      }
-     videoElement.src = videoUrl;
-     videoElement.muted = true;
-     videoElement.playsInline = true;
-
-     videoElement.onloadeddata = () => {
-         videoElement.currentTime = atTime;
-     };
-
-     videoElement.onseeked = () => {
-         try {
-            const canvas = document.createElement('canvas');
-            canvas.width = videoElement.videoWidth;
-            canvas.height = videoElement.videoHeight;
-            const ctx = canvas.getContext('2d');
-            if(ctx) {
-               ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-               const dataUrl = canvas.toDataURL('image/jpeg', 0.85); 
-               setPhotos(prev => [...prev, dataUrl]);
-               toast({title: "Photo Added", description: `Screenshot isolated at ${Math.floor(atTime)}s and added to gallery.`});
-            }
-         } catch (err) {
-            toast({title: "Extraction Failed", description: "Cross-Origin resource sharing prevented capturing this video frame.", variant: "destructive"});
-         }
-     };
-
-     videoElement.onerror = () => {
-        toast({title: "Extraction Failed", description: "CORS prevented capturing this video frame from external storage.", variant: "destructive"});
-     };
-  };
-
-
-  const handleCombineSelected = async () => {
-    if (!member.playerId || selectedAiHighlights.length === 0) return;
-    
-    const selected = selectedAiHighlights.map(idx => aiHighlights[idx]);
-    const segments = selected.map(hl => ({
-      start: hl.startTime,
-      end: hl.endTime,
-      title: hl.title
-    }));
-
-    const newVid = {
-      title: `Combination: ${selected[0].title} & More`,
+    // Optimistic placeholder while we trim
+    const optimisticVid = {
+      title: hl.title,
       url: aiSelectedVideoUrl,
       type: 'Highlight',
-      comments: [],
-      segments
+      comments: [{ text: hl.description, authorName: 'AI Scout', timestamp: hl.startTime }],
+      startAt: hl.startTime || 0,
+      endAt: hl.endTime || 10,
+      isTacticalClip: true,
+      createdAt: new Date().toISOString(),
+      id: 'temp-' + Date.now()
     };
+    setVideos(prev => [optimisticVid as any, ...prev]);
 
-    await addPlayerVideo(member.playerId, newVid as any);
-    toast({ title: "Reel Combined", description: `${selected.length} segments combined into a single tactical sequence.` });
-    setSelectedAiHighlights([]);
-    await loadData();
+    setIsProcessingClip(true);
+    toast({ title: "Trimming Clip", description: `Cutting ${hl.title} with FFmpeg (${Math.round(hl.endTime - hl.startTime)}s)...` });
+
+    try {
+      // ✅ REAL TRIM via FFmpeg WASM — no CORS, works on local File object
+      const result = await processAndUploadTacticalClip(aiSourceFile, hl.startTime, hl.endTime, hl.title);
+
+      const newVid = {
+        title: hl.title,
+        url: result.url,
+        thumbnailUrl: result.thumbnailUrl,
+        type: 'Highlight',
+        comments: [{ text: hl.description, authorName: 'AI Scout', timestamp: hl.startTime }],
+        startAt: 0,
+        endAt: hl.endTime - hl.startTime, // clip-relative times
+        isTacticalClip: true,
+        createdAt: new Date().toISOString()
+      };
+
+      // Replace optimistic entry with real URL
+      setVideos(prev => prev.map(v => v.id === optimisticVid.id ? { ...newVid, id: optimisticVid.id } as any : v));
+      await addPlayerVideo(member.playerId, newVid as any);
+      toast({ title: "Clip Saved ✓", description: `"${hl.title}" physically trimmed and archived to cloud storage.` });
+    } catch (err: any) {
+      console.error("FFmpeg trim error:", err);
+      toast({ title: "Trim Failed", description: err.message || "FFmpeg processing error. Try a smaller clip.", variant: "destructive" });
+      // Remove optimistic entry on failure
+      setVideos(prev => prev.filter(v => v.id !== optimisticVid.id));
+    } finally {
+      setIsProcessingClip(false);
+      setFfmpegProgress(0);
+      setTimeout(async () => {
+        if (member.playerId) {
+          const freshVids = await getPlayerVideos(member.playerId);
+          setVideos(freshVids);
+        }
+      }, 1500);
+    }
+  };
+
+  /**
+   * FIXED: Screenshot extraction using FFmpeg WASM on the raw source File.
+   * Captures at the exact highlight midpoint — no CORS, no canvas SecurityError.
+   */
+  const handleExtractScreenshot = async (atTime: number) => {
+    if (photos.length >= 5) {
+      toast({ title: "Gallery Full", description: "Delete a photo before adding more." });
+      return;
+    }
+
+    if (!aiSourceFile) {
+      toast({
+        title: "No Video File",
+        description: "Upload a video file first. Screenshots from URLs are not reliable due to CORS restrictions.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({ title: "Capturing Frame", description: `Extracting screenshot at ${Math.floor(atTime)}s...` });
+
+    try {
+      // ✅ FFmpeg WASM frame capture — works on raw File, no CORS
+      const screenshotBlob = await captureVideoFrame(aiSourceFile, atTime);
+
+      if (!storage || !member.playerId) throw new Error('Storage not available.');
+
+      const fileName = `gallery_${Date.now()}.jpg`;
+      const fileRef = ref(storage, `players/${member.playerId}/thumbnails/${fileName}`);
+      await uploadBytes(fileRef, screenshotBlob);
+      const downloadUrl = await getDownloadURL(fileRef);
+
+      const newPhotos = [...photos, downloadUrl];
+      setPhotos(newPhotos);
+      await updateRecruitingProfile(member.playerId, { photos: newPhotos });
+      toast({ title: "Screenshot Saved ✓", description: "Frame captured at highlight moment and archived to gallery." });
+    } catch (err: any) {
+      console.error('Screenshot error:', err);
+      toast({ title: "Screenshot Failed", description: err.message || "FFmpeg error — try again.", variant: "destructive" });
+    }
+  };
+
+
+  /**
+   * FIXED: Physically merges trimmed clips using FFmpeg WASM concat.
+   * Each selected highlight is individually trimmed first, then concatenated.
+   */
+  const handleCombineSelected = async () => {
+    if (!member.playerId || selectedAiHighlights.length === 0) return;
+
+    if (!aiSourceFile) {
+      // Fallback: save as multi-segment reference (no physical merge)
+      const selected = selectedAiHighlights.map(idx => aiHighlights[idx]);
+      const segments = selected.map(hl => ({ start: hl.startTime, end: hl.endTime, title: hl.title }));
+      const newVid = { title: `Reel: ${selected[0].title} +${selected.length - 1}`, url: aiSelectedVideoUrl, type: 'Highlight', comments: [], segments };
+      await addPlayerVideo(member.playerId, newVid as any);
+      toast({ title: "Saved as Segment Reel", description: "Upload a video file to create a physically merged MP4." });
+      setSelectedAiHighlights([]);
+      await loadData();
+      return;
+    }
+
+    setIsProcessingClip(true);
+    const selected = selectedAiHighlights.map(idx => aiHighlights[idx]);
+    toast({ title: "Merging Clips", description: `Trimming and combining ${selected.length} highlights with FFmpeg...` });
+
+    try {
+      // Step 1: Trim each selected highlight into individual Blobs
+      const clipBlobs: Blob[] = [];
+      for (let i = 0; i < selected.length; i++) {
+        const hl = selected[i];
+        toast({ title: `Processing ${i + 1}/${selected.length}`, description: `Trimming: ${hl.title}` });
+        const clipped = await trimVideoClip(aiSourceFile, hl.startTime, hl.endTime, (r) => setFfmpegProgress(Math.round(r * 100)));
+        clipBlobs.push(clipped);
+      }
+
+      // Step 2: Merge all trimmed clips into one reel
+      toast({ title: "Concatenating", description: "Merging clips into final highlight reel..." });
+      const mergedBlob = await mergeVideoClips(clipBlobs, (r) => setFfmpegProgress(Math.round(r * 100)));
+
+      // Step 3: Capture screenshot from start of first clip
+      const screenshotBlob = await captureVideoFrame(clipBlobs[0], (selected[0].endTime - selected[0].startTime) / 2);
+
+      // Step 4: Upload merged reel (fails on localhost due to Firebase Storage CORS — falls back to local blob)
+      const reelFileName = `reel_${Date.now()}.mp4`;
+      const thumbFileName = `reel_thumb_${Date.now()}.jpg`;
+      const reelRef = ref(storage, `players/${member.playerId}/videos/${reelFileName}`);
+      const thumbRef = ref(storage, `players/${member.playerId}/thumbnails/${thumbFileName}`);
+
+      let reelUrl: string;
+      let thumbnailUrl: string | undefined;
+
+      try {
+        await uploadBytes(reelRef, mergedBlob);
+        reelUrl = await getDownloadURL(reelRef);
+        try {
+          await uploadBytes(thumbRef, screenshotBlob);
+          thumbnailUrl = await getDownloadURL(thumbRef);
+        } catch (_) {
+          // Thumbnail upload failed — non-fatal
+        }
+      } catch (uploadErr: any) {
+        // Firebase Storage CORS blocks direct browser uploads on localhost.
+        // Fall back to a local blob URL so the reel works in this session.
+        console.warn('[Reel Upload] Firebase Storage blocked (CORS). Using local blob URL.', uploadErr.message);
+        reelUrl = URL.createObjectURL(mergedBlob);
+        toast({
+          title: 'Saved Locally (CORS)',
+          description: 'Firebase Storage is blocked on localhost. Reel is saved for this session. Configure CORS on your bucket for persistent storage.',
+          className: 'bg-amber-50 border-amber-200 text-amber-900',
+        });
+      }
+
+      const reelTitle = `Highlight Reel: ${selected[0].title} +${selected.length - 1} Clips`;
+      const newVid = {
+        title: reelTitle,
+        url: reelUrl,
+        thumbnailUrl,
+        type: 'Highlight',
+        isTacticalClip: true,
+        comments: selected.map(hl => ({ text: hl.description, authorName: 'AI Scout', timestamp: 0 })),
+        startAt: 0,
+        endAt: selected.reduce((acc, hl) => acc + (hl.endTime - hl.startTime), 0),
+        createdAt: new Date().toISOString(),
+      };
+
+      await addPlayerVideo(member.playerId, newVid as any);
+      toast({ title: `Reel Created ✓`, description: `${selected.length} clips merged into "${reelTitle}"` });
+      setSelectedAiHighlights([]);
+      await loadData();
+
+    } catch (err: any) {
+      console.error('Merge error:', err);
+      toast({ title: "Merge Failed", description: err.message || "FFmpeg processing error.", variant: "destructive" });
+    } finally {
+      setIsProcessingClip(false);
+      setFfmpegProgress(0);
+    }
   };
 
   const handleBatchAddIndividually = async () => {
     if (!member.playerId || selectedAiHighlights.length === 0) return;
-    
-    const promises = selectedAiHighlights.map(idx => {
-      const hl = aiHighlights[idx];
-      return addPlayerVideo(member.playerId as string, {
-        title: hl.title,
-        url: aiSelectedVideoUrl,
-        type: 'Highlight',
-        comments: [],
-        startAt: hl.startTime,
-        endAt: hl.endTime,
-      } as any);
-    });
+    setIsProcessingClip(true);
+    setFfmpegProgress(0);
 
-    await Promise.all(promises);
-    toast({ title: "Batch Processed", description: `${selectedAiHighlights.length} highlights added to the reel independently.` });
-    setSelectedAiHighlights([]);
-    await loadData();
+    try {
+      for (let i = 0; i < selectedAiHighlights.length; i++) {
+        const idx = selectedAiHighlights[i];
+        const hl = aiHighlights[idx];
+        toast({ title: `Saving ${i + 1}/${selectedAiHighlights.length}`, description: hl.title });
+
+        let thumbnailUrl: string | undefined;
+
+        // Generate unique HD screenshot for each highlight
+        if (aiSourceFile) {
+          try {
+            // Capture at AI-detected impact frame OR action mid-point fallback
+            const captureAt = hl.impactFrameTime || (hl.impactFrameTime || (hl.startTime + (hl.endTime - hl.startTime) * 0.4));
+            const screenshotBlob = await captureVideoFrame(aiSourceFile, captureAt);
+            const thumbFileName = `hl_thumb_${Date.now()}_${i}_${Math.random().toString(36).substring(7)}.jpg`;
+            const thumbRef = ref(storage, `players/${member.playerId}/thumbnails/${thumbFileName}`);
+            await uploadBytes(thumbRef, screenshotBlob);
+            const rawUrl = await getDownloadURL(thumbRef);
+            thumbnailUrl = `${rawUrl}?t=${Date.now()}`;
+          } catch (thumbErr: any) {
+            console.warn(`[Thumbnail] Storage blocked, switching to Base64 persist:`, thumbErr.message);
+            try {
+               const captureAt = hl.impactFrameTime || (hl.startTime + (hl.endTime - hl.startTime) * 0.4);
+               const blob = await captureVideoFrame(aiSourceFile, captureAt, 0.4); // aggressive compression for Firestore
+               const reader = new FileReader();
+               thumbnailUrl = await new Promise<string>((resolve) => {
+                 reader.onloadend = () => resolve(reader.result as string);
+                 reader.readAsDataURL(blob);
+               });
+            } catch (e) {
+               thumbnailUrl = aiSelectedVideoUrl;
+            }
+          }
+        }
+
+        setFfmpegProgress(Math.round(((i + 1) / selectedAiHighlights.length) * 100));
+
+        await addPlayerVideo(member.playerId as string, {
+          title: hl.title,
+          description: hl.description,  // Stored as dedicated field, visible to scouts
+          url: aiSelectedVideoUrl,
+          thumbnailUrl,                  // Unique per-highlight screenshot
+          type: 'Tactical Clip',
+          comments: [{ text: hl.description, authorName: 'AI Scout', timestamp: hl.startTime }],
+          startAt: hl.startTime,
+          endAt: hl.endTime,
+          isTacticalClip: true,
+        } as any);
+      }
+
+      toast({ title: 'Highlights Saved ✓', description: `${selectedAiHighlights.length} clips added with unique thumbnails.` });
+      setSelectedAiHighlights([]);
+      await loadData();
+    } catch (err: any) {
+      console.error('Batch save error:', err);
+      toast({ title: 'Save Failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsProcessingClip(false);
+      setFfmpegProgress(0);
+    }
   };
+
 
   const handleEditHlTitle = (index: number) => {
     setEditingHlIndex(index);
@@ -1126,6 +1778,13 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     setAiHighlights(updated);
     setEditingHlIndex(null);
   };
+
+  const saveHlDescription = (index: number, value: string) => {
+    const updated = [...aiHighlights];
+    updated[index].description = value;
+    setAiHighlights(updated);
+  };
+
 
   const handleEditVideoTitle = (v: PlayerVideo) => {
     setEditingVideoId(v.id);
@@ -1214,8 +1873,84 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     reader.readAsDataURL(file);
   };
 
-  const removePhoto = (index: number) => {
-    setPhotos(prev => prev.filter((_, i) => i !== index));
+   const handleTacticalDownload = async (video: PlayerVideo) => {
+     if (!video.url || video.url.includes('youtube.com') || video.url.includes('youtu.be')) {
+        toast({ title: "Compatibility Error", description: "Direct trimming for external platforms is restricted. View segment in-player instead.", variant: "destructive" });
+        return;
+     }
+
+     const start = video.startAt || 0;
+     const end = video.endAt || 0;
+     if (end <= start) {
+        toast({ title: "Data Error", description: "Invalid tactical boundaries detected." });
+        return;
+     }
+
+     toast({ title: "Initializing Trimmer", description: "Preparing athletic segment for physical export..." });
+
+     try {
+       const v = document.createElement('video');
+       v.crossOrigin = "anonymous";
+       v.src = video.url.split('#')[0];
+       v.muted = true;
+       v.currentTime = start;
+       
+       await new Promise((resolve) => { v.oncanplay = resolve; });
+       
+       const stream = (v as any).captureStream();
+       let mimeType = 'video/webm;codecs=vp9';
+       if (!MediaRecorder.isTypeSupported(mimeType)) {
+         mimeType = 'video/webm';
+         if (!MediaRecorder.isTypeSupported(mimeType)) {
+           mimeType = ''; // Let browser decide
+         }
+       }
+       
+       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+       const chunks: Blob[] = [];
+
+       recorder.ondataavailable = (e) => chunks.push(e.data);
+       recorder.onstop = () => {
+         const blob = new Blob(chunks, { type: 'video/webm' });
+         const url = URL.createObjectURL(blob);
+         const a = document.createElement('a');
+         a.href = url;
+         a.download = `Tactical_${video.title.replace(/\s+/g, '_')}.webm`;
+         document.body.appendChild(a);
+         a.click();
+         document.body.removeChild(a);
+         toast({ title: "Export Complete", description: "Clipped segment successfully archived to local storage." });
+       };
+
+       v.play();
+       recorder.start();
+
+       const interval = setInterval(() => {
+         if (v.currentTime >= end) {
+           clearInterval(interval);
+           recorder.stop();
+           v.pause();
+         }
+       }, 500);
+
+     } catch (err) {
+       console.error("Transcoding failed:", err);
+       toast({ title: "Export Failed", description: "Browser security (CORS) or resource constraints blocked the tactical record. Downloading full source instead.", variant: "destructive" });
+       // Fallback to full download
+       const a = document.createElement('a');
+       a.href = video.url;
+       a.download = video.title + '.mp4';
+       a.click();
+     }
+   };
+
+  const removePhoto = async (index: number) => {
+    if (!member.playerId) return;
+    const newPhotos = [...photos];
+    newPhotos.splice(index, 1);
+    setPhotos(newPhotos);
+    await updateRecruitingProfile(member.playerId, { photos: newPhotos });
+    toast({ title: "Photo Removed" });
   };
 
   const handleAddStatRow = async () => {
@@ -1328,6 +2063,24 @@ function RecruitingProfileManager({ member }: { member: Member }) {
               <div className="flex flex-col md:flex-row md:items-center gap-4">
                 <Badge className="bg-primary text-white border-none font-black text-[10px] tracking-widest px-5 h-8 w-fit mx-auto md:mx-0 shadow-lg shadow-primary/20">ATHLETE CORE</Badge>
                 <div className="flex items-center justify-center md:justify-start gap-3">
+                   <Button 
+                     variant="outline" 
+                     size="sm" 
+                     className={`h-8 rounded-xl text-[9px] font-black uppercase border-2 transition-all ${profile.downloadsDisabled ? 'border-red-200 text-red-600 bg-red-50' : 'border-green-200 text-green-600 bg-green-50'}`}
+                     onClick={async () => {
+                        if (!member.playerId) return;
+                        const newState = !profile.downloadsDisabled;
+                        await updateRecruitingProfile(member.playerId, { downloadsDisabled: newState });
+                        setProfile({ ...profile, downloadsDisabled: newState });
+                        toast({ 
+                          title: newState ? "Downloads Restricted" : "Downloads Enabled", 
+                          description: newState ? "Institutional scouts can no longer archive this media." : "Media is now fully accessible for scout acquisition."
+                        });
+                     }}
+                   >
+                     {profile.downloadsDisabled ? <Lock className="h-3 w-3 mr-1" /> : <Unlock className="h-3 w-3 mr-1" />}
+                     {profile.downloadsDisabled ? 'Downloads Restricted' : 'Scout Downloads On'}
+                   </Button>
                    <span className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-pulse" />
                    <p className="text-[11px] font-black uppercase text-zinc-400 tracking-[0.35em]">
                      {activeSport} <span className="mx-2 text-zinc-200">/</span> {profile.status === 'committed' ? 'COMMITTED' : 'ACTIVE PROSPECT'}
@@ -1447,14 +2200,22 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                 </div>
               ))}
             </CardContent>
+
+            {/* ── Staff Evaluation Panel (coach/admin only) ────────────────── */}
+            <StaffEvalPanel
+              evals={evals}
+              playerId={member.playerId}
+              addEvaluation={addEvaluation}
+              onSaved={() => loadData(true)}
+            />
           </Card>
 
           <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white">
             <CardHeader className="bg-muted/30 p-6 border-b flex flex-row items-center justify-between">
               <CardTitle className="text-xs font-black uppercase tracking-widest">Highlight Reel</CardTitle>
               <div className="flex items-center gap-2">
-                <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase text-purple-600 hover:text-purple-700 bg-purple-50 hover:bg-purple-100" onClick={() => setIsAIHighlightOpen(true)}>
-                  <Sparkles className="h-3 w-3 mr-1" /> AI Reel Tool
+                <Button disabled size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase text-purple-600/40 bg-purple-50/50" onClick={() => setIsAIHighlightOpen(true)}>
+                  <Sparkles className="h-3 w-3 mr-1" /> AI Reel Tool (Coming Soon)
                 </Button>
                 <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase" onClick={() => setIsAddFilmOpen(true)}><Plus className="h-3 w-3 mr-1" /> Add Film</Button>
               </div>
@@ -1464,10 +2225,26 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                 <div className="space-y-3">
                   {videos.map(v => (
                     <div key={v.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/30 cursor-pointer group" onClick={() => setSelectedVideo(v)}>
-                      <div className="h-16 w-24 bg-black rounded-xl shrink-0 flex items-center justify-center relative overflow-hidden">
-                        <Play className="h-6 w-6 text-white fill-current opacity-60" />
-                        <Badge className="absolute top-1 left-1 bg-primary text-white border-none text-[6px] font-black uppercase px-1.5 h-4">{v.type}</Badge>
-                      </div>
+                     <div className="aspect-video relative w-24 h-16 bg-black rounded-xl overflow-hidden shrink-0">
+                       {v.thumbnailUrl ? (
+                         <img src={v.thumbnailUrl} className="absolute inset-0 w-full h-full object-cover opacity-60" alt="" />
+                       ) : v.url.includes('youtube.com') || v.url.includes('youtu.be') ? (
+                         <img 
+                           src={`https://i.ytimg.com/vi/${v.url.match(/^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]{11}).*/)?.[1] || ''}/hqdefault.jpg`} 
+                           className="absolute inset-0 w-full h-full object-cover opacity-60" 
+                           alt="" 
+                         />
+                       ) : null}
+                       <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/20 transition-all"><Play className="h-6 w-6 text-white fill-current shadow-2xl" /></div>
+                       <Badge className="absolute top-1 left-1 bg-primary text-white border-none font-black text-[6px] h-4 px-1.5">
+                          {v.isTacticalClip ? 'TACTICAL CLIP' : v.type.toUpperCase()}
+                       </Badge>
+                       {v.isTacticalClip && (
+                         <div className="absolute top-1 right-1 bg-purple-600 text-white p-0.5 rounded-md shadow-lg">
+                           <Zap className="h-2 w-2" />
+                         </div>
+                       )}
+                     </div>
                       <div className="flex-1 min-w-0">
                         {editingVideoId === v.id ? (
                           <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
@@ -1491,30 +2268,27 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                         )}
                         <p className="text-[9px] text-muted-foreground font-bold uppercase mt-0.5">{(v.comments?.length || 0)} coach mark{(v.comments?.length || 0) !== 1 ? 's' : ''}</p>
                       </div>
-                      <MessageSquare className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-zinc-100 z-20 shrink-0 ml-1 rounded-sm" onClick={(e) => {
-                          e.stopPropagation();
-                          if (v.url.includes('youtube.com') || v.url.includes('youtu.be')) {
-                             toast({ title: "YouTube Download Restricted", description: "Direct YouTube downloads are restricted by the platform. You can view the clip in the player instead.", variant: "default" });
-                             return;
-                          }
-                          const a = document.createElement('a');
-                          a.href = v.url;
-                          a.download = `${v.title}.mp4`;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                       }}>
-                          <Download className="h-3 w-3" />
-                       </Button>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-600 z-20 shrink-0 ml-1 rounded-sm" onClick={async (e) => {
-                         e.stopPropagation();
-                         if (!member.playerId) return;
-                         await deletePlayerVideo(member.playerId, v.id);
-                         setVideos(videos.filter((vid: any) => vid.id !== v.id));
-                      }}>
-                         <Trash2 className="h-3 w-3" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button 
+                          size="icon" 
+                          variant="ghost" 
+                          className="h-8 w-8 text-zinc-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteVideo(v.id); }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-zinc-100 rounded-lg shrink-0" onClick={(e) => {
+                            e.stopPropagation();
+                            if (v.url.includes('youtube.com') || v.url.includes('youtu.be')) {
+                               toast({ title: "YouTube Download Restricted", description: "Direct YouTube downloads are restricted by platform policies.", variant: "default" });
+                               return;
+                            }
+                            const a = document.createElement('a'); a.href = v.url; a.download = `${v.title}.mp4`;
+                            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                         }}>
+                            <Download className="h-4 w-4" />
+                         </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1524,44 +2298,59 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             </CardContent>
           </Card>
 
-          {/* ADDED: Strategic Imagery Gallery to Main Display */}
+          {/* RECONSTRUCTED: Strategic Imagery Gallery */}
           <Card className="rounded-[2.5rem] border-none shadow-md bg-white overflow-hidden">
-            <CardHeader className="p-6 pb-0 flex flex-row items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Camera className="h-4 w-4 text-primary" />
-                <h3 className="font-black text-xs uppercase tracking-widest text-zinc-900">Strategic Imagery</h3>
+            <CardHeader className="bg-muted/10 border-b p-8 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><Camera className="h-5 w-5" /></div>
+                <CardTitle className="text-sm font-black uppercase tracking-widest">Strategic Imagery</CardTitle>
               </div>
-              <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black uppercase" onClick={() => setIsEditing(true)}><Edit3 className="h-3 w-3 mr-1" /> Manage</Button>
+              <Button size="sm" variant="ghost" className="h-8 rounded-xl font-black text-[9px] uppercase tracking-widest bg-muted/50" onClick={() => setIsEditing(true)}>
+                <Edit3 className="h-3 w-3 mr-2" /> Manage
+              </Button>
             </CardHeader>
-            <CardContent className="p-6">
-              <div className="grid grid-cols-2 gap-3">
-                 {photos.map((url, i) => (
-                    <div key={i} className="aspect-square rounded-2xl overflow-hidden relative group border-2 border-zinc-50 shadow-sm">
-                       <img src={url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt="Scouting" />
-                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <Button variant="secondary" size="icon" className="h-8 w-8 rounded-lg shadow-xl bg-white text-black" onClick={(e) => {
-                             e.stopPropagation();
-                             const a = document.createElement('a');
-                             a.href = url;
-                             a.download = `photo_${i}.jpg`;
-                             document.body.appendChild(a);
-                             a.click();
-                             document.body.removeChild(a);
-                          }}>
-                            <Download className="h-4 w-4" />
-                          </Button>
-                          <Button variant="destructive" size="icon" className="h-8 w-8 rounded-lg shadow-xl" onClick={() => removePhoto(i)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                       </div>
+            <CardContent className="p-8">
+              {/* STREAMLINED: Square Tactical Grid with Integrated Controls */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-8">
+                {photos.length === 0 ? (
+                  <div className="col-span-full py-24 flex flex-col items-center justify-center border-2 border-dashed rounded-[3rem] bg-muted/5 space-y-4 opacity-40">
+                     <div className="bg-white p-6 rounded-[2rem] shadow-sm"><Camera className="h-10 w-10 text-primary" /></div>
+                     <p className="text-xs font-black uppercase tracking-[0.3em]">No Strategic Imagery Captured</p>
+                  </div>
+                ) : (
+                  photos.map((pObj, i) => (
+                    <div key={i} className="group relative aspect-square rounded-[3rem] overflow-hidden bg-muted ring-1 ring-black/5 hover:shadow-2xl hover:shadow-primary/20 transition-all duration-500 cursor-pointer" onClick={() => window.open(pObj.url, '_blank')}>
+                      <img src={pObj.url} alt={`Tactical Capture ${i}`} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                      
+                      {/* RED X DELETE BUTTON - TOP RIGHT */}
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation();
+                          if (pObj.id) {
+                            deletePlayerVideo(member.playerId, pObj.id);
+                            setPhotos(prev => prev.filter(ph => ph.id !== pObj.id));
+                            toast({ title: "Imagery Purged" });
+                          } else {
+                            // Legacy profile photos removal logic
+                            const pPhotos = photos.filter(item => !item.id).map(item => item.url);
+                            const newPPhotos = pPhotos.filter(url => url !== pObj.url);
+                            updateRecruitingProfile(member.playerId, { photos: newPPhotos });
+                            setPhotos(prev => prev.filter(ph => ph.url !== pObj.url));
+                            toast({ title: "Legacy Photo Purged" });
+                          }
+                        }}
+                        className="absolute top-4 right-4 h-10 w-10 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg border-2 border-white opacity-0 group-hover:opacity-100 transition-opacity z-20 hover:scale-110 active:scale-95 translate-x-1 -translate-y-1"
+                      >
+                         <X className="h-5 w-5 stroke-[4px]" />
+                      </button>
+
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-8">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Tactical Capture {i + 1}</p>
+                        <p className="text-[12px] font-black uppercase tracking-widest text-white mt-1">Tap to Expand HD</p>
+                      </div>
                     </div>
-                 ))}
-                 {photos.length === 0 && (
-                   <div className="col-span-full py-10 text-center border-2 border-dashed rounded-[2rem] opacity-20">
-                      <Camera className="h-8 w-8 mx-auto mb-2" />
-                      <p className="text-[10px] font-black uppercase">No strategic photos archived.</p>
-                   </div>
-                 )}
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1758,6 +2547,59 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                         />
                         <p className="text-[9px] font-bold text-muted-foreground uppercase px-2 italic">This field updates the strategic pulse appearing on the public portal.</p>
                       </div>
+
+                      {/* PHOTO GALLERY MANAGER */}
+                      <div className="space-y-4 pt-8 mt-8 border-t border-zinc-100">
+                        <div className="flex items-center justify-between">
+                           <div className="flex items-center gap-2">
+                              <Camera className="h-4 w-4 text-primary" />
+                              <Label className="text-[10px] font-black uppercase text-primary">Archival Photo Gallery</Label>
+                           </div>
+                           <Button 
+                             size="sm" 
+                             variant="outline" 
+                             className="h-8 rounded-xl text-[8px] font-black uppercase"
+                             onClick={() => document.getElementById('manual-photo-upload')?.click()}
+                           >
+                             <Plus className="h-3 w-3 mr-1" /> Add Photo
+                           </Button>
+                           <input 
+                             type="file" 
+                             id="manual-photo-upload" 
+                             className="hidden" 
+                             accept="image/*" 
+                             onChange={handleUploadPhoto} 
+                           />
+                        </div>
+                        
+                        {photos.length > 0 ? (
+                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                              {photos.map((pObj, i) => (
+                                <div key={i} className="aspect-square relative group rounded-[1.5rem] overflow-hidden bg-zinc-100 border border-zinc-100 shadow-sm">
+                                   <img src={pObj.url} className="w-full h-full object-cover" alt="Gallery" />
+                                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                      <Button 
+                                        size="icon" 
+                                        variant="destructive" 
+                                        className="h-8 w-8 rounded-xl shadow-lg hover:scale-105 transition-transform"
+                                        onClick={() => handleDeletePhoto(url)}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                   </div>
+                                </div>
+                              ))}
+                           </div>
+                        ) : (
+                           <div className="py-12 border-2 border-dashed border-zinc-100 rounded-[2.5rem] text-center bg-zinc-50/50">
+                              <div className="bg-white w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm">
+                                <Camera className="h-6 w-6 text-zinc-200" />
+                              </div>
+                              <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">No Archival Photos Yet</p>
+                              <p className="text-[10px] text-zinc-400 mt-1 max-w-[200px] mx-auto leading-relaxed">Capture frames from AI highlights or upload manual tactical shots.</p>
+                           </div>
+                        )}
+                      </div>
                   </TabsContent>
 
                   <TabsContent value="athletic" className="mt-8 space-y-8">
@@ -1852,11 +2694,15 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
-                      {photos.map((url, i) => (
+                      {photos.map((pObj, i) => (
                         <div key={i} className="relative group aspect-square rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl ring-1 ring-black/5">
-                          <img src={url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={`Gallery ${i}`} />
+                          <img src={pObj.url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={`Gallery ${i}`} />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                            <Button type="button" variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-2xl" onClick={() => removePhoto(i)}>
+                            <Button type="button" variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-2xl" onClick={() => {
+                              if (pObj.id) deletePlayerVideo(member.playerId, pObj.id);
+                              setPhotos(prev => prev.filter(ph => ph.url !== pObj.url));
+                              toast({ title: "Archival Asset Purged" });
+                            }}>
                               <Trash2 className="h-6 w-6" />
                             </Button>
                           </div>
@@ -1919,15 +2765,13 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                  }}><Upload className="h-4 w-4 mr-2" /> Upload File</Button>
               </div>
               <input type="file" id="film-upload" accept="video/mp4,video/mov,video/webm" className="hidden" onChange={(e) => {
-                 const file = e.target.files?.[0];
-                 if(file) {
-                    toast({ title: 'Optimization Initiated', description: 'Compressing and transcoding video for storage efficiency while maintaining playback quality...' });
-                    setTimeout(() => {
-                       setFilmUrl(URL.createObjectURL(file));
-                       toast({ title: 'Video Optimized', description: 'File converted to WebM (720p). Ready for archive.' });
-                    }, 2500);
-                 }
-              }} />
+                  const file = e.target.files?.[0];
+                  if(file) {
+                    setSelectedFilmFile(file);
+                    setFilmUrl(URL.createObjectURL(file));
+                    toast({ title: 'Video Optimized', description: 'Resource prioritized for cloud storage. Ready for archive.' });
+                  }
+               }} />
             </div>
 
             <div className="space-y-2">
@@ -1969,7 +2813,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
           </div>
           <div className="p-8 space-y-6">
             {/* Source Video Preview to verify connectivity before Analysis */}
-            {aiSelectedVideoUrl && (
+            {aiSelectedVideoUrl && !aiSelectedVideoUrl.startsWith('blob:') && (
               <div className="aspect-video bg-black rounded-[2rem] overflow-hidden relative border-4 border-purple-100 shadow-xl group">
                  {(() => {
                     const ytMatch = aiSelectedVideoUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/);
@@ -1989,8 +2833,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       Source Asset Synchronized
                     </p>
                  </div>
-              </div>
-            )}
+               </div>
+             )}
             <div className="space-y-3">
               <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-70">Source Material</Label>
               <Tabs defaultValue="library" className="w-full">
@@ -2001,7 +2845,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                 </TabsList>
 
                 <TabsContent value="library" className="mt-4 animate-in fade-in slide-in-from-top-1">
-                  <Select value={aiSelectedVideoUrl} onValueChange={setAiSelectedVideoUrl}>
+                  <Select value={aiSelectedVideoUrl} onValueChange={(val) => handleVideoSourceChange(val)}>
                     <SelectTrigger className="h-12 rounded-2xl border-2 font-bold focus:ring-purple-600">
                       <SelectValue placeholder="Select from athlete archive" />
                     </SelectTrigger>
@@ -2021,7 +2865,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       placeholder="Enter YouTube, Vimeo, or Direct URL" 
                       className="h-12 rounded-2xl border-2 pl-12 font-bold focus-visible:ring-purple-600" 
                       value={aiSelectedVideoUrl} 
-                      onChange={e => setAiSelectedVideoUrl(e.target.value)} 
+                      onChange={e => handleVideoSourceChange(e.target.value)} 
                     />
                   </div>
                   <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-start gap-3">
@@ -2056,36 +2900,61 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       onChange={async (e) => {
                          const file = e.target.files?.[0];
                          if (file) {
-                           setIsOptimizingSource(true);
-                           toast({ title: "Analysis Asset Loaded", description: "Processing local file for cloud intelligence..." });
-                           
-                           // Simulate optimization delay
-                           setTimeout(async () => {
-                             const url = URL.createObjectURL(file);
-                             setAiSelectedVideoUrl(url);
-                             setIsOptimizingSource(false);
-
-                             // Automatically add to Library if it's a new upload in the AI tool
-                             if (member.playerId) {
-                                await addPlayerVideo(member.playerId, {
-                                   title: file.name,
-                                   url: url,
-                                   type: 'fullGame',
-                                   comments: []
-                                } as any);
-                                await loadData();
-                                toast({ title: "Library Updated", description: "Video auto-archived for future analysis." });
-                             }
-                           }, 2000);
+                            setIsOptimizingSource(true);
+                            setAiSourceFile(file);
+                            
+                            // ── LOCAL-ONLY MODE ────────────────────────────
+                            // We no longer auto-upload the full game to storage or save to library.
+                            // We use a local blob URL so FFmpeg can analyze it instantly.
+                            const url = URL.createObjectURL(file);
+                            handleVideoSourceChange(url, file);
+                            
+                            toast({ 
+                              title: "Video Mounted ✓", 
+                              description: "Film is ready for high-speed AI analysis. Highlights will be saved to your library." 
+                            });
+                            setIsOptimizingSource(false);
                          }
                       }} 
                     />
-                    {aiSelectedVideoUrl.startsWith('blob:') && !isOptimizingSource && (
-                      <p className="text-[8px] font-black uppercase text-green-600 flex items-center justify-center bg-green-50 py-2 rounded-xl border border-green-100 italic">
-                        <CheckCircle2 className="h-3 w-3 mr-1" /> Tactical Asset Optimized for Analysis
-                      </p>
+                    {aiSelectedVideoUrl && (
+                      <video 
+                        className="hidden" 
+                        src={aiSelectedVideoUrl.split('#')[0]} 
+                        onLoadedMetadata={(e) => setAiSourceDuration(e.currentTarget.duration)} 
+                      />
                     )}
-                  </div>
+                    {aiSelectedVideoUrl && !isOptimizingSource && (
+                       <div className="space-y-4 animate-in fade-in">
+                          <div className="rounded-2xl overflow-hidden border-2 border-green-200 aspect-video relative group bg-black shadow-inner">
+                             <video 
+                                src={aiSelectedVideoUrl} 
+                                className="w-full h-full object-contain" 
+                                controls 
+                             />
+                             <div className="absolute top-3 left-3">
+                                <Badge className="bg-green-500 text-white border-none text-[8px] font-black uppercase px-2">Live Preview</Badge>
+                             </div>
+                          </div>
+                          <p className="text-[8px] font-black uppercase text-green-600 flex items-center justify-center bg-green-50 py-2 rounded-xl border border-green-100 italic">
+                            <CheckCircle2 className="h-3 w-3 mr-1" /> Tactical Asset Optimized for Analysis ({aiSourceDuration ? `${Math.floor(aiSourceDuration)}s` : '...' })
+                          </p>
+                       </div>
+                     )}
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsAiProcessing(false);
+                        setFfmpegPhase(null);
+                        setFfmpegProgress(0);
+                        if (abortControllerRef.current) abortControllerRef.current.abort();
+                        toast({ title: 'Protocol Reset', description: 'AI link manually reset.' });
+                      }}
+                      className="mt-6 px-5 py-2 rounded-xl bg-purple-100/50 text-[10px] font-black uppercase text-purple-600 hover:bg-purple-600 hover:text-white transition-all transform hover:scale-105"
+                    >
+                      Rescue Manual Reset
+                    </button>
+                 </div>
                 </TabsContent>
               </Tabs>
             </div>
@@ -2095,117 +2964,135 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                 placeholder="e.g. Find all highlights by player #10..." 
                 className="h-12 rounded-2xl border-2 font-bold focus-visible:ring-purple-600" 
                 value={aiVideoPrompt} 
-                onChange={e => setAiVideoPrompt(e.target.value)} 
+                 onChange={e => setAiVideoPrompt(e.target.value)} 
               />
             </div>
             
-            {isAiProcessing && (
+            {(isAiProcessing || (isProcessingClip && ffmpegProgress > 0)) && (
               <div className="bg-purple-50 p-6 rounded-[2rem] border-2 border-purple-100 flex flex-col items-center justify-center space-y-4 animate-in fade-in">
                 <Loader2 className="h-8 w-8 text-purple-600 animate-spin" />
-                <div className="text-center">
-                   <p className="text-xs font-black uppercase text-purple-900 tracking-widest">Analyzing Frame Data...</p>
-                   <p className="text-[10px] font-bold text-purple-600/70 uppercase pt-1">Gemini is scrubbing the video for key events. This may take a moment.</p>
+                <div className="text-center w-full">
+                   <p className="text-xs font-black uppercase text-purple-900 tracking-widest">
+                     {getAiStatusText()}
+                   </p>
+                   <p className="text-[10px] font-bold text-purple-600/70 uppercase pt-1">
+                     {getAiStatusSubtext()}
+                   </p>
+                   {ffmpegProgress > 0 && (
+                     <div className="mt-3 h-2 w-full bg-purple-100 rounded-full overflow-hidden">
+                       <div
+                         className="h-full bg-purple-600 rounded-full transition-all duration-300"
+                         style={{ width: `${ffmpegProgress}%` }}
+                       />
+                     </div>
+                   )}
                 </div>
               </div>
             )}
-            
+
+            {/* ── AI HIGHLIGHTS RESULTS ─────────────────────────────────────── */}
             {!isAiProcessing && aiHighlights.length > 0 && (
-              <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Generated Highlights ({aiHighlights.length})</Label>
-                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                  {aiHighlights.map((hl, i) => (
-                     <div key={i} className={`p-4 rounded-2xl border flex flex-col gap-2 relative group overflow-hidden transition-all ${selectedAiHighlights.includes(i) ? 'bg-purple-100/50 border-purple-300 ring-2 ring-purple-600/10' : 'bg-muted/30 border-transparent hover:border-purple-200'}`}>
-                       <div className="absolute top-4 left-4 z-10">
-                          <input 
-                            type="checkbox" 
-                            className="h-4 w-4 rounded-md border-purple-300 text-purple-600 focus:ring-purple-600 cursor-pointer"
-                            checked={selectedAiHighlights.includes(i)}
-                            onChange={() => {
-                              setSelectedAiHighlights(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]);
-                            }}
-                          />
-                       </div>
-                       <div className="flex items-center justify-between pl-8">
-                         {editingHlIndex === i ? (
-                           <div className="flex items-center gap-2 flex-1">
-                             <Input 
-                               value={editingTitleValue} 
-                               onChange={e => setEditingTitleValue(e.target.value)}
-                               onKeyDown={e => e.key === 'Enter' && saveHlTitle()}
-                               className="h-8 text-xs font-black uppercase rounded-lg border-2 bg-white"
-                               autoFocus
-                             />
-                             <Button size="icon" className="h-8 w-8 rounded-lg bg-purple-600" onClick={saveHlTitle}><CheckCircle2 className="h-4 w-4" /></Button>
-                           </div>
-                         ) : (
-                           <div className="flex items-center gap-2 flex-1 overflow-hidden">
-                             <h4 className="font-black text-xs uppercase tracking-tight text-foreground truncate">{hl.title}</h4>
-                             <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleEditHlTitle(i)}>
-                               <Edit3 className="h-3 w-3" />
-                             </Button>
-                           </div>
-                         )}
-                         <Badge variant="outline" className="text-[8px] font-black shrink-0 ml-2 bg-white/80 backdrop-blur border bg-purple-100 text-purple-700">
-                           {Math.floor(hl.startTime / 60)}:{(Math.floor(hl.startTime % 60)).toString().padStart(2, '0')} - {Math.floor(hl.endTime / 60)}:{(Math.floor(hl.endTime % 60)).toString().padStart(2, '0')}
-                         </Badge>
-                       </div>
-                       <p className="text-[10px] font-medium text-muted-foreground leading-relaxed pl-8">"{hl.description}"</p>
-                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 pl-8">
-                         <Button 
-                           variant="secondary" 
-                           size="sm" 
-                           className="h-8 text-[9px] font-black uppercase tracking-widest gap-2 hover:bg-primary hover:text-white transition-colors"
-                           onClick={() => {
-                              const v = videos.find(vid => vid.url === aiSelectedVideoUrl);
-                              if(v) {
-                                 setSelectedVideo({ ...v, startAt: hl.startTime, endAt: hl.endTime } as any);
-                               } else {
-                                 setSelectedVideo({ 
-                                   id: 'ai-preview',
-                                   title: hl.title,
-                                   url: aiSelectedVideoUrl,
-                                   type: 'Highlight',
-                                   comments: [],
-                                   startAt: hl.startTime,
-                                   endAt: hl.endTime
-                                 } as any);
-                               }
-                           }}
-                         >
-                           <Play className="h-3 w-3" /> View Clip
-                         </Button>
-                         <Button 
-                           variant="outline" 
-                           size="sm" 
-                           className="h-8 text-[9px] font-black uppercase tracking-widest gap-2 hover:bg-black hover:text-white transition-colors"
-                           onClick={() => commitAIHighlightToReel(hl)}
-                         >
-                           <Plus className="h-3 w-3" /> + add reel to videos
-                         </Button>
-                         <Button 
-                           variant="outline" 
-                           size="sm" 
-                           className="h-8 text-[9px] font-black uppercase tracking-widest gap-2 hover:bg-black hover:text-white transition-colors"
-                           onClick={() => handleExtractScreenshot(aiSelectedVideoUrl, hl.startTime + 1)}
-                         >
-                           <Camera className="h-3 w-3" /> Get Photo
-                         </Button>
-                       </div>
-                     </div>
-                  ))}
-                  
+              <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4">
+                <div className="flex items-center justify-between px-1">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-purple-700 flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" />
+                    {aiHighlights.length} Highlights Detected
+                  </p>
                   {selectedAiHighlights.length > 0 && (
-                    <div className="flex items-center justify-between px-2 py-4 bg-muted/20 rounded-[2rem] animate-in fade-in sticky bottom-0 bg-white/80 backdrop-blur border shadow-sm mt-4 z-20">
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-black uppercase text-purple-700">{selectedAiHighlights.length} Selection{selectedAiHighlights.length !== 1 ? 's' : ''}</p>
-                        <p className="text-[8px] font-bold text-muted-foreground uppercase">Execute strategic batch actions across analysis results.</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                         <Button size="sm" variant="outline" className="h-8 rounded-xl text-[9px] font-black uppercase border-2 border-purple-200" onClick={handleBatchAddIndividually}>Indiv. Add All</Button>
-                         <Button size="sm" className="h-8 rounded-xl text-[9px] font-black uppercase bg-purple-600 shadow-lg shadow-purple-600/20 text-white" onClick={handleCombineSelected}>Combine & Add</Button>
-                       </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleBatchAddIndividually}
+                        className="h-7 text-[9px] font-black uppercase rounded-xl border-purple-200 text-purple-700 hover:bg-purple-50"
+                      >
+                        Add {selectedAiHighlights.length} Individually
+                      </Button>
+                      {aiSourceFile && (
+                        <Button
+                          size="sm"
+                          onClick={handleCombineSelected}
+                          className="h-7 text-[9px] font-black uppercase rounded-xl bg-purple-600 hover:bg-purple-700 text-white"
+                        >
+                          Merge into Reel
+                        </Button>
+                      )}
                     </div>
                   )}
+                </div>
+
+                <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                  {aiHighlights.map((hl: any, idx: number) => {
+                    const isSelected = selectedAiHighlights.includes(idx);
+                    const isEditingTitle = editingHlIndex === idx;
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          setSelectedAiHighlights(prev =>
+                            prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+                          );
+                        }}
+                        className={`rounded-2xl border-2 p-4 cursor-pointer transition-all duration-150 ${
+                          isSelected
+                            ? 'border-purple-500 bg-purple-50 shadow-md shadow-purple-100'
+                            : 'border-zinc-100 bg-white hover:border-purple-200 hover:bg-purple-50/30'
+                        }`}
+                      >
+                        {/* Header row: title + timestamp */}
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="flex-1 min-w-0">
+                            {isEditingTitle ? (
+                              <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                                <input
+                                  autoFocus
+                                  value={editingTitleValue}
+                                  onChange={e => setEditingTitleValue(e.target.value)}
+                                  className="flex-1 text-xs font-bold border-b border-purple-400 bg-transparent outline-none pb-0.5"
+                                  onKeyDown={e => { if (e.key === 'Enter') saveHlTitle(); if (e.key === 'Escape') setEditingHlIndex(null); }}
+                                />
+                                <button onClick={saveHlTitle} className="text-[9px] font-black uppercase text-purple-600 shrink-0">Save</button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 group/title">
+                                <p className="text-xs font-black text-zinc-900 leading-tight truncate">{hl.title}</p>
+                                <button
+                                  onClick={e => { e.stopPropagation(); handleEditHlTitle(idx); }}
+                                  className="opacity-0 group-hover/title:opacity-100 text-[8px] text-purple-400 hover:text-purple-600 font-black uppercase transition-opacity shrink-0"
+                                >✎</button>
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-[9px] font-black uppercase text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">
+                            {Math.floor(hl.startTime / 60)}:{String(Math.round(hl.startTime % 60)).padStart(2, '0')} – {Math.floor(hl.endTime / 60)}:{String(Math.round(hl.endTime % 60)).padStart(2, '0')}
+                          </span>
+                          <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className={`h-7 w-7 rounded-xl shrink-0 ${aiSourceFile ? 'text-purple-600 hover:bg-purple-100' : 'text-zinc-300 grayscale opacity-40'}`}
+                            title={aiSourceFile ? "Capture HD Screenshot to Gallery" : "Upload video file to enable screenshots"}
+                            onClick={(e) => { e.stopPropagation(); handleCaptureHlScreenshot(idx); }}
+                            disabled={!aiSourceFile}
+                          >
+                            <Camera className="h-4 w-4" />
+                          </Button>
+                        </div>
+
+                        {/* Inline-editable description */}
+                        <div onClick={e => e.stopPropagation()} className="group/desc relative">
+                          <textarea
+                            value={hl.description || ''}
+                            onChange={e => saveHlDescription(idx, e.target.value)}
+                            rows={2}
+                            placeholder="Add scouting notes..."
+                            className="w-full text-[10px] text-zinc-500 bg-transparent border-0 border-b border-transparent hover:border-zinc-200 focus:border-purple-300 outline-none resize-none leading-relaxed transition-colors placeholder:text-zinc-300 cursor-text"
+                          />
+                          <span className="absolute bottom-0.5 right-0 text-[8px] text-zinc-300 opacity-0 group-hover/desc:opacity-100 transition-opacity pointer-events-none">edit</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+
                 </div>
               </div>
             )}
@@ -2228,15 +3115,12 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             <>
               <div className="bg-black aspect-video relative flex items-center justify-center">
                 {selectedVideo.url ? (() => {
-                    // IMPROVED YouTube URL parsing to handle variations and connectivity rejections
                     const srcUrl = selectedVideo.url;
                     const isYouTube = srcUrl.includes('youtube.com') || srcUrl.includes('youtu.be');
                     const ytMatch = isYouTube ? srcUrl.match(/(?:v=|\/|embed\/|youtu.be\/)([^&?#/]{11})/) : null;
                     
                     if (isYouTube && ytMatch) {
                       const videoId = ytMatch[1];
-                      // STABILIZED: Added origin and enablejsapi to resolve "An error occurred" playback bugs
-                      // Also added a key based on segment index to force re-loading when a combined reel advances
                       const origin = typeof window !== 'undefined' ? window.location.origin : '';
                       let start = 0;
                       let end = 0;
@@ -2254,12 +3138,12 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                          }
                       }
 
-                      const finalSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&enablejsapi=1&origin=${origin}&start=${start}${end > 0 && manualSeekTime === null ? `&end=${end}` : ''}`;
+                      const finalSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&rel=0&enablejsapi=1&origin=${origin}&start=${start}${end > 0 ? `&end=${end}` : ''}`;
                       
                       return (
                         <div className="absolute inset-0">
                           <iframe
-                            key={`${selectedVideo.id}_${currentSegmentIndex}_${manualSeekTime}`}
+                            key={`${selectedVideo.id}_${currentSegmentIndex}_${manualSeekTime}_${start}_${end}`}
                             src={finalSrc}
                             className="absolute inset-0 w-full h-full"
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -2294,58 +3178,42 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       );
                     }
                     
-                    // HTML5 Video Handling (Uploaded Reels)
-                    return (
-                      <video 
-                        ref={videoRef}
-                        src={selectedVideo.url.split('#')[0]} // Strip existing hashes to prevent blob connectivity issues
-                        className="absolute inset-0 w-full h-full object-contain" 
-                        controls 
-                        autoPlay 
-                         onLoadedMetadata={(e) => {
-                            const v = e.currentTarget;
-                            let startTime = selectedVideo.startAt || (selectedVideo.segments && selectedVideo.segments.length > 0 ? selectedVideo.segments[0].start : null);
-                            let endTime = selectedVideo.endAt || (selectedVideo.segments && selectedVideo.segments.length > 0 ? selectedVideo.segments[selectedVideo.segments.length - 1].end : null);
-                            let initialTime = e.currentTarget.currentTime;
+                    // STABILIZED: Use Media Fragment URI (#t=start,end) to strictly limit playback range in-browser
+                    const fragment = selectedVideo.startAt !== undefined && selectedVideo.endAt !== undefined 
+                      ? `#t=${selectedVideo.startAt},${selectedVideo.endAt}` 
+                      : (selectedVideo.segments?.length ? `#t=${selectedVideo.segments[currentSegmentIndex].start},${selectedVideo.segments[currentSegmentIndex].end}` : '');
 
-                            if (manualSeekTime !== null) {
-                                v.currentTime = manualSeekTime;
-                                initialTime = manualSeekTime;
-                            } else if (startTime != null && endTime != null) {
-                                v.currentTime = startTime;
-                                initialTime = startTime;
-                                if (selectedVideo.segments && selectedVideo.segments.length > 0) {
-                                    setCurrentSegmentIndex(0);
+                    return (
+                       <video 
+                         ref={videoRef}
+                         src={selectedVideo.url.split('#')[0] + fragment}
+                         className="absolute inset-0 w-full h-full object-contain" 
+                         controls 
+                         autoPlay 
+                         onTimeUpdate={(e) => {
+                            const v = e.currentTarget;
+                            if (selectedVideo.segments && selectedVideo.segments.length > 0) {
+                                const seg = selectedVideo.segments[currentSegmentIndex];
+                                if (v.currentTime >= seg.end) {
+                                    if (currentSegmentIndex < selectedVideo.segments.length - 1) {
+                                        const next = currentSegmentIndex + 1;
+                                        setCurrentSegmentIndex(next);
+                                        v.currentTime = selectedVideo.segments[next].start;
+                                        v.play();
+                                    } else {
+                                        v.pause();
+                                    }
                                 }
-                            } else if (selectedVideo.segments && selectedVideo.segments.length > 0) {
-                                setCurrentSegmentIndex(0);
-                                v.currentTime = selectedVideo.segments[0].start;
-                                initialTime = selectedVideo.segments[0].start;
-                            } else if (selectedVideo.startAt) {
+                            } else if (selectedVideo.endAt && v.currentTime >= selectedVideo.endAt) {
+                                v.pause();
+                                v.currentTime = selectedVideo.endAt;
+                            } else if (selectedVideo.startAt && v.currentTime < selectedVideo.startAt - 1) {
+                                // Prevent manual rewind past the clip start
                                 v.currentTime = selectedVideo.startAt;
-                                initialTime = selectedVideo.startAt;
                             }
-                        }}
-                        onTimeUpdate={(e) => {
-                           const v = e.currentTarget;
-                           if (selectedVideo.segments && selectedVideo.segments.length > 0) {
-                               const seg = selectedVideo.segments[currentSegmentIndex];
-                               if (v.currentTime >= seg.end) {
-                                   if (currentSegmentIndex < selectedVideo.segments.length - 1) {
-                                       const next = currentSegmentIndex + 1;
-                                       setCurrentSegmentIndex(next);
-                                       v.currentTime = selectedVideo.segments[next].start;
-                                       v.play();
-                                   } else {
-                                       v.pause();
-                                   }
-                               }
-                           } else if (selectedVideo.endAt && v.currentTime >= selectedVideo.endAt) {
-                               v.pause();
-                           }
-                        }}
-                      />
-                    );
+                         }}
+                       />
+                     );
                 })() : (
                   <div className="flex flex-col items-center gap-3 opacity-30">
                     <Video className="h-16 w-16 text-white" />
@@ -3132,6 +4000,119 @@ function SignatureAuditDialog({ proto }: { proto: any }) {
   );
 }
 
+// ── Staff Evaluation Panel ────────────────────────────────────────────────────
+// Rendered inside coaches corner (talent center) only. Scouts see read-only averages.
+function StaffEvalPanel({
+  evals,
+  playerId,
+  addEvaluation,
+  onSaved,
+}: {
+  evals: any[];
+  playerId: string | null | undefined;
+  addEvaluation: (playerId: string, data: any) => Promise<any>;
+  onSaved: () => void;
+}) {
+  const [draft, setDraft] = React.useState({ athleticism: 5, skillLevel: 5, gameIQ: 5, leadership: 5 });
+  const [saving, setSaving] = React.useState(false);
+
+  const avg = React.useMemo(() => {
+    if (evals.length === 0) return null;
+    const t = evals.reduce((a: any, c: any) => ({
+      athleticism: a.athleticism + (c.athleticism || 0),
+      skillLevel: a.skillLevel + (c.skillLevel || 0),
+      gameIQ: a.gameIQ + (c.gameIQ || 0),
+      leadership: a.leadership + (c.leadership || 0),
+    }), { athleticism: 0, skillLevel: 0, gameIQ: 0, leadership: 0 });
+    const n = evals.length;
+    return {
+      athleticism: t.athleticism / n,
+      skillLevel: t.skillLevel / n,
+      gameIQ: t.gameIQ / n,
+      leadership: t.leadership / n,
+      overall: (t.athleticism + t.skillLevel + t.gameIQ + t.leadership) / (n * 4),
+    };
+  }, [evals]);
+
+  const handleSave = async () => {
+    if (!playerId) return;
+    setSaving(true);
+    try {
+      await addEvaluation(playerId, { ...draft, createdAt: new Date().toISOString() });
+      onSaved();
+      toast({ title: 'Evaluation Saved', description: 'Ratings published to athlete profile.' });
+    } catch (e: any) {
+      toast({ title: 'Save Failed', description: e.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const metrics = [
+    { key: 'athleticism', label: 'Athleticism' },
+    { key: 'skillLevel', label: 'Skill Level' },
+    { key: 'gameIQ', label: 'Game IQ' },
+    { key: 'leadership', label: 'Leadership' },
+  ];
+
+  return (
+    <div className="border-t px-6 pb-6 pt-5 space-y-5">
+      {/* Current average (read-only) */}
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+          Staff Rating ({evals.length} submission{evals.length !== 1 ? 's' : ''})
+        </p>
+        {avg && (
+          <span className="text-lg font-black text-primary">{avg.overall.toFixed(1)} / 10</span>
+        )}
+      </div>
+
+      {avg && (
+        <div className="space-y-2">
+          {metrics.map(m => (
+            <div key={m.key} className="space-y-1">
+              <div className="flex justify-between text-[9px] font-black uppercase text-muted-foreground">
+                <span>{m.label}</span>
+                <span>{(avg as any)[m.key].toFixed(1)}</span>
+              </div>
+              <Progress value={(avg as any)[m.key] * 10} className="h-1.5" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Staff slider input */}
+      <div className="bg-muted/20 rounded-2xl p-5 space-y-4 border border-dashed border-muted">
+        <p className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
+          <ShieldCheck className="h-3.5 w-3.5" /> Post Staff Evaluation
+        </p>
+        {metrics.map(m => (
+          <div key={m.key} className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label className="text-[10px] font-black uppercase">{m.label}</Label>
+              <span className="text-sm font-black text-primary">{(draft as any)[m.key]} / 10</span>
+            </div>
+            <Slider
+              min={1} max={10} step={1}
+              value={[(draft as any)[m.key]]}
+              onValueChange={val => setDraft(prev => ({ ...prev, [m.key]: val[0] }))}
+              className="accent-primary"
+            />
+          </div>
+        ))}
+        <Button
+          onClick={handleSave}
+          disabled={saving || !playerId}
+          className="w-full h-11 rounded-xl font-black uppercase text-[10px] bg-primary text-white shadow-lg shadow-primary/20 hover:scale-[1.01] transition-transform"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
+          {saving ? 'Saving...' : 'Submit Staff Evaluation'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function CoachesCornerPage() {
   const router = useRouter();
   const { activeTeam, isStaff, isPro, isStarter, createTeamDocument, updateTeamDocument, deleteTeamDocument, db, members, createAlert, isSchoolMode, user, teams, getLeagueMembers } = useTeam();
@@ -3171,9 +4152,6 @@ export default function CoachesCornerPage() {
     return pool.filter(m => coachPositions.includes(m.position));
   }, [isSchoolMode, institutionalMembers, members]);
 
-  if (!isStaff) return <AccessRestricted type="role" title="Coaches Hub Restricted" description="This tactical vault is reserved for Coaching Staff and Team Administrators." />;
-  if (!isPro && !isStarter) return <AccessRestricted type="tier" />;
-
   const [activeTab, setActiveTab] = useState('recruiting');
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [editingWaiver, setEditingWaiver] = useState<TeamDocument | null>(null);
@@ -3192,6 +4170,9 @@ export default function CoachesCornerPage() {
 
   const eRef = useMemoFirebase(() => db && activeTeam?.id ? query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'desc')) : null, [db, activeTeam?.id]);
   const { data: events } = useCollection<TeamEvent>(eRef);
+
+  if (!isStaff) return <AccessRestricted type="role" title="Coaches Hub Restricted" description="This tactical vault is reserved for Coaching Staff and Team Administrators." />;
+  if (!isPro && !isStarter) return <AccessRestricted type="tier" />;
 
   const handleSaveProtocolUpdate = async () => {
     if (!editingWaiver || !activeTeam) return;
@@ -3220,7 +4201,6 @@ export default function CoachesCornerPage() {
     setEditingWaiver(null);
   };
 
-  if (!isStaff) return <div className="py-24 text-center opacity-20"><ShieldCheck className="h-16 w-16 mx-auto" /><h1 className="text-2xl font-black mt-4 uppercase tracking-widest text-foreground">Staff Access Restricted</h1></div>;
 
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-500">

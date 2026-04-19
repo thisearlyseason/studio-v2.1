@@ -1,59 +1,63 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { GoogleGenAI } from "@google/genai";
 
+/**
+ * TEXT-ONLY FALLBACK route — used when only a URL is provided (no video upload).
+ *
+ * IMPORTANT: This route uses a text completion model (Straico) which CANNOT watch
+ * a video stream. It produces timestamp estimates based on world knowledge and context.
+ * For accurate, frame-accurate highlight detection, use /api/highlights/analyze which
+ * accepts an uploaded video file and uses the Gemini File API.
+ */
 export async function POST(req: NextRequest) {
   try {
-    const { videoUrl, prompt } = await req.json();
+    const { videoUrl, prompt, videoDuration } = await req.json();
 
     if (!videoUrl) {
       return NextResponse.json({ error: 'Video URL is required' }, { status: 400 });
     }
 
     const apiKey = process.env.STRAICO_API_KEY;
-    
     if (!apiKey) {
-      return NextResponse.json({ error: 'API Key missing. Please configure your Straico key.' }, { status: 500 });
+      return NextResponse.json(
+        { error: 'STRAICO_API_KEY missing. This fallback mode requires a Straico key, or upload a video file to use Gemini AI analysis.' },
+        { status: 500 }
+      );
     }
 
-    // Upgraded PRO Scout Prompt for highly accurate and diverse highlight parsing
+    // TEXT-ONLY prompt — no actual video frames are analyzed.
+    // This is pure LLM estimation based on context + world knowledge.
     const aiPrompt = `
-      You are an elite, professional sports scout operating an advanced video analysis engine.
-      Analyze this game video stream: ${videoUrl}
-      (Tactical Note: If this is an external platform link like YouTube/Vimeo, utilize all available metadata, transcript context, and world knowledge to identify segments. If you cannot access the stream directly, provide your best analysis based on the user's prompt).
-      
-      User Scout Request: "${prompt}"
-      
-      CRITICAL SCOUTING DIRECTIVES:
-      1. Action Density: Look for high-impact plays (scoring, critical defense, massive momentum shifts).
-      2. Player Focus: Isolate movements, off-ball IQ, and technical execution for the requested player/filter.
-      3. Timing & Variety: 
-         - Ensure highlight clips map cleanly to realistic pacing (usually 5 to 15 seconds per clip).
-         - MANDATORY: Search the ENTIRE duration of provided metadata/stream.
-         - MANDATORY: Return UNIQUE timestamps. NEVER return the same or nearly identical startTime/endTime for multiple highlights.
-         - If the video is long, space the highlights throughout the game (e.g., 1st half, 2nd half, crunch time).
-      4. Professional Terminology: Use elite scouting vocabulary in the descriptions (e.g. "weak-side help", "explosive first step", "verticality", "vision", "anticipation").
+You are an elite sports scout. Based on the video URL and context provided, estimate likely highlight timestamps.
 
-      Return ONLY a raw JSON array of objects with the exact following keys. Do NOT wrap in markdown formatting blocks (\`\`\`json).
-      - "startTime" (number, start time in seconds, e.g. 14.5)
-      - "endTime" (number, end time in seconds, e.g. 22.0)
-      - "title" (short 2-4 word intense title, e.g. "Weak-Side Block")
-      - "description" (a 1-2 sentence elite breakdown of the execution and impact)
-      
-      Structure the output to simulate 4-6 distinct, diverse, and high-quality findings.
+NOTE: You cannot watch this video. Generate realistic, evenly-spaced timestamp estimates within the video duration.
+
+Video URL: ${videoUrl}
+Duration: ${videoDuration ? `${videoDuration} seconds` : 'Unknown'}
+Scout Request: "${prompt}"
+
+RULES:
+1. Return 4-6 highlight segments.
+2. NEVER return startTime or endTime greater than ${videoDuration || 300} seconds.
+3. Space highlights evenly across the video timeline.
+4. Each highlight window: startTime = peak - 5s, endTime = peak + 8s.
+5. Use professional scouting vocabulary in descriptions.
+6. Mark each title with "[EST]" to indicate these are ESTIMATED timestamps, not frame-verified.
+
+Return ONLY a valid JSON array. No markdown, no code blocks.
+Format: [{"startTime": number, "endTime": number, "title": string, "description": string}]
     `;
 
-    // Attempting to use a reliable model via Straico proxy
     const STRAICO_ENDPOINT = 'https://api.straico.com/v1/chat/completions';
-    
-    // We try a list of models for maximum reliability in "Live" environments
     const MODELS_TO_TRY = [
-      'anthropic/claude-3.5-sonnet',
-      'anthropic/claude-3.7-sonnet',
-      'google/gemini-1.5-pro'
+      'anthropic/claude-3-5-sonnet-20240620',
+      'openai/gpt-4o-mini',
     ];
 
     let textResult = '';
     let lastError = '';
 
+    // --- ATTEMPT 1: Straico ---
     for (const modelId of MODELS_TO_TRY) {
       try {
         const res = await fetch(STRAICO_ENDPOINT, {
@@ -70,46 +74,60 @@ export async function POST(req: NextRequest) {
 
         if (!res.ok) {
           const errText = await res.text();
-          console.error(`[Straico Error for ${modelId}]:`, errText);
           lastError = errText;
-          continue; // Try next model
+          continue;
         }
 
         const json = await res.json();
-        
-        // Straico nests the result: data.completions[modelId].completion.choices[0].message.content
-        const content = json?.data?.completions?.[modelId]?.completion?.choices?.[0]?.message?.content;
-        
+        const content =
+          json?.data?.completions?.[modelId]?.completion?.choices?.[0]?.message?.content;
+
         if (content) {
           textResult = content;
-          break; // Success!
+          break;
         } else {
-          console.error(`[Straico Malformed Response for ${modelId}]:`, JSON.stringify(json));
           lastError = 'Malformed response structure';
         }
       } catch (e: any) {
-        console.error(`[Straico Fetch Failure for ${modelId}]:`, e);
         lastError = e.message;
       }
     }
 
-    if (!textResult) {
-      throw new Error(`AI Engines rejected the request or were unavailable. Last error: ${lastError}. Please ensure your STRAICO_API_KEY is active and has sufficient credits.`);
+    // --- ATTEMPT 2: Gemini Direct ---
+    if (!textResult && process.env.GOOGLE_AI_API_KEY && process.env.GOOGLE_AI_API_KEY !== 'your_gemini_api_key_here') {
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY });
+        const model = ai.models.get("gemini-1.5-flash");
+        const result = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: aiPrompt }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        });
+        textResult = result.text;
+      } catch (e: any) {
+        lastError = `Gemini: ${e.message}`;
+      }
     }
 
-    // Clean up Markdown JSON blocks if the model accidentally included them
-    const cleanText = textResult.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
+    if (!textResult) {
+      throw new Error(
+        `All AI models failed. Last error: ${lastError}. Ensure your STRAICO_API_KEY is active.`
+      );
+    }
+
+    const cleanText = textResult
+      .replace(/^```json\s*/g, '')
+      .replace(/^```\s*/g, '')
+      .replace(/```$/g, '')
+      .trim();
 
     try {
-      const highlightData = JSON.parse(cleanText);
-      return NextResponse.json(highlightData);
-    } catch (parseErr) {
-      console.error("JSON Parsing Error from Model Output:", cleanText);
-      throw new Error("Failed to parse the AI analysis into structured timestamps.");
+      const highlights = JSON.parse(cleanText);
+      return NextResponse.json(highlights);
+    } catch {
+      throw new Error('Failed to parse AI response as structured JSON.');
     }
-
   } catch (err: any) {
-    console.error('[AI Highlight Generation Error]:', err);
+    console.error('[Highlights Fallback Error]:', err);
     return NextResponse.json({ error: err.message || 'Analysis Failed' }, { status: 500 });
   }
 }

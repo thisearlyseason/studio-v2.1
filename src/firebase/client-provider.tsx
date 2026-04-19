@@ -3,6 +3,7 @@
 import React, { useMemo, useEffect, type ReactNode } from 'react';
 import { FirebaseProvider } from '@/firebase/provider';
 import { initializeFirebase } from './core';
+import { Activity } from 'lucide-react';
 
 interface FirebaseClientProviderProps {
   children: ReactNode;
@@ -61,15 +62,47 @@ if (typeof window !== 'undefined') {
 
 export function FirebaseClientProvider({ children }: FirebaseClientProviderProps) {
   const firebaseServices = useMemo(() => {
-    // Initialize Firebase on the client side, once per component mount.
-    return initializeFirebase();
+    try {
+      // Initialize Firebase on the client side, once per component mount.
+      return initializeFirebase();
+    } catch (e) {
+      console.error('[Firebase] SDK Initialization Critical Failure:', e);
+      return {
+        firebaseApp: null,
+        auth: null,
+        firestore: null,
+        storage: null
+      };
+    }
   }, []); // Empty dependency array ensures this runs only once on mount
+
+  if (!firebaseServices.firebaseApp) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-black text-white p-6 text-center">
+        <div className="h-16 w-16 bg-primary/20 rounded-full flex items-center justify-center mb-6 animate-pulse">
+          <Activity className="h-8 w-8 text-primary" />
+        </div>
+        <h1 className="text-2xl font-black uppercase tracking-tight mb-2">Tactical Link Failure</h1>
+        <p className="text-sm font-bold text-white/40 uppercase tracking-widest max-w-xs">
+          Unable to establish secure connection to Squad HQ. 
+          Please check your network or refresh the protocol.
+        </p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="mt-8 h-12 px-10 rounded-xl bg-primary text-white font-black uppercase text-xs tracking-widest shadow-xl"
+        >
+          Retry Protocol
+        </button>
+      </div>
+    );
+  }
 
   return (
     <FirebaseProvider
-      firebaseApp={firebaseServices.firebaseApp}
-      auth={firebaseServices.auth}
-      firestore={firebaseServices.firestore}
+      firebaseApp={firebaseServices.firebaseApp as any}
+      auth={firebaseServices.auth as any}
+      firestore={firebaseServices.firestore as any}
+      storage={firebaseServices.storage as any}
     >
       {children}
     </FirebaseProvider>
