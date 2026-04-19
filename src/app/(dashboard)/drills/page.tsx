@@ -1243,7 +1243,7 @@ export default function PlaybookAndGamePlayPage() {
                 </div>
               </div>
             );
-          })()}
+          })())}
         </DialogContent>
       </Dialog>
       
