@@ -149,17 +149,28 @@ export default function HowToGuidePage() {
   };
 
   const BLOCK_FILM_COMPLIANCE = {
-    title: "8. Film Study Compliance",
+    title: "8. Tactical Film Study & Verification",
     icon: Video,
     steps: [
-      { step: "Media Archiving", detail: <>Upload MP4 match film or drills to the <strong>Playbook</strong>. Pro includes 10GB of high-speed media storage.</> },
-      { step: "The 75% Rule", detail: <>The system tracks watch time. Teammates must watch <strong>75% of the video</strong> to be marked as <strong>Compliant</strong> in your ledger.</> },
-      { step: "Tactical Discussion", detail: <>Add time-stamped comments to film study sessions to spark strategy discussions.</> }
+      { step: "Upload Tactical Protocol", detail: <>In <strong>Playbook &rarr; Archive</strong>, paste a YouTube link or upload a local high-res MP4. Use the 10GB institutional storage vault.</> },
+      { step: "Toggle Mandatory Watch", detail: <>Enable the <strong>Verified Study</strong> toggle on any video. The system will now track individual player engagement per frame.</> },
+      { step: "The 75% Compliance Rule", detail: <>Athletes must complete <strong>75% of the video duration</strong> to be marked 'Compliant' in the staff ledger. This is the organizational standard for roster eligibility.</> },
+      { step: "Tactical Marks", detail: <>Add time-stamped 'marks' to specific moments. When athletes view the mark, their player automatically seeks to that exact frame for review.</> }
+    ]
+  };
+
+  const BLOCK_BRIEFING_UNIT = {
+    title: "9. Branded Briefing Unit (PDF)",
+    icon: Download,
+    steps: [
+      { step: "Orchestrate Itinerary", detail: <>Open any <strong>Practice</strong> or <strong>Match</strong> event and select the <strong>Tactical Plan</strong> tab.</> },
+      { step: "Inject Playbook Drills", detail: <>Search your library and tap <strong>Inject to Session</strong> to build a chronological timeline of training objectives.</> },
+      { step: "Export Elite PDF", detail: <>Tap <strong>Export Tactical Plan</strong>. The system generates a high-resolution, branded PDF with the <strong>Championship Red</strong> signature, facility maps, and drill diagrams.</> }
     ]
   };
 
   const BLOCK_FEES_GOVERNANCE = {
-    title: "9. Roster Fees & Governance",
+    title: "10. Roster Fees & Governance",
     icon: DollarSign,
     steps: [
       { step: "Post Fees", detail: <>In the <strong>Roster</strong> hub, attach uniform or tournament dues to player profiles. Track <strong>Paid</strong> vs <strong>Owed</strong> status automatically.</> },
@@ -168,7 +179,7 @@ export default function HowToGuidePage() {
   };
 
   const BLOCK_HIGH_PRIORITY = {
-    title: "10. High-Priority Command",
+    title: "11. High-Priority Command",
     icon: Megaphone,
     steps: [
       { step: "Broadcast Alerts", detail: <>Use the <strong>Megaphone</strong> icon to send urgent, full-screen team-wide alerts for venue changes or safety.</> },
@@ -176,12 +187,22 @@ export default function HowToGuidePage() {
     ]
   };
 
-  const BLOCK_SCOUTING_AI = {
-    title: "11. AI Scouting Assistant",
+  const BLOCK_AI_SCOUTING = {
+    title: "12. High-Fidelity AI Scouting & FFmpeg",
     icon: BrainCircuit,
     steps: [
-      { step: "Log Observations", detail: <>In <strong>Playbook &rarr; Scouting</strong>, enter raw notes about opponent tendencies.</> },
-      { step: "Generate Brief", detail: <>Tap <strong>Generate AI Brief</strong>. The AI structures your notes into <strong>Strengths, Weaknesses, and Keys to Victory</strong>.</> }
+      { step: "Capture Tactical Frames", detail: <>Use the <strong>FFmpeg Engine</strong> in the video viewer to capture frame-accurate screenshots of defensive schemes or player positioning.</> },
+      { step: "Input Scout Ledger", detail: <>Enter raw performance notes or play-by-play observations in the <strong>AI Scout</strong> portal.</> },
+      { step: "Generate Professional Briefs", detail: <>Tap <strong>Analyze Schematic</strong>. The AI digests your notes and frame captures into a structured <strong>Keys to Victory</strong> briefing.</> }
+    ]
+  };
+
+  const BLOCK_FISCAL_AUDIT = {
+    title: "13. Institutional Fiscal Pulse",
+    icon: DollarSign,
+    steps: [
+      { step: "Aggregated Dues Tracking", detail: <>Organization directors use the <strong>Club Hub</strong> to view a master ledger of all collected fees across every squad.</> },
+      { step: "Direct Ledger Editing", detail: <>Staff can override payment status and fees directly in the <strong>Squad Pulse</strong> matrix to reflect offline transactions or sponsorships.</> }
     ]
   };
 
@@ -262,13 +283,13 @@ export default function HowToGuidePage() {
     ]
   };
 
-  const BLOCK_PARENT_HUB = {
-    title: "Guardian Safety Hub",
+  const BLOCK_HOUSEHOLD_HUB = {
+    title: "19. Consolidated Household Hub",
     icon: Baby,
     steps: [
-      { step: "Household Command", detail: <>Add your children in the <strong>Family Hub</strong>. They link to your account for unified scheduling and billing.</> },
-      { step: "Fiscal Audit", detail: <>View your <strong>Household Balance</strong> on the dashboard to track aggregated dues across squads.</> },
-      { step: "Login Provisioning", detail: <>Use <strong>Enable Login</strong> in the Family Hub to give your child tactical access while maintaining oversight.</> }
+      { step: "Unified Guardian Profile", detail: <>Manage multiple minor athletes from one dashboard. System intelligently separates squad commitments per child.</> },
+      { step: "Compliance Signature", detail: <>Sign medical waivers and liability protocols once; the system pushes the verified signature IP and timestamp to the relevant squad coaches instantly.</> },
+      { step: "Single Balance Payment", detail: <>View the <strong>Household Pulse</strong> to see the total fiscal requirement for all children across all leagues in one view.</> }
     ]
   };
 
@@ -291,44 +312,44 @@ export default function HowToGuidePage() {
     pro: {
       label: "Squad Pro",
       desc: "Exhaustive coordination for elite squads with advanced verification.",
-      highlights: ["Elite Auto-Scheduler", "75% Film Compliance", "Digital Waivers", "AI Scouting Assistant", "Broadcast Alerts"],
+      highlights: ["75% Film Compliance", "Branded Briefing Unit", "AI Scouting assistant", "Broadcast Alerts", "Digital Signatures"],
       sections: [
         BLOCK_DEPLOYMENT, BLOCK_SCHEDULING, BLOCK_COMMUNICATION, BLOCK_SCOREKEEPING, BLOCK_PLAYBOOK, 
-        BLOCK_PRO_ACTIVATION, BLOCK_TOURNAMENT_ENGINE, BLOCK_FILM_COMPLIANCE, BLOCK_FEES_GOVERNANCE, 
-        BLOCK_HIGH_PRIORITY, BLOCK_SCOUTING_AI
+        BLOCK_PRO_ACTIVATION, BLOCK_TOURNAMENT_ENGINE, BLOCK_FILM_COMPLIANCE, BLOCK_BRIEFING_UNIT, 
+        BLOCK_HIGH_PRIORITY, BLOCK_AI_SCOUTING
       ]
     },
     elite: {
       label: "Elite Org (Team/League)",
       desc: "Master institutional infrastructure for organizations and leagues.",
-      highlights: ["Master Club Hub", "Public Recruitment Portal", "Form Architect", "Facility Fleet", "Conflict Resolution"],
+      highlights: ["Master Fiscal Pulse", "Public Recruitment Portal", "Institutional Protocols", "Facility Management", "Club wide Audit"],
       sections: [
         BLOCK_DEPLOYMENT, BLOCK_SCHEDULING, BLOCK_COMMUNICATION, BLOCK_SCOREKEEPING, BLOCK_PLAYBOOK, 
-        BLOCK_PRO_ACTIVATION, BLOCK_TOURNAMENT_ENGINE, BLOCK_FILM_COMPLIANCE, BLOCK_FEES_GOVERNANCE, 
-        BLOCK_HIGH_PRIORITY, BLOCK_SCOUTING_AI, BLOCK_CLUB_HUB, BLOCK_INSTITUTIONAL_PROTOCOLS, BLOCK_RECRUITMENT_PORTAL, BLOCK_FLEET_LOGISTICS
+        BLOCK_PRO_ACTIVATION, BLOCK_TOURNAMENT_ENGINE, BLOCK_FILM_COMPLIANCE, BLOCK_BRIEFING_UNIT, 
+        BLOCK_HIGH_PRIORITY, BLOCK_AI_SCOUTING, BLOCK_CLUB_HUB, BLOCK_INSTITUTIONAL_PROTOCOLS, BLOCK_RECRUITMENT_PORTAL, BLOCK_FISCAL_AUDIT
       ]
     },
     school: {
       label: "School District (K-12)",
       desc: "Full K-12 program hub for academic athletic departments.",
-      highlights: ["District Dashboard", "Athletic Director Controls", "Multi-Squad Hub", "Academic Eligibility", "College Recruiting"],
+      highlights: ["District Dashboard", "Athletic Director Controls", "Academic Eligibility", "College Recruiting", "Physical Clearance"],
       sections: [
         BLOCK_DEPLOYMENT, BLOCK_SCHEDULING, BLOCK_COMMUNICATION, BLOCK_SCOREKEEPING, BLOCK_PLAYBOOK,
-        BLOCK_PRO_ACTIVATION, BLOCK_TOURNAMENT_ENGINE, BLOCK_FILM_COMPLIANCE, BLOCK_FEES_GOVERNANCE,
-        BLOCK_HIGH_PRIORITY, BLOCK_SCOUTING_AI, BLOCK_SCHOOL_HUB, BLOCK_SCHOOL_COMPLIANCE, BLOCK_SCHOOL_RECRUITING, BLOCK_FLEET_LOGISTICS
+        BLOCK_PRO_ACTIVATION, BLOCK_TOURNAMENT_ENGINE, BLOCK_FILM_COMPLIANCE, BLOCK_BRIEFING_UNIT,
+        BLOCK_HIGH_PRIORITY, BLOCK_AI_SCOUTING, BLOCK_SCHOOL_HUB, BLOCK_SCHOOL_COMPLIANCE, BLOCK_SCHOOL_RECRUITING, BLOCK_FISCAL_AUDIT
       ]
     },
     player: {
       label: "Individual Athlete",
       desc: "Stay coordinated and ready. Manage your personal recruitment portfolio.",
-      highlights: ["Join via Code", "Recruiting Portfolio", "Film Compliance", "RSVP Mandate", "Live Chat Access"],
-      sections: [BLOCK_PLAYER_HUB, BLOCK_COMMUNICATION, BLOCK_SCHEDULING, BLOCK_SCOREKEEPING]
+      highlights: ["Verified Film Study", "Recruiting Portfolio", "Tactical Itineraries", "Digital Locker Access", "Live Chat Access"],
+      sections: [BLOCK_PLAYER_HUB, BLOCK_COMMUNICATION, BLOCK_SCHEDULING, BLOCK_FILM_COMPLIANCE]
     },
     parent: {
       label: "Parent / Guardian",
       desc: "Unified household safety and fiscal command.",
-      highlights: ["Household Command", "Fiscal Audit", "Volunteer Board", "Fundraising Hub", "Child Registration"],
-      sections: [BLOCK_PARENT_HUB, BLOCK_COMMUNITY_BOARD, BLOCK_COMMUNICATION, BLOCK_SCHEDULING, BLOCK_SCOREKEEPING]
+      highlights: ["Household Pulse", "Waiver Execution", "Volunteer Tracking", "Centralized Billing", "Multi-Athlete Support"],
+      sections: [BLOCK_HOUSEHOLD_HUB, BLOCK_COMMUNITY_BOARD, BLOCK_COMMUNICATION, BLOCK_SCHEDULING, BLOCK_SCOREKEEPING]
     }
   };
 

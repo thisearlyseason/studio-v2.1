@@ -43,9 +43,9 @@ import {
   Package,
   DollarSign,
   PenTool,
-  Search,
   Building,
-  GraduationCap
+  GraduationCap,
+  BookOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -832,12 +832,22 @@ export default function LandingPage() {
               <BrandLogo variant="light-background" className="h-8 w-32" />
             </Link>
             
-            <div className="flex items-center gap-8 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+            <div className="flex flex-wrap items-center justify-center gap-8 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground text-center mb-4">
               <Link href="/how-to" className="hover:text-primary transition-colors">How to Guide</Link>
+              <Link href="/Tactical_User_Manual.md" className="hover:text-primary transition-colors text-primary font-black scale-110">Tactical Manual</Link>
+              <Link href="/AI_KNOWLEDGE_BASE.md" className="hover:text-primary transition-colors">AI Knowledge Base</Link>
               <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
-              <Link href="/safety" className="hover:text-primary transition-colors">Safety Center</Link>
             </div>
+
+            <Link 
+              href="/how-to" 
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all font-black uppercase text-[10px] tracking-widest shadow-lg shadow-primary/5 group"
+            >
+              <BookOpen className="h-4 w-4" />
+              Launch Institutional How-To Portal
+              <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+            </Link>
 
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
               © {new Date().getFullYear()} The Squad Hub. All Rights Reserved.

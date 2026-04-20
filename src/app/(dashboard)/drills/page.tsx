@@ -72,39 +72,6 @@ export default function PlaybookAndGamePlayPage() {
   const [viewMode, setViewMode] = useState<'drills' | 'gameplay'>('drills');
   const [searchTerm, setSearchTerm] = useState('');
   
-  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
-  const [librarySearch, setLibrarySearch] = useState('');
-  const [selectedLibDrill, setSelectedLibDrill] = useState<any>(null);
-
-  const libraryQuery = useMemoFirebase(() => {
-    if (!db) return null;
-    return query(collection(db, 'drillLibrary'), orderBy('title', 'asc'));
-  }, [db]);
-  const { data: globalDrillsRaw, isLoading: isLibraryLoading } = useCollection(libraryQuery);
-  const globalDrills = useMemo(() => globalDrillsRaw || [], [globalDrillsRaw]);
-
-  // Self-Healing Seed Logic
-  useEffect(() => {
-    if (!db || !activeTeam || isLibraryLoading) return;
-    if (globalDrills.length === 0) {
-      const seedLib = async () => {
-        const drills = [
-          { title: "Full Court Press Break", description: "Tactical protocol for navigating high-intensity pressure.", objective: "Minimize turnovers", duration: 15, category: "Tactical", difficulty: "Intermediate", videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" },
-          { title: "Corner 3 Precision", description: "Elite shooting drill for high-percentage looks.", objective: "Increase accuracy", duration: 20, category: "Skill", difficulty: "Advanced", videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" },
-          { title: "Defensive Slide Cycle", description: "Mobility and stance maintenance fundamentals.", objective: "Perimeter containment", duration: 10, category: "Warmup", difficulty: "Beginner", videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
-        ];
-        for (const d of drills) {
-          try { await addDoc(collection(db, 'drillLibrary'), { ...d, isPublic: true, createdAt: new Date().toISOString() }); } catch(e) {}
-          try { 
-            const id = `drill_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-            await setDoc(doc(db, 'teams', activeTeam.id, 'drills', id), { ...d, id, isGlobal: false, importedAt: new Date().toISOString(), createdAt: new Date().toISOString(), comments: [], watchedBy: {} });
-          } catch(e) {}
-        }
-      };
-      seedLib();
-    }
-  }, [db, activeTeam, isLibraryLoading, globalDrills.length]);
-
   const drillsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
     return query(collection(db, 'teams', activeTeam.id, 'drills'), orderBy('createdAt', 'desc'), limit(20));
@@ -207,24 +174,6 @@ export default function PlaybookAndGamePlayPage() {
         description: err?.message || "Could not save to playbook. If using images, ensure they aren't too large.",
         variant: "destructive" 
       });
-    }
-  };
-
-  const handleImportDrill = async (libDrill: any) => {
-    if (!activeTeam || !db || !isStaff) return;
-    try {
-      await addDrill({
-        ...libDrill,
-        id: undefined, // Let Firebase generate new ID
-        isGlobal: false,
-        importedAt: new Date().toISOString(),
-        comments: [],
-        watchedBy: {}
-      });
-      toast({ title: "Drill Deployed", description: `${libDrill.title} is now in your playbook.` });
-      setIsLibraryOpen(false);
-    } catch (err) {
-      toast({ title: "Import Failed", variant: "destructive" });
     }
   };
 
@@ -524,11 +473,6 @@ export default function PlaybookAndGamePlayPage() {
             </div>
             {isStaff && (
               <div className="flex gap-2 shrink-0">
-                {viewMode === 'drills' && (
-                  <Button variant="outline" onClick={() => setIsLibraryOpen(true)} className="rounded-full h-14 px-8 font-black uppercase text-xs border-2 border-primary/20 text-primary hover:bg-primary/5">
-                    <Package className="h-5 w-5 mr-2" /> Browse Library
-                  </Button>
-                )}
                 <Button onClick={() => {
                   setNewTitle(''); setNewUrl(''); setNewDesc('');
                   viewMode === 'drills' ? setIsAddDrillOpen(true) : setIsUploadOpen(true);
@@ -924,159 +868,143 @@ export default function PlaybookAndGamePlayPage() {
       </Dialog>
       
       <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
-        <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-6xl h-full sm:h-auto sm:max-h-[95vh] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col">
+        <DialogContent className="sm:max-w-[95vw] lg:max-w-7xl h-[95vh] sm:h-[90vh] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col rounded-t-[2.5rem] sm:rounded-[3.5rem]">
           <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
           <DialogClose asChild>
-            <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-[60] h-10 w-10 rounded-full bg-black/50 hover:bg-black/70 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all">
-              <X className="h-5 w-5" />
+            <Button variant="ghost" size="icon" className="absolute top-6 right-6 z-[60] h-12 w-12 rounded-full bg-black/50 hover:bg-black/70 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all">
+              <X className="h-6 w-6" />
             </Button>
           </DialogClose>
           {!!(selectedDrill || selectedFile) && (
-            <div className="flex flex-col h-full overflow-hidden bg-muted/10">
-              {/* STICKY TACTICAL HEADER */}
-              <div className="bg-black shrink-0 relative shadow-2xl z-20 sm:rounded-t-[3rem] overflow-hidden p-0 sm:p-4 lg:p-8">
-                {/* 
-                   Harden Data: Direct lookup to avoid IIFE overhead 
-                */}
-                {(() => {
-                  const data = selectedDrill || selectedFile;
-                  if (!data) return null;
-                  const url = selectedDrill ? selectedDrill.videoUrl : selectedFile?.url;
-                  const type = selectedDrill ? 'drills' : 'files';
-                  const isMandatory = data.mandatoryWatch;
-                  const userHasWatched = hasUserWatched(data);
-                  
-                  return (
-                    <>
-                      {/* Mandatory Watch Banner */}
-                      {isMandatory && (
-                        <div className={cn(
-                          "mb-4 px-4 py-3 rounded-2xl flex items-center justify-between",
-                          userHasWatched ? "bg-green-500/20 border border-green-500/30" : "bg-amber-500/20 border border-amber-500/30"
-                        )}>
-                          <div className="flex items-center gap-2">
-                            {userHasWatched ? (
-                              <CheckCircle2 className="h-4 w-4 text-green-400" strokeWidth={3} />
-                            ) : (
-                              <Bell className="h-4 w-4 text-amber-400" />
-                            )}
-                            <span className="text-[10px] font-black uppercase tracking-widest text-white">
-                              {userHasWatched ? "Watch Verified ✓ 75% Complete" : "Mandatory 75% Watch Required"}
-                            </span>
-                          </div>
-                          {isStaff && (
-                            <button
-                              onClick={() => { setWatchersDrill(data); setIsWatchersOpen(true); }}
-                              className="text-[9px] font-black uppercase tracking-widest text-white/60 hover:text-white flex items-center gap-1"
-                            >
-                              <Users className="h-3 w-3" />
-                              {Object.keys(data.watchedBy || {}).length}/{(members || []).length} watched
-                            </button>
-                          )}
-                        </div>
-                      )}
+            <div className="flex flex-col lg:flex-row h-full overflow-hidden">
+              {/* VIDEO & CONTENT AREA */}
+              <div className="flex-1 flex flex-col min-h-0 bg-neutral-950">
+                {/* VIDEO PLAYER */}
+                <div className="relative aspect-video bg-neutral-900 border-b border-white/5 overflow-hidden shadow-2xl group shrink-0">
+                  {(() => {
+                    const data = selectedDrill || selectedFile;
+                    if (!data) return null;
+                    const url = selectedDrill ? selectedDrill.videoUrl : selectedFile?.url;
+                    return url && (url.includes('youtube.com') || url.includes('youtu.be/')) ? (
+                      <iframe
+                        ref={iframeRef}
+                        src={`https://www.youtube.com/embed/${url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|u\/\w\/))([^\?&"'>]+)/)?.[1]}?enablejsapi=1&autoplay=1`}
+                        className="w-full h-full border-none"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        onLoad={() => {
+                          if (data.mandatoryWatch && !hasUserWatched(data) && data.id) {
+                            startWatchTracking(data.id, 300);
+                          }
+                        }}
+                      />
+                    ) : url ? (
+                      <video
+                        ref={videoRef}
+                        src={url}
+                        controls
+                        autoPlay
+                        className="w-full h-full"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center opacity-20">
+                        <Video className="h-20 w-20 text-white" />
+                      </div>
+                    );
+                  })()}
+                </div>
 
-                      <div className="aspect-video bg-neutral-900 rounded-[2.5rem] overflow-hidden shadow-2xl relative group mb-8">
-                        {url && (url.includes('youtube.com') || url.includes('youtu.be/')) ? (
-                          <iframe
-                            ref={iframeRef}
-                            src={`https://www.youtube.com/embed/${url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|u\/\w\/))([^\?&"'>]+)/)?.[1]}?enablejsapi=1&autoplay=1`}
-                            className="w-full h-full border-none"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                            onLoad={() => {
-                              if (isMandatory && !userHasWatched && data.id) {
-                                startWatchTracking(data.id, 300); // assume 5 min video
-                              }
-                            }}
-                          />
-                        ) : url ? (
-                          <video
-                            ref={videoRef}
-                            src={url}
-                            controls
-                            autoPlay
-                            className="w-full h-full"
-                            onTimeUpdate={(e) => {
-                              const video = e.currentTarget;
-                              const pct = video.duration > 0 ? (video.currentTime / video.duration) * 100 : 0;
-                              setWatchProgress(pct);
-                              if (pct >= 75 && isMandatory && !userHasWatched && user?.id && activeTeam && db) {
-                                updateDoc(doc(db, 'teams', activeTeam.id, 'drills', data.id), {
-                                  [`watchedBy.${user.id}`]: { userId: user.id, name: user.name || 'Viewer', watchedAt: new Date().toISOString(), percentage: 75 }
-                                }).catch(() => {});
-                                setHasCompletedWatch(true);
-                              }
-                            }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-muted/10">
-                            <Video className="h-20 w-20 text-white/5 animate-pulse" />
+                {/* SCROLLABLE DESCRIPTION / ASSETS */}
+                <div className="flex-1 overflow-y-auto p-6 sm:p-10 space-y-10 custom-scrollbar-white">
+                  {(() => {
+                    const data = selectedDrill || selectedFile;
+                    if (!data) return null;
+                    return (
+                      <div className="max-w-4xl mx-auto space-y-10 pb-10">
+                        <div className="space-y-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className="bg-primary text-white border-none font-black text-[9px] uppercase tracking-widest px-4 h-6">
+                              {selectedDrill ? "Drill Protocol" : "Archive Tape"}
+                            </Badge>
+                            {selectedDrill?.estimatedTime && (
+                              <Badge className="bg-white/10 text-white border-none font-black text-[9px] uppercase tracking-widest px-4 h-6">
+                                <Clock className="h-3 w-3 mr-2" /> {selectedDrill.estimatedTime}
+                              </Badge>
+                            )}
+                          </div>
+                          <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tight text-white leading-none">
+                            {selectedDrill ? data.title : (data as any).name}
+                          </h2>
+                          <div className="flex items-center gap-3 text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">
+                            <CalendarIcon className="h-3 w-3 text-primary" />
+                            {selectedFile ? format(new Date((data as any).date), 'PPP') : 'Tactical Protocol Active'}
+                          </div>
+                        </div>
+
+                        <div className="relative">
+                          <div className="absolute -left-6 top-0 bottom-0 w-1 bg-primary/20 rounded-full" />
+                          <p className="text-white/60 text-base sm:text-lg font-medium leading-relaxed italic">
+                            {selectedDrill ? data.description : ((data as any).description || 'Institutional tactical documentation archived in vault.')}
+                          </p>
+                        </div>
+
+                        {/* Additional Media Content */}
+                        {(data as any).additionalMedia && (data as any).additionalMedia.length > 0 && (
+                          <div className="space-y-6 pt-10 border-t border-white/5">
+                            <h4 className="text-white/40 text-[9px] font-black uppercase tracking-[0.3em]">Auxiliary Tactical Assets</h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {(data as any).additionalMedia.map((media: any, idx: number) => {
+                                 const mediaUrl = typeof media === 'string' ? media : media.url;
+                                 return (
+                                   <div key={idx} className="aspect-video bg-neutral-900 rounded-[2rem] overflow-hidden shadow-lg relative cursor-zoom-in group border border-white/5" onClick={() => setLightboxUrl(mediaUrl)}>
+                                     <img src={mediaUrl} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100 bg-black/40 backdrop-blur-sm">
+                                       <Search className="h-8 w-8 text-white" />
+                                     </div>
+                                   </div>
+                                 );
+                              })}
+                            </div>
                           </div>
                         )}
                       </div>
-                    </>
-                  );
-                })()}
+                    );
+                  })()}
+                </div>
               </div>
 
-              {/* SCROLLABLE DATA HUB */}
-              <div className="flex-1 flex flex-col lg:flex-row overflow-hidden divide-y lg:divide-y-0 lg:divide-x bg-white">
+              {/* TACTICAL SIDEBAR (COMMENTS & COMPLIANCE) */}
+              <div className="w-full lg:w-[420px] bg-white flex flex-col shrink-0">
                 {(() => {
                   const data = selectedDrill || selectedFile;
                   if (!data) return null;
                   const type = selectedDrill ? 'drills' : 'files';
+                  const userHasWatched = hasUserWatched(data);
+                  const isStaffMember = isStaff;
 
                   return (
                     <>
-                      {/* Left Column: Descriptions & Extra Media */}
-                      <div className="flex-1 overflow-y-auto p-4 lg:p-10 space-y-10 custom-scrollbar">
-                        <div className="space-y-4">
-                          <div className="flex items-start justify-between">
-                            <div className="min-w-0">
-                              <h3 className="font-black text-2xl tracking-tighter uppercase leading-none truncate">{data.title || (data as any).name}</h3>
-                              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-2">{new Date(data.createdAt || (data as any).date).toLocaleDateString()}</p>
+                      <div className="p-8 border-b bg-zinc-50/50 space-y-6">
+                        <h3 className="font-black text-[10px] uppercase tracking-[0.3em] text-muted-foreground flex items-center gap-2">
+                          <Package className="h-3 w-3" /> Command Center
+                        </h3>
+                        
+                        {/* Mandatory Watch Status */}
+                        <div className={cn(
+                          "p-6 rounded-[2.5rem] border-2 shadow-sm transition-all",
+                          data.mandatoryWatch ? "bg-amber-500/5 border-amber-500/20" : "bg-muted/30 border-muted-foreground/10"
+                        )}>
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                              <div className={cn("h-8 w-8 rounded-full flex items-center justify-center shadow-lg", data.mandatoryWatch ? "bg-amber-500 text-white" : "bg-muted text-muted-foreground")}>
+                                <Bell className="h-4 w-4" />
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-foreground leading-none mb-1">Watch Compliance</p>
+                                <p className="text-[8px] font-bold text-muted-foreground uppercase">{data.mandatoryWatch ? 'PROTOCOL ACTIVE' : 'VOLUNTARY'}</p>
+                              </div>
                             </div>
-                            {isStaff && (
-                              <div className="flex items-center gap-2 shrink-0">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="text-muted-foreground hover:text-black hover:bg-black/5 rounded-xl shrink-0" 
-                                      onClick={(e) => {
-                                        if (selectedDrill) {
-                                          openEditDrill(e, selectedDrill);
-                                          setSelectedDrill(null);
-                                        } else {
-                                          openEditFile(e, selectedFile);
-                                          setSelectedFile(null);
-                                        }
-                                      }}
-                                    >
-                                      <Edit2 className="h-5 w-5" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="bg-black text-white border-white/10 font-bold text-[10px] uppercase tracking-widest">Quick Modify</TooltipContent>
-                                </Tooltip>
-                              </div>
-                            )}
-                          </div>
-                          <p className="text-xs font-medium text-muted-foreground leading-relaxed">
-                            {selectedDrill ? data.description : ((data as any).description || 'No institutional notes archived.')}
-                          </p>
-
-                          {/* Mandatory Watch Toggle in viewer */}
-                          {isStaff && (
-                            <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border-2 border-dashed">
-                              <div className="flex items-center gap-2">
-                                <Bell className="h-4 w-4 text-amber-500" />
-                                <div>
-                                  <p className="text-[10px] font-black uppercase tracking-widest">Mandatory 75% Watch</p>
-                                  <p className="text-[8px] text-muted-foreground">Require roster to watch 75%</p>
-                                </div>
-                              </div>
+                            {isStaffMember && (
                               <Switch
                                 checked={!!data.mandatoryWatch}
                                 onCheckedChange={async (checked) => {
@@ -1086,58 +1014,94 @@ export default function PlaybookAndGamePlayPage() {
                                     mandatoryWatch: checked,
                                     mandatoryWatchThreshold: 75
                                   });
-                                  if (selectedDrill) {
-                                    setSelectedDrill((prev: any) => ({ ...prev, mandatoryWatch: checked }));
-                                  } else {
-                                    setSelectedFile((prev: any) => ({ ...prev, mandatoryWatch: checked }));
-                                  }
+                                  if (selectedDrill) setSelectedDrill((prev: any) => ({ ...prev, mandatoryWatch: checked }));
+                                  else setSelectedFile((prev: any) => ({ ...prev, mandatoryWatch: checked }));
                                   toast({ title: checked ? "Mandatory Watch Enabled" : "Mandatory Watch Disabled" });
                                 }}
                               />
+                            )}
+                          </div>
+                          
+                          {data.mandatoryWatch && (
+                            <div className="space-y-4 pt-2 border-t border-amber-500/10">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">My Verification</span>
+                                <Badge className={cn("text-[7px] font-black px-2 h-4", userHasWatched ? "bg-green-500 text-white" : "bg-amber-100 text-amber-700")}>
+                                  {userHasWatched ? "VERIFIED" : "PENDING"}
+                                </Badge>
+                              </div>
+                              {isStaffMember && (
+                                <Button 
+                                  variant="outline" 
+                                  className="w-full h-10 rounded-2xl text-[8px] font-black uppercase tracking-widest bg-white border-primary/10 shadow-sm hover:bg-primary/5 text-primary"
+                                  onClick={() => { setWatchersDrill(data); setIsWatchersOpen(true); }}
+                                >
+                                  <Users className="h-3 w-3 mr-2" />
+                                  Compliance Ledger
+                                </Button>
+                              )}
                             </div>
                           )}
                         </div>
-
-                        {/* Additional Media Content */}
-                        {(data as any).additionalMedia && (data as any).additionalMedia.length > 0 && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                            {(data as any).additionalMedia.map((media: any, idx: number) => {
-                               const mediaUrl = typeof media === 'string' ? media : media.url;
-                               return (
-                                 <div key={idx} className="aspect-video bg-neutral-900 rounded-3xl overflow-hidden shadow-lg relative cursor-zoom-in" onClick={() => setLightboxUrl(mediaUrl)}>
-                                   <img src={mediaUrl} className="w-full h-full object-cover" />
-                                 </div>
-                               );
-                            })}
-                          </div>
-                        )}
                       </div>
 
-                      {/* Right Column: Coach Marks */}
-                      <div className="w-full lg:w-[450px] flex flex-col overflow-hidden bg-zinc-50/50">
-                        <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-6 custom-scrollbar">
-                           <div className="space-y-4">
-                            {(data.comments || []).map((c: any) => (
-                              <div key={c.id} className="bg-white p-5 rounded-3xl shadow-sm border space-y-2 cursor-pointer hover:bg-primary/5 transition-all" onClick={() => seekTo(c.timestamp)}>
+                      {/* Marks / Comments Ledger */}
+                      <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Tactical Marks</h4>
+                          <Badge variant="outline" className="h-5 text-[8px] font-black border-2 border-black/5">{(data.comments || []).length} TOTAL</Badge>
+                        </div>
+                        <div className="space-y-4">
+                          {(data.comments || []).map((c: any) => (
+                            <div key={c.id} className="bg-white p-5 rounded-[2rem] shadow-sm border-2 border-black/5 group cursor-pointer hover:border-primary/20 transition-all" onClick={() => seekTo(c.timestamp)}>
+                              <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
-                                  {c.timestamp != null && <Badge className="bg-primary text-white border-none text-[8px] font-black uppercase">{Math.floor(c.timestamp/60)}:{String(c.timestamp%60).padStart(2,'0')}</Badge>}
-                                  <span className="text-[9px] font-black uppercase text-primary">{c.authorName}</span>
+                                  {c.timestamp != null && (
+                                    <Badge className="bg-black text-white border-none text-[8px] font-black px-2 h-4">
+                                      {Math.floor(c.timestamp/60)}:{String(c.timestamp%60).padStart(2,'0')}
+                                    </Badge>
+                                  )}
+                                  <span className="text-[9px] font-black uppercase text-primary tracking-widest">{c.authorName}</span>
                                 </div>
-                                <p className="text-xs font-bold">{c.text}</p>
+                                {isStaffMember && (
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 text-red-500 hover:bg-red-50 rounded-full" onClick={(e) => { e.stopPropagation(); handleDeleteComment(data.id, c.id, data.comments, type); }}>
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                )}
                               </div>
-                            ))}
-                           </div>
+                              <p className="text-[11px] font-bold text-foreground leading-relaxed">{c.text}</p>
+                              <p className="text-[7px] font-black text-muted-foreground uppercase tracking-widest mt-2">{format(new Date(c.createdAt), 'HH:mm')}</p>
+                            </div>
+                          ))}
+                          {(data.comments || []).length === 0 && (
+                            <div className="py-20 text-center opacity-20 italic">
+                              <Bookmark className="h-8 w-8 mx-auto mb-2" />
+                              <p className="text-[9px] font-black uppercase tracking-widest">No Tactical Marks Captured</p>
+                            </div>
+                          )}
                         </div>
+                      </div>
 
-                        <div className="p-8 space-y-4 bg-white border-t shrink-0">
-                          <div className="flex gap-2">
-                             <Input placeholder={isStaff ? "Capture Mark..." : "Comment..."} className="flex-1 h-12 rounded-xl border-2 font-bold text-xs" value={commentText} onChange={e => setCommentText(e.target.value)} />
-                             <Button className="h-12 w-12 rounded-xl" onClick={() => handleAddComment(data.id, data.comments, type)} disabled={!commentText}><Bookmark className="h-4 w-4" /></Button>
-                          </div>
-                          <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-[10px] border-emerald-500/20 text-emerald-600" onClick={() => { setSelectedDrill(null); setSelectedFile(null); }}>
-                            <CheckCircle2 className="h-4 w-4 mr-2" /> Mark Complete
-                          </Button>
+                      {/* Control Panel */}
+                      <div className="p-8 border-t bg-zinc-50 space-y-4 shrink-0">
+                        <div className="flex gap-3">
+                           <Input 
+                             placeholder="Capture Mark..." 
+                             className="flex-1 h-14 rounded-2xl border-2 border-black/5 font-black text-[10px] uppercase tracking-widest bg-white shadow-inner" 
+                             value={commentText} 
+                             onChange={e => setCommentText(e.target.value)} 
+                           />
+                           <Button className="h-14 w-14 rounded-2xl shadow-xl shadow-primary/20" onClick={() => handleAddComment(data.id, data.comments, type)} disabled={!commentText}>
+                             <Bookmark className="h-5 w-5" />
+                           </Button>
                         </div>
+                        <Button 
+                          variant="outline" 
+                          className="w-full h-14 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] border-2 border-primary/10 text-primary hover:bg-primary/5 active:scale-95 transition-all shadow-sm" 
+                          onClick={() => { setSelectedDrill(null); setSelectedFile(null); }}
+                        >
+                          <CheckCircle2 className="h-4 w-4 mr-3" /> Mark Session Complete
+                        </Button>
                       </div>
                     </>
                   );
@@ -1168,67 +1132,7 @@ export default function PlaybookAndGamePlayPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── DRILL LIBRARY DIALOG ── */}
-      <Dialog open={isLibraryOpen} onOpenChange={setIsLibraryOpen}>
-        <DialogContent className="sm:max-w-5xl h-[90vh] p-0 border-none shadow-2xl bg-white overflow-hidden flex flex-col rounded-[2.5rem]">
-          <DialogHeader className="p-8 pb-4 shrink-0">
-             <div className="flex items-center justify-between">
-                <div>
-                   <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] mb-1">Global Repository</Badge>
-                   <DialogTitle className="text-3xl font-black uppercase tracking-tight leading-none">Drill Library</DialogTitle>
-                </div>
-                <div className="relative w-72">
-                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                   <Input 
-                     placeholder="Search library..." 
-                     className="pl-11 h-12 rounded-xl bg-muted/30 border-none font-bold" 
-                     value={librarySearch}
-                     onChange={e => setLibrarySearch(e.target.value)}
-                   />
-                </div>
-             </div>
-          </DialogHeader>
-          
-          <div className="flex-1 overflow-y-auto p-8 pt-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 custom-scrollbar">
-            {isLibraryLoading ? (
-               <div className="col-span-full py-20 text-center animate-pulse">
-                  <Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" />
-                  <p className="text-xs font-black uppercase mt-4">Accessing Global Vault...</p>
-               </div>
-            ) : globalDrills.length === 0 ? (
-               <div className="col-span-full py-20 text-center opacity-40 italic">
-                  No drills available in the library yet.
-               </div>
-            ) : globalDrills.filter(d => d.title.toLowerCase().includes(librarySearch.toLowerCase())).map((drill: any) => (
-               <Card key={drill.id} className="rounded-[2rem] overflow-hidden border-none shadow-md ring-1 ring-black/5 hover:shadow-xl transition-all group flex flex-col">
-                  <div className="aspect-video bg-black relative">
-                     {drill.coverImageUrl ? (
-                        <img src={drill.coverImageUrl} className="w-full h-full object-cover opacity-60" />
-                     ) : drill.videoUrl && getYoutubeThumbnail(drill.videoUrl) ? (
-                        <img src={getYoutubeThumbnail(drill.videoUrl)!} className="w-full h-full object-cover opacity-40" />
-                     ) : (
-                        <div className="absolute inset-0 flex items-center justify-center opacity-10"><Package className="h-12 w-12 text-white" /></div>
-                     )}
-                     <Badge className="absolute top-4 left-4 bg-primary text-white border-none text-[8px] font-black uppercase">{drill.category || 'Standard'}</Badge>
-                     {drill.difficulty && <Badge className="absolute top-4 right-4 bg-white/20 text-white backdrop-blur-md border-none text-[8px] font-black uppercase">{drill.difficulty}</Badge>}
-                  </div>
-                  <CardContent className="p-5 flex-1 flex flex-col justify-between">
-                     <div className="space-y-2">
-                        <h4 className="font-black text-sm uppercase truncate">{drill.title}</h4>
-                        <p className="text-[10px] text-muted-foreground line-clamp-3 leading-relaxed">{drill.description}</p>
-                     </div>
-                     <Button 
-                       className="w-full mt-4 h-10 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/10"
-                       onClick={() => handleImportDrill(drill)}
-                     >
-                       Deploy to Team
-                     </Button>
-                  </CardContent>
-               </Card>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+
 
         </div>
       </div>
