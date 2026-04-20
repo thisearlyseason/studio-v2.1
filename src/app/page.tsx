@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { 
   ChevronRight, 
@@ -855,6 +856,10 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+
+      {/* Elfsight AI Chatbot | Squad Pro */}
+      <Script src="https://elfsightcdn.com/platform.js" async />
+      <div className="elfsight-app-4f8f60bc-5748-46cb-914c-1b03d7c8826e" data-elfsight-app-lazy></div>
     </div>
   );
 }
