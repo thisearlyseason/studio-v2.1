@@ -443,13 +443,14 @@ export default function LandingPage() {
               <tbody className="divide-y">
                 {[
                   { feature: "Branded PDF Briefings", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Institutional Tactical PDF Printouts" },
+                  { feature: "HD Tactical Capture", squad: true, tsnap: false, hudl: "Basic", treach: false, gchanger: false, note: "Frame-accurate play breakdown" },
+                  { feature: "Institutional Fiscal Audit", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Club-wide financial visibility" },
+                  { feature: "Recruiting Portfolio Export", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Certified athlete performance resumes" },
+                  { feature: "Consolidated Household Hub", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Unified management for multi-athlete families" },
                   { feature: "AI Image/Asset Optimization", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Automatic high-res compression" },
                   { feature: "75% Film Watch Rule", squad: true, tsnap: false, hudl: "Partial", treach: false, gchanger: false, note: "Verified compliance monitoring" },
-                  { feature: "UTC-Precision Scheduling", squad: true, tsnap: "Basic", hudl: "Basic", treach: "Basic", gchanger: "Basic", note: "Timezone-aware local consistency" },
-                  { feature: "Modular Drill Deployment", squad: true, tsnap: false, hudl: "Add-on", treach: false, gchanger: false, note: "One-tap institutional library" },
                   { feature: "Tournament & League Elite Engines", squad: true, tsnap: "Partial", hudl: false, treach: false, gchanger: "Basic", note: "One-click championship series" },
-                  { feature: "Team Chat & Groups", squad: true, tsnap: true, hudl: true, treach: true, gchanger: true, note: "Universal comms" },
-                  { feature: "Mobile Hub Access", squad: true, tsnap: true, hudl: true, treach: true, gchanger: true, note: "Anywhere operations" },
+                  { feature: "UTC-Precision Scheduling", squad: true, tsnap: "Basic", hudl: "Basic", treach: "Basic", gchanger: "Basic", note: "Timezone-aware local consistency" },
                 ].map((row, idx) => (
                   <tr key={idx} className="group hover:bg-muted/10 transition-colors">
                     <td className="py-6 px-8">
@@ -501,22 +502,22 @@ export default function LandingPage() {
                 <div className="space-y-3">
                   <BrainCircuit className="h-8 w-8 text-primary" />
                   <h5 className="text-lg font-black uppercase">AI Scouting Analyst</h5>
-                  <p className="text-xs text-white/60 leading-relaxed font-medium">Generate <strong>Structured Opponent Intelligence</strong> from raw match notes using our integrated GenAI flows.</p>
+                  <p className="text-xs text-white/60 leading-relaxed font-medium">Generate <strong>Structured Opponent Intel</strong> from match notes using integrated GenAI protocols.</p>
+                </div>
+                <div className="space-y-3">
+                  <Video className="h-8 w-8 text-primary" />
+                  <h5 className="text-lg font-black uppercase">HD Tactical Capture</h5>
+                  <p className="text-xs text-white/60 leading-relaxed font-medium">Extract high-resolution <strong>Tactical Frames</strong> from raw film for granular play-by-play breakdown.</p>
                 </div>
                 <div className="space-y-3">
                   <Building className="h-8 w-8 text-primary" />
                   <h5 className="text-lg font-black uppercase">Institutional Hub</h5>
-                  <p className="text-xs text-white/60 leading-relaxed font-medium"><strong>Fiscal Pulse & Multi-Team Billing</strong> for clubs managing 20+ squads with aggregated financial auditing.</p>
-                </div>
-                <div className="space-y-3">
-                  <Package className="h-8 w-8 text-primary" />
-                  <h5 className="text-lg font-black uppercase">Inventory Vault</h5>
-                  <p className="text-xs text-white/60 leading-relaxed font-medium">Professional <strong>Inventory Vault & Asset Tracking</strong> for uniforms, medical kits, and training gear with return monitoring.</p>
+                  <p className="text-xs text-white/60 leading-relaxed font-medium"><strong>Fiscal Pulse Auditing</strong> for club directors managing 20+ squads with aggregated financial visibility.</p>
                 </div>
                 <div className="space-y-3">
                   <ShieldAlert className="h-8 w-8 text-primary" />
-                  <h5 className="text-lg font-black uppercase">Personnel Evaluations</h5>
-                  <p className="text-xs text-white/60 leading-relaxed font-medium"><strong>Staff Personnel Evaluations</strong> ledger for private tactical reviews and certified recruiting portfolios.</p>
+                  <h5 className="text-lg font-black uppercase">Recruiting Portfolios</h5>
+                  <p className="text-xs text-white/60 leading-relaxed font-medium">Certified <strong>Personnel Evaluations</strong> that athletes can export directly to college recruitment pipelines.</p>
                 </div>
               </div>
             </div>
@@ -582,7 +583,7 @@ export default function LandingPage() {
             <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:translate-y-[-8px] transition-all duration-500">
               <Baby className="h-12 w-12 text-primary" />
               <h5 className="text-2xl font-black uppercase tracking-tight">Guardian Hub</h5>
-              <p className="text-sm font-medium text-muted-foreground leading-relaxed">Manage multiple children from one unified <strong>Household Hub</strong>. Track consolidated dues, verify RSVPs, and claim volunteer shifts.</p>
+              <p className="text-sm font-medium text-muted-foreground leading-relaxed">Manage multiple children from one unified **Household Hub**. Track consolidated dues, verify digital waivers, and manage volunteer assignments globally.</p>
             </Card>
             <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:translate-y-[-8px] transition-all duration-500">
               <User className="h-12 w-12 text-primary" />
