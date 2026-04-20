@@ -49,7 +49,11 @@ This authoritative guide provides granular, step-by-step instructions for every 
 1.  **Drill Management**:
     - Click **"Add Drill"**.
     - **Video URL**: Paste a YouTube or Vimeo link.
+    - **Modular Drill Library**: Click "Browse Library" to access pre-configured institutional drills. One-tap "Deploy" to add them to your playbook.
+    - **Commit to Playbook**: When adding custom drills, the system uses **AI-Driven Image Optimization** to automatically compress large screenshots/photos to ensure they fit within institutional storage limits.
     - **Strategy Notes**: Enter the objective (e.g., "Defensive spacing").
+    - **Mandatory 75% Watch (Pro)**: Enable this on any drill to track player accountability. The system monitors video progress and provides a checklist of compliant personnel.
+    - **Tactical Briefing (PDF)**: From any practice event, click "Export Tactical Plan" to generate a branded, professional briefing document for physical redistribution.
 2.  **Coach Marks (The Feedback System)**:
     - Open a video from the **Video Archive**.
     - Play the video to the specific point of a tactical error or success.
@@ -142,6 +146,8 @@ This authoritative guide provides granular, step-by-step instructions for every 
 - **Midnight Matches**: If a game starts late (e.g., 11:30 PM), the system correctly blocks early morning slots for the following day to ensure athlete recovery.
 - **Missing Games**: If matches aren't showing in the calendar, ensure the **"Is Public"** toggle is enabled in the League/Tournament config.
 - **Waiver Conflicts**: If a player cannot join a game, check the **Roster Compliance Ledger**. Many squads require signed waivers before allowing game-day attendance.
+- **Date/Time Precision**: All scheduling uses local-time parsing (UTC-corrected). If a date appears shifted by one day, ensure you are using the modern "Pick Date" workflow which enforces local calendar integrity.
+- **Image Upload Failures**: If "Operation Failed" appears when saving a drill, the image may be too large. The system now features **Auto-Compression**, but extremely high-res assets should be downscaled before upload where possible.
 - **Identity Sweep**: If a player's previous stats aren't showing, ensure they are joined using the same **Parent Email** as their previous season.
 - **Resetting a Season**: Admins should use **"Settings" -> "Seasonal Reset"** to archive old matches while keeping the roster intact for the new year.
 

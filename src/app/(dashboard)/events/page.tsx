@@ -24,6 +24,8 @@ import {
   Users,
   Info,
   Loader2,
+  Dumbbell,
+  Package,
   Calendar as CalendarIcon
 } from 'lucide-react';
 import { AnimatedScore } from '@/components/ui/animated-score';
@@ -56,6 +58,8 @@ import { format, isPast, isSameDay, startOfDay, parseISO } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { downloadICS } from '@/lib/calendar-utils';
 import { WeatherPulse } from '@/components/WeatherPulse';
 import { EventDetailDialog, formatDateRange, formatDayRange } from './EventDetailDialog';
@@ -85,6 +89,11 @@ export default function EventsPage() {
   const [eventType, setEventType] = useState<EventType>('game');
   const [opponent, setOpponent] = useState('');
   const [assignments, setAssignments] = useState<{ id: string; title: string, assigneeId: string | null, assigneeName?: string | null }[]>([]);
+  const [selectedDrillIds, setSelectedDrillIds] = useState<string[]>([]);
+
+  const db = useFirestore();
+  const drillsQuery = useMemoFirebase(() => (activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'drills'), orderBy('title', 'asc')) : null, [activeTeam?.id, db]);
+  const { data: teamDrills } = useCollection(drillsQuery);
 
   const addAssignmentField = () => {
     setAssignments([...assignments, { id: `as_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, title: '', assigneeId: null }]);
@@ -177,7 +186,8 @@ export default function EventsPage() {
         assignments: assignments.map(a => ({
           ...a,
           status: a.assigneeId ? 'claimed' : 'open'
-        }))
+        })),
+        drillIds: eventType === 'practice' ? selectedDrillIds : []
       }; 
       const success = editingEvent ? await updateEvent(editingEvent.id, payload) : await addEvent(payload); 
       
@@ -204,7 +214,7 @@ export default function EventsPage() {
   };
 
   const resetForm = () => {
-    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null); setAssignments([]);
+    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null); setAssignments([]); setSelectedDrillIds([]);
   };
 
   const handleEdit = (event: TeamEvent) => { 
@@ -218,6 +228,7 @@ export default function EventsPage() {
     setNewDescription(event.description); 
     setAssignments(event.assignments || []);
     setOpponent(event.opponent || '');
+    setSelectedDrillIds(event.drillIds || []);
     setIsCreateOpen(true); 
   };
 
@@ -302,12 +313,12 @@ export default function EventsPage() {
                         <Button
                           variant={"outline"}
                           className={cn(
-                            "h-12 w-full justify-start text-left font-black rounded-xl border-2 px-4 italic uppercase tracking-widest bg-white hover:bg-muted/50 transition-all",
+                           "h-12 w-full justify-start text-left font-black rounded-xl border-2 px-4 italic uppercase tracking-tight bg-white hover:bg-muted/50 transition-all text-[10px]",
                             !newDate && "text-muted-foreground"
                           )}
                         >
-                          <CalendarIcon className="mr-2 h-4 w-4 text-primary" />
-                          {newDate ? format(new Date(newDate), "PPP") : <span>Pick Date</span>}
+                          <CalendarIcon className="mr-2 h-4 w-4 text-primary shrink-0" />
+                          {newDate ? format(parseISO(newDate), "MMM dd, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
@@ -327,12 +338,12 @@ export default function EventsPage() {
                         <Button
                           variant={"outline"}
                           className={cn(
-                            "h-12 w-full justify-start text-left font-black rounded-xl border-2 px-4 italic uppercase tracking-widest bg-white hover:bg-muted/50 transition-all",
+                           "h-12 w-full justify-start text-left font-black rounded-xl border-2 px-4 italic uppercase tracking-tight bg-white hover:bg-muted/50 transition-all text-[10px]",
                             !newEndDate && "text-muted-foreground"
                           )}
                         >
-                          <CalendarIcon className="mr-2 h-4 w-4 text-primary" />
-                          {newEndDate ? format(new Date(newEndDate), "PPP") : <span>Pick Date</span>}
+                          <CalendarIcon className="mr-2 h-4 w-4 text-primary shrink-0" />
+                          {newEndDate ? format(parseISO(newEndDate), "MMM dd, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
@@ -355,6 +366,41 @@ export default function EventsPage() {
               <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Location</Label><Input value={newLocation} onChange={e => setNewLocation(e.target.value)} className="h-12 rounded-xl border-2 font-bold" /></div>
               <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Event Brief</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[100px] border-2 font-medium" /></div>
               
+              {eventType === 'practice' && (
+                <div className="pt-6 border-t space-y-4 animate-in slide-in-from-bottom-2 duration-500">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Tactical Plan (Drills)</Label>
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase ml-1">Select institutional drills to include in this practice</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[250px] overflow-y-auto p-2 border-2 border-dashed rounded-2xl bg-muted/20 custom-scrollbar">
+                    {teamDrills && teamDrills.length > 0 ? teamDrills.map((drill: any) => {
+                      const isSelected = selectedDrillIds.includes(drill.id);
+                      return (
+                        <div 
+                          key={drill.id} 
+                          onClick={() => setSelectedDrillIds(prev => isSelected ? prev.filter(id => id !== drill.id) : [...prev, drill.id])}
+                          className={cn(
+                            "flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all",
+                            isSelected ? "bg-primary border-primary text-white shadow-lg" : "bg-white border-transparent hover:border-primary/30"
+                          )}
+                        >
+                          <Dumbbell className={cn("h-4 w-4 shrink-0", isSelected ? "text-white" : "text-primary")} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-black uppercase truncate">{drill.title}</p>
+                            <p className={cn("text-[8px] font-bold uppercase opacity-60", isSelected ? "text-white" : "text-muted-foreground")}>{drill.category || 'Skill'}</p>
+                          </div>
+                          {isSelected && <CheckCircle2 className="h-3 w-3 shrink-0" />}
+                        </div>
+                      );
+                    }) : (
+                      <div className="col-span-full py-10 text-center opacity-30 italic text-[9px] font-black uppercase tracking-widest">
+                        Your Playbook is empty. <br/> Import drills first.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="pt-6 border-t space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">

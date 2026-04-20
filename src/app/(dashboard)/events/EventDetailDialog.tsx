@@ -11,8 +11,13 @@ import {
   Plus, 
   Download, 
   Trash2, 
-  Users 
+  Users,
+  Dumbbell,
+  Play,
+  ArrowUpRight,
+  Loader2
 } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { 
   Dialog, 
   DialogClose,
@@ -31,11 +36,13 @@ import { Button } from '@/components/ui/button';
 import { useTeam, TeamEvent, Member, TournamentGame } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
 import { format, isSameDay, parseISO } from 'date-fns';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, where } from 'firebase/firestore';
 
 export const formatDateRange = (start: string | Date, end?: string | Date) => {
-  const startDate = new Date(start);
+  const startDate = typeof start === 'string' ? parseISO(start) : start;
   if (!end) return format(startDate, 'MMM dd');
-  const endDate = new Date(end);
+  const endDate = typeof end === 'string' ? parseISO(end) : end;
   if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
   if (startDate.getMonth() === endDate.getMonth()) {
     return `${format(startDate, 'MMM d')} - ${format(endDate, 'd')}`;
@@ -44,9 +51,9 @@ export const formatDateRange = (start: string | Date, end?: string | Date) => {
 };
 
 export const formatDayRange = (start: string | Date, end?: string | Date) => {
-  const startDate = new Date(start);
+  const startDate = typeof start === 'string' ? parseISO(start) : start;
   if (!end) return format(startDate, 'd');
-  const endDate = new Date(end);
+  const endDate = typeof end === 'string' ? parseISO(end) : end;
   if (isSameDay(startDate, endDate)) return format(startDate, 'd');
   if (startDate.getMonth() === endDate.getMonth()) {
     return `${format(startDate, 'd')}-${format(endDate, 'd')}`;
@@ -73,8 +80,16 @@ export function EventDetailDialog({
   children, 
   members 
 }: EventDetailDialogProps) {
-  const { user, exportAttendanceCSV, myChildren, isParent, isPlayer, teams, getMember, games, isStaff, claimAssignment } = useTeam();
+  const { user, exportAttendanceCSV, myChildren, isParent, isPlayer, teams, getMember, games, isStaff, claimAssignment, activeTeam } = useTeam();
   const router = useRouter();
+  const db = useFirestore();
+
+  const drillsQuery = useMemoFirebase(() => {
+    if (!activeTeam?.id || !db || !event.drillIds?.length) return null;
+    // Note: 'in' query limited to 30 items
+    return query(collection(db, 'teams', activeTeam.id, 'drills'), where('__name__', 'in', event.drillIds.slice(0, 30)));
+  }, [activeTeam?.id, db, event.drillIds]);
+  const { data: eventDrills, isLoading: isDrillsLoading } = useCollection(drillsQuery);
   
   const linkedGame = useMemo(() => {
     if (event.eventType !== 'game') return null;
@@ -277,9 +292,10 @@ export function EventDetailDialog({
           <div className="flex-1 bg-white flex flex-col">
             <Tabs defaultValue="attendance" className="flex flex-col h-full">
               <div className="px-8 pt-8 shrink-0">
-                <TabsList className="grid w-full grid-cols-4 bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14">
+                <TabsList className="grid w-full grid-cols-5 bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14">
                   <TabsTrigger value="attendance" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Squad Pulse</TabsTrigger>
                   <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md" disabled={!event.isTournament}>Matches</TabsTrigger>
+                  <TabsTrigger value="plan" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md" disabled={!event.drillIds?.length}>Tactical Plan</TabsTrigger>
                   <TabsTrigger value="assignments" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Logistics</TabsTrigger>
                   <TabsTrigger value="intel" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Intel</TabsTrigger>
                 </TabsList>
@@ -359,6 +375,177 @@ export function EventDetailDialog({
                       </div>
                     </div>
                   ))}
+                </TabsContent>
+
+                <TabsContent value="plan" className="mt-0 space-y-6 animate-in fade-in duration-300">
+                   <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-primary/10 p-2 rounded-xl text-primary"><Dumbbell className="h-5 w-5" /></div>
+                      <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Tactical Itinerary</h3>
+                    </div>
+                    {eventDrills && eventDrills.length > 0 && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-9 rounded-xl border-2 font-black uppercase text-[9px] tracking-widest hover:bg-primary/5 hover:text-primary transition-all"
+                        onClick={async () => {
+                          const { jsPDF } = await import('jspdf');
+                          const doc = new jsPDF();
+                          
+                          // Brand Colors
+                          const CHASSIS_RED = [220, 38, 38]; // #dc2626
+                          const MIDNIGHT = [15, 23, 42];
+                          const SLATE = [100, 116, 139];
+                          
+                          // --- HEADER ---
+                          doc.setFillColor(CHASSIS_RED[0], CHASSIS_RED[1], CHASSIS_RED[2]);
+                          doc.rect(0, 0, 210, 40, 'F');
+                          
+                          doc.setFont("helvetica", "bold");
+                          doc.setFontSize(28);
+                          doc.setTextColor(255, 255, 255);
+                          doc.text("SQUAD", 20, 25);
+                          
+                          doc.setFontSize(10);
+                          doc.setTextColor(255, 255, 255);
+                          doc.text("TACTICAL INTELLIGENCE UNIT", 20, 32);
+                          
+                          // Header Diagonal Accent
+                          doc.setDrawColor(255, 255, 255);
+                          doc.setLineWidth(0.5);
+                          doc.line(140, 0, 210, 40);
+                          
+                          // --- EVENT TITLES ---
+                          let y = 60;
+                          doc.setTextColor(MIDNIGHT[0], MIDNIGHT[1], MIDNIGHT[2]);
+                          doc.setFontSize(22);
+                          doc.text(event.title.toUpperCase(), 20, y);
+                          
+                          y += 12;
+                          doc.setFont("helvetica", "normal");
+                          doc.setFontSize(10);
+                          doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
+                          const dateStr = formatDateRange(event.date, event.endDate);
+                          doc.text(`DATE: ${dateStr.toUpperCase()}  |  LOCATION: ${event.location.toUpperCase()}`, 20, y);
+                          
+                          y += 15;
+                          doc.setDrawColor(230, 230, 230);
+                          doc.setLineWidth(0.1);
+                          doc.line(20, y, 190, y);
+                          y += 15;
+                          
+                          // --- DRILLS / ITINERARY ---
+                          doc.setFont("helvetica", "bold");
+                          doc.setFontSize(14);
+                          doc.setTextColor(MIDNIGHT[0], MIDNIGHT[1], MIDNIGHT[2]);
+                          doc.text("TACTICAL PLAN", 20, y);
+                          y += 10;
+                          
+                          eventDrills.forEach((drill: any, index: number) => {
+                            // Check for page break
+                            if (y > 240) {
+                              // Footer on previous page
+                              doc.setFontSize(8);
+                              doc.setTextColor(180, 180, 180);
+                              doc.text("SQUAD INTELLIGENCE PORTAL - CONFIDENTIAL", 105, 285, { align: 'center' });
+                              
+                              doc.addPage();
+                              y = 30;
+                              
+                              // Small header on new page
+                              doc.setFillColor(CHASSIS_RED[0], CHASSIS_RED[1], CHASSIS_RED[2]);
+                              doc.rect(0, 0, 210, 15, 'F');
+                              doc.setFont("helvetica", "bold");
+                              doc.setFontSize(10);
+                              doc.setTextColor(255, 255, 255);
+                              doc.text(`SQUAD TACTICAL BRIEFING: ${event.title.toUpperCase()}`, 20, 10);
+                              y = 30;
+                            }
+                            
+                            // Drill Box Accent
+                            doc.setFillColor(245, 247, 250);
+                            doc.rect(20, y - 5, 170, 7, 'F');
+                            
+                            // Drill Header
+                            doc.setFont("helvetica", "bold");
+                            doc.setFontSize(12);
+                            doc.setTextColor(CHASSIS_RED[0], CHASSIS_RED[1], CHASSIS_RED[2]);
+                            doc.text(`${(index + 1).toString().padStart(2, '0')}  ${drill.title.toUpperCase()}`, 25, y);
+                            
+                            // Metadata Row
+                            y += 8;
+                            doc.setFont("helvetica", "bold");
+                            doc.setFontSize(8);
+                            doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
+                            doc.text(`CAT: ${drill.category?.toUpperCase() || 'SKILL'}  |  DUR: ${drill.duration || 10} MIN  |  DIFF: ${drill.difficulty?.toUpperCase() || 'STANDARD'}`, 25, y);
+                            
+                            // Objective
+                            if (drill.objective) {
+                              y += 6;
+                              doc.setFont("helvetica", "bold");
+                              doc.setTextColor(MIDNIGHT[0], MIDNIGHT[1], MIDNIGHT[2]);
+                              doc.text(`OBJECTIVE:`, 25, y);
+                              doc.setFont("helvetica", "normal");
+                              doc.text(drill.objective.toUpperCase(), 48, y);
+                            }
+                            
+                            // Description
+                            y += 7;
+                            doc.setFont("helvetica", "normal");
+                            doc.setFontSize(9);
+                            doc.setTextColor(50, 50, 50);
+                            const lines = doc.splitTextToSize(drill.description, 160);
+                            doc.text(lines, 25, y);
+                            
+                            y += (lines.length * 5) + 12;
+                          });
+                          
+                          // --- FINAL FOOTER ---
+                          doc.setFontSize(8);
+                          doc.setTextColor(180, 180, 180);
+                          doc.text("SQUAD INTELLIGENCE PORTAL - CONFIDENTIAL PROPERTY", 105, 285, { align: 'center' });
+                          doc.text(`GENERATED: ${new Date().toLocaleString().toUpperCase()}`, 105, 290, { align: 'center' });
+                          
+                          doc.save(`Briefing_${event.title.replace(/\s+/g, '_')}.pdf`);
+                        }}
+                      >
+                        <Download className="h-3 w-3 mr-2" /> Export Tactical Plan
+                      </Button>
+                    )}
+                  </div>
+                  
+                  {isDrillsLoading ? (
+                    <div className="py-12 text-center animate-pulse"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                      {eventDrills?.map((drill: any) => (
+                        <Card key={drill.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden group hover:shadow-lg transition-all cursor-pointer" onClick={() => router.push('/drills')}>
+                           <div className="flex flex-col sm:flex-row">
+                              <div className="w-full sm:w-32 aspect-video sm:aspect-square bg-black shrink-0 relative">
+                                 {drill.coverImageUrl ? (
+                                   <img src={drill.coverImageUrl} className="w-full h-full object-cover opacity-60" />
+                                 ) : drill.url ? (
+                                   <div className="absolute inset-0 flex items-center justify-center bg-primary/10"><Play className="h-6 w-6 text-primary" /></div>
+                                 ) : (
+                                   <div className="absolute inset-0 flex items-center justify-center opacity-10"><Dumbbell className="h-8 w-8" /></div>
+                                 )}
+                                 <Badge className="absolute bottom-2 right-2 bg-black/60 text-white text-[7px] font-black uppercase border-none">{drill.duration || 10}m</Badge>
+                              </div>
+                              <div className="p-4 flex-1 flex flex-col justify-center">
+                                 <div className="flex items-center justify-between gap-2 mb-1">
+                                    <h4 className="text-xs font-black uppercase tracking-tight truncate">{drill.title}</h4>
+                                    <Badge variant="outline" className="text-[7px] font-black uppercase h-5">{drill.category || 'Skill'}</Badge>
+                                 </div>
+                                 <p className="text-[10px] text-muted-foreground line-clamp-2 leading-relaxed">{drill.description}</p>
+                              </div>
+                              <div className="p-4 bg-muted/20 sm:bg-transparent flex items-center justify-center sm:pr-6">
+                                 <ArrowUpRight className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
+                              </div>
+                           </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="assignments" className="mt-0 space-y-6 animate-in fade-in duration-300">

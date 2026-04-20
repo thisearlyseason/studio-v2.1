@@ -53,8 +53,9 @@ This manual provides role-specific, step-by-step guides for using the app.
 3. **Details:** Select the event type (Game, Practice, Meeting) and specify the date, start time, and location.
 4. **Opponent:** Select the opposing team/school from the dropdown list.
 5. **Participants:** Assign the roster/squad that will be involved.
-6. Tap "Save & Notify." *The system automatically sends reminders to assigned participants.*
-**Success Criteria:** The new event appears on the main calendar view and any relevant teammates receive a push/email notification.
+6. **Export Tactical Plan (Branded PDF):** From the event detail view, tap "Export Tactical Plan" to generate a professionally branded PDF briefing. This includes the institutional "Chassis Red" header, structured drill itinerary, and confidential watermarks.
+7. Tap "Save & Notify." *The system automatically sends reminders to assigned participants.*
+**Success Criteria:** The new event appears on the main calendar view using accurate local-time scheduling (UTC-corrected), and the branded Tactical Briefing PDF is available for download.
 
 #### **League Management**
 **Goal:** Oversee participation and standings within defined leagues.
@@ -63,6 +64,17 @@ This manual provides role-specific, step-by-step guides for using the app.
 3. Tap "Manage League Settings."
 4. Here, you can invite associated schools, set season rules (e.g., 'Must Win 3 to Qualify'), and view the master league calendar.
 **Success Criteria:** The league settings reflect the mandated rules, and all connected schools see the league as active.
+ 
+ #### **Practice Setup & Drills**
+ **Goal:** Construct detailed training itineraries and distribute tactical briefings.
+ 1. **Deploy Drills:** Navigate to **Coaches Corner -> Playbook** and ensure your drills are imported from the **Drill Library** or created manually via "Publish Drill."
+ 2. **Create Practice:** Go to the **Schedule** tab and tap **(+) Create Event**.
+ 3. **Set Type:** Select **"Practice"** from the Event Type dropdown. 
+ 4. **Select Itinerary:** A "Playbook Drills" section will appear. Tap drills from your library to add them to the session.
+ 5. **Timezone Integrity:** Confirm the Date/Time. The system automatically corrects for UTC offsets to ensure the practice appears on the correct local calendar day.
+ 6. **Tactical Briefing PDF:** Once saved, open the event detail. Go to the **"Tactical Plan"** tab and tap **"Export Tactical Plan"** to generate a branded, printable PDF for distribution to staff and players.
+ **Success Criteria:** A professional training itinerary is saved, visible to players, and available as a Championship-branded PDF.
+
 
 #### **Tournament Creation & Management**
 **Goal:** Set up complex, multi-day structured competitions.
@@ -103,8 +115,10 @@ This manual provides role-specific, step-by-step guides for using the app.
 **Goal:** Access coaching resources, analytics, and school resources.
 **A. Playbook:**
 1. Navigate to the Playbook section and select the desired sport/level.
-2. Browse categorized plays (e.g., 'Zone Press', 'Quick Counter').
-3. Tap a play to view its schematic diagrams, breakdown of formations, and recommended executes.
+2. **Modular Drill Library:** Browse the integrated institutional library for pre-vetted drills. Tap "Browse Library" to search and one-tap "Deploy" to add them to your team's tactical playbook.
+3. **Commit to Playbook:** Use the "Publish Drill" workflow to add custom protocols. The system features **Automated Image Optimization**, compressing large screenshots and photos into institutional-grade assets automatically.
+4. **Mandatory 75% Watch (Pro):** Toggle "Mandatory Watch" on any drill or film. The system will track roster compliance and provide a real-time checklist of who has completed at least 75% of the briefing.
+5. Tap a play/drill to view its schematic diagrams, breakdown of formations, and recommended executes.
 **B. Incident Documentation:**
 1. Select "File Incident."
 2. Input mandatory details (Date, Time, Location, Involved Parties).

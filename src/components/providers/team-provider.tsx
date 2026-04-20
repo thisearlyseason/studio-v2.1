@@ -168,6 +168,28 @@ export type PlayerVideo = {
   segments?: { start: number; end: number; title: string }[];
 };
 
+export type Drill = {
+  id: string;
+  title: string;
+  description: string;
+  objective?: string;
+  duration?: number; // in minutes
+  category?: 'Warmup' | 'Skill' | 'Tactical' | 'Conditioning' | string;
+  difficulty?: 'Beginner' | 'Intermediate' | 'Advanced' | string;
+  url?: string;
+  coverUrl?: string;
+  media?: {url: string, description: string}[];
+  createdAt?: string;
+  updatedAt?: string;
+  tags?: string[];
+  comments?: VideoComment[];
+};
+
+export type GlobalDrill = Drill & {
+  isPublic: boolean;
+  authorId?: string;
+};
+
 export type Team = {
   id: string;
   name: string;
@@ -297,6 +319,7 @@ export type TeamEvent = {
   paymentInstructions?: string;
   opponent?: string;
   assignments?: EventAssignment[];
+  drillIds?: string[]; // References to drills in the playbook/library
 };
 
 export type TeamAlert = {
@@ -719,8 +742,10 @@ interface TeamContextType {
   assignEquipment: (id: string, userId: string, userName: string, qty: number) => Promise<void>;
   returnEquipment: (id: string, userId: string) => Promise<void>;
   addDrill: (data: any) => Promise<void>;
+  updateDrill: (drillId: string, data: any) => Promise<void>;
   deleteDrill: (drillId: string) => Promise<void>;
-  addFile: (name: string, type: string, sBytes: number, url: string, category: string, d?: string) => Promise<void>;
+  assignDrillsToEvent: (eventId: string, drillIds: string[]) => Promise<void>;
+  addFile: (name: string, type: string, sizeBytes: number, url: string, category: string, description?: string) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   addFacility: (data: any) => Promise<void>;
   deleteFacility: (id: string) => Promise<void>;
@@ -2137,12 +2162,31 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const addDrill = useCallback(async (d: any) => { 
     if (!isStaff) return;
-    if (activeTeam?.id && db) await addDoc(collection(db, 'teams', activeTeam.id, 'drills'), clean(d)); 
+    if (activeTeam?.id && db) await addDoc(collection(db, 'teams', activeTeam.id, 'drills'), { ...clean(d), createdAt: new Date().toISOString() }); 
+  }, [activeTeam, db, isStaff]);
+
+  const updateDrill = useCallback(async (drillId: string, d: any) => {
+    if (!isStaff) return;
+    if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'drills', drillId), { ...clean(d), updatedAt: new Date().toISOString() });
   }, [activeTeam, db, isStaff]);
 
   const deleteDrill = useCallback(async (drillId: string) => { 
     if (!isStaff) return;
     if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'drills', drillId)); 
+  }, [activeTeam, db, isStaff]);
+
+  const assignDrillsToEvent = useCallback(async (eventId: string, drillIds: string[]) => {
+    if (!isStaff || !activeTeam?.id || !db) return;
+    try {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'events', eventId), {
+        drillIds,
+        updatedAt: serverTimestamp()
+      });
+      toast({ title: "Itinerary Updated", description: "Drills successfully injected into practice." });
+    } catch (e) {
+      console.error("Assign Drills Error:", e);
+      toast({ title: "Injection Failed", description: "Failed to map drills to event.", variant: "destructive" });
+    }
   }, [activeTeam, db, isStaff]);
   const addFile = useCallback(async (n: string, t: string, sb: number, u: string, c: string, d?: string) => { 
     if (!activeTeam?.id || !db) return;
@@ -3126,7 +3170,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
     addLeagueGame,
-    createAlert, deleteAlert, addDrill, deleteDrill, addFile, deleteFile, addFacility, deleteFacility,
+    createAlert, deleteAlert, addDrill, updateDrill, deleteDrill, assignDrillsToEvent, addFile, deleteFile, addFacility, deleteFacility,
     addField, deleteField: deleteFacilityField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
@@ -3158,7 +3202,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
     addLeagueGame,
-    createAlert, deleteAlert, addDrill, deleteDrill, addFile, deleteFile, addFacility, deleteFacility,
+    createAlert, deleteAlert, addDrill, updateDrill, deleteDrill, assignDrillsToEvent, addFile, deleteFile, addFacility, deleteFacility,
     addField, deleteFacilityField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,

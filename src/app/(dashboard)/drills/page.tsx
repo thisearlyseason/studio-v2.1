@@ -27,7 +27,8 @@ import {
   BellOff,
   Users,
   Eye,
-  EyeOff
+  EyeOff,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -42,8 +43,8 @@ import { DialogClose } from '@/components/ui/dialog';
 import { X } from 'lucide-react';
 import { useTeam, TeamFile } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, doc, limit, updateDoc } from 'firebase/firestore';
-import { cn } from '@/lib/utils';
+import { collection, query, orderBy, doc, limit, updateDoc, addDoc, setDoc } from 'firebase/firestore';
+import { cn, compressImage } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -53,6 +54,7 @@ import {
 } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { format } from 'date-fns';
 
 const getYoutubeThumbnail = (url: string) => {
   if (!url) return null;
@@ -64,12 +66,45 @@ const getYoutubeThumbnail = (url: string) => {
 };
 
 export default function PlaybookAndGamePlayPage() {
-  const { activeTeam, addDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro, members } = useTeam();
+  const { activeTeam, addDrill, updateDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro, members } = useTeam();
   const db = useFirestore();
 
   const [viewMode, setViewMode] = useState<'drills' | 'gameplay'>('drills');
   const [searchTerm, setSearchTerm] = useState('');
   
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState('');
+  const [selectedLibDrill, setSelectedLibDrill] = useState<any>(null);
+
+  const libraryQuery = useMemoFirebase(() => {
+    if (!db) return null;
+    return query(collection(db, 'drillLibrary'), orderBy('title', 'asc'));
+  }, [db]);
+  const { data: globalDrillsRaw, isLoading: isLibraryLoading } = useCollection(libraryQuery);
+  const globalDrills = useMemo(() => globalDrillsRaw || [], [globalDrillsRaw]);
+
+  // Self-Healing Seed Logic
+  useEffect(() => {
+    if (!db || !activeTeam || isLibraryLoading) return;
+    if (globalDrills.length === 0) {
+      const seedLib = async () => {
+        const drills = [
+          { title: "Full Court Press Break", description: "Tactical protocol for navigating high-intensity pressure.", objective: "Minimize turnovers", duration: 15, category: "Tactical", difficulty: "Intermediate", videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" },
+          { title: "Corner 3 Precision", description: "Elite shooting drill for high-percentage looks.", objective: "Increase accuracy", duration: 20, category: "Skill", difficulty: "Advanced", videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" },
+          { title: "Defensive Slide Cycle", description: "Mobility and stance maintenance fundamentals.", objective: "Perimeter containment", duration: 10, category: "Warmup", difficulty: "Beginner", videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
+        ];
+        for (const d of drills) {
+          try { await addDoc(collection(db, 'drillLibrary'), { ...d, isPublic: true, createdAt: new Date().toISOString() }); } catch(e) {}
+          try { 
+            const id = `drill_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+            await setDoc(doc(db, 'teams', activeTeam.id, 'drills', id), { ...d, id, isGlobal: false, importedAt: new Date().toISOString(), createdAt: new Date().toISOString(), comments: [], watchedBy: {} });
+          } catch(e) {}
+        }
+      };
+      seedLib();
+    }
+  }, [db, activeTeam, isLibraryLoading, globalDrills.length]);
+
   const drillsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
     return query(collection(db, 'teams', activeTeam.id, 'drills'), orderBy('createdAt', 'desc'), limit(20));
@@ -95,6 +130,7 @@ export default function PlaybookAndGamePlayPage() {
   const [newCoverUrl, setNewCoverUrl] = useState<string>('');
   const [newMedia, setNewMedia] = useState<{url: string, description: string}[]>([]);
   const [newTime, setNewTime] = useState<string>('');
+  const [newDate, setNewDate] = useState<string>(new Date().toISOString());
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [expandedDrillIds, setExpandedDrillIds] = useState<Set<string>>(new Set());
   const [isWatchersOpen, setIsWatchersOpen] = useState(false);
@@ -128,13 +164,23 @@ export default function PlaybookAndGamePlayPage() {
   const handleAddDrill = async () => {
     if (!newTitle || !newDesc || !activeTeam || !db) return;
     try {
+      let finalCoverUrl = newCoverUrl;
+      if (newCoverUrl?.startsWith('data:image')) {
+        finalCoverUrl = await compressImage(newCoverUrl);
+      }
+
+      const compressedMedia = await Promise.all(newMedia.filter(m => m.url).map(async m => ({
+        ...m,
+        url: m.url.startsWith('data:image') ? await compressImage(m.url) : m.url
+      })));
+
       if (editingItemId) {
         await updateDoc(doc(db, 'teams', activeTeam.id, 'drills', editingItemId), {
           title: newTitle,
           description: newDesc,
           videoUrl: newUrl,
-          coverImageUrl: newCoverUrl,
-          additionalMedia: newMedia.filter(m => m.url),
+          coverImageUrl: finalCoverUrl,
+          additionalMedia: compressedMedia,
           estimatedTime: newTime
         });
         toast({ title: "Drill Updated", description: "Strategic protocol modified." });
@@ -143,10 +189,9 @@ export default function PlaybookAndGamePlayPage() {
           title: newTitle, 
           description: newDesc, 
           videoUrl: newUrl, 
-          coverImageUrl: newCoverUrl,
-          additionalMedia: newMedia.filter(m => m.url),
+          coverImageUrl: finalCoverUrl,
+          additionalMedia: compressedMedia,
           estimatedTime: newTime,
-          createdAt: new Date().toISOString(), 
           comments: [],
           mandatoryWatch: false,
           mandatoryWatchThreshold: 75,
@@ -156,8 +201,30 @@ export default function PlaybookAndGamePlayPage() {
       }
       setIsAddDrillOpen(false);
       setNewTitle(''); setNewDesc(''); setNewUrl(''); setNewCoverUrl(''); setNewMedia([]); setNewTime(''); setEditingItemId(null);
-    } catch(err) {
-      toast({ title: "Operation Failed", variant: "destructive" });
+    } catch(err: any) {
+      toast({ 
+        title: "Operation Failed", 
+        description: err?.message || "Could not save to playbook. If using images, ensure they aren't too large.",
+        variant: "destructive" 
+      });
+    }
+  };
+
+  const handleImportDrill = async (libDrill: any) => {
+    if (!activeTeam || !db || !isStaff) return;
+    try {
+      await addDrill({
+        ...libDrill,
+        id: undefined, // Let Firebase generate new ID
+        isGlobal: false,
+        importedAt: new Date().toISOString(),
+        comments: [],
+        watchedBy: {}
+      });
+      toast({ title: "Drill Deployed", description: `${libDrill.title} is now in your playbook.` });
+      setIsLibraryOpen(false);
+    } catch (err) {
+      toast({ title: "Import Failed", variant: "destructive" });
     }
   };
 
@@ -178,8 +245,12 @@ export default function PlaybookAndGamePlayPage() {
       }
       setIsUploadOpen(false);
       setNewTitle(''); setNewUrl(''); setNewDesc(''); setEditingItemId(null);
-    } catch (err) {
-      toast({ title: "Operation Failed", variant: "destructive" });
+    } catch (err: any) {
+      toast({ 
+        title: "Operation Failed", 
+        description: err?.message || "Could not save film to archive.",
+        variant: "destructive" 
+      });
     }
   };
 
@@ -210,7 +281,11 @@ export default function PlaybookAndGamePlayPage() {
       const file = e.target.files[0];
       const reader = new FileReader();
       reader.onload = async (ev) => {
-        await addFile(file.name, file.name.split('.').pop() || 'file', file.size, ev.target?.result as string, uploadCat, newDesc);
+        let result = ev.target?.result as string;
+        if (file.type.startsWith('image/')) {
+          result = await compressImage(result);
+        }
+        await addFile(file.name, file.name.split('.').pop() || 'file', file.size, result, uploadCat, newDesc);
         setIsUploadOpen(false);
         setNewDesc('');
         toast({ title: "File Uploaded", description: "Strategic asset archived." });
@@ -448,12 +523,19 @@ export default function PlaybookAndGamePlayPage() {
               <Input placeholder={`Search ${viewMode}...`} className="pl-11 h-14 rounded-2xl bg-muted/50 border-none shadow-inner font-black text-sm text-foreground" value={searchTerm ?? ""} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             {isStaff && (
-              <Button onClick={() => {
-                setNewTitle(''); setNewUrl(''); setNewDesc('');
-                viewMode === 'drills' ? setIsAddDrillOpen(true) : setIsUploadOpen(true);
-              }} className="rounded-full h-14 px-8 font-black uppercase text-xs shadow-xl shadow-primary/20 shrink-0">
-                <Plus className="h-5 w-5 mr-2" /> Publish {viewMode === 'drills' ? 'Drill' : 'Film'}
-              </Button>
+              <div className="flex gap-2 shrink-0">
+                {viewMode === 'drills' && (
+                  <Button variant="outline" onClick={() => setIsLibraryOpen(true)} className="rounded-full h-14 px-8 font-black uppercase text-xs border-2 border-primary/20 text-primary hover:bg-primary/5">
+                    <Package className="h-5 w-5 mr-2" /> Browse Library
+                  </Button>
+                )}
+                <Button onClick={() => {
+                  setNewTitle(''); setNewUrl(''); setNewDesc('');
+                  viewMode === 'drills' ? setIsAddDrillOpen(true) : setIsUploadOpen(true);
+                }} className="rounded-full h-14 px-8 font-black uppercase text-xs shadow-xl shadow-primary/20">
+                  <Plus className="h-5 w-5 mr-2" /> Publish {viewMode === 'drills' ? 'Drill' : 'Film'}
+                </Button>
+              </div>
             )}
           </div>
 
@@ -1083,6 +1165,68 @@ export default function PlaybookAndGamePlayPage() {
               className="max-w-full max-h-[85vh] object-contain shadow-2xl animate-in zoom-in duration-300" 
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── DRILL LIBRARY DIALOG ── */}
+      <Dialog open={isLibraryOpen} onOpenChange={setIsLibraryOpen}>
+        <DialogContent className="sm:max-w-5xl h-[90vh] p-0 border-none shadow-2xl bg-white overflow-hidden flex flex-col rounded-[2.5rem]">
+          <DialogHeader className="p-8 pb-4 shrink-0">
+             <div className="flex items-center justify-between">
+                <div>
+                   <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] mb-1">Global Repository</Badge>
+                   <DialogTitle className="text-3xl font-black uppercase tracking-tight leading-none">Drill Library</DialogTitle>
+                </div>
+                <div className="relative w-72">
+                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                   <Input 
+                     placeholder="Search library..." 
+                     className="pl-11 h-12 rounded-xl bg-muted/30 border-none font-bold" 
+                     value={librarySearch}
+                     onChange={e => setLibrarySearch(e.target.value)}
+                   />
+                </div>
+             </div>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-y-auto p-8 pt-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 custom-scrollbar">
+            {isLibraryLoading ? (
+               <div className="col-span-full py-20 text-center animate-pulse">
+                  <Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" />
+                  <p className="text-xs font-black uppercase mt-4">Accessing Global Vault...</p>
+               </div>
+            ) : globalDrills.length === 0 ? (
+               <div className="col-span-full py-20 text-center opacity-40 italic">
+                  No drills available in the library yet.
+               </div>
+            ) : globalDrills.filter(d => d.title.toLowerCase().includes(librarySearch.toLowerCase())).map((drill: any) => (
+               <Card key={drill.id} className="rounded-[2rem] overflow-hidden border-none shadow-md ring-1 ring-black/5 hover:shadow-xl transition-all group flex flex-col">
+                  <div className="aspect-video bg-black relative">
+                     {drill.coverImageUrl ? (
+                        <img src={drill.coverImageUrl} className="w-full h-full object-cover opacity-60" />
+                     ) : drill.videoUrl && getYoutubeThumbnail(drill.videoUrl) ? (
+                        <img src={getYoutubeThumbnail(drill.videoUrl)!} className="w-full h-full object-cover opacity-40" />
+                     ) : (
+                        <div className="absolute inset-0 flex items-center justify-center opacity-10"><Package className="h-12 w-12 text-white" /></div>
+                     )}
+                     <Badge className="absolute top-4 left-4 bg-primary text-white border-none text-[8px] font-black uppercase">{drill.category || 'Standard'}</Badge>
+                     {drill.difficulty && <Badge className="absolute top-4 right-4 bg-white/20 text-white backdrop-blur-md border-none text-[8px] font-black uppercase">{drill.difficulty}</Badge>}
+                  </div>
+                  <CardContent className="p-5 flex-1 flex flex-col justify-between">
+                     <div className="space-y-2">
+                        <h4 className="font-black text-sm uppercase truncate">{drill.title}</h4>
+                        <p className="text-[10px] text-muted-foreground line-clamp-3 leading-relaxed">{drill.description}</p>
+                     </div>
+                     <Button 
+                       className="w-full mt-4 h-10 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/10"
+                       onClick={() => handleImportDrill(drill)}
+                     >
+                       Deploy to Team
+                     </Button>
+                  </CardContent>
+               </Card>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
 

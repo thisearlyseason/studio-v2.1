@@ -347,18 +347,32 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
             <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:bg-black hover:text-white transition-all duration-500">
               <div className="bg-primary p-4 rounded-2xl w-fit shadow-lg shadow-primary/20">
                 <TableIcon className="h-8 w-8 text-white" />
               </div>
-              <h4 className="text-2xl font-black uppercase tracking-tight">Elite Tournament Engine</h4>
+              <h4 className="text-2xl font-black uppercase tracking-tight">Tournament & League Elite Engines</h4>
               <p className="text-sm font-medium leading-relaxed opacity-70">
-                Automated bracket generation with a <strong>Public Spectator URL</strong> and mobile <strong>Scorekeeper Portal</strong> for real-time standings.
+                Automated <strong>League Itineraries</strong> and bracket generation with a <strong>Public Spectator Hub</strong> and mobile <strong>Scorekeeper Portal</strong> for real-time results.
               </p>
               <ul className="space-y-3 pt-4">
                 <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Live Standings</li>
-                <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Public Result Feed</li>
+                <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Multi-Team Conflicts</li>
+              </ul>
+            </Card>
+
+            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:bg-black hover:text-white transition-all duration-500">
+              <div className="bg-primary p-4 rounded-2xl w-fit shadow-lg shadow-primary/20">
+                <PenTool className="h-8 w-8 text-white" />
+              </div>
+              <h4 className="text-2xl font-black uppercase tracking-tight">Branded Briefing Unit</h4>
+              <p className="text-sm font-medium leading-relaxed opacity-70">
+                Export professionally branded <strong>Tactical PDF Briefings</strong> for every event. Automated <strong>AI Image Optimization</strong> ensures drill assets load instantly.
+              </p>
+              <ul className="space-y-3 pt-4">
+                <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Printable Itineraries</li>
+                <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Institutional Branding</li>
               </ul>
             </Card>
 
@@ -368,7 +382,7 @@ export default function LandingPage() {
               </div>
               <h4 className="text-2xl font-black uppercase tracking-tight">Film Watch Verification</h4>
               <p className="text-sm font-medium leading-relaxed opacity-70">
-                The <strong>75% Watch Rule</strong> ensures teammates actually study the playbook. Monitor compliance in your master roster ledger.
+                The <strong>75% Watch Rule</strong> ensures teammates study their assignments. Monitor video compliance directly in your master roster ledger.
               </p>
               <ul className="space-y-3 pt-4">
                 <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> 10GB Pro Storage</li>
@@ -382,11 +396,11 @@ export default function LandingPage() {
               </div>
               <h4 className="text-2xl font-black uppercase tracking-tight">Recruitment Engine</h4>
               <p className="text-sm font-medium leading-relaxed opacity-70">
-                Custom <strong>Form Architect</strong> for public registration. Collect sizes, medical waivers, and fees with automated coach assignment logic.
+                Custom <strong>Form Architect</strong> for registration. Collect medical waivers and fees with automated coach assignment and performance portfolios.
               </p>
               <ul className="space-y-3 pt-4">
                 <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Digital Signatures</li>
-                <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Auto-Assignment</li>
+                <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Performance Export</li>
               </ul>
             </Card>
           </div>
@@ -428,13 +442,13 @@ export default function LandingPage() {
               </thead>
               <tbody className="divide-y">
                 {[
-                  { feature: "AI Scouting Analyst", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Built-in GenAI tactical analysis" },
+                  { feature: "Branded PDF Briefings", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Institutional Tactical PDF Printouts" },
+                  { feature: "AI Image/Asset Optimization", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Automatic high-res compression" },
                   { feature: "75% Film Watch Rule", squad: true, tsnap: false, hudl: "Partial", treach: false, gchanger: false, note: "Verified compliance monitoring" },
-                  { feature: "Auto-Brackets + Public Hub", squad: true, tsnap: "Partial", hudl: false, treach: false, gchanger: "Basic", note: "One-click championship series" },
-                  { feature: "Form Architect (Recruitment)", squad: true, tsnap: "Add-on", hudl: false, treach: false, gchanger: false, note: "Custom data entry + waivers" },
-                  { feature: "Institutional Fiscal Audit", squad: true, tsnap: "Partial", hudl: false, treach: false, gchanger: false, note: "Club-wide dues aggregation" },
+                  { feature: "UTC-Precision Scheduling", squad: true, tsnap: "Basic", hudl: "Basic", treach: "Basic", gchanger: "Basic", note: "Timezone-aware local consistency" },
+                  { feature: "Modular Drill Deployment", squad: true, tsnap: false, hudl: "Add-on", treach: false, gchanger: false, note: "One-tap institutional library" },
+                  { feature: "Tournament & League Elite Engines", squad: true, tsnap: "Partial", hudl: false, treach: false, gchanger: "Basic", note: "One-click championship series" },
                   { feature: "Team Chat & Groups", squad: true, tsnap: true, hudl: true, treach: true, gchanger: true, note: "Universal comms" },
-                  { feature: "Schedule & RSVPs", squad: true, tsnap: true, hudl: true, treach: true, gchanger: true, note: "Foundation coordination" },
                   { feature: "Mobile Hub Access", squad: true, tsnap: true, hudl: true, treach: true, gchanger: true, note: "Anywhere operations" },
                 ].map((row, idx) => (
                   <tr key={idx} className="group hover:bg-muted/10 transition-colors">
