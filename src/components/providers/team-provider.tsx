@@ -322,6 +322,16 @@ export type TeamEvent = {
   drillIds?: string[]; // References to drills in the playbook/library
 };
 
+export type PracticeTemplate = {
+  id: string;
+  teamId: string;
+  title: string;
+  description: string;
+  drillIds: string[];
+  createdAt: string;
+  createdBy: string;
+};
+
 export type TeamAlert = {
   id: string;
   title: string;
@@ -745,6 +755,9 @@ interface TeamContextType {
   updateDrill: (drillId: string, data: any) => Promise<void>;
   deleteDrill: (drillId: string) => Promise<void>;
   assignDrillsToEvent: (eventId: string, drillIds: string[]) => Promise<void>;
+  addPracticeTemplate: (data: any) => Promise<void>;
+  updatePracticeTemplate: (templateId: string, data: any) => Promise<void>;
+  deletePracticeTemplate: (templateId: string) => Promise<void>;
   addFile: (name: string, type: string, sizeBytes: number, url: string, category: string, description?: string) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   addFacility: (data: any) => Promise<void>;
@@ -2188,6 +2201,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       toast({ title: "Injection Failed", description: "Failed to map drills to event.", variant: "destructive" });
     }
   }, [activeTeam, db, isStaff]);
+
+  const addPracticeTemplate = useCallback(async (data: any) => { 
+    if (!isStaff) return;
+    if (activeTeam?.id && db && firebaseUser) await addDoc(collection(db, 'teams', activeTeam.id, 'practice_templates'), { ...clean(data), teamId: activeTeam.id, createdBy: firebaseUser.uid, createdAt: new Date().toISOString() }); 
+  }, [activeTeam, db, isStaff, firebaseUser]);
+
+  const updatePracticeTemplate = useCallback(async (templateId: string, data: any) => {
+    if (!isStaff) return;
+    if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'practice_templates', templateId), { ...clean(data), updatedAt: new Date().toISOString() });
+  }, [activeTeam, db, isStaff]);
+
+  const deletePracticeTemplate = useCallback(async (templateId: string) => { 
+    if (!isStaff) return;
+    if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'practice_templates', templateId)); 
+  }, [activeTeam, db, isStaff]);
   const addFile = useCallback(async (n: string, t: string, sb: number, u: string, c: string, d?: string) => { 
     if (!activeTeam?.id || !db) return;
 
@@ -3170,7 +3198,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
     addLeagueGame,
-    createAlert, deleteAlert, addDrill, updateDrill, deleteDrill, assignDrillsToEvent, addFile, deleteFile, addFacility, deleteFacility,
+    createAlert, deleteAlert, addDrill, updateDrill, deleteDrill, assignDrillsToEvent,
+    addPracticeTemplate, updatePracticeTemplate, deletePracticeTemplate,
+    addFile, deleteFile, addFacility, deleteFacility,
     addField, deleteField: deleteFacilityField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
@@ -3202,7 +3232,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     saveLeagueRegistrationConfig, submitRegistrationEntry,
     signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
     addLeagueGame,
-    createAlert, deleteAlert, addDrill, updateDrill, deleteDrill, assignDrillsToEvent, addFile, deleteFile, addFacility, deleteFacility,
+    createAlert, deleteAlert, addDrill, updateDrill, deleteDrill, assignDrillsToEvent, 
+    addPracticeTemplate, updatePracticeTemplate, deletePracticeTemplate,
+    addFile, deleteFile, addFacility, deleteFacility,
     addField, deleteFacilityField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,

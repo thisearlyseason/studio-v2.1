@@ -40,9 +40,9 @@ import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 
 export const formatDateRange = (start: string | Date, end?: string | Date) => {
-  const startDate = typeof start === 'string' ? parseISO(start) : start;
+  const startDate = typeof start === 'string' ? (start.includes('T') ? parseISO(start) : new Date(start.replace(/-/g, '/'))) : start;
   if (!end) return format(startDate, 'MMM dd');
-  const endDate = typeof end === 'string' ? parseISO(end) : end;
+  const endDate = typeof end === 'string' ? (end.includes('T') ? parseISO(end) : new Date(end.replace(/-/g, '/'))) : end;
   if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
   if (startDate.getMonth() === endDate.getMonth()) {
     return `${format(startDate, 'MMM d')} - ${format(endDate, 'd')}`;
@@ -51,9 +51,9 @@ export const formatDateRange = (start: string | Date, end?: string | Date) => {
 };
 
 export const formatDayRange = (start: string | Date, end?: string | Date) => {
-  const startDate = typeof start === 'string' ? parseISO(start) : start;
+  const startDate = typeof start === 'string' ? (start.includes('T') ? parseISO(start) : new Date(start.replace(/-/g, '/'))) : start;
   if (!end) return format(startDate, 'd');
-  const endDate = typeof end === 'string' ? parseISO(end) : end;
+  const endDate = typeof end === 'string' ? (end.includes('T') ? parseISO(end) : new Date(end.replace(/-/g, '/'))) : end;
   if (isSameDay(startDate, endDate)) return format(startDate, 'd');
   if (startDate.getMonth() === endDate.getMonth()) {
     return `${format(startDate, 'd')}-${format(endDate, 'd')}`;
@@ -348,7 +348,7 @@ export function EventDetailDialog({
                       <div className="flex items-center gap-3 ml-2">
                         <div className="h-2 w-2 rounded-full bg-primary" />
                         <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">
-                          {format(parseISO(date), 'EEEE, MMMM do')}
+                          {format(date.includes('T') ? parseISO(date) : new Date(date.replace(/-/g, '/')), 'EEEE, MMMM do')}
                         </p>
                       </div>
                       <div className="grid grid-cols-1 gap-3">

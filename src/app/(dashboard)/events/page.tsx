@@ -49,7 +49,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useTeam, TeamEvent, EventType, Member, EventAssignment, TournamentGame } from '@/components/providers/team-provider';
+import { useTeam, TeamEvent, EventType, Member, EventAssignment, TournamentGame, PracticeTemplate } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -94,6 +94,9 @@ export default function EventsPage() {
   const db = useFirestore();
   const drillsQuery = useMemoFirebase(() => (activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'drills'), orderBy('title', 'asc')) : null, [activeTeam?.id, db]);
   const { data: teamDrills } = useCollection(drillsQuery);
+
+  const templatesQuery = useMemoFirebase(() => (activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'practice_templates'), orderBy('title', 'asc')) : null, [activeTeam?.id, db]);
+  const { data: practiceTemplates } = useCollection<PracticeTemplate>(templatesQuery);
 
   const addAssignmentField = () => {
     setAssignments([...assignments, { id: `as_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, title: '', assigneeId: null }]);
@@ -179,8 +182,8 @@ export default function EventsPage() {
     try {
       const payload: any = { 
         title: newTitle, eventType, 
-        date: new Date(newDate).toISOString(), 
-        endDate: newEndDate ? new Date(newEndDate).toISOString() : new Date(newDate).toISOString(),
+        date: new Date(`${newDate}T${newTime || '00:00'}`).toISOString(), 
+        endDate: newEndDate ? new Date(`${newEndDate}T${newTime || '23:59'}`).toISOString() : new Date(`${newDate}T${newTime || '23:59'}`).toISOString(),
         startTime: newTime, location: newLocation, description: newDescription,
         opponent: eventType === 'game' ? opponent : '',
         assignments: assignments.map(a => ({
@@ -318,13 +321,13 @@ export default function EventsPage() {
                           )}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4 text-primary shrink-0" />
-                          {newDate ? format(parseISO(newDate), "MMM dd, yyyy") : <span>Pick Date</span>}
+                          {newDate ? format(new Date(newDate.replace(/-/g, '/')), "MMM dd, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
                         <Calendar
                           mode="single"
-                          selected={newDate ? new Date(newDate) : undefined}
+                          selected={newDate ? new Date(newDate.replace(/-/g, '/')) : undefined}
                           onSelect={(date) => setNewDate(date ? format(date, "yyyy-MM-dd") : '')}
                           initialFocus
                         />
@@ -343,13 +346,13 @@ export default function EventsPage() {
                           )}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4 text-primary shrink-0" />
-                          {newEndDate ? format(parseISO(newEndDate), "MMM dd, yyyy") : <span>Pick Date</span>}
+                          {newEndDate ? format(new Date(newEndDate.replace(/-/g, '/')), "MMM dd, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
                         <Calendar
                           mode="single"
-                          selected={newEndDate ? new Date(newEndDate) : undefined}
+                          selected={newEndDate ? new Date(newEndDate.replace(/-/g, '/')) : undefined}
                           onSelect={(date) => setNewEndDate(date ? format(date, "yyyy-MM-dd") : '')}
                           initialFocus
                         />
@@ -367,36 +370,62 @@ export default function EventsPage() {
               <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Event Brief</Label><Textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} className="rounded-xl min-h-[100px] border-2 font-medium" /></div>
               
               {eventType === 'practice' && (
-                <div className="pt-6 border-t space-y-4 animate-in slide-in-from-bottom-2 duration-500">
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Tactical Plan (Drills)</Label>
-                    <p className="text-[9px] font-bold text-muted-foreground uppercase ml-1">Select institutional drills to include in this practice</p>
+                <div className="pt-6 border-t space-y-6 animate-in slide-in-from-bottom-2 duration-500">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Load Protocol Template</Label>
+                    <Select onValueChange={(val) => {
+                      const template = practiceTemplates?.find(t => t.id === val);
+                      if (template) {
+                        setSelectedDrillIds(template.drillIds || []);
+                        if (!newTitle) setNewTitle(template.title);
+                        if (!newDescription) setNewDescription(template.description);
+                        toast({ title: "Protocol Loaded", description: "Strategic drills have been injected." });
+                      }
+                    }}>
+                      <SelectTrigger className="h-12 rounded-xl border-2 bg-white">
+                        <SelectValue placeholder="Select a pre-defined protocol..." />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        {practiceTemplates && practiceTemplates.length > 0 ? practiceTemplates.map(t => (
+                          <SelectItem key={t.id} value={t.id} className="font-bold uppercase text-[10px]">{t.title}</SelectItem>
+                        )) : (
+                          <div className="py-4 text-center text-[10px] font-black uppercase opacity-40">No templates found</div>
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[250px] overflow-y-auto p-2 border-2 border-dashed rounded-2xl bg-muted/20 custom-scrollbar">
-                    {teamDrills && teamDrills.length > 0 ? teamDrills.map((drill: any) => {
-                      const isSelected = selectedDrillIds.includes(drill.id);
-                      return (
-                        <div 
-                          key={drill.id} 
-                          onClick={() => setSelectedDrillIds(prev => isSelected ? prev.filter(id => id !== drill.id) : [...prev, drill.id])}
-                          className={cn(
-                            "flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all",
-                            isSelected ? "bg-primary border-primary text-white shadow-lg" : "bg-white border-transparent hover:border-primary/30"
-                          )}
-                        >
-                          <Dumbbell className={cn("h-4 w-4 shrink-0", isSelected ? "text-white" : "text-primary")} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[10px] font-black uppercase truncate">{drill.title}</p>
-                            <p className={cn("text-[8px] font-bold uppercase opacity-60", isSelected ? "text-white" : "text-muted-foreground")}>{drill.category || 'Skill'}</p>
+
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Tactical Plan (Drills)</Label>
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase ml-1">Select institutional drills to include in this practice</p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[250px] overflow-y-auto p-2 border-2 border-dashed rounded-2xl bg-muted/20 custom-scrollbar">
+                      {teamDrills && teamDrills.length > 0 ? teamDrills.map((drill: any) => {
+                        const isSelected = selectedDrillIds.includes(drill.id);
+                        return (
+                          <div 
+                            key={drill.id} 
+                            onClick={() => setSelectedDrillIds(prev => isSelected ? prev.filter(id => id !== drill.id) : [...prev, drill.id])}
+                            className={cn(
+                              "flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all",
+                              isSelected ? "bg-primary border-primary text-white shadow-lg" : "bg-white border-transparent hover:border-primary/30"
+                            )}
+                          >
+                            <Dumbbell className={cn("h-4 w-4 shrink-0", isSelected ? "text-white" : "text-primary")} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-black uppercase truncate">{drill.title}</p>
+                              <p className={cn("text-[8px] font-bold uppercase opacity-60", isSelected ? "text-white" : "text-muted-foreground")}>{drill.category || 'Skill'}</p>
+                            </div>
+                            {isSelected && <CheckCircle2 className="h-3 w-3 shrink-0" />}
                           </div>
-                          {isSelected && <CheckCircle2 className="h-3 w-3 shrink-0" />}
+                        );
+                      }) : (
+                        <div className="col-span-full py-10 text-center opacity-30 italic text-[9px] font-black uppercase tracking-widest">
+                          Your Playbook is empty. <br/> Import drills first.
                         </div>
-                      );
-                    }) : (
-                      <div className="col-span-full py-10 text-center opacity-30 italic text-[9px] font-black uppercase tracking-widest">
-                        Your Playbook is empty. <br/> Import drills first.
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               )}

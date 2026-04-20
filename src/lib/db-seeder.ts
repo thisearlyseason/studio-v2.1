@@ -150,9 +150,8 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
       },
       { id: `lg1_${teamId}`, teamId, title: `League Match vs Bears`, eventType: 'game', isLeagueGame: true, date: tomorrow, startTime: '06:00 PM', location: 'Memorial Field', description: 'Primary season league match.', matchTeamIds: [teamId, 'tt_7'] },
       { id: `lg2_${teamId}`, teamId, title: `League Match vs Eagles`, eventType: 'game', isLeagueGame: true, date: later, startTime: '12:00 PM', location: 'City Park', description: 'Second league fixture of the week.', matchTeamIds: [teamId, 'tt_5'] },
-      { id: `lg3_${teamId}`, teamId, title: `Conference Playoff`, eventType: 'game', isLeagueGame: true, date: day4, startTime: '10:00 AM', location: 'State Complex', description: 'Qualifier for states.', matchTeamIds: [teamId, 'tt_1'] },
-      { id: `prac1_${teamId}`, teamId, title: `Team Tactical Session`, eventType: 'practice', date: later, startTime: '03:30 PM', location: 'West Fields', description: 'Drill-focused training session.' },
-      { id: `prac2_${teamId}`, teamId, title: `Conditioning Lab`, eventType: 'practice', date: tomorrow, startTime: '04:00 PM', location: 'Field 4', description: 'Strength and focus drills.' },
+      { id: `prac1_${teamId}`, teamId, title: `Team Tactical Session`, eventType: 'practice', date: later, startTime: '03:30 PM', location: 'West Fields', description: 'Drill-focused training session.', drillIds: [`d1_${teamId}`] },
+      { id: `prac2_${teamId}`, teamId, title: `Conditioning Lab`, eventType: 'practice', date: tomorrow, startTime: '04:00 PM', location: 'Field 4', description: 'Strength and focus drills.', drillIds: [`d2_${teamId}`] },
       { id: `prac3_${teamId}`, teamId, title: `Morning Skills`, eventType: 'practice', date: day3, startTime: '07:30 AM', location: 'Main Gym', description: 'Voluntary skills session.' },
       { id: `meet_${teamId}`, teamId, title: `Strategy Review`, eventType: 'meeting', date: day(2), startTime: '07:00 PM', location: 'Clubhouse', description: 'Film study and strategy review.' }
     ],
@@ -178,6 +177,10 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
     drills: [
       { id: `d1_${teamId}`, title: `Defensive Positioning Fundamentals`, description: 'Master defensive footwork, positioning, and communication. Focus on the 3-2 zone and help-side rotations for maximum defensive coverage.', videoUrl: 'https://www.youtube.com/watch?v=L3374C3OyrY', coverImageUrl: 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800&q=80', additionalMedia: [{ url: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&q=80', description: 'Full-court defensive positioning diagram' }, { url: 'https://images.unsplash.com/photo-1519861531473-9200262188bf?w=800&q=80', description: 'Player footwork breakdown' }], estimatedTime: '20 mins', createdAt: now.toISOString(), mandatoryWatch: true, mandatoryWatchThreshold: 75, watchedBy: {} },
       { id: `d2_${teamId}`, title: `Fast Break & Transition Offense`, description: 'Explosive transition mechanics from defense to offense. Practice reading the outlet pass, spacing, and finishing in 3-on-2 and 2-on-1 situations.', videoUrl: 'https://www.youtube.com/watch?v=6zeCAkoyA44', coverImageUrl: 'https://images.unsplash.com/photo-1608245449230-4ac19066d2d0?w=800&q=80', additionalMedia: [{ url: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80', description: 'Outlet pass mechanics' }], estimatedTime: '15 mins', createdAt: now.toISOString(), mandatoryWatch: false, mandatoryWatchThreshold: 75, watchedBy: {} }
+    ],
+    practice_templates: [
+      { id: `t1_${teamId}`, title: 'Defensive Masterclass', description: 'Elite defensive rotations and communication protocol.', drillIds: [`d1_${teamId}`], createdAt: now.toISOString() },
+      { id: `t2_${teamId}`, title: 'Offensive Flow Block', description: 'Transition offense and fast break execution.', drillIds: [`d2_${teamId}`], createdAt: now.toISOString() }
     ],
     feed: [
       { id: `p1_${teamId}`, type: 'user', content: `Focus for Saturday, ${teamSuffix || 'the'} squad!`, author: { name: 'Jordan Smith' }, authorId: `u1_${teamId}`, createdAt: yesterday, likes: [userId] },
@@ -507,6 +510,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                 batch.set(doc(db, 'teams', v.id, 'games', g.id), clean({ ...g, teamId: v.id, matchTeamIds, createdAt: now }));
             });
             data.drills.forEach(d => batch.set(doc(db, 'teams', v.id, 'drills', d.id), clean(d)));
+            data.practice_templates.forEach(pt => batch.set(doc(db, 'teams', v.id, 'practice_templates', pt.id), clean(pt)));
             data.documents.forEach(d => batch.set(doc(db, 'teams', v.id, 'documents', d.id), clean({ ...d, ownerUserId: userId, teamId: v.id })));
             data.files.forEach(f => batch.set(doc(db, 'teams', v.id, 'files', f.id), clean({ ...f, teamId: v.id })));
             data.alerts.forEach(a => batch.set(doc(db, 'teams', v.id, 'alerts', a.id), clean(a)));
@@ -638,10 +642,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
             // Regular practices
             const practices = [
-              { id: `prac1_${tid}`, teamId: tid, title: 'Tactical Drill Session', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset) * 86400000).toISOString(), startTime: '04:00 PM', location: 'Practice Court A' },
-              { id: `prac2_${tid}`, teamId: tid, title: 'Strength & Conditioning', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset + 2) * 86400000).toISOString(), startTime: '06:00 PM', location: 'Gymnasium' },
-              { id: `prac3_${tid}`, teamId: tid, title: 'Morning Performance Lab', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset + 3) * 86400000).toISOString(), startTime: '06:30 AM', location: 'West Field' },
-              { id: `prac4_${tid}`, teamId: tid, title: 'Institutional Strategy Review', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset + 4) * 86400000).toISOString(), startTime: '07:00 PM', location: 'Clubhouse' }
+              { id: `prac1_${tid}`, teamId: tid, title: 'Tactical Drill Session', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset) * 86400000).toISOString(), startTime: '04:00 PM', location: 'Practice Court A', drillIds: [`d1_${tid}`] },
+              { id: `prac2_${tid}`, teamId: tid, title: 'Strength & Conditioning', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset + 2) * 86400000).toISOString(), startTime: '06:00 PM', location: 'Gymnasium', drillIds: [`d2_${tid}`] },
+              { id: `prac3_${tid}`, teamId: tid, title: 'Morning Performance Lab', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset + 3) * 86400000).toISOString(), startTime: '06:30 AM', location: 'West Field', drillIds: [`d1_${tid}`] },
+              { id: `prac4_${tid}`, teamId: tid, title: 'Institutional Strategy Review', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset + 4) * 86400000).toISOString(), startTime: '07:00 PM', location: 'Clubhouse', drillIds: [`d2_${tid}`] }
             ];
             practices.forEach(p => batch.set(doc(db, 'teams', tid, 'events', p.id), clean(p)));
         });
@@ -777,6 +781,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             eb.brackets.forEach(b => batch.set(doc(db, 'teams', teamId, 'events', eb.eventId, 'brackets', b.id), clean(b)));
         });
         data.drills.forEach(d => batch.set(doc(db, 'teams', teamId, 'drills', d.id), clean(d)));
+        data.practice_templates.forEach(pt => batch.set(doc(db, 'teams', teamId, 'practice_templates', pt.id), clean(pt)));
         data.feed.forEach(p => batch.set(doc(db, 'teams', teamId, 'feedPosts', p.id), clean(p)));
         data.documents.forEach(d => batch.set(doc(db, 'teams', teamId, 'documents', d.id), clean({ ...d, ownerUserId: userId })));
         data.alerts.forEach(a => batch.set(doc(db, 'teams', teamId, 'alerts', a.id), clean(a)));

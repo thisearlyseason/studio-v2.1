@@ -109,6 +109,7 @@ import {
 const coordinationTabs = [
   { name: 'Feed', href: '/feed', icon: Radio, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
+  { name: 'Practice', href: '/practice', icon: Dumbbell, pro: true },
   { name: 'Leagues', href: '/leagues', icon: Shield, pro: false },
   { name: 'Tournaments', href: '/manage-tournaments', icon: TableIcon, pro: true },
   { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: true },
