@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { MapPin, Sun, Wind, Cloud, Thermometer } from 'lucide-react';
+import { MapPin, Sun, Wind, Cloud, Thermometer, CloudRain, Snowflake } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
@@ -20,11 +20,12 @@ export function WeatherPulse({ location }: { location?: string }) {
       .then(data => {
         if (!data.current_condition) throw new Error();
         const current = data.current_condition[0];
+        const desc = current.weatherDesc[0].value;
         setWeather({
           temp: `${current.temp_F}°F`,
           wind: `${current.windspeedMiles} MPH`,
-          precip: `${current.precipInches}"`,
-          desc: current.weatherDesc[0].value
+          precip: `${current.precipMM > 0 ? (current.precipMM / 25.4).toFixed(1) : '0.0'}"`,
+          desc: desc
         });
       })
       .catch(() => {
@@ -34,6 +35,15 @@ export function WeatherPulse({ location }: { location?: string }) {
   }, [location]);
 
   if (!location) return null;
+
+  const getWeatherIcon = () => {
+    const desc = weather?.desc?.toLowerCase() || '';
+    if (desc.includes('sun') || desc.includes('clear')) return <Sun className="h-5 w-5 mx-auto text-amber-500 group-hover:scale-110 transition-transform" />;
+    if (desc.includes('rain') || desc.includes('drizzle') || desc.includes('shower')) return <CloudRain className="h-5 w-5 mx-auto text-blue-500 group-hover:scale-110 transition-transform" />;
+    if (desc.includes('cloud') || desc.includes('overcast') || desc.includes('mist')) return <Cloud className="h-5 w-5 mx-auto text-slate-400 group-hover:scale-110 transition-transform" />;
+    if (desc.includes('snow') || desc.includes('ice')) return <Snowflake className="h-5 w-5 mx-auto text-cyan-300 group-hover:scale-110 transition-transform" />;
+    return <Sun className="h-5 w-5 mx-auto text-amber-500 group-hover:scale-110 transition-transform" />;
+  };
 
   return (
     <div className="pt-6 border-t space-y-6">
@@ -51,7 +61,7 @@ export function WeatherPulse({ location }: { location?: string }) {
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-muted/30 p-4 rounded-2xl border text-center space-y-1 transition-all hover:bg-white hover:shadow-lg group">
-          <Sun className="h-5 w-5 mx-auto text-amber-500 group-hover:scale-110 transition-transform" />
+          {getWeatherIcon()}
           <p className="text-[10px] font-black uppercase">{weather?.temp || '--'}</p>
           <p className="text-[7px] font-bold text-muted-foreground uppercase">{weather?.desc || '...'}</p>
         </div>

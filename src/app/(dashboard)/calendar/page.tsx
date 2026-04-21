@@ -293,10 +293,10 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
           <div className="flex-1 bg-white lg:overflow-hidden overflow-visible flex flex-col h-auto lg:h-full min-h-[500px] lg:min-h-0">
             <Tabs defaultValue="brief" className="flex flex-col h-full">
               <div className="px-8 pt-8 shrink-0">
-                <TabsList className="grid w-full grid-cols-3 bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14">
-                  <TabsTrigger value="brief" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Brief</TabsTrigger>
-                  <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md" disabled={!event.isTournament}>Matches</TabsTrigger>
-                  <TabsTrigger value="roster" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Attendance</TabsTrigger>
+                <TabsList className="flex w-full overflow-x-auto bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14 no-scrollbar gap-1 custom-scrollbar-hidden">
+                  <TabsTrigger value="brief" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Brief</TabsTrigger>
+                  <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0" disabled={!event.isTournament}>Matches</TabsTrigger>
+                  <TabsTrigger value="roster" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Attendance</TabsTrigger>
                 </TabsList>
               </div>
 

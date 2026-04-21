@@ -709,7 +709,7 @@ export default function PlaybookAndGamePlayPage() {
             <DialogTitle className="font-black text-2xl uppercase tracking-tighter">{editingItemId ? 'Update Drill' : 'Publish Drill'}</DialogTitle>
             <DialogDescription className="text-white/40 text-[10px] font-black uppercase tracking-widest">{editingItemId ? 'Modify an existing execution protocol.' : 'Enroll a new execution protocol into the playbook.'}</DialogDescription>
           </div>
-          <div className="p-8 space-y-6">
+          <div className="p-8 space-y-6 overflow-y-auto max-h-[calc(100vh-200px)] custom-scrollbar">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               <div className="sm:col-span-2 space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Drill Title</Label>
@@ -832,7 +832,7 @@ export default function PlaybookAndGamePlayPage() {
             <DialogTitle className="font-black text-2xl uppercase tracking-tighter">{editingItemId ? 'Update Tape' : 'Archive Film'}</DialogTitle>
             <DialogDescription className="text-white/60 text-[10px] font-black uppercase tracking-widest">{editingItemId ? 'Modify existing tape parameters.' : 'Enshrine game tape or tournament footage in the vault.'}</DialogDescription>
           </div>
-          <div className="p-8 space-y-6">
+          <div className="p-8 space-y-6 overflow-y-auto max-h-[calc(100vh-200px)] custom-scrollbar">
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1">Tape Title</Label>
               <Input placeholder="e.g. Regional Finals vs Lancers" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle ?? ""} onChange={e => setNewTitle(e.target.value)} />
@@ -868,7 +868,7 @@ export default function PlaybookAndGamePlayPage() {
       </Dialog>
       
       <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
-        <DialogContent className="sm:max-w-[95vw] lg:max-w-7xl h-[95vh] sm:h-[90vh] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col rounded-t-[2.5rem] sm:rounded-[3.5rem]">
+        <DialogContent hideClose className="sm:max-w-[95vw] lg:max-w-7xl h-full sm:h-[90vh] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col rounded-none sm:rounded-[3.5rem]">
           <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
           <DialogClose asChild>
             <Button variant="ghost" size="icon" className="absolute top-6 right-6 z-[60] h-12 w-12 rounded-full bg-black/50 hover:bg-black/70 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all">
@@ -876,11 +876,11 @@ export default function PlaybookAndGamePlayPage() {
             </Button>
           </DialogClose>
           {!!(selectedDrill || selectedFile) && (
-            <div className="flex flex-col lg:flex-row h-full overflow-hidden">
-              {/* VIDEO & CONTENT AREA */}
-              <div className="flex-1 flex flex-col min-h-0 bg-neutral-950">
-                {/* VIDEO PLAYER */}
-                <div className="relative aspect-video bg-neutral-900 border-b border-white/5 overflow-hidden shadow-2xl group shrink-0">
+            <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-neutral-950">
+              {/* LEFT: STRATEGIC INTEL (VIDEO + DOCUMENTATION) */}
+              <div className="flex-1 flex flex-col min-h-0">
+                {/* PRIMARY INTEL: VIDEO HEADLINE */}
+                <div className="relative w-full aspect-video lg:aspect-auto lg:h-[45vh] bg-neutral-900 border-b border-white/10 shrink-0 group shadow-2xl z-10">
                   {(() => {
                     const data = selectedDrill || selectedFile;
                     if (!data) return null;
@@ -899,67 +899,58 @@ export default function PlaybookAndGamePlayPage() {
                         }}
                       />
                     ) : url ? (
-                      <video
-                        ref={videoRef}
-                        src={url}
-                        controls
-                        autoPlay
-                        className="w-full h-full"
-                      />
+                      <video ref={videoRef} src={url} controls autoPlay className="w-full h-full" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center opacity-20">
-                        <Video className="h-20 w-20 text-white" />
-                      </div>
+                      <div className="w-full h-full flex items-center justify-center opacity-20"><Video className="h-24 w-24 text-white" /></div>
                     );
                   })()}
                 </div>
 
-                {/* SCROLLABLE DESCRIPTION / ASSETS */}
-                <div className="flex-1 overflow-y-auto p-6 sm:p-10 space-y-10 custom-scrollbar-white">
+                {/* SCROLLABLE STRATEGIC DOCUMENTATION */}
+                <div className="flex-1 overflow-y-auto no-scrollbar scroll-smooth p-6 sm:p-12 lg:p-16 space-y-12">
                   {(() => {
                     const data = selectedDrill || selectedFile;
                     if (!data) return null;
                     return (
-                      <div className="max-w-4xl mx-auto space-y-10 pb-10">
-                        <div className="space-y-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge className="bg-primary text-white border-none font-black text-[9px] uppercase tracking-widest px-4 h-6">
+                      <div className="max-w-4xl mx-auto space-y-12">
+                        <div className="space-y-6">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <Badge className="bg-primary text-white border-none font-black text-[11px] uppercase tracking-wider px-5 h-8">
                               {selectedDrill ? "Drill Protocol" : "Archive Tape"}
                             </Badge>
                             {selectedDrill?.estimatedTime && (
-                              <Badge className="bg-white/10 text-white border-none font-black text-[9px] uppercase tracking-widest px-4 h-6">
-                                <Clock className="h-3 w-3 mr-2" /> {selectedDrill.estimatedTime}
+                              <Badge className="bg-white/10 text-white border-none font-black text-[11px] uppercase tracking-wider px-5 h-8" title="Estimated Completion Time">
+                                <Clock className="h-4 w-4 mr-2" /> {selectedDrill.estimatedTime}
                               </Badge>
                             )}
                           </div>
-                          <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tight text-white leading-none">
+                          <h2 className="text-3xl sm:text-6xl font-black uppercase tracking-tight text-white leading-[0.9]">
                             {selectedDrill ? data.title : (data as any).name}
                           </h2>
-                          <div className="flex items-center gap-3 text-white/40 text-[10px] font-black uppercase tracking-[0.2em]">
-                            <CalendarIcon className="h-3 w-3 text-primary" />
+                          <div className="flex items-center gap-3 text-white/50 text-[12px] font-black uppercase tracking-[0.2em]">
+                            <CalendarIcon className="h-4 w-4 text-primary" />
                             {selectedFile ? format(new Date((data as any).date), 'PPP') : 'Tactical Protocol Active'}
                           </div>
                         </div>
 
                         <div className="relative">
-                          <div className="absolute -left-6 top-0 bottom-0 w-1 bg-primary/20 rounded-full" />
-                          <p className="text-white/60 text-base sm:text-lg font-medium leading-relaxed italic">
+                          <div className="absolute -left-6 lg:-left-10 top-0 bottom-0 w-1.5 bg-primary rounded-full shadow-[0_0_15px_rgba(var(--primary),0.5)]" />
+                          <p className="text-white/70 text-lg sm:text-2xl font-medium leading-relaxed italic">
                             {selectedDrill ? data.description : ((data as any).description || 'Institutional tactical documentation archived in vault.')}
                           </p>
                         </div>
 
-                        {/* Additional Media Content */}
                         {(data as any).additionalMedia && (data as any).additionalMedia.length > 0 && (
-                          <div className="space-y-6 pt-10 border-t border-white/5">
-                            <h4 className="text-white/40 text-[9px] font-black uppercase tracking-[0.3em]">Auxiliary Tactical Assets</h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-8 pt-12 border-t border-white/10">
+                            <h4 className="text-white/40 text-[10px] font-black uppercase tracking-[0.4em]">Auxiliary Tactical Assets</h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                               {(data as any).additionalMedia.map((media: any, idx: number) => {
                                  const mediaUrl = typeof media === 'string' ? media : media.url;
                                  return (
-                                   <div key={idx} className="aspect-video bg-neutral-900 rounded-[2rem] overflow-hidden shadow-lg relative cursor-zoom-in group border border-white/5" onClick={() => setLightboxUrl(mediaUrl)}>
-                                     <img src={mediaUrl} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
-                                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100 bg-black/40 backdrop-blur-sm">
-                                       <Search className="h-8 w-8 text-white" />
+                                   <div key={idx} className="aspect-video bg-neutral-900 rounded-[2.5rem] overflow-hidden shadow-2xl relative cursor-zoom-in group border-2 border-white/5 hover:border-primary/50 transition-all duration-500" onClick={() => setLightboxUrl(mediaUrl)}>
+                                     <img src={mediaUrl} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700" />
+                                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/60 backdrop-blur-sm transition-all duration-500">
+                                       <Search className="h-10 w-10 text-white" />
                                      </div>
                                    </div>
                                  );
@@ -973,141 +964,145 @@ export default function PlaybookAndGamePlayPage() {
                 </div>
               </div>
 
-              {/* TACTICAL SIDEBAR (COMMENTS & COMPLIANCE) */}
-              <div className="w-full lg:w-[420px] bg-white flex flex-col shrink-0">
-                {(() => {
-                  const data = selectedDrill || selectedFile;
-                  if (!data) return null;
-                  const type = selectedDrill ? 'drills' : 'files';
-                  const userHasWatched = hasUserWatched(data);
-                  const isStaffMember = isStaff;
+              {/* RIGHT: COMMAND CENTER (FULL HEIGHT SIDEBAR) */}
+              <div className="w-full lg:w-[420px] bg-white lg:border-l flex flex-col shrink-0 border-t lg:border-t-0 h-full overflow-hidden">
+                <div className="flex-1 flex flex-col min-h-0 overflow-y-auto no-scrollbar scroll-smooth">
+                    {(() => {
+                      const data = selectedDrill || selectedFile;
+                      if (!data) return null;
+                      const type = selectedDrill ? 'drills' : 'files';
+                      const userHasWatched = hasUserWatched(data);
+                      const isStaffMember = isStaff;
 
-                  return (
-                    <>
-                      <div className="p-8 border-b bg-zinc-50/50 space-y-6">
-                        <h3 className="font-black text-[10px] uppercase tracking-[0.3em] text-muted-foreground flex items-center gap-2">
-                          <Package className="h-3 w-3" /> Command Center
-                        </h3>
-                        
-                        {/* Mandatory Watch Status */}
-                        <div className={cn(
-                          "p-6 rounded-[2.5rem] border-2 shadow-sm transition-all",
-                          data.mandatoryWatch ? "bg-amber-500/5 border-amber-500/20" : "bg-muted/30 border-muted-foreground/10"
-                        )}>
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-3">
-                              <div className={cn("h-8 w-8 rounded-full flex items-center justify-center shadow-lg", data.mandatoryWatch ? "bg-amber-500 text-white" : "bg-muted text-muted-foreground")}>
-                                <Bell className="h-4 w-4" />
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-foreground leading-none mb-1">Watch Compliance</p>
-                                <p className="text-[8px] font-bold text-muted-foreground uppercase">{data.mandatoryWatch ? 'PROTOCOL ACTIVE' : 'VOLUNTARY'}</p>
-                              </div>
-                            </div>
-                            {isStaffMember && (
-                              <Switch
-                                checked={!!data.mandatoryWatch}
-                                onCheckedChange={async (checked) => {
-                                  if (!activeTeam || !db) return;
-                                  const collName = selectedDrill ? 'drills' : 'files';
-                                  await updateDoc(doc(db, 'teams', activeTeam.id, collName, data.id), {
-                                    mandatoryWatch: checked,
-                                    mandatoryWatchThreshold: 75
-                                  });
-                                  if (selectedDrill) setSelectedDrill((prev: any) => ({ ...prev, mandatoryWatch: checked }));
-                                  else setSelectedFile((prev: any) => ({ ...prev, mandatoryWatch: checked }));
-                                  toast({ title: checked ? "Mandatory Watch Enabled" : "Mandatory Watch Disabled" });
-                                }}
-                              />
-                            )}
-                          </div>
-                          
-                          {data.mandatoryWatch && (
-                            <div className="space-y-4 pt-2 border-t border-amber-500/10">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">My Verification</span>
-                                <Badge className={cn("text-[7px] font-black px-2 h-4", userHasWatched ? "bg-green-500 text-white" : "bg-amber-100 text-amber-700")}>
-                                  {userHasWatched ? "VERIFIED" : "PENDING"}
-                                </Badge>
-                              </div>
-                              {isStaffMember && (
-                                <Button 
-                                  variant="outline" 
-                                  className="w-full h-10 rounded-2xl text-[8px] font-black uppercase tracking-widest bg-white border-primary/10 shadow-sm hover:bg-primary/5 text-primary"
-                                  onClick={() => { setWatchersDrill(data); setIsWatchersOpen(true); }}
-                                >
-                                  <Users className="h-3 w-3 mr-2" />
-                                  Compliance Ledger
-                                </Button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Marks / Comments Ledger */}
-                      <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Tactical Marks</h4>
-                          <Badge variant="outline" className="h-5 text-[8px] font-black border-2 border-black/5">{(data.comments || []).length} TOTAL</Badge>
-                        </div>
-                        <div className="space-y-4">
-                          {(data.comments || []).map((c: any) => (
-                            <div key={c.id} className="bg-white p-5 rounded-[2rem] shadow-sm border-2 border-black/5 group cursor-pointer hover:border-primary/20 transition-all" onClick={() => seekTo(c.timestamp)}>
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                  {c.timestamp != null && (
-                                    <Badge className="bg-black text-white border-none text-[8px] font-black px-2 h-4">
-                                      {Math.floor(c.timestamp/60)}:{String(c.timestamp%60).padStart(2,'0')}
-                                    </Badge>
-                                  )}
-                                  <span className="text-[9px] font-black uppercase text-primary tracking-widest">{c.authorName}</span>
+                      return (
+                        <>
+                          <div className="p-8 border-b bg-zinc-50/50 space-y-6">
+                            <h3 className="font-black text-[12px] uppercase tracking-[0.3em] text-muted-foreground flex items-center gap-2">
+                              <Package className="h-4 w-4" /> Command Center
+                            </h3>
+                            
+                            {/* Mandatory Watch Status */}
+                            <div className={cn(
+                              "p-6 rounded-[2.5rem] border-2 shadow-sm transition-all",
+                              data.mandatoryWatch ? "bg-amber-500/5 border-amber-500/20" : "bg-muted/30 border-muted-foreground/10"
+                            )}>
+                              <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                  <div className={cn("h-8 w-8 rounded-full flex items-center justify-center shadow-lg", data.mandatoryWatch ? "bg-amber-500 text-white" : "bg-muted text-muted-foreground")}>
+                                    <Bell className="h-4 w-4" />
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] font-black uppercase tracking-widest text-foreground leading-none mb-1">Watch Compliance</p>
+                                    <p className="text-[9px] font-bold text-muted-foreground uppercase">{data.mandatoryWatch ? 'PROTOCOL ACTIVE' : 'VOLUNTARY'}</p>
+                                  </div>
                                 </div>
                                 {isStaffMember && (
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 text-red-500 hover:bg-red-50 rounded-full" onClick={(e) => { e.stopPropagation(); handleDeleteComment(data.id, c.id, data.comments, type); }}>
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
+                                  <Switch
+                                    checked={!!data.mandatoryWatch}
+                                    onCheckedChange={async (checked) => {
+                                      if (!activeTeam || !db) return;
+                                      const collName = selectedDrill ? 'drills' : 'files';
+                                      await updateDoc(doc(db, 'teams', activeTeam.id, collName, data.id), {
+                                        mandatoryWatch: checked,
+                                        mandatoryWatchThreshold: 75
+                                      });
+                                      if (selectedDrill) setSelectedDrill((prev: any) => ({ ...prev, mandatoryWatch: checked }));
+                                      else setSelectedFile((prev: any) => ({ ...prev, mandatoryWatch: checked }));
+                                      toast({ title: checked ? "Mandatory Watch Enabled" : "Mandatory Watch Disabled" });
+                                    }}
+                                  />
                                 )}
                               </div>
-                              <p className="text-[11px] font-bold text-foreground leading-relaxed">{c.text}</p>
-                              <p className="text-[7px] font-black text-muted-foreground uppercase tracking-widest mt-2">{format(new Date(c.createdAt), 'HH:mm')}</p>
+                              
+                              {data.mandatoryWatch && (
+                                <div className="space-y-4 pt-2 border-t border-amber-500/10">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">My Verification</span>
+                                    <Badge className={cn("text-[9px] font-black px-3 h-5", userHasWatched ? "bg-green-500 text-white" : "bg-amber-100 text-amber-700")}>
+                                      {userHasWatched ? "VERIFIED" : "PENDING"}
+                                    </Badge>
+                                  </div>
+                                  {isStaffMember && (
+                                    <Button 
+                                      variant="outline" 
+                                      className="w-full h-10 rounded-2xl text-[8px] font-black uppercase tracking-widest bg-white border-primary/10 shadow-sm hover:bg-primary/5 text-primary"
+                                      onClick={() => { setWatchersDrill(data); setIsWatchersOpen(true); }}
+                                    >
+                                      <Users className="h-3 w-3 mr-2" />
+                                      Compliance Ledger
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                          ))}
-                          {(data.comments || []).length === 0 && (
-                            <div className="py-20 text-center opacity-20 italic">
-                              <Bookmark className="h-8 w-8 mx-auto mb-2" />
-                              <p className="text-[9px] font-black uppercase tracking-widest">No Tactical Marks Captured</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                          </div>
 
-                      {/* Control Panel */}
-                      <div className="p-8 border-t bg-zinc-50 space-y-4 shrink-0">
-                        <div className="flex gap-3">
-                           <Input 
-                             placeholder="Capture Mark..." 
-                             className="flex-1 h-14 rounded-2xl border-2 border-black/5 font-black text-[10px] uppercase tracking-widest bg-white shadow-inner" 
-                             value={commentText} 
-                             onChange={e => setCommentText(e.target.value)} 
-                           />
-                           <Button className="h-14 w-14 rounded-2xl shadow-xl shadow-primary/20" onClick={() => handleAddComment(data.id, data.comments, type)} disabled={!commentText}>
-                             <Bookmark className="h-5 w-5" />
-                           </Button>
-                        </div>
-                        <Button 
-                          variant="outline" 
-                          className="w-full h-14 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] border-2 border-primary/10 text-primary hover:bg-primary/5 active:scale-95 transition-all shadow-sm" 
-                          onClick={() => { setSelectedDrill(null); setSelectedFile(null); }}
-                        >
-                          <CheckCircle2 className="h-4 w-4 mr-3" /> Mark Session Complete
-                        </Button>
-                      </div>
-                    </>
-                  );
-                })()}
+                          {/* Marks / Comments Ledger */}
+                          <div className="p-8 space-y-8">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-[11px] font-black uppercase tracking-[0.3em] text-muted-foreground">Tactical Marks</h4>
+                              <Badge variant="outline" className="h-6 text-[10px] font-black border-2 border-black/5 px-3">{(data.comments || []).length} TOTAL</Badge>
+                            </div>
+                            <div className="space-y-4">
+                              {(data.comments || []).map((c: any) => (
+                                <div key={c.id} className="bg-zinc-50 p-6 rounded-[2rem] border-2 border-transparent hover:border-primary/20 hover:bg-white hover:shadow-xl transition-all cursor-pointer group" onClick={() => {
+                                  seekTo(c.timestamp);
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}>
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-3">
+                                      {c.timestamp != null && (
+                                        <Badge className="bg-black text-white border-none text-[9px] font-black px-3 h-5">
+                                          {Math.floor(c.timestamp/60)}:{String(c.timestamp%60).padStart(2,'0')}
+                                        </Badge>
+                                      )}
+                                      <span className="text-[10px] font-black uppercase text-primary tracking-widest">{c.authorName}</span>
+                                    </div>
+                                    {isStaffMember && (
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 text-red-500 hover:bg-red-50 rounded-full" onClick={(e) => { e.stopPropagation(); handleDeleteComment(data.id, c.id, data.comments, type); }}>
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                  <p className="text-xs font-bold text-foreground leading-relaxed">{c.text}</p>
+                                </div>
+                              ))}
+                              {(data.comments || []).length === 0 && (
+                                <div className="py-20 text-center opacity-10 italic">
+                                  <Bookmark className="h-10 w-10 mx-auto mb-3" />
+                                  <p className="text-[10px] font-black uppercase tracking-widest">No Tactical Marks Captured</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Control Panel */}
+                          <div className="p-8 border-t bg-zinc-50 space-y-4 shrink-0">
+                            <div className="flex gap-3">
+                               <Input 
+                                 placeholder="Capture Mark..." 
+                                 className="flex-1 h-14 rounded-2xl border-2 border-black/5 font-black text-[10px] uppercase tracking-widest bg-white shadow-inner" 
+                                 value={commentText} 
+                                 onChange={e => setCommentText(e.target.value)} 
+                               />
+                               <Button className="h-14 w-14 rounded-2xl shadow-xl shadow-primary/20" onClick={() => handleAddComment(data.id, data.comments, type)} disabled={!commentText}>
+                                 <Bookmark className="h-5 w-5" />
+                               </Button>
+                            </div>
+                            <Button 
+                              variant="outline" 
+                              className="w-full h-14 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] border-2 border-primary/10 text-primary hover:bg-primary/5 active:scale-95 transition-all shadow-sm" 
+                              onClick={() => { setSelectedDrill(null); setSelectedFile(null); }}
+                            >
+                              <CheckCircle2 className="h-4 w-4 mr-3" /> Mark Session Complete
+                            </Button>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
               </div>
-            </div>
           )}
         </DialogContent>
       </Dialog>

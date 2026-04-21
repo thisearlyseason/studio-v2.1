@@ -292,12 +292,12 @@ export function EventDetailDialog({
           <div className="flex-1 bg-white flex flex-col">
             <Tabs defaultValue="attendance" className="flex flex-col h-full">
               <div className="px-8 pt-8 shrink-0">
-                <TabsList className="grid w-full grid-cols-5 bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14">
-                  <TabsTrigger value="attendance" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Squad Pulse</TabsTrigger>
-                  <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md" disabled={!event.isTournament}>Matches</TabsTrigger>
-                  <TabsTrigger value="plan" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md" disabled={!event.drillIds?.length}>Tactical Plan</TabsTrigger>
-                  <TabsTrigger value="assignments" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Logistics</TabsTrigger>
-                  <TabsTrigger value="intel" className="rounded-xl font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-md">Intel</TabsTrigger>
+                <TabsList className="flex w-full overflow-x-auto bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14 no-scrollbar gap-1 custom-scrollbar-hidden">
+                  <TabsTrigger value="attendance" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Squad Pulse</TabsTrigger>
+                  <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0" disabled={!event.isTournament}>Matches</TabsTrigger>
+                  <TabsTrigger value="plan" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0" disabled={!event.drillIds?.length}>Tactical Plan</TabsTrigger>
+                  <TabsTrigger value="assignments" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Logistics</TabsTrigger>
+                  <TabsTrigger value="intel" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Briefing</TabsTrigger>
                 </TabsList>
               </div>
 
