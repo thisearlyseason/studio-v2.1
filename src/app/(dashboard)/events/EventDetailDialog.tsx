@@ -127,7 +127,7 @@ export function EventDetailDialog({
       <DialogContent className="sm:max-w-4xl w-[95vw] sm:w-[100vw] p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground max-h-[90vh] flex flex-col">
         <DialogTitle className="sr-only">Event Intelligence: {event.title}</DialogTitle>
         <DialogClose asChild>
-          <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
+          <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-md transition-all">
             <X className="h-5 w-5" />
           </Button>
         </DialogClose>

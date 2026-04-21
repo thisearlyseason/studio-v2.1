@@ -491,7 +491,8 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
     if (rL.includes('lb final')) return 75;
     if (rL.includes('quarter')) return 80;
     if (rL.includes('semi')) return 90;
-    if (rL.includes('championship') || rL.includes('grand final') || rL.includes('reset')) return 100;
+    if (rL.includes('championship')) return 100;
+    if (rL.includes('decider')) return 110;
     return 10;
   };
 
@@ -636,9 +637,9 @@ function buildEliminationBracket(
       const isFinal = r === totalRounds - 1;
       const isSemi = r === totalRounds - 2;
       const label = isFinal
-        ? (isDouble ? 'WB Finals' : 'Championship')
+        ? (isDouble ? 'Winners Bracket Final' : 'Championship')
         : isSemi
-          ? (isDouble ? 'WB Semi-Finals' : 'Semi-Finals')
+          ? (isDouble ? 'Winners Bracket Semi-Finals' : 'Semi-Finals')
           : `Round ${r + 1}`;
       roundMatches[r].push({
         id: nextMatchId(`wb_r${r}_m${m}`),
@@ -726,7 +727,7 @@ function buildEliminationBracket(
     // Step A: LB survivors meet WB losers
     const lbrX: any[] = [];
     for (let i = 0; i < wbRound.length; i++) {
-      const label = isFinalWB ? 'LB Finals' : `LB Round ${r * 2}`;
+      const label = isFinalWB ? 'Losers Bracket Final' : `LB Round ${r * 2}`;
       const m = { id: nextMatchId(`lb_rx_r${r}_m${i}`), round: label, stage: 'LB', t1: 'TBD', t2: 'TBD' };
       lbrX.push(m);
       lbMatchups.push(m);
@@ -766,8 +767,8 @@ function buildEliminationBracket(
     id: grandFinalId,
     round: 'Championship',
     stage: 'GF',
-    t1: 'TBD (WB Winner)',
-    t2: 'TBD (LB Winner)',
+    t1: 'TBD (Winners Bracket)',
+    t2: 'TBD (Losers Bracket)',
     t1Id: 'tbd', t2Id: 'tbd',
     // If LB winner wins GF, the GF Reset is triggered
     loserTo: grandFinalResetId,
@@ -779,10 +780,10 @@ function buildEliminationBracket(
   // Modeled as a conditional match — UI should hide until triggered.
   lbMatchups.push({
     id: grandFinalResetId,
-    round: 'Grand Final Reset',
+    round: 'Championship Decider',
     stage: 'GF',
-    t1: 'TBD (GF Team 1)',
-    t2: 'TBD (GF Team 2)',
+    t1: 'TBD (Championship Team 1)',
+    t2: 'TBD (Championship Team 2)',
     t1Id: 'tbd', t2Id: 'tbd',
     isResetMatch: true,   // UI flag: only show when triggered
     isConditional: true,  // Only played if LB winner wins Grand Final

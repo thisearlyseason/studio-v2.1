@@ -11,7 +11,7 @@ import { Clock, MapPin, ChevronRight, Loader2, AlertCircle, CalendarDays, Zap, T
 import { Button } from '@/components/ui/button';
 import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 export default function PublicLeagueScorekeeperHub() {
   const { leagueId } = useParams();
@@ -27,7 +27,9 @@ export default function PublicLeagueScorekeeperHub() {
   
   const dates = useMemo(() => {
     const d = new Set<string>();
-    schedule.forEach(g => d.add(g.date));
+    schedule.forEach(g => {
+      if (g.date) d.add(g.date);
+    });
     return Array.from(d).sort();
   }, [schedule]);
 
@@ -77,7 +79,13 @@ export default function PublicLeagueScorekeeperHub() {
                 className={cn("rounded-xl h-10 px-6 font-black uppercase text-[10px] border-2 transition-all", selectedDate === date ? "bg-primary border-primary shadow-lg" : "hover:border-primary/40")}
                 onClick={() => setSelectedDate(date)}
               >
-                {format(new Date(date + 'T12:00:00'), 'MMM d')}
+                {(() => {
+                  try {
+                    return format(parseISO(date), 'MMM d');
+                  } catch (e) {
+                    return 'MD';
+                  }
+                })()}
               </Button>
             ))}
           </div>
@@ -89,28 +97,65 @@ export default function PublicLeagueScorekeeperHub() {
                 <Card 
                   key={game.id} 
                   className={cn(
-                    "rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 hover:ring-primary/20 transition-all cursor-pointer group bg-white",
-                    game.isCompleted && "opacity-60 grayscale-[0.5]"
+                    "rounded-[2.5rem] border-none shadow-sm ring-1 ring-black/5 hover:ring-primary/40 hover:shadow-2xl transition-all cursor-pointer group bg-white relative overflow-hidden",
+                    game.isCompleted && "bg-muted/5 ring-muted/50"
                   )}
                   onClick={() => router.push(`/leagues/scorekeeper/${leagueId}/${game.id}`)}
                 >
-                  <CardContent className="p-6 flex items-center justify-between">
-                    <div className="flex items-center gap-6 flex-1 min-w-0">
-                      <div className="w-16 h-16 rounded-2xl bg-muted/30 flex flex-col items-center justify-center border shrink-0">
-                        <Clock className="h-4 w-4 text-primary mb-1" />
-                        <span className="text-[10px] font-black uppercase">{game.time}</span>
+                  <CardContent className="p-0">
+                    <div className="flex items-stretch h-full">
+                      {/* Left Time Signature */}
+                      <div className={cn(
+                        "w-24 shrink-0 flex flex-col items-center justify-center border-r border-dashed transition-colors",
+                        game.isCompleted ? "bg-muted/20 border-muted" : "bg-primary/[0.03] border-primary/10 group-hover:bg-primary/5"
+                      )}>
+                        <Clock className="h-4 w-4 text-primary/40 mb-1" />
+                        <span className="text-[10px] font-black uppercase text-primary leading-none">{game.time}</span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-black text-sm uppercase truncate"><span className="text-primary">{game.team1}</span> vs {game.team2}</h3>
-                          {game.isCompleted && <Badge className="bg-black text-white font-black text-[7px] h-4">POSTED</Badge>}
+
+                      {/* Main Tactical Body */}
+                      <div className="flex-1 p-6 md:p-8 space-y-4 min-w-0">
+                        <div className="flex justify-between items-start mb-2">
+                          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 flex items-center gap-1.5 leading-none">
+                            <MapPin className="h-3 w-3" /> {game.location || 'Official Venue'}
+                          </p>
+                          {game.isCompleted && <Badge className="bg-black text-white font-black text-[7px] tracking-widest px-2 h-5 rounded-full border-none">VERIFIED POST</Badge>}
                         </div>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                          <MapPin className="h-3 w-3 opacity-40" /> {game.location || 'League Venue'}
-                        </p>
+
+                        <div className="grid grid-cols-1 gap-2">
+                           {/* Team 1 Row */}
+                           <div className="flex justify-between items-center group/team">
+                              <div className="flex items-center gap-3 min-w-0">
+                                {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-4 w-4 text-yellow-500 shadow-md" />}
+                                <h3 className={cn(
+                                  "font-black text-lg sm:text-xl uppercase tracking-tighter transition-all",
+                                  game.isCompleted ? "text-foreground/80" : "text-foreground group-hover:text-primary"
+                                )}>{game.team1}</h3>
+                              </div>
+                              {game.isCompleted && <span className="text-2xl font-black text-primary tabular-nums tracking-tighter">{game.score1}</span>}
+                           </div>
+
+                           <div className="h-px bg-muted/50 w-8" />
+
+                           {/* Team 2 Row */}
+                           <div className="flex justify-between items-center group/team">
+                              <div className="flex items-center gap-3 min-w-0">
+                                {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-4 w-4 text-yellow-500 shadow-md" />}
+                                <h3 className={cn(
+                                  "font-black text-lg sm:text-xl uppercase tracking-tighter transition-all",
+                                  game.isCompleted ? "text-foreground/80" : "text-foreground group-hover:text-primary"
+                                )}>{game.team2}</h3>
+                              </div>
+                              {game.isCompleted && <span className="text-2xl font-black text-primary tabular-nums tracking-tighter">{game.score2}</span>}
+                           </div>
+                        </div>
+                      </div>
+
+                      {/* Action Visualizer */}
+                      <div className="w-16 shrink-0 flex items-center justify-center bg-muted/5 group-hover:bg-primary/[0.02] transition-colors border-l border-muted/20">
+                         <ChevronRight className="h-6 w-6 text-primary scale-90 group-hover:scale-110 transition-transform opacity-20 group-hover:opacity-100" />
                       </div>
                     </div>
-                    <ChevronRight className="h-6 w-6 text-primary opacity-20 group-hover:opacity-100 transition-all" />
                   </CardContent>
                 </Card>
               ))}

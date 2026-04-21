@@ -868,7 +868,7 @@ export default function PlaybookAndGamePlayPage() {
       </Dialog>
       
       <Dialog open={!!selectedDrill || !!selectedFile} onOpenChange={() => { setSelectedDrill(null); setSelectedFile(null); }}>
-        <DialogContent hideClose className="sm:max-w-[95vw] lg:max-w-7xl h-full sm:h-[90vh] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground flex flex-col rounded-none sm:rounded-[3.5rem]">
+        <DialogContent hideClose className="sm:max-w-[95vw] lg:max-w-7xl h-full sm:h-[90vh] p-0 border-none shadow-2xl overflow-y-auto lg:overflow-hidden bg-white text-foreground flex flex-col rounded-none sm:rounded-[3.5rem]">
           <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
           <DialogClose asChild>
             <Button variant="ghost" size="icon" className="absolute top-6 right-6 z-[60] h-12 w-12 rounded-full bg-black/50 hover:bg-black/70 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all">
@@ -876,9 +876,9 @@ export default function PlaybookAndGamePlayPage() {
             </Button>
           </DialogClose>
           {!!(selectedDrill || selectedFile) && (
-            <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-neutral-950">
+            <div className="flex flex-col lg:flex-row min-h-full lg:h-full bg-neutral-950">
               {/* LEFT: STRATEGIC INTEL (VIDEO + DOCUMENTATION) */}
-              <div className="flex-1 flex flex-col min-h-0">
+              <div className="w-full lg:flex-1 flex flex-col shrink-0 lg:h-full">
                 {/* PRIMARY INTEL: VIDEO HEADLINE */}
                 <div className="relative w-full aspect-video lg:aspect-auto lg:h-[45vh] bg-neutral-900 border-b border-white/10 shrink-0 group shadow-2xl z-10">
                   {(() => {
@@ -907,7 +907,7 @@ export default function PlaybookAndGamePlayPage() {
                 </div>
 
                 {/* SCROLLABLE STRATEGIC DOCUMENTATION */}
-                <div className="flex-1 overflow-y-auto no-scrollbar scroll-smooth p-6 sm:p-12 lg:p-16 space-y-12">
+                <div className="w-full shrink-0 p-6 sm:p-12 lg:p-16 space-y-12 lg:flex-1 lg:overflow-y-auto no-scrollbar">
                   {(() => {
                     const data = selectedDrill || selectedFile;
                     if (!data) return null;
@@ -965,8 +965,8 @@ export default function PlaybookAndGamePlayPage() {
               </div>
 
               {/* RIGHT: COMMAND CENTER (FULL HEIGHT SIDEBAR) */}
-              <div className="w-full lg:w-[420px] bg-white lg:border-l flex flex-col shrink-0 border-t lg:border-t-0 h-full overflow-hidden">
-                <div className="flex-1 flex flex-col min-h-0 overflow-y-auto no-scrollbar scroll-smooth">
+              <div className="w-full lg:w-[420px] bg-white lg:border-l flex flex-col shrink-0 border-t lg:border-t-0 lg:h-full">
+                <div className="w-full shrink-0 lg:flex-1 lg:overflow-y-auto no-scrollbar">
                     {(() => {
                       const data = selectedDrill || selectedFile;
                       if (!data) return null;

@@ -15,6 +15,18 @@ interface BracketProps {
 }
 
 // Recursive Tree Node for Single/Double Elimination Brackets
+const formatRoundName = (name?: string) => {
+  if (!name) return 'MATCH';
+  return name
+    .replace(/Grand Final Reset/gi, 'Championship Decider')
+    .replace(/Grand Final/gi, 'Championship')
+    .replace(/WB Finals/gi, 'Winners Bracket Final')
+    .replace(/LB Finals/gi, 'Losers Bracket Final')
+    .replace(/WB Semi-Finals/gi, 'Winners Bracket Semi')
+    .replace(/LB Semi-Finals/gi, 'Losers Bracket Semi')
+    .toUpperCase();
+};
+
 function BracketNode({ game, allGames, onGameClick }: { game: TournamentGame, allGames: TournamentGame[], onGameClick?: (game: TournamentGame) => void }) {
   const feeder1 = allGames.find(g => g.winnerTo === game.id && g.winnerToSlot === 'team1');
   const feeder2 = allGames.find(g => g.winnerTo === game.id && g.winnerToSlot === 'team2');
@@ -68,7 +80,7 @@ function BracketNode({ game, allGames, onGameClick }: { game: TournamentGame, al
          >
            {/* Header */}
            <div className="bg-black/40 px-2 py-1 flex justify-between items-center text-[9px] font-black uppercase tracking-widest text-white/50 border-b border-white/5">
-             <span className="truncate pr-2">{game.round || 'MATCH'}</span>
+             <span className="truncate pr-2">{formatRoundName(game.round)}</span>
              <span className="shrink-0">{game.time}</span>
            </div>
            
@@ -78,7 +90,9 @@ function BracketNode({ game, allGames, onGameClick }: { game: TournamentGame, al
              <div className="flex justify-between items-center px-3 py-1.5 border-b border-white/5 bg-[#0F172A]/50 hover:bg-white/5 transition-colors">
                <div className="flex items-center gap-1.5 overflow-hidden">
                  {isCompleted && game.score1 > game.score2 && <Trophy className="h-2.5 w-2.5 text-yellow-500 shrink-0" />}
-                 <span className={cn("text-[10px] font-bold uppercase truncate max-w-[90px]", (game.team1.includes('TBD') && !isCompleted) ? 'text-white/30' : 'text-white/90')}>{game.team1}</span>
+                 <span className={cn("text-[10px] font-bold uppercase truncate max-w-[90px]", (game.team1.includes('TBD') && !isCompleted) ? 'text-white/30' : 'text-white/90')}>
+                    {formatTeamName(game.team1)}
+                 </span>
                </div>
                <span className={cn("text-xs font-black", (game.score1 > game.score2 && isCompleted) ? "text-primary drop-shadow-[0_0_8px_rgba(var(--primary),0.8)]" : "text-white/40")}>{game.score1}</span>
              </div>
@@ -86,7 +100,9 @@ function BracketNode({ game, allGames, onGameClick }: { game: TournamentGame, al
              <div className="flex justify-between items-center px-3 py-1.5 bg-[#0F172A]/50 hover:bg-white/5 transition-colors relative">
                <div className="flex items-center gap-1.5 overflow-hidden">
                  {isCompleted && game.score2 > game.score1 && <Trophy className="h-2.5 w-2.5 text-yellow-500 shrink-0" />}
-                 <span className={cn("text-[10px] font-bold uppercase truncate max-w-[90px]", (game.team2.includes('TBD') && !isCompleted) ? 'text-white/30' : 'text-white/90')}>{game.team2}</span>
+                 <span className={cn("text-[10px] font-bold uppercase truncate max-w-[90px]", (game.team2.includes('TBD') && !isCompleted) ? 'text-white/30' : 'text-white/90')}>
+                    {formatTeamName(game.team2)}
+                 </span>
                </div>
                <span className={cn("text-xs font-black", (game.score2 > game.score1 && isCompleted) ? "text-primary drop-shadow-[0_0_8px_rgba(var(--primary),0.8)]" : "text-white/40")}>{game.score2}</span>
              </div>
@@ -100,6 +116,16 @@ function BracketNode({ game, allGames, onGameClick }: { game: TournamentGame, al
   );
 }
 
+function formatTeamName(name?: string) {
+  if (!name) return 'TBD';
+  return name
+    .replace(/\(GF Team 1\)/gi, '(Championship Team 1)')
+    .replace(/\(GF Team 2\)/gi, '(Championship Team 2)')
+    .replace(/\(WB Winner\)/gi, '(Winners Bracket)')
+    .replace(/\(LB Winner\)/gi, '(Losers Bracket)')
+    .replace(/Grand Final/gi, 'Championship');
+}
+
 export default function TournamentBracket({ games, standalone = false, onGameClick, tournamentName }: BracketProps) {
   const bracketRef = useRef<HTMLDivElement>(null);
 
@@ -108,10 +134,15 @@ export default function TournamentBracket({ games, standalone = false, onGameCli
     const poolGames: TournamentGame[] = [];
     const roots: TournamentGame[] = []; 
 
-    const resetMatch = games.find(g => g.round === 'Grand Final Reset');
+    const resetMatch = games.find(g => g.isResetMatch || g.round === 'Championship Decider' || g.round === 'Grand Final Reset');
     let displayGames = games;
+
     if (resetMatch) {
-       const isNeeded = resetMatch.team1 && !resetMatch.team1.toLowerCase().includes('tbd') && resetMatch.team2 && !resetMatch.team2.toLowerCase().includes('tbd');
+       // Only show the reset/decider match if BOTH teams are definitively resolved (not TBD)
+       const isNeeded = 
+         resetMatch.team1 && !resetMatch.team1.toLowerCase().includes('tbd') && 
+         resetMatch.team2 && !resetMatch.team2.toLowerCase().includes('tbd');
+         
        if (!isNeeded) {
            displayGames = games.filter(g => g.id !== resetMatch.id);
        }
@@ -165,13 +196,13 @@ export default function TournamentBracket({ games, standalone = false, onGameCli
         </div>
       )}
 
-        <div className="w-full overflow-x-auto pb-8 scrollbar-hide flex justify-center">
+        <div className="w-full overflow-x-auto pb-12 scrollbar-hide flex justify-start">
         <div 
           ref={bracketRef} 
           id="bracket-root-element"
           className={cn(
-            "relative p-4 md:p-8 lg:p-12 bg-[#0a0a0a] rounded-[3rem] shadow-2xl border border-white/[0.05] min-h-[400px]",
-            standalone ? "rounded-none h-full min-h-screen border-none flex-1" : "mx-auto"
+            "relative p-8 md:p-16 lg:p-24 bg-[#111] rounded-[3rem] shadow-2xl border border-white/[0.05] min-h-[600px] w-fit h-fit",
+            standalone ? "rounded-none h-full min-h-screen border-none flex-1" : "mx-4 lg:mx-8"
           )}
         >
           <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-black to-black pointer-events-none rounded-[3rem]" />
@@ -227,7 +258,7 @@ export default function TournamentBracket({ games, standalone = false, onGameCli
             
             <div className="flex flex-col gap-8 py-6 px-4 max-w-full overflow-visible">
               {knockoutRoots.map(rootGame => (
-                <div key={rootGame.id} className="flex items-center relative group justify-start sm:justify-center">
+                <div key={rootGame.id} className="flex items-center relative group justify-start">
                    {/* Recursively compute the left-to-right tree starting from Finals at the far right! */}
                    <BracketNode game={rootGame} allGames={activeGames} onGameClick={onGameClick} />
                    

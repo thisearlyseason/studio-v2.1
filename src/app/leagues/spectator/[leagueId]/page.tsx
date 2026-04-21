@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { AnimatedScore } from '@/components/ui/animated-score';
 import { Trophy, CalendarDays, MapPin, Clock, Loader2, AlertCircle, List, ChevronRight } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
-import { format, isAfter, isBefore, isSameDay, parseISO } from 'date-fns';
+import { format, isAfter, isBefore, isSameDay, parseISO, startOfDay, addDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
@@ -26,7 +26,10 @@ export default function PublicLeagueSpectatorHub() {
   const db = useFirestore();
 
   const [teamFilter, setTeamFilter] = useState<string | 'all'>('all');
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: startOfDay(new Date()),
+    to: addDays(startOfDay(new Date()), 14)
+  });
 
   const leagueRef = useMemoFirebase(() => (db && leagueId) ? doc(db, 'leagues', leagueId as string) : null, [db, leagueId]);
   const { data: league, isLoading } = useDoc<League>(leagueRef);
@@ -76,7 +79,7 @@ export default function PublicLeagueSpectatorHub() {
     <div className="min-h-screen bg-muted/5 flex flex-col items-center py-8 lg:py-12 px-4 md:px-6">
       <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
       
-      <div className="max-w-7xl w-full space-y-8 lg:space-y-12">
+      <div className="w-full max-w-[1920px] space-y-8 lg:space-y-12">
         <section className="bg-black text-white p-8 lg:p-12 rounded-[3rem] shadow-2xl relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000"><Trophy className="h-48 w-48" /></div>
           <div className="relative z-10 space-y-4">
@@ -153,45 +156,95 @@ export default function PublicLeagueSpectatorHub() {
             </div>
 
             <div className="space-y-12">
-              {Object.entries(gamesByDay).map(([date, dayGames]: [string, any]) => (
-                <div key={date} className="space-y-6">
-                  <div className="flex items-center gap-4 px-4">
-                    <div className="h-px flex-1 bg-black/5" />
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground bg-white px-6 py-2 rounded-full ring-1 ring-black/5 shadow-sm">
-                      {format(parseISO(date), 'EEEE, MMMM do')}
-                    </h3>
-                    <div className="h-px flex-1 bg-black/5" />
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {dayGames.map((game: any) => (
-                      <Card key={game.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md group">
-                        <div className="flex justify-between items-center">
-                          <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary">{game.time}</Badge>
-                          {game.isCompleted && <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2 h-5">FINAL</Badge>}
-                        </div>
-                        <div className="grid grid-cols-7 items-center gap-4 text-center">
-                          <div className="col-span-3 min-w-0">
-                            <p className="font-black text-xs uppercase truncate mb-1">{game.team1}</p>
-                            <AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")} value={game.score1} />
+              {Object.entries(gamesByDay).map(([date, dayGames]: [string, any]) => {
+                const isPastDay = isBefore(parseISO(date), startOfDay(new Date()));
+                
+                return (
+                  <div key={date} className={cn("space-y-6 transition-all duration-500", isPastDay && "opacity-60")}>
+                    <div className="flex items-center gap-4 px-4">
+                      <div className={cn("h-px flex-1", isPastDay ? "bg-black/5" : "bg-primary/20")} />
+                      <h3 className={cn(
+                        "text-[10px] font-black uppercase tracking-[0.3em] px-6 py-2 rounded-full ring-1 shadow-sm transition-all",
+                        isPastDay 
+                          ? "text-muted-foreground bg-muted/20 ring-black/5" 
+                          : "text-primary bg-primary/5 ring-primary/20"
+                      )}>
+                        {format(parseISO(date), 'EEEE, MMMM do')} {isPastDay && "• ARCHIVED"}
+                      </h3>
+                      <div className={cn("h-px flex-1", isPastDay ? "bg-black/5" : "bg-primary/20")} />
+                    </div>
+                    
+                    <div className={cn(
+                      "grid gap-6 transition-all duration-500",
+                      isPastDay 
+                        ? "grid-cols-2 lg:grid-cols-4 md:grid-cols-3 2xl:grid-cols-8" 
+                        : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                    )}>
+                      {dayGames.map((game: any) => (
+                        <Card 
+                          key={game.id} 
+                          className={cn(
+                            "rounded-[2rem] border-none shadow-sm ring-1 transition-all group overflow-hidden flex flex-col",
+                            isPastDay 
+                              ? "bg-muted/5 ring-black/5 p-3 space-y-1 hover:bg-white" 
+                              : "bg-white ring-black/5 p-6 space-y-5 hover:shadow-2xl hover:ring-primary/20"
+                          )}
+                        >
+                          <div className={cn("flex justify-between items-center text-[9px] font-black uppercase tracking-widest", isPastDay ? "text-muted-foreground/40" : "text-muted-foreground/60")}>
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-3 w-3 text-primary/40" />
+                              {game.time}
+                            </div>
+                            {!isPastDay && game.location && (
+                              <div className="flex items-center gap-1.5 max-w-[120px] truncate text-right">
+                                <MapPin className="h-3 w-3 opacity-30" />
+                                {game.location}
+                              </div>
+                            )}
                           </div>
-                          <div className="col-span-1 opacity-20 font-black text-[10px]">VS</div>
-                          <div className="col-span-3 min-w-0">
-                            <p className="font-black text-xs uppercase truncate mb-1">{game.team2}</p>
-                            <AnimatedScore className={cn("text-3xl font-black inline-block", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")} value={game.score2} />
+                          
+                          <div className={cn("flex-1 space-y-4", isPastDay && "opacity-60")}>
+                            <div className="flex items-center justify-between gap-4">
+                               <div className="flex items-center gap-3 min-w-0">
+                                 {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
+                                 <p className={cn("font-black uppercase tracking-tight leading-tight", isPastDay ? "text-[10px]" : "text-base sm:text-lg")}>{game.team1}</p>
+                               </div>
+                               <AnimatedScore className={cn("font-black tracking-tighter tabular-nums", (game.isCompleted && game.score1 > game.score2) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-3xl sm:text-4xl")} value={game.score1} />
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                               <div className="flex items-center gap-3 min-w-0">
+                                 {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
+                                 <p className={cn("font-black uppercase tracking-tight leading-tight", isPastDay ? "text-[10px]" : "text-base sm:text-lg")}>{game.team2}</p>
+                               </div>
+                               <AnimatedScore className={cn("font-black tracking-tighter tabular-nums", (game.isCompleted && game.score2 > game.score1) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-3xl sm:text-4xl")} value={game.score2} />
+                            </div>
                           </div>
-                        </div>
-                        {game.location && (
-                          <p className="text-[9px] font-bold text-muted-foreground uppercase text-center flex items-center justify-center gap-1.5 pt-2 border-t border-muted">
-                            <MapPin className="h-3 w-3 opacity-40" /> {game.location}
-                          </p>
-                        )}
-                      </Card>
-                    ))}
+                          
+                          <div className={cn("pt-4 border-t flex items-center justify-between", isPastDay ? "border-black/5" : "border-muted")}>
+                            <div className="flex items-center gap-2">
+                              {game.round && <span className="text-[8px] font-black uppercase text-muted-foreground/40 tracking-wider transition-all group-hover:text-primary/40">{game.round}</span>}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {game.isCompleted ? (
+                                <span className="text-[8px] font-black uppercase text-primary tracking-[0.2em] px-2 py-0.5 bg-primary/5 rounded-full border border-primary/10">Archive Log</span>
+                              ) : (
+                                <div className="flex items-center gap-1.5 animate-in fade-in duration-1000">
+                                  <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+                                  <span className="text-[8px] font-black uppercase text-green-600 tracking-[0.2em]">Live Operation</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
-              {filteredSchedule.length === 0 && <div className="col-span-full py-20 text-center opacity-30 italic uppercase font-black text-xs tracking-widest">No matches found for the selected filters.</div>}
+                );
+              })}
+              {filteredSchedule.length === 0 && <div className="col-span-full py-20 text-center bg-white rounded-3xl border-2 border-dashed opacity-40">
+                <Clock className="h-12 w-12 mx-auto mb-4" />
+                <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">No matches found for the selected filters.</p>
+              </div>}
             </div>
           </div>
 

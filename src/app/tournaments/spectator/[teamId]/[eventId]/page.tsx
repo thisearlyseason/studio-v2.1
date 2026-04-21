@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Trophy, CalendarDays, MapPin, Clock, Loader2, AlertCircle, List, Zap } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
-import { format, isAfter, isBefore, isSameDay, parseISO } from 'date-fns';
+import { format, isAfter, isBefore, isSameDay, parseISO, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
 import TournamentBracket from '@/components/TournamentBracket';
 import { DateRange } from "react-day-picker";
@@ -18,6 +18,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { AnimatedScore } from '@/components/ui/animated-score';
+
+function formatRoundName(name?: string) {
+  if (!name) return '';
+  return name
+    .replace(/Grand Final Reset/gi, 'Championship Decider')
+    .replace(/Grand Final/gi, 'Championship')
+    .replace(/WB Finals/gi, 'Winners Bracket Final')
+    .replace(/LB Finals/gi, 'Losers Bracket Final')
+    .replace(/WB Semi-Finals/gi, 'Winners Bracket Semi')
+    .replace(/LB Semi-Finals/gi, 'Losers Bracket Semi')
+    .toUpperCase();
+}
+
+function formatTeamName(name?: string) {
+  if (!name) return 'TBD';
+  return name
+    .replace(/\(GF Team 1\)/gi, '(Championship Team 1)')
+    .replace(/\(GF Team 2\)/gi, '(Championship Team 2)')
+    .replace(/\(WB Winner\)/gi, '(Winners Bracket)')
+    .replace(/\(LB Winner\)/gi, '(Losers Bracket)')
+    .replace(/Grand Final/gi, 'Championship');
+}
 
 /**
  * Tactical Scoring Logic:
@@ -129,7 +151,7 @@ export default function PublicSpectatorHub() {
     <div className="min-h-screen bg-muted/5 flex flex-col items-center py-8 lg:py-12 px-4 md:px-6">
       <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
       
-      <div className="max-w-7xl w-full space-y-8 lg:space-y-12">
+      <div className="w-full max-w-[1920px] space-y-8 lg:space-y-12">
         <section className="bg-black text-white p-8 lg:p-12 rounded-[3rem] shadow-2xl relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
             <Trophy className="h-48 w-48" />
@@ -165,11 +187,12 @@ export default function PublicSpectatorHub() {
             </div>
           </div>
 
-          {activeTab === 'bracket' ? (
-            <TournamentBracket games={event.tournamentGames || []} />
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="lg:col-span-3 space-y-6">
+            {activeTab === 'bracket' ? (
+              <TournamentBracket games={event.tournamentGames || []} />
+            ) : (
+              <div className="space-y-6">
                 <div className="flex flex-col space-y-4 px-2">
                   <div className="flex items-center gap-3 self-start">
                     <div className="bg-primary/10 p-2 rounded-xl text-primary">
@@ -235,50 +258,91 @@ export default function PublicSpectatorHub() {
                 </div>
 
                 <div className="space-y-12">
-                  {Object.entries(gamesByDay).map(([date, dayGames]: [string, any]) => (
-                    <div key={date} className="space-y-6">
-                      <div className="flex items-center gap-4 px-4">
-                        <div className="h-px flex-1 bg-black/5" />
-                        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground bg-white px-6 py-2 rounded-full ring-1 ring-black/5 shadow-sm">
-                          {format(parseISO(date), 'EEEE, MMMM do')}
-                        </h3>
-                        <div className="h-px flex-1 bg-black/5" />
-                      </div>
-                      
-                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-                        {dayGames.map((game: any) => (
-                          <Card key={game.id} className="rounded-xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-3 space-y-2 transition-all hover:shadow-md group">
-                            <div className="flex justify-between items-center pb-2 border-b border-muted">
-                              <Badge variant="outline" className="text-[8px] font-black uppercase border-primary/20 text-primary px-1.5 py-0 h-4">{game.time}</Badge>
-                              {game.round && <Badge className="bg-muted text-foreground border-none text-[7px] font-black uppercase px-1.5 h-4">{game.round}</Badge>}
-                              {game.isCompleted && <Badge className="bg-black text-white border-none text-[7px] font-black uppercase px-1.5 h-4">FINAL</Badge>}
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                              <div className="flex items-center justify-between">
-                                 <div className="flex items-center gap-1.5 overflow-hidden">
-                                   {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-2.5 w-2.5 text-yellow-500 shrink-0" />}
-                                   <p className="font-bold text-[10px] uppercase truncate max-w-[110px]">{game.team1}</p>
-                                 </div>
-                                 <AnimatedScore className={cn("text-lg font-black", game.isCompleted && game.score1 > game.score2 ? "text-primary" : "text-foreground")} value={game.score1} />
+                  {Object.entries(gamesByDay).map(([date, dayGames]: [string, any]) => {
+                    const isPastDay = isBefore(parseISO(date), startOfDay(new Date()));
+                    
+                    return (
+                      <div key={date} className={cn("space-y-6 transition-all duration-500", isPastDay && "opacity-60")}>
+                        <div className="flex items-center gap-4 px-4">
+                          <div className={cn("h-px flex-1", isPastDay ? "bg-black/5" : "bg-primary/20")} />
+                          <h3 className={cn(
+                            "text-[10px] font-black uppercase tracking-[0.3em] px-6 py-2 rounded-full ring-1 shadow-sm transition-all",
+                            isPastDay 
+                              ? "text-muted-foreground bg-muted/20 ring-black/5" 
+                              : "text-primary bg-primary/5 ring-primary/20"
+                          )}>
+                            {format(parseISO(date), 'EEEE, MMMM do')} {isPastDay && "• ARCHIVED"}
+                          </h3>
+                          <div className={cn("h-px flex-1", isPastDay ? "bg-black/5" : "bg-primary/20")} />
+                        </div>
+                        
+                        <div className={cn(
+                          "grid gap-6 transition-all duration-500",
+                          isPastDay 
+                            ? "grid-cols-2 lg:grid-cols-4 md:grid-cols-3 2xl:grid-cols-8" 
+                            : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+                        )}>
+                          {dayGames.map((game: any) => (
+                            <Card 
+                              key={game.id} 
+                              className={cn(
+                                "rounded-[2rem] border-none shadow-sm ring-1 transition-all group overflow-hidden flex flex-col",
+                                isPastDay 
+                                  ? "bg-muted/5 ring-black/5 p-3 space-y-1 hover:bg-white" 
+                                  : "bg-white ring-black/5 p-6 space-y-5 hover:shadow-2xl hover:ring-primary/20"
+                              )}
+                            >
+                              <div className={cn("flex justify-between items-center text-[9px] font-black uppercase tracking-widest", isPastDay ? "text-muted-foreground/40" : "text-muted-foreground/60")}>
+                                <div className="flex items-center gap-2">
+                                  <Clock className="h-3 w-3 text-primary/40" />
+                                  {game.time}
+                                </div>
+                                {!isPastDay && game.location && (
+                                  <div className="flex items-center gap-1.5 max-w-[150px] truncate text-right">
+                                    <MapPin className="h-3 w-3 opacity-30" />
+                                    <span className="text-[7px] text-muted-foreground/40 mr-0.5 whitespace-nowrap">FIELD:</span> {game.location}
+                                  </div>
+                                )}
                               </div>
-                              <div className="flex items-center justify-between">
-                                 <div className="flex items-center gap-1.5 overflow-hidden">
-                                   {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-2.5 w-2.5 text-yellow-500 shrink-0" />}
-                                   <p className="font-bold text-[10px] uppercase truncate max-w-[110px]">{game.team2}</p>
-                                 </div>
-                                 <AnimatedScore className={cn("text-lg font-black", game.isCompleted && game.score2 > game.score1 ? "text-primary" : "text-foreground")} value={game.score2} />
+                              
+                              <div className={cn("flex-1 space-y-3", isPastDay && "opacity-60")}>
+                                <div className="flex items-center justify-between">
+                                   <div className="flex items-center gap-2 overflow-hidden">
+                                     {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-3.5 w-3.5 text-yellow-500 shrink-0 shadow-lg" />}
+                                     <p className={cn("font-black uppercase truncate", isPastDay ? "text-[10px] max-w-[100px]" : "text-sm sm:text-base tracking-tight")}>{formatTeamName(game.team1)}</p>
+                                   </div>
+                                   <AnimatedScore className={cn("font-black tracking-tighter", (game.isCompleted && game.score1 > game.score2) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-2xl sm:text-3xl")} value={game.score1} />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                   <div className="flex items-center gap-2 overflow-hidden">
+                                     {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-3.5 w-3.5 text-yellow-500 shrink-0 shadow-lg" />}
+                                     <p className={cn("font-black uppercase truncate", isPastDay ? "text-[10px] max-w-[100px]" : "text-sm sm:text-base tracking-tight")}>{formatTeamName(game.team2)}</p>
+                                   </div>
+                                   <AnimatedScore className={cn("font-black tracking-tighter", (game.isCompleted && game.score2 > game.score1) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-2xl sm:text-3xl")} value={game.score2} />
+                                </div>
                               </div>
-                            </div>
-                            {game.location && (
-                              <p className="text-[8px] font-bold text-muted-foreground uppercase text-left flex items-center gap-1.5 pt-1.5 border-t border-muted">
-                                <MapPin className="h-2.5 w-2.5 opacity-40" /> {game.location}
-                              </p>
-                            )}
-                          </Card>
-                        ))}
+                              
+                              <div className={cn("pt-4 border-t flex items-center justify-between", isPastDay ? "border-black/5" : "border-muted")}>
+                                <div className="flex items-center gap-2">
+                                  {game.round && <span className="text-[8px] font-black uppercase text-muted-foreground/40 tracking-wider transition-all group-hover:text-primary/40">{formatRoundName(game.round)}</span>}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {game.isCompleted ? (
+                                    <span className="text-[8px] font-black uppercase text-primary tracking-[0.2em] px-2 py-0.5 bg-primary/5 rounded-full border border-primary/10">Archive Log</span>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5 animate-in fade-in duration-1000">
+                                      <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+                                      <span className="text-[8px] font-black uppercase text-green-600 tracking-[0.2em]">Deploying...</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {filteredSchedule.length === 0 && (
                     <div className="col-span-full py-20 text-center bg-white rounded-3xl border-2 border-dashed opacity-40">
                       <Clock className="h-12 w-12 mx-auto mb-4" />
@@ -287,6 +351,8 @@ export default function PublicSpectatorHub() {
                   )}
                 </div>
               </div>
+            )}
+          </div>
 
               <aside className="space-y-6">
                 <div className="flex items-center gap-3 px-2">
@@ -357,11 +423,10 @@ export default function PublicSpectatorHub() {
                     </p>
                   </div>
                 </div>
-              </aside>
-            </div>
-          )}
+          </aside>
         </div>
       </div>
+    </div>
 
       <footer className="mt-16 lg:mt-24 text-center">
         <p className="text-[9px] font-black uppercase text-muted-foreground tracking-[0.3em] opacity-40">The Squad Coordination Hub v1.0 • Powered by SquadForge</p>
