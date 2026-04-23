@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { AnimatedScore } from '@/components/ui/animated-score';
+import { SquadIdentity } from '@/components/SquadIdentity';
 
 function formatRoundName(name?: string) {
   if (!name) return '';
@@ -308,15 +309,31 @@ export default function PublicSpectatorHub() {
                               <div className={cn("flex-1 space-y-3", isPastDay && "opacity-60")}>
                                 <div className="flex items-center justify-between">
                                    <div className="flex items-center gap-2 overflow-hidden">
+                                     <SquadIdentity 
+                                       teamId={(game as any).team1Id} 
+                                       teamName={formatTeamName(game.team1)} 
+                                       logoUrl={event.tournamentTeamsData?.find(t => t.id === (game as any).team1Id)?.logoUrl || event.tournamentTeamsData?.find(t => t.name === game.team1)?.logoUrl}
+                                       logoClassName="h-6 w-6 rounded shadow-sm border shrink-0" 
+                                       showNameWithLogo
+                                       horizontal
+                                       textClassName={cn("font-black uppercase truncate", isPastDay ? "text-[10px] max-w-[100px]" : "text-sm sm:text-base tracking-tight")}
+                                     />
                                      {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-3.5 w-3.5 text-yellow-500 shrink-0 shadow-lg" />}
-                                     <p className={cn("font-black uppercase truncate", isPastDay ? "text-[10px] max-w-[100px]" : "text-sm sm:text-base tracking-tight")}>{formatTeamName(game.team1)}</p>
                                    </div>
                                    <AnimatedScore className={cn("font-black tracking-tighter", (game.isCompleted && game.score1 > game.score2) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-2xl sm:text-3xl")} value={game.score1} />
                                 </div>
                                 <div className="flex items-center justify-between">
                                    <div className="flex items-center gap-2 overflow-hidden">
+                                     <SquadIdentity 
+                                       teamId={(game as any).team2Id} 
+                                       teamName={formatTeamName(game.team2)} 
+                                       logoUrl={event.tournamentTeamsData?.find(t => t.id === (game as any).team2Id)?.logoUrl || event.tournamentTeamsData?.find(t => t.name === game.team2)?.logoUrl}
+                                       logoClassName="h-6 w-6 rounded shadow-sm border shrink-0" 
+                                       showNameWithLogo
+                                       horizontal
+                                       textClassName={cn("font-black uppercase truncate", isPastDay ? "text-[10px] max-w-[100px]" : "text-sm sm:text-base tracking-tight")}
+                                     />
                                      {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-3.5 w-3.5 text-yellow-500 shrink-0 shadow-lg" />}
-                                     <p className={cn("font-black uppercase truncate", isPastDay ? "text-[10px] max-w-[100px]" : "text-sm sm:text-base tracking-tight")}>{formatTeamName(game.team2)}</p>
                                    </div>
                                    <AnimatedScore className={cn("font-black tracking-tighter", (game.isCompleted && game.score2 > game.score1) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-2xl sm:text-3xl")} value={game.score2} />
                                 </div>
@@ -381,7 +398,15 @@ export default function PublicSpectatorHub() {
                             <td className="px-6 py-5">
                               <div className="flex items-center gap-3">
                                 <span className="text-[10px] font-black text-muted-foreground/40 w-4">{idx + 1}</span>
-                                <span className="font-black text-xs uppercase tracking-tight truncate max-w-[100px]">{team.name}</span>
+                                <SquadIdentity 
+                                  teamId={event.tournamentTeamsData?.find(t => t.name === team.name)?.id} 
+                                  teamName={team.name} 
+                                  logoUrl={event.tournamentTeamsData?.find(t => t.name === team.name)?.logoUrl}
+                                  logoClassName="h-6 w-6 rounded shadow-sm border shrink-0" 
+                                  showNameWithLogo
+                                  horizontal
+                                  textClassName="font-black text-xs uppercase tracking-tight truncate max-w-[100px]"
+                                />
                               </div>
                             </td>
                             <td className="px-2 py-5 text-center font-bold text-[10px] text-muted-foreground">

@@ -32,9 +32,22 @@ export function initializeFirebase() {
 
 export function getSdks(firebaseApp: FirebaseApp) {
   let firestore;
+  let auth;
   
   // Initialize Firestore with settings to mitigate the 'ID: ca9' assertion bug
   if (typeof window !== 'undefined') {
+    const { initializeAuth, browserLocalPersistence, getAuth, indexedDBLocalPersistence } = require('firebase/auth');
+    
+    // Auth Hardening: Explicitly manage persistence to avoid 'network-request-failed' hangs in restricted environments
+    try {
+      auth = getAuth(firebaseApp);
+    } catch (e) {
+      // If default initialization fails (e.g. HMR race), use a robust initialization
+      auth = initializeAuth(firebaseApp, {
+        persistence: [browserLocalPersistence, indexedDBLocalPersistence]
+      });
+    }
+
     try {
       // Check if Firestore is already initialized to avoid "Firestore has already been initialized" errors
       firestore = getFirestore(firebaseApp);
@@ -52,11 +65,12 @@ export function getSdks(firebaseApp: FirebaseApp) {
   } else {
     // On server, initialize without persistence
     firestore = getFirestore(firebaseApp);
+    auth = getAuth(firebaseApp);
   }
 
   return {
     firebaseApp,
-    auth: getAuth(firebaseApp),
+    auth,
     firestore,
     storage: getStorage(firebaseApp)
   };

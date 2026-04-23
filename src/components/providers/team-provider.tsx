@@ -56,6 +56,7 @@ export type UserProfile = {
   schoolAdminIds?: string[];
   isPrimaryClubAuthority?: boolean;
   isStaff?: boolean;
+  division?: string; // High-level organizational tier
 };
 
 export type PlayerProfile = {
@@ -85,6 +86,7 @@ export type PlayerProfile = {
   inviteToken?: string;
   inviteSentAt?: string;
   inviteExpiresAt?: string;
+  division?: string; // Assigned division for roster sorting
 };
 
 export type RecruitingProfile = {
@@ -216,6 +218,8 @@ export type Team = {
   leagueIds?: Record<string, boolean>;
   isDemo?: boolean;
   rosterLimit?: number;
+  isArchived?: boolean;
+  division?: string;
 };
 
 export type Club = {
@@ -259,6 +263,7 @@ export type Member = {
   status?: 'active' | 'removed';
   removalReason?: string;
   removedAt?: string;
+  division?: string; // Division assignment for league play
 };
 
 export interface Plan {
@@ -320,6 +325,8 @@ export type TeamEvent = {
   opponent?: string;
   assignments?: EventAssignment[];
   drillIds?: string[]; // References to drills in the playbook/library
+  isArchived?: boolean;
+  division?: string;
 };
 
 export type PracticeTemplate = {
@@ -455,6 +462,7 @@ export type League = {
     origin?: string;
     coachPhone?: string;
     organizerNotes?: string;
+    teamLogoUrl?: string;
   }>;
   individualRecruits?: Record<string, {
     name: string;
@@ -489,6 +497,8 @@ export type League = {
   requiredSquads?: number;
   slug?: string;
   blackoutDaysOfWeek?: number[];
+  isArchived?: boolean;
+  divisions?: string[]; // List of available divisions (e.g. 'Gold', 'Silver', 'U12')
 };
 
 export type Facility = {
@@ -547,6 +557,7 @@ export type RegistrationEntry = {
   assigned_team_id?: string;
   assigned_team_owner_id?: string;
   waiver_signed_text?: string;
+  division?: string; // Selected division during registration
 };
 
 export type RegistrationFormField = {
@@ -578,6 +589,8 @@ export type TournamentGame = {
   team2: string;
   team1Id?: string;
   team2Id?: string;
+  team1LogoUrl?: string;
+  team2LogoUrl?: string;
   score1: number;
   score2: number;
   date: string;
@@ -815,6 +828,7 @@ interface TeamContextType {
   getMember: (id: string | null | undefined) => Member | undefined;
   getTeamByCode: (code: string, leagueId?: string) => Promise<any>;
   getLeagueMembers: (leagueId: string) => Promise<Member[]>;
+  propagateLogoToLeagues: (teamId: string, logoUrl: string) => Promise<void>;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -2265,7 +2279,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       creatorId: firebaseUser.uid, 
       sport: activeTeam.sport || 'General', 
       teams: { 
-        [activeTeam.id]: { teamName: activeTeam.name, wins: 0, losses: 0, ties: 0, points: 0, status: 'accepted' } 
+        [activeTeam.id]: { teamName: activeTeam.name, teamLogoUrl: activeTeam.teamLogoUrl || '', wins: 0, losses: 0, ties: 0, points: 0, status: 'accepted' } 
       }, 
       memberTeamIds: [activeTeam.id], 
       finances: {}, 
@@ -2281,6 +2295,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateLeague = useCallback(async (leagueId: string, updates: Partial<League>) => { 
     if (!db) return; 
     await updateDoc(doc(db, 'leagues', leagueId), clean(updates)); 
+  }, [db]);
+
+  /**
+   * Propagates a newly uploaded team logo URL to all leagues this team is enrolled in.
+   * Call this immediately after updating the team document's teamLogoUrl field so
+   * that league.teams[teamId].teamLogoUrl stays in sync everywhere.
+   */
+  const propagateLogoToLeagues = useCallback(async (teamId: string, logoUrl: string) => {
+    if (!db || !teamId || !logoUrl) return;
+    try {
+      const q = query(collection(db, 'leagues'), where('memberTeamIds', 'array-contains', teamId));
+      const snap = await getDocs(q);
+      const updates = snap.docs.map(leagueDoc =>
+        updateDoc(leagueDoc.ref, { [`teams.${teamId}.teamLogoUrl`]: logoUrl })
+      );
+      await Promise.all(updates);
+    } catch (e) {
+      console.warn('[propagateLogoToLeagues] Failed to sync logo to leagues:', e);
+    }
   }, [db]);
 
   const addLeagueGame = useCallback(async (lId: string, game: any) => {
@@ -2476,6 +2509,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
               teamName, 
               coachName: a.name || 'Recruit Coach', 
               coachEmail: a.email, 
+              teamLogoUrl: a.teamLogoUrl || teamsRaw.find(t => t.name === teamName)?.teamLogoUrl || '', 
               wins: 0, 
               losses: 0, 
               ties: 0, 
@@ -2495,6 +2529,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
               name: teamName,
               coach: a.name || 'Pipeline Coach',
               email: a.email || '',
+              logoUrl: a.teamLogoUrl || '',
               source: 'pipeline'
             })),
             tournamentTeams: arrayUnion(teamName),
@@ -2556,7 +2591,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       
       batch.update(leagueRef, { 
         [`teams.${placeholderKey}`]: deleteField(),
-        [`teams.${activeTeam.id}`]: { ...placeholderData, status: 'accepted', teamName: activeTeam.name },
+        [`teams.${activeTeam.id}`]: { ...placeholderData, status: 'accepted', teamName: activeTeam.name, teamLogoUrl: activeTeam.teamLogoUrl || placeholderData.teamLogoUrl || '' },
         memberTeamIds: arrayUnion(activeTeam.id)
       });
       // Corrected: arrayRemove was missing in the previous block but I can combine it here if needed, or do it separately.
@@ -2932,16 +2967,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // Handle Winner/Loser Progression
     const winnerName = score1 > score2 ? updatedGame.team1 : updatedGame.team2;
     const winnerId = score1 > score2 ? updatedGame.team1Id : updatedGame.team2Id;
+    const winnerLogo = score1 > score2 ? updatedGame.team1LogoUrl : updatedGame.team2LogoUrl;
     const loserName = score1 > score2 ? updatedGame.team2 : updatedGame.team1;
     const loserId = score1 > score2 ? updatedGame.team2Id : updatedGame.team1Id;
+    const loserLogo = score1 > score2 ? updatedGame.team2LogoUrl : updatedGame.team1LogoUrl;
 
     if (updatedGame.winnerTo) {
       const targetIdx = games.findIndex((g: any) => g.id === updatedGame.winnerTo);
       if (targetIdx !== -1) {
         if (updatedGame.winnerToSlot === 'team2') {
-          games[targetIdx] = { ...games[targetIdx], team2: winnerName, team2Id: winnerId };
+          games[targetIdx] = { ...games[targetIdx], team2: winnerName, team2Id: winnerId, team2LogoUrl: winnerLogo, score2: 0 };
         } else {
-          games[targetIdx] = { ...games[targetIdx], team1: winnerName, team1Id: winnerId };
+          games[targetIdx] = { ...games[targetIdx], team1: winnerName, team1Id: winnerId, team1LogoUrl: winnerLogo, score1: 0 };
         }
       }
     }
@@ -2950,9 +2987,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const targetIdx = games.findIndex((g: any) => g.id === updatedGame.loserTo);
       if (targetIdx !== -1) {
         if (updatedGame.loserToSlot === 'team2') {
-          games[targetIdx] = { ...games[targetIdx], team2: loserName, team2Id: loserId };
+          games[targetIdx] = { ...games[targetIdx], team2: loserName, team2Id: loserId, team2LogoUrl: loserLogo, score2: 0 };
         } else {
-          games[targetIdx] = { ...games[targetIdx], team1: loserName, team1Id: loserId };
+          games[targetIdx] = { ...games[targetIdx], team1: loserName, team1Id: loserId, team1LogoUrl: loserLogo, score1: 0 };
         }
       }
     }
@@ -3206,7 +3243,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
     addRegistration, addLeaguePayment, updateLeagueGlobalFees,
 
-    getMember, firebaseUser, getTeamByCode, deleteMessage, getLeagueMembers, storage
+    getMember, firebaseUser, getTeamByCode, deleteMessage, getLeagueMembers, storage,
+    checkCodeUniqueness, updateTeamCode, propagateLogoToLeagues
   }), [
     db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser, storage,
     isStaff, isPro, isStarter, householdEvents, householdGames, activeTeamEvents, games, myChildren, plans, isPlansLoading, isPaywallOpen,
@@ -3241,7 +3279,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addRegistration, purchasePro, addLeaguePayment, updateLeagueGlobalFees,
     getMember, getTeamByCode, deleteMessage, getLeagueMembers,
     removeMember, reinstateMember,
-    checkCodeUniqueness, updateTeamCode
+    checkCodeUniqueness, updateTeamCode, propagateLogoToLeagues
   ]);
 
   return <TeamContext.Provider value={contextValue}>{children}</TeamContext.Provider>;

@@ -40,7 +40,8 @@ import {
   Share2,
   Lock as LockIcon,
   AlertCircle,
-  FileText
+  FileText,
+  Copy
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -56,7 +57,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, where, doc, updateDoc, limit } from 'firebase/firestore';
+import { collection, query, orderBy, where, doc, updateDoc, limit, or } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { generateIntelligentLeagueSchedule } from '@/lib/intelligent-scheduler';
@@ -71,6 +72,7 @@ import { Select, SelectContent, SelectItem,  SelectTrigger,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SquadIdentity } from '@/components/SquadIdentity';
 
 const DAYS_OF_WEEK = [
   { id: 1, label: 'Mon' },
@@ -137,7 +139,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     if (!league?.teams) return [];
     return Object.entries(league.teams)
       .filter(([_, t]) => t.status === 'accepted' || t.status === 'assigned')
-      .map(([id, t]) => ({ id, name: t.teamName }));
+      .map(([id, t]) => ({ id, name: t.teamName, logoUrl: t.teamLogoUrl }));
   }, [league?.teams]);
 
   const handleGenerate = async () => {
@@ -404,12 +406,30 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
 }
 
 function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League, schedule: TournamentGame[], onOpenManualGame?: () => void }) {
-  const { isStaff, submitLeagueMatchScore } = useTeam();
+  const { isStaff, submitLeagueMatchScore, activeTeam } = useTeam();
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [teamFilter, setTeamFilter] = useState<string>('all');
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
   const [scoreForm, setScoreForm] = useState({ s1: '', s2: '' });
+
+  // Logo map: activeTeam is the authoritative source (live Firestore doc merge).
+  // teamsRaw/teamMemberships docs do NOT contain teamLogoUrl — only activeTeamDoc does.
+  // Layer: activeTeam first → league.teams overrides (for external enrolled teams).
+  const teamLogoMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    // Primary: the current user's active team — always fresh from Firestore
+    if (activeTeam?.id && activeTeam?.teamLogoUrl) {
+      map[activeTeam.id] = activeTeam.teamLogoUrl;
+    }
+    // Secondary: logos stored in the league document itself (set at enrollment/propagation time)
+    if (league?.teams) {
+      Object.entries(league.teams).forEach(([id, t]) => {
+        if ((t as any).teamLogoUrl) map[id] = (t as any).teamLogoUrl;
+      });
+    }
+    return map;
+  }, [league?.teams, activeTeam?.id, activeTeam?.teamLogoUrl]);
 
   const gamesByDay = useMemo(() => {
     const map: Record<string, TournamentGame[]> = {};
@@ -532,62 +552,74 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
       {viewMode === 'list' ? (
         <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
           <CardContent className="p-0 text-foreground">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b">
-                  <tr>
-                    <th className="px-8 py-5">Date/Time</th>
-                    <th className="px-4 py-5">Location</th>
-                    <th className="px-4 py-5">Matchup (HOME VS GUEST)</th>
-                    <th className="px-8 py-5 text-right">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-muted/50">
-                    {filteredSchedule.map(game => (
-                      <tr key={game.id} className="hover:bg-muted/5 transition-colors group">
-                        <td className="px-8 py-6">
-                          <p className="font-black text-xs uppercase">{format(new Date(game.date), 'MMMM d, yyyy')}</p>
-                          <div className="flex items-center gap-2">
-                            <p className="text-[10px] font-bold text-muted-foreground">{game.time}</p>
-                            {getDoubleHeaderLabel(game) && <Badge className="bg-primary/10 text-primary border-none text-[7px] h-4 font-black">DOUBLE HEADER</Badge>}
-                          </div>
-                        </td>
-                        <td className="px-4 py-6 font-bold text-xs uppercase text-muted-foreground">{game.location || 'TBD'}</td>
-                        <td className="px-4 py-6">
-                          <div className="flex items-center gap-4">
-                            <span className="font-black text-xs uppercase truncate max-w-[120px] text-primary">{game.team1}</span>
-                            <div className="flex flex-col items-center gap-1">
-                              {game.isCompleted ? (
-                                <div className={cn("flex items-center gap-2 px-3 py-1 rounded-lg border-2", game.isDisputed ? "bg-red-50 border-red-200 text-red-600 animate-pulse" : "bg-muted/50 border-black/5")}>
-                                  <span className="font-black text-xs">{game.score1} - {game.score2}</span>
-                                </div>
-                              ) : <span className="opacity-20 text-[10px] font-black">VS</span>}
-                              {game.isDisputed && <div className="text-[6px] font-black text-red-600 uppercase tracking-widest leading-none mt-1">Dispute Pending</div>}
-                              {game.reportedBy && !game.isDisputed && (
-                                <div className="text-[6px] font-bold text-muted-foreground uppercase opacity-40">Posted by {game.reportedBy}</div>
-                              )}
+              {/* ── PREMIUM FIXTURE CARD GRID ── */}
+              <div className="divide-y divide-muted/40">
+                {filteredSchedule.map(game => {
+                  const logo1 = teamLogoMap[game.team1Id || ''];
+                  const logo2 = teamLogoMap[game.team2Id || ''];
+                  return (
+                    <div
+                      key={game.id}
+                      className="group px-6 py-5 flex items-center gap-4 hover:bg-muted/5 transition-colors"
+                    >
+                      {/* Date/Time */}
+                      <div className="w-[100px] shrink-0 text-left">
+                        <p className="font-black text-[11px] uppercase tracking-tight leading-none">{format(new Date(game.date), 'MMM d, yyyy')}</p>
+                        <p className="text-[10px] font-bold text-muted-foreground mt-0.5">{game.time}</p>
+                        {getDoubleHeaderLabel(game) && <Badge className="bg-primary/10 text-primary border-none text-[7px] h-4 font-black mt-1">DH</Badge>}
+                      </div>
+
+                      {/* Fixture face-off */}
+                      <div className="flex-1 flex items-center justify-center gap-3">
+                        {/* Home team */}
+                        <div className="flex-1 flex items-center justify-end gap-3 min-w-0">
+                          <p className="font-black text-sm uppercase truncate text-primary">{game.team1}</p>
+                          {logo1 ? (
+                            <div className="h-14 w-14 shrink-0 rounded-xl overflow-hidden border border-muted/20 shadow-md bg-white p-1">
+                              <img src={logo1} alt={game.team1} className="w-full h-full object-contain" />
                             </div>
-                            <span className="font-black text-xs uppercase truncate max-w-[120px]">{game.team2}</span>
-                          </div>
-                        </td>
-                        <td className="px-8 py-6 text-right">
-                          {isStaff && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100" onClick={() => { setEditingGame(game); setScoreForm({ s1: game.score1.toString(), s2: game.score2.toString() }); }}>
-                              <Edit3 className="h-4 w-4" />
-                            </Button>
+                          ) : null}
+                        </div>
+
+                        {/* Score / VS */}
+                        <div className="shrink-0 w-20 flex items-center justify-center">
+                          {game.isCompleted ? (
+                            <div className={cn("px-3 py-1.5 rounded-lg border-2 text-center", game.isDisputed ? "bg-red-50 border-red-200 text-red-600 animate-pulse" : "bg-black text-white border-black")}>
+                              <span className="font-black text-sm tabular-nums">{game.score1} – {game.score2}</span>
+                            </div>
+                          ) : (
+                            <span className="font-black text-[10px] uppercase tracking-[0.2em] text-muted-foreground/40">VS</span>
                           )}
-                        </td>
-                      </tr>
-                    ))}
-                    {filteredSchedule.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="px-8 py-12 text-center text-muted-foreground text-sm font-bold uppercase tracking-widest">
-                          No matches found for current filters.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                        </div>
+
+                        {/* Away team */}
+                        <div className="flex-1 flex items-center justify-start gap-3 min-w-0">
+                          {logo2 ? (
+                            <div className="h-14 w-14 shrink-0 rounded-xl overflow-hidden border border-muted/20 shadow-md bg-white p-1">
+                              <img src={logo2} alt={game.team2} className="w-full h-full object-contain" />
+                            </div>
+                          ) : null}
+                          <p className="font-black text-sm uppercase truncate">{game.team2}</p>
+                        </div>
+                      </div>
+
+                      {/* Location + Edit */}
+                      <div className="w-[120px] shrink-0 text-right flex flex-col items-end gap-1.5">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase truncate">{game.location || 'TBD'}</p>
+                        {isStaff && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg opacity-0 group-hover:opacity-100" onClick={() => { setEditingGame(game); setScoreForm({ s1: (game.score1 ?? 0).toString(), s2: (game.score2 ?? 0).toString() }); }}>
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {filteredSchedule.length === 0 && (
+                  <div className="px-8 py-12 text-center text-muted-foreground text-sm font-bold uppercase tracking-widest">
+                    No matches found for current filters.
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -616,34 +648,69 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
             </div>
             
             <div className="grid grid-cols-1 gap-4">
-              {filteredSchedule.map(game => (
-                <Card key={game.id} className="rounded-[2rem] border-none shadow-sm p-6 flex flex-col md:flex-row md:items-center justify-between bg-white text-foreground group hover:ring-2 hover:ring-primary/20 transition-all" onClick={() => isStaff && setEditingGame(game)}>
-                  <div className="flex items-center gap-6">
-                    <div className="w-16 h-16 rounded-2xl bg-primary/5 flex flex-col items-center justify-center border shrink-0">
-                      <Clock className="h-5 w-5 text-primary mb-1" />
-                      <span className="text-[10px] font-black uppercase text-primary">{game.time}</span>
+              {filteredSchedule.map(game => {
+                const logo1 = teamLogoMap[game.team1Id || ''];
+                const logo2 = teamLogoMap[game.team2Id || ''];
+                return (
+                  <Card
+                    key={game.id}
+                    className="rounded-[2rem] border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5 hover:shadow-xl hover:ring-primary/20 transition-all cursor-pointer group"
+                    onClick={() => isStaff && setEditingGame(game)}
+                  >
+                    {/* Meta strip */}
+                    <div className="flex justify-between items-center px-6 pt-5 pb-3 border-b border-muted/30">
+                      <p className="font-black text-[10px] uppercase tracking-widest text-muted-foreground">{format(new Date(game.date), 'MMM d, yyyy')} · {game.time}</p>
+                      <p className="font-bold text-[10px] uppercase text-muted-foreground truncate max-w-[120px]">{game.location || 'Venue TBD'}</p>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-3">
-                        <p className="font-black text-lg uppercase truncate text-foreground"><span className="text-primary">{game.team1}</span> vs {game.team2}</p>
-                        {getDoubleHeaderLabel(game) && <Badge className="bg-primary text-white border-none text-[8px] h-5 font-black uppercase">Double Header</Badge>}
-                      </div>
-                      <div className="flex items-center gap-3 mt-1">
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1"><MapPin className="h-3 w-3 text-primary" /> {game.location || 'Venue TBD'}</p>
-                        {game.isCompleted && (
-                          <div className="flex items-center gap-2">
-                            <Badge className={cn("border-none font-black text-[8px] h-5", game.isDisputed ? "bg-red-600 text-white animate-pulse" : "bg-black text-white")}>
-                              {game.isDisputed ? "DISPUTED" : `FINAL: ${game.score1}-${game.score2}`}
-                            </Badge>
-                            {game.reportedBy && !game.isDisputed && <span className="text-[8px] font-bold text-muted-foreground uppercase opacity-60 italic">Reported by {game.reportedBy}</span>}
+
+                    {/* Face-off */}
+                    <div className="flex items-stretch">
+                      {/* Home */}
+                      <div className="flex-1 flex flex-col items-center justify-center gap-3 py-6 px-4">
+                        {logo1 ? (
+                          <div className="h-20 w-20 rounded-2xl overflow-hidden border border-muted/20 shadow-lg bg-white p-1.5">
+                            <img src={logo1} alt={game.team1} className="w-full h-full object-contain" />
                           </div>
+                        ) : null}
+                        <p className="font-black text-xs uppercase tracking-tight text-center text-primary leading-tight max-w-[100px]">{game.team1}</p>
+                      </div>
+
+                      {/* VS / Score */}
+                      <div className="flex flex-col items-center justify-center px-4 py-4 shrink-0">
+                        {game.isCompleted ? (
+                          <div className={cn("px-4 py-2 rounded-xl border-2 text-center", game.isDisputed ? "bg-red-50 border-red-200 text-red-600 animate-pulse" : "bg-black text-white border-black")}>
+                            <span className="font-black text-xl tabular-nums">{game.score1} – {game.score2}</span>
+                            {game.isDisputed && <p className="text-[7px] font-black uppercase mt-0.5 opacity-70">Disputed</p>}
+                          </div>
+                        ) : (
+                          <span className="font-black text-[10px] uppercase tracking-[0.25em] text-muted-foreground/40">VS</span>
+                        )}
+                        {getDoubleHeaderLabel(game) && (
+                          <Badge className="bg-primary/10 text-primary border-none text-[7px] h-4 font-black mt-2">DH</Badge>
                         )}
                       </div>
+
+                      {/* Away */}
+                      <div className="flex-1 flex flex-col items-center justify-center gap-3 py-6 px-4">
+                        {logo2 ? (
+                          <div className="h-20 w-20 rounded-2xl overflow-hidden border border-muted/20 shadow-lg bg-white p-1.5">
+                            <img src={logo2} alt={game.team2} className="w-full h-full object-contain" />
+                          </div>
+                        ) : null}
+                        <p className="font-black text-xs uppercase tracking-tight text-center leading-tight max-w-[100px]">{game.team2}</p>
+                      </div>
                     </div>
-                  </div>
-                  <ChevronRight className="h-6 w-6 text-primary opacity-20 group-hover:opacity-100 transition-all hidden md:block" />
-                </Card>
-              ))}
+
+                    {/* Footer */}
+                    {game.isCompleted && (
+                      <div className="px-6 py-3 border-t border-muted/30 flex items-center justify-between">
+                        <span className="text-[8px] font-black uppercase text-muted-foreground/40">{game.reportedBy ? `Reported by ${game.reportedBy}` : 'Completed'}</span>
+                        <Badge className="bg-black text-white border-none text-[8px] h-5 font-black">FINAL</Badge>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
               {filteredSchedule.length === 0 && (
                 <div className="py-24 text-center opacity-20 italic font-black uppercase text-sm border-2 border-dashed rounded-[3rem] bg-muted/10">
                   No matches scheduled for this window.
@@ -825,6 +892,7 @@ export default function LeaguesPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState<'portals' | 'teams' | 'players' | 'compliance' | 'schedule'>('teams');
   const [mounted, setMounted] = useState(false);
+  const [selectedDivision, setSelectedDivision] = useState<string | null>(null);
 
   const [editingTeam, setEditingTeam] = useState<any>(null);
   const [editTeamForm, setEditTeamForm] = useState({ 
@@ -847,10 +915,26 @@ export default function LeaguesPage() {
     contactEmail: '', contactPhone: '', registrationCost: '', twitter: '', instagram: '', paymentInstructions: '',
     slug: '', requiredSquads: '', blackoutDaysOfWeek: [] as number[]
   });
+  const [duplicateTitle, setDuplicateTitle] = useState('');
+  const [isDuplicateOpen, setIsDuplicateOpen] = useState(false);
+  const [duplicatingLeague, setDuplicatingLeague] = useState<League | null>(null);
 
   const leaguesQuery = useMemoFirebase(() => {
     if (!isAuthResolved || !db || !authUser?.uid) return null;
     
+    // For staff members, show both leagues they created OR leagues where their active team is a member
+    if (isStaff) {
+      const conditions = [where('creatorId', '==', authUser.uid)];
+      if (activeTeam?.id) {
+        conditions.push(where('memberTeamIds', 'array-contains', activeTeam.id));
+      }
+      return query(
+        collection(db, 'leagues'),
+        or(...conditions),
+        limit(50)
+      );
+    }
+
     // For regular users, leagues where their active team is a member
     if (activeTeam?.id) {
       return query(
@@ -860,25 +944,38 @@ export default function LeaguesPage() {
       );
     }
     
-    // For managers without a selected team, leagues they created
-    if (isStaff) {
-      return query(
-        collection(db, 'leagues'),
-        where('creatorId', '==', authUser.uid),
-        limit(20)
-      );
-    }
-    
     return null;
-  }, [isAuthResolved, activeTeam?.id, db, authUser?.uid, isStaff]);
+  }, [isAuthResolved, db, authUser?.uid, activeTeam?.id, isStaff]);
 
-  const { data: leagues, isLoading: isLeaguesLoading } = useCollection<League>(leaguesQuery);
+  const { data: allLeagues, isLoading: isLeaguesLoading } = useCollection<League>(leaguesQuery);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
-  
-  const activeLeague = useMemo(() => {
-    if (selectedLeagueId) return (leagues || []).find(l => l.id === selectedLeagueId) || null;
-    return (leagues || [])[0] || null;
-  }, [leagues, selectedLeagueId]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [newDivisionName, setNewDivisionName] = useState('');
+
+  const leagues = useMemo(() => {
+    if (!allLeagues) return [];
+    return allLeagues.filter(l => showArchived ? l.isArchived : !l.isArchived);
+  }, [allLeagues, showArchived]);
+
+  const activeLeague = useMemo(() => leagues.find(l => l.id === selectedLeagueId), [leagues, selectedLeagueId]);
+
+  // Logo resolution map: activeTeam is the authoritative source.
+  // teamMembership docs lack teamLogoUrl — only activeTeamDoc (merged into activeTeam) is live.
+  const teamLogoMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    // Primary: live Firestore team doc for the current user's team
+    if (activeTeam?.id && activeTeam?.teamLogoUrl) {
+      map[activeTeam.id] = activeTeam.teamLogoUrl;
+    }
+    // Secondary: logos enrolled/propagated into the league document
+    if (activeLeague?.teams) {
+      Object.entries(activeLeague.teams).forEach(([id, t]) => {
+        if ((t as any).teamLogoUrl) map[id] = (t as any).teamLogoUrl;
+      });
+    }
+    return map;
+  }, [activeLeague, activeTeam?.id, activeTeam?.teamLogoUrl]);
 
   const waiversQuery = useMemoFirebase(() => {
     if (!db || !activeLeague?.id) return null;
@@ -909,8 +1006,15 @@ export default function LeaguesPage() {
 
   const sortedStandings = useMemo(() => {
     if (!activeLeague || !activeLeague.teams) return [];
-    return Object.entries(activeLeague.teams).map(([id, stats]) => ({ id, ...stats })).sort((a, b) => b.points - a.points || b.wins - a.wins);
-  }, [activeLeague]);
+    return Object.entries(activeLeague.teams)
+      .map(([id, stats]) => {
+        // Use teamLogoMap which merges both league-stored and club-known logos
+        const teamLogoUrl = teamLogoMap[id] || (stats as any).teamLogoUrl;
+        return { id, ...stats, teamLogoUrl };
+      })
+      .filter(team => !selectedDivision || team.division === selectedDivision)
+      .sort((a, b) => b.points - a.points || b.wins - a.wins);
+  }, [activeLeague, selectedDivision, teamLogoMap]);
 
   const exportStandings = useCallback(() => {
     if (!activeLeague || sortedStandings.length === 0) return;
@@ -1060,9 +1164,55 @@ export default function LeaguesPage() {
       paymentInstructions: activeLeague.paymentInstructions || '',
       slug: activeLeague.slug || '',
       requiredSquads: activeLeague.requiredSquads?.toString() || '',
-      blackoutDaysOfWeek: activeLeague.blackoutDaysOfWeek || []
+      blackoutDaysOfWeek: activeLeague.blackoutDaysOfWeek || [],
+      divisions: activeLeague.divisions || []
     });
     setIsEditLeagueOpen(true);
+  };
+
+  const handleArchiveLeague = async () => {
+    if (!activeLeague) return;
+    if (!window.confirm(`Are you sure you want to archive ${activeLeague.name}? It will be removed from active dashboards but remain in the Historical Archives.`)) return;
+    setIsProcessing(true);
+    try {
+      await updateDoc(doc(db, 'leagues', activeLeague.id), { isArchived: true });
+      setSelectedLeagueId(null);
+      setIsEditLeagueOpen(false);
+      toast({ title: "Hub Archived", description: "League moved to historical storage." });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleUnarchiveLeague = async (leagueId: string) => {
+    setIsProcessing(true);
+    try {
+      await updateDoc(doc(db, 'leagues', leagueId), { isArchived: false });
+      toast({ title: "Hub Restored", description: "League returned to active operations." });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleAddDivision = () => {
+    if (!newDivisionName.trim()) return;
+    const current = editLeagueForm.divisions || [];
+    if (current.includes(newDivisionName.trim())) {
+      toast({ title: "Duplicate Division", variant: "destructive" });
+      return;
+    }
+    setEditLeagueForm({
+      ...editLeagueForm,
+      divisions: [...current, newDivisionName.trim()]
+    });
+    setNewDivisionName('');
+  };
+
+  const handleRemoveDivision = (name: string) => {
+    setEditLeagueForm({
+      ...editLeagueForm,
+      divisions: (editLeagueForm.divisions || []).filter(d => d !== name)
+    });
   };
 
   const handleSaveLeague = async () => {
@@ -1089,9 +1239,76 @@ export default function LeaguesPage() {
         blackoutDaysOfWeek: editLeagueForm.blackoutDaysOfWeek
       });
       setIsEditLeagueOpen(false);
-      toast({ title: `${leagueLabel} Profile Updated` });
+    } finally { setIsProcessing(false); }
+  };
+
+  const handleDuplicateLeague = async () => {
+    if (!duplicatingLeague || !duplicateTitle.trim() || !db || !authUser?.uid) {
+      toast({ title: "Inaccessible Auth State", description: "Authorization required for institutional replication.", variant: "destructive" });
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const newLeagueRef = doc(collection(db, 'leagues'));
+      
+      // Explicitly pick only the framework fields to avoid carrying over runtime state or large collections
+      const newLeagueData = {
+        name: duplicateTitle.trim(),
+        sport: duplicatingLeague.sport || '',
+        description: duplicatingLeague.description || '',
+        startDate: duplicatingLeague.startDate || '',
+        endDate: duplicatingLeague.endDate || '',
+        ages: duplicatingLeague.ages || '',
+        contactEmail: duplicatingLeague.contactEmail || '',
+        contactPhone: duplicatingLeague.contactPhone || '',
+        registrationCost: duplicatingLeague.registrationCost || '',
+        paymentInstructions: duplicatingLeague.paymentInstructions || '',
+        socialLinks: duplicatingLeague.socialLinks || {},
+        slug: `${newLeagueRef.id.slice(-6)}-clone`,
+        requiredSquads: duplicatingLeague.requiredSquads || null,
+        blackoutDaysOfWeek: duplicatingLeague.blackoutDaysOfWeek || [],
+        divisions: duplicatingLeague.divisions || [],
+        
+        // Reset operational fields
+        id: newLeagueRef.id,
+        creatorId: authUser.uid,
+        createdAt: new Date().toISOString(),
+        isArchived: false,
+        is_active: false,
+        teams: {},
+        individualRecruits: {},
+        schedule: [],
+        memberTeamIds: [],
+        memberIndivIds: []
+      };
+      
+      const { setDoc, getDoc } = await import('firebase/firestore');
+      await setDoc(newLeagueRef, newLeagueData);
+
+      // Duplicate Registration Configs
+      const configs = ['player_config', 'team_config', 'waiver_config'];
+      for (const configId of configs) {
+        const sourceRef = doc(db, 'leagues', duplicatingLeague.id, 'registration_config', configId);
+        const sourceCfg = await getDoc(sourceRef);
+        if (sourceCfg.exists()) {
+          const cfgData = sourceCfg.data();
+          // Reset any per-league overrides if necessary
+          await setDoc(doc(db, 'leagues', newLeagueRef.id, 'registration_config', configId), cfgData);
+        }
+      }
+
+      setIsDuplicateOpen(false);
+      setDuplicateTitle('');
+      setDuplicatingLeague(null);
+      toast({ title: "Hub Replicated", description: "Institutional framework cloned. Redirecting to new environment..." });
+      
+      // Force a query refresh by briefly toggling a state or just letting useCollection handle it
+      // Actually, we could select it right away
+      setSelectedLeagueId(newLeagueRef.id);
+      
     } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: 'destructive' });
+      console.error("[Leagues] Duplication failed:", e);
+      toast({ title: "Replication Failed", description: e.message, variant: 'destructive' });
     } finally {
       setIsProcessing(false);
     }
@@ -1120,7 +1337,8 @@ export default function LeaguesPage() {
       wins: team.wins || 0,
       losses: team.losses || 0,
       ties: team.ties || 0,
-      points: team.points || 0
+      points: team.points || 0,
+      division: team.division || ''
     });
   };
 
@@ -1156,11 +1374,19 @@ export default function LeaguesPage() {
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Master Hub</Badge>
           <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">{leaguesLabel}</h1>
         </div>
-        {!activeLeague && isPrimaryClubAuthority && (
-          <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
-            <Plus className="h-5 w-5 mr-2" /> Launch {leagueLabel} Architect
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {leagues.some(l => l.isArchived) || showArchived ? (
+            <Button variant="ghost" size="sm" onClick={() => setShowArchived(!showArchived)} className="h-14 px-6 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
+               <Clock className="h-4 w-4" />
+               {showArchived ? 'View Active Hubs' : 'View Archived Hubs'}
+            </Button>
+          ) : null}
+          {!activeLeague && isPrimaryClubAuthority && (
+            <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="h-5 w-5 mr-2" /> Launch {leagueLabel} Architect
+            </Button>
+          )}
+        </div>
       </div>
 
       {leagues && leagues.length > 0 && (
@@ -1189,12 +1415,33 @@ export default function LeaguesPage() {
                         {Object.keys(league.teams || {}).length} squads • Hub ID: {league.id.slice(-6).toUpperCase()}
                       </p>
                     </div>
-                    <div className="pt-4 border-t flex justify-between items-center">
-                      <div className="flex gap-2">
-                         <div className="h-8 w-8 rounded-lg bg-muted/20 flex items-center justify-center"><Users className="h-4 w-4 opacity-40" /></div>
-                         <div className="h-8 w-8 rounded-lg bg-muted/20 flex items-center justify-center"><Zap className="h-4 w-4 opacity-40" /></div>
-                      </div>
-                      <Button variant="ghost" size="sm" className="h-8 rounded-lg text-[9px] font-black uppercase group-hover:bg-primary group-hover:text-white transition-all">Select Hub</Button>
+                    <div className="pt-4 border-t flex flex-col sm:flex-row justify-between items-center gap-3">
+                       <div className="flex gap-1.5 overflow-hidden w-full sm:w-auto justify-center sm:justify-start">
+                         <div className="h-8 w-8 rounded-lg bg-muted/20 flex items-center justify-center shrink-0"><Users className="h-4 w-4 opacity-40" /></div>
+                         <div className="h-8 w-8 rounded-lg bg-muted/20 flex items-center justify-center shrink-0"><Zap className="h-4 w-4 opacity-40" /></div>
+                       </div>
+                       <div className="flex gap-2 w-full sm:w-auto">
+                         {isStaff && league.creatorId === authUser?.uid && (
+                           <Button 
+                             variant="outline" 
+                             size="sm" 
+                             className="h-9 px-4 rounded-xl border-2 font-black uppercase text-[9px] tracking-widest hover:bg-black hover:text-white transition-all flex-1 sm:flex-none"
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               setDuplicatingLeague(league);
+                               setDuplicateTitle(`${league.name} (Clone)`);
+                               setIsDuplicateOpen(true);
+                             }}
+                           >
+                             <Copy className="h-3.5 w-3.5 mr-2" /> Clone
+                           </Button>
+                         )}
+                         {league.isArchived ? (
+                           <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleUnarchiveLeague(league.id); }} className="h-9 rounded-xl text-[9px] font-black uppercase hover:bg-green-600 hover:text-white transition-all text-green-600 border border-green-600/20 px-4 flex-1 sm:flex-none">Restore Hub</Button>
+                         ) : (
+                           <Button variant="ghost" size="sm" className="h-9 rounded-xl text-[9px] font-black uppercase group-hover:bg-primary group-hover:text-white transition-all px-4 flex-1 sm:flex-none border-2 border-transparent group-hover:border-primary">Select Hub</Button>
+                         )}
+                       </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -1264,12 +1511,38 @@ export default function LeaguesPage() {
 
 
             <div className="flex flex-col sm:flex-row items-baseline justify-between gap-4">
-              <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex shadow-inner overflow-x-auto max-w-full no-scrollbar">
-                <Button variant={activeTab === 'teams' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('teams')}>Teams</Button>
-                <Button variant={activeTab === 'schedule' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('schedule')}>Schedule</Button>
-                {isStaff && <Button variant={activeTab === 'players' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('players')}>Players</Button>}
-                {isStaff && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('portals')}>Portals</Button>}
-                {isStaff && <Button variant={activeTab === 'compliance' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('compliance')}>Compliance</Button>}
+              <div className="flex flex-col gap-4 w-full">
+                <div className="bg-muted/50 p-1.5 rounded-2xl border-2 inline-flex shadow-inner overflow-x-auto max-w-full no-scrollbar">
+                  <Button variant={activeTab === 'teams' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('teams')}>Teams</Button>
+                  <Button variant={activeTab === 'schedule' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('schedule')}>Schedule</Button>
+                  {isStaff && <Button variant={activeTab === 'players' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('players')}>Players</Button>}
+                  {isStaff && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('portals')}>Portals</Button>}
+                  {isStaff && <Button variant={activeTab === 'compliance' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('compliance')}>Compliance</Button>}
+                </div>
+                
+                {activeTab === 'teams' && activeLeague.divisions && activeLeague.divisions.length > 0 && (
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2">
+                    <Button 
+                      variant={!selectedDivision ? 'secondary' : 'ghost'} 
+                      size="sm" 
+                      onClick={() => setSelectedDivision(null)}
+                      className="h-8 rounded-xl font-black text-[9px] uppercase px-4 shrink-0 transition-all"
+                    >
+                      All Tiers
+                    </Button>
+                    {activeLeague.divisions.map((d: string) => (
+                      <Button 
+                        key={d}
+                        variant={selectedDivision === d ? 'secondary' : 'ghost'} 
+                        size="sm" 
+                        onClick={() => setSelectedDivision(d)}
+                        className="h-8 rounded-xl font-black text-[9px] uppercase px-4 shrink-0 transition-all"
+                      >
+                        {d} Division
+                      </Button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex gap-2 w-full sm:w-auto mt-2 sm:mt-0">
               {activeTab === 'teams' && (
@@ -1296,8 +1569,19 @@ export default function LeaguesPage() {
                           <td className="px-10 py-6">
                             <div className="flex items-center gap-4">
                               <span className="text-xs font-black text-muted-foreground/40 w-6">{idx + 1}</span>
+                              <SquadIdentity 
+                                teamId={team.id} 
+                                teamName={team.teamName} 
+                                logoUrl={(team as any).teamLogoUrl}
+                                logoClassName="h-10 w-10 rounded-xl shadow-sm border-2"
+                                showNameWithLogo
+                                horizontal
+                                textClassName="font-black text-sm uppercase truncate text-foreground"
+                              />
                               <div>
-                                <div className="font-black text-sm uppercase truncate text-foreground">{team.teamName}</div>
+                                <div className="flex items-center gap-2">
+                                  {team.division && <Badge className="bg-primary/5 text-primary border-none text-[7px] font-black uppercase px-2 h-4">{team.division}</Badge>}
+                                </div>
                                 <p className="text-[8px] font-bold text-muted-foreground uppercase opacity-60">{team.coachName || 'Staff Managed'}</p>
                               </div>
                             </div>
@@ -1617,6 +1901,20 @@ export default function LeaguesPage() {
                 </div>
               </div>
               <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Division Assignment</Label>
+                <Select value={editTeamForm.division || 'none'} onValueChange={v => setEditTeamForm({...editTeamForm, division: v === 'none' ? '' : v})}>
+                  <SelectTrigger className="h-12 rounded-xl border-2 font-black uppercase text-[10px]">
+                    <SelectValue placeholder="--- UNASSIGNED ---" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="none" className="font-bold uppercase text-[9px]">Unassigned / General</SelectItem>
+                    {activeLeague?.divisions?.map((d: string) => (
+                      <SelectItem key={d} value={d} className="font-bold uppercase text-[9px]">{d} Division</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Phone</Label>
                 <Input value={editTeamForm.coachPhone} onChange={e => setEditTeamForm({...editTeamForm, coachPhone: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
               </div>
@@ -1714,10 +2012,113 @@ export default function LeaguesPage() {
                    <Input type="url" value={editLeagueForm.instagram} onChange={e => setEditLeagueForm({...editLeagueForm, instagram: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="https://instagram.com/yourleague" />
                  </div>
                </div>
+                <div className="space-y-4 pt-6 border-t font-black">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Division Architect</Label>
+                  <p className="text-[10px] font-medium text-muted-foreground italic leading-relaxed px-1">Define competitive tiers (e.g. Gold, Silver, U12) to partition squads and participants.</p>
+                  
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="New Division Title..." 
+                      value={newDivisionName} 
+                      onChange={e => setNewDivisionName(e.target.value)} 
+                      className="h-12 rounded-xl border-2 font-bold bg-white text-foreground"
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddDivision())}
+                    />
+                    <Button type="button" onClick={handleAddDivision} variant="outline" className="h-12 px-6 rounded-xl font-black uppercase text-[10px] text-foreground border-2">Add</Button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {(editLeagueForm.divisions || []).map((div, i) => (
+                      <Badge key={i} className="bg-primary/5 text-primary border-primary/20 px-3 py-1.5 rounded-xl font-black text-[10px] uppercase flex items-center gap-2">
+                        {div}
+                        <button onClick={() => handleRemoveDivision(div)} className="hover:text-red-600 transition-colors">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                    {(editLeagueForm.divisions || []).length === 0 && (
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-40 italic py-2">No divisions defined. Single-tier hub active.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-8 border-t space-y-4">
+                  <div className="flex items-center justify-between">
+                     <div className="space-y-1">
+                       <h4 className="text-xl font-black uppercase tracking-tight text-red-600">Danger Zone</h4>
+                       <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Historical Operations & Decommissioning</p>
+                     </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-5 rounded-2xl bg-muted/10 border-2 border-dashed border-black/5 flex flex-col justify-between gap-4">
+                       <div className="space-y-1">
+                         <p className="text-[10px] font-black uppercase tracking-widest leading-none text-foreground">Archive League Hub</p>
+                         <p className="text-[9px] font-medium text-muted-foreground leading-tight italic">Move this league to the historical archives. It will stay in your database but hidden from active squads.</p>
+                       </div>
+                       <Button variant="outline" className="h-10 border-red-200 text-red-600 hover:bg-red-50 font-black uppercase text-[10px]" onClick={handleArchiveLeague}>
+                         Archive Environment
+                       </Button>
+                    </div>
+
+                    <div className="p-5 rounded-2xl bg-red-50 border-2 border-dashed border-red-100 flex flex-col justify-between gap-4">
+                       <div className="space-y-1">
+                         <p className="text-[10px] font-black uppercase tracking-widest leading-none text-red-700">Decommission Entire Season</p>
+                         <p className="text-[9px] font-medium text-red-600 leading-tight italic">Warning: This will purge all active matches and standings. Registration data and waivers will remain archived.</p>
+                       </div>
+                       <Button variant="destructive" className="h-10 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[10px]" onClick={async () => {
+                         if (!activeLeague) return;
+                         if (!window.confirm(`CRITICAL: You are about to purge all matches and standings for ${activeLeague.name}. This action cannot be reversed. Continue?`)) return;
+                         setIsProcessing(true);
+                         try {
+                           await updateDoc(doc(db, 'leagues', activeLeague.id), { schedule: [], teams: {} }); 
+                           setIsEditLeagueOpen(false);
+                           toast({ title: "Season Purged", description: "Operational environment reset." });
+                         } finally { setIsProcessing(false); }
+                       }}>
+                         Authorize Purge
+                       </Button>
+                    </div>
+                  </div>
+                </div>
             </div>
             <DialogFooter className="pt-6">
               <Button disabled={isProcessing} className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSaveLeague}>
                 {isProcessing ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : `Commit ${leagueLabel} Profile`}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDuplicateOpen} onOpenChange={setIsDuplicateOpen}>
+        <DialogContent className="rounded-[2.5rem] sm:max-w-md p-0 overflow-hidden bg-white text-foreground">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-10 space-y-8">
+            <DialogHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="bg-primary/5 p-3 rounded-2xl text-primary"><Copy className="h-6 w-6" /></div>
+                <DialogTitle className="text-3xl font-black uppercase">Replicate Hub</DialogTitle>
+              </div>
+              <DialogDescription className="font-bold text-[10px] uppercase tracking-widest text-primary">Clone operational framework and pipeline</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Label className="text-[10px] font-black uppercase">New Hub Title</Label>
+              <Input 
+                placeholder="e.g. State Varsity Premier - Season 2" 
+                value={duplicateTitle} 
+                onChange={e => setDuplicateTitle(e.target.value)} 
+                className="h-14 rounded-2xl border-2 font-black" 
+                autoFocus
+              />
+              <p className="text-[9px] font-medium text-muted-foreground italic leading-relaxed">
+                This will clone all divisions, age groups, costs, and registration portals. 
+                Rosters and match history will be reset.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleDuplicateLeague} disabled={isProcessing || !duplicateTitle.trim()}>
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Replicated Hub"}
               </Button>
             </DialogFooter>
           </div>

@@ -89,7 +89,8 @@ import {
   DialogTitle, 
   DialogTrigger,
   DialogFooter,
-  DialogDescription
+  DialogDescription,
+  DialogClose
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';

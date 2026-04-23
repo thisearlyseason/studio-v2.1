@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { SquadIdentity } from '@/components/SquadIdentity';
 
 export default function PublicLeagueSpectatorHub() {
   const { leagueId } = useParams();
@@ -62,6 +63,17 @@ export default function PublicLeagueSpectatorHub() {
     if (!league?.teams) return [];
     return Object.entries(league.teams).map(([id, stats]) => ({ id, ...stats })).sort((a, b) => b.points - a.points || b.wins - a.wins);
   }, [league]);
+
+  // Build a team logo map from league.teams for consistent logo resolution
+  const logoMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (league?.teams) {
+      Object.entries(league.teams).forEach(([id, t]) => {
+        if ((t as any).teamLogoUrl) map[id] = (t as any).teamLogoUrl;
+      });
+    }
+    return map;
+  }, [league?.teams]);
 
   const gamesByDay = useMemo(() => {
     return (filteredSchedule as any[]).reduce((acc: any, game: any) => {
@@ -205,16 +217,26 @@ export default function PublicLeagueSpectatorHub() {
                           
                           <div className={cn("flex-1 space-y-4", isPastDay && "opacity-60")}>
                             <div className="flex items-center justify-between gap-4">
-                               <div className="flex items-center gap-3 min-w-0">
-                                 {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
-                                 <p className={cn("font-black uppercase tracking-tight leading-tight", isPastDay ? "text-[10px]" : "text-base sm:text-lg")}>{game.team1}</p>
+                                 <div className="flex items-center gap-3 min-w-0">
+                                   {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
+                                   {logoMap[(game as any).team1Id || ''] ? (
+                                     <div className={cn("shrink-0 rounded-xl overflow-hidden border border-muted/20 shadow-md bg-white p-1", isPastDay ? "h-10 w-10" : "h-14 w-14")}>
+                                       <img src={logoMap[(game as any).team1Id || '']} alt={game.team1} className="w-full h-full object-contain" />
+                                     </div>
+                                   ) : null}
+                                   <span className={cn("font-black uppercase tracking-tight leading-tight", isPastDay ? "text-[10px]" : "text-base sm:text-lg")}>{game.team1}</span>
                                </div>
                                <AnimatedScore className={cn("font-black tracking-tighter tabular-nums", (game.isCompleted && game.score1 > game.score2) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-3xl sm:text-4xl")} value={game.score1} />
                             </div>
                             <div className="flex items-center justify-between gap-4">
-                               <div className="flex items-center gap-3 min-w-0">
-                                 {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
-                                 <p className={cn("font-black uppercase tracking-tight leading-tight", isPastDay ? "text-[10px]" : "text-base sm:text-lg")}>{game.team2}</p>
+                                <div className="flex items-center gap-3 min-w-0">
+                                  {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
+                                  {logoMap[(game as any).team2Id || ''] ? (
+                                    <div className={cn("shrink-0 rounded-xl overflow-hidden border border-muted/20 shadow-md bg-white p-1", isPastDay ? "h-10 w-10" : "h-14 w-14")}>
+                                      <img src={logoMap[(game as any).team2Id || '']} alt={game.team2} className="w-full h-full object-contain" />
+                                    </div>
+                                  ) : null}
+                                  <span className={cn("font-black uppercase tracking-tight leading-tight", isPastDay ? "text-[10px]" : "text-base sm:text-lg")}>{game.team2}</span>
                                </div>
                                <AnimatedScore className={cn("font-black tracking-tighter tabular-nums", (game.isCompleted && game.score2 > game.score1) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-3xl sm:text-4xl")} value={game.score2} />
                             </div>
@@ -254,7 +276,27 @@ export default function PublicLeagueSpectatorHub() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest text-muted-foreground border-b"><tr><th className="px-6 py-5">Squad</th><th className="px-2 py-5 text-center">W-L</th><th className="px-6 py-5 text-right text-primary">PTS</th></tr></thead>
-                  <tbody className="divide-y">{standings.map((team, idx) => (<tr key={team.id} className="hover:bg-primary/5 transition-colors"><td className="px-6 py-5"><div className="flex items-center gap-3"><span className="text-[10px] font-black text-muted-foreground/40 w-4">{idx + 1}</span><span className="font-black text-xs uppercase tracking-tight truncate max-w-[100px]">{team.teamName}</span></div></td><td className="px-2 py-5 text-center font-bold text-[10px] text-muted-foreground">{team.wins}-{team.losses}</td><td className="px-6 py-5 text-right"><span className={cn("font-black text-sm", team.points > 0 ? "text-primary" : team.points < 0 ? "text-destructive" : "text-foreground")}>{team.points > 0 ? '+' : ''}{team.points}</span></td></tr>))}</tbody>
+                  <tbody className="divide-y">{standings.map((team, idx) => (
+                    <tr key={team.id} className="hover:bg-primary/5 transition-colors">
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] font-black text-muted-foreground/40 w-4">{idx + 1}</span>
+                          {logoMap[team.id] || (team as any).teamLogoUrl ? (
+                            <div className="h-10 w-10 rounded-lg overflow-hidden border border-muted/20 shadow-sm bg-white p-0.5 shrink-0">
+                              <img src={logoMap[team.id] || (team as any).teamLogoUrl} alt={team.teamName} className="w-full h-full object-contain" />
+                            </div>
+                          ) : null}
+                          <span className="font-black text-xs uppercase tracking-tight truncate max-w-[100px]">{team.teamName}</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-5 text-center font-bold text-[10px] text-muted-foreground">{team.wins}-{team.losses}</td>
+                      <td className="px-6 py-5 text-right">
+                        <span className={cn("font-black text-sm", team.points > 0 ? "text-primary" : team.points < 0 ? "text-destructive" : "text-foreground")}>
+                          {team.points > 0 ? '+' : ''}{team.points}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}</tbody>
                 </table>
               </div>
             </Card>

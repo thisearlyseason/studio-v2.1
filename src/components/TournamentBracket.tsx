@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Download, Trophy, Target, FileDown, Layers } from 'lucide-react';
+import { SquadIdentity } from '@/components/SquadIdentity';
 import { Button } from '@/components/ui/button';
 import { exportImageToPDF } from '@/lib/pdf-utils';
 
@@ -88,24 +89,44 @@ function BracketNode({ game, allGames, onGameClick }: { game: TournamentGame, al
            <div className="flex flex-col">
              {/* Team 1 */}
              <div className="flex justify-between items-center px-3 py-1.5 border-b border-white/5 bg-[#0F172A]/50 hover:bg-white/5 transition-colors">
-               <div className="flex items-center gap-1.5 overflow-hidden">
-                 {isCompleted && game.score1 > game.score2 && <Trophy className="h-2.5 w-2.5 text-yellow-500 shrink-0" />}
-                 <span className={cn("text-[10px] font-bold uppercase truncate max-w-[90px]", (game.team1.includes('TBD') && !isCompleted) ? 'text-white/30' : 'text-white/90')}>
-                    {formatTeamName(game.team1)}
-                 </span>
-               </div>
-               <span className={cn("text-xs font-black", (game.score1 > game.score2 && isCompleted) ? "text-primary drop-shadow-[0_0_8px_rgba(var(--primary),0.8)]" : "text-white/40")}>{game.score1}</span>
-             </div>
+                <div className="flex items-center gap-1.5 overflow-hidden">
+                  <SquadIdentity 
+                    teamId={game.team1Id} 
+                    teamName={formatTeamName(game.team1)} 
+                    logoUrl={game.team1LogoUrl}
+                    logoClassName="h-4 w-4 rounded shadow-sm border shrink-0" 
+                    showNameWithLogo
+                    horizontal
+                    textClassName={cn("text-[10px] font-bold uppercase truncate max-w-[110px]", (game.team1.includes('TBD') && !game.isCompleted) ? 'text-white/30' : 'text-white/90')}
+                  />
+                  {isCompleted && game.score1 > game.score2 && <Trophy className="h-2.5 w-2.5 text-yellow-500 shrink-0" />}
+                </div>
+                {!game.team1.includes('TBD') || game.isCompleted ? (
+                  <span className={cn("text-xs font-black", (game.score1 > game.score2 && game.isCompleted) ? "text-primary drop-shadow-[0_0_8px_rgba(var(--primary),0.8)]" : "text-white/40")}>
+                    {game.score1}
+                  </span>
+                ) : <span className="text-[8px] font-black opacity-10">...</span>}
+              </div>
              {/* Team 2 */}
              <div className="flex justify-between items-center px-3 py-1.5 bg-[#0F172A]/50 hover:bg-white/5 transition-colors relative">
-               <div className="flex items-center gap-1.5 overflow-hidden">
-                 {isCompleted && game.score2 > game.score1 && <Trophy className="h-2.5 w-2.5 text-yellow-500 shrink-0" />}
-                 <span className={cn("text-[10px] font-bold uppercase truncate max-w-[90px]", (game.team2.includes('TBD') && !isCompleted) ? 'text-white/30' : 'text-white/90')}>
-                    {formatTeamName(game.team2)}
-                 </span>
-               </div>
-               <span className={cn("text-xs font-black", (game.score2 > game.score1 && isCompleted) ? "text-primary drop-shadow-[0_0_8px_rgba(var(--primary),0.8)]" : "text-white/40")}>{game.score2}</span>
-             </div>
+                <div className="flex items-center gap-1.5 overflow-hidden">
+                  <SquadIdentity 
+                    teamId={game.team2Id} 
+                    teamName={formatTeamName(game.team2)} 
+                    logoUrl={game.team2LogoUrl}
+                    logoClassName="h-4 w-4 rounded shadow-sm border shrink-0" 
+                    showNameWithLogo
+                    horizontal
+                    textClassName={cn("text-[10px] font-bold uppercase truncate max-w-[110px]", (game.team2.includes('TBD') && !game.isCompleted) ? 'text-white/30' : 'text-white/90')}
+                  />
+                  {isCompleted && game.score2 > game.score1 && <Trophy className="h-2.5 w-2.5 text-yellow-500 shrink-0" />}
+                </div>
+                {!game.team2.includes('TBD') || game.isCompleted ? (
+                  <span className={cn("text-xs font-black", (game.score2 > game.score1 && game.isCompleted) ? "text-primary drop-shadow-[0_0_8px_rgba(var(--primary),0.8)]" : "text-white/40")}>
+                    {game.score2}
+                  </span>
+                ) : <span className="text-[8px] font-black opacity-10">...</span>}
+              </div>
            </div>
 
            {/* Completion Strip */}
@@ -231,12 +252,32 @@ export default function TournamentBracket({ games, standalone = false, onGameCli
                     <Badge className="bg-white text-black text-[7px] font-black uppercase tracking-widest px-1.5">{game.time}</Badge>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="font-bold uppercase text-xs text-white/90 truncate pr-2">{game.team1}</span>
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <SquadIdentity 
+                        teamId={game.team1Id} 
+                        teamName={game.team1} 
+                        logoUrl={game.team1LogoUrl}
+                        logoClassName="h-5 w-5 rounded shadow-sm border shrink-0" 
+                        showNameWithLogo
+                        horizontal
+                        textClassName="font-bold uppercase text-xs text-white/90 truncate pr-2"
+                      />
+                    </div>
                     <span className="font-black text-xl text-white/40 group-hover:text-white drop-shadow-sm transition-colors">{game.score1}</span>
                   </div>
                   <div className="py-2 flex items-center justify-center opacity-20"><Target className="h-3 w-3 text-white animate-pulse" /></div>
                   <div className="flex items-center justify-between">
-                    <span className="font-bold uppercase text-xs text-white/90 truncate pr-2">{game.team2}</span>
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <SquadIdentity 
+                        teamId={game.team2Id} 
+                        teamName={game.team2} 
+                        logoUrl={game.team2LogoUrl}
+                        logoClassName="h-5 w-5 rounded shadow-sm border shrink-0" 
+                        showNameWithLogo
+                        horizontal
+                        textClassName="font-bold uppercase text-xs text-white/90 truncate pr-2"
+                      />
+                    </div>
                     <span className="font-black text-xl text-white/40 group-hover:text-white drop-shadow-sm transition-colors">{game.score2}</span>
                   </div>
                 </Card>

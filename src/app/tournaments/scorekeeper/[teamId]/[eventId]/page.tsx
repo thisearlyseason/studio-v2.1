@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Terminal, Clock, MapPin, ChevronRight, Loader2, AlertCircle, ShieldCheck } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
+import { SquadIdentity } from '@/components/SquadIdentity';
 
 export default function PublicScorekeeperHub() {
   const { teamId, eventId } = useParams();
@@ -63,12 +64,35 @@ export default function PublicScorekeeperHub() {
                     <Clock className="h-4 w-4 text-primary mb-1" />
                     <span className="text-[10px] font-black uppercase">{game.time}</span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-black text-sm uppercase truncate">{game.team1} vs {game.team2}</h3>
-                      {game.isCompleted && <Badge className="bg-black text-white font-black text-[7px] h-4">FINAL</Badge>}
-                      {game.isDisputed && <Badge className="bg-red-600 text-white font-black text-[7px] h-4">DISPUTED</Badge>}
-                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-col gap-1 mb-2">
+                        <div className="flex items-center">
+                          <SquadIdentity 
+                            teamId={game.team1Id} 
+                            teamName={game.team1} 
+                            logoUrl={event.tournamentTeamsData?.find(t => t.id === game.team1Id)?.logoUrl || event.tournamentTeamsData?.find(t => t.name === game.team1)?.logoUrl}
+                            logoClassName="h-6 w-6 rounded shadow-sm border shrink-0" 
+                            showNameWithLogo
+                            horizontal
+                            textClassName="font-black text-sm uppercase truncate"
+                          />
+                        </div>
+                        <div className="flex items-center">
+                          <SquadIdentity 
+                            teamId={game.team2Id} 
+                            teamName={game.team2} 
+                            logoUrl={event.tournamentTeamsData?.find(t => t.id === game.team2Id)?.logoUrl || event.tournamentTeamsData?.find(t => t.name === game.team2)?.logoUrl}
+                            logoClassName="h-6 w-6 rounded shadow-sm border shrink-0" 
+                            showNameWithLogo
+                            horizontal
+                            textClassName="font-black text-sm uppercase truncate"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {game.isCompleted && <Badge className="bg-black text-white font-black text-[7px] h-4 uppercase">FINAL: {game.score1}-{game.score2}</Badge>}
+                        {game.isDisputed && <Badge className="bg-red-600 text-white font-black text-[7px] h-4">DISPUTED</Badge>}
+                      </div>
                     <p className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
                       <MapPin className="h-3 w-3" /> {game.location || event.location}
                     </p>

@@ -199,6 +199,16 @@ export default function RosterPage() {
     return `U${age + 1}`;
   };
 
+  const handleUpdateMemberField = async (field: keyof Member, value: any) => {
+    if (!selectedMember) return;
+    try {
+      await updateMember(selectedMember.id, { [field]: value });
+      toast({ title: "Profile Synchronized", description: `${field.toUpperCase()} has been updated for ${selectedMember.name}` });
+    } catch (e) {
+      toast({ title: "Update Failed", variant: "destructive" });
+    }
+  };
+
   const handleUpdatePosition = async () => {
     if (!selectedMember) return;
     setIsSavingPosition(true);
@@ -306,7 +316,8 @@ export default function RosterPage() {
       y += 20;
       drawStat("Sanctioned Sport", activeTeam?.sport || 'General', 20, y);
       drawStat("Age Group", calculateAgeGroup(selectedMember.birthdate) || 'U18', 80, y);
-      drawStat("Institutional ID", selectedMember.id.slice(-8), 140, y);
+      drawStat("Division", selectedMember.division || 'N/A', 140, y);
+      drawStat("Institutional ID", selectedMember.id.slice(-8), 200, y); // Adjusted x to fit division
 
       // --- Narrative Section ---
       y += 25;
@@ -648,6 +659,12 @@ export default function RosterPage() {
                           )}
                         </div>
                       <div className="flex flex-col gap-2 text-white/60 text-[10px] font-bold uppercase tracking-widest">
+                        {selectedMember.division && (
+                          <div className="flex items-center gap-2">
+                            <Target className="h-3 w-3" />
+                            <span>Division: {selectedMember.division}</span>
+                          </div>
+                        )}
                         {selectedMember.email && (
                           <div className="flex items-center gap-2">
                             <Mail className="h-3 w-3" />
@@ -740,6 +757,22 @@ export default function RosterPage() {
                   <>
                     <div className="space-y-6">
                       <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Award className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Athlete Narrative</h4></div>
+                      
+                      {isStaff && (
+                         <div className="bg-black/5 p-6 rounded-3xl border-2 border-dashed space-y-4 mb-6">
+                           <div className="flex items-center justify-between">
+                             <Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Institutional Tier / Division</Label>
+                           </div>
+                           <Input 
+                             placeholder="e.g. Varsity, Junior Varsity, Elite..."
+                             value={selectedMember.division || ''}
+                             onChange={(e) => handleUpdateMemberField('division', e.target.value)}
+                             className="h-12 rounded-[1.5rem] border-2 font-black text-lg bg-white"
+                           />
+                           <p className="text-[9px] font-medium text-muted-foreground italic leading-relaxed">Assign this athlete to a specific competitive division for league and tournament sorting.</p>
+                         </div>
+                      )}
+
                       <div className="bg-muted/30 p-6 rounded-[2.5rem] border-2 border-dashed">
                         <p className="text-sm font-medium leading-relaxed italic text-foreground/80">
                           {selectedMember.notes || "This athlete has not yet established a squad bio. Visit Settings to update."}

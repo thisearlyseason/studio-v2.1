@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { SquadIdentity } from '@/components/SquadIdentity';
 
 export default function BillingDashboard() {
   const { user: userProfile, isPro, teams, proQuotaStatus, updateTeamPlan } = useTeam();
@@ -494,8 +495,8 @@ export default function BillingDashboard() {
                 <Card key={team.id} className={cn("rounded-[2rem] border-2 transition-all overflow-hidden", team.isPro ? "border-primary/20 bg-primary/[0.02]" : "border-border/40 bg-white")}>
                   <CardHeader className="p-6 pb-2">
                     <div className="flex items-start justify-between">
-                       <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center font-black text-xs uppercase overflow-hidden">
-                          {team.teamLogoUrl ? <img src={team.teamLogoUrl} className="w-full h-full object-cover" /> : team.name.slice(0, 2)}
+                       <div className="flex-shrink-0">
+                          <SquadIdentity teamId={team.id} teamName={team.name} logoUrl={team.teamLogoUrl} size="md" />
                        </div>
                        {team.isPro ? (
                          <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[8px] font-black uppercase tracking-widest px-2">Pro Linked</Badge>

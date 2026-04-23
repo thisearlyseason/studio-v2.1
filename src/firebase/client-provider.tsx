@@ -21,7 +21,9 @@ if (typeof window !== 'undefined') {
     msg?.includes('ve: -1') ||
     msg?.includes('hc: "Error: FIRESTORE') ||
     msg?.includes('could not be completed') ||
-    (msg?.includes('FIRESTORE') && msg?.includes('INTERNAL'));
+    (msg?.includes('FIRESTORE') && msg?.includes('INTERNAL')) ||
+    msg?.includes('auth/network-request-failed') ||
+    msg?.includes('network-request-failed');
 
   const handleError = (event: ErrorEvent) => {
     const msg = event.message || event.error?.message || String(event.error || '');

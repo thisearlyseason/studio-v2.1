@@ -27,7 +27,6 @@ import {
   ArrowRight,
   RotateCcw,
   AlertTriangle,
-  BookOpen,
   ShieldCheck,
   User,
   Edit3,
@@ -59,7 +58,7 @@ import { toast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import Link from 'next/link';
-import { cn } from '@/lib/utils';
+import { cn, compressImage } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
 
@@ -67,7 +66,7 @@ export default function SettingsPage() {
   const { 
     user, updateUser, members, activeTeam, updateMember, 
     manageSubscription, isPro, resetSquadData, checkCodeUniqueness, 
-    updateTeamCode, isStaff, isPrimaryClubAuthority 
+    updateTeamCode, isStaff, isPrimaryClubAuthority, db
   } = useTeam();
   const auth = useAuth();
   const router = useRouter();
@@ -82,8 +81,6 @@ export default function SettingsPage() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   
   const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', position: '', bio: '' });
-  const [isCodeEditOpen, setIsCodeEditOpen] = useState(false);
-  const [newCode, setNewCode] = useState('');
 
   useEffect(() => {
     setMounted(true);
@@ -121,14 +118,17 @@ export default function SettingsPage() {
       try {
         const reader = new FileReader();
         reader.onload = async (ev) => {
-          await updateUser({ avatar: ev.target?.result as string });
+          const rawData = ev.target?.result as string;
+          // Use institutional compression to stay within document limits
+          const compressedAvatar = await compressImage(rawData, 400, 400, 0.7);
+          await updateUser({ avatar: compressedAvatar });
           toast({ title: "Avatar Updated" });
           setIsUpdatingAvatar(false);
         };
         reader.readAsDataURL(e.target.files[0]);
       } catch (error) {
         setIsUpdatingAvatar(false);
-        toast({ title: "Update Failed", variant: "destructive" });
+        toast({ title: "Update Failed", description: "Avatar packet rejected by server.", variant: "destructive" });
       }
     }
   };
@@ -158,31 +158,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleCodeUpdate = async () => {
-    if (newCode.length < 8 || newCode.length > 20) {
-      toast({ title: "Incompatible Length", description: "Identity codes must be between 8 and 20 characters.", variant: "destructive" });
-      return;
-    }
-    
-    setIsProcessing(true);
-    try {
-      const isUnique = await checkCodeUniqueness(newCode);
-      if (!isUnique) {
-        toast({ title: "Identity Clash", description: "This code is already reserved by another squad. Try a different combination.", variant: "destructive" });
-        return;
-      }
-      
-      if (activeTeam?.id) {
-        await updateTeamCode(activeTeam.id, newCode);
-        toast({ title: "Identity Formalized", description: "Your unique squad code is now active." });
-        setIsCodeEditOpen(false);
-      }
-    } catch (e) {
-      toast({ title: "Protocol Failure", description: "Failed to broadcast identity update.", variant: "destructive" });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+
 
   const handleFinalReset = async () => {
     setIsProcessing(true);
@@ -214,9 +190,9 @@ export default function SettingsPage() {
     }
   };
 
-  const lastUpdate = activeTeam?.lastCodeEditedAt ? new Date(activeTeam.lastCodeEditedAt).getTime() : 0;
-  const isLocked = (Date.now() - lastUpdate) < (24 * 60 * 60 * 1000);
-  const hoursLeft = Math.max(0, Math.ceil((24 * 60 * 60 * 1000 - (Date.now() - lastUpdate)) / (60 * 60 * 1000)));
+  // const lastUpdate = activeTeam?.lastCodeEditedAt ? new Date(activeTeam.lastCodeEditedAt).getTime() : 0;
+  // const isLocked = (Date.now() - lastUpdate) < (24 * 60 * 60 * 1000);
+  // const hoursLeft = Math.max(0, Math.ceil((24 * 60 * 60 * 1000 - (Date.now() - lastUpdate)) / (60 * 60 * 1000)));
 
   return (
     <div className="space-y-10 pb-20 max-w-4xl mx-auto">
@@ -383,79 +359,7 @@ export default function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
-
-        {isAdmin && (
-          <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden lg:col-span-2">
-            <CardHeader className="bg-primary/5 border-b p-8 flex flex-row items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><Edit3 className="h-5 w-5" /></div>
-                <CardTitle className="text-sm font-black uppercase tracking-widest">Squad Identity Architect</CardTitle>
-              </div>
-              {isLocked && (
-                <Badge variant="outline" className="text-muted-foreground font-black uppercase text-[8px] tracking-widest px-3 border-orange-200 bg-orange-50 text-orange-700">Cooling Down ({hoursLeft}h)</Badge>
-              )}
-            </CardHeader>
-            <CardContent className="p-8">
-              <div className="flex flex-col md:flex-row items-center gap-8">
-                <div className="flex-1 space-y-4">
-                  <div className="p-6 bg-muted/20 rounded-[2rem] border-2 border-transparent flex items-center justify-between">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Active Registration Code</p>
-                      <p className={cn("font-black text-primary tracking-tighter select-all", (activeTeam?.code || activeTeam?.teamCode || "").length > 12 ? "text-2xl" : "text-3xl")}>{activeTeam?.code || activeTeam?.teamCode || activeTeam?.inviteCode}</p>
-                    </div>
-                    {!isLocked && (
-                      <Button onClick={() => setIsCodeEditOpen(true)} className="h-10 rounded-xl font-black text-[10px] uppercase tracking-widest px-6 active:scale-95 transition-all">
-                        Customize
-                      </Button>
-                    )}
-                  </div>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed px-2">
-                    {isLocked 
-                      ? `Your unique squad identity code is currently cooling down. You can customize it again in approximately ${hoursLeft} hours.`
-                      : "You can personalize your squad code once every 24 hours. Ensure it is unique and memorable for your athletes. Codes must be 8-20 characters."}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
-
-      <Dialog open={isCodeEditOpen} onOpenChange={setIsCodeEditOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden">
-          <DialogTitle className="sr-only">Customize Squad Identity</DialogTitle>
-          <div className="h-2 bg-primary w-full" />
-          <div className="p-8 space-y-8">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Finalize Identity</DialogTitle>
-              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Customize once every 24 hours</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Proposed Squad Code</Label>
-                <Input 
-                  placeholder="e.g. VARSITY24" 
-                  className="h-14 rounded-2xl border-2 font-black text-xl uppercase tracking-tighter text-center bg-muted/20 focus:bg-white transition-all uppercase"
-                  value={newCode}
-                  maxLength={20}
-                  onChange={e => setNewCode(e.target.value.toUpperCase().replace(/\s+/g, ''))}
-                />
-              </div>
-              <div className="bg-amber-50 p-4 rounded-2xl flex items-start gap-3 border border-amber-100">
-                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                <p className="text-[10px] font-bold text-amber-700 uppercase leading-relaxed">
-                  Changing your code will immediately invalidate the old one. Any athletes using the previous code will need the new one to join.
-                </p>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button className="w-full h-14 rounded-full text-sm font-black uppercase tracking-widest shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCodeUpdate} disabled={isProcessing || newCode.length < 8}>
-                {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Authorize Identity Update"}
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <div className="space-y-4 pt-10 border-t">
         <h3 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground px-2">Account Logistics</h3>

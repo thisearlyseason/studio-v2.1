@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
+import { SquadIdentity } from '@/components/SquadIdentity';
 
 export default function PublicLeagueScorekeeperHub() {
   const { leagueId } = useParams();
@@ -123,31 +124,46 @@ export default function PublicLeagueScorekeeperHub() {
                         </div>
 
                         <div className="grid grid-cols-1 gap-2">
-                           {/* Team 1 Row */}
-                           <div className="flex justify-between items-center group/team">
-                              <div className="flex items-center gap-3 min-w-0">
-                                {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-4 w-4 text-yellow-500 shadow-md" />}
-                                <h3 className={cn(
-                                  "font-black text-lg sm:text-xl uppercase tracking-tighter transition-all",
-                                  game.isCompleted ? "text-foreground/80" : "text-foreground group-hover:text-primary"
-                                )}>{game.team1}</h3>
-                              </div>
-                              {game.isCompleted && <span className="text-2xl font-black text-primary tabular-nums tracking-tighter">{game.score1}</span>}
-                           </div>
+                            <div className="flex justify-between items-center group/team">
+                               <div className="flex items-center gap-3 min-w-0">
+                                 {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-4 w-4 text-yellow-500 shadow-md shrink-0" />}
+                                 <SquadIdentity 
+                                   teamId={(game as any).team1Id} 
+                                   teamName={game.team1} 
+                                   logoUrl={league.teams?.[(game as any).team1Id || '']?.teamLogoUrl}
+                                   showNameWithLogo
+                                   horizontal
+                                   logoClassName="h-8 w-8 rounded-lg shadow-sm border shrink-0" 
+                                   textClassName={cn(
+                                     "font-black text-lg sm:text-xl uppercase tracking-tighter transition-all",
+                                     game.isCompleted ? "text-foreground/80" : "text-foreground group-hover:text-primary"
+                                   )}
+                                 />
+                               </div>
+                               {game.isCompleted && <span className="text-2xl font-black text-primary tabular-nums tracking-tighter">{game.score1}</span>}
+                            </div>
 
                            <div className="h-px bg-muted/50 w-8" />
 
                            {/* Team 2 Row */}
-                           <div className="flex justify-between items-center group/team">
-                              <div className="flex items-center gap-3 min-w-0">
-                                {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-4 w-4 text-yellow-500 shadow-md" />}
-                                <h3 className={cn(
-                                  "font-black text-lg sm:text-xl uppercase tracking-tighter transition-all",
-                                  game.isCompleted ? "text-foreground/80" : "text-foreground group-hover:text-primary"
-                                )}>{game.team2}</h3>
-                              </div>
-                              {game.isCompleted && <span className="text-2xl font-black text-primary tabular-nums tracking-tighter">{game.score2}</span>}
-                           </div>
+                            <div className="flex justify-between items-center group/team">
+                               <div className="flex items-center gap-3 min-w-0">
+                                 {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-4 w-4 text-yellow-500 shadow-md shrink-0" />}
+                                 <SquadIdentity 
+                                   teamId={(game as any).team2Id} 
+                                   teamName={game.team2} 
+                                   logoUrl={league.teams?.[(game as any).team2Id || '']?.teamLogoUrl}
+                                   showNameWithLogo
+                                   horizontal
+                                   logoClassName="h-8 w-8 rounded-lg shadow-sm border shrink-0" 
+                                   textClassName={cn(
+                                     "font-black text-lg sm:text-xl uppercase tracking-tighter transition-all",
+                                     game.isCompleted ? "text-foreground/80" : "text-foreground group-hover:text-primary"
+                                   )}
+                                 />
+                               </div>
+                               {game.isCompleted && <span className="text-2xl font-black text-primary tabular-nums tracking-tighter">{game.score2}</span>}
+                            </div>
                         </div>
                       </div>
 

@@ -42,6 +42,7 @@ export interface TeamIdentity {
   name: string;
   coach?: string;
   email?: string;
+  logoUrl?: string;
 }
 
 export interface ScheduleConfig {
@@ -285,6 +286,7 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
       finalGames.push({
         id: nextMatchId('lg'),
         team1: t1.name, team2: t2.name, team1Id: t1.id, team2Id: t2.id,
+        team1LogoUrl: t1.logoUrl, team2LogoUrl: t2.logoUrl,
         score1: 0, score2: 0,
         date: format(slot.date, 'yyyy-MM-dd'),
         time: slotTimeFormatted,
@@ -343,7 +345,9 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
     // MINOR-1 FIX: Deterministic order (no shuffle) for reproducibility
     const pairs = generateRoundRobinPairs(teamList);
     pairs.forEach(p => matchups.push({
-      t1: p.t1.name, t2: p.t2.name, t1Id: p.t1.id, t2Id: p.t2.id, round: 'Pool Play'
+      t1: p.t1.name, t2: p.t2.name, t1Id: p.t1.id, t2Id: p.t2.id, 
+      t1LogoUrl: p.t1.logoUrl, t2LogoUrl: p.t2.logoUrl,
+      round: 'Pool Play'
     }));
   }
 
@@ -367,6 +371,7 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
       const pairs = generateRoundRobinPairs(poolTeams);
       pairs.forEach(p => matchups.push({
         t1: p.t1.name, t2: p.t2.name, t1Id: p.t1.id, t2Id: p.t2.id,
+        t1LogoUrl: p.t1.logoUrl, t2LogoUrl: p.t2.logoUrl,
         round: `Pool ${poolLabel}`, pool: poolIdx
       }));
     });
@@ -477,129 +482,153 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
   const teamGamesPerDay = new Map<string, number>(); // "date:teamId" → count
 
   // Round tier determines scheduling order (pool → WB/LB → semis → final)
-  const getRoundTier = (r: string): number => {
-    const rL = r.toLowerCase();
-    if (rL.startsWith('pool')) return 0;
-    if (rL.includes('lb round')) {
-      const m = rL.match(/lb round\s+(\d+)/);
-      return m ? 20 + parseInt(m[1]) : 20;
-    }
-    const m = rL.match(/round\s+(\d+)/);
-    if (m) return 10 + parseInt(m[1]);
-    if (rL.includes('wb semi')) return 60;
-    if (rL.includes('wb final')) return 70;
-    if (rL.includes('lb final')) return 75;
-    if (rL.includes('quarter')) return 80;
-    if (rL.includes('semi')) return 90;
-    if (rL.includes('championship')) return 100;
-    if (rL.includes('decider')) return 110;
-    return 10;
-  };
+    const getRoundTier = (r: string): number => {
+      const rL = r.toLowerCase();
+      if (rL.startsWith('pool')) return 0;
+      
+      // Tournament Protocol: Hierarchy of phases
+      // 1. WB Rounds (11-19)
+      // 2. LB Rounds (31-39) - Must follow WB
+      // 3. Semis/Quarters (70-80)
+      // 4. Finals (90-100)
+      
+      if (rL.includes('championship')) return 100;
+      if (rL.includes('decider')) return 110;
+      
+      if (rL.includes('final')) {
+          if (rL.includes('winners') || rL.includes('wb')) return 90;
+          if (rL.includes('losers') || rL.includes('lb')) return 95;
+          return 100;
+      }
+      
+      if (rL.includes('semi')) return 80;
+      if (rL.includes('quarter')) return 70;
+
+      // Detect LB specific rounds first to separate from WB
+      if (rL.includes('lb round')) {
+        const m = rL.match(/lb round\s+(\d+)/);
+        return m ? 30 + parseInt(m[1]) : 31;
+      }
+      
+      // Standard WB Round detection
+      const m = rL.match(/round\s+(\d+)/);
+      if (m) return 10 + parseInt(m[1]);
+
+      return 10;
+    };
 
   const pool = [...finalMatchups];
 
-  for (const slot of slots) {
+  // Group slots by timeslot (Date + Time)
+  const slotsByTime = new Map<string, { date: Date; time: Date; field: string }[]>();
+  slots.forEach(s => {
+    const key = `${format(s.date, 'yyyy-MM-dd')}_${format(s.time, 'HH:mm')}`;
+    if (!slotsByTime.has(key)) slotsByTime.set(key, []);
+    slotsByTime.get(key)!.push(s);
+  });
+
+  const sortedTimes = Array.from(slotsByTime.keys()).sort();
+
+  for (const timeKey of sortedTimes) {
     if (pool.length === 0) break;
+    const currentSlots = slotsByTime.get(timeKey)!;
+    const dayKey = format(currentSlots[0].date, 'yyyy-MM-dd');
+    const slotTimeStr = format(currentSlots[0].time, 'h:mm a');
 
-    const dayKey = format(slot.date, 'yyyy-MM-dd');
-    const slotTimeStr = format(slot.time, 'h:mm a');
+    // CRITICAL FIX: Lock the tier for this entire timeslot.
+    // This prevents Round 2 from starting at the same time as Round 1 on different fields.
+    const currentTierLimit = Math.min(...pool.map(m => getRoundTier(m.round)));
 
-    let foundMatchupIndex = -1;
+    for (const slot of currentSlots) {
+      if (pool.length === 0) break;
 
-    // Enforce chronological phase ordering
-    const minTierInPool = Math.min(...pool.map(m => getRoundTier(m.round)));
+      let foundMatchupIndex = -1;
+      for (let i = 0; i < pool.length; i++) {
+        const { t1, t2, t1Id, t2Id, round } = pool[i];
+        
+        // Strict adherence to the locked tier for this timeslot
+        if (getRoundTier(round) > currentTierLimit) continue;
 
-    for (let i = 0; i < pool.length; i++) {
-      const { t1, t2, t1Id, t2Id, round } = pool[i];
-      const id1 = t1Id || t1;
-      const id2 = t2Id || t2;
+        const id1 = t1Id || t1;
+        const id2 = t2Id || t2;
+        const MIN_REST = gameLength + breakLength;
+        const currentSlotTime = slot.time;
 
-      // Phase isolation
-      if (getRoundTier(round) > minTierInPool) continue;
+        const t1IsTBD = t1.includes('TBD') || id1 === 'tbd';
+        const t2IsTBD = t2.includes('TBD') || id2 === 'tbd';
 
-      const MIN_REST = gameLength + breakLength;
-      const currentSlotTime = slot.time;
+        const t1IsBusy = !t1IsTBD && finalGames.some(g => {
+          if (g.date !== dayKey) return false;
+          if (g.team1Id !== id1 && g.team2Id !== id1 && g.team1 !== t1 && g.team2 !== t1) return false;
+          const gTime = parse(g.time, 'h:mm a', parseLocalDate(g.date)); 
+          return Math.abs(differenceInMinutes(currentSlotTime, gTime)) < MIN_REST;
+        });
 
-      const t1IsTBD = t1.includes('TBD') || id1 === 'tbd';
-      const t2IsTBD = t2.includes('TBD') || id2 === 'tbd';
+        const t2IsBusy = !t2IsTBD && finalGames.some(g => {
+          if (g.date !== dayKey) return false;
+          if (g.team1Id !== id2 && g.team2Id !== id2 && g.team1 !== t2 && g.team2 !== t2) return false;
+          const gTime = parse(g.time, 'h:mm a', parseLocalDate(g.date)); 
+          return Math.abs(differenceInMinutes(currentSlotTime, gTime)) < MIN_REST;
+        });
 
-      // Participant conflict: team cannot play within MIN_REST minutes of another game (same day)
-      const t1IsBusy = !t1IsTBD && finalGames.some(g => {
-        if (g.date !== dayKey) return false;
-        if (g.team1Id !== id1 && g.team2Id !== id1 && g.team1 !== t1 && g.team2 !== t1) return false;
-        const gTime = parse(g.time, 'h:mm a', parseLocalDate(g.date)); // CRITICAL-2 FIX
-        return Math.abs(differenceInMinutes(currentSlotTime, gTime)) < MIN_REST;
-      });
+        if (t1IsBusy || t2IsBusy) continue;
 
-      const t2IsBusy = !t2IsTBD && finalGames.some(g => {
-        if (g.date !== dayKey) return false;
-        if (g.team1Id !== id2 && g.team2Id !== id2 && g.team1 !== t2 && g.team2 !== t2) return false;
-        const gTime = parse(g.time, 'h:mm a', parseLocalDate(g.date)); // CRITICAL-2 FIX
-        return Math.abs(differenceInMinutes(currentSlotTime, gTime)) < MIN_REST;
-      });
+        const t1DailyCount = t1IsTBD ? 0 : (teamGamesPerDay.get(`${dayKey}:${id1}`) || 0);
+        const t2DailyCount = t2IsTBD ? 0 : (teamGamesPerDay.get(`${dayKey}:${id2}`) || 0);
 
-      // CRITICAL-1 FIX: Field double-booking — one match per field per timeslot
-      const fieldIsBusy = finalGames.some(g =>
-        g.location === slot.field && g.date === dayKey && g.time === slotTimeStr
-      );
-
-      if (t1IsBusy || t2IsBusy || fieldIsBusy) continue;
-
-      // Daily game limit per team
-      const t1DailyCount = t1IsTBD ? 0 : (teamGamesPerDay.get(`${dayKey}:${id1}`) || 0);
-      const t2DailyCount = t2IsTBD ? 0 : (teamGamesPerDay.get(`${dayKey}:${id2}`) || 0);
-
-      if (doubleHeaderOption === 'none') {
-        if (t1DailyCount >= 1 || t2DailyCount >= 1) continue;
-      } else if (doubleHeaderOption === 'sameTeam') {
-        if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
-        if (t1DailyCount === 1) {
-          const first = finalGames.find(g => g.date === dayKey && (g.team1Id === id1 || g.team2Id === id1));
-          if (first && (first.team1Id === id1 ? first.team2Id : first.team1Id) !== id2) continue;
+        if (doubleHeaderOption === 'none') {
+          if (t1DailyCount >= 1 || t2DailyCount >= 1) continue;
+        } else if (doubleHeaderOption === 'sameTeam') {
+          if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
+          if (t1DailyCount === 1) {
+            const first = finalGames.find(g => g.date === dayKey && (g.team1Id === id1 || g.team2Id === id1));
+            if (first && (first.team1Id === id1 ? first.team2Id : first.team1Id) !== id2) continue;
+          }
+          if (t2DailyCount === 1) {
+            const first = finalGames.find(g => g.date === dayKey && (g.team1Id === id2 || g.team2Id === id2));
+            if (first && (first.team1Id === id2 ? first.team2Id : first.team1Id) !== id1) continue;
+          }
+        } else if (doubleHeaderOption === 'differentTeams') {
+          if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
         }
-        if (t2DailyCount === 1) {
-          const first = finalGames.find(g => g.date === dayKey && (g.team1Id === id2 || g.team2Id === id2));
-          if (first && (first.team1Id === id2 ? first.team2Id : first.team1Id) !== id1) continue;
-        }
-      } else if (doubleHeaderOption === 'differentTeams') {
-        if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
+
+        foundMatchupIndex = i;
+        break;
       }
 
-      foundMatchupIndex = i;
-      break;
-    }
+      if (foundMatchupIndex !== -1) {
+        const match = pool.splice(foundMatchupIndex, 1)[0];
+        const id1 = match.t1Id || match.t1;
+        const id2 = match.t2Id || match.t2;
 
-    if (foundMatchupIndex !== -1) {
-      const match = pool.splice(foundMatchupIndex, 1)[0];
-      const id1 = match.t1Id || match.t1;
-      const id2 = match.t2Id || match.t2;
+        finalGames.push({
+          id: match.id || nextMatchId('tg'),
+          team1: match.t1, team2: match.t2,
+          team1Id: match.t1Id || 'tbd', team2Id: match.t2Id || 'tbd',
+          team1LogoUrl: match.t1LogoUrl, team2LogoUrl: match.t2LogoUrl,
+          score1: 0, score2: 0,
+          date: dayKey,
+          time: slotTimeStr,
+          location: slot.field,
+          isCompleted: false,
+          updatedAt: new Date().toISOString(),
+          round: match.round,
+          stage: match.stage || (
+            match.round?.includes('WB') ? 'WB' :
+            match.round?.includes('LB') ? 'LB' :
+            match.round?.includes('Pool') ? 'Pool' : 'Main'
+          ),
+          pool: match.pool,
+          winnerTo: match.winnerTo,
+          winnerToSlot: match.winnerToSlot,
+          loserTo: match.loserTo,
+          loserToSlot: match.loserToSlot,
+          isResetMatch: match.isResetMatch || false,
+        });
 
-      finalGames.push({
-        id: match.id || nextMatchId('tg'),
-        team1: match.t1, team2: match.t2,
-        team1Id: match.t1Id || 'tbd', team2Id: match.t2Id || 'tbd',
-        score1: 0, score2: 0,
-        date: dayKey,
-        time: slotTimeStr,
-        location: slot.field,
-        isCompleted: false,
-        updatedAt: new Date().toISOString(),
-        round: match.round,
-        stage: match.stage || (
-          match.round?.includes('WB') ? 'WB' :
-          match.round?.includes('LB') ? 'LB' :
-          match.round?.includes('Pool') ? 'Pool' : 'Main'
-        ),
-        pool: match.pool,
-        winnerTo: match.winnerTo,
-        winnerToSlot: match.winnerToSlot,
-        loserTo: match.loserTo,
-        loserToSlot: match.loserToSlot,
-        isResetMatch: match.isResetMatch || false,
-      });
-
-      teamGamesPerDay.set(`${dayKey}:${id1}`, (teamGamesPerDay.get(`${dayKey}:${id1}`) || 0) + 1);
-      teamGamesPerDay.set(`${dayKey}:${id2}`, (teamGamesPerDay.get(`${dayKey}:${id2}`) || 0) + 1);
+        teamGamesPerDay.set(`${dayKey}:${id1}`, (teamGamesPerDay.get(`${dayKey}:${id1}`) || 0) + 1);
+        teamGamesPerDay.set(`${dayKey}:${id2}`, (teamGamesPerDay.get(`${dayKey}:${id2}`) || 0) + 1);
+      }
     }
   }
 
@@ -677,8 +706,10 @@ function buildEliminationBracket(
     const t2Idx = seeds[i * 2 + 1];
     firstRound[i].t1 = t1Idx < numTeams ? teamList[t1Idx].name : 'BYE';
     firstRound[i].t1Id = t1Idx < numTeams ? teamList[t1Idx].id : 'bye';
+    firstRound[i].t1LogoUrl = t1Idx < numTeams ? teamList[t1Idx].logoUrl : undefined;
     firstRound[i].t2 = t2Idx < numTeams ? teamList[t2Idx].name : 'BYE';
     firstRound[i].t2Id = t2Idx < numTeams ? teamList[t2Idx].id : 'bye';
+    firstRound[i].t2LogoUrl = t2Idx < numTeams ? teamList[t2Idx].logoUrl : undefined;
   }
 
   roundMatches.forEach(rm => rm.forEach(m => matchups.push(m)));

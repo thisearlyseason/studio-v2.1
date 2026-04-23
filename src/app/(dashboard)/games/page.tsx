@@ -104,10 +104,17 @@ export default function GamesPage() {
       
       // 2. Tournament games
       if (e.eventType === 'tournament' && e.tournamentGames && e.tournamentGames.length > 0) {
+        const teamName = activeTeam?.name || '';
         e.tournamentGames.forEach((g: any, idx: number) => {
           const gameId = g.id || `${e.id}_${idx}`;
-          if (!recordedEventIds.has(gameId)) {
-            let usName = activeTeam?.name || 'Us';
+          const involvesUs = g.team1 === teamName || g.team1Id === activeTeam?.id || g.team2 === teamName || g.team2Id === activeTeam?.id;
+          
+          if (involvesUs && !recordedEventIds.has(gameId)) {
+            // Filter out TBD matchups unless we are specifically named
+            const isTBD = g.team1.includes('TBD') || g.team2.includes('TBD');
+            if (isTBD && !(g.team1 === teamName || g.team2 === teamName)) return;
+
+            let usName = teamName || 'Us';
             let opp = g.team2;
             if (g.team1 !== usName && g.team2 === usName) opp = g.team1;
             else if (g.team1 !== usName && g.team2 !== usName) opp = `${g.team1} vs ${g.team2}`;
@@ -116,7 +123,7 @@ export default function GamesPage() {
               id: gameId,
               eventId: gameId,
               opponent: opp,
-              date: g.date || e.date, // Use exact game date if available, otherwise tournament date
+              date: g.date || e.date, 
               displayDate: new Date(g.date || e.date),
               isRecorded: false,
               location: g.location || e.location,
@@ -129,7 +136,7 @@ export default function GamesPage() {
     });
 
     return items.sort((a, b) => b.displayDate.getTime() - a.displayDate.getTime());
-  }, [games, activeTeamEvents, recordedEventIds, activeTeam?.name]);
+  }, [games, activeTeamEvents, recordedEventIds, activeTeam?.id, activeTeam?.name]);
 
   useEffect(() => {
     const recordEventId = searchParams.get('recordEventId');
@@ -286,8 +293,8 @@ export default function GamesPage() {
                 setEditingGame(game);
                 setOpponent(game.opponent);
                 setDate(new Date(game.date).toISOString().split('T')[0]);
-                setMyScore(game.myScore.toString());
-                setOpponentScore(game.opponentScore.toString());
+                setMyScore((game.myScore ?? 0).toString());
+                setOpponentScore((game.opponentScore ?? 0).toString());
                 setLocation(game.location || '');
                 setNotes(game.notes || '');
                 setSelectedEventId(game.eventId || 'manual');

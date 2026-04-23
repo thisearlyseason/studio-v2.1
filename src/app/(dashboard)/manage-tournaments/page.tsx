@@ -42,7 +42,8 @@ import {
   AlertCircle,
   Wallet,
   Share,
-  ExternalLink as ExternalLinkIcon
+  ExternalLink as ExternalLinkIcon,
+  Copy
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -72,12 +73,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import html2canvas from 'html2canvas';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import TournamentBracket from '@/components/TournamentBracket';
+import { SquadIdentity } from '@/components/SquadIdentity';
 
 interface TournamentTeam extends TeamIdentity {
   coach?: string;
   email?: string;
   source?: 'manual' | 'league' | 'pipeline';
   rosterLimit?: number;
+  logoUrl?: string;
 }
 
 function calculateTournamentStandings(teams: TournamentTeam[], games: TournamentGame[]) {
@@ -138,7 +141,7 @@ function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { fa
   );
 }
 
-function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOpen: boolean, onOpenChange: (o: boolean) => void, onComplete: () => void }) {
+function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEvent }: { isOpen: boolean, onOpenChange: (o: boolean) => void, onComplete: () => void, editEvent?: TeamEvent }) {
   const { activeTeam, user, hasFeature } = useTeam();
   const db = useFirestore();
   const { addEvent } = useTeam();
@@ -152,7 +155,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
     endDate: '',
     location: '',
     description: '',
-    tournamentType: 'round_robin' as 'round_robin' | 'single_elimination' | 'double_elimination',
+    tournamentType: 'round_robin' as 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout',
     gameLength: '60',
     breakLength: '15',
     gamesPerTeam: '3',
@@ -161,8 +164,38 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
     manualVenue: '',
     waiverIds: [] as string[],
     registration_cost: '0',
-    teams: [] as TournamentTeam[]
+    teams: [] as TournamentTeam[],
+    adminEmails: [] as string[]
   });
+
+  const [typeChangeWarning, setTypeChangeWarning] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && editEvent) {
+      setForm({
+        title: editEvent.title || '',
+        startDate: editEvent.date ? new Date(editEvent.date).toISOString().split('T')[0] : '',
+        endDate: editEvent.endDate ? new Date(editEvent.endDate).toISOString().split('T')[0] : '',
+        location: editEvent.location || '',
+        description: editEvent.description || '',
+        tournamentType: (editEvent.tournamentType as any) || 'round_robin',
+        gameLength: editEvent.gameLength?.toString() || '60',
+        breakLength: editEvent.breakLength?.toString() || '15',
+        gamesPerTeam: editEvent.gamesPerTeam?.toString() || '3',
+        dailyWindows: editEvent.dailyWindows || [],
+        selectedFields: editEvent.selectedFields || [],
+        manualVenue: editEvent.manualVenue || '',
+        waiverIds: editEvent.waiverIds || [],
+        registration_cost: editEvent.registrationCost || '0',
+        teams: editEvent.tournamentTeamsData || [],
+        adminEmails: editEvent.adminEmails || []
+      });
+      setStep(1);
+    } else if (isOpen && !editEvent) {
+      // Reset for new creation
+      setStep(1);
+    }
+  }, [isOpen, editEvent]);
 
   const facilitiesQuery = useMemoFirebase(() => {
     if (!db || !user?.id) return null;
@@ -221,7 +254,8 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
       name: t.teamName,
       coach: t.coachName || 'League Coach',
       email: t.coachEmail || '',
-      source: 'league' as const
+      source: 'league' as const,
+      logoUrl: (t as any).teamLogoUrl
     }));
     setForm(p => ({ ...p, teams: [...p.teams, ...teamsToImport] }));
     toast({ title: "Teams Imported" });
@@ -234,7 +268,8 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
       name: e.answers.teamName || e.answers.name,
       coach: e.answers.name || 'Pipeline Coach',
       email: e.answers.email || '',
-      source: 'pipeline' as const
+      source: 'pipeline' as const,
+      logoUrl: (e.answers as any).teamLogoUrl
     }));
     setForm(p => ({ ...p, teams: [...p.teams, ...teamsToImport] }));
     toast({ title: "Pipelines Imported" });
@@ -245,7 +280,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
     setIsProcessing(true);
     const { games: schedule, report } = generateIntelligentTournamentSchedule({
       teams: form.teams,
-      fields: form.selectedFields.length > 0 ? form.selectedFields : [form.manualVenue || form.location],
+      fields: (form.selectedFields && form.selectedFields.length > 0) ? form.selectedFields : [form.manualVenue || form.location],
       startDate: form.startDate,
       endDate: form.endDate,
       startTime: form.dailyWindows[0]?.startTime || '08:00',
@@ -257,10 +292,12 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
       tournamentType: form.tournamentType
     });
 
+    const { addEvent, updateEvent } = useTeam();
+
     // Sanitize to remove 'undefined' fields which crash Firestore silently via 'Unsupported field value: undefined'
     const cleanSchedule = JSON.parse(JSON.stringify(schedule));
 
-    const success = await addEvent({
+    const eventPayload = {
       title: form.title,
       date: new Date(form.startDate + 'T12:00:00').toISOString(),
       endDate: new Date((form.endDate || form.startDate) + 'T12:00:00').toISOString(),
@@ -272,19 +309,36 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
       tournamentTeams: form.teams.map(t => t.name),
       tournamentGames: cleanSchedule,
       waiverIds: form.waiverIds,
-      registration_cost: form.registration_cost
-    });
+      registrationCost: form.registration_cost,
+      gameLength: parseInt(form.gameLength),
+      breakLength: parseInt(form.breakLength),
+      gamesPerTeam: parseInt(form.gamesPerTeam),
+      dailyWindows: form.dailyWindows,
+      selectedFields: form.selectedFields,
+      manualVenue: form.manualVenue,
+      tournamentType: form.tournamentType,
+      adminEmails: form.adminEmails || []
+    };
+
+    let success = false;
+    if (editEvent) {
+       await updateDoc(doc(db, 'teams', activeTeam.id, 'events', editEvent.id), eventPayload);
+       success = true;
+    } else {
+       success = await addEvent(eventPayload);
+    }
+
     if (success) { 
       onOpenChange(false); 
       onComplete(); 
-      toast({ title: "SYS_DEPLOY", description: "Elite series architecture successfully calibrated." }); 
+      toast({ title: editEvent ? "SYS_UPDATE" : "SYS_DEPLOY", description: editEvent ? "Architectural modifications synchronized." : "Elite series architecture successfully calibrated." }); 
     }
     setIsProcessing(false);
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-6xl rounded-[3rem] p-0 border border-white/10 shadow-2xl overflow-hidden bg-[#050505] text-white h-[92vh] flex flex-col">
+      <DialogContent className="max-w-[98vw] lg:max-w-[1600px] rounded-[3rem] p-0 border border-white/10 shadow-2xl overflow-hidden bg-[#050505] text-white h-[95vh] flex flex-col">
         <DialogTitle className="sr-only">Elite Series Architect</DialogTitle>
         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-600 via-orange-500 to-primary w-full shrink-0" />
         
@@ -306,10 +360,13 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                  {num: 3, title: 'Field Matrix & Chrono', desc: 'Format Constraints & Timeslots'},
                  {num: 4, title: 'Pre-Flight Audit', desc: 'Verify Operational Telemetry'},
                ].map((s) => (
-                 <div key={s.num} className={cn(
-                   "relative pl-8 transition-all duration-300",
-                   step === s.num ? "opacity-100" : "opacity-30"
-                 )}>
+                 <div key={s.num} 
+                   className={cn(
+                     "relative pl-8 transition-all duration-300 cursor-pointer hover:opacity-100",
+                     step === s.num ? "opacity-100" : "opacity-30"
+                   )}
+                   onClick={() => setStep(s.num)}
+                 >
                    <div className={cn(
                      "absolute left-0 top-1 bottom-1 w-[2px]",
                      step === s.num ? "bg-primary shadow-[0_0_10px_rgba(var(--primary),0.8)]" : "bg-white/10"
@@ -365,6 +422,17 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                         <div className="space-y-3">
                           <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Registration Toll ($)</Label>
                           <Input type="number" min="0" value={form.registration_cost} onChange={e => setForm({...form, registration_cost: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-black text-xl text-primary focus-visible:ring-primary px-6 shadow-inner" />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-8">
+                        <div className="space-y-3">
+                          <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Admin Email 1</Label>
+                          <Input type="email" placeholder="coach@example.com" value={form.adminEmails[0] || ''} onChange={e => {const n=[...form.adminEmails]; n[0]=e.target.value; setForm({...form, adminEmails:n});}} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-6 shadow-inner" />
+                        </div>
+                        <div className="space-y-3">
+                          <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Admin Email 2</Label>
+                          <Input type="email" placeholder="staff@example.com" value={form.adminEmails[1] || ''} onChange={e => {const n=[...form.adminEmails]; n[1]=e.target.value; setForm({...form, adminEmails:n});}} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-6 shadow-inner" />
                         </div>
                       </div>
                     </div>
@@ -444,6 +512,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                        <div className="space-y-3">
                           <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Tournament Architecture</Label>
                           <Select value={form.tournamentType} onValueChange={(v: any) => {
+                            if (editEvent && v !== editEvent.tournamentType) {
+                              setTypeChangeWarning(true);
+                            }
                             let newGamesPerTeam = form.gamesPerTeam;
                             if (v === 'single_elimination') newGamesPerTeam = '1';
                             if (v === 'double_elimination') newGamesPerTeam = '2';
@@ -496,6 +567,16 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
                          ))}
                        </div>
                     </div>
+                    {typeChangeWarning && (
+                       <div className="bg-red-500/10 border-2 border-red-500/30 p-8 rounded-[2.5rem] flex items-center gap-6 animate-in shake duration-500 mt-8">
+                          <div className="bg-red-500 p-4 rounded-2xl text-white"><ShieldAlert className="h-8 w-8" /></div>
+                          <div className="flex-1">
+                             <h4 className="text-xl font-black uppercase text-red-500">Critical Format Collision</h4>
+                             <p className="text-xs font-bold text-red-500/60 uppercase tracking-widest leading-relaxed">Transitioning the topological format will result in the immediate destruction of all current match results and bracket progression. Proceed with extreme caution.</p>
+                          </div>
+                          <Button variant="ghost" onClick={() => setTypeChangeWarning(false)} className="h-10 text-red-500 font-black uppercase text-[10px]">Acknowledge Risk</Button>
+                       </div>
+                    )}
                   </div>
                 )}
 
@@ -552,79 +633,33 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete }: { isOp
 
 function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEvent, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
   const { activeTeam, db } = useTeam();
-  const [formData, setFormData] = useState({ 
-    title: event.title, 
-    date: event.date ? event.date.split('w')[0].substring(0, 10) : '', // Safety parse
-    endDate: event.endDate ? event.endDate.split('T')[0].substring(0, 10) : '', 
-    location: event.location || '', 
-    registration_cost: event.registrationCost || '0',
-    adminEmail1: event.adminEmails && event.adminEmails[0] ? event.adminEmails[0] : '',
-    adminEmail2: event.adminEmails && event.adminEmails[1] ? event.adminEmails[1] : ''
-  });
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    if (isOpen) {
-      setFormData({
-        title: event.title,
-        date: event.date ? new Date(event.date).toISOString().split('T')[0] : '',
-        endDate: event.endDate ? new Date(event.endDate).toISOString().split('T')[0] : '',
-        location: event.location || '',
-        registration_cost: event.registrationCost || '0',
-        adminEmail1: event.adminEmails && event.adminEmails[0] ? event.adminEmails[0] : '',
-        adminEmail2: event.adminEmails && event.adminEmails[1] ? event.adminEmails[1] : ''
-      });
+  const handleArchive = async () => {
+    if(!db || !activeTeam) return;
+    if(!window.confirm("Authorize Archival Protocol? This series will be moved to historical datastores.")) return;
+    setIsSaving(true);
+    try {
+      await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { isArchived: true });
+      onOpenChange(false);
+      window.location.reload(); // Refresh to clear selected state
+      toast({ title: "Series Decommissioned", description: "Tournament moved to historical archives." });
+    } catch(e) {
+      toast({ title: "Archival Failed", variant: "destructive" });
     }
-  }, [event, isOpen]);
-
-  const handleSave = async () => {
-     if(!db || !activeTeam) return;
-     setIsSaving(true);
-     try {
-       await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
-         title: formData.title,
-         date: formData.date ? new Date(formData.date + 'T12:00:00').toISOString() : event.date,
-         endDate: formData.endDate ? new Date(formData.endDate + 'T12:00:00').toISOString() : event.endDate,
-         location: formData.location,
-         registrationCost: formData.registration_cost,
-         adminEmails: [formData.adminEmail1.trim(), formData.adminEmail2.trim()].filter(Boolean)
-       });
-       onOpenChange(false);
-       toast({ title: "Series Configuration Updated" });
-     } catch(e) {
-       console.error(e);
-       toast({ title: "Error tracking update", variant: "destructive" });
-     }
-     setIsSaving(false);
+    setIsSaving(false);
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md rounded-[2.5rem] p-8 border-none shadow-2xl bg-white">
-        <DialogHeader className="mb-6">
-          <DialogTitle className="text-2xl font-black uppercase tracking-tight">Edit Series config</DialogTitle>
-          <DialogDescription className="text-xs uppercase tracking-widest font-black opacity-50">Modify the identity and timeline of this deployment.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-6">
-          <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Series Headline</Label><Input value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="h-14 font-black rounded-xl bg-slate-50 border-slate-200 focus:bg-white transition-all" /></div>
-          <div className="grid grid-cols-2 gap-4">
-             <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Launch Date</Label><Input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="h-12 font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
-             <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Finale Date</Label><Input type="date" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="h-12 font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
-          </div>
-          <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Base Location Hub</Label><Input value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="h-12 font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
-          <div className="space-y-2"><Label className="text-[10px] font-black uppercase">Registration Toll ($)</Label><Input type="number" value={formData.registration_cost} onChange={e => setFormData({...formData, registration_cost: e.target.value})} className="h-12 font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
-          <div className="space-y-4 pt-4 border-t border-slate-100">
-             <div className="flex items-center gap-2 mb-2"><Label className="text-[10px] font-black uppercase text-primary">Tourney Admin Access (Optional)</Label></div>
-             <div className="space-y-2"><Label className="text-[8px] font-bold uppercase text-muted-foreground tracking-widest text-left block">Admin Email 1</Label><Input type="email" placeholder="coach@example.com" value={formData.adminEmail1} onChange={e => setFormData({...formData, adminEmail1: e.target.value})} className="h-10 text-xs font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
-             <div className="space-y-2"><Label className="text-[8px] font-bold uppercase text-muted-foreground tracking-widest text-left block">Admin Email 2</Label><Input type="email" placeholder="staff@example.com" value={formData.adminEmail2} onChange={e => setFormData({...formData, adminEmail2: e.target.value})} className="h-10 text-xs font-bold rounded-xl bg-slate-50 border-slate-200" /></div>
-          </div>
-        </div>
-        <DialogFooter className="mt-8">
-           <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-xl font-black uppercase">Cancel</Button>
-           <Button onClick={handleSave} disabled={isSaving} className="rounded-xl px-8 font-black shadow-xl uppercase">{isSaving ? 'Synching...' : 'Commit Protocol'}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <TournamentDeploymentWizard 
+      editEvent={event} 
+      isOpen={isOpen} 
+      onOpenChange={onOpenChange} 
+      onComplete={() => {
+        // Since we are editing an active event, we might need to refresh local state if not auto-synced
+        onOpenChange(false);
+      }}
+    />
   );
 }
 
@@ -970,13 +1005,16 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                     {event.tournamentTeamsData?.map((team: any, idx: number) => (
                        <Card key={idx} className="rounded-[2.5rem] p-8 border-none shadow-xl flex items-center justify-between bg-white group hover:shadow-2xl transition-all">
                           <div className="flex items-center gap-4">
-                             <div className="h-12 w-12 rounded-full bg-black text-white flex items-center justify-center font-black text-xs uppercase shadow-inner">
-                               T{idx+1}
-                             </div>
-                             <div>
-                               <h4 className="font-black text-lg uppercase truncate max-w-[150px]">{team.name}</h4>
-                               {team.coach && <p className="text-[10px] font-bold text-muted-foreground uppercase">{team.coach}</p>}
-                             </div>
+                              <SquadIdentity 
+                                teamId={team.id} 
+                                teamName={team.name} 
+                                logoUrl={team.logoUrl} 
+                                logoClassName="h-12 w-12 rounded-2xl shadow-xl border-2 shrink-0" 
+                              />
+                              <div>
+                                <h4 className="font-black text-lg uppercase truncate max-w-[150px]">{team.name}</h4>
+                                {team.coach && <p className="text-[10px] font-bold text-muted-foreground uppercase">{team.coach}</p>}
+                              </div>
                           </div>
                           <div><Badge className="bg-black/5 text-black hover:bg-black hover:text-white uppercase font-black tracking-widest text-[8px]">Squad</Badge></div>
                        </Card>
@@ -1034,13 +1072,29 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                               {game.round && <Badge variant="outline" className={cn("text-[9px] font-black uppercase cursor-default", isTBD ? "border-dashed" : "border-2")}>{game.round}</Badge>}
                            </div>
                            <div className="grid grid-cols-7 items-center text-center relative z-10 cursor-default">
-                              <div className="col-span-3 min-w-0">
-                                <p className={cn("font-black text-[11px] uppercase opacity-40 mb-2 truncate", isTBD && game.team1.toLowerCase().includes('tbd') && "italic")}>{game.team1}</p>
+                              <div className="col-span-3 min-w-0 flex flex-col items-center gap-2">
+                                <SquadIdentity
+                                  teamId={(game as any).team1Id}
+                                  teamName={game.team1}
+                                  logoUrl={event.tournamentTeamsData?.find((t: any) => t.id === (game as any).team1Id || t.name === game.team1)?.logoUrl}
+                                  logoClassName="h-8 w-8 rounded-xl shadow-sm border-2 shrink-0"
+                                  showNameWithLogo
+                                  horizontal
+                                  textClassName={cn("font-black text-[11px] uppercase opacity-40 truncate", isTBD && game.team1.toLowerCase().includes('tbd') && "italic")}
+                                />
                                 <p className={cn("text-4xl font-black tracking-tighter", isTBD ? "opacity-20" : "")}>{game.score1}</p>
                               </div>
                               <div className="col-span-1 opacity-10 font-black text-xs pt-8 italic">VS</div>
-                              <div className="col-span-3 min-w-0">
-                                <p className={cn("font-black text-[11px] uppercase opacity-40 mb-2 truncate", isTBD && game.team2.toLowerCase().includes('tbd') && "italic")}>{game.team2}</p>
+                              <div className="col-span-3 min-w-0 flex flex-col items-center gap-2">
+                                <SquadIdentity
+                                  teamId={(game as any).team2Id}
+                                  teamName={game.team2}
+                                  logoUrl={event.tournamentTeamsData?.find((t: any) => t.id === (game as any).team2Id || t.name === game.team2)?.logoUrl}
+                                  logoClassName="h-8 w-8 rounded-xl shadow-sm border-2 shrink-0"
+                                  showNameWithLogo
+                                  horizontal
+                                  textClassName={cn("font-black text-[11px] uppercase opacity-40 truncate", isTBD && game.team2.toLowerCase().includes('tbd') && "italic")}
+                                />
                                 <p className={cn("text-4xl font-black tracking-tighter", isTBD ? "opacity-20" : "")}>{game.score2}</p>
                               </div>
                            </div>
@@ -1134,7 +1188,20 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                       <tbody className="divide-y divide-black/5">
                          {standings.map((t, idx) => (
                            <tr key={t.name} className="hover:bg-muted/10 transition-colors">
-                              <td className="px-10 py-6"><div className="flex items-center gap-4"><span className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-black">{idx + 1}</span><span className="font-black uppercase text-sm">{t.name}</span></div></td>
+                              <td className="px-10 py-6">
+                                <div className="flex items-center gap-4">
+                                  <span className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-black shrink-0">{idx + 1}</span>
+                                  <SquadIdentity
+                                    teamId={event.tournamentTeamsData?.find((td: any) => td.name === t.name)?.id}
+                                    teamName={t.name}
+                                    logoUrl={event.tournamentTeamsData?.find((td: any) => td.name === t.name)?.logoUrl}
+                                    logoClassName="h-8 w-8 rounded-xl shadow-sm border-2 shrink-0"
+                                    showNameWithLogo
+                                    horizontal
+                                    textClassName="font-black uppercase text-sm"
+                                  />
+                                </div>
+                              </td>
                               <td className="text-center font-bold text-emerald-600">{t.wins}</td>
                               <td className="text-center font-bold text-red-600">{t.losses}</td>
                               <td className="text-center font-bold text-muted-foreground">{t.ties}</td>
@@ -1153,18 +1220,89 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 }
 
 export default function ManageTournamentsPage() {
-  const { activeTeam, db, user } = useTeam();
+  const { activeTeam, db, firebaseUser: user } = useTeam();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [duplicateTitle, setDuplicateTitle] = useState('');
+  const [isDuplicateOpen, setIsDuplicateOpen] = useState(false);
+  const [duplicatingEvent, setDuplicatingEvent] = useState<TeamEvent | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const eventsQuery = useMemoFirebase(() => {
     if (!db || !activeTeam?.id) return null;
     return query(collection(db, 'teams', activeTeam.id, 'events'), where('isTournament', '==', true));
   }, [db, activeTeam?.id]);
+  
   const { data: rawEvents, loading } = useCollection<TeamEvent>(eventsQuery);
-  const events = useMemo(() => rawEvents?.slice().sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [rawEvents]);
+  const events = useMemo(() => {
+    if (!rawEvents) return [];
+    return rawEvents
+      .filter(e => showArchived ? e.isArchived : !e.isArchived)
+      .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [rawEvents, showArchived]);
 
-  const activeEvent = useMemo(() => events?.find(e => e.id === selectedEventId), [events, selectedEventId]);
+  const hasArchived = useMemo(() => (rawEvents || []).some(e => e.isArchived), [rawEvents]);
+
+  const activeEvent = useMemo(() => rawEvents?.find(e => e.id === selectedEventId), [rawEvents, selectedEventId]);
+
+  const handleDuplicateTournament = async () => {
+    if (!duplicatingEvent || !duplicateTitle.trim() || !db || !activeTeam || !user?.uid) {
+      toast({ title: "Replication Error", description: "Authorization or source data missing.", variant: "destructive" });
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const newEventRef = doc(collection(db, 'teams', activeTeam.id, 'events'));
+      const newEventData = {
+        // Essential framework
+        title: duplicateTitle.trim(),
+        date: duplicatingEvent.date || '',
+        endDate: duplicatingEvent.endDate || '',
+        location: duplicatingEvent.location || '',
+        registrationCost: duplicatingEvent.registrationCost || '0',
+        adminEmails: duplicatingEvent.adminEmails || [],
+        isTournament: true,
+        tournamentType: duplicatingEvent.tournamentType || '',
+        venueSettings: duplicatingEvent.venueSettings || {},
+        
+        // Reset operational state
+        id: newEventRef.id,
+        teamId: activeTeam.id,
+        creatorId: user.uid,
+        createdAt: new Date().toISOString(),
+        isArchived: false,
+        isCompleted: false,
+        tournamentTeamsData: [],
+        tournamentGames: [],
+        schedule: [],
+        archived_waivers: []
+      };
+      
+      const { setDoc, getDoc } = await import('firebase/firestore');
+      await setDoc(newEventRef, newEventData);
+
+      // Duplicate Registration Config (team_config)
+      const sourceCfgRef = doc(db, 'teams', activeTeam.id, 'events', duplicatingEvent.id, 'registration', 'team_config');
+      const sourceCfg = await getDoc(sourceCfgRef);
+      if (sourceCfg.exists()) {
+        await setDoc(doc(db, 'teams', activeTeam.id, 'events', newEventRef.id, 'registration', 'team_config'), sourceCfg.data());
+      }
+
+      setIsDuplicateOpen(false);
+      setDuplicateTitle('');
+      setDuplicatingEvent(null);
+      toast({ title: "Series Replicated", description: "Tournament blueprint cloned. Opening new series hub..." });
+      
+      // Auto-select the fresh duplicate
+      setSelectedEventId(newEventRef.id);
+    } catch (e: any) {
+      console.error("[Tournaments] Replication failed:", e);
+      toast({ title: "Replication Failed", description: e.message, variant: 'destructive' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   if (activeEvent) return <div className="p-8 lg:p-14"><TournamentDetailView event={activeEvent} onBack={() => setSelectedEventId(null)} /></div>;
 
@@ -1176,9 +1314,19 @@ export default function ManageTournamentsPage() {
           <h1 className="text-4xl md:text-7xl font-black uppercase tracking-tighter leading-none italic">Manage Tournaments</h1>
           <p className="text-sm font-medium text-muted-foreground leading-relaxed italic max-w-2xl">Elite-level institutional Series Architect for managing multi-field tournaments, synchronized officiating, and live bracket telemetry.</p>
         </div>
-        <Button onClick={() => setIsWizardOpen(true)} className="h-20 px-12 rounded-[2rem] bg-black hover:bg-black/90 text-white font-black uppercase text-lg shadow-2xl transition-all active:scale-95 shrink-0">
-          Assemble Elite Series <Plus className="ml-3 h-6 w-6" />
-        </Button>
+        <div className="flex flex-col gap-4">
+          <div className="flex gap-2 justify-end">
+            {hasArchived && (
+              <Button variant="ghost" onClick={() => setShowArchived(!showArchived)} className="h-14 px-6 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest text-[#050505] bg-white hover:bg-muted flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                {showArchived ? 'Active Mode' : 'Historical Data'}
+              </Button>
+            )}
+            <Button onClick={() => setIsWizardOpen(true)} className="h-14 px-8 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl transition-all active:scale-95 shrink-0 flex items-center">
+              Assemble Elite Series <Plus className="ml-3 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -1188,7 +1336,10 @@ export default function ManageTournamentsPage() {
                <Trophy className="h-32 w-32" />
             </div>
             <div className="relative z-10 space-y-4">
-              <Badge variant="outline" className="border-2 font-black text-[9px] uppercase tracking-widest bg-white">Tournament Series</Badge>
+              <div className="flex justify-between items-center">
+                <Badge variant="outline" className="border-2 font-black text-[9px] uppercase tracking-widest bg-white">Tournament Series</Badge>
+                {event.isArchived && <Badge className="bg-amber-100 text-amber-700 border-none text-[8px] font-black uppercase px-2">Archived</Badge>}
+              </div>
               <h3 className="text-3xl font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{event.title}</h3>
               <div className="flex flex-col gap-2 pt-4">
                 <div className="flex items-center gap-3 text-muted-foreground">
@@ -1206,7 +1357,21 @@ export default function ManageTournamentsPage() {
                <div className="space-y-1"><p className="text-[8px] font-black uppercase opacity-40">Squads</p><p className="text-xl font-black">{(event.tournamentTeamsData || []).length}</p></div>
                <div className="space-y-1"><p className="text-[8px] font-black uppercase opacity-40">Matches</p><p className="text-xl font-black">{(event.tournamentGames || []).length}</p></div>
             </div>
-            <Button variant="ghost" className="w-full h-14 rounded-2xl border-2 font-black uppercase text-xs tracking-widest group-hover:bg-primary group-hover:text-white group-hover:border-primary transition-all">Launch Operations Hub <ChevronRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" /></Button>
+            <div className="flex flex-col gap-2 w-full">
+              <Button variant="ghost" className="w-full h-14 rounded-2xl border-2 font-black uppercase text-xs tracking-widest group-hover:bg-primary group-hover:text-white group-hover:border-primary transition-all">Launch Hub <ChevronRight className="ml-2 h-4 w-4" /></Button>
+              <Button 
+                variant="outline" 
+                className="w-full h-14 px-6 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest hover:bg-black hover:text-white transition-all flex items-center justify-center gap-2" 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDuplicatingEvent(event);
+                  setDuplicateTitle(`${event.title} (Clone)`);
+                  setIsDuplicateOpen(true);
+                }}
+              >
+                <Copy className="h-4 w-4" /> Clone Series
+              </Button>
+            </div>
           </Card>
         ))}
         {loading && [1, 2, 3].map(i => <div key={i} className="h-80 rounded-[3rem] bg-muted/20 animate-pulse border-2 border-dashed" />)}
@@ -1221,6 +1386,44 @@ export default function ManageTournamentsPage() {
       </div>
 
       <TournamentDeploymentWizard isOpen={isWizardOpen} onOpenChange={setIsWizardOpen} onComplete={() => setSelectedEventId(null)} />
+
+      <Dialog open={isDuplicateOpen} onOpenChange={setIsDuplicateOpen}>
+        <DialogContent className="rounded-[4rem] sm:max-w-md p-0 overflow-hidden bg-black text-white border-none shadow-[0_0_100px_rgba(0,0,0,0.5)]">
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-12 space-y-10">
+            <DialogHeader>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="bg-primary/20 p-4 rounded-[1.5rem] text-primary"><Copy className="h-8 w-8" /></div>
+                <div>
+                   <DialogTitle className="text-4xl font-black uppercase tracking-tighter">Replicate Series</DialogTitle>
+                   <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Clone Series Architecture & Logic</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="space-y-3">
+                 <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 ml-2">New Series Headline</Label>
+                 <Input 
+                   placeholder="e.g. Winter Invitational - Elite Tier" 
+                   value={duplicateTitle} 
+                   onChange={e => setDuplicateTitle(e.target.value)} 
+                   className="h-20 rounded-[2rem] border-2 border-white/10 bg-white/5 font-black text-2xl px-8 focus:bg-white focus:text-black transition-all" 
+                   autoFocus
+                 />
+              </div>
+              <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest leading-relaxed italic px-2">
+                Replicating clones all logistical metadata, locations, and registration protocols. 
+                Participating squads and match history will be purged for the new iteration.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button className="w-full h-20 rounded-[2rem] text-xl font-black bg-white text-black hover:bg-primary hover:text-white transition-all shadow-2xl" onClick={handleDuplicateTournament} disabled={isProcessing || !duplicateTitle.trim()}>
+                {isProcessing ? <Loader2 className="h-8 w-8 animate-spin" /> : "Deploy Replicated Series"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

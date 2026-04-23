@@ -14,19 +14,21 @@ import {
   ClipboardList,
   CheckCircle2,
   XCircle,
+  ExternalLink,
+  Target,
+  AlertTriangle,
+  RotateCcw,
+  Save,
+  Plus,
+  Terminal,
   Zap,
   PenTool,
   MapPin,
   Package,
   Shield,
-  ChevronRight,
-  ArrowUpRight,
-  Terminal,
   Mail,
   Phone,
-  Copy,
-  ExternalLink,
-  Target
+  Copy
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -53,21 +55,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
-import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collectionGroup, query, where } from 'firebase/firestore';
+import { collectionGroup, query, where, doc, updateDoc } from 'firebase/firestore';
+import { cn, compressImage } from '@/lib/utils';
+import { useUser, useCollection, useMemoFirebase } from '@/firebase';
 import Link from 'next/link';
 
 export default function TeamProfilePage() {
   const { user: authUser } = useUser();
-  const { activeTeam, setActiveTeam, teams, user, members, updateTeamDetails, isSuperAdmin, plans, updateTeamPlan, isStaff, hasFeature, respondToAssignment } = useTeam();
-  const db = useFirestore();
+  const { 
+    activeTeam, setActiveTeam, teams, user, members, updateTeamDetails, 
+    isSuperAdmin, plans, updateTeamPlan, isStaff, hasFeature, 
+    respondToAssignment, db, updateTeamCode, checkCodeUniqueness, propagateLogoToLeagues 
+  } = useTeam();
+
   
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isUpdatingLogo, setIsUpdatingLogo] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [isCodeEditOpen, setIsCodeEditOpen] = useState(false);
+  const [newCode, setNewCode] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const assignmentsQuery = useMemoFirebase(() => {
@@ -146,21 +155,60 @@ export default function TeamProfilePage() {
   const activePlan = plans.find(p => p.id === activeTeam.planId);
 
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
+    if (e.target.files && e.target.files[0] && activeTeam?.id) {
       setIsUpdatingLogo(true);
       try {
         const reader = new FileReader();
         reader.onload = async (ev) => {
-          await updateTeamDetails({ teamLogoUrl: ev.target?.result as string });
-          toast({ title: "Logo Updated" });
+          const rawData = ev.target?.result as string;
+          // Institutional compression pass
+          const compressedLogo = await compressImage(rawData, 400, 400, 0.8);
+          
+          if (db) {
+            await updateDoc(doc(db, 'teams', activeTeam.id), { teamLogoUrl: compressedLogo });
+            // Propagate the new logo to all leagues this team is enrolled in
+            propagateLogoToLeagues(activeTeam.id, compressedLogo);
+            toast({ title: "Squad Branding Updated", description: "Identity assets synchronized across the matrix." });
+          }
           setIsUpdatingLogo(false);
         };
         reader.readAsDataURL(e.target.files[0]);
-      } catch (error) {
+      } catch (err) {
         setIsUpdatingLogo(false);
+        toast({ title: "Branding Failed", description: "Identity synchronization interrupted.", variant: "destructive" });
       }
     }
   };
+
+  const handleCodeUpdate = async () => {
+    if (newCode.length < 8 || newCode.length > 20) {
+      toast({ title: "Incompatible Length", description: "Identity codes must be between 8 and 20 characters.", variant: "destructive" });
+      return;
+    }
+    
+    setIsProcessing(true);
+    try {
+      const isUnique = await checkCodeUniqueness(newCode);
+      if (!isUnique) {
+        toast({ title: "Identity Clash", description: "This code is already reserved by another squad.", variant: "destructive" });
+        return;
+      }
+      
+      if (activeTeam?.id) {
+        await updateTeamCode(activeTeam.id, newCode);
+        toast({ title: "Identity Formalized", description: "Your unique squad code is now active." });
+        setIsCodeEditOpen(false);
+      }
+    } catch (e) {
+      toast({ title: "Protocol Failure", variant: "destructive" });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const lastUpdate = activeTeam?.lastCodeEditedAt ? new Date(activeTeam.lastCodeEditedAt).getTime() : 0;
+  const isLocked = (Date.now() - lastUpdate) < (24 * 60 * 60 * 1000);
+  const hoursLeft = Math.max(0, Math.ceil((24 * 60 * 60 * 1000 - (Date.now() - lastUpdate)) / (60 * 60 * 1000)));
 
   const handleSaveDetails = async () => {
     try {
@@ -408,20 +456,91 @@ export default function TeamProfilePage() {
             </Card>
           )}
 
-          <Card className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
+          <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
+            <CardHeader className="bg-primary p-8 text-white">
+              <div className="flex items-center gap-4">
+                 <div className="bg-white/20 p-3 rounded-2xl"><Camera className="h-6 w-6" /></div>
+                 <div>
+                    <CardTitle className="text-2xl font-black uppercase tracking-tight">Squad Branding</CardTitle>
+                    <CardDescription className="text-white/60 font-bold text-[10px] uppercase tracking-widest">Architectural Team Identity</CardDescription>
+                 </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-8 space-y-8">
+               <div className="flex flex-col md:flex-row gap-8 items-center">
+                  <div className="relative group shrink-0">
+                    <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={handleLogoChange} />
+                    <div 
+                      onClick={() => logoInputRef.current?.click()}
+                      className={cn(
+                        "h-48 w-48 rounded-[2.5rem] border-4 border-dashed border-primary/20 flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all relative overflow-hidden group",
+                        activeTeam.teamLogoUrl ? "border-solid border-primary/40" : ""
+                      )}
+                    >
+                      {activeTeam.teamLogoUrl ? (
+                        <>
+                          <img src={activeTeam.teamLogoUrl} className="w-full h-full object-contain p-4" alt="Squad Logo" />
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white p-4 text-center">
+                             <Camera className="h-8 w-8 mb-2" />
+                             <p className="text-[10px] font-black uppercase tracking-wider">Replace Logo</p>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-center p-6 space-y-3">
+                           <div className="bg-primary/10 h-16 w-16 rounded-3xl flex items-center justify-center mx-auto text-primary">
+                             {isUpdatingLogo ? <Loader2 className="h-8 w-8 animate-spin" /> : <Plus className="h-8 w-8" />}
+                           </div>
+                           <div>
+                              <p className="font-black text-xs uppercase tracking-tight text-primary">Upload Official Logo</p>
+                              <p className="text-[8px] font-bold text-muted-foreground uppercase mt-1">PNG, JPG up to 1MB</p>
+                           </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex-1 space-y-4">
+                     <div className="space-y-1">
+                        <h4 className="text-xl font-black uppercase tracking-tight">Identity Synchronization</h4>
+                        <p className="text-xs font-bold text-muted-foreground uppercase leading-relaxed">Your squad logo is the primary identifier across the entire platform. It will appear on match schedules, tournament brackets, and parent communications.</p>
+                     </div>
+                     <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2 text-emerald-600">
+                           <CheckCircle2 className="h-4 w-4" />
+                           <span className="text-[10px] font-black uppercase tracking-widest">Optimized for Brackets</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-emerald-600">
+                           <CheckCircle2 className="h-4 w-4" />
+                           <span className="text-[10px] font-black uppercase tracking-widest">Spectator Mode Analytics</span>
+                        </div>
+                     </div>
+                     <Button 
+                       variant="outline" 
+                       className="h-12 px-6 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest w-full sm:w-auto"
+                       onClick={() => logoInputRef.current?.click()}
+                       disabled={isUpdatingLogo}
+                     >
+                       {activeTeam.teamLogoUrl ? "Update Identity Asset" : "Initialize Branding"}
+                     </Button>
+                  </div>
+               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
             <CardHeader className="bg-primary/5 border-b border-primary/5">
-              <CardTitle className="text-xl font-black">Official Squad Identity</CardTitle>
-              <CardDescription className="text-xs font-bold uppercase tracking-widest text-primary/60">Tier: {activePlan?.name || (activeTeam.planId === 'squad_organization' ? 'Squad Organization' : 'Starter')}</CardDescription>
+              <CardTitle className="text-xl font-black uppercase tracking-tight">Official Squad Details</CardTitle>
+              <CardDescription className="text-xs font-bold uppercase tracking-widest text-primary/60">Tier: {plans.find(p => p.id === activeTeam.planId)?.name || (activeTeam.planId === 'squad_organization' ? 'Squad Organization' : 'Starter')}</CardDescription>
             </CardHeader>
             <CardContent className="pt-8 space-y-8">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Official Name</Label>
-                  <p className="text-xl font-extrabold px-1">{activeTeam.name}</p>
+                  <p className="text-xl font-extrabold px-1 uppercase tracking-tight">{activeTeam.name}</p>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Sanctioned Sport</Label>
-                  <p className="text-xl font-extrabold px-1">{activeTeam.sport || 'General Squad'}</p>
+                  <p className="text-xl font-extrabold px-1 uppercase tracking-tight">{activeTeam.sport || 'General Squad'}</p>
                 </div>
                 <div className="space-y-2 col-span-full">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Squad Bio</Label>
@@ -431,7 +550,7 @@ export default function TeamProfilePage() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Contact Email</Label>
-                  <p className="text-sm font-bold px-1 flex items-center gap-2 text-primary"><Mail className="h-4 w-4" />{activeTeam.contactEmail || 'No email registered'}</p>
+                  <p className="text-sm font-bold px-1 flex items-center gap-2 text-primary lowercase"><Mail className="h-4 w-4" />{activeTeam.contactEmail || 'No email registered'}</p>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Contact Phone</Label>
@@ -464,6 +583,14 @@ export default function TeamProfilePage() {
                     <Copy className="h-5 w-5 text-white/40 hover:text-white" />
                   </button>
                 </div>
+                {!isLocked && isAdmin && (
+                  <Button variant="ghost" className="h-8 px-4 rounded-lg bg-white/10 text-white font-black text-[8px] uppercase hover:bg-white hover:text-primary mt-2" onClick={() => { setNewCode(activeTeam.code || ""); setIsCodeEditOpen(true); }}>
+                    Customize Identity
+                  </Button>
+                )}
+                {isLocked && (
+                  <p className="text-[7px] font-black uppercase text-white/40 mt-1">Locked for {hoursLeft}h</p>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -483,6 +610,42 @@ export default function TeamProfilePage() {
               </div>
             </CardContent>
           </Card>
+
+          <Dialog open={isCodeEditOpen} onOpenChange={setIsCodeEditOpen}>
+            <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden text-foreground">
+              <DialogTitle className="sr-only">Customize Squad Identity</DialogTitle>
+              <div className="h-2 bg-primary w-full" />
+              <div className="p-8 space-y-8">
+                <DialogHeader>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Finalize Identity</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Customize once every 24 hours</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Proposed Squad Code</Label>
+                    <Input 
+                      placeholder="e.g. VARSITY24" 
+                      className="h-14 rounded-2xl border-2 font-black text-xl uppercase tracking-tighter text-center bg-muted/20 focus:bg-white transition-all uppercase text-foreground"
+                      value={newCode}
+                      maxLength={20}
+                      onChange={e => setNewCode(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+                    />
+                  </div>
+                  <div className="bg-amber-50 p-4 rounded-2xl flex items-start gap-3 border border-amber-100">
+                    <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-[10px] font-bold text-amber-700 uppercase leading-relaxed text-left">
+                      Changing your code will immediately invalidate the old one. Any athletes using the previous code will need the new one to join.
+                    </p>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button className="w-full h-14 rounded-full text-sm font-black uppercase tracking-widest shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCodeUpdate} disabled={isProcessing || newCode.length < 8}>
+                    {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Authorize Identity Update"}
+                  </Button>
+                </DialogFooter>
+              </div>
+            </DialogContent>
+          </Dialog>
         </aside>
       </div>
 

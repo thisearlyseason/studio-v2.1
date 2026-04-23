@@ -464,9 +464,24 @@ export default function LeagueRegistrationAdminPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Portal Description</Label>
-                    <Textarea value={localConfig?.description || ''} onChange={e => handleUpdateConfig({ description: e.target.value })} className="rounded-3xl min-h-[100px] border-2 font-medium bg-muted/5 p-6 focus:bg-white transition-all" placeholder="Explain the registration process..." />
+                  <div className="space-y-4 pt-6 border-t font-black">
+                     <div className="flex items-center justify-between">
+                       <div className="space-y-1">
+                         <Label className="text-[10px] font-black uppercase tracking-widest text-primary leading-none">Division Selection Protocol</Label>
+                         <p className="text-[9px] font-medium text-muted-foreground italic leading-tight">Prompt applicants to select their competitive tier during registration.</p>
+                       </div>
+                       <Switch 
+                         checked={localConfig?.require_division_selection || false} 
+                         onCheckedChange={(v) => handleUpdateConfig({ require_division_selection: v }, true)} 
+                       />
+                     </div>
+                     {localConfig?.require_division_selection && (
+                       <div className="bg-primary/5 p-5 rounded-2xl border-2 border-dashed border-primary/20 animate-in slide-in-from-top-2 duration-300">
+                         <p className="text-[9px] font-bold text-primary uppercase tracking-widest leading-relaxed">
+                           Current Institutional Tiers: {(activeLeague?.divisions || []).join(', ') || 'None Defined (Visit League Settings to add divisions)'}
+                         </p>
+                       </div>
+                     )}
                   </div>
                 </CardContent>
               </Card>

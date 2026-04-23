@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { SquadIdentity } from '@/components/SquadIdentity';
 
 export default function PublicScorekeeperEntryPage() {
   const { teamId, eventId, gameId } = useParams();
@@ -117,15 +118,35 @@ export default function PublicScorekeeperEntryPage() {
                 <CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Official Score Entry</CardDescription>
               </div>
             </div>
-            <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed space-y-3">
+            <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{game.time}</span>
                 {game.location && <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1"><MapPin className="h-3 w-3" /> {game.location}</span>}
               </div>
               <div className="flex items-center justify-center gap-6">
-                <span className="font-black text-lg uppercase truncate max-w-[120px]">{game.team1}</span>
+                <div className="flex flex-col items-center gap-2">
+                  <SquadIdentity 
+                    teamId={game.team1Id} 
+                    teamName={game.team1} 
+                    logoUrl={event.tournamentTeamsData?.find(t => t.id === game.team1Id)?.logoUrl || event.tournamentTeamsData?.find(t => t.name === game.team1)?.logoUrl}
+                    logoClassName="h-12 w-12 rounded-xl shadow-lg border-2" 
+                    showNameWithLogo
+                    horizontal
+                    textClassName="font-black text-[10px] uppercase truncate max-w-[100px] text-center"
+                  />
+                </div>
                 <span className="opacity-20 text-xs font-black">VS</span>
-                <span className="font-black text-lg uppercase truncate max-w-[120px] text-right">{game.team2}</span>
+                <div className="flex flex-col items-center gap-2">
+                  <SquadIdentity 
+                    teamId={game.team2Id} 
+                    teamName={game.team2} 
+                    logoUrl={event.tournamentTeamsData?.find(t => t.id === game.team2Id)?.logoUrl || event.tournamentTeamsData?.find(t => t.name === game.team2)?.logoUrl}
+                    logoClassName="h-12 w-12 rounded-xl shadow-lg border-2" 
+                    showNameWithLogo
+                    horizontal
+                    textClassName="font-black text-[10px] uppercase truncate max-w-[100px] text-center"
+                  />
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -136,17 +157,29 @@ export default function PublicScorekeeperEntryPage() {
               <div className="grid grid-cols-2 gap-4">
                 <Button 
                   variant={selectedTeam === game.team1 ? "default" : "outline"} 
-                  className={cn("h-16 rounded-2xl font-black text-xs uppercase transition-all", selectedTeam === game.team1 ? "bg-primary shadow-lg" : "border-2 opacity-60")}
+                  className={cn("h-24 rounded-2xl font-black text-xs uppercase flex flex-col gap-2 transition-all", selectedTeam === game.team1 ? "bg-primary shadow-lg" : "border-2 opacity-60")}
                   onClick={() => setSelectedTeam(game.team1)}
                 >
-                  {game.team1} Rep
+                  <SquadIdentity 
+                    teamId={game.team1Id} 
+                    teamName={game.team1} 
+                    logoUrl={event.tournamentTeamsData?.find(t => t.id === game.team1Id)?.logoUrl || event.tournamentTeamsData?.find(t => t.name === game.team1)?.logoUrl}
+                    logoClassName="h-10 w-10 rounded-lg shadow-inner" 
+                  />
+                  <span>{game.team1} Rep</span>
                 </Button>
                 <Button 
                   variant={selectedTeam === game.team2 ? "default" : "outline"} 
-                  className={cn("h-16 rounded-2xl font-black text-xs uppercase transition-all", selectedTeam === game.team2 ? "bg-primary shadow-lg" : "border-2 opacity-60")}
+                  className={cn("h-24 rounded-2xl font-black text-xs uppercase flex flex-col gap-2 transition-all", selectedTeam === game.team2 ? "bg-primary shadow-lg" : "border-2 opacity-60")}
                   onClick={() => setSelectedTeam(game.team2)}
                 >
-                  {game.team2} Rep
+                  <SquadIdentity 
+                    teamId={game.team2Id} 
+                    teamName={game.team2} 
+                    logoUrl={event.tournamentTeamsData?.find(t => t.id === game.team2Id)?.logoUrl || event.tournamentTeamsData?.find(t => t.name === game.team2)?.logoUrl}
+                    logoClassName="h-10 w-10 rounded-lg shadow-inner" 
+                  />
+                  <span>{game.team2} Rep</span>
                 </Button>
               </div>
             </div>

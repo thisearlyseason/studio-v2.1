@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { SquadIdentity } from '@/components/SquadIdentity';
 
 export default function PublicLeagueScorekeeperEntryPage() {
   const { leagueId, gameId } = useParams();
@@ -95,14 +96,69 @@ export default function PublicLeagueScorekeeperEntryPage() {
           <div className="h-2 bg-primary w-full" />
           <CardHeader className="p-8 lg:p-10 pb-4">
             <div className="flex items-center gap-4 mb-4"><div className="bg-primary/10 p-3 rounded-2xl text-primary"><ShieldAlert className="h-6 w-6" /></div><div><CardTitle className="text-2xl font-black uppercase tracking-tight">Post Result</CardTitle><CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Official Score Entry</CardDescription></div></div>
-            <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed space-y-3"><div className="flex items-center justify-between"><span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{game.date} • {game.time}</span></div><div className="flex items-center justify-center gap-6"><span className="font-black text-lg uppercase truncate">{game.team1}</span><span className="opacity-20 text-xs font-black">VS</span><span className="font-black text-lg uppercase truncate text-right">{game.team2}</span></div></div>
+            <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{game.date} • {game.time}</span>
+              </div>
+              <div className="flex items-center justify-center gap-6">
+                <div className="flex flex-col items-center gap-2">
+                  <SquadIdentity 
+                    teamId={(game as any).team1Id} 
+                    teamName={game.team1} 
+                    logoUrl={league.teams?.[(game as any).team1Id || '']?.teamLogoUrl}
+                    logoClassName="h-12 w-12 rounded-xl shadow-lg border-2" 
+                    showNameWithLogo
+                    horizontal
+                    textClassName="font-black text-[10px] uppercase truncate max-w-[100px] text-center"
+                  />
+                </div>
+                <span className="opacity-20 text-xs font-black">VS</span>
+                <div className="flex flex-col items-center gap-2">
+                  <SquadIdentity 
+                    teamId={(game as any).team2Id} 
+                    teamName={game.team2} 
+                    logoUrl={league.teams?.[(game as any).team2Id || '']?.teamLogoUrl}
+                    logoClassName="h-12 w-12 rounded-xl shadow-lg border-2" 
+                    showNameWithLogo
+                    horizontal
+                    textClassName="font-black text-[10px] uppercase truncate max-w-[100px] text-center"
+                  />
+                </div>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-8 lg:p-10 space-y-8">
             <div className="space-y-4">
               <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Submitting Squad Representative</Label>
               <div className="grid grid-cols-2 gap-4">
-                <Button variant={selectedTeam === game.team1 ? "default" : "outline"} className={cn("h-16 rounded-2xl font-black text-xs uppercase", selectedTeam === game.team1 ? "bg-primary" : "opacity-60")} onClick={() => setSelectedTeam(game.team1)}>{game.team1}</Button>
-                <Button variant={selectedTeam === game.team2 ? "default" : "outline"} className={cn("h-16 rounded-2xl font-black text-xs uppercase", selectedTeam === game.team2 ? "bg-primary" : "opacity-60")} onClick={() => setSelectedTeam(game.team2)}>{game.team2}</Button>
+                <Button 
+                  variant={selectedTeam === game.team1 ? "default" : "outline"} 
+                  className={cn("h-24 rounded-2xl font-black text-xs uppercase flex flex-col gap-2 transition-all", selectedTeam === game.team1 ? "bg-primary shadow-lg" : "border-2 opacity-60")} 
+                  onClick={() => setSelectedTeam(game.team1)}
+                >
+                  <SquadIdentity 
+                    teamId={(game as any).team1Id} 
+                    teamName={game.team1} 
+                    logoUrl={league.teams?.[(game as any).team1Id || '']?.teamLogoUrl}
+                    logoClassName="h-10 w-10 rounded-lg shadow-inner" 
+                    showNameWithLogo
+                    horizontal
+                  />
+                </Button>
+                <Button 
+                  variant={selectedTeam === game.team2 ? "default" : "outline"} 
+                  className={cn("h-24 rounded-2xl font-black text-xs uppercase flex flex-col gap-2 transition-all", selectedTeam === game.team2 ? "bg-primary shadow-lg" : "border-2 opacity-60")} 
+                  onClick={() => setSelectedTeam(game.team2)}
+                >
+                  <SquadIdentity 
+                    teamId={(game as any).team2Id} 
+                    teamName={game.team2} 
+                    logoUrl={league.teams?.[(game as any).team2Id || '']?.teamLogoUrl}
+                    logoClassName="h-10 w-10 rounded-lg shadow-inner" 
+                    showNameWithLogo
+                    horizontal
+                  />
+                </Button>
               </div>
             </div>
             {selectedTeam && (

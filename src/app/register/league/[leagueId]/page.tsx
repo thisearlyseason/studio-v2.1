@@ -408,6 +408,21 @@ function RegistrationForm() {
                       ) : null}
                     </div>
                   )}
+
+                  {currentStepInfo.id === 'identity' && config?.require_division_selection && league?.divisions && (
+                    <div className="space-y-3">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Selected Division / Tier <span className="text-primary">*</span></Label>
+                      <Select required value={answers['division'] || ''} onValueChange={v => handleInputChange('division', v)}>
+                         <SelectTrigger className="h-16 rounded-2xl border-2 font-black text-lg bg-white shadow-xl border-primary/20">
+                            <SelectValue placeholder="--- SELECT TARGET DIVISION ---" />
+                         </SelectTrigger>
+                         <SelectContent className="rounded-2xl border-2">
+                            {league.divisions.map((d: string) => <SelectItem key={d} value={d} className="font-black uppercase tracking-widest">{d}</SelectItem>)}
+                         </SelectContent>
+                      </Select>
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest ml-2 italic">Official competitive tier for this enrollment.</p>
+                    </div>
+                  )}
                   {stepFields.map(field => (
                     <div key={field.id} className="space-y-3">
                       {field.type === 'header' ? (
