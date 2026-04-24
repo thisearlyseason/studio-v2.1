@@ -16,6 +16,8 @@ import { toast } from '@/hooks/use-toast';
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
 const DEMO_START_KEY = 'squad_demo_start_time';
+const SEEDING_ATTEMPTED_KEY = 'squad_seeding_attempted'; // sessionStorage – survives remounts, cleared on tab close
+const LOADING_HARD_TIMEOUT_MS = 30_000; // 30 s max wait before forcing the loading state to resolve
 
 function DemoSeedWrapper({ 
   user, 
@@ -35,59 +37,80 @@ function DemoSeedWrapper({
   const searchParams = useSearchParams();
   const db = useFirestore();
   const auth = useAuth();
-  const seedingAttempted = useRef(false);
-
   useEffect(() => {
     const demoPlanId = searchParams.get('seed_demo');
-    if (!user || isDemoInitializing || !demoPlanId || isTeamsLoading || seedingAttempted.current) return;
-    
-    // Check lock BEFORE escalating state to initializing/seeding to prevent deadlocks
+    if (!user || isDemoInitializing || !demoPlanId || isTeamsLoading) return;
+
+    // Use sessionStorage so this guard survives React remounts within the same browser session.
+    // Unlike a useRef, this persists across component teardown/remount cycles.
+    const sessionAttemptKey = `${SEEDING_ATTEMPTED_KEY}_${demoPlanId}_${user.uid}`;
+    if (sessionStorage.getItem(sessionAttemptKey)) return;
+
+    // Also check the global Firestore write lock to avoid double-seeding
     const globalLock = localStorage.getItem('squad_seeding_lock');
     if (globalLock === demoPlanId) {
-      console.warn("Seeding lock detected for this plan. Skipping redundant seed.");
+      console.warn('[Demo] Seeding lock active – skipping redundant seed.');
       return;
     }
 
-    seedingAttempted.current = true;
+    // Mark as attempted BEFORE going async so concurrent re-renders don't race
+    sessionStorage.setItem(sessionAttemptKey, 'true');
     setIsDemoInitializing(true);
     localStorage.setItem('squad_seeding_lock', demoPlanId);
     setIsSeedingDemo(true);
-    
-    // Immediately clear the URL parameter visually to prevent loops on user refresh
+
+    // Immediately strip the URL param to prevent a loop if the user hits refresh
     const url = new URL(window.location.href);
     url.searchParams.delete('seed_demo');
     window.history.replaceState({}, '', url.pathname + url.search);
 
-    const seed = async () => {
+    const seed = async (attempt = 1) => {
       try {
-        if (auth.currentUser) {
-          const primaryId = await seedGuestDemoTeam(db, user.uid, demoPlanId);
-          if (primaryId) {
-            localStorage.setItem('sf_session_team_id', primaryId);
-          }
-          toast({ title: "Environment Ready", description: "Tactical data synchronized." });
-          
-          // Clear lock on success so future entries aren't blocked
-          localStorage.removeItem('squad_seeding_lock');
-
-          // Force full reload to reset all providers with new seed state
-          setTimeout(() => {
-            window.location.replace('/dashboard');
-          }, 1000);
+        if (!auth.currentUser) throw new Error('No authenticated user');
+        const primaryId = await seedGuestDemoTeam(db, user.uid, demoPlanId);
+        if (primaryId) {
+          localStorage.setItem('sf_session_team_id', primaryId);
         }
-      } catch (e: any) {
-        setIsDemoInitializing(false);
-        setIsSeedingDemo(false);
+        toast({ title: '✅ Environment Ready', description: 'Tactical data synchronized successfully.' });
+
+        // Clear the Firestore write-lock on success
         localStorage.removeItem('squad_seeding_lock');
-        
+
+        // Give Firestore an extra 2 s to propagate all writes before redirecting.
+        // The previous 1 s was too short on cold starts.
+        setTimeout(() => {
+          window.location.replace('/dashboard');
+        }, 2000);
+
+      } catch (e: any) {
+        console.error(`[Demo] Seed attempt ${attempt} failed:`, e);
+
         if (e.code === 'resource-exhausted') {
-          toast({ 
-            title: "Quota Exceeded", 
-            description: "Database write bandwidth reached. Please try again in 24 hours or upgrade plan.", 
-            variant: "destructive" 
+          // Quota errors are not recoverable — surface immediately
+          setIsDemoInitializing(false);
+          setIsSeedingDemo(false);
+          localStorage.removeItem('squad_seeding_lock');
+          sessionStorage.removeItem(sessionAttemptKey);
+          toast({
+            title: 'Quota Exceeded',
+            description: 'Database write bandwidth reached. Please try again in 24 hours or upgrade plan.',
+            variant: 'destructive'
           });
+        } else if (attempt < 3) {
+          // Transient network/Firestore error — retry with exponential back-off
+          console.warn(`[Demo] Retrying seed in ${attempt * 1500} ms…`);
+          setTimeout(() => seed(attempt + 1), attempt * 1500);
         } else {
-          toast({ title: "Sync Failed", description: "Environment could not be established.", variant: "destructive" });
+          // All retries exhausted
+          setIsDemoInitializing(false);
+          setIsSeedingDemo(false);
+          localStorage.removeItem('squad_seeding_lock');
+          sessionStorage.removeItem(sessionAttemptKey);
+          toast({
+            title: 'Sync Failed',
+            description: 'Environment could not be established after multiple attempts. Please try again.',
+            variant: 'destructive'
+          });
         }
       }
     };
@@ -111,12 +134,20 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const syncAttempted = useRef(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+  // Hard timeout: if loading lasts more than LOADING_HARD_TIMEOUT_MS, force-unblock so the
+  // UI never gets permanently stuck (e.g. Firestore listener never fires on a bad network).
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  const hardTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => { 
-    setMounted(true); 
+  useEffect(() => {
+    setMounted(true);
+    hardTimeoutRef.current = setTimeout(() => {
+      setLoadingTimedOut(true);
+    }, LOADING_HARD_TIMEOUT_MS);
     return () => {
-      // Clear seeding state on unmount out of abundance of caution
-      localStorage.removeItem('squad_seeding_lock');
+      // NOTE: Do NOT clear 'squad_seeding_lock' here — doing so would abort an in-progress
+      // seed when React re-mounts this layout (e.g. during Suspense boundary resolution).
+      if (hardTimeoutRef.current) clearTimeout(hardTimeoutRef.current);
     };
   }, []);
 
@@ -236,7 +267,18 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     }
   }, [mounted, user, searchParams, auth, isSyncingPlan]);
 
-  const isLoadingState = !mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile || isSyncingPlan;
+  // Clear the hard timeout once we're actually done loading
+  useEffect(() => {
+    const reallyDone = mounted && isAuthResolved && !isUserLoading && !isSeedingDemo && !isDemoInitializing && !isTeamsLoading && !!userProfile && !isSyncingPlan;
+    if (reallyDone && hardTimeoutRef.current) {
+      clearTimeout(hardTimeoutRef.current);
+      hardTimeoutRef.current = null;
+      setLoadingTimedOut(false);
+    }
+  }, [mounted, isAuthResolved, isUserLoading, isSeedingDemo, isDemoInitializing, isTeamsLoading, userProfile, isSyncingPlan]);
+
+  // loadingTimedOut forces the loading gate open so the user isn't permanently blocked.
+  const isLoadingState = !loadingTimedOut && (!mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile || isSyncingPlan);
 
   if (isLoadingState) {
     return (
@@ -257,8 +299,17 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           </div>
           <div className="text-center space-y-2">
             <p className="text-lg font-black uppercase tracking-widest text-primary">
-              {isSyncingPlan ? "Synchronizing Upgraded Protocol..." : "Synchronizing Secure Hub..."}
+              {isSyncingPlan
+                ? 'Synchronizing Upgraded Protocol...'
+                : isDemoInitializing || isSeedingDemo
+                ? 'Building Demo Environment...'
+                : 'Synchronizing Secure Hub...'}
             </p>
+            {(isDemoInitializing || isSeedingDemo) && (
+              <p className="text-xs text-muted-foreground">
+                Seeding tactical data — this takes a few seconds
+              </p>
+            )}
           </div>
         </div>
       </div>
