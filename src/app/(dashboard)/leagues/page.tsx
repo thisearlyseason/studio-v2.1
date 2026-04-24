@@ -870,7 +870,7 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
   );
 }
 
-export default function LeaguesPage() {
+export function LeaguesPageContent({ embedded = false }: { embedded?: boolean }) {
   const { 
     activeTeam, createLeague, isStaff, isPro, purchasePro, 
     teams, removeTeamFromLeague, updateLeagueTeamDetails,
@@ -1369,25 +1369,41 @@ export default function LeaguesPage() {
 
   return (
     <div className="space-y-10 pb-20 text-foreground">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Master Hub</Badge>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">{leaguesLabel}</h1>
+      {!embedded ? (
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Master Hub</Badge>
+            <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">{leaguesLabel}</h1>
+          </div>
+          <div className="flex gap-2">
+            {leagues.some(l => l.isArchived) || showArchived ? (
+              <Button variant="ghost" size="sm" onClick={() => setShowArchived(!showArchived)} className="h-14 px-6 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
+                 <Clock className="h-4 w-4" />
+                 {showArchived ? 'View Active Hubs' : 'View Archived Hubs'}
+              </Button>
+            ) : null}
+            {!activeLeague && isPrimaryClubAuthority && (
+              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="h-5 w-5 mr-2" /> Launch {leagueLabel} Architect
+              </Button>
+            )}
+          </div>
         </div>
-        <div className="flex gap-2">
+      ) : (
+        <div className="flex justify-end gap-2">
           {leagues.some(l => l.isArchived) || showArchived ? (
-            <Button variant="ghost" size="sm" onClick={() => setShowArchived(!showArchived)} className="h-14 px-6 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setShowArchived(!showArchived)} className="h-11 px-5 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
                <Clock className="h-4 w-4" />
-               {showArchived ? 'View Active Hubs' : 'View Archived Hubs'}
+               {showArchived ? 'Active Hubs' : 'Archived Hubs'}
             </Button>
           ) : null}
           {!activeLeague && isPrimaryClubAuthority && (
-            <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="h-5 w-5 mr-2" /> Launch {leagueLabel} Architect
+            <Button className="h-11 px-6 rounded-2xl font-black shadow-xl shadow-primary/20 text-xs" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" /> Launch {leagueLabel} Architect
             </Button>
           )}
         </div>
-      </div>
+      )}
 
       {leagues && leagues.length > 0 && (
         <div className="flex flex-col gap-8">
@@ -2129,4 +2145,8 @@ export default function LeaguesPage() {
       {activeLeague && <ManualGameDialog league={activeLeague} isOpen={isManualGameOpen} onOpenChange={setIsManualGameOpen} />}
     </div>
   );
+}
+
+export default function LeaguesPage() {
+  return <LeaguesPageContent />;
 }

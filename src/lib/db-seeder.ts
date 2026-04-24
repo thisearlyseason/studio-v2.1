@@ -468,13 +468,20 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
         variants.forEach(v => {
             const uniqueCode = `SQUAD-${v.id.toUpperCase().slice(-14)}`;
+
+            // For player demos, teams are OWNED by a fictional coach, not the player.
+            // This prevents proQuotaStatus from firing (player owns 0 teams).
+            // For parent demos, same principle — parents observe, they don't own.
+            const fictionalCoachId = `demo_coach_${userId.slice(-8)}`;
+            const teamOwner = (isParentDemo || isPlayerDemo) ? fictionalCoachId : userId;
+
             batch.set(doc(db, 'teams', v.id), clean({
                 id: v.id,
                 teamName: v.name,
                 code: uniqueCode,
                 teamCode: uniqueCode,
                 inviteCode: uniqueCode,
-                ownerUserId: userId,
+                ownerUserId: teamOwner, // NOT the player/parent user
                 isPro: true,
                 planId: 'team',
                 sport: 'Basketball',
@@ -486,15 +493,58 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                 teamLogoUrl: v.logo
             }));
 
-            // Parent membership
+            // --- Role-specific membership & member records ---
+            // Parent: viewer/guardian role — redirected to /family hub
+            // Player: participant role — stays on main dashboard with read-only ops access
+            const membershipRole = isParentDemo ? 'parent' : 'Member';
+            const memberPosition = isParentDemo ? 'Guardian' : 'Player';
+            const memberName = isParentDemo ? 'Guest Parent' : 'Guest Player';
+
+            // Membership document (users/{uid}/teamMemberships/{teamId})
+            // ownerUserId is intentionally the fictional coach — player/parent never owns
             batch.set(doc(db, 'users', userId, 'teamMemberships', v.id), clean({
-                teamId: v.id, name: v.name, role: 'parent', isPro: true, planId: 'team', isDemo: true, joinedAt: now
+                teamId: v.id,
+                name: v.name,
+                role: membershipRole,
+                isPro: true,
+                planId: 'team',
+                isDemo: true,
+                ownerUserId: teamOwner,
+                joinedAt: now
             }));
 
-            // Parent member record
+            // Member record inside the team (teams/{teamId}/members/{uid})
             batch.set(doc(db, 'teams', v.id, 'members', userId), clean({
-                id: userId, userId, teamId: v.id, name: 'Guest Parent', role: 'parent', position: 'Guardian', joinedAt: now, isDemo: true
+                id: userId, userId, teamId: v.id,
+                name: memberName,
+                role: membershipRole,
+                position: memberPosition,
+                joinedAt: now,
+                isDemo: true
             }));
+
+            // For player demos: also seed a linked players doc so isPlayer resolves
+            // correctly on pages that look up the players collection.
+            if (isPlayerDemo) {
+                const playerDob = new Date(nowObj.getFullYear() - 19, 3, 10).toISOString().split('T')[0];
+                batch.set(doc(db, 'players', userId), clean({
+                    id: userId,
+                    firstName: 'Guest',
+                    lastName: 'Player',
+                    isMinor: false,
+                    parentId: null,
+                    userId: userId,
+                    dateOfBirth: playerDob,
+                    hasLogin: true,
+                    createdAt: now,
+                    joinedTeamIds: [v.id],
+                    ageGroup: 'Adult',
+                    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=guestplayer`,
+                    sports: ['Basketball'],
+                    primaryPosition: 'Player',
+                    isDemo: true
+                }), { merge: true });
+            }
 
             // Pull rich sub-resources from the static blueprint (NO EVENTS — handled by staggered parent block below)
             const data = GET_DEMO_DATA(v.id, userId, v.name, v.name);

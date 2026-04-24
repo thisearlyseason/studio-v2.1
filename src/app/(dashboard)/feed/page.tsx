@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,7 +32,9 @@ import {
   Plus,
   MessageCircle,
   LineChart as ChartIcon,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Clapperboard,
+  Search
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -59,6 +61,116 @@ import {
   DialogFooter
 } from '@/components/ui/dialog';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+
+// ─── Tenor GIF Picker ──────────────────────────────────────────────────────
+// Tenor v1 demo key — free, no registration needed for dev/demo use.
+// For production: get a free key at developers.google.com/tenor
+const TENOR_KEY = 'LIVDSRZULELA';
+const TENOR_LIMIT = 24;
+
+function GifPicker({ onSelect, onClose }: { onSelect: (url: string) => void; onClose: () => void }) {
+  const [query, setQuery] = useState('');
+  const [gifs, setGifs] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchGifs = useCallback(async (q: string) => {
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      const base = 'https://api.tenor.com/v1';
+      const endpoint = q.trim()
+        ? `${base}/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=${TENOR_LIMIT}&media_filter=minimal&contentfilter=medium`
+        : `${base}/trending?key=${TENOR_KEY}&limit=${TENOR_LIMIT}&media_filter=minimal&contentfilter=medium`;
+      const res = await fetch(endpoint);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      setGifs(json.results || []);
+    } catch (err: any) {
+      setFetchError(err.message || 'Failed to load GIFs');
+      setGifs([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Load trending GIFs on mount
+  useEffect(() => { fetchGifs(''); }, [fetchGifs]);
+
+  // Debounced search
+  useEffect(() => {
+    if (searchRef.current) clearTimeout(searchRef.current);
+    searchRef.current = setTimeout(() => fetchGifs(query), 450);
+    return () => { if (searchRef.current) clearTimeout(searchRef.current); };
+  }, [query, fetchGifs]);
+
+  return (
+    <div className="mt-3 rounded-2xl border-2 border-primary/10 bg-muted/20 overflow-hidden animate-in slide-in-from-top-2 duration-200">
+      {/* Search header */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b bg-background">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            autoFocus
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search GIFs..."
+            className="w-full h-9 rounded-xl bg-muted/50 pl-9 pr-4 text-xs font-bold border-none outline-none focus:ring-2 focus:ring-primary/30 transition-all"
+          />
+        </div>
+        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl shrink-0 text-muted-foreground hover:text-foreground" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* GIF grid */}
+      <div className="p-3 h-64 overflow-y-auto custom-scrollbar">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+        ) : fetchError ? (
+          <div className="flex flex-col items-center justify-center h-full gap-2 opacity-50">
+            <Clapperboard className="h-8 w-8 text-destructive" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-destructive">API Error: {fetchError}</p>
+          </div>
+        ) : gifs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-2 opacity-40">
+            <Clapperboard className="h-8 w-8" />
+            <p className="text-[10px] font-black uppercase tracking-widest">No GIFs found</p>
+          </div>
+        ) : (
+          <div className="columns-3 sm:columns-4 gap-2 space-y-2">
+            {gifs.map((gif) => {
+              // Tenor v1: media is an array of objects; tinygif for thumb, gif for full
+              const media = gif.media?.[0];
+              const thumb = media?.tinygif?.url || media?.gif?.url;
+              const full  = media?.gif?.url || media?.tinygif?.url;
+              if (!thumb || !full) return null;
+              return (
+                <button
+                  key={gif.id}
+                  onClick={() => { onSelect(full); onClose(); }}
+                  className="break-inside-avoid w-full rounded-xl overflow-hidden ring-2 ring-transparent hover:ring-primary transition-all hover:scale-[1.02] active:scale-[0.98] duration-150"
+                >
+                  <img src={thumb} alt={gif.title || 'GIF'} className="w-full h-auto block" loading="lazy" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Attribution — required by Tenor ToS */}
+      <div className="px-4 py-2 border-t bg-background flex items-center justify-between">
+        <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Powered by Tenor</span>
+        <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">{query.trim() ? 'Search' : 'Trending'}</span>
+      </div>
+    </div>
+  );
+}
 
 function CommentList({ postId, teamId, isAdmin, currentUserId, canComment }: { postId: string, teamId: string, isAdmin: boolean, currentUserId: string, canComment: boolean }) {
   const db = useFirestore();
@@ -135,7 +247,10 @@ export default function FeedPage() {
   const [isPollDialogOpen, setIsPollDialogOpen] = useState(false);
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptions, setPollOptions] = useState<{text: string, image?: string}[]>([{text: '', image: undefined}, {text: '', image: undefined}]);
+  const [isGifPickerOpen, setIsGifPickerOpen] = useState(false);
+
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [isGifOpen, setIsGifOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const heroInputRef = useRef<HTMLInputElement>(null);
@@ -256,53 +371,6 @@ export default function FeedPage() {
 
   return (
     <div className="space-y-10 pb-20">
-      {/* Tactical Widgets Top Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
-        <Card className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden bg-white">
-          <CardHeader className="bg-primary/5 border-b pb-4 px-6 py-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-primary/10 p-2 rounded-xl text-primary"><CalendarIcon className="h-4 w-4" /></div>
-              <CardTitle className="text-[10px] font-black uppercase tracking-widest text-primary">Upcoming Schedule</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6 space-y-4">
-            {events?.map((event: any) => (
-              <div key={event.id} className="flex gap-4 group cursor-pointer" onClick={() => router.push('/events')}>
-                <div className="h-12 w-12 rounded-2xl bg-muted flex flex-col items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
-                  <span className="text-[8px] font-black uppercase text-muted-foreground group-hover:text-primary leading-none">{format(new Date(event.date), 'MMM')}</span>
-                  <span className="text-lg font-black tracking-tighter">{format(new Date(event.date), 'dd')}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-black truncate">{event.title}</p>
-                  <p className="text-[10px] font-bold text-muted-foreground mt-1">{event.startTime}</p>
-                </div>
-              </div>
-            ))}
-            <Button variant="ghost" className="w-full text-[10px] font-black uppercase tracking-widest h-10 mt-2" onClick={() => router.push('/events')}>Full Schedule <ChevronRight className="h-3 w-3 ml-2" /></Button>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden bg-primary text-primary-foreground">
-          <CardContent className="p-8 space-y-4 h-full flex flex-col justify-between">
-            <div className="space-y-4">
-              <Trophy className="h-8 w-8 text-white/40" />
-              <h3 className="text-xl font-black tracking-tight leading-tight">Season Progress</h3>
-              <div className="grid grid-cols-2 gap-4 pt-2">
-                <div className="bg-white/10 p-3 rounded-2xl text-center">
-                  <p className="text-[8px] font-black uppercase text-white/60 mb-1">Wins</p>
-                  <p className="text-2xl font-black">{games?.filter((g: any) => g.result === 'Win').length || 0}</p>
-                </div>
-                <div className="bg-white/10 p-3 rounded-2xl text-center">
-                  <p className="text-[8px] font-black uppercase text-white/60 mb-1">Losses</p>
-                  <p className="text-2xl font-black">{games?.filter((g: any) => g.result === 'Loss').length || 0}</p>
-                </div>
-              </div>
-            </div>
-            <Button variant="secondary" className="w-full h-11 rounded-xl font-black text-[10px] uppercase tracking-widest bg-white text-primary hover:bg-white/90" onClick={() => router.push('/games')}>Scoreboard</Button>
-          </CardContent>
-        </Card>
-      </div>
-
       <div className="space-y-6 lg:space-y-8 max-w-4xl mx-auto w-full">
         {/* Team Hero Section */}
         <section className="relative h-48 sm:h-64 lg:h-80 rounded-3xl lg:rounded-[2.5rem] overflow-hidden shadow-xl lg:shadow-2xl group ring-1 ring-black/5">
@@ -379,6 +447,24 @@ export default function FeedPage() {
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={cn(
+                            "h-10 w-10 lg:h-12 lg:w-12 rounded-full transition-all",
+                            isGifOpen
+                              ? "bg-primary/10 text-primary"
+                              : "text-muted-foreground hover:text-primary hover:bg-primary/5"
+                          )}
+                          onClick={() => { setIsGifOpen(v => !v); }}
+                        >
+                          <Clapperboard className="h-4 w-4 lg:h-5 lg:w-5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Search GIFs</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => setIsPollDialogOpen(true)}>
                           <BarChart2 className="h-4 w-4 lg:h-5 lg:w-5" />
                         </Button>
@@ -387,6 +473,14 @@ export default function FeedPage() {
                     </Tooltip>
                     <Button disabled={!newPostContent.trim() && !imageUrl} onClick={handlePost} className="ml-auto rounded-full px-6 lg:px-8 h-10 lg:h-12 font-black uppercase text-[9px] lg:text-[11px] tracking-widest shadow-lg lg:shadow-xl shadow-primary/20">Post to Squad</Button>
                   </div>
+
+                  {/* GIF Picker — renders inline below toolbar */}
+                  {isGifOpen && (
+                    <GifPicker
+                      onSelect={(url) => { setImageUrl(url); setIsGifOpen(false); }}
+                      onClose={() => setIsGifOpen(false)}
+                    />
+                  )}
                 </div>
               </div>
             </CardContent>

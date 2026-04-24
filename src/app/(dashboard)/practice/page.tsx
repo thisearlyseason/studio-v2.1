@@ -242,28 +242,36 @@ export default function PracticeManagementPage() {
                 event={event}
                 updateRSVP={updateRSVP}
                 isAdmin={isStaff}
-                onEdit={() => {}} // Redirecting to events page is handled by global nav if needed, or we keep it read-only here
+                onEdit={() => {}}
                 onDelete={deleteEvent}
                 members={members}
+                defaultTab="plan"
               >
-                <Card className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden hover:shadow-md transition-all cursor-pointer group/card">
-                  <div className="flex items-center gap-4 p-4">
-                    <div className="w-14 h-14 rounded-2xl bg-black text-white flex flex-col items-center justify-center shrink-0">
-                      <span className="text-[8px] font-black uppercase leading-none mb-0.5">{format(event.date.includes('T') ? parseISO(event.date) : new Date(event.date.replace(/-/g, '/')), 'MMM')}</span>
-                      <span className="text-lg font-black leading-none">{format(event.date.includes('T') ? parseISO(event.date) : new Date(event.date.replace(/-/g, '/')), 'dd')}</span>
+                <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg hover:-translate-y-0.5 transition-all group overflow-hidden bg-white cursor-pointer">
+                  <div className="flex items-stretch h-28">
+                    <div className="w-24 bg-black text-white flex flex-col items-center justify-center shrink-0 transition-colors group-hover:bg-primary">
+                      <span className="text-[8px] font-black uppercase opacity-60 leading-none">{format(event.date.includes('T') ? parseISO(event.date) : new Date(event.date.replace(/-/g, '/')), 'MMM')}</span>
+                      <span className="text-3xl font-black leading-none">{format(event.date.includes('T') ? parseISO(event.date) : new Date(event.date.replace(/-/g, '/')), 'dd')}</span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-black text-xs uppercase truncate tracking-tight">{event.title}</h4>
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                          <Clock className="h-3 w-3 text-primary" /> {event.startTime}
-                        </span>
+                    <div className="flex-1 p-6 flex flex-col justify-center min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge className="bg-primary/10 text-primary border-none text-[8px] uppercase font-black px-2 h-5">Practice</Badge>
+                        {(event.drillIds?.length || 0) > 0 && (
+                          <Badge variant="outline" className="text-[8px] font-black uppercase h-5 border-primary/20 text-primary">
+                            {event.drillIds!.length} Protocol{event.drillIds!.length !== 1 ? 's' : ''}
+                          </Badge>
+                        )}
+                      </div>
+                      <h4 className="font-black text-base uppercase truncate group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
+                      <div className="flex items-center justify-between mt-1">
+                        <p className="text-[10px] font-medium text-muted-foreground flex items-center gap-1 opacity-60">
+                          <Clock className="h-3 w-3" /> {event.startTime || 'TBD'}
+                        </p>
                         <span className="text-[9px] font-black text-primary uppercase">
-                           {event.drillIds?.length || 0} Protocols
+                          {(event.drillIds?.length || 0) > 0 ? 'View Tactical Plan →' : 'No plan assigned'}
                         </span>
                       </div>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-primary opacity-20 group-hover/card:translate-x-1 transition-transform" />
                   </div>
                 </Card>
               </EventDetailDialog>

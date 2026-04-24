@@ -69,6 +69,8 @@ interface EventDetailDialogProps {
   onDelete: (eventId: string) => void;
   children: React.ReactNode;
   members: Member[];
+  /** If provided, the dialog opens on this tab instead of 'attendance' */
+  defaultTab?: 'attendance' | 'matches' | 'plan' | 'assignments' | 'intel';
 }
 
 export function EventDetailDialog({ 
@@ -78,7 +80,8 @@ export function EventDetailDialog({
   onEdit, 
   onDelete, 
   children, 
-  members 
+  members,
+  defaultTab = 'attendance'
 }: EventDetailDialogProps) {
   const { user, exportAttendanceCSV, myChildren, isParent, isPlayer, teams, getMember, games, isStaff, claimAssignment, activeTeam } = useTeam();
   const router = useRouter();
@@ -290,11 +293,19 @@ export function EventDetailDialog({
 
           {/* RIGHT PANEL: TABS & INTELLIGENCE */}
           <div className="flex-1 bg-white flex flex-col">
-            <Tabs defaultValue="attendance" className="flex flex-col h-full">
+            {/* Matches tab is only valid on the parent tournament event, not individual child matches */}
+            {(() => {
+              const isChildMatch = !!(event as any).parentTournamentId;
+              const isParentTournament = event.isTournament && !isChildMatch;
+              const effectiveDefault = (defaultTab === 'matches' && !isParentTournament) ? 'attendance' : defaultTab;
+              return (
+            <Tabs defaultValue={effectiveDefault} className="flex flex-col h-full">
               <div className="px-8 pt-8 shrink-0">
                 <TabsList className="flex w-full overflow-x-auto bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14 no-scrollbar gap-1 custom-scrollbar-hidden">
                   <TabsTrigger value="attendance" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Squad Pulse</TabsTrigger>
-                  <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0" disabled={!event.isTournament}>Matches</TabsTrigger>
+                  {isParentTournament && (
+                    <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Matches</TabsTrigger>
+                  )}
                   <TabsTrigger value="plan" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0" disabled={!event.drillIds?.length}>Tactical Plan</TabsTrigger>
                   <TabsTrigger value="assignments" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Logistics</TabsTrigger>
                   <TabsTrigger value="intel" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Briefing</TabsTrigger>
@@ -593,6 +604,8 @@ export function EventDetailDialog({
                 </TabsContent>
               </div>
             </Tabs>
+              );
+            })()}
           </div>
         </div>
       </DialogContent>

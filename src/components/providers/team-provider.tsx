@@ -1319,6 +1319,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const proQuotaStatus = useMemo(() => {
     if (!userProfile?.id) return { current: 0, limit: 1, exceeded: false, remaining: 0 };
+
+    // Parents and players are never team owners — quota management is irrelevant for them.
+    // Guard here so the QuotaResolutionOverlay never fires for member-level roles.
+    const memberOnlyRoles = ['parent', 'guardian', 'adult_player', 'youth_player', 'player'];
+    if (memberOnlyRoles.includes(userProfile.role?.toLowerCase() || '')) {
+      return { current: 0, limit: 1, exceeded: false, remaining: 1 };
+    }
+
     const ownedProTeams = teamsRaw.filter(t => t.ownerUserId === userProfile.id && t.isPro);
     const limit = userProfile.team_limit || 1; 
     return { current: ownedProTeams.length, limit, exceeded: ownedProTeams.length > limit && (limit > 0), remaining: Math.max(0, limit - ownedProTeams.length) };

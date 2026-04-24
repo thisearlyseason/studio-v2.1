@@ -165,7 +165,7 @@ export default function UniversalAccountDashboard() {
             const dB = toDateObj(b.date);
             return (dA?.getTime() || 0) - (dB?.getTime() || 0);
         })
-        .slice(0, 8);
+        .slice(0, 6);
   }, [isParent, householdEvents, activeTeamEvents, myChildren, teams, householdGames]);
 
   if (!mounted || !user) return (
@@ -202,7 +202,7 @@ export default function UniversalAccountDashboard() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <Card className="rounded-[2.5rem] shadow-xl bg-primary text-white p-8 space-y-2 relative overflow-hidden group">
           <TrendingUp className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
           <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Victory Ratio</p>

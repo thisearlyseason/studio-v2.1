@@ -28,7 +28,8 @@ import {
   Shield,
   Mail,
   Phone,
-  Copy
+  Copy,
+  ChevronRight
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -297,6 +298,15 @@ export default function TeamProfilePage() {
                   <div className="flex flex-col items-start min-w-0 ml-3">
                     <span>Facilities</span>
                     <span className="text-[7px] text-white/40">Venue Control</span>
+                  </div>
+                </Link>
+              </Button>
+              <Button asChild variant="outline" className="h-20 rounded-2xl bg-white/5 border-white/10 hover:bg-white/10 text-white font-black uppercase text-[10px] tracking-widest justify-start gap-4 px-6 group/btn">
+                <Link href="/roster" className="flex items-center w-full">
+                  <Users className="h-6 w-6 text-primary group-hover/btn:scale-110 transition-transform" />
+                  <div className="flex flex-col items-start min-w-0 ml-3">
+                    <span>Squad Roster</span>
+                    <span className="text-[7px] text-white/40">Members & Profiles</span>
                   </div>
                 </Link>
               </Button>
@@ -648,6 +658,29 @@ export default function TeamProfilePage() {
           </Dialog>
         </aside>
       </div>
+
+      {/* ── Squad Roster Card ── visible to all members ────────────── */}
+      <Link href="/roster">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-white overflow-hidden group hover:shadow-2xl transition-all cursor-pointer ring-1 ring-black/5">
+          <CardContent className="p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
+            <div className="bg-primary/10 p-5 rounded-[1.5rem] text-primary shadow-inner shrink-0">
+              <Users className="h-10 w-10" />
+            </div>
+            <div className="flex-1 min-w-0 text-center sm:text-left">
+              <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 mb-2">Personnel Database</Badge>
+              <h3 className="text-2xl font-black uppercase tracking-tight group-hover:text-primary transition-colors">Squad Roster</h3>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-1">
+                {members.length} Active Members • View Profiles & Intelligence
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button className="rounded-2xl h-11 px-6 font-black uppercase text-xs shadow-lg shadow-primary/20">
+                Open Roster <ChevronRight className="ml-2 h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-lg overflow-hidden p-0 border-none shadow-2xl">

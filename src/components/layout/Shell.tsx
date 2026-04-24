@@ -7,7 +7,6 @@ import {
   LayoutDashboard, 
   CalendarDays, 
   MessageCircle, 
-  Users2, 
   FolderClosed, 
   Settings,
   ChevronDown,
@@ -48,7 +47,8 @@ import {
   Trash2,
   UserX,
   ShieldAlert,
-  User
+  User,
+  Medal
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -110,15 +110,12 @@ const coordinationTabs = [
   { name: 'Feed', href: '/feed', icon: Radio, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
   { name: 'Practice', href: '/practice', icon: Dumbbell, pro: true },
-  { name: 'Leagues', href: '/leagues', icon: Shield, pro: false },
-  { name: 'Tournaments', href: '/manage-tournaments', icon: TableIcon, pro: true },
+  { name: 'Competition Hub', href: '/competition', icon: Medal, pro: false },
   { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: true },
-  { name: 'Calendar', href: '/calendar', icon: CalendarIcon, pro: false },
   { name: 'Playbook', href: '/drills', icon: GraduationCap, pro: true },
   { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: true },
   { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: true },
   { name: 'Tactical Chat', href: '/chats', icon: MessageCircle, pro: false },
-  { name: 'Roster', href: '/roster', icon: Users2, pro: false },
   { name: 'Library', href: '/files', icon: FolderClosed, pro: false },
 ];
 
@@ -239,14 +236,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     .filter(tab => {
       // Feed is filtered by plan/feature
       if (tab.name === 'Feed') return hasFeature?.('live_feed_read');
-      
-      // Most coordination items are visible to all members for transparency,
-      // internal page logic handles edit/administrative permissions.
       return true;
     })
     .map(tab => {
-      if (tab.name === 'Leagues' && isSchoolMode) {
-        return { ...tab, name: 'Programs' };
+      if (tab.name === 'Competition Hub' && isSchoolMode) {
+        return { ...tab, name: 'Programs Hub' };
       }
       return tab;
     });
@@ -382,6 +376,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   {activeTeam?.code || activeTeam?.teamCode || activeTeam?.inviteCode || '---'}
                 </p>
               </div>
+
 
               <Link href="/settings">
                 <div className="flex items-center gap-3 p-2 hover:bg-primary/5 rounded-2xl transition-all cursor-pointer group">
@@ -735,6 +730,38 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         <div className="space-y-3">
                           <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground px-2">Account Management</p>
                           <div className="grid grid-cols-1 gap-2">
+                            <Link
+                              href="/team"
+                              onClick={() => setIsMoreMenuOpen(false)}
+                              className="flex items-center justify-between p-4 rounded-2xl border bg-muted/30 border-transparent transition-all"
+                            >
+                              <div className="flex items-center gap-4">
+                                <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                                  <Shield className="h-4 w-4 text-primary" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-black uppercase tracking-widest text-foreground">Squad Profile</span>
+                                  <span className="text-[8px] font-bold text-muted-foreground uppercase">Identity & Branding</span>
+                                </div>
+                              </div>
+                              <ChevronRight className="h-4 w-4 text-muted-foreground/30" />
+                            </Link>
+                            <Link
+                              href="/roster"
+                              onClick={() => setIsMoreMenuOpen(false)}
+                              className="flex items-center justify-between p-4 rounded-2xl border bg-muted/30 border-transparent transition-all"
+                            >
+                              <div className="flex items-center gap-4">
+                                <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                                  <Users className="h-4 w-4 text-primary" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-black uppercase tracking-widest text-foreground">Squad Roster</span>
+                                  <span className="text-[8px] font-bold text-muted-foreground uppercase">Members & Profiles</span>
+                                </div>
+                              </div>
+                              <ChevronRight className="h-4 w-4 text-muted-foreground/30" />
+                            </Link>
                             <Link 
                               href="/settings"
                               onClick={() => setIsMoreMenuOpen(false)}

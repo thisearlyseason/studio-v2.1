@@ -621,7 +621,7 @@ export default function RosterPage() {
       )}
 
       <Dialog open={!!selectedMemberId} onOpenChange={(open) => !open && setSelectedMemberId(null)}>
-        <DialogContent className="rounded-[3rem] sm:max-w-5xl border-none shadow-2xl p-0 flex flex-col bg-white overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
+        <DialogContent className="rounded-t-[3rem] sm:rounded-[3rem] sm:max-w-5xl border-none shadow-2xl p-0 flex flex-col bg-white overflow-y-auto max-h-[95dvh] sm:max-h-[90vh] custom-scrollbar text-foreground">
           <DialogTitle className="sr-only">Player Profile: {selectedMember?.name}</DialogTitle>
           <DialogDescription className="sr-only">Detailed athletic portfolio and personnel evaluation for {selectedMember?.name}</DialogDescription>
           {selectedMember && (

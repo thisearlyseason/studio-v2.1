@@ -1219,7 +1219,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
   );
 }
 
-export default function ManageTournamentsPage() {
+export function ManageTournamentsPageContent({ embedded = false }: { embedded?: boolean }) {
   const { activeTeam, db, firebaseUser: user } = useTeam();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -1307,27 +1307,41 @@ export default function ManageTournamentsPage() {
   if (activeEvent) return <div className="p-8 lg:p-14"><TournamentDetailView event={activeEvent} onBack={() => setSelectedEventId(null)} /></div>;
 
   return (
-    <div className="p-8 lg:p-14 space-y-12">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-8">
-        <div className="space-y-2">
-          <Badge className="bg-primary text-white border-none font-black text-[10px] px-4 h-7 uppercase tracking-[0.2em] shadow-xl">Series Operations Hub</Badge>
-          <h1 className="text-4xl md:text-7xl font-black uppercase tracking-tighter leading-none italic">Manage Tournaments</h1>
-          <p className="text-sm font-medium text-muted-foreground leading-relaxed italic max-w-2xl">Elite-level institutional Series Architect for managing multi-field tournaments, synchronized officiating, and live bracket telemetry.</p>
-        </div>
-        <div className="flex flex-col gap-4">
-          <div className="flex gap-2 justify-end">
-            {hasArchived && (
-              <Button variant="ghost" onClick={() => setShowArchived(!showArchived)} className="h-14 px-6 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest text-[#050505] bg-white hover:bg-muted flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                {showArchived ? 'Active Mode' : 'Historical Data'}
-              </Button>
-            )}
-            <Button onClick={() => setIsWizardOpen(true)} className="h-14 px-8 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl transition-all active:scale-95 shrink-0 flex items-center">
-              Assemble Elite Series <Plus className="ml-3 h-4 w-4" />
-            </Button>
+    <div className={embedded ? "space-y-10" : "p-8 lg:p-14 space-y-12"}>
+      {!embedded ? (
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-8">
+          <div className="space-y-2">
+            <Badge className="bg-primary text-white border-none font-black text-[10px] px-4 h-7 uppercase tracking-[0.2em] shadow-xl">Series Operations Hub</Badge>
+            <h1 className="text-4xl md:text-7xl font-black uppercase tracking-tighter leading-none italic">Manage Tournaments</h1>
+            <p className="text-sm font-medium text-muted-foreground leading-relaxed italic max-w-2xl">Elite-level institutional Series Architect for managing multi-field tournaments, synchronized officiating, and live bracket telemetry.</p>
           </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex gap-2 justify-end">
+              {hasArchived && (
+                <Button variant="ghost" onClick={() => setShowArchived(!showArchived)} className="h-14 px-6 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest text-[#050505] bg-white hover:bg-muted flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  {showArchived ? 'Active Mode' : 'Historical Data'}
+                </Button>
+              )}
+              <Button onClick={() => setIsWizardOpen(true)} className="h-14 px-8 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl transition-all active:scale-95 shrink-0 flex items-center">
+                Assemble Elite Series <Plus className="ml-3 h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+      ) : (
+        <div className="flex justify-end gap-2">
+          {hasArchived && (
+            <Button variant="ghost" onClick={() => setShowArchived(!showArchived)} className="h-11 px-5 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              {showArchived ? 'Active' : 'Archived'}
+            </Button>
+          )}
+          <Button onClick={() => setIsWizardOpen(true)} className="h-11 px-6 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl flex items-center">
+            Assemble Elite Series <Plus className="ml-2 h-4 w-4" />
+          </Button>
         </div>
-      </header>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {events?.map(event => (
@@ -1426,4 +1440,8 @@ export default function ManageTournamentsPage() {
       </Dialog>
     </div>
   );
+}
+
+export default function ManageTournamentsPage() {
+  return <ManageTournamentsPageContent />;
 }
