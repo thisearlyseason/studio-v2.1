@@ -4,6 +4,7 @@ import {
   Firestore, 
   doc, 
   writeBatch,
+  WriteBatch,
   collection,
   serverTimestamp,
   setDoc,
@@ -12,6 +13,47 @@ import {
 } from 'firebase/firestore';
 import { generateTournamentSchedule } from '@/lib/scheduler-utils';
 import { format, parseISO } from 'date-fns';
+
+/**
+ * BatchHelper — safely accumulates Firestore writes and auto-commits every
+ * CHUNK_SIZE operations to stay well under the 500-op hard limit.
+ */
+class BatchHelper {
+  private db: Firestore;
+  private batch: WriteBatch;
+  private opCount = 0;
+  private readonly CHUNK_SIZE = 400;
+
+  constructor(db: Firestore) {
+    this.db = db;
+    this.batch = writeBatch(db);
+  }
+
+  set(ref: any, data: any, opts?: any) {
+    if (opts) {
+      this.batch.set(ref, data, opts);
+    } else {
+      this.batch.set(ref, data);
+    }
+    this.opCount++;
+    return this;
+  }
+
+  async maybeCommit() {
+    if (this.opCount >= this.CHUNK_SIZE) {
+      await this.batch.commit();
+      this.batch = writeBatch(this.db);
+      this.opCount = 0;
+    }
+  }
+
+  async commit() {
+    if (this.opCount > 0) {
+      await this.batch.commit();
+      this.opCount = 0;
+    }
+  }
+}
 
 /**
  * Sanitizes objects for Firestore by removing undefined values recursively.
@@ -389,7 +431,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const pos = isParentDemo ? 'Parent' : (isPlayerDemo ? 'Player' : (isSchoolDemo ? 'Athletic Director' : 'Coach'));
   const role = (isParentDemo || isPlayerDemo) ? 'Member' : 'Admin';
 
-  let batch = writeBatch(db);
+  const batch = new BatchHelper(db);
 
   // 1. Core Profile Reset
   batch.set(doc(db, 'users', userId), clean({
@@ -410,6 +452,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     clubName: isSchoolDemo ? 'Springfield High School' : (isEliteDemo ? 'Apex Academy' : 'Squad Sports Hub'),
     isStaff: true
   }), { merge: true });
+  await batch.maybeCommit();
 
   // 1.1 Secure Facilities Seeding (All Pro Tiers)
   if (isProTier && !isParentDemo && !isPlayerDemo) {
@@ -474,6 +517,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     { id: 'school', name: 'Organization', isPro: true, features: { feed_post: true, tournaments_view: true, tournaments_manage: true, payments_collect: true, incidents_report: true, volunteers_manage: true, fundraising_manage: true, chats_unlimited: true, roster_unlimited: true, advanced_scheduling: true, media_library: true, multi_team_management: true, school_hub: true, facility_management: true, club_management: true } }
   ];
   plans.forEach(p => batch.set(doc(db, 'plans', p.id), clean(p), { merge: true }));
+  await batch.maybeCommit();
 
     // --- Specialized Parent/Player Demo Data ---
     if (isParentDemo || isPlayerDemo) {
@@ -516,7 +560,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             { id: lakerId, name: 'Lakers', logo: 'https://picsum.photos/seed/lakers/200/200' }
         ];
 
-        variants.forEach(v => {
+        for (const v of variants) {
             const uniqueCode = `SQUAD-${v.id.toUpperCase().slice(-14)}`;
 
             // For player demos, teams are OWNED by a fictional coach, not the player.
@@ -601,6 +645,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             data.members.forEach(m => {
               batch.set(doc(db, 'teams', v.id, 'members', m.id), clean({ ...m, teamId: v.id, joinedAt: now, isDemo: true }));
             });
+            await batch.maybeCommit();
             data.volunteers.forEach(vol => batch.set(doc(db, 'teams', v.id, 'volunteers', vol.id), clean(vol)));
             data.fundraising.forEach(fund => batch.set(doc(db, 'teams', v.id, 'fundraising', fund.id), clean(fund)));
             data.equipment.forEach(eq => batch.set(doc(db, 'teams', v.id, 'equipment', eq.id), clean(eq)));
@@ -609,6 +654,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                 const matchTeamIds = [v.id, 'mock_opp'].filter(Boolean);
                 batch.set(doc(db, 'teams', v.id, 'games', g.id), clean({ ...g, teamId: v.id, matchTeamIds, createdAt: now }));
             });
+            await batch.maybeCommit();
             data.drills.forEach(d => batch.set(doc(db, 'teams', v.id, 'drills', d.id), clean(d)));
             data.practice_templates.forEach(pt => batch.set(doc(db, 'teams', v.id, 'practice_templates', pt.id), clean(pt)));
             data.documents.forEach(d => batch.set(doc(db, 'teams', v.id, 'documents', d.id), clean({ ...d, ownerUserId: userId, teamId: v.id })));
@@ -616,11 +662,13 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             data.alerts.forEach(a => batch.set(doc(db, 'teams', v.id, 'alerts', a.id), clean(a)));
             data.feed.forEach(p => batch.set(doc(db, 'teams', v.id, 'feedPosts', p.id), clean(p)));
             data.signatures.forEach(s => s.sigs.forEach(sig => batch.set(doc(db, 'teams', v.id, 'members', sig.userId, 'signatures', sig.documentId), clean(sig))));
+            await batch.maybeCommit();
             data.chats.forEach(c => {
               batch.set(doc(db, 'teams', v.id, 'groupChats', c.id), clean({ id: c.id, name: c.name, createdBy: c.createdBy, memberIds: c.memberIds, isDeleted: c.isDeleted, teamId: v.id, createdAt: c.createdAt }));
               c.messages.forEach(m => batch.set(doc(db, 'teams', v.id, 'groupChats', c.id, 'messages', m.id), clean(m)));
             });
-        });
+            await batch.maybeCommit();
+        }
 
         // 3. Children Profiles
         const juniorId = `c1_${userId}`;
@@ -658,7 +706,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             id: alexId, teamId: lakerId, name: 'Alex Guest', role: 'Member', position: 'Player', joinedAt: now, isDemo: true, parentId: userId, email: alexEmail
         }));
 
-        tids.forEach(tid => {
+        for (const tid of tids) {
             const isJunior = tid === strikerId;
             
             // Stagger timelines: Junior gets Early Tournament & Late League. Alex gets Early League & Late Tournament.
@@ -769,7 +817,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
               { id: `prac4_${tid}`, teamId: tid, title: 'Institutional Strategy Review', eventType: 'practice', date: new Date(nowObj.getTime() + (pracOffset + 4) * 86400000).toISOString(), startTime: '07:00 PM', location: 'Clubhouse', drillIds: [`d2_${tid}`] }
             ];
             practices.forEach(p => batch.set(doc(db, 'teams', tid, 'events', p.id), clean(p)));
-        });
+            await batch.maybeCommit();
+        }
         
         await batch.commit();
         return strikerId;
@@ -838,7 +887,9 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
         const uniqueCode = `SQUAD-${teamId.toUpperCase().slice(-14)}`; 
         batch.set(doc(db, 'teams', teamId), clean({ 
-            id: teamId, teamName: name, 
+            id: teamId,
+            name,       // canonical field used by Team type
+            teamName: name, // legacy alias kept for compatibility
             code: uniqueCode, teamCode: uniqueCode, inviteCode: uniqueCode,
             ownerUserId: userId, isPro: isProTier || isSchoolDemo, planId: plan_type, sport: isSchoolDemo ? 'Basketball' : 'Multi-Sport', 
             isDemo: true, type: teamType, schoolId, leagueId: !isParentDemo ? leagueId : undefined,
@@ -912,23 +963,20 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         data.incidents.forEach(inc => batch.set(doc(db, 'teams', teamId, 'incidents', inc.id), clean(inc)));
         // Seed game results for Scorekeeping page
         data.games.forEach(g => {
-            const matchTeamIds = g.matchTeamIds || [teamId, g.opponentId].filter(Boolean);
+            const matchTeamIds = [teamId, 'mock_opp'].filter(Boolean);
             batch.set(doc(db, 'teams', teamId, 'games', g.id), clean({ ...g, teamId, matchTeamIds, createdAt: now }));
         });
+        await batch.maybeCommit();
         // Seed files for Library
         data.files.forEach(f => batch.set(doc(db, 'teams', teamId, 'files', f.id), clean({ ...f, teamId })));
         // Seed document signatures for Coaches Corner / Files
         data.signatures.forEach(s => s.sigs.forEach(sig => batch.set(doc(db, 'teams', teamId, 'members', sig.userId, 'signatures', sig.documentId), clean(sig))));
+        await batch.maybeCommit();
         data.chats.forEach(c => {
             batch.set(doc(db, 'teams', teamId, 'groupChats', c.id), clean({ id: c.id, name: c.name, createdBy: c.createdBy, memberIds: c.memberIds, isDeleted: c.isDeleted, teamId: c.teamId, createdAt: c.createdAt }));
             c.messages.forEach(m => batch.set(doc(db, 'teams', teamId, 'groupChats', c.id, 'messages', m.id), clean(m)));
         });
-
-        // Avoid batch limit for large organization demos
-        if (i > 0 && i % 2 === 0) {
-            await batch.commit();
-            batch = writeBatch(db);
-        }
+        await batch.maybeCommit();
     }
 
     await batch.commit();

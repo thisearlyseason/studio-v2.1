@@ -392,10 +392,10 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[98vw] lg:max-w-[1600px] rounded-[3rem] p-0 border border-white/10 shadow-2xl overflow-hidden bg-[#050505] text-white h-[95vh] flex flex-col">
+      <DialogContent hideClose className="max-w-[98vw] lg:max-w-[1600px] rounded-[3rem] p-0 border border-white/10 shadow-2xl overflow-hidden bg-[#050505] text-white h-[95vh] flex flex-col">
         <DialogTitle className="sr-only">Elite Series Architect</DialogTitle>
-        <DialogClose className="absolute right-8 top-8 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground z-50">
-          <X className="h-8 w-8 text-white" />
+        <DialogClose className="absolute right-6 top-6 z-50 h-10 w-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/15 transition-all flex items-center justify-center backdrop-blur-sm">
+          <X className="h-5 w-5 text-white" />
           <span className="sr-only">Close</span>
         </DialogClose>
         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-600 via-orange-500 to-primary w-full shrink-0" />
@@ -1220,59 +1220,70 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
             </TabsList>
           </div>
           <div className="p-8 lg:p-14">
-             <TabsContent value="architecture" className="mt-0 space-y-10">
-                <div className="bg-orange-50 p-10 rounded-[3rem] border-2 border-dashed border-orange-200 space-y-8">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-orange-500/10 p-3 rounded-2xl text-orange-600"><Zap className="h-6 w-6" /></div>
-                    <div>
-                      <h3 className="text-2xl font-black uppercase tracking-tight">Bracket Telemetry</h3>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-orange-600/60">Automated Seeding & Progression</p>
+             <TabsContent value="architecture" className="mt-0 space-y-6">
+                {/* ── DARK SYSTEM: Bracket Telemetry ── */}
+                <div className="bg-[#050505] rounded-[3rem] border border-white/10 overflow-hidden">
+                  <div className="h-0.5 bg-gradient-to-r from-primary via-orange-500 to-transparent w-full" />
+                  <div className="p-10 space-y-8">
+                    <div className="flex items-center gap-4">
+                      <div className="border border-white/20 p-3 rounded-xl text-white shadow-[0_0_15px_rgba(255,255,255,0.05)]"><Zap className="h-5 w-5" /></div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">Telemetry Engine</p>
+                        <h3 className="text-2xl font-black uppercase tracking-tight text-white">Bracket Telemetry</h3>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Automated Seeding & Progression</p>
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card className="p-8 rounded-[2.5rem] border-none shadow-xl bg-white space-y-6">
-                      <div className="space-y-2">
-                        <Badge className="bg-orange-600 text-white font-black text-[8px]">PRO TOOL</Badge>
-                        <h4 className="text-lg font-black uppercase italic">Seed from Standings</h4>
-                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-tight">Automatically promote the current Top 4 squads into the Semi-Final bracket.</p>
-                      </div>
-                      <Button onClick={seedBracketFromStandings} className="w-full h-14 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-black uppercase text-xs shadow-lg shadow-orange-600/20 transition-all active:scale-95">
-                        Initialize Seeds 1-4 <ArrowRight className="ml-2 h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" onClick={injectBracketSlots} className="w-full text-orange-600 font-black uppercase text-[9px] tracking-widest hover:bg-orange-50">
-                        Incorporate Missing Bracket Architecture &rarr;
-                      </Button>
-                    </Card>
 
-                    <Card className="p-8 rounded-[2.5rem] border-none shadow-xl bg-black text-white space-y-6">
-                      <div className="space-y-1">
-                        <Badge className="bg-primary text-white font-black text-[8px]">ACTIVE</Badge>
-                        <h4 className="text-lg font-black uppercase italic">Winner Progression</h4>
-                        <p className="text-xs text-white/40 font-medium uppercase tracking-tight">Matches are currently linked. Winners of Semi-Finals automatically advance to Championship.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-[#0a0a0a] p-8 rounded-[2rem] border border-white/5 space-y-6">
+                        <div className="space-y-2">
+                          <Badge className="bg-primary/20 text-primary border border-primary/30 font-black text-[8px] uppercase tracking-widest">Pro Tool</Badge>
+                          <h4 className="text-lg font-black uppercase tracking-tight text-white">Seed from Standings</h4>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 leading-relaxed">Automatically promote the current Top 4 squads into the Semi-Final bracket.</p>
+                        </div>
+                        <Button onClick={seedBracketFromStandings} className="w-full h-14 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest transition-all active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)]">
+                          Initialize Seeds 1–4 <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" onClick={injectBracketSlots} className="w-full text-white/40 hover:text-white font-black uppercase text-[9px] tracking-widest hover:bg-white/5">
+                          Inject Missing Bracket Slots →
+                        </Button>
                       </div>
-                      <div className="flex items-center gap-2 text-green-500 font-black text-[10px] uppercase tracking-widest">
-                        <CheckCircle2 className="h-4 w-4" /> Synchronization Active
+
+                      <div className="bg-[#0a0a0a] p-8 rounded-[2rem] border border-white/5 space-y-6 relative overflow-hidden">
+                        <div className="absolute inset-0 bg-emerald-500/[0.03]" />
+                        <div className="relative space-y-2">
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-black text-[8px] uppercase tracking-widest">Active</Badge>
+                          <h4 className="text-lg font-black uppercase tracking-tight text-white">Winner Progression</h4>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 leading-relaxed">Matches are linked. Winners of Semi-Finals automatically advance to Championship.</p>
+                        </div>
+                        <div className="relative flex items-center gap-2 text-emerald-400 font-black text-[10px] uppercase tracking-widest">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Synchronization Active
+                        </div>
                       </div>
-                    </Card>
+                    </div>
                   </div>
                 </div>
 
-                <div className="bg-slate-50 p-10 rounded-[3rem] border-2 border-dashed border-slate-200 space-y-8 relative">
-                  <div className="flex items-center justify-between">
-                     <div className="flex items-center gap-4">
-                        <div className="bg-black text-white p-3 rounded-2xl"><FileSignature className="h-6 w-6" /></div>
+                {/* ── DARK SYSTEM: Registration Architect ── */}
+                <div className="bg-[#050505] rounded-[3rem] border border-white/10 overflow-hidden">
+                  <div className="h-0.5 bg-gradient-to-r from-white/20 via-white/5 to-transparent w-full" />
+                  <div className="p-10">
+                    <div className="flex items-center justify-between gap-6">
+                      <div className="flex items-center gap-4">
+                        <div className="border border-white/20 p-3 rounded-xl text-white shadow-[0_0_15px_rgba(255,255,255,0.05)]"><FileSignature className="h-5 w-5" /></div>
                         <div>
-                           <h3 className="text-2xl font-black uppercase tracking-tight">Registration Architect</h3>
-                           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Custom Intake Forms & Documentation</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">Form Builder</p>
+                          <h3 className="text-2xl font-black uppercase tracking-tight text-white">Registration Architect</h3>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Custom Intake Forms & Documentation</p>
                         </div>
-                     </div>
-                     <Button 
-                       onClick={() => router.push(`/manage-tournaments/registration/${activeTeam?.id}/${event.id}`)} 
-                       className="h-14 px-8 rounded-2xl bg-black text-white font-black uppercase shadow-xl hover:bg-black/80"
-                     >
-                       Launch Form Builder <ExternalLink className="ml-2 h-4 w-4" />
-                     </Button>
+                      </div>
+                      <Button
+                        onClick={() => router.push(`/manage-tournaments/registration/${activeTeam?.id}/${event.id}`)}
+                        className="h-14 px-8 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest shadow-[0_0_20px_rgba(255,255,255,0.1)] shrink-0"
+                      >
+                        Launch Builder <ExternalLink className="ml-2 h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </TabsContent>

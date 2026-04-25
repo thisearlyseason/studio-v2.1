@@ -23,7 +23,11 @@ if (typeof window !== 'undefined') {
     msg?.includes('could not be completed') ||
     (msg?.includes('FIRESTORE') && msg?.includes('INTERNAL')) ||
     msg?.includes('auth/network-request-failed') ||
-    msg?.includes('network-request-failed');
+    msg?.includes('network-request-failed') ||
+    // Firestore offline/cold-start timeout — recovers automatically, not an app error
+    msg?.includes('Could not reach Cloud Firestore backend') ||
+    msg?.includes("Backend didn't respond within") ||
+    msg?.includes('client will operate in offline mode');
 
   const handleError = (event: ErrorEvent) => {
     const msg = event.message || event.error?.message || String(event.error || '');

@@ -4,13 +4,12 @@ import { Suspense } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { TeamProvider } from '@/components/providers/team-provider';
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const metadata: Metadata = {
   title: 'The Squad - Ultimate Team Hub',
   description: 'Unite your team and coordinate like pros with The Squad.',
 };
-
-import { TooltipProvider } from "@/components/ui/tooltip";
 
 export default function RootLayout({
   children,

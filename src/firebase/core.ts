@@ -53,13 +53,12 @@ export function getSdks(firebaseApp: FirebaseApp) {
       firestore = getFirestore(firebaseApp);
       console.log('[Firestore] Re-using existing instance');
     } catch (e) {
-      console.log('[Firestore] Initializing with memory cache and long-polling workaround');
+      console.log('[Firestore] Initializing fresh Firestore instance');
       firestore = initializeFirestore(firebaseApp, {
         localCache: memoryLocalCache(),
-        experimentalForceLongPolling: true, // Force long-polling to bypass buggy WebSocket state machine in v11
-        experimentalAutoDetectLongPolling: true, // Additional stability for v11 streams
-        host: 'firestore.googleapis.com',
-        ssl: true
+        // Auto-detect picks the best transport (WebSocket vs long-poll).
+        // Do NOT combine with experimentalForceLongPolling — they conflict.
+        experimentalAutoDetectLongPolling: true,
       });
     }
   } else {

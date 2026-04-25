@@ -41,7 +41,8 @@ import {
   Lock as LockIcon,
   AlertCircle,
   FileText,
-  Copy
+  Copy,
+  X
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -50,7 +51,8 @@ import {
   DialogTitle, 
   DialogTrigger,
   DialogDescription, 
-  DialogFooter
+  DialogFooter,
+  DialogClose
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -215,190 +217,227 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-5xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+      <DialogContent hideClose className="max-w-[98vw] lg:max-w-[1600px] rounded-[3rem] p-0 border border-white/10 shadow-2xl overflow-hidden bg-[#050505] text-white h-[95vh] flex flex-col">
         <DialogTitle className="sr-only">Season Architect</DialogTitle>
-        <div className="h-2 bg-primary w-full" />
-        <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
-          <DialogHeader>
-            <div className="flex items-center gap-4 mb-2">
-              <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Settings className="h-6 w-6" /></div>
+        <DialogClose className="absolute right-6 top-6 z-50 h-10 w-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/15 transition-all flex items-center justify-center backdrop-blur-sm">
+          <X className="h-5 w-5 text-white" />
+          <span className="sr-only">Close</span>
+        </DialogClose>
+        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-600 via-orange-500 to-primary w-full shrink-0" />
+        
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left Navigation Matrix */}
+          <div className="w-[320px] bg-[#0a0a0a] border-r border-white/5 p-10 flex flex-col hidden lg:flex relative">
+            <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10" />
+            <div className="relative z-10 flex items-center gap-4 mb-20">
+              <div className="border border-white/20 p-3 rounded-xl shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white"><Settings className="h-5 w-5" /></div>
               <div>
-                <DialogTitle className="text-3xl font-black uppercase tracking-tight">Season Architect</DialogTitle>
-                <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Precision {leagueLabel} Deployment Engine</DialogDescription>
+                 <h2 className="text-xl font-black uppercase tracking-tight">Season<br/>Architect</h2>
               </div>
             </div>
-          </DialogHeader>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-            <div className="lg:col-span-7 space-y-10">
-              <section className="space-y-6">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Timeline & Availability</h3>
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Season Start</Label>
-                    <Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} className="h-12 border-2 font-black px-4 pr-10 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:mr-1" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Season End</Label>
-                    <Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} className="h-12 border-2 font-black px-4 pr-10 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:mr-1" />
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <Label className="text-[10px] font-black uppercase ml-1">Active Play Days</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {DAYS_OF_WEEK.map(day => (
-                      <button 
-                        key={day.id} 
-                        onClick={() => toggleDay(day.id)} 
-                        disabled={config.blackoutDaysOfWeek.includes(day.id)}
-                        className={cn(
-                          "h-10 px-4 rounded-xl font-black text-[10px] uppercase border-2 transition-all", 
-                          config.playDays.includes(day.id) ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" : "bg-white text-muted-foreground hover:border-primary/20",
-                          config.blackoutDaysOfWeek.includes(day.id) && "opacity-20 cursor-not-allowed border-dashed"
-                        )}
-                      >
-                        {day.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Do Not Schedule Days (Recurring)</Label>
-                    <Badge variant="outline" className="text-[8px] font-black uppercase py-0 px-1 border-primary/30 text-primary">Priority</Badge>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {DAYS_OF_WEEK.map(day => (
-                      <button 
-                        key={day.id} 
-                        onClick={() => toggleSkipDay(day.id)} 
-                        className={cn(
-                          "h-10 px-4 rounded-xl font-black text-[10px] uppercase border-2 transition-all", 
-                          config.blackoutDaysOfWeek.includes(day.id) ? "bg-black text-white border-black shadow-lg" : "bg-white text-muted-foreground hover:border-black/20"
-                        )}
-                      >
-                        {day.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
-              <section className="space-y-6">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Execution Parameters</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Daily Start</Label>
-                    <Input type="time" value={config.startTime} onChange={e => setConfig({...config, startTime: e.target.value})} className="h-12 border-2 font-bold" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Daily End</Label>
-                    <Input type="time" value={config.endTime} onChange={e => setConfig({...config, endTime: e.target.value})} className="h-12 border-2 font-bold" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Break (Min)</Label>
-                    <Input type="number" value={config.breakLength} onChange={e => setConfig({...config, breakLength: e.target.value})} className="h-12 border-2 font-bold" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Match Length</Label>
-                    <Input type="number" value={config.gameLength} onChange={e => setConfig({...config, gameLength: e.target.value})} className="h-12 border-2 font-bold" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Games/Team</Label>
-                    <Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-12 border-2 font-black text-primary" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase ml-1">Double Headers</Label>
-                    <Select value={config.doubleHeaderOption} onValueChange={(v: any) => setConfig({...config, doubleHeaderOption: v})}>
-                      <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        <SelectItem value="none" className="font-bold">None</SelectItem>
-                        <SelectItem value="sameTeam" className="font-bold">Same Opponent (Swap)</SelectItem>
-                        <SelectItem value="differentTeams" className="font-bold">Different Opponents</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </section>
-
-              <section className="space-y-6">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Venue Allocation</h3>
-                <ScrollArea className="h-64 border-2 rounded-[2.5rem] bg-muted/5 p-6 shadow-inner">
-                  {facilities?.length ? facilities.map(f => (
-                    <div key={f.id} className="space-y-4 mb-8 last:mb-0">
-                      <div className="flex items-center gap-3 px-2">
-                        <Building className="h-4 w-4 text-primary" />
-                        <span className="text-xs font-black uppercase">{f.name}</span>
-                      </div>
-                      <FacilityFieldLoader facilityId={f.id} selectedFields={config.selectedFields} onToggleField={toggleField} />
-                    </div>
-                  )) : (
-                    <div className="py-12 text-center opacity-30 italic text-xs uppercase font-black">No organization facilities found.</div>
-                  )}
-                </ScrollArea>
-              </section>
+            
+            <div className="relative z-10 space-y-8 flex-1">
+              <div className="relative pl-8 transition-all duration-300 cursor-pointer opacity-100">
+                <div className="absolute left-0 top-1 bottom-1 w-[2px] bg-primary shadow-[0_0_10px_rgba(var(--primary),0.8)]" />
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Configuration</h4>
+                <h3 className="text-sm font-black uppercase tracking-tight mb-1">Timeline & Matrix</h3>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-white/40">Deployment Parameters</p>
+              </div>
             </div>
-
-            <aside className="lg:col-span-5 space-y-8">
-              <div className="bg-black text-white rounded-[2.5rem] p-8 space-y-6 relative overflow-hidden group">
-                <CalendarDays className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12" />
-                <div className="relative z-10 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-primary p-2 rounded-xl"><CalendarIcon className="h-4 w-4 text-white" /></div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-primary">Blackout Calendar</p>
-                  </div>
-                  <p className="text-[10px] font-medium text-white/60 leading-relaxed italic">Select dates where no {leagueLabel.toLowerCase()} matches should be scheduled.</p>
-                  <div className="bg-white rounded-2xl p-2 text-black flex justify-center">
-                    <Calendar 
-                      mode="multiple" 
-                      selected={config.blackoutDates} 
-                      onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})} 
-                      className="mx-auto"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-primary/5 p-6 rounded-3xl border-2 border-dashed border-primary/20 space-y-4">
-                <div className="flex items-center gap-2 text-primary"><Info className="h-4 w-4" /><h4 className="text-[10px] font-black uppercase tracking-widest">Enrollment Status</h4></div>
-                <div className="space-y-2">
-                  <p className="text-[11px] font-bold text-muted-foreground uppercase">{leagueTeams.length} squads detected in active roster.</p>
-                  {league.requiredSquads && leagueTeams.length < league.requiredSquads && (
-                    <div className="bg-red-50 p-4 rounded-2xl border border-red-100 flex items-start gap-3">
-                      <ShieldAlert className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-[9px] font-black uppercase text-red-600 leading-tight">Incomplete Deployment Warning</p>
-                        <p className="text-[10px] font-bold text-red-500 leading-tight mt-1">{leagueLabel} requires {league.requiredSquads} squads. Current enrollment ({leagueTeams.length}) will result in an undersized season.</p>
-                      </div>
-                    </div>
-                  )}
-                  {league.requiredSquads && leagueTeams.length >= league.requiredSquads && (
-                    <div className="bg-green-50 p-4 rounded-2xl border border-green-100 flex items-start gap-3">
-                      <ShieldCheck className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-[9px] font-black uppercase text-green-600 leading-tight">Minimum Target Met</p>
-                        <p className="text-[10px] font-bold text-green-500 leading-tight mt-1">Enrollment threshold ({league.requiredSquads}) satisfied for full deployment.</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </aside>
+            
+            <div className="mt-auto border-t border-white/10 pt-8 relative z-10">
+               <div className="flex items-center gap-2 text-emerald-500 font-black text-[9px] uppercase tracking-[0.2em]"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Studio Engine Online</div>
+            </div>
           </div>
 
-          <DialogFooter className="pt-6 border-t">
-            <Button 
-              className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-0.98 transition-all" 
-              onClick={handleGenerate} 
-              disabled={isProcessing || !hasFeature?.('league_generation')}
-            >
-              {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : <Sparkles className="h-6 w-6 mr-3" />}
-              {!hasFeature?.('league_generation') ? 'Upgrade to Generate' : 'Deploy Seasonal Pipeline'}
-            </Button>
-          </DialogFooter>
+          {/* Right Content Execution Area */}
+          <div className="flex-1 flex flex-col overflow-hidden relative">
+            <div className="absolute top-10 right-10 opacity-5 pointer-events-none w-64 h-64"><CalendarDays className="w-full h-full" /></div>
+            
+            <ScrollArea className="flex-1 px-8 lg:px-16 pt-16 pb-32">
+              <div className="max-w-6xl mx-auto space-y-12">
+                <div className="space-y-12 animate-in slide-in-from-right-4 duration-500">
+                  <div>
+                    <Badge className="bg-primary/20 text-primary border border-primary/30 uppercase font-black tracking-widest text-[8px] mb-4">Precision Engine</Badge>
+                    <h3 className="text-4xl font-black uppercase tracking-tighter mb-2 text-white">Season Architect</h3>
+                    <p className="text-sm font-bold opacity-40 uppercase tracking-widest">Precision {leagueLabel} Deployment Engine</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+                    <div className="lg:col-span-7 space-y-12">
+                      <section className="space-y-6">
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Timeline & Availability</h3>
+                        <div className="grid grid-cols-2 gap-6">
+                          <div className="space-y-3">
+                            <Label className="text-[10px] font-black uppercase text-white/60 ml-1">Season Start</Label>
+                            <Input type="date" value={config.startDate} onChange={e => setConfig({...config, startDate: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/15 border-white/20 font-black text-white px-6 shadow-inner" />
+                          </div>
+                          <div className="space-y-3">
+                            <Label className="text-[10px] font-black uppercase text-white/60 ml-1">Season End</Label>
+                            <Input type="date" value={config.endDate} onChange={e => setConfig({...config, endDate: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/15 border-white/20 font-black text-white px-6 shadow-inner" />
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-4 pt-4">
+                          <Label className="text-[10px] font-black uppercase text-white/60 ml-1">Active Play Days</Label>
+                          <div className="flex flex-wrap gap-3">
+                            {DAYS_OF_WEEK.map(day => (
+                              <button 
+                                key={day.id} 
+                                onClick={() => toggleDay(day.id)} 
+                                disabled={config.blackoutDaysOfWeek.includes(day.id)}
+                                className={cn(
+                                  "h-12 px-6 rounded-xl font-black text-[10px] uppercase border transition-all", 
+                                  config.playDays.includes(day.id) ? "bg-primary text-white border-primary shadow-[0_0_15px_rgba(var(--primary),0.3)]" : "bg-white/5 text-white/60 border-white/10 hover:border-white/30",
+                                  config.blackoutDaysOfWeek.includes(day.id) && "opacity-20 cursor-not-allowed border-dashed"
+                                )}
+                              >
+                                {day.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-4 pt-4 border-t border-white/10">
+                          <div className="flex items-center gap-3">
+                            <Label className="text-[10px] font-black uppercase text-white/60 ml-1">Do Not Schedule Days (Recurring)</Label>
+                            <Badge className="bg-primary/20 text-primary border border-primary/30 text-[8px] font-black uppercase py-0 px-2 h-5">Priority</Badge>
+                          </div>
+                          <div className="flex flex-wrap gap-3">
+                            {DAYS_OF_WEEK.map(day => (
+                              <button 
+                                key={day.id} 
+                                onClick={() => toggleSkipDay(day.id)} 
+                                className={cn(
+                                  "h-12 px-6 rounded-xl font-black text-[10px] uppercase border transition-all", 
+                                  config.blackoutDaysOfWeek.includes(day.id) ? "bg-white text-black border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]" : "bg-white/5 text-white/60 border-white/10 hover:border-white/30"
+                                )}
+                              >
+                                {day.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="space-y-6 pt-8 border-t border-white/10">
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Execution Parameters</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-8">
+                          <div className="space-y-3">
+                            <Label className="text-[10px] font-black uppercase text-white/60 ml-1">Daily Start</Label>
+                            <Input type="time" value={config.startTime} onChange={e => setConfig({...config, startTime: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-4 shadow-inner" />
+                          </div>
+                          <div className="space-y-3">
+                            <Label className="text-[10px] font-black uppercase text-white/60 ml-1">Daily End</Label>
+                            <Input type="time" value={config.endTime} onChange={e => setConfig({...config, endTime: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-4 shadow-inner" />
+                          </div>
+                          <div className="space-y-3">
+                            <Label className="text-[10px] font-black uppercase text-white/60 ml-1">Break (Min)</Label>
+                            <Input type="number" value={config.breakLength} onChange={e => setConfig({...config, breakLength: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-6 shadow-inner" />
+                          </div>
+                          <div className="space-y-3">
+                            <Label className="text-[10px] font-black uppercase text-white/60 ml-1">Match Length</Label>
+                            <Input type="number" value={config.gameLength} onChange={e => setConfig({...config, gameLength: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-6 shadow-inner" />
+                          </div>
+                          <div className="space-y-3">
+                            <Label className="text-[10px] font-black uppercase text-white/60 ml-1">Games/Team</Label>
+                            <Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-14 rounded-xl bg-white/15 border-primary/50 font-black text-primary px-6 shadow-[inset_0_2px_10px_rgba(var(--primary),0.1)]" />
+                          </div>
+                          <div className="space-y-3">
+                            <Label className="text-[10px] font-black uppercase text-white/60 ml-1">Double Headers</Label>
+                            <Select value={config.doubleHeaderOption} onValueChange={(v: any) => setConfig({...config, doubleHeaderOption: v})}>
+                              <SelectTrigger className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-4 shadow-inner">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl bg-[#111] border-white/10 text-white">
+                                <SelectItem value="none" className="font-bold focus:bg-white/10 focus:text-white">None</SelectItem>
+                                <SelectItem value="sameTeam" className="font-bold focus:bg-white/10 focus:text-white">Same Opponent (Swap)</SelectItem>
+                                <SelectItem value="differentTeams" className="font-bold focus:bg-white/10 focus:text-white">Different Opponents</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="space-y-6 pt-8 border-t border-white/10">
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary ml-1">Venue Allocation</h3>
+                        <ScrollArea className="h-64 border border-white/10 rounded-[2.5rem] bg-white/5 p-6 shadow-inner">
+                          {facilities?.length ? facilities.map(f => (
+                            <div key={f.id} className="space-y-4 mb-8 last:mb-0">
+                              <div className="flex items-center gap-3 px-2">
+                                <Building className="h-4 w-4 text-primary" />
+                                <span className="text-xs font-black uppercase text-white">{f.name}</span>
+                              </div>
+                              <FacilityFieldLoader facilityId={f.id} selectedFields={config.selectedFields} onToggleField={toggleField} />
+                            </div>
+                          )) : (
+                            <div className="py-12 text-center opacity-30 italic text-xs uppercase font-black text-white">No organization facilities found.</div>
+                          )}
+                        </ScrollArea>
+                      </section>
+                    </div>
+
+                    <aside className="lg:col-span-5 space-y-8">
+                      <div className="bg-white/5 border border-white/10 text-white rounded-[2.5rem] p-8 space-y-6 relative overflow-hidden group">
+                        <CalendarDays className="absolute -right-4 -bottom-4 h-24 w-24 opacity-5 -rotate-12" />
+                        <div className="relative z-10 space-y-4">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-primary/20 p-2 rounded-xl border border-primary/30"><CalendarIcon className="h-4 w-4 text-primary" /></div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-primary">Blackout Calendar</p>
+                          </div>
+                          <p className="text-[10px] font-medium text-white/40 leading-relaxed italic">Select dates where no {leagueLabel.toLowerCase()} matches should be scheduled.</p>
+                          <div className="bg-white rounded-2xl p-2 text-black flex justify-center shadow-2xl">
+                            <Calendar 
+                              mode="multiple" 
+                              selected={config.blackoutDates} 
+                              onSelect={(dates) => setConfig({...config, blackoutDates: dates || []})} 
+                              className="mx-auto"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-primary/5 p-6 rounded-[2rem] border border-primary/20 space-y-4">
+                        <div className="flex items-center gap-2 text-primary"><Info className="h-4 w-4" /><h4 className="text-[10px] font-black uppercase tracking-widest">Enrollment Status</h4></div>
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-bold text-white/60 uppercase">{leagueTeams.length} squads detected in active roster.</p>
+                          {league.requiredSquads && leagueTeams.length < league.requiredSquads && (
+                            <div className="bg-red-500/10 p-4 rounded-2xl border border-red-500/20 flex items-start gap-3">
+                              <ShieldAlert className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-[9px] font-black uppercase text-red-500 leading-tight">Incomplete Deployment Warning</p>
+                                <p className="text-[10px] font-bold text-red-400 leading-tight mt-1">{leagueLabel} requires {league.requiredSquads} squads. Current enrollment ({leagueTeams.length}) will result in an undersized season.</p>
+                              </div>
+                            </div>
+                          )}
+                          {league.requiredSquads && leagueTeams.length >= league.requiredSquads && (
+                            <div className="bg-green-500/10 p-4 rounded-2xl border border-green-500/20 flex items-start gap-3">
+                              <ShieldCheck className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-[9px] font-black uppercase text-green-500 leading-tight">Minimum Target Met</p>
+                                <p className="text-[10px] font-bold text-green-400 leading-tight mt-1">Enrollment threshold ({league.requiredSquads}) satisfied for full deployment.</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </aside>
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+            
+            <div className="p-8 border-t border-white/10 bg-[#070707] flex justify-end items-center shrink-0">
+              <Button 
+                className="h-16 px-14 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-sm tracking-widest shadow-[0_0_30px_rgba(255,255,255,0.1)] transition-all flex items-center" 
+                onClick={handleGenerate} 
+                disabled={isProcessing || !hasFeature?.('league_generation')}
+              >
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-3" /> : <Sparkles className="h-6 w-6 mr-3" />}
+                {!hasFeature?.('league_generation') ? 'Upgrade to Generate' : 'Deploy Seasonal Pipeline'}
+              </Button>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -1954,156 +1993,212 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       </Dialog>
 
       <Dialog open={isEditLeagueOpen} onOpenChange={setIsEditLeagueOpen}>
-        <DialogContent className="sm:max-w-2xl rounded-[3rem] p-0 overflow-hidden border-none shadow-2xl bg-white text-foreground max-h-[90vh] overflow-y-auto w-11/12 mx-auto sm:w-full">
-          <div className="h-3 bg-black w-full" />
-          <div className="p-8 lg:p-12 space-y-8">
-            <DialogHeader>
-              <DialogTitle className="text-3xl font-black uppercase tracking-tight">{leagueLabel} Profile</DialogTitle>
-              <DialogDescription className="font-bold text-[10px] uppercase tracking-widest mt-2">{activeLeague?.name} • Public Context</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Registration Slug</Label>
-                    <Input value={editLeagueForm.slug} onChange={e => setEditLeagueForm({...editLeagueForm, slug: e.target.value})} className="h-12 rounded-xl border-2 font-black" placeholder="my-premier-league" />
-                    <p className="text-[8px] text-muted-foreground ml-1 font-bold italic">Custom URL: /register/league/{editLeagueForm.slug || 'id'}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Required Squads</Label>
-                    <Input type="number" value={editLeagueForm.requiredSquads} onChange={e => setEditLeagueForm({...editLeagueForm, requiredSquads: e.target.value})} className="h-12 rounded-xl border-2 font-black" placeholder="8" />
-                    <p className="text-[8px] text-muted-foreground ml-1 font-bold italic">Triggers validation warnings in Season Architect.</p>
-                  </div>
+        <DialogContent hideClose className="max-w-[98vw] lg:max-w-[1600px] rounded-[3rem] p-0 border border-white/10 shadow-2xl overflow-hidden bg-[#050505] text-white h-[95vh] flex flex-col">
+          <DialogTitle className="sr-only">{leagueLabel} Profile</DialogTitle>
+          <DialogClose className="absolute right-6 top-6 z-50 h-10 w-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/15 transition-all flex items-center justify-center backdrop-blur-sm">
+            <X className="h-5 w-5 text-white" />
+            <span className="sr-only">Close</span>
+          </DialogClose>
+          <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-600 via-orange-500 to-primary w-full shrink-0" />
+          
+          <div className="flex flex-1 overflow-hidden">
+            {/* Left Navigation Matrix */}
+            <div className="w-[320px] bg-[#0a0a0a] border-r border-white/5 p-10 flex flex-col hidden lg:flex relative">
+              <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10" />
+              <div className="relative z-10 flex items-center gap-4 mb-20">
+                <div className="border border-white/20 p-3 rounded-xl shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white"><Globe className="h-5 w-5" /></div>
+                <div>
+                   <h2 className="text-xl font-black uppercase tracking-tight">{leagueLabel}<br/>Profile</h2>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">{leagueLabel} Name</Label>
-                    <Input value={editLeagueForm.name} onChange={e => setEditLeagueForm({...editLeagueForm, name: e.target.value})} className="h-12 rounded-xl border-2 font-black" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Type of Sport</Label>
-                    <Input value={editLeagueForm.sport} onChange={e => setEditLeagueForm({...editLeagueForm, sport: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
-                  </div>
+              </div>
+              
+              <div className="relative z-10 space-y-8 flex-1">
+                <div className="relative pl-8 transition-all duration-300 cursor-pointer opacity-100">
+                  <div className="absolute left-0 top-1 bottom-1 w-[2px] bg-primary shadow-[0_0_10px_rgba(var(--primary),0.8)]" />
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Configuration</h4>
+                  <h3 className="text-sm font-black uppercase tracking-tight mb-1">Identity & Settings</h3>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-white/40">Define Foundational Parameters</p>
                 </div>
-               <div className="space-y-2">
-                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Description</Label>
-                 <Textarea value={editLeagueForm.description} onChange={e => setEditLeagueForm({...editLeagueForm, description: e.target.value})} className="rounded-2xl border-2 font-medium min-h-[100px]" placeholder={`Detailed description of the ${leagueLabel.toLowerCase()}...`} />
-               </div>
-               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                 <div className="space-y-2 col-span-2 md:col-span-1">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label>
-                    <Input type="date" value={editLeagueForm.startDate} onChange={e => setEditLeagueForm({...editLeagueForm, startDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold px-4 [&::-webkit-calendar-picker-indicator]:p-1 [&::-webkit-calendar-picker-indicator]:mr-3 sm:[&::-webkit-calendar-picker-indicator]:mr-2" />
-                  </div>
-                  <div className="space-y-2 col-span-2 md:col-span-1">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">End Date</Label>
-                    <Input type="date" value={editLeagueForm.endDate} onChange={e => setEditLeagueForm({...editLeagueForm, endDate: e.target.value})} className="h-12 rounded-xl border-2 font-bold px-4 [&::-webkit-calendar-picker-indicator]:p-1 [&::-webkit-calendar-picker-indicator]:mr-3 sm:[&::-webkit-calendar-picker-indicator]:mr-2" />
-                  </div>
-                 <div className="space-y-2 col-span-2 md:col-span-1">
-                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Ages / Divisions</Label>
-                   <Input value={editLeagueForm.ages} onChange={e => setEditLeagueForm({...editLeagueForm, ages: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="e.g. U14 - U18" />
-                 </div>
-                 <div className="space-y-2 col-span-2 md:col-span-1">
-                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Season Cost</Label>
-                   <Input value={editLeagueForm.registrationCost} onChange={e => setEditLeagueForm({...editLeagueForm, registrationCost: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="$500/Team" />
-                 </div>
-               </div>
-               <div className="space-y-2">
-                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Offline Payment Instructions</Label>
-                 <Textarea value={editLeagueForm.paymentInstructions} onChange={e => setEditLeagueForm({...editLeagueForm, paymentInstructions: e.target.value})} className="rounded-2xl border-2 font-medium min-h-[80px]" placeholder="E-transfer to accounts@league.com with your team name..." />
-                 <p className="text-[10px] text-muted-foreground ml-1 font-bold">These instructions will be shown during registration. Online payments coming soon.</p>
-               </div>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t">
-                 <div className="space-y-2">
-                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Contact Email</Label>
-                   <Input type="email" value={editLeagueForm.contactEmail} onChange={e => setEditLeagueForm({...editLeagueForm, contactEmail: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="hq@league.com" />
-                 </div>
-                 <div className="space-y-2">
-                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Contact Phone</Label>
-                   <Input type="tel" value={editLeagueForm.contactPhone} onChange={e => setEditLeagueForm({...editLeagueForm, contactPhone: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="(555) 123-4567" />
-                 </div>
-                 <div className="space-y-2">
-                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-sky-600">Twitter (X) Link</Label>
-                   <Input type="url" value={editLeagueForm.twitter} onChange={e => setEditLeagueForm({...editLeagueForm, twitter: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="https://x.com/yourleague" />
-                 </div>
-                 <div className="space-y-2">
-                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-pink-600">Instagram Link</Label>
-                   <Input type="url" value={editLeagueForm.instagram} onChange={e => setEditLeagueForm({...editLeagueForm, instagram: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="https://instagram.com/yourleague" />
-                 </div>
-               </div>
-                <div className="space-y-4 pt-6 border-t font-black">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Division Architect</Label>
-                  <p className="text-[10px] font-medium text-muted-foreground italic leading-relaxed px-1">Define competitive tiers (e.g. Gold, Silver, U12) to partition squads and participants.</p>
-                  
-                  <div className="flex gap-2">
-                    <Input 
-                      placeholder="New Division Title..." 
-                      value={newDivisionName} 
-                      onChange={e => setNewDivisionName(e.target.value)} 
-                      className="h-12 rounded-xl border-2 font-bold bg-white text-foreground"
-                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddDivision())}
-                    />
-                    <Button type="button" onClick={handleAddDivision} variant="outline" className="h-12 px-6 rounded-xl font-black uppercase text-[10px] text-foreground border-2">Add</Button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {(editLeagueForm.divisions || []).map((div, i) => (
-                      <Badge key={i} className="bg-primary/5 text-primary border-primary/20 px-3 py-1.5 rounded-xl font-black text-[10px] uppercase flex items-center gap-2">
-                        {div}
-                        <button onClick={() => handleRemoveDivision(div)} className="hover:text-red-600 transition-colors">
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                    {(editLeagueForm.divisions || []).length === 0 && (
-                      <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-40 italic py-2">No divisions defined. Single-tier hub active.</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="pt-8 border-t space-y-4">
-                  <div className="flex items-center justify-between">
-                     <div className="space-y-1">
-                       <h4 className="text-xl font-black uppercase tracking-tight text-red-600">Danger Zone</h4>
-                       <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Historical Operations & Decommissioning</p>
-                     </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-5 rounded-2xl bg-muted/10 border-2 border-dashed border-black/5 flex flex-col justify-between gap-4">
-                       <div className="space-y-1">
-                         <p className="text-[10px] font-black uppercase tracking-widest leading-none text-foreground">Archive League Hub</p>
-                         <p className="text-[9px] font-medium text-muted-foreground leading-tight italic">Move this league to the historical archives. It will stay in your database but hidden from active squads.</p>
-                       </div>
-                       <Button variant="outline" className="h-10 border-red-200 text-red-600 hover:bg-red-50 font-black uppercase text-[10px]" onClick={handleArchiveLeague}>
-                         Archive Environment
-                       </Button>
-                    </div>
-
-                    <div className="p-5 rounded-2xl bg-red-50 border-2 border-dashed border-red-100 flex flex-col justify-between gap-4">
-                       <div className="space-y-1">
-                         <p className="text-[10px] font-black uppercase tracking-widest leading-none text-red-700">Decommission Entire Season</p>
-                         <p className="text-[9px] font-medium text-red-600 leading-tight italic">Warning: This will purge all active matches and standings. Registration data and waivers will remain archived.</p>
-                       </div>
-                       <Button variant="destructive" className="h-10 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[10px]" onClick={async () => {
-                         if (!activeLeague) return;
-                         if (!window.confirm(`CRITICAL: You are about to purge all matches and standings for ${activeLeague.name}. This action cannot be reversed. Continue?`)) return;
-                         setIsProcessing(true);
-                         try {
-                           await updateDoc(doc(db, 'leagues', activeLeague.id), { schedule: [], teams: {} }); 
-                           setIsEditLeagueOpen(false);
-                           toast({ title: "Season Purged", description: "Operational environment reset." });
-                         } finally { setIsProcessing(false); }
-                       }}>
-                         Authorize Purge
-                       </Button>
-                    </div>
-                  </div>
-                </div>
+              </div>
+              
+              <div className="mt-auto border-t border-white/10 pt-8 relative z-10">
+                 <div className="flex items-center gap-2 text-emerald-500 font-black text-[9px] uppercase tracking-[0.2em]"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Studio Engine Online</div>
+              </div>
             </div>
-            <DialogFooter className="pt-6">
-              <Button disabled={isProcessing} className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleSaveLeague}>
-                {isProcessing ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : `Commit ${leagueLabel} Profile`}
-              </Button>
-            </DialogFooter>
+
+            {/* Right Content Execution Area */}
+            <div className="flex-1 flex flex-col overflow-hidden relative">
+              <div className="absolute top-10 right-10 opacity-5 pointer-events-none w-64 h-64"><Trophy className="w-full h-full" /></div>
+              
+              <ScrollArea className="flex-1 px-8 lg:px-16 pt-16 pb-32">
+                <div className="max-w-3xl mx-auto space-y-12">
+                  <div className="space-y-12 animate-in slide-in-from-right-4 duration-500">
+                    <div>
+                      <Badge className="bg-primary/20 text-primary border border-primary/30 uppercase font-black tracking-widest text-[8px] mb-4">Base Configuration</Badge>
+                      <h3 className="text-4xl font-black uppercase tracking-tighter mb-2 text-white">{leagueLabel} Profile</h3>
+                      <p className="text-sm font-bold opacity-40 uppercase tracking-widest">{activeLeague?.name} • Public Context</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Registration Slug</Label>
+                        <Input value={editLeagueForm.slug} onChange={e => setEditLeagueForm({...editLeagueForm, slug: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-black text-white placeholder:text-white/30 uppercase focus-visible:ring-primary px-6 shadow-inner" placeholder="my-premier-league" />
+                        <p className="text-[8px] text-white/40 ml-2 font-bold italic">Custom URL: /register/league/{editLeagueForm.slug || 'id'}</p>
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Required Squads</Label>
+                        <Input type="number" value={editLeagueForm.requiredSquads} onChange={e => setEditLeagueForm({...editLeagueForm, requiredSquads: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-black text-white focus-visible:ring-primary px-6 shadow-inner" placeholder="8" />
+                        <p className="text-[8px] text-white/40 ml-2 font-bold italic">Triggers validation warnings in Season Architect.</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">{leagueLabel} Name</Label>
+                        <Input value={editLeagueForm.name} onChange={e => setEditLeagueForm({...editLeagueForm, name: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-black text-white focus-visible:ring-primary px-6 shadow-inner" />
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Type of Sport</Label>
+                        <Input value={editLeagueForm.sport} onChange={e => setEditLeagueForm({...editLeagueForm, sport: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-6 shadow-inner" />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Description</Label>
+                      <Textarea value={editLeagueForm.description} onChange={e => setEditLeagueForm({...editLeagueForm, description: e.target.value})} className="rounded-2xl bg-white/15 border-white/20 font-medium text-white focus-visible:ring-primary px-6 py-4 shadow-inner min-h-[100px]" placeholder={`Detailed description of the ${leagueLabel.toLowerCase()}...`} />
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+                      <div className="space-y-3 col-span-2 md:col-span-1">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Start Date</Label>
+                        <Input type="date" value={editLeagueForm.startDate} onChange={e => setEditLeagueForm({...editLeagueForm, startDate: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-4 shadow-inner" />
+                      </div>
+                      <div className="space-y-3 col-span-2 md:col-span-1">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">End Date</Label>
+                        <Input type="date" value={editLeagueForm.endDate} onChange={e => setEditLeagueForm({...editLeagueForm, endDate: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-4 shadow-inner" />
+                      </div>
+                      <div className="space-y-3 col-span-2 md:col-span-1">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Ages / Divisions</Label>
+                        <Input value={editLeagueForm.ages} onChange={e => setEditLeagueForm({...editLeagueForm, ages: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-4 shadow-inner" placeholder="e.g. U14 - U18" />
+                      </div>
+                      <div className="space-y-3 col-span-2 md:col-span-1">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Season Cost</Label>
+                        <Input value={editLeagueForm.registrationCost} onChange={e => setEditLeagueForm({...editLeagueForm, registrationCost: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-4 shadow-inner" placeholder="$500/Team" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Offline Payment Instructions</Label>
+                      <Textarea value={editLeagueForm.paymentInstructions} onChange={e => setEditLeagueForm({...editLeagueForm, paymentInstructions: e.target.value})} className="rounded-2xl bg-white/15 border-white/20 font-medium text-white focus-visible:ring-primary px-6 py-4 shadow-inner min-h-[80px]" placeholder="E-transfer to accounts@league.com with your team name..." />
+                      <p className="text-[10px] text-white/40 ml-2 font-bold">These instructions will be shown during registration. Online payments coming soon.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-8 border-t border-white/10">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Contact Email</Label>
+                        <Input type="email" value={editLeagueForm.contactEmail} onChange={e => setEditLeagueForm({...editLeagueForm, contactEmail: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-6 shadow-inner" placeholder="hq@league.com" />
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Contact Phone</Label>
+                        <Input type="tel" value={editLeagueForm.contactPhone} onChange={e => setEditLeagueForm({...editLeagueForm, contactPhone: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-6 shadow-inner" placeholder="(555) 123-4567" />
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Twitter (X) Link</Label>
+                        <Input type="url" value={editLeagueForm.twitter} onChange={e => setEditLeagueForm({...editLeagueForm, twitter: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-6 shadow-inner" placeholder="https://x.com/yourleague" />
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Instagram Link</Label>
+                        <Input type="url" value={editLeagueForm.instagram} onChange={e => setEditLeagueForm({...editLeagueForm, instagram: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-6 shadow-inner" placeholder="https://instagram.com/yourleague" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-5 pt-8 border-t border-white/10 font-black">
+                      <div>
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-2">Division Architect</Label>
+                        <p className="text-[10px] font-medium text-white/40 italic leading-relaxed px-2">Define competitive tiers (e.g. Gold, Silver, U12) to partition squads and participants.</p>
+                      </div>
+                      
+                      <div className="flex gap-4">
+                        <Input 
+                          placeholder="New Division Title..." 
+                          value={newDivisionName} 
+                          onChange={e => setNewDivisionName(e.target.value)} 
+                          className="h-14 flex-1 rounded-xl bg-white/15 border-white/20 font-bold text-white focus-visible:ring-primary px-6 shadow-inner"
+                          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddDivision())}
+                        />
+                        <Button type="button" onClick={handleAddDivision} variant="outline" className="h-14 px-8 rounded-xl font-black uppercase text-[10px] border-white/20 text-white hover:bg-white/10 hover:text-white">Add</Button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        {(editLeagueForm.divisions || []).map((div, i) => (
+                          <Badge key={i} className="bg-white/10 text-white border-white/20 px-4 py-2 rounded-xl font-black text-[10px] uppercase flex items-center gap-2">
+                            {div}
+                            <button onClick={() => handleRemoveDivision(div)} className="text-white/40 hover:text-red-500 transition-colors">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                        {(editLeagueForm.divisions || []).length === 0 && (
+                          <div className="py-8 w-full border-2 border-dashed border-white/10 rounded-2xl text-center">
+                            <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest italic">No divisions defined. Single-tier hub active.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-12 border-t border-white/10 space-y-6">
+                      <div className="flex items-center justify-between">
+                         <div className="space-y-1">
+                           <h4 className="text-xl font-black uppercase tracking-tight text-red-500">Danger Zone</h4>
+                           <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">Historical Operations & Decommissioning</p>
+                         </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="p-6 rounded-[2rem] bg-white/5 border border-white/10 flex flex-col justify-between gap-6">
+                           <div className="space-y-2">
+                             <p className="text-[10px] font-black uppercase tracking-widest text-white">Archive League Hub</p>
+                             <p className="text-[10px] font-medium text-white/40 leading-relaxed italic">Move this league to the historical archives. It will stay in your database but hidden from active squads.</p>
+                           </div>
+                           <Button variant="outline" className="h-12 border-white/20 text-red-400 hover:bg-red-500/10 hover:text-red-400 font-black uppercase text-[10px]" onClick={handleArchiveLeague}>
+                             Archive Environment
+                           </Button>
+                        </div>
+
+                        <div className="p-6 rounded-[2rem] bg-red-500/5 border border-red-500/20 flex flex-col justify-between gap-6">
+                           <div className="space-y-2">
+                             <p className="text-[10px] font-black uppercase tracking-widest text-red-500">Decommission Entire Season</p>
+                             <p className="text-[10px] font-medium text-red-500/60 leading-relaxed italic">Warning: This will purge all active matches and standings. Registration data and waivers will remain archived.</p>
+                           </div>
+                           <Button variant="destructive" className="h-12 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[10px]" onClick={async () => {
+                             if (!activeLeague) return;
+                             if (!window.confirm(`CRITICAL: You are about to purge all matches and standings for ${activeLeague.name}. This action cannot be reversed. Continue?`)) return;
+                             setIsProcessing(true);
+                             try {
+                               await updateDoc(doc(db, 'leagues', activeLeague.id), { schedule: [], teams: {} }); 
+                               setIsEditLeagueOpen(false);
+                               toast({ title: "Season Purged", description: "Operational environment reset." });
+                             } finally { setIsProcessing(false); }
+                           }}>
+                             Authorize Purge
+                           </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </ScrollArea>
+              
+              <div className="p-8 border-t border-white/10 bg-[#070707] flex justify-end items-center shrink-0">
+                <Button 
+                  disabled={isProcessing} 
+                  className="h-16 px-14 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-sm tracking-widest shadow-[0_0_30px_rgba(255,255,255,0.1)] transition-all flex items-center" 
+                  onClick={handleSaveLeague}
+                >
+                  {isProcessing ? <Loader2 className="mr-3 h-5 w-5 animate-spin" /> : `Commit ${leagueLabel} Profile`}
+                </Button>
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
