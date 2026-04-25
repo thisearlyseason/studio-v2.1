@@ -327,6 +327,7 @@ export type TeamEvent = {
   drillIds?: string[]; // References to drills in the playbook/library
   isArchived?: boolean;
   division?: string;
+  refereePool?: TournamentReferee[];
 };
 
 export type PracticeTemplate = {
@@ -613,6 +614,18 @@ export type TournamentGame = {
   isResetMatch?: boolean;
   /** True for conditional matches that only occur under specific bracket outcomes */
   isConditional?: boolean;
+  /** Assigned official */
+  refereeId?: string;
+  refereeName?: string;
+};
+
+export type TournamentReferee = {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  certLevel?: string | null; // e.g. 'Regional' | 'State' | 'National'
+  notes?: string | null;
 };
 
 export type DocumentSignature = {
@@ -2972,15 +2985,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     };
     games[idx] = updatedGame; 
 
-    // Handle Winner/Loser Progression
-    const winnerName = score1 > score2 ? updatedGame.team1 : updatedGame.team2;
-    const winnerId = score1 > score2 ? updatedGame.team1Id : updatedGame.team2Id;
-    const winnerLogo = score1 > score2 ? updatedGame.team1LogoUrl : updatedGame.team2LogoUrl;
-    const loserName = score1 > score2 ? updatedGame.team2 : updatedGame.team1;
-    const loserId = score1 > score2 ? updatedGame.team2Id : updatedGame.team1Id;
-    const loserLogo = score1 > score2 ? updatedGame.team2LogoUrl : updatedGame.team1LogoUrl;
+    // Null-coalesce ALL fields to prevent Firestore "Unsupported field value: undefined" error.
+    // Firestore accepts null but rejects undefined — missing logo/id fields cause hard write failures.
+    const isTie = score1 === score2;
+    const winnerName  = score1 > score2 ? (updatedGame.team1 ?? null)        : (updatedGame.team2 ?? null);
+    const winnerId    = score1 > score2 ? (updatedGame.team1Id ?? null)       : (updatedGame.team2Id ?? null);
+    const winnerLogo  = score1 > score2 ? (updatedGame.team1LogoUrl ?? null)  : (updatedGame.team2LogoUrl ?? null);
+    const loserName   = score1 > score2 ? (updatedGame.team2 ?? null)         : (updatedGame.team1 ?? null);
+    const loserId     = score1 > score2 ? (updatedGame.team2Id ?? null)       : (updatedGame.team1Id ?? null);
+    const loserLogo   = score1 > score2 ? (updatedGame.team2LogoUrl ?? null)  : (updatedGame.team1LogoUrl ?? null);
 
-    if (updatedGame.winnerTo) {
+    // Only propagate winner/loser on decisive results — skip on ties
+    if (!isTie && updatedGame.winnerTo) {
       const targetIdx = games.findIndex((g: any) => g.id === updatedGame.winnerTo);
       if (targetIdx !== -1) {
         if (updatedGame.winnerToSlot === 'team2') {
@@ -2991,7 +3007,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    if (updatedGame.loserTo) {
+    if (!isTie && updatedGame.loserTo) {
       const targetIdx = games.findIndex((g: any) => g.id === updatedGame.loserTo);
       if (targetIdx !== -1) {
         if (updatedGame.loserToSlot === 'team2') {

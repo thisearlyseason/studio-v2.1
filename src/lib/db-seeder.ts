@@ -83,6 +83,13 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
           { day: 2, title: 'Semi-Finals', date: later },
           { day: 3, title: 'Finals Day', date: day3 }
         ],
+        refereePool: [
+          { id: `ref_1_${teamId}`, name: 'Marcus Webb', email: 'marcus.webb@officials.org', phone: '555-0141', certLevel: 'National', notes: 'Head referee. Available all 3 days.' },
+          { id: `ref_2_${teamId}`, name: 'Dana Holloway', email: 'd.holloway@officials.org', phone: '555-0182', certLevel: 'State', notes: 'Experienced center ref. Available Day 1 & 2 only.' },
+          { id: `ref_3_${teamId}`, name: 'Jordan Park', email: 'j.park@officials.org', phone: '555-0233', certLevel: 'Regional', notes: 'Line judge specialist.' },
+          { id: `ref_4_${teamId}`, name: 'Sam Torres', email: 's.torres@officials.org', phone: '555-0274', certLevel: 'State', notes: 'Certified in double-elimination formats.' },
+          { id: `ref_5_${teamId}`, name: 'Casey Nguyen', email: 'c.nguyen@officials.org', phone: '555-0315', certLevel: 'Regional', notes: 'New to program — covering Day 3 finals.' }
+        ],
         tournamentTeamsData: [
           { id: `tt_0`, name: teamName || `Team ${teamSuffix || 'A'}`, coach: `Coach ${teamSuffix || 'A'}`, email: 'coach.a@example.com', source: 'manual', complianceStatus: 'verified' },
           { id: `tt_1`, name: 'Thunder', coach: 'Mike Thunder', email: 'mike@thunder.com', source: 'manual', complianceStatus: 'verified' },
@@ -113,26 +120,52 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
           breakLength: 15,
           tournamentType: 'double_elimination'
         }).map((g, idx) => {
-          // Deterministic day assignment across all DE/WB/LB round names.
+          // ── Day assignment — matched against exact scheduler round name strings ──
+          // Scheduler emits: "WB Round 1/2/3", "Winners Bracket Semi-Finals",
+          //   "Winners Bracket Final", "LB Round 1/2/3/4", "Losers Bracket Final",
+          //   "Championship", "Championship Decider"
           // Day 1 (tomorrow): WB Round 1, LB Round 1, LB Round 2
-          // Day 2 (later):    WB Round 2+, WB Semi-Finals, LB Round 3-4
-          // Day 3 (day3):     WB Finals, LB Finals, Championship, GF, GF Reset
+          // Day 2 (later):    WB Round 2+, Winners Bracket Semi-Finals, LB Round 3+
+          // Day 3 (day3):     Winners Bracket Final, Losers Bracket Final, Championship, Championship Decider
           const r = (g.round || '').toLowerCase();
-          let gameDate = tomorrow; // Day 1 default (WB R1, LB R1, LB R2)
 
-          const isDay3 = r.includes('championship') || r.includes('lb final')
-            || r.includes('grand final') || r.includes('wb final') || r.includes('reset');
+          const isDay3 =
+            r === 'winners bracket final' ||
+            r === 'losers bracket final' ||
+            r === 'championship' ||
+            r === 'championship decider' ||
+            r.includes('grand final') ||
+            r.includes('reset');
+
+          const lbRoundMatch = r.match(/lb round\s+(\d+)/);
+          const lbRoundNum = lbRoundMatch ? parseInt(lbRoundMatch[1], 10) : 0;
+
           const isDay2 = !isDay3 && (
-            r.includes('semi') || r.includes('round 2') || r.includes('round 3')
-            || r.includes('round 4') || r.includes('lb round 3') || r.includes('lb round 4')
+            r.includes('winners bracket semi-finals') ||
+            r.includes('semi') ||
+            r.match(/wb round\s+[2-9]/) !== null ||
+            (lbRoundNum >= 3)
           );
 
+          let gameDate = tomorrow;
           if (isDay3) gameDate = day3;
           else if (isDay2) gameDate = later;
 
           const completed = idx < 4;
+
+          // Cycle through all 5 pool members deterministically for every game
+          const allRefs = [
+            { refereeId: `ref_1_${teamId}`, refereeName: 'Marcus Webb' },
+            { refereeId: `ref_2_${teamId}`, refereeName: 'Dana Holloway' },
+            { refereeId: `ref_3_${teamId}`, refereeName: 'Jordan Park' },
+            { refereeId: `ref_4_${teamId}`, refereeName: 'Sam Torres' },
+            { refereeId: `ref_5_${teamId}`, refereeName: 'Alex Rivera' },
+          ];
+          const refAssignment = allRefs[idx % allRefs.length];
+
           return {
             ...g,
+            ...refAssignment,
             date: gameDate,
             isCompleted: completed,
             score1: completed ? [5, 4, 8, 10][idx] : 0,
@@ -187,9 +220,21 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
       { id: `p2_${teamId}`, type: 'user', content: `Great game last night! Highlights are up.`, author: { name: 'Alex Rivera' }, authorId: `u2_${teamId}`, createdAt: day(-2), likes: [userId] }
     ],
     documents: [
-      { id: `w1_${teamId}`, teamId, title: 'Annual Liability Waiver', content: 'Standard liability waiver for the season.', type: 'waiver', isActive: true, assignedTo: ['all'], signatureCount: 3, required: true, createdAt: now.toISOString() },
-      { id: `w2_${teamId}`, teamId, title: 'Media Release Form', content: 'Release for photos/video recording.', type: 'waiver', isActive: true, assignedTo: ['all'], signatureCount: 2, required: false, createdAt: weekAgo },
-      { id: `w3_${teamId}`, teamId, title: 'Medical Clearance 2024', content: 'Physical exam verification.', type: 'waiver', isActive: true, assignedTo: ['all'], signatureCount: 5, required: true, createdAt: day(-30) }
+      {
+        id: `w1_${teamId}`, teamId, title: 'Annual Liability Waiver', type: 'waiver',
+        isActive: true, assignedTo: ['all'], signatureCount: 3, required: true, createdAt: now.toISOString(),
+        content: `PARTICIPANT LIABILITY WAIVER & RELEASE OF LIABILITY\n\nI, the undersigned participant (or parent/guardian if participant is a minor), acknowledge that participation in team sports and athletic activities involves inherent risks of physical injury, including but not limited to sprains, fractures, concussions, and other serious injuries.\n\nBy signing this waiver, I voluntarily agree to assume all risks associated with participation in practices, games, tournaments, and team-related activities organized by the team and its affiliated leagues.\n\nI hereby release, waive, discharge, and covenant not to sue the team, its coaches, administrators, officers, volunteers, sponsors, and affiliated organizations from any and all liability, claims, demands, or causes of action arising out of or related to any loss, damage, or injury that may be sustained during participation.\n\nI confirm that the participant is in good physical health and has no medical conditions that would prevent safe participation. I authorize team staff to seek emergency medical treatment on behalf of the participant if I cannot be reached.\n\nThis waiver shall be binding upon my heirs, executors, administrators, and legal representatives. I have read this waiver carefully, understand its terms, and sign it voluntarily.`
+      },
+      {
+        id: `w2_${teamId}`, teamId, title: 'Media Release Form', type: 'waiver',
+        isActive: true, assignedTo: ['all'], signatureCount: 2, required: false, createdAt: weekAgo,
+        content: `MEDIA & PHOTOGRAPHY RELEASE AUTHORIZATION\n\nI, the undersigned, hereby grant permission to the team, its coaching staff, and authorized representatives to photograph, record video, and capture audio of the participant during team practices, games, tournaments, events, and any other team-related activities.\n\nI authorize the team to use, publish, and distribute any such photographs, video footage, or audio recordings for purposes including but not limited to: team websites and social media accounts, promotional materials, sponsor content, highlight reels, and press coverage.\n\nI understand that I will not receive compensation for this authorization and that the team retains all rights to the media captured. I waive any right to inspect or approve the finished product.\n\nThis release applies to all media formats including digital, print, broadcast, and online platforms. I understand this authorization remains in effect for the duration of the current season and any subsequent seasons unless revoked in writing.\n\nIf the participant is a minor, I confirm that I am the parent or legal guardian and have full authority to grant this release.`
+      },
+      {
+        id: `w3_${teamId}`, teamId, title: 'Medical Clearance 2024', type: 'waiver',
+        isActive: true, assignedTo: ['all'], signatureCount: 5, required: true, createdAt: day(-30),
+        content: `PRE-SEASON MEDICAL CLEARANCE & HEALTH DISCLOSURE FORM\n\nParticipant Health Declaration\n\nI certify that the participant has undergone a physical examination by a licensed physician within the past 12 months and has been cleared for full athletic participation, including high-intensity training, competitive games, and multi-day tournaments.\n\nMedical History Disclosure: I confirm that the participant has disclosed all relevant medical conditions, including but not limited to: cardiovascular conditions, asthma or respiratory issues, musculoskeletal injuries, neurological conditions, and any prescribed medications that may affect athletic performance or require administration during team activities.\n\nEmergency Medical Information: I authorize the team's certified athletic trainer or coaching staff to administer basic first aid in the event of an injury. In the event of a serious medical emergency, I authorize emergency medical services to be contacted and appropriate treatment to be provided.\n\nAllergies & Medications: Any known allergies and current medications have been documented on the participant's confidential health record on file with the team administrator.\n\nI affirm that all information provided is accurate and complete, and I agree to notify the team immediately of any change in the participant's medical status during the season.`
+      }
     ],
     alerts: [
       { id: `a1_${teamId}`, title: 'Venue Change', message: 'Match moved to Court 4 due to maintenance.', audience: 'everyone', createdAt: yesterday, createdBy: userId }
@@ -668,6 +713,26 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
               matchTeamIds: [g.team1Id, g.team2Id].filter(Boolean)
             }));
 
+            const demoRefereePool = [
+              { id: `ref_1_${tid}`, name: 'Marcus Webb', email: 'marcus.webb@officials.org', phone: '555-0141', certLevel: 'National', notes: 'Head referee. Available all 3 days.' },
+              { id: `ref_2_${tid}`, name: 'Dana Holloway', email: 'd.holloway@officials.org', phone: '555-0182', certLevel: 'State', notes: 'Experienced center ref. Day 1 & 2 only.' },
+              { id: `ref_3_${tid}`, name: 'Jordan Park', email: 'j.park@officials.org', phone: '555-0233', certLevel: 'Regional', notes: 'Line judge specialist.' },
+              { id: `ref_4_${tid}`, name: 'Sam Torres', email: 's.torres@officials.org', phone: '555-0274', certLevel: 'State', notes: 'Certified in DE formats.' },
+              { id: `ref_5_${tid}`, name: 'Casey Nguyen', email: 'c.nguyen@officials.org', phone: '555-0315', certLevel: 'Regional', notes: 'Covering Day 3 finals.' }
+            ];
+            // Assign refs to first 4 games (typically completed in demo)
+            const demoRefAssignments: Record<number, { refereeId: string; refereeName: string }> = {
+              0: { refereeId: `ref_1_${tid}`, refereeName: 'Marcus Webb' },
+              1: { refereeId: `ref_2_${tid}`, refereeName: 'Dana Holloway' },
+              2: { refereeId: `ref_3_${tid}`, refereeName: 'Jordan Park' },
+              3: { refereeId: `ref_4_${tid}`, refereeName: 'Sam Torres' },
+            };
+            const enrichedTournamentGames = tournamentGames.map((g: any, idx: number) => ({
+              ...g,
+              ...(demoRefAssignments[idx] || {}),
+              matchTeamIds: [g.team1Id, g.team2Id].filter(Boolean)
+            }));
+
             batch.set(doc(db, 'teams', tid, 'events', tournamentId), clean({
               id: tournamentId,
               teamId: tid,
@@ -678,9 +743,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
               endDate: tournEnd,
               location: 'Premier Sports Park',
               description: 'The final 3-day showdown for the regional title.',
-              tournamentTeams: tournamentTeamsData.map(t => t.name),
+              tournamentTeams: tournamentTeamsData.map((t: any) => t.name),
               tournamentTeamsData: tournamentTeamsData,
-              tournamentGames: tournamentGames,
+              tournamentGames: enrichedTournamentGames,
+              refereePool: demoRefereePool,
               teamAgreements: {
                 'Strikers': { signedAt: yesterday, signatureCount: 15, captainName: 'Coach Strikers' },
                 'Lakers': { signedAt: day2, signatureCount: 12, captainName: 'Coach Lakers' },

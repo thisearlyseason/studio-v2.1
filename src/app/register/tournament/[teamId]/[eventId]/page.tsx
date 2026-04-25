@@ -171,6 +171,18 @@ function RegistrationForm() {
     );
   }
 
+  if (!config || !config.is_active || !event) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-6 text-foreground">
+        <Card className="max-w-md w-full text-center p-12 rounded-[3.5rem] border-none shadow-2xl bg-white">
+          <Trophy className="h-20 w-20 text-muted mx-auto mb-8 opacity-20" />
+          <h2 className="text-2xl font-black uppercase tracking-tight">Series Locked</h2>
+          <p className="text-muted-foreground font-medium mt-2 leading-relaxed">The enrollment pipeline for this series is currently closed or restricted.</p>
+        </Card>
+      </div>
+    );
+  }
+
   if (isSuccess) {
     return (
       <div className="min-h-screen bg-muted/30 flex flex-col items-center justify-center p-6 text-center text-foreground">
@@ -191,18 +203,6 @@ function RegistrationForm() {
           </div>
 
           <p className="mt-10 text-[9px] font-black uppercase opacity-30">Deployment ID: {eventId}</p>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!config || !config.is_active || !event) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-6 text-foreground">
-        <Card className="max-w-md w-full text-center p-12 rounded-[3.5rem] border-none shadow-2xl bg-white">
-          <Trophy className="h-20 w-20 text-muted mx-auto mb-8 opacity-20" />
-          <h2 className="text-2xl font-black uppercase tracking-tight">Series Locked</h2>
-          <p className="text-muted-foreground font-medium mt-2 leading-relaxed">The enrollment pipeline for this series is currently closed or restricted.</p>
         </Card>
       </div>
     );
@@ -274,7 +274,7 @@ function RegistrationForm() {
                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Guaranteed Slot</span>
               </div>
             ) : (
-              <p className="text-sm font-black text-primary uppercase tracking-widest">Pipeline Entry: Under Review</p>
+              <p className="text-sm font-black text-green-600 uppercase tracking-widest">✓ NO FEE — Free Entry</p>
             )}
             <div className="pt-4 border-t border-primary/10 space-y-4">
               <div className="bg-white p-5 rounded-[2rem] text-[11px] font-medium leading-relaxed border border-primary/5 text-foreground/80 shadow-inner whitespace-pre-wrap">

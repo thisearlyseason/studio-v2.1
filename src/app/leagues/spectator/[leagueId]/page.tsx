@@ -64,12 +64,16 @@ export default function PublicLeagueSpectatorHub() {
     return Object.entries(league.teams).map(([id, stats]) => ({ id, ...stats })).sort((a, b) => b.points - a.points || b.wins - a.wins);
   }, [league]);
 
-  // Build a team logo map from league.teams for consistent logo resolution
+  // Build a team logo map from league.teams — indexed by BOTH team doc ID and team name
+  // so the lookup succeeds even when game.team1Id is unset or doesn't match.
   const logoMap = useMemo(() => {
     const map: Record<string, string> = {};
     if (league?.teams) {
       Object.entries(league.teams).forEach(([id, t]) => {
-        if ((t as any).teamLogoUrl) map[id] = (t as any).teamLogoUrl;
+        if ((t as any).teamLogoUrl) {
+          map[id] = (t as any).teamLogoUrl;
+          if ((t as any).teamName) map[(t as any).teamName] = (t as any).teamLogoUrl;
+        }
       });
     }
     return map;
@@ -219,9 +223,9 @@ export default function PublicLeagueSpectatorHub() {
                             <div className="flex items-center justify-between gap-4">
                                  <div className="flex items-center gap-3 min-w-0">
                                    {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
-                                   {logoMap[(game as any).team1Id || ''] ? (
+                                   {logoMap[(game as any).team1Id || game.team1 || ''] ? (
                                      <div className={cn("shrink-0 rounded-xl overflow-hidden border border-muted/20 shadow-md bg-white p-1", isPastDay ? "h-10 w-10" : "h-14 w-14")}>
-                                       <img src={logoMap[(game as any).team1Id || '']} alt={game.team1} className="w-full h-full object-contain" />
+                                       <img src={logoMap[(game as any).team1Id || game.team1 || '']} alt={game.team1} className="w-full h-full object-contain" />
                                      </div>
                                    ) : null}
                                    <span className={cn("font-black uppercase tracking-tight leading-tight", isPastDay ? "text-[10px]" : "text-base sm:text-lg")}>{game.team1}</span>
@@ -231,9 +235,9 @@ export default function PublicLeagueSpectatorHub() {
                             <div className="flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-3 min-w-0">
                                   {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
-                                  {logoMap[(game as any).team2Id || ''] ? (
+                                  {logoMap[(game as any).team2Id || game.team2 || ''] ? (
                                     <div className={cn("shrink-0 rounded-xl overflow-hidden border border-muted/20 shadow-md bg-white p-1", isPastDay ? "h-10 w-10" : "h-14 w-14")}>
-                                      <img src={logoMap[(game as any).team2Id || '']} alt={game.team2} className="w-full h-full object-contain" />
+                                      <img src={logoMap[(game as any).team2Id || game.team2 || '']} alt={game.team2} className="w-full h-full object-contain" />
                                     </div>
                                   ) : null}
                                   <span className={cn("font-black uppercase tracking-tight leading-tight", isPastDay ? "text-[10px]" : "text-base sm:text-lg")}>{game.team2}</span>

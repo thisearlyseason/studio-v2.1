@@ -68,6 +68,7 @@ export default function TournamentRegistrationAdminPage() {
   const [isManualAddOpen, setIsManualAddOpen] = useState(false);
   const [manualForm, setManualForm] = useState({ teamName: '', coachName: '', email: '' });
   const [isManualProcessing, setIsManualProcessing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // --- SYNC ---
   const configId = 'team_config';
@@ -112,6 +113,8 @@ export default function TournamentRegistrationAdminPage() {
   const teamWaivers = useMemo(() => (teamWaiversData || []).filter(d => d.type === 'waiver'), [teamWaiversData]);
 
   useEffect(() => {
+    // Don't overwrite optimistic local state while a save is in flight
+    if (isSaving) return;
     if (config) setLocalConfig(config);
     else if (!isConfigLoading) {
       // Init default if missing
@@ -130,7 +133,7 @@ export default function TournamentRegistrationAdminPage() {
         form_version: 1
       });
     }
-  }, [config, isConfigLoading, event]);
+  }, [config, isConfigLoading, event, isSaving]);
 
   const handleUpdateConfig = (updates: Partial<LeagueRegistrationConfig>, immediate = false) => {
     if (!teamId || !eventId || !configRef) return;
@@ -150,11 +153,37 @@ export default function TournamentRegistrationAdminPage() {
     setLocalConfig(updated);
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     
-    const performSync = async () => { 
-      await setDoc(configRef, updated, { merge: true }); 
-      // Synchronize cost back to the event for top-level access if needed
-      if (updates.registration_cost !== undefined && eventRef) {
-        await updateDoc(eventRef, { registration_cost: updates.registration_cost });
+    const performSync = async () => {
+      if (!configRef) {
+        toast({ title: 'Auth Not Ready', description: 'Please wait and try again.', variant: 'destructive' });
+        return;
+      }
+      setIsSaving(true);
+      try {
+        await setDoc(configRef, updated, { merge: true });
+        // Sync cost to the event doc for top-level reads
+        if (updates.registration_cost !== undefined && eventRef) {
+          await updateDoc(eventRef, { registration_cost: updates.registration_cost });
+        }
+        // Confirm activation/deactivation explicitly
+        if (updates.is_active !== undefined) {
+          toast({
+            title: updates.is_active ? '✓ Form Activated' : 'Form Deactivated',
+            description: updates.is_active
+              ? 'The enrollment pipeline is now live.'
+              : 'Registration is now closed.',
+          });
+        }
+      } catch (err: any) {
+        // Revert the optimistic update so UI matches actual Firestore state
+        setLocalConfig(config || null);
+        toast({
+          title: 'Save Failed',
+          description: err?.message || 'Could not sync to server. Please retry.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsSaving(false);
       }
     };
     
@@ -278,12 +307,29 @@ export default function TournamentRegistrationAdminPage() {
             <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
               <CardHeader className="bg-primary/5 border-b p-8 lg:p-10 flex flex-row items-center justify-between">
                 <div className="flex items-center gap-4"><div className="bg-primary p-4 rounded-3xl text-white shadow-xl"><Globe className="h-8 w-8" /></div><div><CardTitle className="text-3xl font-black uppercase tracking-tight">{localConfig?.title || 'Series Pipeline'}</CardTitle><CardDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Institutional Blueprint v{localConfig?.form_version || 1}</CardDescription></div></div>
-                <Switch checked={localConfig?.is_active || false} onCheckedChange={(v) => handleUpdateConfig({ is_active: v }, true)} />
+                <div className="flex items-center gap-3">
+                  {isSaving && <Loader2 className="h-4 w-4 animate-spin text-primary opacity-60" />}
+                  <Switch 
+                    checked={localConfig?.is_active || false} 
+                    onCheckedChange={(v) => handleUpdateConfig({ is_active: v }, true)} 
+                    disabled={isSaving}
+                  />
+                </div>
               </CardHeader>
               <CardContent className="p-8 lg:p-10 space-y-10">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Series Headline</Label><Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-14 rounded-2xl border-2 font-black" /></div>
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Entry Fee ($)</Label><Input type="number" value={localConfig?.registration_cost || '0'} onChange={e => handleUpdateConfig({ registration_cost: e.target.value })} className="h-14 rounded-2xl border-2 font-black text-primary" /></div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Scorekeeper Code <span className="text-muted-foreground font-medium normal-case tracking-normal">(optional — gates the public portal)</span></Label>
+                    <Input 
+                      value={(localConfig as any)?.scoringCode || ''} 
+                      onChange={e => handleUpdateConfig({ scoringCode: e.target.value } as any)} 
+                      placeholder="Leave blank for open access..." 
+                      className="h-14 rounded-2xl border-2 font-black uppercase tracking-widest" 
+                    />
+                    <p className="text-[10px] text-muted-foreground ml-1">Share this code with scorekeepers only. Guests must enter it before accessing match entry.</p>
+                  </div>
                 </div>
                 <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Operational Brief</Label><Textarea value={localConfig?.description || ''} onChange={e => handleUpdateConfig({ description: e.target.value })} className="rounded-3xl min-h-[150px] border-2 font-medium" placeholder="Define the recruitment scope..." /></div>
                 

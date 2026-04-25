@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
@@ -36,27 +36,48 @@ export default function PublicScorekeeperEntryPage() {
     return event?.tournamentGames?.find(g => g.id === gameId);
   }, [event, gameId]);
 
-  const [score1, setScore1] = useState<string>(game?.score1?.toString() || '');
-  const [score2, setScore2] = useState<string>(game?.score2?.toString() || '');
+  const [score1, setScore1] = useState<string>('');
+  const [score2, setScore2] = useState<string>('');
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  
   const [isDisputeOpen, setIsDisputeOpen] = useState(false);
   const [disputeNotes, setDisputeNotes] = useState('');
+
+  // Sync score state once game data loads (useState initial value runs before data arrives)
+  React.useEffect(() => {
+    if (game) {
+      setScore1(game.score1 != null ? game.score1.toString() : '0');
+      setScore2(game.score2 != null ? game.score2.toString() : '0');
+    }
+  }, [game?.id]);
+
+  // If this event uses a scoring code, bounce unauthenticated visitors back to the hub gate
+  useEffect(() => {
+    if (!event) return;
+    const hasCode = !!(event as any).scoringCode;
+    if (!hasCode) return;
+    const verified = typeof window !== 'undefined' && sessionStorage.getItem(`scorer_verified_${eventId}`) === 'true';
+    if (!verified) router.replace(`/tournaments/scorekeeper/${teamId}/${eventId}`);
+  }, [event, eventId, teamId, router]);
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   if (!event || !game) return <div className="min-h-screen flex items-center justify-center p-6"><Card className="max-w-md text-center p-10"><AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" /><h2 className="text-2xl font-black uppercase tracking-tight">Match Inactive</h2></Card></div>;
 
   const handleSubmit = async () => {
-    if (!selectedTeam || !score1 || !score2 || isSubmitting) return;
+    // Use explicit empty-string check so a score of 0 is valid
+    if (!selectedTeam || score1 === '' || score2 === '' || isSubmitting) return;
     setIsSubmitting(true);
     const isTeam1 = selectedTeam === game.team1;
     try {
       await submitMatchScore(teamId as string, eventId as string, gameId as string, isTeam1, parseInt(score1), parseInt(score2));
       setIsSubmitted(true);
-    } catch (err) {
-      toast({ title: "Submission Error", variant: "destructive" });
+    } catch (err: any) {
+      toast({ 
+        title: "Submission Error", 
+        description: err?.message || "Score could not be posted. Please retry.",
+        variant: "destructive" 
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -191,7 +212,8 @@ export default function PublicScorekeeperEntryPage() {
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">{game.team1}</Label>
                     <Input 
                       type="number" 
-                      placeholder="0" 
+                      placeholder="0"
+                      min={0}
                       value={score1} 
                       onChange={e => setScore1(e.target.value)} 
                       className="h-16 text-center font-black text-3xl rounded-2xl border-2 focus:border-primary bg-muted/10" 
@@ -201,7 +223,8 @@ export default function PublicScorekeeperEntryPage() {
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">{game.team2}</Label>
                     <Input 
                       type="number" 
-                      placeholder="0" 
+                      placeholder="0"
+                      min={0}
                       value={score2} 
                       onChange={e => setScore2(e.target.value)} 
                       className="h-16 text-center font-black text-3xl rounded-2xl border-2 focus:border-primary bg-muted/10" 
@@ -215,7 +238,7 @@ export default function PublicScorekeeperEntryPage() {
           <CardFooter className="p-8 lg:p-10 pt-0 flex flex-col gap-4">
             <Button 
               className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all"
-              disabled={!selectedTeam || !score1 || !score2 || isSubmitting}
+              disabled={!selectedTeam || score1 === '' || score2 === '' || isSubmitting}
               onClick={handleSubmit}
             >
               {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Score Result"}
