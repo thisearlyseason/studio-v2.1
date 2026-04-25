@@ -94,7 +94,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Slider } from '@/components/ui/slider';
@@ -3456,7 +3456,9 @@ export function IncidentDetailDialog({ incident, isOpen, onOpenChange, onEdit }:
                 <div className="bg-primary/10 p-3 rounded-2xl text-primary"><ShieldAlert className="h-6 w-6" /></div>
                 <div className="min-w-0">
                   <DialogTitle className="text-3xl font-black uppercase tracking-tight truncate">{incident.title}</DialogTitle>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{incident.date} {incident.time} • {incident.location}</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                    {(() => { try { return format(parseISO(incident.date), 'MMMM d, yyyy'); } catch { return incident.date; } })()} {incident.time && (() => { try { return format(parseISO(`${incident.date}T${incident.time}`), 'h:mm a'); } catch { return incident.time; } })()} • {incident.location}
+                  </p>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -3757,7 +3759,9 @@ function SafetyHub() {
                       {inc.emergencyServicesCalled ? 'CRITICAL' : 'ROUTINE'}
                     </Badge>
                   </td>
-                  <td className="px-8 py-6 text-right font-black text-xs uppercase text-foreground">{inc.date}</td>
+                        <td className="px-8 py-6 text-right font-black text-xs uppercase text-foreground">
+                          {(() => { try { return format(parseISO(inc.date), 'MMMM d, yyyy'); } catch { return inc.date; } })()}
+                        </td>
                 </tr>
               ))}
               {(!incidents || incidents.length === 0) && (

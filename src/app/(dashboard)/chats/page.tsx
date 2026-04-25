@@ -26,6 +26,7 @@ import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, where } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
 
 export default function ChatsPage() {
   const { activeTeam, members, createChat, isStaff, isParent, isPlayer, isSuperAdmin, user } = useTeam();
@@ -251,7 +252,7 @@ export default function ChatsPage() {
                     <div className="flex items-center justify-between mb-1">
                       <h3 className="font-black text-xl tracking-tight truncate group-hover:text-primary transition-colors">{chat.name}</h3>
                       <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest bg-muted/50 px-2 py-1 rounded-lg">
-                        {chat.lastMessageAt ? new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'ACTIVE'}
+                        {chat.lastMessageAt ? format(new Date(chat.lastMessageAt), 'MMMM d, yyyy h:mm a') : 'ACTIVE'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-4">

@@ -41,13 +41,13 @@ import { collection, query, where } from 'firebase/firestore';
 
 export const formatDateRange = (start: string | Date, end?: string | Date) => {
   const startDate = typeof start === 'string' ? (start.includes('T') ? parseISO(start) : new Date(start.replace(/-/g, '/'))) : start;
-  if (!end) return format(startDate, 'MMM dd');
+  if (!end) return format(startDate, 'MMMM d, yyyy');
   const endDate = typeof end === 'string' ? (end.includes('T') ? parseISO(end) : new Date(end.replace(/-/g, '/'))) : end;
-  if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
+  if (isSameDay(startDate, endDate)) return format(startDate, 'MMMM d, yyyy');
   if (startDate.getMonth() === endDate.getMonth()) {
-    return `${format(startDate, 'MMM d')} - ${format(endDate, 'd')}`;
+    return `${format(startDate, 'MMMM d')} - ${format(endDate, 'd, yyyy')}`;
   }
-  return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
+  return `${format(startDate, 'MMMM d')} - ${format(endDate, 'MMMM d, yyyy')}`;
 };
 
 export const formatDayRange = (start: string | Date, end?: string | Date) => {
@@ -158,7 +158,7 @@ export function EventDetailDialog({
 
               <div className="bg-white/5 p-5 rounded-[2rem] border border-white/10 space-y-4 font-bold text-sm shadow-inner mt-8">
                 <div className="flex items-center gap-4 text-white/80"><CalendarDays className="h-5 w-5 text-primary" />{formatDateRange(event.date, event.endDate)}</div>
-                <div className="flex items-center gap-4 text-white/80"><Clock className="h-5 w-5 text-primary" />{event.startTime}</div>
+                <div className="flex items-center gap-4 text-white/80"><Clock className="h-5 w-5 text-primary" />{event.startTime ? (() => { try { return format(new Date(`2000-01-01T${event.startTime}`), 'h:mm a'); } catch { return event.startTime; } })() : 'TBD'}</div>
                 <div className="flex items-center gap-4 text-white/80"><MapPin className="h-5 w-5 text-primary" /><span className="truncate">{event.location}</span></div>
               </div>
               
@@ -359,7 +359,7 @@ export function EventDetailDialog({
                       <div className="flex items-center gap-3 ml-2">
                         <div className="h-2 w-2 rounded-full bg-primary" />
                         <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">
-                          {format(date.includes('T') ? parseISO(date) : new Date(date.replace(/-/g, '/')), 'EEEE, MMMM do')}
+                          {format(date.includes('T') ? parseISO(date) : new Date(date.replace(/-/g, '/')), 'MMMM d, yyyy')}
                         </p>
                       </div>
                       <div className="grid grid-cols-1 gap-3">
@@ -367,7 +367,7 @@ export function EventDetailDialog({
                           <div key={i} className="p-5 border rounded-[2rem] bg-muted/10 group hover:bg-white transition-all shadow-none hover:shadow-lg">
                             <div className="flex justify-between items-center mb-4">
                               <Badge className="bg-primary text-white text-[8px] font-black uppercase h-5 px-3 border-none">ROUND: {g.round || 'POOL'}</Badge>
-                              <span className="text-[10px] font-black opacity-40">{g.time}</span>
+                              <span className="text-[10px] font-black opacity-40">{g.time ? (() => { try { return format(new Date(`2000-01-01T${g.time}`), 'h:mm a'); } catch { return g.time; } })() : 'TBD'}</span>
                             </div>
                             <div className="flex items-center justify-center gap-6">
                               <div className="text-center flex-1">

@@ -317,9 +317,9 @@ export default function GamesPage() {
                 {game.isRecorded ? (
                   <Badge className={cn("text-[8px] font-black uppercase px-2 h-5 shadow-sm", game.result === 'Win' ? "bg-green-500" : game.result === 'Loss' ? "bg-red-600" : "bg-muted text-black")}>{game.result}</Badge>
                 ) : (
-                  <Badge className="bg-primary/20 text-primary border-none text-[8px] font-black uppercase px-2 h-5 tracking-widest text-black">UPCOMING • {game.time || 'TBD'}</Badge>
+                  <Badge className="bg-primary/20 text-primary border-none text-[8px] font-black uppercase px-2 h-5 tracking-widest text-black">UPCOMING • {game.time ? (() => { try { return format(new Date(`2000-01-01T${game.time}`), 'h:mm a'); } catch { return game.time; } })() : 'TBD'}</Badge>
                 )}
-                <span className="text-[10px] font-black text-muted-foreground uppercase">{format(new Date(game.displayDate), 'MMM d, yyyy')}</span>
+                <span className="text-[10px] font-black text-muted-foreground uppercase">{format(new Date(game.displayDate), 'MMMM d, yyyy')}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
@@ -367,7 +367,7 @@ export default function GamesPage() {
                         <SelectItem key={event.id} value={event.id} disabled={isRecorded}>
                           <div className="flex flex-col items-start py-1">
                             <span className="font-black text-xs uppercase">{event.title}</span>
-                            <span className="text-[10px] opacity-50 uppercase">{format(new Date(event.date), 'MMM d')} @ {event.location} {isRecorded ? '(Already Recorded)' : ''}</span>
+                            <span className="text-[10px] opacity-50 uppercase">{format(new Date(event.date), 'MMMM d, yyyy')} @ {event.location} {isRecorded ? '(Already Recorded)' : ''}</span>
                           </div>
                         </SelectItem>
                       );

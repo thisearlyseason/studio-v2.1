@@ -353,7 +353,7 @@ export default function EventsPage() {
                           )}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4 text-primary shrink-0" />
-                          {newDate ? format(new Date(newDate.replace(/-/g, '/')), "MMM dd, yyyy") : <span>Pick Date</span>}
+                          {newDate ? format(new Date(newDate.replace(/-/g, '/')), "MMMM d, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
@@ -378,7 +378,7 @@ export default function EventsPage() {
                           )}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4 text-primary shrink-0" />
-                          {newEndDate ? format(new Date(newEndDate.replace(/-/g, '/')), "MMM dd, yyyy") : <span>Pick Date</span>}
+                          {newEndDate ? format(new Date(newEndDate.replace(/-/g, '/')), "MMMM d, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
@@ -637,7 +637,7 @@ export default function EventsPage() {
               <div className="space-y-3 pt-4 border-t">
                 <div className="flex items-center justify-between px-1">
                   <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">
-                    {format(selectedCalendarDay, 'EEEE, MMMM d')}
+                    {format(selectedCalendarDay, 'EEEE, MMMM d, yyyy')}
                   </h3>
                   <span className="text-[10px] font-black uppercase tracking-widest text-primary">
                     {selectedDayEvents.length} {selectedDayEvents.length === 1 ? 'Event' : 'Events'}
@@ -654,13 +654,13 @@ export default function EventsPage() {
                         <Card className="hover:border-primary/30 transition-all duration-300 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                           <div className="flex items-stretch h-24">
                             <div className={cn('w-20 flex flex-col items-center justify-center border-r-2 shrink-0 px-2 text-center', EVENT_TYPE_COLORS[event.eventType || 'other'])}>
-                              <span className="text-[9px] font-black uppercase opacity-60 leading-none mb-1">{format(new Date(event.date), 'MMM').toUpperCase()}</span>
+                              <span className="text-[9px] font-black uppercase opacity-60 leading-none mb-1">{format(new Date(event.date), 'MMMM').toUpperCase()}</span>
                               <span className="text-2xl font-black tracking-tighter leading-none">{format(new Date(event.date), 'd')}</span>
                             </div>
                             <div className="flex-1 p-4 flex flex-col justify-center min-w-0">
                               <div className="flex gap-2 mb-1">
                                 <Badge className="text-[7px] uppercase font-black">{event.eventType || 'Activity'}</Badge>
-                                <Badge variant="outline" className="text-[7px] uppercase font-black text-primary border-primary/20">{event.startTime}</Badge>
+                                <Badge variant="outline" className="text-[7px] uppercase font-black text-primary border-primary/20">{event.startTime ? (() => { try { return format(new Date(`2000-01-01T${event.startTime}`), 'h:mm a'); } catch { return event.startTime; } })() : 'TBD'}</Badge>
                               </div>
                               <h3 className="text-base font-black tracking-tight leading-none truncate group-hover:text-primary transition-colors uppercase">{event.title}</h3>
                               {event.location && (
@@ -694,7 +694,7 @@ export default function EventsPage() {
                 <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                   <div className="flex items-stretch min-h-[96px] sm:h-32">
                     <div className={cn("w-16 sm:w-24 lg:w-32 flex flex-col items-center justify-center border-r-2 shrink-0 px-1 sm:px-2 text-center", EVENT_TYPE_COLORS[event.eventType || 'other'])}>
-                      <span className="text-[8px] sm:text-[9px] font-black uppercase opacity-60 leading-none mb-1">{format(new Date(event.date), 'MMM').toUpperCase()}</span>
+                      <span className="text-[8px] sm:text-[9px] font-black uppercase opacity-60 leading-none mb-1">{format(new Date(event.date), 'MMMM').toUpperCase()}</span>
                       <span className="text-xl sm:text-3xl lg:text-4xl font-black tracking-tighter leading-none">{formatDayRange(event.date, event.endDate)}</span>
                     </div>
                     <div className="flex-1 p-3 sm:p-6 flex flex-col justify-center min-w-0">
@@ -702,7 +702,7 @@ export default function EventsPage() {
                         <div>
                           <div className="flex gap-2 mb-1.5">
                             <Badge className="text-[7px] uppercase font-black">{(event.eventType || 'Activity')}</Badge>
-                            <Badge variant="outline" className="text-[7px] uppercase font-black text-primary border-primary/20">{event.startTime}</Badge>
+                            <Badge variant="outline" className="text-[7px] uppercase font-black text-primary border-primary/20">{event.startTime ? (() => { try { return format(new Date(`2000-01-01T${event.startTime}`), 'h:mm a'); } catch { return event.startTime; } })() : 'TBD'}</Badge>
                             {event.isLeagueGame && (
                               <Badge className={cn("text-[7px] uppercase font-black border-none", event.isHome ? "bg-primary text-white" : "bg-black text-white")}>
                                 {event.isHome ? 'HOME' : 'AWAY'}

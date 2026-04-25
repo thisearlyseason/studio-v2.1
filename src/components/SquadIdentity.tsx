@@ -15,6 +15,8 @@ interface SquadIdentityProps {
   showNameWithLogo?: boolean;
   /** Render logo + name side-by-side (horizontal). Defaults to vertical (stacked). */
   horizontal?: boolean;
+  /** Completely hide the name node (useful if parent handles name display) */
+  hideName?: boolean;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   teamId?: string;
 }
@@ -27,6 +29,7 @@ export function SquadIdentity({
   logoClassName, 
   textClassName,
   showNameWithLogo = false,
+  hideName = false,
   horizontal = false,
   size = 'md',
   teamId
@@ -66,7 +69,7 @@ export function SquadIdentity({
     </div>
   ) : null; // No logo, no initials circle — name will be shown via nameNode
 
-  const nameNode = (showNameWithLogo || !hasLogo) && !isTBD ? (
+  const nameNode = !hideName && (showNameWithLogo || !hasLogo) && !isTBD ? (
     <span className={cn(
       textSizes[size],
       horizontal ? "font-black uppercase tracking-tight truncate" : "font-black uppercase tracking-widest truncate max-w-full",
@@ -74,7 +77,7 @@ export function SquadIdentity({
     )}>
       {safeName}
     </span>
-  ) : showNameWithLogo ? (
+  ) : !hideName && showNameWithLogo ? (
     <span className={cn(
       textSizes[size],
       horizontal ? "font-black uppercase tracking-tight truncate" : "font-black uppercase tracking-widest truncate max-w-full",

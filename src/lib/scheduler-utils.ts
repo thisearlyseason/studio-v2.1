@@ -262,16 +262,18 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
       if (doubleHeaderOption === 'none') {
         if (t1DailyCount >= 1 || t2DailyCount >= 1) continue;
       } else if (doubleHeaderOption === 'sameTeam') {
+        // LOGIC-3 FIX: Allow a second game only if BOTH teams already played each other
+        // (suspended/replay double-header). A team's 2nd game must be vs same opponent.
         if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
         if (t1DailyCount === 1) {
           const first = finalGames.find(g => g.date === dayKey && (g.team1Id === t1.id || g.team2Id === t1.id));
-          const firstOppId = first?.team1Id === t1.id ? first?.team2Id : first?.team1Id;
-          if (t2.id !== firstOppId) continue;
+          const firstOppId = first ? (first.team1Id === t1.id ? first.team2Id : first.team1Id) : null;
+          if (!firstOppId || firstOppId !== t2.id) continue;
         }
         if (t2DailyCount === 1) {
           const first = finalGames.find(g => g.date === dayKey && (g.team1Id === t2.id || g.team2Id === t2.id));
-          const firstOppId = first?.team1Id === t2.id ? first?.team2Id : first?.team1Id;
-          if (t1.id !== firstOppId) continue;
+          const firstOppId = first ? (first.team1Id === t2.id ? first.team2Id : first.team1Id) : null;
+          if (!firstOppId || firstOppId !== t1.id) continue;
         }
       } else if (doubleHeaderOption === 'differentTeams') {
         if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
@@ -439,23 +441,36 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
     buildEliminationBracket(teamList, matchups, true);
   }
 
-  // ── Trim round robin if gamesPerTeam is set ───────────────────────────
+  // ── Trim round robin if gamesPerTeam is set (trim at round boundaries) ─
+  // LOGIC-4 FIX: Slice at round boundaries so all teams in a partial round
+  // either get the game or none do — prevents one team getting extra games.
   let finalMatchups = matchups;
   if (tournamentType === 'round_robin' && config.gamesPerTeam) {
     const maxGames = Math.ceil((teamList.length * config.gamesPerTeam) / 2);
-    finalMatchups = matchups.slice(0, maxGames);
+    // matchups are already in Berger round order; find the last full-round cutoff
+    const roundSize = Math.floor(teamList.length / 2);
+    const fullRounds = Math.floor(maxGames / roundSize);
+    finalMatchups = matchups.slice(0, fullRounds * roundSize);
   }
   if (tournamentType === 'pool_play_knockout' && config.gamesPerTeam) {
-    const maxPerPool = Math.ceil((teamList.length * config.gamesPerTeam) / 2);
-    const poolMatches = matchups.filter(m => (m.round as string).startsWith('Pool')).slice(0, maxPerPool);
+    const poolMatches = matchups.filter(m => (m.round as string).startsWith('Pool'));
     const knockoutMatches = matchups.filter(m => !(m.round as string).startsWith('Pool'));
-    finalMatchups = [...poolMatches, ...knockoutMatches];
+    // Per-pool trim at round boundaries
+    const numPools = Math.min(config.poolCount || 2, Math.floor(teamList.length / 2));
+    const poolSize = Math.ceil(teamList.length / numPools);
+    const roundSize = Math.floor(poolSize / 2);
+    const maxPerPool = Math.ceil((poolSize * (config.gamesPerTeam || 3)) / 2);
+    const fullRounds = roundSize > 0 ? Math.floor(maxPerPool / roundSize) : 0;
+    const trimmedPool = poolMatches.slice(0, fullRounds * roundSize * numPools);
+    finalMatchups = [...trimmedPool, ...knockoutMatches];
   }
 
   // ── Slot Generation ─────────────────────────────────────────────────
 
   const startD = parseLocalDate(startDate);
   const endD = endDate ? parseLocalDate(endDate) : startD;
+  // Guard: eachDayOfInterval throws if start > end
+  if (isAfter(startD, endD)) return [];
   const dayInterval = eachDayOfInterval({ start: startD, end: endD });
   const slots: { date: Date; time: Date; field: string }[] = [];
 
@@ -492,12 +507,12 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
       // 3. Semis/Quarters (70-80)
       // 4. Finals (90-100)
       
+      if (rL.includes('decider')) return 110;         // Championship Decider (conditional — never scheduled)
       if (rL.includes('championship')) return 100;
-      if (rL.includes('decider')) return 110;
       
       if (rL.includes('final')) {
-          if (rL.includes('winners') || rL.includes('wb')) return 90;
-          if (rL.includes('losers') || rL.includes('lb')) return 95;
+          if (rL.includes('winners') || rL.startsWith('wb')) return 90;
+          if (rL.includes('losers') || rL.startsWith('lb')) return 95;
           return 100;
       }
       
@@ -510,14 +525,20 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
         return m ? 30 + parseInt(m[1]) : 31;
       }
       
-      // Standard WB Round detection
+      // WB Round (labeled "WB Round N" after CRIT-1 fix)
+      if (rL.startsWith('wb round') || rL.includes('wb round')) {
+        const m = rL.match(/wb round\s+(\d+)/);
+        return m ? 10 + parseInt(m[1]) : 11;
+      }
+
+      // Legacy plain "Round N" label (single elimination, or old seeded data)
       const m = rL.match(/round\s+(\d+)/);
       if (m) return 10 + parseInt(m[1]);
 
       return 10;
     };
 
-  const pool = [...finalMatchups];
+  const pool = [...finalMatchups].filter(m => !m.isConditional); // Exclude conditional matches (GF reset) from scheduling
 
   // Group slots by timeslot (Date + Time)
   const slotsByTime = new Map<string, { date: Date; time: Date; field: string }[]>();
@@ -669,7 +690,7 @@ function buildEliminationBracket(
         ? (isDouble ? 'Winners Bracket Final' : 'Championship')
         : isSemi
           ? (isDouble ? 'Winners Bracket Semi-Finals' : 'Semi-Finals')
-          : `Round ${r + 1}`;
+          : isDouble ? `WB Round ${r + 1}` : `Round ${r + 1}`;
       roundMatches[r].push({
         id: nextMatchId(`wb_r${r}_m${m}`),
         round: label, stage: 'WB',
@@ -688,7 +709,9 @@ function buildEliminationBracket(
     }
   }
 
-  // Populate Round 1 with seeded teams (topological seeding: 1v8, 4v5, 2v7, 3v6)
+  // Populate Round 1 with seeded teams — standard topological seeding (1v8, 4v5, 2v7, 3v6)
+  // LOGIC-2 FIX: Run expansion exactly `totalRounds` times so the seed array has
+  // exactly 2^totalRounds = bracketSize entries (not 2^(totalRounds+1)).
   let seeds = [0];
   for (let r = 1; r <= totalRounds; r++) {
     const next: number[] = [];
@@ -699,6 +722,8 @@ function buildEliminationBracket(
     }
     seeds = next;
   }
+  // seeds now has exactly bracketSize entries: [0, 7, 3, 4, 1, 6, 2, 5] for 8-team
+  // → Match 0: Seed1 vs Seed8, Match 1: Seed4 vs Seed5, Match 2: Seed2 vs Seed7, Match 3: Seed3 vs Seed6
 
   const firstRound = roundMatches[0];
   for (let i = 0; i < firstRound.length; i++) {

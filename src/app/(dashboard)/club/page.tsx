@@ -79,6 +79,7 @@ import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collectionGroup, query, where, orderBy, collection, getDocs, limit, doc, getDoc } from 'firebase/firestore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IncidentDetailDialog } from '@/app/(dashboard)/coaches-corner/page';
+import { format, parseISO } from 'date-fns';
 
 function TeamComplianceCard({ teams, clubDocs }: { teams: Team[], clubDocs: TeamDocument[] }) {
   const db = useFirestore();
@@ -879,7 +880,9 @@ export default function ClubManagementPage() {
                         <td className="px-10 py-6"><p className="font-black text-sm uppercase text-foreground">{inc.title}</p><p className="text-[10px] font-bold text-muted-foreground uppercase mt-0.5">{inc.location}</p></td>
                         <td className="px-6 py-6 font-black text-xs uppercase text-foreground">{inc.teamName}</td>
                         <td className="px-6 py-6"><Badge className={cn("border-none font-black text-[8px] uppercase px-3 h-5", inc.emergencyServicesCalled ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground")}>{inc.emergencyServicesCalled ? 'CRITICAL' : 'ROUTINE'}</Badge></td>
-                        <td className="px-10 py-6 text-right font-black text-xs uppercase text-foreground">{inc.date}</td>
+                        <td className="px-10 py-6 text-right font-black text-xs uppercase text-foreground">
+                          {(() => { try { return format(parseISO(inc.date), 'MMMM d, yyyy'); } catch { return inc.date; } })()}
+                        </td>
                       </tr>
                     ))}
                     {clubIncidents.length === 0 && (

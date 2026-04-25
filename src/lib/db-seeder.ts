@@ -129,26 +129,31 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
           // Day 3 (day3):     Winners Bracket Final, Losers Bracket Final, Championship, Championship Decider
           const r = (g.round || '').toLowerCase();
 
+          // Championship Decider is conditional — only played if LB winner defeats
+          // the undefeated WB champion. It is excluded from the scheduling pool
+          // entirely (isConditional flag) and should never receive a demo date.
+          const isConditional = r === 'championship decider' || (g as any).isConditional;
+
           const isDay3 =
             r === 'winners bracket final' ||
             r === 'losers bracket final' ||
             r === 'championship' ||
-            r === 'championship decider' ||
-            r.includes('grand final') ||
-            r.includes('reset');
+            r.includes('grand final');
 
           const lbRoundMatch = r.match(/lb round\s+(\d+)/);
           const lbRoundNum = lbRoundMatch ? parseInt(lbRoundMatch[1], 10) : 0;
 
-          const isDay2 = !isDay3 && (
+          const isDay2 = !isDay3 && !isConditional && (
             r.includes('winners bracket semi-finals') ||
             r.includes('semi') ||
             r.match(/wb round\s+[2-9]/) !== null ||
             (lbRoundNum >= 3)
           );
 
+          // Day 1: WB Round 1, LB Round 1, LB Round 2 (and anything unclassified)
           let gameDate = tomorrow;
-          if (isDay3) gameDate = day3;
+          if (isConditional) gameDate = day3; // Park conditional match on day3 if ever surfaced
+          else if (isDay3) gameDate = day3;
           else if (isDay2) gameDate = later;
 
           const completed = idx < 4;
@@ -159,7 +164,7 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
             { refereeId: `ref_2_${teamId}`, refereeName: 'Dana Holloway' },
             { refereeId: `ref_3_${teamId}`, refereeName: 'Jordan Park' },
             { refereeId: `ref_4_${teamId}`, refereeName: 'Sam Torres' },
-            { refereeId: `ref_5_${teamId}`, refereeName: 'Alex Rivera' },
+            { refereeId: `ref_5_${teamId}`, refereeName: 'Casey Nguyen' },
           ];
           const refAssignment = allRefs[idx % allRefs.length];
 

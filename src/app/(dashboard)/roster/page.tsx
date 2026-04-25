@@ -822,7 +822,7 @@ export default function RosterPage() {
                                   {isSigned && signatureRecord.signedAt && (
                                     <div className="space-y-0.5 mt-1">
                                       <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
-                                        {format(new Date(signatureRecord.signedAt), 'MMM d, yyyy h:mm a')}
+                                        {format(new Date(signatureRecord.signedAt), 'MMMM d, yyyy h:mm a')}
                                       </p>
                                       {signatureRecord.signedByParent && signatureRecord.parentName && (
                                         <p className="text-[8px] font-black text-primary uppercase tracking-[0.1em]">

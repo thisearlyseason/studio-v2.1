@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { format } from 'date-fns';
 import { useParams, useRouter } from 'next/navigation';
 import { 
   ChevronLeft, 
@@ -289,7 +290,7 @@ export default function ChatRoomPage() {
                     <div className="flex items-center gap-2 mb-2 px-1">
                       {!isMe && <Avatar className="h-6 w-6 rounded-lg border shadow-sm"><AvatarFallback className="text-[8px] font-black">{msg.author[0]}</AvatarFallback></Avatar>}
                       <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">{msg.author}</span>
-                      <span className="text-[8px] text-muted-foreground/40 font-bold">{formatTime(msg.createdAt)}</span>
+                      <span className="text-[8px] text-muted-foreground/40 font-bold">{format(new Date(msg.createdAt), 'MMMM d, yyyy h:mm a')}</span>
                     </div>
                   )}
                   

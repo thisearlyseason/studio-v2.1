@@ -17,6 +17,7 @@ import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { SquadIdentity } from '@/components/SquadIdentity';
+import { format, parseISO } from 'date-fns';
 
 export default function PublicLeagueScorekeeperEntryPage() {
   const { leagueId, gameId } = useParams();
@@ -98,7 +99,7 @@ export default function PublicLeagueScorekeeperEntryPage() {
             <div className="flex items-center gap-4 mb-4"><div className="bg-primary/10 p-3 rounded-2xl text-primary"><ShieldAlert className="h-6 w-6" /></div><div><CardTitle className="text-2xl font-black uppercase tracking-tight">Post Result</CardTitle><CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Official Score Entry</CardDescription></div></div>
             <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{game.date} • {game.time}</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{(() => { try { return format(parseISO(game.date), 'MMMM d, yyyy'); } catch { return game.date; } })()}{game.time ? ` • ${game.time}` : ''}</span>
               </div>
               <div className="flex items-center justify-center gap-6">
                 <div className="flex flex-col items-center gap-2">

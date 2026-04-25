@@ -87,13 +87,21 @@ interface TournamentTeam extends TeamIdentity {
   logoUrl?: string;
 }
 
-function calculateTournamentStandings(teams: TournamentTeam[], games: TournamentGame[]) {
+function calculateTournamentStandings(teams: TournamentTeam[], games: TournamentGame[], poolFilter?: number) {
+  // MISS-4 FIX: Isolate by pool when poolFilter is provided (pool_play_knockout mode)
+  const relevantGames = poolFilter !== undefined
+    ? (games || []).filter(g => (g as any).pool === poolFilter)
+    : (games || []);
+
   const standings = (teams || []).reduce((acc, team) => {
-    acc[team.name] = { name: team.name, wins: 0, losses: 0, ties: 0, points: 0, netScore: 0 };
+    acc[team.name] = { name: team.name, wins: 0, losses: 0, ties: 0, points: 0, netScore: 0, h2hWins: 0 };
     return acc;
   }, {} as Record<string, any>);
   
-  (games || []).forEach(game => {
+  // MISS-3 FIX: Track head-to-head wins for tiebreaker
+  const h2hMap: Record<string, Record<string, number>> = {}; // h2hMap[teamA][teamB] = wins of A vs B
+
+  relevantGames.forEach(game => {
     if (!game.isCompleted) return;
     const t1 = game.team1; const t2 = game.team2;
     if (!standings[t1] || !standings[t2]) return;
@@ -101,20 +109,36 @@ function calculateTournamentStandings(teams: TournamentTeam[], games: Tournament
     standings[t1].netScore += (game.score1 - (game.score2 || 0));
     standings[t2].netScore += (game.score2 - (game.score1 || 0));
 
+    if (!h2hMap[t1]) h2hMap[t1] = {};
+    if (!h2hMap[t2]) h2hMap[t2] = {};
+
     if (game.score1 > game.score2) { 
       standings[t1].wins += 1; standings[t1].points += 3; 
-      standings[t2].losses += 1; 
+      standings[t2].losses += 1;
+      h2hMap[t1][t2] = (h2hMap[t1][t2] || 0) + 1;
     }
     else if (game.score2 > game.score1) { 
       standings[t2].wins += 1; standings[t2].points += 3; 
-      standings[t1].losses += 1; 
+      standings[t1].losses += 1;
+      h2hMap[t2][t1] = (h2hMap[t2][t1] || 0) + 1;
     }
     else { 
       standings[t1].ties += 1; standings[t1].points += 1;
       standings[t2].ties += 1; standings[t2].points += 1;
     }
   });
-  return Object.values(standings).sort((a, b) => b.points - a.points || b.netScore - a.netScore || b.wins - a.wins);
+
+  // Roll up h2h wins into standings for sort access
+  Object.keys(standings).forEach(name => {
+    standings[name].h2hWins = Object.values(h2hMap[name] || {}).reduce((s: number, v: any) => s + v, 0);
+  });
+
+  return Object.values(standings).sort((a, b) =>
+    b.points - a.points ||
+    b.h2hWins - a.h2hWins ||   // MISS-3: Head-to-head wins
+    b.netScore - a.netScore ||
+    b.wins - a.wins
+  );
 }
 
 function parseGameMinutes(time: string): number {
@@ -585,7 +609,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                            <div key={win.date} className="bg-[#0a0a0a] p-6 rounded-3xl flex items-center justify-between border border-white/5">
                              <div className="flex items-center gap-4">
                                <CalendarIcon className="h-5 w-5 text-white/30" />
-                               <span className="font-black uppercase tracking-widest text-sm text-white">{format(new Date(win.date), 'EEEE, MMM do')}</span>
+                               <span className="font-black uppercase tracking-widest text-sm text-white">{format(new Date(win.date), 'EEEE, MMMM d, yyyy')}</span>
                              </div>
                              <div className="flex items-center gap-4">
                                <Input type="time" value={win.startTime} onChange={e => {const n=[...form.dailyWindows]; n[i].startTime=e.target.value; setForm({...form, dailyWindows:n});}} style={{ colorScheme: 'dark' }} className="h-12 w-32 bg-white/5 border-white/10 font-bold text-white" />
@@ -787,15 +811,24 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
       'Winners Bracket Final':       'WB Final',
       'Winners Bracket Semi-Finals': 'WB Semis',
       'Losers Bracket Final':        'LB Final',
-      'Championship Decider':        'Championship',
+      // Championship Decider is only played if LB winner defeats undefeated WB champ
+      'Championship Decider':        'If Needed',
     };
     if (map[r]) return map[r];
-    // e.g. "WB Round 1" → "WB Round 1" (already short)
+    // "WB Round 1" → "WB R1", "LB Round 3" → "LB R3" for compact display
+    const wbM = r.match(/^WB Round (\d+)$/i);
+    if (wbM) return `WB R${wbM[1]}`;
+    const lbM = r.match(/^LB Round (\d+)$/i);
+    if (lbM) return `LB R${lbM[1]}`;
     return r;
   };
 
   const gamesByDay = useMemo(() => {
     if (!event.tournamentGames) return {};
+
+    // Exclude conditional "Championship Decider" (If Needed) from the schedule view.
+    // It only appears in the bracket renderer when actually triggered.
+    const scheduledGames = event.tournamentGames.filter((g: TournamentGame) => !(g as any).isConditional);
 
     // Parse "8:00 AM" / "2:30 PM" → total minutes from midnight for reliable sort
     const parseTimeMinutes = (t: string): number => {
@@ -825,7 +858,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
       return 50;
     };
 
-    const grouped = event.tournamentGames.reduce((acc: any, game: TournamentGame) => {
+    const grouped = scheduledGames.reduce((acc: any, game: TournamentGame) => {
       const day = game.date;
       if (!acc[day]) acc[day] = [];
       acc[day].push(game);
@@ -852,6 +885,17 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
   }, [event.tournamentGames]);
   
   const standings = useMemo(() => calculateTournamentStandings(event.tournamentTeamsData || [], event.tournamentGames || []), [event]);
+
+  // MISS-4: Per-pool standings for pool_play_knockout — computed per pool index
+  const poolStandings = useMemo(() => {
+    const games = event.tournamentGames || [];
+    const poolIndices = [...new Set(games.filter(g => (g as any).pool !== undefined).map(g => (g as any).pool as number))].sort();
+    if (poolIndices.length === 0) return null;
+    return poolIndices.map(poolIdx => ({
+      label: String.fromCharCode(65 + poolIdx), // A, B, C...
+      rows: calculateTournamentStandings(event.tournamentTeamsData || [], games, poolIdx)
+    }));
+  }, [event]);
 
   const seedBracketFromStandings = async () => {
     if (!db || !activeTeam || !event.tournamentGames) return;
@@ -953,7 +997,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
               <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Squads</p><p className="text-3xl font-black">{(event.tournamentTeamsData || []).length}</p></div>
               <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Matches</p><p className="text-3xl font-black">{(event.tournamentGames || []).length}</p></div>
               <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Completion</p><p className="text-3xl font-black">{Math.round(((event.tournamentGames || []).filter(g => g.isCompleted).length / Math.max(1, (event.tournamentGames || []).length)) * 100)}%</p></div>
-              <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Timeline</p><p className="text-xl font-bold uppercase">{format(new Date(event.date), 'MMM d')} - {format(new Date(event.endDate || event.date), 'MMM d, yyyy')}</p></div>
+              <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Timeline</p><p className="text-xl font-bold uppercase">{format(new Date(event.date), 'MMMM d')} - {format(new Date(event.endDate || event.date), 'MMMM d, yyyy')}</p></div>
            </div>
             {/* ── Quick Access ── */}
             <div className="flex flex-wrap items-center gap-2 pt-5 border-t border-white/10">
@@ -1251,11 +1295,15 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                     </div>
                     <div className="space-y-3">
                       {(() => {
-                        const assignable = (event.tournamentGames || []).filter((g: TournamentGame) => !g.team1.includes('TBD') && !g.team2.includes('TBD'));
+                        // Show ALL non-conditional matches — referees must be booked for
+                        // every game, including bracket slots where teams are still TBD.
+                        const assignable = (event.tournamentGames || []).filter(
+                          (g: TournamentGame) => !(g as any).isConditional
+                        );
                         if (assignable.length === 0) return (
                           <div className="text-center py-16 opacity-30">
                             <CalendarDays className="h-12 w-12 mx-auto mb-3" />
-                            <p className="text-sm font-black uppercase tracking-widest">No confirmed matches yet</p>
+                            <p className="text-sm font-black uppercase tracking-widest">No matches scheduled yet</p>
                           </div>
                         );
                         return assignable.map((game: any) => (
@@ -1263,7 +1311,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                             <div className="flex items-center justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="font-black text-sm uppercase tracking-tight">{game.team1} <span className="text-muted-foreground/40 font-normal">vs</span> {game.team2}</p>
-                                <p className="text-[9px] font-bold text-muted-foreground uppercase">{game.date}{game.time ? ` · ${game.time}` : ''}{game.location ? ` · ${game.location}` : ''}</p>
+                                <p className="text-[9px] font-bold text-muted-foreground uppercase">{(() => { try { return format(parseISO(game.date), 'MMMM d, yyyy'); } catch { return game.date; } })()}{game.time ? ` · ${(() => { try { return format(new Date(`2000-01-01T${game.time}`), 'h:mm a'); } catch { return game.time; } })()}` : ''}{game.location ? ` · ${game.location}` : ''}</p>
                               </div>
                               {game.round && <Badge variant="outline" className="text-[9px] font-black uppercase border-2 shrink-0">{game.round}</Badge>}
                             </div>
@@ -1313,38 +1361,57 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
               </TabsContent>
 
               <TabsContent value="roster" className="mt-0 space-y-10">
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {event.tournamentTeamsData?.map((team: any, idx: number) => (
-                       <Card key={idx} className="rounded-[2.5rem] p-8 border-none shadow-xl flex items-center justify-between bg-white group hover:shadow-2xl transition-all">
-                          <div className="flex items-center gap-4">
-                              <SquadIdentity 
-                                teamId={team.id} 
-                                teamName={team.name} 
-                                logoUrl={team.logoUrl} 
-                                logoClassName="h-12 w-12 rounded-2xl shadow-xl border-2 shrink-0" 
-                              />
-                              <div>
-                                <h4 className="font-black text-lg uppercase truncate max-w-[150px]">{team.name}</h4>
-                                {team.coach && <p className="text-[10px] font-bold text-muted-foreground uppercase">{team.coach}</p>}
-                              </div>
+                  <div className="bg-white rounded-[3rem] shadow-xl border border-black/5 overflow-hidden">
+                    <div className="p-8 border-b bg-muted/5 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xl font-black uppercase tracking-tight">Active Roster</h3>
+                        <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">Verified competitors for this series</p>
+                      </div>
+                      <Badge className="bg-primary/10 text-primary border-none font-black text-[10px] uppercase h-8 px-4 rounded-full">
+                        {event.tournamentTeamsData?.length || 0} Registered
+                      </Badge>
+                    </div>
+                    <div className="divide-y divide-black/5">
+                      {event.tournamentTeamsData?.map((team: any, idx: number) => (
+                        <div key={idx} className="p-6 flex items-center justify-between hover:bg-muted/5 transition-all group">
+                          <div className="flex items-center gap-6">
+                            <SquadIdentity 
+                              teamId={team.id} 
+                              teamName={team.name} 
+                              logoUrl={team.logoUrl} 
+                              logoClassName="h-16 w-16 rounded-2xl shadow-xl border-2 shrink-0 bg-white" 
+                              hideName={true}
+                              horizontal={true}
+                            />
+                            <div>
+                              <h4 className="font-black text-2xl uppercase tracking-tighter leading-none mb-1">{team.name}</h4>
+                              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                                {team.coach || 'Head Coach Unassigned'}
+                              </p>
+                            </div>
                           </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <Badge className="bg-black/5 text-black hover:bg-black hover:text-white uppercase font-black tracking-widest text-[8px]">Squad</Badge>
+                          <div className="flex items-center gap-8 px-4">
+                            <div className="hidden sm:flex flex-col items-end">
+                              <Badge className="bg-black/5 text-black hover:bg-black hover:text-white uppercase font-black tracking-widest text-[8px] mb-1">Squad</Badge>
+                              <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter opacity-40">Series Competitor</p>
+                            </div>
                             {isStaff && (
-                              <button
+                              <Button
+                                variant="ghost"
                                 onClick={() => setLogoEditState({ idx, name: team.name, url: team.logoUrl || '' })}
-                                className="text-[8px] font-black uppercase tracking-widest text-primary/40 hover:text-primary transition-colors"
+                                className="h-12 px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest text-primary hover:bg-primary/5 border border-transparent hover:border-primary/20"
                               >
-                                {team.logoUrl ? 'Edit Logo' : '+ Set Logo'}
-                              </button>
+                                {team.logoUrl ? 'EDIT LOGO' : 'UPLOAD LOGO'}
+                              </Button>
                             )}
                           </div>
-                       </Card>
-                    ))}
-                 </div>
-                 {(!event.tournamentTeamsData || event.tournamentTeamsData.length === 0) && (
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {(!event.tournamentTeamsData || event.tournamentTeamsData.length === 0) && (
                     <div className="py-32 text-center opacity-40 font-black uppercase tracking-widest">No active squads are assigned to this series.</div>
-                 )}
+                  )}
 
                  {/* Logo Edit Dialog */}
                  <Dialog open={!!logoEditState} onOpenChange={(o) => !o && setLogoEditState(null)}>
@@ -1469,7 +1536,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                                 )}
                                 {isSigned && agreement?.signedAt && (
                                   <span className="text-[8px] font-bold text-muted-foreground/40 uppercase tracking-widest hidden lg:block">
-                                    {format(new Date(agreement.signedAt), 'MMM d, yyyy')}
+                                    {format(new Date(agreement.signedAt), 'MMMM d, yyyy')}
                                   </span>
                                 )}
                               </div>
@@ -1495,7 +1562,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                    <div className="flex items-center gap-4">
                      <div className="h-px flex-1 bg-muted" />
                      <Badge variant="outline" className="bg-white border-2 border-primary/10 px-6 h-10 rounded-full text-[10px] font-black uppercase tracking-[0.2em] text-primary shadow-sm">
-                       {format(parseISO(date), 'EEEE, MMMM do')}
+                       {format(parseISO(date), 'EEEE, MMMM d, yyyy')}
                      </Badge>
                      <div className="h-px flex-1 bg-muted" />
                    </div>
@@ -1526,13 +1593,19 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                                 <Badge variant="outline" className={cn(
                                   "text-[9px] font-black uppercase cursor-default max-w-[140px] truncate",
                                   isTBD ? "border-dashed" : "border-2",
-                                  (game.round || '').toLowerCase().includes('winners bracket') || /^wb/.test((game.round || '').toLowerCase())
+                                  // WB — emerald (Winners Bracket + WB Round N)
+                                  ((game.round || '').toLowerCase().includes('winners bracket') || /^wb\s/i.test(game.round || ''))
                                     ? 'border-emerald-300 text-emerald-700 bg-emerald-50'
-                                    : (game.round || '').toLowerCase().includes('losers bracket') || /^lb/.test((game.round || '').toLowerCase())
+                                  // LB — orange (Losers Bracket + LB Round N)
+                                  : ((game.round || '').toLowerCase().includes('losers bracket') || /^lb\s/i.test(game.round || ''))
                                     ? 'border-orange-300 text-orange-600 bg-orange-50'
-                                    : (game.round || '').toLowerCase().includes('championship') || (game.round || '').toLowerCase().includes('grand final')
+                                  // Championship — primary
+                                  : ((game.round || '').toLowerCase().includes('championship') || (game.round || '').toLowerCase().includes('grand final'))
                                     ? 'border-primary/40 text-primary bg-primary/5'
-                                    : ''
+                                  // Conditional If Needed — muted italic
+                                  : (game.round || '').toLowerCase().includes('decider')
+                                    ? 'border-dashed border-muted-foreground/30 text-muted-foreground bg-muted/30 italic'
+                                  : ''
                                 )}>
                                   {formatRoundBadge(game.round)}
                                 </Badge>
@@ -1584,37 +1657,74 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                />
              </TabsContent>
              <TabsContent value="standings" className="mt-0 space-y-8">
-                <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
-                   <table className="w-full text-left">
+                {poolStandings ? (
+                  poolStandings.map(pool => (
+                    <div key={pool.label}>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-3 px-1">Pool {pool.label}</p>
+                      <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
+                        <table className="w-full text-left">
+                          <thead className="bg-muted/30 border-b text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                            <tr><th className="px-10 py-5">Squad Rank</th><th className="text-center">W</th><th className="text-center">L</th><th className="text-center">T</th><th className="text-center">PTS</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-black/5">
+                            {pool.rows.map((t: any, idx: number) => (
+                              <tr key={t.name} className="hover:bg-muted/10 transition-colors">
+                                <td className="px-10 py-6">
+                                  <div className="flex items-center gap-4">
+                                    <span className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-black shrink-0">{idx + 1}</span>
+                                    <SquadIdentity
+                                      teamId={event.tournamentTeamsData?.find((td: any) => td.name === t.name)?.id}
+                                      teamName={t.name}
+                                      logoUrl={event.tournamentTeamsData?.find((td: any) => td.name === t.name)?.logoUrl}
+                                      logoClassName="h-8 w-8 rounded-xl shadow-sm border-2 shrink-0"
+                                      showNameWithLogo horizontal
+                                      textClassName="font-black uppercase text-sm"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="text-center font-bold text-emerald-600">{t.wins}</td>
+                                <td className="text-center font-bold text-red-600">{t.losses}</td>
+                                <td className="text-center font-bold text-muted-foreground">{t.ties}</td>
+                                <td className="text-center bg-primary/[0.03]"><Badge className="bg-primary text-white font-black px-4">{t.points}</Badge></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </Card>
+                    </div>
+                  ))
+                ) : (
+                  <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
+                    <table className="w-full text-left">
                       <thead className="bg-muted/30 border-b text-[9px] font-black uppercase tracking-widest text-muted-foreground">
-                         <tr><th className="px-10 py-5">Squad Rank</th><th className="text-center">W</th><th className="text-center">L</th><th className="text-center">T</th><th className="text-center">PTS</th></tr>
+                        <tr><th className="px-10 py-5">Squad Rank</th><th className="text-center">W</th><th className="text-center">L</th><th className="text-center">T</th><th className="text-center">PTS</th></tr>
                       </thead>
                       <tbody className="divide-y divide-black/5">
-                         {standings.map((t, idx) => (
-                           <tr key={t.name} className="hover:bg-muted/10 transition-colors">
-                              <td className="px-10 py-6">
-                                <div className="flex items-center gap-4">
-                                  <span className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-black shrink-0">{idx + 1}</span>
-                                  <SquadIdentity
-                                    teamId={event.tournamentTeamsData?.find((td: any) => td.name === t.name)?.id}
-                                    teamName={t.name}
-                                    logoUrl={event.tournamentTeamsData?.find((td: any) => td.name === t.name)?.logoUrl}
-                                    logoClassName="h-8 w-8 rounded-xl shadow-sm border-2 shrink-0"
-                                    showNameWithLogo
-                                    horizontal
-                                    textClassName="font-black uppercase text-sm"
-                                  />
-                                </div>
-                              </td>
-                              <td className="text-center font-bold text-emerald-600">{t.wins}</td>
-                              <td className="text-center font-bold text-red-600">{t.losses}</td>
-                              <td className="text-center font-bold text-muted-foreground">{t.ties}</td>
-                              <td className="text-center bg-primary/[0.03]"><Badge className="bg-primary text-white font-black px-4">{t.points}</Badge></td>
-                           </tr>
-                         ))}
+                        {standings.map((t, idx) => (
+                          <tr key={t.name} className="hover:bg-muted/10 transition-colors">
+                            <td className="px-10 py-6">
+                              <div className="flex items-center gap-4">
+                                <span className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-black shrink-0">{idx + 1}</span>
+                                <SquadIdentity
+                                  teamId={event.tournamentTeamsData?.find((td: any) => td.name === t.name)?.id}
+                                  teamName={t.name}
+                                  logoUrl={event.tournamentTeamsData?.find((td: any) => td.name === t.name)?.logoUrl}
+                                  logoClassName="h-8 w-8 rounded-xl shadow-sm border-2 shrink-0"
+                                  showNameWithLogo horizontal
+                                  textClassName="font-black uppercase text-sm"
+                                />
+                              </div>
+                            </td>
+                            <td className="text-center font-bold text-emerald-600">{t.wins}</td>
+                            <td className="text-center font-bold text-red-600">{t.losses}</td>
+                            <td className="text-center font-bold text-muted-foreground">{t.ties}</td>
+                            <td className="text-center bg-primary/[0.03]"><Badge className="bg-primary text-white font-black px-4">{t.points}</Badge></td>
+                          </tr>
+                        ))}
                       </tbody>
-                   </table>
-                </Card>
+                    </table>
+                  </Card>
+                )}
              </TabsContent>
           </div>
         </Tabs>
@@ -1764,8 +1874,8 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
                    <CalendarDays className="h-4 w-4" />
                    <span className="text-[10px] font-black uppercase tracking-widest">
                      {event.endDate && event.endDate !== event.date 
-                       ? `${format(new Date(event.date), 'MMMM do')} - ${format(new Date(event.endDate), 'do, yyyy')}`
-                       : format(new Date(event.date), 'MMMM do, yyyy')}
+                       ? `${format(new Date(event.date), 'MMMM d')} - ${format(new Date(event.endDate), 'd, yyyy')}`
+                       : format(new Date(event.date), 'MMMM d, yyyy')}
                    </span>
                 </div>
                 <div className="flex items-center gap-3 text-muted-foreground"><MapPin className="h-4 w-4" /><span className="text-[10px] font-black uppercase tracking-widest truncate">{event.location}</span></div>
