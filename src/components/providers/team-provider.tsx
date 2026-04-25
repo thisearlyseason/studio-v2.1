@@ -328,6 +328,19 @@ export type TeamEvent = {
   isArchived?: boolean;
   division?: string;
   refereePool?: TournamentReferee[];
+  // ── Tournament deployment fields (set by TournamentDeploymentWizard) ──
+  tournamentType?: 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout';
+  gameLength?: number;
+  breakLength?: number;
+  gamesPerTeam?: number;
+  dailyWindows?: Array<{ date: string; startTime: string; endTime: string }>;
+  selectedFields?: string[];
+  manualVenue?: string;
+  waiverIds?: string[];
+  venueSettings?: Record<string, any>;
+  creatorId?: string;
+  isCompleted?: boolean;
+  archived_waivers?: any[];
 };
 
 export type PracticeTemplate = {
@@ -464,6 +477,7 @@ export type League = {
     coachPhone?: string;
     organizerNotes?: string;
     teamLogoUrl?: string;
+    division?: string;
   }>;
   individualRecruits?: Record<string, {
     name: string;
@@ -532,6 +546,8 @@ export type LeagueRegistrationConfig = {
   form_version?: number;
   registration_cost?: string;
   offline_payment_instructions?: string;
+  require_division_selection?: boolean;
+  available_divisions?: string[];
   type: 'player' | 'team' | 'waiver';
 };
 
@@ -2971,7 +2987,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!snap.exists()) return; 
     
     const data = snap.data();
-    const games = [...(data.tournamentGames || [])]; 
+    let games = [...(data.tournamentGames || [])]; 
     const idx = games.findIndex((g: any) => g.id === gameId); 
     if (idx === -1) return; 
     
@@ -2985,38 +3001,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     };
     games[idx] = updatedGame; 
 
-    // Null-coalesce ALL fields to prevent Firestore "Unsupported field value: undefined" error.
-    // Firestore accepts null but rejects undefined — missing logo/id fields cause hard write failures.
-    const isTie = score1 === score2;
-    const winnerName  = score1 > score2 ? (updatedGame.team1 ?? null)        : (updatedGame.team2 ?? null);
-    const winnerId    = score1 > score2 ? (updatedGame.team1Id ?? null)       : (updatedGame.team2Id ?? null);
-    const winnerLogo  = score1 > score2 ? (updatedGame.team1LogoUrl ?? null)  : (updatedGame.team2LogoUrl ?? null);
-    const loserName   = score1 > score2 ? (updatedGame.team2 ?? null)         : (updatedGame.team1 ?? null);
-    const loserId     = score1 > score2 ? (updatedGame.team2Id ?? null)       : (updatedGame.team1Id ?? null);
-    const loserLogo   = score1 > score2 ? (updatedGame.team2LogoUrl ?? null)  : (updatedGame.team1LogoUrl ?? null);
-
-    // Only propagate winner/loser on decisive results — skip on ties
-    if (!isTie && updatedGame.winnerTo) {
-      const targetIdx = games.findIndex((g: any) => g.id === updatedGame.winnerTo);
-      if (targetIdx !== -1) {
-        if (updatedGame.winnerToSlot === 'team2') {
-          games[targetIdx] = { ...games[targetIdx], team2: winnerName, team2Id: winnerId, team2LogoUrl: winnerLogo, score2: 0 };
-        } else {
-          games[targetIdx] = { ...games[targetIdx], team1: winnerName, team1Id: winnerId, team1LogoUrl: winnerLogo, score1: 0 };
-        }
-      }
-    }
-
-    if (!isTie && updatedGame.loserTo) {
-      const targetIdx = games.findIndex((g: any) => g.id === updatedGame.loserTo);
-      if (targetIdx !== -1) {
-        if (updatedGame.loserToSlot === 'team2') {
-          games[targetIdx] = { ...games[targetIdx], team2: loserName, team2Id: loserId, team2LogoUrl: loserLogo, score2: 0 };
-        } else {
-          games[targetIdx] = { ...games[targetIdx], team1: loserName, team1Id: loserId, team1LogoUrl: loserLogo, score1: 0 };
-        }
-      }
-    }
+    // MISS-5: Bracket Auto-Advancement
+    // Use the unified helper to handle winner/loser progression and DE GF Reset logic.
+    const { advanceBracketMatch } = await import('@/lib/scheduler-utils');
+    games = advanceBracketMatch(games, gameId, score1, score2);
 
     await updateDoc(eventRef, { tournamentGames: games }); 
   }, [db]);

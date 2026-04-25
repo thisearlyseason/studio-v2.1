@@ -47,7 +47,8 @@ import {
   UserCheck,
   UserMinus,
   Phone,
-  Mail
+  Mail,
+  RefreshCw
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -66,12 +67,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTeam, TeamEvent, TournamentGame, TournamentReferee, Member, Facility, Field, TeamDocument, League, RegistrationEntry } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, where, doc, updateDoc, getDocs, collectionGroup } from 'firebase/firestore';
+import { collection, query, orderBy, where, doc, updateDoc, getDoc, getDocs, collectionGroup } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { format, isPast, isSameDay, eachDayOfInterval, parseISO } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
-import { DailyWindow, TeamIdentity } from '@/lib/scheduler-utils';
+import { DailyWindow, TeamIdentity, advanceBracketMatch } from '@/lib/scheduler-utils';
 import { generateIntelligentTournamentSchedule } from '@/lib/intelligent-scheduler';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import html2canvas from 'html2canvas';
@@ -375,7 +376,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
 
     let success = false;
     if (editEvent) {
-       await updateDoc(doc(db, 'teams', activeTeam.id, 'events', editEvent.id), eventPayload);
+       await updateDoc(doc(db, 'teams', activeTeam!.id, 'events', editEvent.id), eventPayload);
        success = true;
     } else {
        success = await addEvent(eventPayload);
@@ -393,6 +394,10 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[98vw] lg:max-w-[1600px] rounded-[3rem] p-0 border border-white/10 shadow-2xl overflow-hidden bg-[#050505] text-white h-[95vh] flex flex-col">
         <DialogTitle className="sr-only">Elite Series Architect</DialogTitle>
+        <DialogClose className="absolute right-8 top-8 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground z-50">
+          <X className="h-8 w-8 text-white" />
+          <span className="sr-only">Close</span>
+        </DialogClose>
         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-600 via-orange-500 to-primary w-full shrink-0" />
         
         <div className="flex flex-1 overflow-hidden">
@@ -726,6 +731,43 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
   const [selectedGame, setSelectedGame] = useState<TournamentGame | null>(null);
   const [celebrationWinner, setCelebrationWinner] = useState<string | null>(null);
   const [logoEditState, setLogoEditState] = useState<{ idx: number; name: string; url: string } | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const handleSyncLogos = async () => {
+    if (!db || !activeTeam || !event.tournamentTeamsData) return;
+    setIsProcessing(true);
+    try {
+      const updatedTeamsData = [...event.tournamentTeamsData];
+      let changes = 0;
+      
+      for (let i = 0; i < updatedTeamsData.length; i++) {
+        const team = updatedTeamsData[i];
+        if (team.id && !team.id.startsWith('p_') && !team.id.startsWith('l_')) {
+          const teamDoc = await getDoc(doc(db, 'teams', team.id));
+          if (teamDoc.exists()) {
+            const teamData = teamDoc.data();
+            if (teamData.logoUrl && teamData.logoUrl !== team.logoUrl) {
+              updatedTeamsData[i] = { ...team, logoUrl: teamData.logoUrl };
+              changes++;
+            }
+          }
+        }
+      }
+      
+      if (changes > 0) {
+        await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
+          tournamentTeamsData: updatedTeamsData
+        });
+        toast({ title: "LOGOS_SYNCED", description: `${changes} team logos have been updated to match their official profiles.` });
+      } else {
+        toast({ title: "LOGOS_CURRENT", description: "All team logos are already up to date." });
+      }
+    } catch (error) {
+      console.error("Sync error:", error);
+      toast({ title: "SYNC_ERROR", description: "Failed to synchronize logos.", variant: "destructive" });
+    }
+    setIsProcessing(false);
+  };
 
   const handleSaveTeamLogo = async () => {
     if (!logoEditState || !db || !activeTeam) return;
@@ -1027,6 +1069,9 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
           <DialogHeader>
             <DialogTitle className="text-3xl font-black uppercase tracking-tighter">Match Result</DialogTitle>
             <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Secure Node Submission</DialogDescription>
+            <DialogClose className="absolute right-8 top-8 opacity-70 transition-opacity hover:opacity-100">
+              <X className="h-6 w-6" />
+            </DialogClose>
           </DialogHeader>
           
           {selectedGame && (
@@ -1035,56 +1080,66 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
               if (!db || !activeTeam || !event.tournamentGames) return;
               
               const formData = new FormData(e.currentTarget);
-              const score1 = parseInt(formData.get('score1') as string, 10);
-              const score2 = parseInt(formData.get('score2') as string, 10);
-              
+              const rawScore1 = parseInt(formData.get('score1') as string, 10);
+              const rawScore2 = parseInt(formData.get('score2') as string, 10);
               const roundName = formData.get('roundName') as string;
               const explicitWinner = formData.get('explicitWinner') as string;
-              
-              const pGames = [...event.tournamentGames];
-              
-              // Determine winner: Use explicit selection first, fallback to score comparison
-              let t1Adv = explicitWinner === 'team1' ? selectedGame.team1 : 
-                           explicitWinner === 'team2' ? selectedGame.team2 : 
-                           (score1 > score2 ? selectedGame.team1 : selectedGame.team2);
-              
-              let t1AdvId = explicitWinner === 'team1' ? selectedGame.team1Id : 
-                             explicitWinner === 'team2' ? selectedGame.team2Id : 
-                             (score1 > score2 ? selectedGame.team1Id : selectedGame.team2Id);
-              
-              let t1Los = explicitWinner === 'team1' ? selectedGame.team2 : 
-                           explicitWinner === 'team2' ? selectedGame.team1 : 
-                           (score1 > score2 ? selectedGame.team2 : selectedGame.team1);
-              
-              let t1LosId = explicitWinner === 'team1' ? selectedGame.team2Id : 
-                             explicitWinner === 'team2' ? selectedGame.team1Id : 
-                             (score1 > score2 ? selectedGame.team2Id : selectedGame.team1Id);
+
+              // ── Explicit winner override: swap scores so advanceBracketMatch
+              //    always sees a decisive result in the correct direction.
+              //    The stored score1/score2 values reflect the real input; only the
+              //    "effective" scores used for bracket routing differ.
+              let effectiveScore1 = rawScore1;
+              let effectiveScore2 = rawScore2;
+              if (explicitWinner === 'team1') {
+                // Force team1 to win regardless of actual scores
+                if (effectiveScore1 <= effectiveScore2) { effectiveScore1 = (effectiveScore2 || 0) + 1; }
+              } else if (explicitWinner === 'team2') {
+                // Force team2 to win regardless of actual scores
+                if (effectiveScore2 <= effectiveScore1) { effectiveScore2 = (effectiveScore1 || 0) + 1; }
+              }
 
               try {
-                const updatedGames = pGames.map(g => {
-                   if (g.id === selectedGame.id) {
-                      return { ...g, score1, score2, round: roundName || g.round, isCompleted: true, updatedAt: new Date().toISOString() };
-                   }
-                   // Flow winner
-                   if (g.id === selectedGame.winnerTo) {
-                      if (selectedGame.winnerToSlot === 'team1') return { ...g, team1: t1Adv, team1Id: t1AdvId || 'tbd' };
-                      if (selectedGame.winnerToSlot === 'team2') return { ...g, team2: t1Adv, team2Id: t1AdvId || 'tbd' };
-                   }
-                   // Flow loser (dropout)
-                   if (g.id === selectedGame.loserTo) {
-                      if (selectedGame.loserToSlot === 'team1') return { ...g, team1: t1Los, team1Id: t1LosId || 'tbd' };
-                      if (selectedGame.loserToSlot === 'team2') return { ...g, team2: t1Los, team2Id: t1LosId || 'tbd' };
-                   }
-                   return g;
+                // 1. Mark the game completed with the real scores and any round rename
+                let updatedGames: TournamentGame[] = event.tournamentGames.map(g => {
+                  if (g.id !== selectedGame.id) return g;
+                  return {
+                    ...g,
+                    score1: rawScore1,
+                    score2: rawScore2,
+                    round: roundName || g.round,
+                    isCompleted: true,
+                    updatedAt: new Date().toISOString(),
+                  };
                 });
-                
+
+                // 2. Run the canonical bracket advancement engine with effective scores.
+                //    This handles: winner/loser routing, logo propagation, score reset on
+                //    destination slots, and the Grand Final Reset (DE Championship Decider).
+                updatedGames = advanceBracketMatch(updatedGames, selectedGame.id, effectiveScore1, effectiveScore2);
+
+                // 3. If the Grand Final Reset was just triggered (LB winner beat WB winner),
+                //    make the Championship Decider visible by clearing its isConditional flag.
+                const gfResetTriggered = updatedGames.some(g =>
+                  g.isResetMatch &&
+                  !g.isConditional &&
+                  g.team1 && !g.team1.includes('TBD') &&
+                  g.team2 && !g.team2.includes('TBD')
+                );
+                if (gfResetTriggered) {
+                  updatedGames = updatedGames.map(g =>
+                    g.isResetMatch ? { ...g, isConditional: false } : g
+                  );
+                }
+
                 await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { tournamentGames: updatedGames });
-                
-                // Only trigger for the ultimate championship match
-                const rLower = (selectedGame.round || '').toLowerCase();
-                const isUltimateFinal = rLower === 'championship' || rLower === 'grand final';
+
+                // 4. Championship celebration for the ultimate final
+                const rLower = (roundName || selectedGame.round || '').toLowerCase();
+                const isUltimateFinal = rLower === 'championship' || rLower === 'grand final' || rLower === 'championship decider';
                 if (isUltimateFinal) {
-                    setCelebrationWinner(t1Adv);
+                  const winnerName = effectiveScore1 > effectiveScore2 ? selectedGame.team1 : selectedGame.team2;
+                  setCelebrationWinner(winnerName);
                 }
 
                 toast({ title: "Score Synchronized", description: "Match progression pushed to bracket architecture." });
@@ -1203,7 +1258,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                   </div>
                 </div>
 
-                <div className="bg-slate-50 p-10 rounded-[3rem] border-2 border-dashed border-slate-200 space-y-8">
+                <div className="bg-slate-50 p-10 rounded-[3rem] border-2 border-dashed border-slate-200 space-y-8 relative">
                   <div className="flex items-center justify-between">
                      <div className="flex items-center gap-4">
                         <div className="bg-black text-white p-3 rounded-2xl"><FileSignature className="h-6 w-6" /></div>
@@ -1361,52 +1416,79 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
               </TabsContent>
 
               <TabsContent value="roster" className="mt-0 space-y-10">
-                  <div className="bg-white rounded-[3rem] shadow-xl border border-black/5 overflow-hidden">
-                    <div className="p-8 border-b bg-muted/5 flex items-center justify-between">
-                      <div>
-                        <h3 className="text-xl font-black uppercase tracking-tight">Active Roster</h3>
-                        <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">Verified competitors for this series</p>
+                  <div className="bg-white rounded-[4rem] shadow-2xl border-2 border-black/5 overflow-hidden">
+                    <div className="p-10 border-b bg-muted/5 flex items-center justify-between">
+                      <div className="flex items-center gap-6">
+                        <div className="bg-primary/10 p-4 rounded-2xl text-primary shadow-sm">
+                          <Users className="h-7 w-7" />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-black uppercase tracking-tight">System Roster & Compliance</h3>
+                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">Verified competitors & Audit Status</p>
+                        </div>
                       </div>
-                      <Badge className="bg-primary/10 text-primary border-none font-black text-[10px] uppercase h-8 px-4 rounded-full">
-                        {event.tournamentTeamsData?.length || 0} Registered
-                      </Badge>
+                      <div className="flex items-center gap-3">
+                        <Button 
+                          variant="outline" 
+                          onClick={handleSyncLogos} 
+                          disabled={isProcessing}
+                          className="h-12 px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest border-2 hover:bg-muted/10 transition-all"
+                        >
+                          <RefreshCw className={cn("h-4 w-4 mr-2", isProcessing && "animate-spin")} /> Sync Logos
+                        </Button>
+                        <Badge className="bg-black text-white border-none font-black text-[10px] uppercase h-10 px-6 rounded-full flex items-center gap-2">
+                          {event.tournamentTeamsData?.length || 0} SQUADS ENROLLED
+                        </Badge>
+                      </div>
                     </div>
                     <div className="divide-y divide-black/5">
-                      {event.tournamentTeamsData?.map((team: any, idx: number) => (
-                        <div key={idx} className="p-6 flex items-center justify-between hover:bg-muted/5 transition-all group">
-                          <div className="flex items-center gap-6">
-                            <SquadIdentity 
-                              teamId={team.id} 
-                              teamName={team.name} 
-                              logoUrl={team.logoUrl} 
-                              logoClassName="h-16 w-16 rounded-2xl shadow-xl border-2 shrink-0 bg-white" 
-                              hideName={true}
-                              horizontal={true}
-                            />
-                            <div>
-                              <h4 className="font-black text-2xl uppercase tracking-tighter leading-none mb-1">{team.name}</h4>
-                              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-                                {team.coach || 'Head Coach Unassigned'}
-                              </p>
+                      {event.tournamentTeamsData?.map((team: any, idx: number) => {
+                        const agreement = (event as any).teamAgreements?.[team.name];
+                        const isSigned = agreement?.status === 'signed';
+                        return (
+                          <div key={idx} className="p-8 flex items-center justify-between hover:bg-muted/5 transition-all group">
+                            <div className="flex items-center gap-8 flex-1 min-w-0">
+                              <SquadIdentity 
+                                teamId={team.id} 
+                                teamName={team.name} 
+                                logoUrl={team.logoUrl} 
+                                logoClassName="h-20 w-20 rounded-[1.5rem] shadow-xl border-2 shrink-0 bg-white" 
+                                hideName={true}
+                                horizontal={true}
+                              />
+                              <div className="min-w-0">
+                                <h4 className="font-black text-3xl uppercase tracking-tighter leading-none mb-2 truncate">{team.name}</h4>
+                                <div className="flex items-center gap-4">
+                                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                                    <Users className="h-3 w-3" /> {team.coach || 'Head Coach Unassigned'}
+                                  </p>
+                                  <div className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+                                  {isSigned ? (
+                                    <div className="flex items-center gap-2 text-green-600 font-black text-[10px] uppercase tracking-widest">
+                                      <CheckCircle2 className="h-4 w-4" strokeWidth={3} /> Verified Compliance
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-2 text-amber-500 font-black text-[10px] uppercase tracking-widest">
+                                      <AlertCircle className="h-4 w-4" /> Awaiting Waiver
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-6 px-4">
+                              {isStaff && (
+                                <Button
+                                  variant="ghost"
+                                  onClick={() => setLogoEditState({ idx, name: team.name, url: team.logoUrl || '' })}
+                                  className="h-14 px-8 rounded-2xl font-black uppercase text-xs tracking-widest text-primary hover:bg-primary/5 border-2 border-transparent hover:border-primary/20 transition-all"
+                                >
+                                  {team.logoUrl ? 'EDIT LOGO' : 'UPLOAD LOGO'}
+                                </Button>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-8 px-4">
-                            <div className="hidden sm:flex flex-col items-end">
-                              <Badge className="bg-black/5 text-black hover:bg-black hover:text-white uppercase font-black tracking-widest text-[8px] mb-1">Squad</Badge>
-                              <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter opacity-40">Series Competitor</p>
-                            </div>
-                            {isStaff && (
-                              <Button
-                                variant="ghost"
-                                onClick={() => setLogoEditState({ idx, name: team.name, url: team.logoUrl || '' })}
-                                className="h-12 px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest text-primary hover:bg-primary/5 border border-transparent hover:border-primary/20"
-                              >
-                                {team.logoUrl ? 'EDIT LOGO' : 'UPLOAD LOGO'}
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                   {(!event.tournamentTeamsData || event.tournamentTeamsData.length === 0) && (
@@ -1421,6 +1503,9 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                        <DialogHeader>
                          <DialogTitle className="text-2xl font-black uppercase tracking-tight">Set Squad Logo</DialogTitle>
                          <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{logoEditState?.name}</DialogDescription>
+                         <DialogClose className="absolute right-8 top-8 opacity-70 transition-opacity hover:opacity-100">
+                           <X className="h-6 w-6" />
+                         </DialogClose>
                        </DialogHeader>
                        <div className="space-y-3">
                          <Label className="text-[10px] font-black uppercase tracking-widest">Logo Image URL</Label>
@@ -1447,113 +1532,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                    </DialogContent>
                  </Dialog>
 
-                {/* ── Waiver Compliance ── */}
-                <div className="border-t-2 border-black/5 pt-8 space-y-8">
-                <div className="space-y-6">
-                  <div className="flex items-center gap-4 px-2">
-                    <div className="bg-primary/10 p-4 rounded-2xl text-primary shadow-sm">
-                      <ShieldAlert className="h-7 w-7" />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-black uppercase tracking-tight">Compliance Auditing</h2>
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
-                        Waiver &amp; registration status for all enrolled squads
-                      </p>
-                    </div>
-                  </div>
 
-                  {/* Summary Stats */}
-                  {(() => {
-                    const teams = event.tournamentTeamsData || [];
-                    const agreements = (event as any).teamAgreements || {};
-                    const signedCount = teams.filter((t: any) => agreements[t.name]?.status === 'signed').length;
-                    const totalCount = teams.length;
-                    return (
-                      <div className="grid grid-cols-3 gap-4">
-                        <Card className="rounded-[2rem] border-none shadow-md bg-black text-white p-6 space-y-1">
-                          <p className="text-[9px] font-black uppercase tracking-widest opacity-40">Total Squads</p>
-                          <p className="text-3xl font-black">{totalCount}</p>
-                        </Card>
-                        <Card className="rounded-[2rem] border-none shadow-md bg-green-500 text-white p-6 space-y-1">
-                          <p className="text-[9px] font-black uppercase tracking-widest opacity-70">Waivers Signed</p>
-                          <p className="text-3xl font-black">{signedCount}</p>
-                        </Card>
-                        <Card className="rounded-[2rem] border-none shadow-md p-6 space-y-1">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Pending</p>
-                          <p className="text-3xl font-black text-amber-500">{totalCount - signedCount}</p>
-                        </Card>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Team Compliance Grid */}
-                  <Card className="rounded-[3rem] border-none shadow-xl bg-white overflow-hidden">
-                    <div className="p-6 border-b bg-muted/5 flex items-center justify-between">
-                      <div>
-                        <h3 className="text-sm font-black uppercase tracking-tight">Team Waiver Status</h3>
-                        <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">Real-time compliance view for all registered squads</p>
-                      </div>
-                      <Badge className="bg-primary/10 text-primary border-none font-black text-[10px] uppercase">
-                        {(event.tournamentTeamsData || []).filter((t: any) => (event as any).teamAgreements?.[t.name]?.status === 'signed').length}
-                        &nbsp;/&nbsp;{(event.tournamentTeamsData || []).length} Cleared
-                      </Badge>
-                    </div>
-                    <ScrollArea className="h-[500px]">
-                      <div className="divide-y">
-                        {(event.tournamentTeamsData || []).map((team: any, idx: number) => {
-                          const agreement = (event as any).teamAgreements?.[team.name];
-                          const isSigned = agreement?.status === 'signed';
-                          return (
-                            <div key={idx} className="p-5 sm:p-6 flex items-center justify-between hover:bg-muted/5 transition-colors gap-4">
-                              <div className="flex items-center gap-4 min-w-0">
-                                <SquadIdentity
-                                  teamId={team.id}
-                                  teamName={team.name}
-                                  logoUrl={team.logoUrl}
-                                  size="sm"
-                                  showNameWithLogo
-                                  horizontal
-                                  textClassName="font-black text-sm uppercase tracking-tight"
-                                  logoClassName="h-9 w-9 rounded-xl shadow-sm"
-                                />
-                                {team.coach && (
-                                  <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest hidden md:block truncate max-w-[160px]">
-                                    {team.coach}
-                                  </p>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-3 shrink-0">
-                                {isSigned ? (
-                                  <div className="flex items-center gap-2 bg-green-50 px-4 py-2 rounded-xl border border-green-100">
-                                    <CheckCircle2 className="h-4 w-4 text-green-600" strokeWidth={3} />
-                                    <span className="text-[9px] font-black uppercase tracking-widest text-green-700">Waiver Signed</span>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center gap-2 bg-muted/20 px-4 py-2 rounded-xl border border-muted/30">
-                                    <CheckCircle2 className="h-4 w-4 text-muted-foreground/30" strokeWidth={2} />
-                                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Awaiting Signature</span>
-                                  </div>
-                                )}
-                                {isSigned && agreement?.signedAt && (
-                                  <span className="text-[8px] font-bold text-muted-foreground/40 uppercase tracking-widest hidden lg:block">
-                                    {format(new Date(agreement.signedAt), 'MMMM d, yyyy')}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {(!event.tournamentTeamsData || event.tournamentTeamsData.length === 0) && (
-                          <div className="py-20 text-center opacity-20">
-                            <ShieldAlert className="h-12 w-12 mx-auto mb-4" />
-                            <p className="text-sm font-black uppercase tracking-widest">No squads enrolled yet</p>
-                          </div>
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </Card>
-                </div>
-                </div>{/* end waiver compliance */}
               </TabsContent>
 
              <TabsContent value="itinerary" className="mt-0 space-y-12">
@@ -1748,7 +1727,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
     return query(collection(db, 'teams', activeTeam.id, 'events'), where('isTournament', '==', true));
   }, [db, activeTeam?.id]);
   
-  const { data: rawEvents, loading } = useCollection<TeamEvent>(eventsQuery);
+  const { data: rawEvents, isLoading } = useCollection<TeamEvent>(eventsQuery);
   const events = useMemo(() => {
     if (!rawEvents) return [];
     return rawEvents
@@ -1902,8 +1881,8 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
             </div>
           </Card>
         ))}
-        {loading && [1, 2, 3].map(i => <div key={i} className="h-80 rounded-[3rem] bg-muted/20 animate-pulse border-2 border-dashed" />)}
-        {events?.length === 0 && !loading && (
+        {isLoading && [1, 2, 3].map(i => <div key={i} className="h-80 rounded-[3rem] bg-muted/20 animate-pulse border-2 border-dashed" />)}
+        {events?.length === 0 && !isLoading && (
           <div className="col-span-full py-40 text-center border-4 border-dashed rounded-[5rem] bg-muted/5 flex flex-col items-center">
             <div className="bg-primary/10 p-10 rounded-[3rem] text-primary mb-8 shadow-inner animate-pulse"><Trophy className="h-20 w-20" /></div>
             <h2 className="text-4xl font-black uppercase tracking-tighter mb-4 italic">The Arena is Empty</h2>

@@ -61,7 +61,7 @@ import { collection, query, orderBy, where, doc, updateDoc, limit, or } from 'fi
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { generateIntelligentLeagueSchedule } from '@/lib/intelligent-scheduler';
-import { addSquadBranding } from '@/lib/pdf-utils';
+import { addSquadBranding, addSquadFooter } from '@/lib/pdf-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format, isSameDay, startOfDay, endOfDay } from 'date-fns';
 import { DateRange } from 'react-day-picker';
@@ -503,7 +503,7 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
     
     schedule.forEach(g => {
       if (y > 260) { 
-        addSquadFooter(doc, null, league.name);
+        addSquadFooter(doc, undefined, league.name);
         doc.addPage(); 
         addSquadBranding(doc, `${league.name} SCHEDULE`, "OFFICIAL COMPETITIVE FIXTURES LOG");
         y = 70; 
@@ -515,7 +515,7 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
       doc.setDrawColor(245, 245, 245); doc.line(25, y + 4, pageWidth - 25, y+4); y += 12;
     });
     
-    addSquadFooter(doc, null, league.name);
+    addSquadFooter(doc, undefined, league.name);
     doc.save(`SCHEDULE_${league.name.replace(/\s+/g, '_')}.pdf`);
     toast({ title: "Fixtures Ledger Exported" });
   }, [league, schedule]);
@@ -903,6 +903,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     origin: '',
     organizerNotes: '',
     inviteCode: '',
+    division: '',
     wins: 0,
     losses: 0,
     ties: 0,
@@ -913,7 +914,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   const [editLeagueForm, setEditLeagueForm] = useState({
     name: '', sport: '', description: '', startDate: '', endDate: '', ages: '', 
     contactEmail: '', contactPhone: '', registrationCost: '', twitter: '', instagram: '', paymentInstructions: '',
-    slug: '', requiredSquads: '', blackoutDaysOfWeek: [] as number[]
+    slug: '', requiredSquads: '', blackoutDaysOfWeek: [] as number[], divisions: [] as string[]
   });
   const [duplicateTitle, setDuplicateTitle] = useState('');
   const [isDuplicateOpen, setIsDuplicateOpen] = useState(false);

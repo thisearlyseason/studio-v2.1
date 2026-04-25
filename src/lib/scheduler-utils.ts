@@ -262,18 +262,20 @@ export function generateLeagueSchedule(config: ScheduleConfig): TournamentGame[]
       if (doubleHeaderOption === 'none') {
         if (t1DailyCount >= 1 || t2DailyCount >= 1) continue;
       } else if (doubleHeaderOption === 'sameTeam') {
-        // LOGIC-3 FIX: Allow a second game only if BOTH teams already played each other
-        // (suspended/replay double-header). A team's 2nd game must be vs same opponent.
+        // LOGIC-3 FIX: A team's second game MUST be against the same opponent.
+        // If a team has played 1 game already today, they can only play again if it's vs the same team.
         if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
         if (t1DailyCount === 1) {
-          const first = finalGames.find(g => g.date === dayKey && (g.team1Id === t1.id || g.team2Id === t1.id));
-          const firstOppId = first ? (first.team1Id === t1.id ? first.team2Id : first.team1Id) : null;
-          if (!firstOppId || firstOppId !== t2.id) continue;
+          const first = todaysGames.find(g => g.teamId === t1.id);
+          const firstGame = finalGames.find(g => g.date === dayKey && (g.team1Id === t1.id || g.team2Id === t1.id));
+          const firstOppId = firstGame ? (firstGame.team1Id === t1.id ? firstGame.team2Id : firstGame.team1Id) : null;
+          if (firstOppId !== t2.id) continue;
         }
         if (t2DailyCount === 1) {
-          const first = finalGames.find(g => g.date === dayKey && (g.team1Id === t2.id || g.team2Id === t2.id));
-          const firstOppId = first ? (first.team1Id === t2.id ? first.team2Id : first.team1Id) : null;
-          if (!firstOppId || firstOppId !== t1.id) continue;
+          const first = todaysGames.find(g => g.teamId === t2.id);
+          const firstGame = finalGames.find(g => g.date === dayKey && (g.team1Id === t2.id || g.team2Id === t2.id));
+          const firstOppId = firstGame ? (firstGame.team1Id === t2.id ? firstGame.team2Id : firstGame.team1Id) : null;
+          if (firstOppId !== t1.id) continue;
         }
       } else if (doubleHeaderOption === 'differentTeams') {
         if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
@@ -602,12 +604,14 @@ export function generateTournamentSchedule(config: ScheduleConfig): TournamentGa
         } else if (doubleHeaderOption === 'sameTeam') {
           if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
           if (t1DailyCount === 1) {
-            const first = finalGames.find(g => g.date === dayKey && (g.team1Id === id1 || g.team2Id === id1));
-            if (first && (first.team1Id === id1 ? first.team2Id : first.team1Id) !== id2) continue;
+            const firstGame = finalGames.find(g => g.date === dayKey && (g.team1Id === id1 || g.team2Id === id1));
+            const firstOppId = firstGame ? (firstGame.team1Id === id1 ? firstGame.team2Id : firstGame.team1Id) : null;
+            if (firstOppId !== id2) continue;
           }
           if (t2DailyCount === 1) {
-            const first = finalGames.find(g => g.date === dayKey && (g.team1Id === id2 || g.team2Id === id2));
-            if (first && (first.team1Id === id2 ? first.team2Id : first.team1Id) !== id1) continue;
+            const firstGame = finalGames.find(g => g.date === dayKey && (g.team1Id === id2 || g.team2Id === id2));
+            const firstOppId = firstGame ? (firstGame.team1Id === id2 ? firstGame.team2Id : firstGame.team1Id) : null;
+            if (firstOppId !== id1) continue;
           }
         } else if (doubleHeaderOption === 'differentTeams') {
           if (t1DailyCount >= 2 || t2DailyCount >= 2) continue;
@@ -846,4 +850,78 @@ function buildEliminationBracket(
   });
 
   lbMatchups.forEach(m => matchups.push(m));
+}
+
+/**
+ * MISS-5: Bracket Auto-Advancement
+ * Takes a list of tournament games and advances the winner/loser of a specific match
+ * to their respective next nodes in the bracket.
+ */
+export function advanceBracketMatch(
+  games: TournamentGame[],
+  matchId: string,
+  score1: number,
+  score2: number
+): TournamentGame[] {
+  const updatedGames = [...games];
+  const idx = updatedGames.findIndex(g => g.id === matchId);
+  if (idx === -1) return updatedGames;
+
+  const match = updatedGames[idx];
+  const isTie = score1 === score2;
+  if (isTie) return updatedGames; // Brackets don't advance on ties
+
+  const winnerId = score1 > score2 ? match.team1Id : match.team2Id;
+  const winnerName = score1 > score2 ? match.team1 : match.team2;
+  const winnerLogo = score1 > score2 ? match.team1LogoUrl : match.team2LogoUrl;
+
+  const loserId = score1 > score2 ? match.team2Id : match.team1Id;
+  const loserName = score1 > score2 ? match.team2 : match.team1;
+  const loserLogo = score1 > score2 ? match.team2LogoUrl : match.team1LogoUrl;
+
+  // 1. Advance Winner
+  if (match.winnerTo) {
+    const targetIdx = updatedGames.findIndex(g => g.id === match.winnerTo);
+    if (targetIdx !== -1) {
+      const slot = match.winnerToSlot || 'team1';
+      updatedGames[targetIdx] = {
+        ...updatedGames[targetIdx],
+        [slot]: winnerName,
+        [`${slot}Id`]: winnerId,
+        [`${slot}LogoUrl`]: winnerLogo,
+        [`score${slot === 'team1' ? '1' : '2'}`]: 0
+      };
+    }
+  }
+
+  // 2. Advance Loser (Double Elimination)
+  if (match.loserTo) {
+    const targetIdx = updatedGames.findIndex(g => g.id === match.loserTo);
+    if (targetIdx !== -1) {
+      const slot = match.loserToSlot || 'team1';
+      updatedGames[targetIdx] = {
+        ...updatedGames[targetIdx],
+        [slot]: loserName,
+        [`${slot}Id`]: loserId,
+        [`${slot}LogoUrl`]: loserLogo,
+        [`score${slot === 'team1' ? '1' : '2'}`]: 0
+      };
+
+      // 3. SPECIAL: Double Elimination Grand Final Reset Logic
+      // If a loser is sent to a "Reset Match" (isResetMatch: true), 
+      // the WINNER must also be sent to that same match in the other slot.
+      if (updatedGames[targetIdx].isResetMatch) {
+        const otherSlot = slot === 'team1' ? 'team2' : 'team1';
+        updatedGames[targetIdx] = {
+          ...updatedGames[targetIdx],
+          [otherSlot]: winnerName,
+          [`${otherSlot}Id`]: winnerId,
+          [`${otherSlot}LogoUrl`]: winnerLogo,
+          [`score${otherSlot === 'team1' ? '1' : '2'}`]: 0
+        };
+      }
+    }
+  }
+
+  return updatedGames;
 }
