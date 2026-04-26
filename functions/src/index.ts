@@ -418,3 +418,54 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
     res.status(500).send("Strategic Failure during feed generation.");
   }
 });
+
+/**
+ * TRIGGER 5: cleanupAnonymousUsers (Scheduled)
+ * Automatically sweeps and deletes anonymous Firebase accounts that are older than 24 hours,
+ * preventing database bloat from demo users.
+ */
+import { onSchedule } from "firebase-functions/v2/scheduler";
+
+export const cleanupAnonymousUsers = onSchedule("every 24 hours", async (event: any) => {
+  const auth = admin.auth();
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  let pageToken: string | undefined = undefined;
+  let deletedCount = 0;
+
+  try {
+    do {
+      const listUsersResult: any = await auth.listUsers(1000, pageToken);
+      const usersToDelete: string[] = [];
+
+      listUsersResult.users.forEach((userRecord: any) => {
+        // Only target anonymous users (no providerData attached)
+        if (userRecord.providerData.length === 0) {
+          const creationTime = Date.parse(userRecord.metadata.creationTime);
+          if (now - creationTime > ONE_DAY_MS) {
+             usersToDelete.push(userRecord.uid);
+          }
+        }
+      });
+
+      if (usersToDelete.length > 0) {
+        await auth.deleteUsers(usersToDelete);
+        
+        // Optional: Also wipe associated demo data in Firestore to save database storage.
+        const batch = db.batch();
+        usersToDelete.forEach((uid: string) => {
+           batch.delete(db.collection("users").doc(uid));
+        });
+        await batch.commit();
+
+        deletedCount += usersToDelete.length;
+      }
+
+      pageToken = listUsersResult.pageToken;
+    } while (pageToken);
+
+    console.log(`Successfully swept ${deletedCount} stale anonymous demo accounts.`);
+  } catch (error) {
+    console.error("Failed to execute cleanup routine:", error);
+  }
+});
