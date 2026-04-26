@@ -194,11 +194,6 @@ export default function UniversalAccountDashboard() {
               </Button>
             </>
           )}
-          {isYouth && (
-            <Button onClick={() => router.push('/settings')} variant="outline" className="rounded-xl h-12 border-2 font-black uppercase text-[10px] text-foreground">
-              <Activity className="h-4 w-4 mr-2" /> Athlete Profile
-            </Button>
-          )}
         </div>
       </header>
 
@@ -226,7 +221,7 @@ export default function UniversalAccountDashboard() {
               <p className="text-3xl font-black text-foreground">Active</p>
               <span className="text-[8px] font-black uppercase text-primary tracking-widest bg-primary/10 px-2 py-0.5 rounded-full ml-2">Visible</span>
             </div>
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-[8px] font-black uppercase border mt-2 text-foreground" onClick={() => router.push('/settings')}>Review Profile</Button>
+
           </Card>
         ) : (
           <Card className="rounded-[2.5rem] shadow-xl bg-muted/20 p-8 space-y-2">

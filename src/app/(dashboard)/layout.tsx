@@ -13,6 +13,9 @@ import { seedGuestDemoTeam } from '@/lib/db-seeder';
 import { useFirestore } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
 const DEMO_START_KEY = 'squad_demo_start_time';
@@ -277,8 +280,18 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     }
   }, [mounted, isAuthResolved, isUserLoading, isSeedingDemo, isDemoInitializing, isTeamsLoading, userProfile, isSyncingPlan]);
 
-  // loadingTimedOut forces the loading gate open so the user isn't permanently blocked.
-  const isLoadingState = !loadingTimedOut && (!mounted || isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile || isSyncingPlan);
+  // The loading gate logic is critical. We must ensure that we don't get trapped in a 
+  // 'Suspense Loop' where a suspending child causes this layout to remount, which resets
+  // the 'mounted' state, which triggers the loading gate, which unmounts the child, 
+  // which aborts the suspension... and repeat.
+  
+  // We consider the system 'resolved' if we have a user profile and auth is confirmed,
+  // even if 'mounted' is briefly false during a React remount cycle.
+  const isEssentiallyLoading = isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile || isSyncingPlan;
+  
+  // We only show the full-screen gate if we aren't 'essentially loaded' OR if we haven't mounted yet.
+  // But if we HAVE a userProfile, we skip the !mounted requirement to break the Suspense Trap.
+  const isLoadingState = !loadingTimedOut && (isEssentiallyLoading || (!mounted && !userProfile));
 
   if (isLoadingState) {
     return (
@@ -294,21 +307,62 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           />
         )}
         <div className="flex flex-col items-center gap-6 animate-in fade-in duration-500">
-          <div className="bg-primary/10 p-6 rounded-[2.5rem] shadow-xl">
+          <div className="bg-primary/10 p-6 rounded-[2.5rem] shadow-xl relative">
             <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            {loadingTimedOut && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-[2.5rem]">
+                <Timer className="h-6 w-6 text-destructive" />
+              </div>
+            )}
           </div>
-          <div className="text-center space-y-2">
-            <p className="text-lg font-black uppercase tracking-widest text-primary">
-              {isSyncingPlan
-                ? 'Synchronizing Upgraded Protocol...'
-                : isDemoInitializing || isSeedingDemo
-                ? 'Building Demo Environment...'
-                : 'Synchronizing Secure Hub...'}
-            </p>
-            {(isDemoInitializing || isSeedingDemo) && (
-              <p className="text-xs text-muted-foreground">
-                Seeding tactical data — this takes a few seconds
+          <div className="text-center space-y-4 max-w-md px-6">
+            <div className="space-y-1">
+              <p className="text-lg font-black uppercase tracking-widest text-primary">
+                {isSyncingPlan
+                  ? 'Synchronizing Upgraded Protocol...'
+                  : isDemoInitializing || isSeedingDemo
+                  ? 'Building Demo Environment...'
+                  : 'Synchronizing Secure Hub...'}
               </p>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
+                System Architecture Optimization in Progress
+              </p>
+            </div>
+
+            {/* Developer Debug Indicator - helps identify which flag is stuck */}
+            <div className="flex flex-wrap justify-center gap-2 pt-4">
+              {[
+                { label: 'Auth', val: isAuthResolved, inverse: true },
+                { label: 'User', val: isUserLoading },
+                { label: 'Profile', val: !!userProfile, inverse: true },
+                { label: 'Teams', val: isTeamsLoading },
+                { label: 'Plan', val: isSyncingPlan },
+                { label: 'Demo', val: isDemoInitializing || isSeedingDemo }
+              ].map(f => (
+                <div key={f.label} className={cn(
+                  "px-2 py-1 rounded text-[8px] font-black uppercase border transition-colors",
+                  (f.inverse ? !f.val : f.val) ? "bg-amber-500/10 border-amber-500/50 text-amber-600 animate-pulse" : "bg-primary/5 border-primary/10 text-primary/40"
+                )}>
+                  {f.label}
+                </div>
+              ))}
+            </div>
+
+            {(isDemoInitializing || isSeedingDemo) && (
+              <p className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-xl border border-dashed">
+                Seeding tactical data — this takes a few seconds to verify integrity.
+              </p>
+            )}
+
+            {mounted && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="mt-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-all"
+                onClick={() => setLoadingTimedOut(true)}
+              >
+                Bypass Synchronization Gate
+              </Button>
             )}
           </div>
         </div>

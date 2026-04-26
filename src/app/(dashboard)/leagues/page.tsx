@@ -144,6 +144,16 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
       .map(([id, t]) => ({ id, name: t.teamName, logoUrl: t.teamLogoUrl }));
   }, [league?.teams]);
 
+  const totalRegisteredTeams = useMemo(() => {
+    if (!league?.teams) return 0;
+    return Object.keys(league.teams).length;
+  }, [league?.teams]);
+
+  const pendingTeamsCount = useMemo(() => {
+    if (!league?.teams) return 0;
+    return Object.values(league.teams).filter(t => t.status === 'pending').length;
+  }, [league?.teams]);
+
   const handleGenerate = async () => {
     if (!config.startDate || !config.selectedFields.length || leagueTeams.length < 2) {
       toast({ 
@@ -400,13 +410,36 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                       <div className="bg-primary/5 p-6 rounded-[2rem] border border-primary/20 space-y-4">
                         <div className="flex items-center gap-2 text-primary"><Info className="h-4 w-4" /><h4 className="text-[10px] font-black uppercase tracking-widest">Enrollment Status</h4></div>
                         <div className="space-y-2">
-                          <p className="text-[11px] font-bold text-white/60 uppercase">{leagueTeams.length} squads detected in active roster.</p>
-                          {league.requiredSquads && leagueTeams.length < league.requiredSquads && (
-                            <div className="bg-red-500/10 p-4 rounded-2xl border border-red-500/20 flex items-start gap-3">
+                          <p className="text-[11px] font-bold text-white/60 uppercase">{totalRegisteredTeams} squads detected in system.</p>
+                          <div className="flex items-center gap-4">
+                             <div className="flex items-center gap-1.5">
+                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                <span className="text-[9px] font-black text-emerald-500/80 uppercase tracking-wider">{leagueTeams.length} Enrolled</span>
+                             </div>
+                             {pendingTeamsCount > 0 && (
+                               <div className="flex items-center gap-1.5">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                  <span className="text-[9px] font-black text-amber-500/80 uppercase tracking-wider">{pendingTeamsCount} Pending Approval</span>
+                               </div>
+                             )}
+                          </div>
+
+                          {leagueTeams.length < 2 && (
+                            <div className="bg-red-500/10 p-4 rounded-2xl border border-red-500/20 flex items-start gap-3 mt-4">
                               <ShieldAlert className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
                               <div>
-                                <p className="text-[9px] font-black uppercase text-red-500 leading-tight">Incomplete Deployment Warning</p>
-                                <p className="text-[10px] font-bold text-red-400 leading-tight mt-1">{leagueLabel} requires {league.requiredSquads} squads. Current enrollment ({leagueTeams.length}) will result in an undersized season.</p>
+                                <p className="text-[9px] font-black uppercase text-red-500 leading-tight">Deployment Blocked</p>
+                                <p className="text-[10px] font-bold text-red-400 leading-tight mt-1">Minimum 2 accepted squads required to generate a season schedule. Review pending registrations to proceed.</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {league.requiredSquads && leagueTeams.length >= 2 && leagueTeams.length < league.requiredSquads && (
+                            <div className="bg-amber-500/10 p-4 rounded-2xl border border-amber-500/20 flex items-start gap-3 mt-4">
+                              <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-[9px] font-black uppercase text-amber-500 leading-tight">Incomplete Deployment Warning</p>
+                                <p className="text-[10px] font-bold text-amber-400 leading-tight mt-1">{leagueLabel} target is {league.requiredSquads} squads. Proceeding with {leagueTeams.length} will result in an undersized season.</p>
                               </div>
                             </div>
                           )}
@@ -815,8 +848,12 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
   const leagueTeams = useMemo(() => {
     if (!league?.teams) return [];
     return Object.entries(league.teams)
-      .filter(([_, t]) => t.status === 'accepted' || t.status === 'assigned')
-      .map(([id, t]) => ({ id, name: t.teamName }));
+      .map(([id, t]) => ({ 
+        id, 
+        name: t.teamName, 
+        status: t.status as string
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [league?.teams]);
 
   const handleSubmit = async () => {
@@ -862,8 +899,24 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
                   <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white text-foreground">
                     <SelectValue placeholder="Select Home" />
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    {leagueTeams.map(t => <SelectItem key={t.id} value={t.id} className="font-bold uppercase text-[10px]">{t.name}</SelectItem>)}
+                  <SelectContent className="rounded-xl bg-white border-2 border-muted shadow-2xl z-[100]">
+                    {leagueTeams.length === 0 ? (
+                      <div className="p-4 text-[10px] font-bold uppercase text-muted-foreground text-center">No squads found</div>
+                    ) : (
+                      leagueTeams.map(t => (
+                        <SelectItem key={t.id} value={t.id} className="font-bold uppercase text-[10px] py-3 border-b last:border-0 border-muted/30">
+                          <div className="flex items-center justify-between w-full gap-8">
+                            <span>{t.name}</span>
+                            <span className={cn(
+                              "text-[8px] px-2 py-0.5 rounded-full border",
+                              t.status === 'accepted' || t.status === 'assigned' ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : "bg-amber-500/10 text-amber-600 border-amber-500/20"
+                            )}>
+                              {t.status}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -873,8 +926,24 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
                   <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white text-foreground">
                     <SelectValue placeholder="Select Guest" />
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    {leagueTeams.map(t => <SelectItem key={t.id} value={t.id} className="font-bold uppercase text-[10px]">{t.name}</SelectItem>)}
+                  <SelectContent className="rounded-xl bg-white border-2 border-muted shadow-2xl z-[100]">
+                    {leagueTeams.length === 0 ? (
+                      <div className="p-4 text-[10px] font-bold uppercase text-muted-foreground text-center">No squads found</div>
+                    ) : (
+                      leagueTeams.map(t => (
+                        <SelectItem key={t.id} value={t.id} className="font-bold uppercase text-[10px] py-3 border-b last:border-0 border-muted/30">
+                          <div className="flex items-center justify-between w-full gap-8">
+                            <span>{t.name}</span>
+                            <span className={cn(
+                              "text-[8px] px-2 py-0.5 rounded-full border",
+                              t.status === 'accepted' || t.status === 'assigned' ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : "bg-amber-500/10 text-amber-600 border-amber-500/20"
+                            )}>
+                              {t.status}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>

@@ -871,13 +871,13 @@ export function advanceBracketMatch(
   const isTie = score1 === score2;
   if (isTie) return updatedGames; // Brackets don't advance on ties
 
-  const winnerId = score1 > score2 ? match.team1Id : match.team2Id;
-  const winnerName = score1 > score2 ? match.team1 : match.team2;
-  const winnerLogo = score1 > score2 ? match.team1LogoUrl : match.team2LogoUrl;
+  const winnerId = (score1 > score2 ? match.team1Id : match.team2Id) ?? null;
+  const winnerName = (score1 > score2 ? match.team1 : match.team2) ?? "TBD";
+  const winnerLogo = (score1 > score2 ? match.team1LogoUrl : match.team2LogoUrl) ?? null;
 
-  const loserId = score1 > score2 ? match.team2Id : match.team1Id;
-  const loserName = score1 > score2 ? match.team2 : match.team1;
-  const loserLogo = score1 > score2 ? match.team2LogoUrl : match.team1LogoUrl;
+  const loserId = (score1 > score2 ? match.team2Id : match.team1Id) ?? null;
+  const loserName = (score1 > score2 ? match.team2 : match.team1) ?? "TBD";
+  const loserLogo = (score1 > score2 ? match.team2LogoUrl : match.team1LogoUrl) ?? null;
 
   // 1. Advance Winner
   if (match.winnerTo) {
@@ -923,5 +923,14 @@ export function advanceBracketMatch(
     }
   }
 
-  return updatedGames;
+  // Helper to ensure we don't return 'undefined' fields which crash Firestore
+  const sanitize = (g: TournamentGame): TournamentGame => {
+    const cleaned: any = {};
+    Object.entries(g).forEach(([k, v]) => {
+      if (v !== undefined) cleaned[k] = v;
+    });
+    return cleaned as TournamentGame;
+  };
+
+  return updatedGames.map(sanitize);
 }

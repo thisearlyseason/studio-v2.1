@@ -378,18 +378,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </div>
 
 
-              <Link href="/settings">
-                <div className="flex items-center gap-3 p-2 hover:bg-primary/5 rounded-2xl transition-all cursor-pointer group">
-                  <Avatar className="h-10 w-10 border-2 border-background shadow-md transition-transform group-hover:scale-105">
-                    <AvatarImage src={user?.avatar} />
-                    <AvatarFallback className="font-black text-xs">{user?.name?.[0]}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-black text-sm truncate uppercase tracking-tight text-foreground">{user?.name}</span>
-                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Global Settings</span>
-                  </div>
-                </div>
-              </Link>
+
             </SidebarFooter>
           </Sidebar>
 

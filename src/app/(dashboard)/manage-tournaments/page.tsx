@@ -948,13 +948,28 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
     }
 
     const updatedGames = [...event.tournamentGames];
-    const s1Idx = updatedGames.findIndex(g => g.round === 'Semi-Finals' && g.team1.includes('Seed 1'));
-    const s2Idx = updatedGames.findIndex(g => g.round === 'Semi-Finals' && g.team1.includes('Seed 2'));
+    // Find Semi-Final slots (handle both standard and Winners Bracket variants)
+    const semiFinals = updatedGames.filter(g => 
+      (g.round === 'Semi-Finals' || g.round === 'Winners Bracket Semi-Finals') && 
+      (g.team1.includes('TBD') || g.team1.includes('Seed'))
+    );
 
-    if (s1Idx === -1 || s2Idx === -1) {
-      toast({ title: "Architectural Mismatch", description: "No eligible TBD semi-final slots found.", variant: "destructive" });
+    if (semiFinals.length < 2) {
+      toast({ title: "Architectural Mismatch", description: "No eligible TBD semi-final slots found. Use 'Refactor Architecture' to inject slots if this is a manual bracket.", variant: "destructive" });
       return;
     }
+
+    // Sort semiFinals to ensure we seed 1v4 and 2v3 consistently
+    // If they have "Seed 1" or "Seed 2" labels, use those. Otherwise, just pick the first two.
+    let s1Idx = updatedGames.findIndex(g => g.id === semiFinals[0].id);
+    let s2Idx = updatedGames.findIndex(g => g.id === semiFinals[1].id);
+
+    // Try to be specific if labels exist
+    const label1Idx = updatedGames.findIndex(g => (g.round === 'Semi-Finals' || g.round === 'Winners Bracket Semi-Finals') && g.team1.includes('Seed 1'));
+    const label2Idx = updatedGames.findIndex(g => (g.round === 'Semi-Finals' || g.round === 'Winners Bracket Semi-Finals') && g.team1.includes('Seed 2'));
+    
+    if (label1Idx !== -1) s1Idx = label1Idx;
+    if (label2Idx !== -1) s2Idx = label2Idx;
 
     updatedGames[s1Idx] = { 
       ...updatedGames[s1Idx], 
@@ -967,7 +982,16 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
       team2: top4[2].name, team2Id: (event.tournamentTeamsData?.find(t => t.name === top4[2].name) as any)?.id || 'tbd'
     };
 
-    await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { tournamentGames: updatedGames });
+    // SANITIZATION: Strip 'undefined' values before Firestore sync.
+    const sanitizedGames = updatedGames.map(g => {
+      const cleaned: any = {};
+      Object.entries(g).forEach(([k, v]) => {
+        if (v !== undefined) cleaned[k] = v;
+      });
+      return cleaned as TournamentGame;
+    });
+
+    await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { tournamentGames: sanitizedGames });
     toast({ title: "Bracket Initialized", description: "Seeds 1-4 have been deployed to semi-finals." });
   };
 
@@ -1012,7 +1036,16 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
       isCompleted: false, updatedAt: new Date().toISOString() 
     });
 
-    await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { tournamentGames: updatedGames });
+    // SANITIZATION: Strip 'undefined' values before Firestore sync.
+    const sanitizedGames = updatedGames.map(g => {
+      const cleaned: any = {};
+      Object.entries(g).forEach(([k, v]) => {
+        if (v !== undefined) cleaned[k] = v;
+      });
+      return cleaned as TournamentGame;
+    });
+
+    await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { tournamentGames: sanitizedGames });
     toast({ title: "Architecture Refactored", description: "New bracket slots injected into series itinerary." });
   };
 
@@ -1132,7 +1165,16 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                   );
                 }
 
-                await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { tournamentGames: updatedGames });
+                // 4. SANITIZATION: Strip 'undefined' values before Firestore sync to prevent crashes.
+                const sanitizedGames = updatedGames.map(g => {
+                  const cleaned: any = {};
+                  Object.entries(g).forEach(([k, v]) => {
+                    if (v !== undefined) cleaned[k] = v;
+                  });
+                  return cleaned as TournamentGame;
+                });
+
+                await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { tournamentGames: sanitizedGames });
 
                 // 4. Championship celebration for the ultimate final
                 const rLower = (roundName || selectedGame.round || '').toLowerCase();
