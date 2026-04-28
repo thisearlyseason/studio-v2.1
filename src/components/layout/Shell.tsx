@@ -189,10 +189,12 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
           isActive ? "bg-primary/10 text-primary" : "hover:bg-muted/50"
         )}
       >
-        <Avatar className="h-7 w-7 rounded-md shrink-0">
-          <AvatarImage src={team.teamLogoUrl} className="object-cover" />
+        <Avatar className="h-7 w-7 rounded-md shrink-0 ring-1 ring-black/5">
+          {team.teamLogoUrl ? (
+            <AvatarImage src={team.teamLogoUrl} className="object-cover" />
+          ) : null}
           <AvatarFallback className={cn("font-black text-[10px]", isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground")}>
-            {team.name?.[0] || 'T'}
+            {team.name?.[0]?.toUpperCase() || 'T'}
           </AvatarFallback>
         </Avatar>
         <div className="flex flex-col min-w-0 flex-1">

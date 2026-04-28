@@ -230,7 +230,7 @@ export default function LeagueRegistrationAdminPage() {
     } else if (!isConfigLoading && !config) {
       const defaultPlayerSchema: RegistrationFormField[] = [
         { id: 'f_phone', label: 'Phone Number', type: 'short_text', required: true, step: 'identity' },
-        { id: 'f_position', label: 'Position/Role', type: 'dropdown', required: false, options: ['Forward', 'Midfield', 'Defense', 'Goalkeeper', 'General'], step: 'identity' },
+        { id: 'f_position', label: 'Position / Role', type: 'short_text', required: false, step: 'identity' },
         { id: 'f_emer_name', label: 'Emergency Contact Name', type: 'short_text', required: true, step: 'identity' },
         { id: 'f_emer_phone', label: 'Emergency Contact Phone', type: 'short_text', required: true, step: 'identity' },
       ];
@@ -258,7 +258,7 @@ export default function LeagueRegistrationAdminPage() {
     if (!leagueId) return;
     const defaultPlayerSchema: RegistrationFormField[] = [
       { id: 'f_phone', label: 'Phone Number', type: 'short_text', required: true, step: 'identity' },
-      { id: 'f_position', label: 'Position/Role', type: 'dropdown', required: false, options: ['Forward', 'Midfield', 'Defense', 'Goalkeeper', 'General'], step: 'identity' },
+      { id: 'f_position', label: 'Position / Role', type: 'short_text', required: false, step: 'identity' },
       { id: 'f_emer_name', label: 'Emergency Contact Name', type: 'short_text', required: true, step: 'identity' },
       { id: 'f_emer_phone', label: 'Emergency Contact Phone', type: 'short_text', required: true, step: 'identity' },
     ];
@@ -451,37 +451,11 @@ export default function LeagueRegistrationAdminPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-8 space-y-8">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="grid grid-cols-1 gap-8">
                     <div className="space-y-2">
                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Protocol Headline</Label>
                       <Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-14 rounded-2xl border-2 font-black shadow-sm" placeholder="e.g. 2024 Spring Season Portal" />
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Enrollment Fee (USD)</Label>
-                      <div className="relative">
-                        <span className="absolute left-5 top-1/2 -translate-y-1/2 font-black text-primary">$</span>
-                        <Input type="number" value={localConfig?.registration_cost || '0'} onChange={e => handleUpdateConfig({ registration_cost: e.target.value })} className="h-14 pl-10 rounded-2xl border-2 font-black text-primary bg-primary/5 border-primary/20" />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-4 pt-6 border-t font-black">
-                     <div className="flex items-center justify-between">
-                       <div className="space-y-1">
-                         <Label className="text-[10px] font-black uppercase tracking-widest text-primary leading-none">Division Selection Protocol</Label>
-                         <p className="text-[9px] font-medium text-muted-foreground italic leading-tight">Prompt applicants to select their competitive tier during registration.</p>
-                       </div>
-                       <Switch 
-                         checked={localConfig?.require_division_selection || false} 
-                         onCheckedChange={(v) => handleUpdateConfig({ require_division_selection: v }, true)} 
-                       />
-                     </div>
-                     {localConfig?.require_division_selection && (
-                       <div className="bg-primary/5 p-5 rounded-2xl border-2 border-dashed border-primary/20 animate-in slide-in-from-top-2 duration-300">
-                         <p className="text-[9px] font-bold text-primary uppercase tracking-widest leading-relaxed">
-                           Current Institutional Tiers: {(activeLeague?.divisions || []).join(', ') || 'None Defined (Visit League Settings to add divisions)'}
-                         </p>
-                       </div>
-                     )}
                   </div>
                 </CardContent>
               </Card>
@@ -1029,146 +1003,149 @@ export default function LeagueRegistrationAdminPage() {
       </Dialog>
 
       <Dialog open={!!inspectingEntryId} onOpenChange={(open) => !open && setInspectingEntryId(null)}>
-        <DialogContent className="rounded-[3rem] border-none shadow-2xl p-0 overflow-hidden max-w-4xl max-h-[90vh] flex flex-col">
-          <div className="h-3 bg-primary w-full shrink-0" />
+        <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden w-full max-w-2xl max-h-[90vh] flex flex-col">
+          <div className="h-2 bg-primary w-full shrink-0" />
+          {/* Dark header */}
+          <div className="bg-black text-white px-8 py-5 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-4">
+              <div className="bg-primary p-3 rounded-2xl shrink-0"><Terminal className="h-5 w-5" /></div>
+              <div>
+                <DialogTitle className="text-xl font-black uppercase tracking-tight text-white leading-none">Institutional Audit</DialogTitle>
+                <DialogDescription className="text-white/50 text-[10px] font-black uppercase tracking-widest mt-0.5">
+                  {inspectingEntry?.answers?.teamName || inspectingEntry?.answers?.team_name || inspectingEntry?.answers?.name || 'Entry Review'}
+                </DialogDescription>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1.5 shrink-0">
+              <Badge className={cn("border-none font-black text-[9px] uppercase px-3 h-6",
+                inspectingEntry?.status === 'accepted' ? "bg-green-500 text-white" :
+                inspectingEntry?.status === 'assigned' ? "bg-primary text-white" : "bg-amber-500 text-white"
+              )}>{inspectingEntry?.status || 'pending'}</Badge>
+              <Badge className={cn("border-none font-black text-[9px] uppercase px-3 h-6", (inspectingEntry as any)?.verified ? "bg-emerald-600 text-white" : "bg-rose-600 text-white")}>
+                {(inspectingEntry as any)?.verified ? '✓ Verified' : '⚠ Not Verified'}
+              </Badge>
+            </div>
+          </div>
+
           <ScrollArea className="flex-1">
-            <div className="p-10 space-y-12">
-              <div className="flex items-center justify-between">
-                <DialogHeader>
-                  <div className="flex items-center gap-4">
-                    <div className="bg-primary p-4 rounded-3xl text-white shadow-xl"><Terminal className="h-8 w-8" /></div>
-                    <div>
-                      <DialogTitle className="text-4xl font-black uppercase tracking-tighter">Institutional Audit</DialogTitle>
-                      <DialogDescription className="font-bold text-primary uppercase text-xs tracking-widest mt-1">Verification Lead for {inspectingEntry?.answers?.name || 'Applicant'}</DialogDescription>
-                    </div>
-                  </div>
-                </DialogHeader>
-                <div className="text-right">
-                   <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Entry UID</p>
-                   <p className="text-[11px] font-mono font-bold text-primary">{inspectingEntry?.id || '--'}</p>
+            <div className="p-6 space-y-5 bg-white">
+              {/* IDENTITY STRIP */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-4 rounded-2xl bg-primary/5 border-2 border-primary/10 space-y-1">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-primary">Team / Organization</p>
+                  <p className="text-sm font-black uppercase text-foreground leading-tight">
+                    {inspectingEntry?.answers?.teamName || inspectingEntry?.answers?.team_name || inspectingEntry?.answers?.name || '—'}
+                  </p>
+                </div>
+                <div className="p-4 rounded-2xl bg-muted/30 border-2 border-transparent space-y-1">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Representative</p>
+                  <p className="text-sm font-black uppercase text-foreground leading-tight">
+                    {inspectingEntry?.answers?.coachName || inspectingEntry?.answers?.fullName || inspectingEntry?.answers?.representative || inspectingEntry?.answers?.name || '—'}
+                  </p>
+                  {inspectingEntry?.answers?.email && (
+                    <p className="text-[10px] font-bold text-muted-foreground truncate">{inspectingEntry.answers.email}</p>
+                  )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                <div className="lg:col-span-2 space-y-10">
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-xl bg-muted flex items-center justify-center"><Download className="h-4 w-4" /></div>
-                      <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Payload Analysis (Form Data)</p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {Object.entries(inspectingEntry?.answers || {}).map(([key, val]) => (
-                        <div key={key} className="p-5 rounded-2xl bg-muted/20 border-2 border-transparent transition-all hover:bg-muted/30">
-                          <p className="text-[9px] font-black uppercase text-muted-foreground mb-1 tracking-widest">{key.replace(/_/g, ' ')}</p>
-                          <p className="text-sm font-bold text-foreground leading-tight">{val?.toString() || '--'}</p>
+              {/* FORM DATA — filter out meta fields */}
+              {(() => {
+                const EXCLUDE = new Set(['teamName','team_name','coachName','fullName','name','email','recruiter_code','team_id','team_code','inviteCode','manual_enrollment']);
+                const entries = Object.entries(inspectingEntry?.answers || {}).filter(([k]) => !EXCLUDE.has(k));
+                if (entries.length === 0) return null;
+                return (
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Form Data</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {entries.map(([key, val]) => (
+                        <div key={key} className="p-4 rounded-2xl bg-muted/20 border-2 border-transparent hover:bg-muted/30 transition-colors">
+                          <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest mb-1">
+                            {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </p>
+                          <p className="text-sm font-bold text-foreground leading-snug break-words">{val?.toString() || '—'}</p>
                         </div>
                       ))}
                     </div>
                   </div>
+                );
+              })()}
 
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-xl bg-muted flex items-center justify-center"><ShieldCheck className="h-4 w-4" /></div>
-                        <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Compliance Record (Signed Waivers)</p>
-                      </div>
-                      <Badge className="bg-green-100 text-green-700 font-black uppercase text-[8px] h-6 px-3 border-none">Verified Execution</Badge>
-                    </div>
-                    <div className="space-y-3">
-                      {archivedWaivers.filter(w => (w as any).email === inspectingEntry?.answers?.email).length > 0 ? (
-                        archivedWaivers.filter(w => (w as any).email === inspectingEntry?.answers?.email).map(w => (
-                          <div key={w.id} className="p-6 rounded-[2rem] bg-green-50 border-2 border-green-100 flex items-center justify-between">
-                             <div className="flex items-center gap-4">
-                               <FileSignature className="h-6 w-6 text-green-600" />
-                               <div>
-                                 <p className="text-xs font-black uppercase text-green-900">{w.type.replace(/_/g, ' ')}</p>
-                                 <p className="text-[9px] font-bold text-green-600/60 uppercase tracking-widest mt-1">Signed {format(new Date(w.signedAt), 'PPP')}</p>
-                               </div>
-                             </div>
-                              <Button variant="outline" size="sm" className="rounded-xl h-10 px-4 font-black uppercase text-[10px]" onClick={() => {
-                                generateBrandedPDF({
-                                  title: "Compliance Verification",
-                                  subtitle: `Signed Waiver Record • ID: ${w.id}`,
-                                  filename: `Waiver_${w.id}`,
-                                  businessName: "SQUAD INTELLIGENCE"
-                                }, (doc, startY) => {
-                                  doc.setFontSize(14);
-                                  doc.setFont('helvetica', 'bold');
-                                  doc.text("PARTICIPANT INFO", 20, startY);
-                                  
-                                  doc.setFontSize(10);
-                                  doc.setFont('helvetica', 'normal');
-                                  doc.text(`Signer: ${w.signer}`, 20, startY + 10);
-                                  doc.text(`Affiliation: ${w.teamName || 'Independent'}`, 20, startY + 18);
-                                  doc.text(`Date Verified: ${format(new Date(w.signedAt), 'PPP p')}`, 20, startY + 26);
-                                  doc.text(`Pipeline Type: ${w.type.toUpperCase()}`, 20, startY + 34);
-
-                                  doc.setFontSize(14);
-                                  doc.setFont('helvetica', 'bold');
-                                  doc.text("AGREEMENT TERMS", 20, startY + 55);
-                                  
-                                  doc.setFontSize(8);
-                                  doc.setFont('helvetica', 'normal');
-                                  doc.setTextColor(60);
-                                  const splitWaiverText = doc.splitTextToSize(w.waiverText, 170);
-                                  doc.text(splitWaiverText, 20, startY + 65);
-                                  
-                                  const currentY = startY + 65 + (splitWaiverText.length * 3.5);
-                                  doc.setDrawColor(240);
-                                  doc.line(20, currentY + 10, 190, currentY + 10);
-
-                                  doc.setFontSize(12);
-                                  doc.setFont('helvetica', 'bold');
-                                  doc.setTextColor(0);
-                                  doc.text("ELECTRONIC SEAL", 20, currentY + 25);
-                                  doc.setFontSize(9);
-                                  doc.setFont('helvetica', 'normal');
-                                  doc.text(`This document serves as proof of legal agreement. SQUAD INTELLIGENCE confirms that the identity associated with ${w.signer} successfully completed the verification pipeline and agreed to the above terms on ${format(new Date(w.signedAt), 'PPP p')}.`, 20, currentY + 35, { maxWidth: 170 });
-
-                                  return currentY + 60;
-                                });
-                              }}>
-                                <Download className="h-3.5 w-3.5 mr-2" /> Download Audit
-                              </Button>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="p-8 rounded-[2rem] border-2 border-dashed border-muted text-center opacity-40">
-                           <ShieldAlert className="h-10 w-10 mx-auto mb-3" />
-                           <p className="text-[10px] font-black uppercase tracking-widest">No Archived Signatures Detected</p>
+              {/* SIGNED WAIVERS */}
+              <div className="space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Signed Waivers</p>
+                {archivedWaivers.filter(w => (w as any).email === inspectingEntry?.answers?.email).length > 0 ? (
+                  archivedWaivers.filter(w => (w as any).email === inspectingEntry?.answers?.email).map(w => (
+                    <div key={w.id} className="p-4 rounded-2xl bg-green-50 border-2 border-green-100 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FileSignature className="h-5 w-5 text-green-600 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-black uppercase text-green-900 truncate">{w.type.replace(/_/g, ' ')}</p>
+                          <p className="text-[9px] font-bold text-green-600/60 uppercase tracking-widest">Signed {format(new Date(w.signedAt), 'MMM d, yyyy')}</p>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-12">
-                  <div className="space-y-6">
-                    <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest px-1">Squad Assignment</p>
-                    <div className="p-8 rounded-[2.5rem] bg-primary text-white space-y-6 shadow-xl relative overflow-hidden group/as">
-                      <Users className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 rotate-12 transition-transform group-hover/as:scale-110" />
-                      <div className="space-y-4 relative z-10">
-                        <Label className="text-[10px] font-black uppercase tracking-widest text-primary-foreground/40 ml-1">Dispatch Target</Label>
-                        <Select value={inspectingEntry?.assigned_team_id || 'unassigned'} onValueChange={(tid) => assignEntryToTeam(leagueId as string, inspectingEntry?.id!, tid === 'unassigned' ? null : tid)}>
-                          <SelectTrigger className="h-14 rounded-2xl border-none bg-white/10 backdrop-blur-xl font-black shadow-inner focus:ring-0"><SelectValue placeholder="Select Squad..." /></SelectTrigger>
-                          <SelectContent className="rounded-2xl border-2">
-                            <SelectItem value="unassigned" className="font-bold uppercase text-[10px]">Unassigned Pool</SelectItem>
-                            {activeTeam?.leagueIds && Object.keys(activeTeam.leagueIds).map(id => (
-                              <SelectItem key={id} value={id} className="font-bold uppercase text-[10px]">Squad {id.slice(-6)}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-[9px] font-bold text-primary-foreground/60 px-1 leading-relaxed">Assigning this applicant will automatically bridge their credentials to the target squadron ledger.</p>
                       </div>
+                      <Button variant="outline" size="sm" className="rounded-xl h-9 px-4 font-black uppercase text-[9px] shrink-0 border-green-200 text-green-700 hover:bg-green-100" onClick={() => {
+                        generateBrandedPDF({ title: "Compliance Verification", subtitle: `Waiver • ID: ${w.id}`, filename: `Waiver_${w.id}`, businessName: "SQUAD INTELLIGENCE" }, (doc, startY) => {
+                          doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text("PARTICIPANT INFO", 20, startY);
+                          doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+                          doc.text(`Signer: ${w.signer}`, 20, startY + 10);
+                          doc.text(`Affiliation: ${w.teamName || 'Independent'}`, 20, startY + 18);
+                          doc.text(`Date: ${format(new Date(w.signedAt), 'PPP p')}`, 20, startY + 26);
+                          doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text("AGREEMENT TERMS", 20, startY + 44);
+                          doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(60);
+                          const split = doc.splitTextToSize(w.waiverText, 170); doc.text(split, 20, startY + 54);
+                          return startY + 54 + (split.length * 3.5) + 20;
+                        });
+                      }}>
+                        <Download className="h-3 w-3 mr-1" /> PDF
+                      </Button>
                     </div>
+                  ))
+                ) : (
+                  <div className="p-6 rounded-2xl border-2 border-dashed border-muted text-center opacity-40">
+                    <ShieldAlert className="h-8 w-8 mx-auto mb-2" />
+                    <p className="text-[10px] font-black uppercase tracking-widest">No Signed Waivers Found</p>
                   </div>
+                )}
+              </div>
 
-                  <div className="space-y-4">
-                    <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest px-1">Administrative Actions</p>
-                    <Button variant="outline" className="w-full h-14 rounded-2xl border-2 font-black uppercase text-xs hover:bg-muted" onClick={() => setInspectingEntryId(null)}>Close Briefing</Button>
-                  </div>
+              {/* ACTIONS */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t">
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Assign to Squad</p>
+                  <Select value={inspectingEntry?.assigned_team_id || 'unassigned'} onValueChange={(tid) => assignEntryToTeam(leagueId as string, inspectingEntry?.id!, tid === 'unassigned' ? null : tid)}>
+                    <SelectTrigger className="h-11 rounded-xl border-2 font-black text-sm"><SelectValue placeholder="Select Squad..." /></SelectTrigger>
+                    <SelectContent className="rounded-xl border-2">
+                      <SelectItem value="unassigned" className="font-bold uppercase text-[10px]">Unassigned Pool</SelectItem>
+                      {Object.entries((activeLeague?.teams || {})).map(([tid2, tdata]: [string, any]) => (
+                        <SelectItem key={tid2} value={tid2} className="font-bold uppercase text-[10px]">
+                          {tdata.teamName || `Squad ${tid2.slice(-6)}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Verification Status</p>
+                  <Button
+                    className={cn("w-full h-11 rounded-xl font-black uppercase text-[10px]",
+                      (inspectingEntry as any)?.verified ? "bg-muted text-muted-foreground hover:bg-red-50 hover:text-red-600" : "bg-emerald-600 text-white hover:bg-emerald-700"
+                    )}
+                    onClick={async () => {
+                      if (!db || !leagueId || !inspectingEntry?.id) return;
+                      const { updateDoc: ud, doc: docFn } = await import('firebase/firestore');
+                      const isVerified = (inspectingEntry as any)?.verified;
+                      await ud(docFn(db, 'leagues', leagueId as string, 'registrationEntries', inspectingEntry.id), { verified: !isVerified });
+                      toast({ title: isVerified ? 'Verification Revoked' : 'Entry Verified' });
+                    }}
+                  >
+                    {(inspectingEntry as any)?.verified ? '⚠ Revoke Verification' : '✓ Mark as Verified'}
+                  </Button>
                 </div>
               </div>
+
+              <Button variant="ghost" className="w-full h-10 rounded-xl font-black uppercase text-xs text-muted-foreground" onClick={() => setInspectingEntryId(null)}>
+                Close Audit
+              </Button>
             </div>
           </ScrollArea>
         </DialogContent>

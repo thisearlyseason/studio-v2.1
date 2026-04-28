@@ -2940,7 +2940,34 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const markMediaAsViewed = useCallback(async (fileId: string) => { if (!firebaseUser || !activeTeam?.id || !db) return; await setDoc(doc(db, 'teams', activeTeam.id, 'members', firebaseUser.uid, 'mediaViews', fileId), { fileId, viewedAt: new Date().toISOString() }); }, [activeTeam, firebaseUser, db]);
 
-  const deployClubProtocol = useCallback(async (data: any, teamIds: string[]) => { if(!db || !firebaseUser) return; const batch = writeBatch(db); teamIds.forEach(tid => { const docId = `protocol_${Date.now()}`; batch.set(doc(db, 'teams', tid, 'documents', docId), clean({ ...data, id: docId, teamId: tid, ownerUserId: firebaseUser.uid, isClubMaster: true, createdAt: new Date().toISOString() })); }); await batch.commit(); }, [db, firebaseUser]);
+  const deployClubProtocol = useCallback(async (data: any, teamIds: string[]) => {
+    if (!db || !firebaseUser) return;
+    const batch = writeBatch(db);
+    const baseId = `protocol_${Date.now()}`;
+    // Always write a global copy to the user's own club-documents store so it shows up even with no squads
+    const globalDocId = `${baseId}_global`;
+    batch.set(doc(db, 'users', firebaseUser.uid, 'clubDocuments', globalDocId), clean({
+      ...data,
+      id: globalDocId,
+      ownerUserId: firebaseUser.uid,
+      isClubMaster: true,
+      isGlobal: true,
+      createdAt: new Date().toISOString()
+    }));
+    // Also push to each squad so compliance checks can reference it
+    teamIds.forEach((tid, i) => {
+      const docId = `${baseId}_${i}`;
+      batch.set(doc(db, 'teams', tid, 'documents', docId), clean({
+        ...data,
+        id: docId,
+        teamId: tid,
+        ownerUserId: firebaseUser.uid,
+        isClubMaster: true,
+        createdAt: new Date().toISOString()
+      }));
+    });
+    await batch.commit();
+  }, [db, firebaseUser]);
 
   const deleteTeam = useCallback(async (tid: string) => { 
     if (!isPrimaryClubAuthority && !isSuperAdmin) {

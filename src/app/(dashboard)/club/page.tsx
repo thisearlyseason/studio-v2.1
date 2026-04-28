@@ -261,7 +261,17 @@ export default function ClubManagementPage() {
 
   const docsQuery = useMemoFirebase(() => (db && user?.id) ? query(collectionGroup(db, 'documents'), where('ownerUserId', '==', user.id)) : null, [db, user?.id]);
   const { data: allDocsRaw } = useCollection<TeamDocument>(docsQuery);
-  const clubDocs = useMemo(() => (allDocsRaw || []), [allDocsRaw]);
+
+  // Also fetch from the global club-documents path (where deployClubProtocol always writes)
+  const globalDocsQuery = useMemoFirebase(() => (db && user?.id) ? collection(db, 'users', user.id, 'clubDocuments') : null, [db, user?.id]);
+  const { data: globalDocsRaw } = useCollection<TeamDocument>(globalDocsQuery as any);
+
+  const clubDocs = useMemo(() => {
+    const all = [...(allDocsRaw || []), ...(globalDocsRaw || [])];
+    // Deduplicate by id — global docs may overlap with team-level copies
+    const seen = new Set<string>();
+    return all.filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true; });
+  }, [allDocsRaw, globalDocsRaw]);
 
   // School Logic: Universal Coach & Staff Roster
   // Always include the Athletic Director (actual user) at the top, then all
@@ -1082,18 +1092,49 @@ export default function ClubManagementPage() {
         <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-lg glass text-foreground">
           <div className="h-2 bg-primary w-full" />
           <div className="p-10 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
-            <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">Deploy Mandate</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Deploy atomic institutional protocol</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">Deploy Global Waiver</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Create or load a template — deploys to all squads in your organization</DialogDescription></DialogHeader>
             <div className="space-y-6">
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Protocol Title</Label><Input placeholder="e.g. 2024 Seasonal Liability Waiver" value={protocolForm.title} onChange={e => setProtocolForm({...protocolForm, title: e.target.value})} className="h-14 rounded-2xl border-2 font-black text-lg" /></div>
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Legal Execution Text</Label><Textarea value={protocolForm.content} onChange={e => setProtocolForm({...protocolForm, content: e.target.value})} className="min-h-[250px] rounded-2xl border-2 font-medium p-6 bg-muted/5 focus:bg-white transition-all resize-none" placeholder="Define terms and conditions..." /></div>
-              <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 flex items-start gap-4">
-                <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
+              {/* Quick Templates */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Quick Templates — Click to Load & Edit</p>
+                <div className="grid grid-cols-1 gap-2">
+                  {[
+                    {
+                      label: 'Liability Waiver',
+                      content: `PARTICIPANT LIABILITY WAIVER AND RELEASE OF CLAIMS\n\nBy participating in any activity organized, supervised, or sponsored by this institution, I (the participant or parent/guardian of a minor) acknowledge and agree:\n\n1. ASSUMPTION OF RISK: I understand that athletic and recreational activities involve inherent risks of injury, including but not limited to sprains, fractures, concussions, and in rare cases serious injury or death. I voluntarily assume all such risks.\n\n2. RELEASE OF LIABILITY: I hereby release, waive, discharge, and covenant not to sue the organization, its officers, directors, coaches, employees, and volunteers from any and all liability, claims, demands, or causes of action arising out of participation in any program activity.\n\n3. MEDICAL CONSENT: I authorize emergency medical treatment if deemed necessary by medical personnel. I accept financial responsibility for any such treatment.\n\n4. PHOTO/MEDIA: I grant the organization a non-exclusive license to use photographs or video of the participant for promotional purposes.\n\nI have read this document, understand its contents, and agree to its terms.`
+                    },
+                    {
+                      label: 'Code of Conduct',
+                      content: `PARTICIPANT CODE OF CONDUCT AGREEMENT\n\nAs a participant in this organization's programs, I agree to abide by the following standards:\n\n1. RESPECT: I will treat all coaches, officials, teammates, and opponents with respect and dignity at all times.\n\n2. SPORTSMANSHIP: I will demonstrate good sportsmanship, accept decisions by officials graciously, and never engage in unsportsmanlike conduct.\n\n3. INTEGRITY: I will not engage in cheating, bullying, harassment, or discriminatory behavior of any kind.\n\n4. COMMITMENT: I will attend scheduled practices and events punctually and notify staff of absences in advance.\n\n5. ZERO TOLERANCE: I understand that violations of this code may result in suspension or removal from the program.\n\nI acknowledge my responsibility to uphold these standards and represent this organization with pride.`
+                    },
+                    {
+                      label: 'Media & Photo Consent',
+                      content: `MEDIA AND PHOTO RELEASE CONSENT FORM\n\nI hereby authorize this organization and its designated representatives to photograph, film, record, or otherwise capture the image and likeness of the participant named in this registration.\n\nI grant the organization a perpetual, non-exclusive, royalty-free license to use, reproduce, distribute, and display such materials in:\n- Print media (brochures, flyers, publications)\n- Digital media (website, social media, email newsletters)\n- Video productions (highlight reels, promotional content)\n\nI understand that no compensation will be provided for this use and that the organization retains all rights to the produced materials.\n\nI release the organization from any claims arising from the use of such materials.`
+                    }
+                  ].map(t => (
+                    <button
+                      key={t.label}
+                      type="button"
+                      onClick={() => setProtocolForm({ ...protocolForm, title: t.label, content: t.content })}
+                      className="w-full text-left px-4 py-3 rounded-xl border-2 border-muted hover:border-primary/40 hover:bg-primary/5 transition-all flex items-center justify-between gap-3 group"
+                    >
+                      <span className="text-[10px] font-black uppercase tracking-widest">{t.label}</span>
+                      <span className="text-[9px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-wider">Load Template →</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Waiver Title</Label><Input placeholder="e.g. 2024 Seasonal Liability Waiver" value={protocolForm.title} onChange={e => setProtocolForm({...protocolForm, title: e.target.value})} className="h-14 rounded-2xl border-2 font-black text-lg" /></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Waiver Text (Editable)</Label><Textarea value={protocolForm.content} onChange={e => setProtocolForm({...protocolForm, content: e.target.value})} className="min-h-[200px] rounded-2xl border-2 font-medium p-6 bg-muted/5 focus:bg-white transition-all resize-none text-sm leading-relaxed" placeholder="Enter or edit waiver text here..." /></div>
+              <div className="bg-primary/5 p-4 rounded-2xl border-2 border-dashed border-primary/20 flex items-start gap-3">
+                <ShieldCheck className="h-5 w-5 text-primary shrink-0 mt-0.5" />
                 <p className="text-[11px] font-medium leading-relaxed italic text-muted-foreground">
-                  Deploying this protocol will instantly push it to the <strong>Compliance Vault</strong> of every Pro squad in your organization.
+                  This waiver will be saved globally to your hub and pushed to all squad compliance vaults. It will appear in the Institutional Mandates ledger immediately.
                 </p>
               </div>
             </div>
-            <DialogFooter><Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 border-none" onClick={handleDeployProtocol} disabled={isCreating}>{isCreating ? <Loader2 className="h-6 w-6 animate-spin" /> : "Authorize Atomic Deployment"}</Button></DialogFooter>
+            <DialogFooter><Button className="w-full h-14 rounded-[2rem] text-base font-black shadow-xl shadow-primary/20 border-none" onClick={handleDeployProtocol} disabled={isCreating || !protocolForm.title}>{isCreating ? <Loader2 className="h-6 w-6 animate-spin" /> : "Save & Deploy Waiver"}</Button></DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
