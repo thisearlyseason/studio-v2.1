@@ -124,13 +124,19 @@ function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], 
             )}
           </div>
           <h4 className="font-black text-sm uppercase truncate group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             {event.location && (
               <p className="text-[9px] font-medium text-muted-foreground truncate uppercase flex items-center gap-1">
                 <MapPin className="h-2 w-2" /> {event.location}
               </p>
             )}
-            {team?.name && (
+            {/* League/Program label — most important for multi-league coaches */}
+            {event.leagueName && (
+              <span className="ml-auto shrink-0 text-[8px] font-black uppercase tracking-widest bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20">
+                {event.leagueName}
+              </span>
+            )}
+            {!event.leagueName && team?.name && (
               <span className="ml-auto shrink-0 text-[8px] font-black uppercase tracking-widest bg-muted/60 text-muted-foreground px-2 py-0.5 rounded-full border">
                 {team.name}
               </span>
@@ -195,11 +201,16 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
             </div>
             
             <div className="space-y-6 relative z-10 lg:overflow-y-auto overflow-visible custom-scrollbar pr-2">
-              <div className="flex gap-2 mb-4">
+              <div className="flex gap-2 mb-4 flex-wrap">
                 <Badge className="uppercase font-black tracking-widest text-[9px] h-6 px-3 bg-primary text-white border-none">{(event.eventType || 'other').toUpperCase()}</Badge>
                 {event.isLeagueGame && (
                   <Badge className={cn("uppercase font-black tracking-widest text-[9px] h-6 px-3 border-none", event.isHome ? "bg-white text-black" : "bg-primary/20 text-white")}>
                     {event.isHome ? 'HOME' : 'AWAY'}
+                  </Badge>
+                )}
+                {(event as any).leagueName && (
+                  <Badge className="uppercase font-black tracking-widest text-[9px] h-6 px-3 bg-white/10 text-white border border-white/20">
+                    {(event as any).leagueName}
                   </Badge>
                 )}
               </div>
@@ -714,6 +725,8 @@ export default function MasterCalendarPage() {
 
             const matchId = game.id || `${e.id}_match_${idx}`;
             if (!map.has(matchId)) {
+              // Derive a human-readable label — prefer leagueName from parent, fall back to tournament title
+              const matchLabel = (e as any).leagueName || (e.title ? e.title.replace(/^\[Tournament\]\s*/i, '').trim() : undefined);
               map.set(matchId, {
                 ...e,
                 id: matchId,
@@ -727,7 +740,8 @@ export default function MasterCalendarPage() {
                 isTournamentMatch: true,
                 round: game.round,
                 parentTournamentId: e.id,
-                matchTeamIds: [game.team1Id, game.team2Id].filter(Boolean)
+                matchTeamIds: [game.team1Id, game.team2Id].filter(Boolean),
+                leagueName: matchLabel
               } as any);
             }
           });

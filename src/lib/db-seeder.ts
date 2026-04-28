@@ -77,7 +77,63 @@ const clean = (obj: any): any => {
  * STATIC BLUEPRINTS
  * Using fixed content for stable resets.
  */
-const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', teamName: string = '') => {
+// ── Per-team coaching staff pools ──────────────────────────────────────────
+const COACHING_STAFF = [
+  { headName: 'Marcus Powell',    headEmail: 'm.powell@thesquad.pro',    headAvatar: 'marcuspowell',    asstName: 'Jennifer Walsh',    asstEmail: 'j.walsh@thesquad.pro',    asstAvatar: 'jenniferwelsh' },
+  { headName: 'Derek Santos',     headEmail: 'd.santos@thesquad.pro',    headAvatar: 'dereksantos',     asstName: 'Karen Osei',        asstEmail: 'k.osei@thesquad.pro',     asstAvatar: 'karenosei' },
+  { headName: 'Tyler Brooks',     headEmail: 't.brooks@thesquad.pro',    headAvatar: 'tylerbrooks',     asstName: 'Maria Gonzalez',    asstEmail: 'm.gonzalez@thesquad.pro', asstAvatar: 'mariagonzalez' },
+  { headName: 'Craig Henderson',  headEmail: 'c.henderson@thesquad.pro', headAvatar: 'craighenderson',  asstName: 'Lisa Park',         asstEmail: 'l.park@thesquad.pro',     asstAvatar: 'lisapark' },
+  { headName: 'Brandon Kim',      headEmail: 'b.kim@thesquad.pro',       headAvatar: 'brandonkim',      asstName: 'Samantha Reed',     asstEmail: 's.reed@thesquad.pro',     asstAvatar: 'samanthareed' },
+  { headName: 'Jonathan Mercer',  headEmail: 'j.mercer@thesquad.pro',    headAvatar: 'jonathanmercer',  asstName: 'Angela Torres',     asstEmail: 'a.torres@thesquad.pro',   asstAvatar: 'angelatorres' },
+];
+
+// ── Per-team player pools (8 players each) ────────────────────────────────
+const PLAYER_POOLS = [
+  [ // Pool 0
+    { name: 'Alex Rivera',   position: 'Forward',        jersey: '10', gpa: '3.9', gradYear: '2026', school: 'Metro Academy',   avatar: 'alex',    amountOwed: 0,   feesPaid: true },
+    { name: 'Taylor Chen',   position: 'Midfield',       jersey: '22', gpa: '3.7', gradYear: '2027', school: 'Heights High',    avatar: 'taylor',  amountOwed: 450, feesPaid: false },
+    { name: 'Casey Morgan',  position: 'Defense',        jersey: '44', gpa: '4.0', gradYear: '2025', school: 'Westside Prep',   avatar: 'casey',   amountOwed: 0,   feesPaid: true },
+    { name: 'Sam Wilson',    position: 'Goalkeeper',     jersey: '01', gpa: '3.5', gradYear: '2026', school: 'Heights High',    avatar: 'sam',     amountOwed: 100, feesPaid: false },
+    { name: 'Riley Jones',   position: 'Forward',        jersey: '15', gpa: '3.8', gradYear: '2027', school: 'Metro Academy',   avatar: 'riley',   amountOwed: 0,   feesPaid: true },
+    { name: 'Morgan Lee',    position: 'Defense',        jersey: '12', gpa: '3.9', gradYear: '2026', school: 'Westside Prep',   avatar: 'morgan',  amountOwed: 0,   feesPaid: true },
+    { name: 'Quinn Davis',   position: 'Midfield',       jersey: '08', gpa: '4.0', gradYear: '2025', school: 'Metro Academy',   avatar: 'quinn',   amountOwed: 0,   feesPaid: true },
+    { name: 'Skyler King',   position: 'Forward',        jersey: '11', gpa: '3.5', gradYear: '2027', school: 'Heights High',    avatar: 'skyler',  amountOwed: 0,   feesPaid: true },
+  ],
+  [ // Pool 1
+    { name: 'Jordan Hayes',  position: 'Point Guard',    jersey: '05', gpa: '3.8', gradYear: '2026', school: 'Riverside High',  avatar: 'jordanhayes', amountOwed: 0,   feesPaid: true },
+    { name: 'Devon Clark',   position: 'Shooting Guard', jersey: '03', gpa: '3.6', gradYear: '2027', school: 'Summit Academy',  avatar: 'devonclark',  amountOwed: 200, feesPaid: false },
+    { name: 'Reagan Torres', position: 'Power Forward',  jersey: '21', gpa: '3.9', gradYear: '2025', school: 'Eastside Prep',   avatar: 'reagantorres',amountOwed: 0,   feesPaid: true },
+    { name: 'Cameron Scott', position: 'Center',         jersey: '33', gpa: '3.4', gradYear: '2026', school: 'Riverside High',  avatar: 'cameronscott',amountOwed: 75,  feesPaid: false },
+    { name: 'Peyton Adams',  position: 'Small Forward',  jersey: '14', gpa: '3.7', gradYear: '2027', school: 'Summit Academy',  avatar: 'peytonadams', amountOwed: 0,   feesPaid: true },
+    { name: 'Blake Nelson',  position: 'Guard',          jersey: '23', gpa: '4.0', gradYear: '2025', school: 'Eastside Prep',   avatar: 'blakenelson', amountOwed: 0,   feesPaid: true },
+    { name: 'Harley Price',  position: 'Forward',        jersey: '18', gpa: '3.5', gradYear: '2026', school: 'Riverside High',  avatar: 'harleyprice', amountOwed: 0,   feesPaid: true },
+    { name: 'Sidney Ross',   position: 'Defense',        jersey: '11', gpa: '3.8', gradYear: '2027', school: 'Summit Academy',  avatar: 'sidneyross',  amountOwed: 300, feesPaid: false },
+  ],
+  [ // Pool 2
+    { name: 'Parker Hughes', position: 'Winger',         jersey: '09', gpa: '3.7', gradYear: '2026', school: 'North Prep',      avatar: 'parkerhughes',amountOwed: 0,   feesPaid: true },
+    { name: 'Lane Cooper',   position: 'Midfield',       jersey: '17', gpa: '3.5', gradYear: '2027', school: 'Central High',    avatar: 'lanecooper',  amountOwed: 125, feesPaid: false },
+    { name: 'Emery Foster',  position: 'Center Back',    jersey: '28', gpa: '3.9', gradYear: '2025', school: 'North Prep',      avatar: 'emeryfoster', amountOwed: 0,   feesPaid: true },
+    { name: 'Drew Mason',    position: 'Goalkeeper',     jersey: '30', gpa: '3.6', gradYear: '2026', school: 'Central High',    avatar: 'drewmason',   amountOwed: 0,   feesPaid: true },
+    { name: 'Sage Thompson', position: 'Striker',        jersey: '06', gpa: '4.0', gradYear: '2027', school: 'Valley Academy',  avatar: 'sagethompson',amountOwed: 0,   feesPaid: true },
+    { name: 'River Collins', position: 'Midfield',       jersey: '04', gpa: '3.8', gradYear: '2025', school: 'Valley Academy',  avatar: 'rivercollins',amountOwed: 50,  feesPaid: false },
+    { name: 'Oakley Brooks', position: 'Defense',        jersey: '25', gpa: '3.4', gradYear: '2026', school: 'North Prep',      avatar: 'oakleybrooks',amountOwed: 0,   feesPaid: true },
+    { name: 'Quinn Miller',  position: 'Forward',        jersey: '07', gpa: '3.7', gradYear: '2027', school: 'Central High',    avatar: 'quinnmiller', amountOwed: 0,   feesPaid: true },
+  ],
+  [ // Pool 3
+    { name: 'Avery Martinez',position: 'Guard',          jersey: '02', gpa: '3.9', gradYear: '2026', school: 'South Academy',   avatar: 'averymartinez',amountOwed: 0,  feesPaid: true },
+    { name: 'Reagan Lewis',  position: 'Forward',        jersey: '13', gpa: '3.6', gradYear: '2027', school: 'Lakewood High',   avatar: 'reaganlewis', amountOwed: 250, feesPaid: false },
+    { name: 'Jordan Green',  position: 'Midfielder',     jersey: '20', gpa: '3.8', gradYear: '2025', school: 'South Academy',   avatar: 'jordangreen', amountOwed: 0,   feesPaid: true },
+    { name: 'Casey White',   position: 'Defense',        jersey: '31', gpa: '4.0', gradYear: '2026', school: 'Lakewood High',   avatar: 'caseywhite',  amountOwed: 0,   feesPaid: true },
+    { name: 'Taylor Hall',   position: 'Striker',        jersey: '26', gpa: '3.5', gradYear: '2027', school: 'West Ridge Prep', avatar: 'taylorhall',  amountOwed: 0,   feesPaid: true },
+    { name: 'Morgan Young',  position: 'Guard',          jersey: '10', gpa: '3.7', gradYear: '2025', school: 'West Ridge Prep', avatar: 'morganyoung', amountOwed: 175, feesPaid: false },
+    { name: 'Dylan Roberts', position: 'Defense',        jersey: '38', gpa: '3.9', gradYear: '2026', school: 'South Academy',   avatar: 'dylanroberts',amountOwed: 0,   feesPaid: true },
+    { name: 'Robin Cruz',    position: 'Winger',         jersey: '09', gpa: '3.6', gradYear: '2027', school: 'Lakewood High',   avatar: 'robincruz',   amountOwed: 0,   feesPaid: true },
+  ],
+];
+
+const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', teamName: string = '', teamIndex: number = 0) => {
+  const staff = COACHING_STAFF[teamIndex % COACHING_STAFF.length];
+  const playerPool = PLAYER_POOLS[teamIndex % PLAYER_POOLS.length];
   const now = new Date();
   const day = (d: number) => new Date(now.getTime() + d * 86400000).toISOString();
   
@@ -90,16 +146,30 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
 
   return {
     members: [
-      { id: `m1_${teamId}`, userId: `u1_${teamId}`, playerId: `p_u1_${teamId}`, name: `Jordan Smith`, role: 'Admin', position: 'Assistant Coach', jersey: 'HQ', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 0, email: 'j.smith@thesquad.pro', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=jordan` },
-      { id: `m2_${teamId}`, userId: `u2_${teamId}`, playerId: `p_u2_${teamId}`, name: `Alex Rivera`, role: 'Member', position: 'Forward', jersey: '10', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'a.rivera@example.com', parentEmail: 'parent.rivera@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=alex`, gradYear: '2026', gpa: '3.9', school: 'Metro Academy' },
-      { id: `m3_${teamId}`, userId: `u3_${teamId}`, playerId: `p_u3_${teamId}`, name: `Taylor Chen`, role: 'Member', position: 'Midfield', jersey: '22', medicalClearance: true, amountOwed: 450, feesPaid: false, totalFees: 1250, email: 't.chen@example.com', parentEmail: 'parent.chen@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=taylor`, gradYear: '2027', gpa: '3.7', school: 'Heights High' },
-      { id: `m4_${teamId}`, userId: `u4_${teamId}`, playerId: `p_u4_${teamId}`, name: `Casey Morgan`, role: 'Member', position: 'Defense', jersey: '44', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'c.morgan@example.com', parentEmail: 'parent.morgan@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=casey`, gradYear: '2025', gpa: '4.0', school: 'Westside Prep' },
-      { id: `m5_${teamId}`, userId: `u5_${teamId}`, playerId: `p_u5_${teamId}`, name: `Sam Wilson`, role: 'Member', position: 'Goalkeeper', jersey: '01', medicalClearance: true, amountOwed: 100, feesPaid: false, totalFees: 1250, email: 's.wilson@example.com', parentEmail: 'parent.wilson@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=sam`, gradYear: '2026', gpa: '3.5', school: 'Heights High' },
-      { id: `m6_${teamId}`, userId: `u6_${teamId}`, playerId: `p_u6_${teamId}`, name: `Riley Jones`, role: 'Member', position: 'Forward', jersey: '15', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'r.jones@example.com', parentEmail: 'parent.jones@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=riley`, gradYear: '2027', gpa: '3.8', school: 'Metro Academy' },
-      { id: `m7_${teamId}`, userId: `u7_${teamId}`, playerId: `p_u7_${teamId}`, name: `Morgan Lee`, role: 'Member', position: 'Defense', jersey: '12', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'm.lee@example.com', parentEmail: 'parent.lee@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=morgan`, gradYear: '2026', gpa: '3.9', school: 'Westside Prep' },
-      { id: `m8_${teamId}`, userId: `u8_${teamId}`, playerId: `p_u8_${teamId}`, name: `Quinn Davis`, role: 'Member', position: 'Midfield', jersey: '08', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'q.davis@example.com', parentEmail: 'parent.davis@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=quinn`, gradYear: '2025', gpa: '4.0', school: 'Metro Academy' },
-      { id: `m9_${teamId}`, userId: `u9_${teamId}`, playerId: `p_u9_${teamId}`, name: `Skyler King`, role: 'Member', position: 'Forward', jersey: '11', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 's.king@example.com', parentEmail: 'parent.king@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=skyler`, gradYear: '2027', gpa: '3.5', school: 'Heights High' },
-      { id: `m10_${teamId}`, userId: `u10_${teamId}`, playerId: `p_u10_${teamId}`, name: `Avery Hall`, role: 'Member', position: 'Guard', jersey: '07', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 1250, email: 'a.hall@example.com', parentEmail: 'parent.hall@example.com', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=avery`, gradYear: '2026', gpa: '3.8', school: 'Westside Prep' }
+      // Head coach (unique per team via staff pool)
+      { id: `m1_${teamId}`, userId: `u1_${teamId}`, playerId: `p_u1_${teamId}`, name: staff.headName, role: 'Admin', position: 'Head Coach', jersey: 'HC', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 0, email: staff.headEmail, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${staff.headAvatar}` },
+      // Assistant coach (unique per team via staff pool)
+      { id: `m2_${teamId}`, userId: `u2_${teamId}`, playerId: `p_u2_${teamId}`, name: staff.asstName, role: 'Admin', position: 'Assistant Coach', jersey: 'AC', medicalClearance: true, amountOwed: 0, feesPaid: true, totalFees: 0, email: staff.asstEmail, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${staff.asstAvatar}` },
+      // Players from unique pool
+      ...playerPool.map((p, idx) => ({
+        id: `m${idx + 3}_${teamId}`,
+        userId: `u${idx + 3}_${teamId}`,
+        playerId: `p_u${idx + 3}_${teamId}`,
+        name: p.name,
+        role: 'Member',
+        position: p.position,
+        jersey: p.jersey,
+        medicalClearance: true,
+        amountOwed: p.amountOwed,
+        feesPaid: p.feesPaid,
+        totalFees: 1250,
+        email: `${p.avatar}@example.com`,
+        parentEmail: `parent.${p.avatar}@example.com`,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.avatar}`,
+        gradYear: p.gradYear,
+        gpa: p.gpa,
+        school: p.school,
+      })),
     ],
     games: [
       { id: `g1_${teamId}`, opponent: 'City Strikers', date: day(-21), myScore: 8, opponentScore: 4, result: 'Win', location: 'Apex Performance Center – Main Arena', notes: 'Dominant performance. Scored 4 in the first half.' },
@@ -221,7 +291,7 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
           };
         }),
         teamAgreements: {
-          [teamName || `Team ${teamSuffix || 'A'}`]: { signedAt: yesterday, signatureCount: 15, captainName: 'Jordan Smith' },
+          [teamName || `Team ${teamSuffix || 'A'}`]: { signedAt: yesterday, signatureCount: 15, captainName: staff.headName },
           'Thunder': { signedAt: day(-2), signatureCount: 12, captainName: 'Mike Thunder' },
           'Shadows': { signedAt: day(-3), signatureCount: 14, captainName: 'Dave Shadow' },
           'Lions': { signedAt: day(-1), signatureCount: 11, captainName: 'Tim Lion' },
@@ -263,8 +333,8 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
       { id: `t2_${teamId}`, title: 'Offensive Flow Block', description: 'Transition offense and fast break execution.', drillIds: [`d2_${teamId}`], createdAt: now.toISOString() }
     ],
     feed: [
-      { id: `p1_${teamId}`, type: 'user', content: `Focus for Saturday, ${teamSuffix || 'the'} squad!`, author: { name: 'Jordan Smith' }, authorId: `u1_${teamId}`, createdAt: yesterday, likes: [userId] },
-      { id: `p2_${teamId}`, type: 'user', content: `Great game last night! Highlights are up.`, author: { name: 'Alex Rivera' }, authorId: `u2_${teamId}`, createdAt: day(-2), likes: [userId] }
+      { id: `p1_${teamId}`, type: 'user', content: `Focus for Saturday, ${teamSuffix || 'the'} squad!`, author: { name: staff.headName }, authorId: `u1_${teamId}`, createdAt: yesterday, likes: [userId] },
+      { id: `p2_${teamId}`, type: 'user', content: `Great game last night! Highlights are up.`, author: { name: playerPool[0].name }, authorId: `u3_${teamId}`, createdAt: day(-2), likes: [userId] }
     ],
     documents: [
       {
@@ -287,7 +357,7 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
       { id: `a1_${teamId}`, title: 'Venue Change', message: 'Match moved to Court 4 due to maintenance.', audience: 'everyone', createdAt: yesterday, createdBy: userId }
     ],
     volunteers: [
-      { id: `vol1_${teamId}`, title: 'Tournament Concessions', description: 'Help run the stand during the multi-day event.', date: tomorrow, startTime: '09:00', endTime: '15:00', spots: 5, hoursPerSlot: 2, pointsPerSlot: 10, signups: { [`u2_${teamId}`]: { userId: `u2_${teamId}`, userName: 'Alex Rivera', status: 'pending', createdAt: yesterday } } },
+      { id: `vol1_${teamId}`, title: 'Tournament Concessions', description: 'Help run the stand during the multi-day event.', date: tomorrow, startTime: '09:00', endTime: '15:00', spots: 5, hoursPerSlot: 2, pointsPerSlot: 10, signups: { [`u3_${teamId}`]: { userId: `u3_${teamId}`, userName: playerPool[0].name, status: 'pending', createdAt: yesterday } } },
       { id: `vol2_${teamId}`, title: 'Match Day Photography', description: 'Capture high-quality action shots for the social feed.', date: later, startTime: '18:00', endTime: '20:00', spots: 2, hoursPerSlot: 2, pointsPerSlot: 25, signups: {} }
     ],
     fundraising: [
@@ -301,13 +371,13 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
       } }
     ],
     equipment: [
-      { id: `eq1_${teamId}`, name: 'Official Match Balls', category: 'Training Gear', totalQuantity: 30, availableQuantity: 24, status: 'Active', description: 'Institutional grade size 5 match balls. Serialized tracking.', assignments: { [`u2_${teamId}`]: { userId: `u2_${teamId}`, userName: 'Alex Rivera', quantity: 6, date: yesterday } } },
+      { id: `eq1_${teamId}`, name: 'Official Match Balls', category: 'Training Gear', totalQuantity: 30, availableQuantity: 24, status: 'Active', description: 'Institutional grade size 5 match balls. Serialized tracking.', assignments: { [`u3_${teamId}`]: { userId: `u3_${teamId}`, userName: playerPool[0].name, quantity: 6, date: yesterday } } },
       { id: `eq2_${teamId}`, name: 'Varsity Travel Jackets', category: 'Uniforms', totalQuantity: 20, availableQuantity: 20, status: 'Active', description: 'Heavyweight weather-resistant travel kits.', assignments: {} },
-      { id: `eq3_${teamId}`, name: 'Field Medical Kit Pro', category: 'Medical', totalQuantity: 2, availableQuantity: 1, status: 'Active', description: 'Fully stocked pitch-side trauma kit.', assignments: { [`u1_${teamId}`]: { userId: `u1_${teamId}`, userName: 'Jordan Smith', quantity: 1, date: now.toISOString() } } }
+      { id: `eq3_${teamId}`, name: 'Field Medical Kit Pro', category: 'Medical', totalQuantity: 2, availableQuantity: 1, status: 'Active', description: 'Fully stocked pitch-side trauma kit.', assignments: { [`u1_${teamId}`]: { userId: `u1_${teamId}`, userName: staff.headName, quantity: 1, date: now.toISOString() } } }
     ],
     incidents: [
-      { id: `inc1_${teamId}`, teamId, title: 'Ankle Sprain - Grade 1', date: yesterday, time: '3:45 PM', location: 'Practice Court B', description: 'Player landed awkwardly after a contested jump. Immediate swelling noted.', emergencyServicesCalled: false, severity: 'minor', treatmentProvided: 'RICE protocol initiated. Assisted to clubhouse. Follow-up with physio required.', witnesses: 'Coach Jordan Smith, Taylor Chen', reportedBy: 'Jordan Smith', followUpRequired: true, weatherConditions: 'Indoors', equipmentInvolved: 'Ankle Brace (Active)' },
-      { id: `inc2_${teamId}`, teamId, title: 'Heat Protocol Precedence', date: weekAgo, time: '11:00 AM', location: 'Field 7', description: 'Extended exposure led to early signs of heat fatigue.', emergencyServicesCalled: false, severity: 'minor', treatmentProvided: 'Mandatory hydration break and shade recovery.', reportedBy: 'Jordan Smith', actionsTaken: 'Scheduled breaks increased for remaining session.' }
+      { id: `inc1_${teamId}`, teamId, title: 'Ankle Sprain - Grade 1', date: yesterday, time: '3:45 PM', location: 'Practice Court B', description: 'Player landed awkwardly after a contested jump. Immediate swelling noted.', emergencyServicesCalled: false, severity: 'minor', treatmentProvided: 'RICE protocol initiated. Assisted to clubhouse. Follow-up with physio required.', witnesses: `Coach ${staff.headName}, ${playerPool[1]?.name || 'Team Player'}`, reportedBy: staff.headName, followUpRequired: true, weatherConditions: 'Indoors', equipmentInvolved: 'Ankle Brace (Active)' },
+      { id: `inc2_${teamId}`, teamId, title: 'Heat Protocol Precedence', date: weekAgo, time: '11:00 AM', location: 'Field 7', description: 'Extended exposure led to early signs of heat fatigue.', emergencyServicesCalled: false, severity: 'minor', treatmentProvided: 'Mandatory hydration break and shade recovery.', reportedBy: staff.headName, actionsTaken: 'Scheduled breaks increased for remaining session.' }
     ],
     files: [
       { id: `f1_${teamId}`, name: 'Season Strategy Playbook.pdf', type: 'pdf', size: '2.4 MB', sizeBytes: 2516582, url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', category: 'Playbook', description: 'Full season tactical overview and formation guides.', date: now.toISOString() },
@@ -316,13 +386,13 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
     ],
     signatures: [
       { docId: `w1_${teamId}`, sigs: [
-        { id: `sig1_${teamId}`, documentId: `w1_${teamId}`, teamId, userId: `u2_${teamId}`, userName: 'Alex Rivera', timestamp: day(-5) },
-        { id: `sig2_${teamId}`, documentId: `w1_${teamId}`, teamId, userId: `u4_${teamId}`, userName: 'Casey Morgan', timestamp: day(-4) },
-        { id: `sig3_${teamId}`, documentId: `w1_${teamId}`, teamId, userId: `u5_${teamId}`, userName: 'Sam Wilson', timestamp: day(-3) }
+        { id: `sig1_${teamId}`, documentId: `w1_${teamId}`, teamId, userId: `u3_${teamId}`, userName: playerPool[0].name, timestamp: day(-5) },
+        { id: `sig2_${teamId}`, documentId: `w1_${teamId}`, teamId, userId: `u4_${teamId}`, userName: playerPool[1]?.name || playerPool[0].name, timestamp: day(-4) },
+        { id: `sig3_${teamId}`, documentId: `w1_${teamId}`, teamId, userId: `u5_${teamId}`, userName: playerPool[2]?.name || playerPool[0].name, timestamp: day(-3) }
       ]},
       { docId: `w2_${teamId}`, sigs: [
-        { id: `sig4_${teamId}`, documentId: `w2_${teamId}`, teamId, userId: `u6_${teamId}`, userName: 'Riley Jones', timestamp: day(-6) },
-        { id: `sig5_${teamId}`, documentId: `w2_${teamId}`, teamId, userId: `u7_${teamId}`, userName: 'Morgan Lee', timestamp: day(-5) }
+        { id: `sig4_${teamId}`, documentId: `w2_${teamId}`, teamId, userId: `u6_${teamId}`, userName: playerPool[3]?.name || playerPool[0].name, timestamp: day(-6) },
+        { id: `sig5_${teamId}`, documentId: `w2_${teamId}`, teamId, userId: `u7_${teamId}`, userName: playerPool[4]?.name || playerPool[0].name, timestamp: day(-5) }
       ]}
     ],
     chats: [
@@ -335,23 +405,23 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
         teamId: teamId,
         createdAt: weekAgo,
         messages: [
-          { id: `msg1_${teamId}`, author: 'Jordan Smith', authorId: `u1_${teamId}`, content: 'Ready for the tourneys this weekend! Brackets are live.', type: 'text', createdAt: weekAgo },
-          { id: `msg2_${teamId}`, author: 'Alex Rivera', authorId: `u2_${teamId}`, content: 'Practiced my shot all morning. See you guys there.', type: 'text', createdAt: yesterday },
-          { id: `msg3_${teamId}`, author: 'Taylor Chen', authorId: `u3_${teamId}`, content: 'Can someone share the updated game plan? Coach sent it last night.', type: 'text', createdAt: yesterday },
-          { id: `msg4_${teamId}`, author: 'Jordan Smith', authorId: `u1_${teamId}`, content: 'Playbook drills are mandatory watch — check the Playbook hub for the new videos!', type: 'text', createdAt: now.toISOString() }
+          { id: `msg1_${teamId}`, author: staff.headName, authorId: `u1_${teamId}`, content: 'Ready for the tourneys this weekend! Brackets are live.', type: 'text', createdAt: weekAgo },
+          { id: `msg2_${teamId}`, author: playerPool[0].name, authorId: `u3_${teamId}`, content: 'Practiced my shot all morning. See you guys there.', type: 'text', createdAt: yesterday },
+          { id: `msg3_${teamId}`, author: playerPool[1]?.name || playerPool[0].name, authorId: `u4_${teamId}`, content: 'Can someone share the updated game plan? Coach sent it last night.', type: 'text', createdAt: yesterday },
+          { id: `msg4_${teamId}`, author: staff.headName, authorId: `u1_${teamId}`, content: 'Playbook drills are mandatory watch — check the Playbook hub for the new videos!', type: 'text', createdAt: now.toISOString() }
         ]
       },
       {
         id: `chat2_${teamId}`,
         name: 'Coaching Staff',
         createdBy: userId,
-        memberIds: [userId, `u1_${teamId}`],
+        memberIds: [userId, `u1_${teamId}`, `u2_${teamId}`],
         isDeleted: false,
         teamId: teamId,
         createdAt: weekAgo,
         messages: [
-          { id: `coachmsg1_${teamId}`, author: 'Jordan Smith', authorId: `u1_${teamId}`, content: 'Reviewing film from last game. Defense was excellent.', type: 'text', createdAt: weekAgo },
-          { id: `coachmsg2_${teamId}`, author: 'Guest Coach', authorId: userId, content: 'Agreed. Transition attack needs work in training this week.', type: 'text', createdAt: yesterday }
+          { id: `coachmsg1_${teamId}`, author: staff.headName, authorId: `u1_${teamId}`, content: 'Reviewing film from last game. Defense was excellent.', type: 'text', createdAt: weekAgo },
+          { id: `coachmsg2_${teamId}`, author: staff.asstName, authorId: `u2_${teamId}`, content: 'Agreed. Transition attack needs work in training this week.', type: 'text', createdAt: yesterday }
         ]
       }
     ]
@@ -641,7 +711,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             }
 
             // Pull rich sub-resources from the static blueprint (NO EVENTS — handled by staggered parent block below)
-            const data = GET_DEMO_DATA(v.id, userId, v.name, v.name);
+            const data = GET_DEMO_DATA(v.id, userId, v.name, v.name, variants.indexOf(v));
             data.members.forEach(m => {
               batch.set(doc(db, 'teams', v.id, 'members', m.id), clean({ ...m, teamId: v.id, joinedAt: now, isDemo: true }));
             });
@@ -909,7 +979,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             ownerUserId: userId, email: `${userRole}@thesquad.pro`
         }));
 
-        const data = GET_DEMO_DATA(teamId, userId, variant, name);
+        const data = GET_DEMO_DATA(teamId, userId, variant, name, i);
         
         // Seed Roster Members & Player Profiles
         data.members.forEach(m => {

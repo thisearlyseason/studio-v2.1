@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useTeam, Team, Member, TeamDocument, DocumentSignature, TeamIncident } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -39,7 +39,9 @@ import {
   FolderClosed,
   ChevronDown,
   Shield,
-  MessageCircle
+  MessageCircle,
+  Info,
+  X
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -159,6 +161,19 @@ export default function ClubManagementPage() {
   const [adminProfiles, setAdminProfiles] = useState<any[]>([]);
   const [viewingIncident, setViewingIncident] = useState<TeamIncident | null>(null);
 
+  // School Hub onboarding note — localStorage-persisted dismiss
+  const HUB_NOTE_KEY = 'school_hub_note_dismissed_v1';
+  const [hubNoteDismissed, setHubNoteDismissed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(HUB_NOTE_KEY) === 'true';
+    }
+    return false;
+  });
+  const dismissHubNote = () => {
+    setHubNoteDismissed(true);
+    if (typeof window !== 'undefined') localStorage.setItem(HUB_NOTE_KEY, 'true');
+  };
+
   // Improved Hub Resolution: Find an explicit school hub, or fallback to the first pro team if user is on a school plan
   const schoolHub = useMemo(() => {
     const explicit = teams.find(t => t.type === 'school' || t.type === 'school_hub');
@@ -197,14 +212,27 @@ export default function ClubManagementPage() {
     return allTeams.map(t => t.id);
   }, [schoolHub, schoolSquads]);
 
-  const allMembersQuery = useMemoFirebase(() => {
-    if (!db || teams.length === 0) return null;
-    // Get all members belonging to ANY of the teams this user owns/manages
-    // 'in' operator supports up to 30 team IDs, which covers most school hubs
-    const teamIds = teams.map(t => t.id);
-    return query(collectionGroup(db, 'members'), where('teamId', 'in', teamIds));
+  // Fetch members from ALL squad sub-collections independently so we don't
+  // rely on a collectionGroup+in composite index (which causes partial results).
+  const [allRawMembers, setAllRawMembers] = useState<Member[]>([]);
+
+  const fetchAllSquadMembers = useCallback(async () => {
+    if (!db || teams.length === 0) return;
+    try {
+      const results: Member[] = [];
+      for (const team of teams) {
+        const snap = await getDocs(collection(db, 'teams', team.id, 'members'));
+        snap.forEach(d => results.push({ id: d.id, ...d.data() } as Member));
+      }
+      setAllRawMembers(results);
+    } catch (e) {
+      console.warn('Failed to fetch squad members:', e);
+    }
   }, [db, teams]);
-  const { data: allRawMembers } = useCollection<Member>(allMembersQuery);
+
+  useEffect(() => {
+    fetchAllSquadMembers();
+  }, [fetchAllSquadMembers]);
 
   // Aggregate all members from all school teams
   const clubMembers = useMemo(() => {
@@ -229,25 +257,66 @@ export default function ClubManagementPage() {
     return Array.from(uniqueMap.values());
   }, [allRawMembers, schoolHub, teams]);
 
-  // Need allMembersRaw for the coaches calculation - use clubMembers
-  const allMembersRaw = clubMembers;
+
 
   const docsQuery = useMemoFirebase(() => (db && user?.id) ? query(collectionGroup(db, 'documents'), where('ownerUserId', '==', user.id)) : null, [db, user?.id]);
   const { data: allDocsRaw } = useCollection<TeamDocument>(docsQuery);
   const clubDocs = useMemo(() => (allDocsRaw || []), [allDocsRaw]);
 
   // School Logic: Universal Coach & Staff Roster
+  // Always include the Athletic Director (actual user) at the top, then all
+  // Admin/coach-position members from every squad — deduplicated by unique userId.
   const allCoaches = useMemo(() => {
     const staffKeywords = ['coach', 'director', 'coordinator', 'staff', 'manager', 'trainer'];
-    return (allMembersRaw || []).filter(m => {
-      if (m.status === 'removed') return false;
+
+    // Build a deduplicated set, keyed by userId (fictional coaches have unique u1_${teamId} keys)
+    const seen = new Set<string>();
+    const coaches: Member[] = [];
+
+    // 1. Athletic Director first (the logged-in user's own member records across squads — one entry)
+    if (user?.id) {
+      const adRecord = allRawMembers.find(m => m.userId === user.id || m.id === user.id);
+      if (adRecord) {
+        seen.add(user.id);
+        coaches.push(adRecord);
+      } else {
+        // Synthesise an AD card from the user profile if no member doc exists
+        const adSynth: Member = {
+          id: user.id,
+          userId: user.id,
+          teamId: teams[0]?.id || '',
+          name: user.name || 'Athletic Director',
+          role: 'Admin',
+          position: 'Athletic Director',
+          email: user.email || '',
+          avatar: user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`,
+          medicalClearance: true,
+          amountOwed: 0,
+          feesPaid: true,
+          totalFees: 0,
+          jersey: 'AD',
+        } as any;
+        seen.add(user.id);
+        coaches.push(adSynth);
+      }
+    }
+
+    // 2. All coaching staff from all squads
+    for (const m of allRawMembers) {
+      if (m.status === 'removed') continue;
+      const key = m.userId || m.id;
+      if (seen.has(key)) continue;  // skip already-added AD or exact duplicate
       const pos = (m.position || '').toLowerCase();
       const role = (m.role || '').toLowerCase();
-      
-      // Match if the position contains any staff keywords OR if the record is an Admin role
-      return staffKeywords.some(keyword => pos.includes(keyword)) || role === 'admin';
-    });
-  }, [allMembersRaw]);
+      const isStaff = staffKeywords.some(kw => pos.includes(kw)) || role === 'admin';
+      if (isStaff) {
+        seen.add(key);
+        coaches.push(m);
+      }
+    }
+
+    return coaches;
+  }, [allRawMembers, user]);
 
   const incidentsQueryOwner = schoolHub ? schoolHub.ownerUserId : user?.id;
   const incidentsQuery = useMemoFirebase(() => (db && incidentsQueryOwner) ? query(collectionGroup(db, 'incidents'), where('ownerUserId', '==', incidentsQueryOwner), orderBy('createdAt', 'desc')) : null, [db, incidentsQueryOwner]);
@@ -366,6 +435,44 @@ export default function ClubManagementPage() {
           </div>
         </div>
       </Card>
+
+      {/* School Hub onboarding note — only visible in school mode, dismissed via localStorage */}
+      {isSchoolMode && !hubNoteDismissed && (
+        <div className="relative rounded-[2rem] border-2 border-primary/20 bg-primary/5 p-6 md:p-8 flex gap-5 items-start overflow-hidden group animate-in slide-in-from-top-4 duration-500">
+          {/* Subtle background glow */}
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none rounded-[2rem]" />
+          <div className="shrink-0 mt-0.5 w-11 h-11 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20">
+            <Info className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 space-y-2 relative z-10">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-primary">How the School Hub Works</p>
+            <h3 className="text-lg font-black uppercase tracking-tight leading-tight text-foreground">
+              One Hub. Every Squad. One Master Schedule.
+            </h3>
+            <div className="text-sm text-muted-foreground space-y-1.5 leading-relaxed">
+              <p>
+                <strong className="text-foreground">Squads</strong> are individual teams under your institution — e.g. <em>"Varsity Boys Basketball"</em> or <em>"JV Girls Soccer"</em>. Each squad has its own roster, coach, and calendar.
+              </p>
+              <p>
+                <strong className="text-foreground">Programs</strong> are the scheduling containers (leagues) that link squads together for fixtures, standings, and playoffs. A squad can belong to multiple programs at once.
+              </p>
+              <p>
+                Every squad's schedule, including all league games and tournaments across all programs, is automatically visible on the <strong className="text-foreground">Master Calendar</strong> — clearly labelled by program so coaches can distinguish them at a glance.
+              </p>
+              <p>
+                You can provision new squads from this hub and manage all compliance, documents, finances, and rosters from a single place.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={dismissHubNote}
+            aria-label="Dismiss hub guide"
+            className="shrink-0 mt-0.5 h-8 w-8 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all relative z-10"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <Dialog open={isSubSquadModalOpen} onOpenChange={setIsSubSquadModalOpen}>
         <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-md bg-white">

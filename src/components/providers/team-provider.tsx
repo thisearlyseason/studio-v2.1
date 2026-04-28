@@ -308,6 +308,7 @@ export type TeamEvent = {
   isLeagueGame?: boolean;
   isHome?: boolean;
   leagueId?: string;
+  leagueName?: string; // Human-readable league/program label for multi-league display
   adminEmails?: string[]; // Allowed emails to manage this specific event
   tournamentTeams?: string[];
   tournamentTeamsData?: any[];
@@ -2383,7 +2384,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         eventType: 'game', 
         isLeagueGame: true, 
         isHome,
-        leagueId: lId, 
+        leagueId: lId,
+        leagueName: leagueData.name || '',
         date: game.date, 
         startTime: game.time, 
         location: game.location, 
@@ -2420,7 +2422,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           eventType: 'game', 
           isLeagueGame: true, 
           isHome,
-          leagueId: lId, 
+          leagueId: lId,
+          leagueName: leagueData.name || '',
           date: game.date, 
           startTime: game.time, 
           location: game.location, 
