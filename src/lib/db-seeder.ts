@@ -843,10 +843,11 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         
         // Pad the league with mock opponents so it always has at least 4 teams
         const mockOpponents = ['City Wildcats', 'Metro Stars', 'Valley Vipers', 'Coastal Elite'];
+        const mockTeamIds = ['wildcats_id', 'stars_id', 'vipers_id', 'elite_id'];
         let mockIndex = 0;
         while (Object.keys(leagueTeams).length < 4) {
-            const mockId = `mock_${mockIndex}_${userId.slice(-4)}`;
-            leagueTeams[mockId] = { teamName: mockOpponents[mockIndex], coachName: `Coach ${mockOpponents[mockIndex]}`, coachEmail: `coach@${mockOpponents[mockIndex].toLowerCase().replace(/\s+/g, '')}.com`, wins: Math.floor(Math.random() * 3), losses: Math.floor(Math.random() * 3), points: Math.floor(Math.random() * 9) };
+            const mockId = mockTeamIds[mockIndex] || `mock_${mockIndex}_${userId.slice(-4)}`;
+            leagueTeams[mockId] = { teamName: mockOpponents[mockIndex], coachName: `Coach ${mockOpponents[mockIndex]}`, coachEmail: `coach@${mockOpponents[mockIndex].toLowerCase().replace(/\s+/g, '')}.com`, wins: Math.floor(Math.random() * 3), losses: Math.floor(Math.random() * 3), points: Math.floor(Math.random() * 9), teamLogoUrl: `https://picsum.photos/seed/${mockOpponents[mockIndex].replace(/\s+/g, '')}/200/200` };
             memberTeamIds.push(mockId);
             mockIndex++;
         }

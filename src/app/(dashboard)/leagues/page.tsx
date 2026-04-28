@@ -488,6 +488,7 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
   // Logo map: activeTeam is the authoritative source (live Firestore doc merge).
   // teamsRaw/teamMemberships docs do NOT contain teamLogoUrl — only activeTeamDoc does.
   // Layer: activeTeam first → league.teams overrides (for external enrolled teams).
+  // Also index by teamName so logo lookup works when game.team1Id doesn't match.
   const teamLogoMap = useMemo(() => {
     const map: Record<string, string> = {};
     // Primary: the current user's active team — always fresh from Firestore
@@ -497,7 +498,10 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
     // Secondary: logos stored in the league document itself (set at enrollment/propagation time)
     if (league?.teams) {
       Object.entries(league.teams).forEach(([id, t]) => {
-        if ((t as any).teamLogoUrl) map[id] = (t as any).teamLogoUrl;
+        if ((t as any).teamLogoUrl) {
+          map[id] = (t as any).teamLogoUrl;
+          map[(t as any).teamName] = (t as any).teamLogoUrl;
+        }
       });
     }
     return map;
