@@ -22,13 +22,16 @@ import { cn } from '@/lib/utils';
 
 function NewTeamForm() {
   const router = useRouter();
-  const { createNewTeam, proQuotaStatus, activeTeam, isSchoolAdmin } = useTeam();
+  const searchParams = useSearchParams();
+  const tierParam = searchParams.get('tier'); // 'starter' | 'pro'
+  const { createNewTeam, proQuotaStatus, activeTeam, isSchoolAdmin, setIsPaywallOpen } = useTeam();
   
   const [teamName, setTeamName] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<"adult" | "youth" | "school" | "school_squad">('adult');
   const [organizerPosition, setOrganizerPosition] = useState('Coach');
-  const [selectedPlan, setSelectedPlan] = useState<'free' | 'team'>('free');
+  // Pre-select plan based on URL param
+  const [selectedPlan, setSelectedPlan] = useState<'free' | 'team'>(tierParam === 'pro' ? 'team' : 'free');
   const [isProcessing, setIsProcessing] = useState(false);
   const [customWaiverTitle, setCustomWaiverTitle] = useState('');
   const [customWaiverContent, setCustomWaiverContent] = useState('');
@@ -39,10 +42,21 @@ function NewTeamForm() {
       setType('school_squad');
       setSelectedPlan('team');
     }
-  }, [isSchoolAdmin, activeTeam]);
+    // If landing with ?tier=pro and no quota available, immediately open paywall
+    if (tierParam === 'pro' && proQuotaStatus.remaining <= 0) {
+      setIsPaywallOpen(true);
+    }
+  }, [isSchoolAdmin, activeTeam, tierParam, proQuotaStatus.remaining, setIsPaywallOpen]);
 
   const handleCreate = async () => {
     if (!teamName.trim()) return;
+
+    // If the user selected Elite Pro and has no remaining quota, gate with paywall
+    if (selectedPlan === 'team' && proQuotaStatus.remaining <= 0) {
+      setIsPaywallOpen(true);
+      return;
+    }
+
     setIsProcessing(true);
     try {
       let targetType = type;
@@ -148,6 +162,7 @@ function NewTeamForm() {
             >
               <p className="font-black text-sm uppercase">Starter Squad</p>
               <p className="text-xl font-black mt-1">$0</p>
+              <p className="text-[10px] text-muted-foreground font-bold mt-1">Basic features, 1 team</p>
             </div>
             <div 
               className={cn("p-6 rounded-3xl border-2 cursor-pointer transition-all relative overflow-hidden", selectedPlan === 'team' ? "border-primary bg-black text-white shadow-xl" : "border-transparent bg-muted/30")}
@@ -155,12 +170,34 @@ function NewTeamForm() {
             >
               <Zap className="absolute -right-2 -bottom-2 h-16 w-16 opacity-10 -rotate-12" />
               <p className="font-black text-sm uppercase">Elite Pro</p>
-              <p className="text-xl font-black mt-1 text-primary">Upgrade Required</p>
+              {proQuotaStatus.remaining > 0 ? (
+                <>
+                  <p className="text-xl font-black mt-1 text-primary">Included in Plan</p>
+                  <p className="text-[10px] font-bold mt-1 opacity-60">{proQuotaStatus.remaining} slot(s) remaining</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xl font-black mt-1 text-primary">$19.99/mo</p>
+                  <p className="text-[10px] font-bold mt-1 opacity-60">Stripe payment required to activate</p>
+                </>
+              )}
             </div>
+            {selectedPlan === 'team' && proQuotaStatus.remaining <= 0 && (
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                <Zap className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider leading-relaxed">
+                  Clicking "Deploy" will redirect you to Stripe checkout. Your team will activate once payment is confirmed.
+                </p>
+              </div>
+            )}
           </div>
 
           <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreate} disabled={isProcessing || !teamName.trim()}>
-            {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Squad Hub"}
+            {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : (
+              selectedPlan === 'team' && proQuotaStatus.remaining <= 0
+                ? 'Continue to Payment →'
+                : 'Deploy Squad Hub'
+            )}
           </Button>
         </div>
       </div>

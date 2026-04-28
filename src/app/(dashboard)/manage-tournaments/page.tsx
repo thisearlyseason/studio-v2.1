@@ -1912,7 +1912,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
                 <Badge variant="outline" className="border-2 font-black text-[9px] uppercase tracking-widest bg-white">Tournament Series</Badge>
                 {event.isArchived && <Badge className="bg-amber-100 text-amber-700 border-none text-[8px] font-black uppercase px-2">Archived</Badge>}
               </div>
-              <h3 className="text-xl sm:text-3xl font-black uppercase tracking-tight leading-tight group-hover:text-primary transition-colors">{event.title}</h3>
+              <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-tight group-hover:text-primary transition-colors break-words overflow-hidden">{event.title}</h3>
               <div className="flex flex-col gap-2 pt-4">
                 <div className="flex items-center gap-3 text-muted-foreground">
                    <CalendarDays className="h-4 w-4" />

@@ -126,7 +126,7 @@ function DemoSeedWrapper({
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading, isAuthResolved } = useUser();
   const auth = useAuth();
-  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, isPrimaryClubAuthority } = useTeam();
+  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode } = useTeam();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -160,16 +160,28 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       router.push('/login');
     }
 
-    // Automatic Redirect to Institutional Hub for Admins/Schools
-    // We use sessionStorage to only perform this once per session to allow manual return to the Personal Hub
-    const landingKey = `squad_hub_landing_${user?.uid}`;
-    const hasRedirected = typeof window !== 'undefined' ? sessionStorage.getItem(landingKey) : null;
-    
-    if (pathname === '/dashboard' && isPrimaryClubAuthority && !hasRedirected) {
-      sessionStorage.setItem(landingKey, 'true');
-      router.push('/club');
+    // Automatic Redirect to Institutional Hub on first login per session
+    // School Admins → School Hub (/club rendered as school view)
+    // Elite Club Organizers → Elite Club Hub (/club rendered as elite view)
+    // Each role uses its own session key so they don't block each other.
+    if (pathname === '/dashboard') {
+      if (isSchoolMode && isPrimaryClubAuthority) {
+        const schoolLandingKey = `school_hub_landing_${user?.uid}`;
+        const hasRedirected = typeof window !== 'undefined' ? sessionStorage.getItem(schoolLandingKey) : null;
+        if (!hasRedirected) {
+          sessionStorage.setItem(schoolLandingKey, 'true');
+          router.push('/club');
+        }
+      } else if (isEliteClubMode) {
+        const eliteLandingKey = `elite_club_landing_${user?.uid}`;
+        const hasRedirected = typeof window !== 'undefined' ? sessionStorage.getItem(eliteLandingKey) : null;
+        if (!hasRedirected) {
+          sessionStorage.setItem(eliteLandingKey, 'true');
+          router.push('/club');
+        }
+      }
     }
-  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, isPrimaryClubAuthority]);
+  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode]);
 
   useEffect(() => {
     if (!mounted || isSeedingDemo || isTeamsLoading || !user || isDemoInitializing) return;

@@ -1538,8 +1538,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                         {league.sport}
                       </Badge>
                     </div>
-                    <div className="space-y-1">
-                      <h3 className="text-xl sm:text-3xl font-black uppercase tracking-tight group-hover:text-primary transition-colors leading-tight">{league.name}</h3>
+                    <div className="space-y-1 min-w-0">
+                      <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight group-hover:text-primary transition-colors leading-tight break-words overflow-hidden">{league.name}</h3>
                       <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
                         {Object.keys(league.teams || {}).length} squads • Hub ID: {league.id.slice(-6).toUpperCase()}
                       </p>

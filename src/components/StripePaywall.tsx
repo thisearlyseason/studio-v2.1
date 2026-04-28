@@ -8,6 +8,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTeam } from '@/components/providers/team-provider';
@@ -74,6 +75,10 @@ export function StripePaywall() {
   return (
     <Dialog open={isPaywallOpen} onOpenChange={setIsPaywallOpen}>
       <DialogContent className="sm:max-w-5xl rounded-[3rem] overflow-hidden p-0 border-none shadow-2xl bg-white">
+        {/* Visually hidden title for screen reader accessibility (Radix requirement) */}
+        <VisuallyHidden.Root>
+          <DialogTitle>Deploy Protocol — Select Your Plan</DialogTitle>
+        </VisuallyHidden.Root>
         <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[600px]">
           {/* Left Sidebar / Image */}
           <div className="lg:col-span-4 bg-black p-8 lg:p-12 flex flex-col justify-between relative overflow-hidden">

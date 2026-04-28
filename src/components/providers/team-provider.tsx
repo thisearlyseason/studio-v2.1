@@ -712,6 +712,7 @@ interface TeamContextType {
   isSchoolMode: boolean;
   isSchoolAdmin: boolean;
   isEliteAccount: boolean;
+  isEliteClubMode: boolean;
   householdEvents: TeamEvent[];
   activeTeamEvents: TeamEvent[];
   games: any[];
@@ -896,7 +897,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [totalStorageUsed, setTotalStorageUsed] = useState(0);
 
 
-  // Restore active team from persistence
+  // Restore active team from persistence.
+  // Only restore if we have a stored ID — validation against actual teams
+  // happens in activeTeamMembership once teamsRaw is loaded.
   useEffect(() => {
     const storedId = localStorage.getItem('sf_session_team_id');
     if (storedId) setManualActiveTeamId(storedId);
@@ -984,12 +987,38 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }), [teamsData, generateTeamCode]);
 
   const activeTeamMembership = useMemo(() => {
-    // If a team was explicitly chosen, honour that selection
-    if (activeTeamId) return teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null;
-    // In school mode, default to the primary school team (type === 'school') so the
-    // Athletic Director always lands on the Institution context, not a random squad.
+    if (teamsRaw.length === 0) return null;
+
+    // --- Validate the stored ID ---
+    // If there's an explicit team selection, honour it — BUT only if that team
+    // still exists in this user's membership list. Stale IDs from a previous
+    // demo/session are silently discarded so the institutional default fires.
+    if (activeTeamId) {
+      const found = teamsRaw.find(t => t.id === activeTeamId);
+      if (found) return found;
+      // Stale ID — clear it so the institutional default takes over
+      localStorage.removeItem('sf_session_team_id');
+    }
+
+    // --- School Admin / Athletic Director ---
+    // Always land on the school institution (type === 'school'), not a random squad.
     const schoolPrimary = teamsRaw.find(t => t.type === 'school');
-    return schoolPrimary || teamsRaw[0] || null;
+    if (schoolPrimary) return schoolPrimary;
+
+    // --- Elite Club Organizer ---
+    // If the user owns an Elite/League plan team (no clubId = they are the club owner),
+    // return null to signal "hub mode" — the sidebar shows the club identity, not a squad.
+    // The Club Hub page handles this state; the user picks a squad from the dropdown.
+    const isEliteOwner = teamsRaw.some(
+      t => !t.clubId && ['elite', 'league'].includes(t.planId || '') && t.ownerUserId === teamsRaw[0]?.ownerUserId
+    );
+    if (isEliteOwner) {
+      // Default to null (hub mode) — no squad active on first load
+      return null;
+    }
+
+    // --- Default: first available team ---
+    return teamsRaw[0] || null;
   }, [teamsRaw, activeTeamId]);
   const activeTeamDocRef = useMemoFirebase(() => (db && activeTeamMembership?.id) ? doc(db, 'teams', activeTeamMembership.id) : null, [db, activeTeamMembership?.id]);
   const { data: activeTeamDoc } = useDoc<Team>(activeTeamDocRef);
@@ -1453,6 +1482,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     );
   }, [activeTeam?.type, userProfile?.plan_type]);
 
+  // Elite Club Organizer mode — true when the user is an Elite/League subscription owner
+  // who is NOT in school mode. Analogous to isSchoolMode for Athletic Directors.
+  // In this mode the user is managing the club hub, not a specific squad.
+  const isEliteClubMode = useMemo(() => {
+    return isEliteAccount && isPrimaryClubAuthority && !isSchoolMode;
+  }, [isEliteAccount, isPrimaryClubAuthority, isSchoolMode]);
+
   // Storage calculation for the active team
   useEffect(() => {
     if (!db || !activeTeam?.id) {
@@ -1679,7 +1715,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       type, sport: isSchool ? 'Basketball' : 'General', 
       description, createdBy: firebaseUser.uid, ownerUserId: resolvedOwnerId, 
       planId: resolvedPlanId, 
-      isPro: resolvedPlanId !== 'free', 
+      // isPro is true only for explicitly paid/pro-tier plans.
+      // 'free' and 'starter' must NOT be auto-promoted, even for Elite Club accounts.
+      isPro: ['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo'].includes(resolvedPlanId), 
       createdAt: new Date().toISOString(),
       schoolId: schoolIdToUse
     })); 
@@ -1697,7 +1735,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       code: teamCode, 
       joinedAt: new Date().toISOString(),
       type,
-      isPro: resolvedPlanId !== 'free',
+      isPro: ['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo'].includes(resolvedPlanId),
       planId: resolvedPlanId,
       schoolId: schoolIdToUse,
       ownerUserId: resolvedOwnerId
@@ -3299,6 +3337,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     isClubManager,
     isPrimaryClubAuthority,
     isEliteAccount,
+    isEliteClubMode,
     isSchoolMode,
     isSchoolAdmin, householdEvents: householdEvents || [], householdGames: householdGames || [], activeTeamEvents, games, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus,
     deleteFundraisingOpportunity, addGame, updateGame, canAddProTeam: (proQuotaStatus.remaining > 0),
