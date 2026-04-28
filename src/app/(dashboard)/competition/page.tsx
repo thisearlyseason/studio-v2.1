@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { Shield, Table as TableIcon, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useTeam } from '@/components/providers/team-provider';
 
 // Dynamically import each hub's content component — keeps their internal state isolated and avoids SSR issues
 const LeaguesHub = dynamic(
@@ -32,14 +33,17 @@ const TournamentsHub = dynamic(
 );
 
 export default function CompetitionHubPage() {
+  const { isSchoolMode } = useTeam();
+  const pageTitle = isSchoolMode ? 'Program League Hub' : 'Competition Hub';
+
   return (
     <div className="space-y-8 pb-32">
       {/* Header */}
       <div className="space-y-1">
         <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">
-          Competition Hub
+          {pageTitle}
         </Badge>
-        <h1 className="text-4xl font-black uppercase tracking-tight">Competition Hub</h1>
+        <h1 className="text-4xl font-black uppercase tracking-tight">{pageTitle}</h1>
       </div>
 
       {/* Tab switcher */}
@@ -50,7 +54,7 @@ export default function CompetitionHubPage() {
             className="rounded-xl font-black uppercase text-[10px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-6 flex items-center gap-2"
           >
             <Shield className="h-4 w-4" />
-            Leagues
+            {isSchoolMode ? 'Programs / Leagues' : 'Leagues'}
           </TabsTrigger>
           <TabsTrigger
             value="tournaments"

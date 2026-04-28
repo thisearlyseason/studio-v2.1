@@ -53,6 +53,8 @@ export type UserProfile = {
   seenAlertIds?: string[];
   clubName?: string;
   clubDescription?: string;
+  schoolName?: string;          // The official school / institution name (editable by AD)
+  institutionTitle?: string;    // e.g. "Athletic Director", "Principal", "Program Director"
   schoolAdminIds?: string[];
   isPrimaryClubAuthority?: boolean;
   isStaff?: boolean;
@@ -957,46 +959,54 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
+  // ── Shared deterministic invite-code fallback ─────────────────────────
+  // MUST stay outside useMemo so both teamsRaw and activeTeam use
+  // the exact same algorithm — guaranteeing they always agree.
+  const generateTeamCode = useCallback((teamId: string): string => {
+    let h = 0;
+    for (let i = 0; i < teamId.length; i++) h = (Math.imul(31, h) + teamId.charCodeAt(i)) | 0;
+    // 8-char base36 padded with leading zeros (not Z) for readability
+    return Math.abs(h).toString(36).toUpperCase().padStart(8, '0');
+  }, []);
+
   const teamsRaw = useMemo(() => (teamsData || []).map(m => {
     const tid = m.teamId || m.id;
-    
-    // Deterministic Hash Fallback: Ensures uniqueness with massive namespace (10-char base36)
-    const generateHash = (str: string) => {
-      let h = 0;
-      for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
-      // Convert to 10-char base36 string for quadrillions of combinations
-      return Math.abs(h).toString(36).toUpperCase().padStart(10, 'Z');
-    };
-
-    const fallbackCode = generateHash(tid);
-    
+    const storedCode = (m.code || m.teamCode || m.inviteCode || '').toString().trim().toUpperCase();
+    const finalCode = storedCode || generateTeamCode(tid);
     return { 
       ...m, 
       id: tid, 
       name: m.name || m.teamName || 'Squad',
-      code: m.code || m.teamCode || m.inviteCode || fallbackCode,
-      teamCode: m.code || m.teamCode || m.inviteCode || fallbackCode,
-      inviteCode: m.code || m.teamCode || m.inviteCode || fallbackCode
+      code: finalCode,
+      teamCode: finalCode,
+      inviteCode: finalCode
     };
-  }), [teamsData]);
+  }), [teamsData, generateTeamCode]);
 
-  const activeTeamMembership = useMemo(() => teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null, [teamsRaw, activeTeamId]);
+  const activeTeamMembership = useMemo(() => {
+    // If a team was explicitly chosen, honour that selection
+    if (activeTeamId) return teamsRaw.find(t => t.id === activeTeamId) || teamsRaw[0] || null;
+    // In school mode, default to the primary school team (type === 'school') so the
+    // Athletic Director always lands on the Institution context, not a random squad.
+    const schoolPrimary = teamsRaw.find(t => t.type === 'school');
+    return schoolPrimary || teamsRaw[0] || null;
+  }, [teamsRaw, activeTeamId]);
   const activeTeamDocRef = useMemoFirebase(() => (db && activeTeamMembership?.id) ? doc(db, 'teams', activeTeamMembership.id) : null, [db, activeTeamMembership?.id]);
   const { data: activeTeamDoc } = useDoc<Team>(activeTeamDocRef);
 
   const activeTeam = useMemo(() => {
     if (!activeTeamMembership) return null;
     const combined = { ...activeTeamMembership, ...activeTeamDoc };
-    // Bridge the gap between 'code', 'teamCode', and 'inviteCode' fields
-    const code = (combined.code || combined.teamCode || combined.inviteCode || '').toString().toUpperCase();
-    const finalCode = code || (combined.id ? 'SF' + combined.id.slice(-4).toUpperCase() : 'SQUAD');
+    // Use the same shared fallback — NEVER 'SF' + slice which was inconsistent
+    const storedCode = (combined.code || combined.teamCode || combined.inviteCode || '').toString().trim().toUpperCase();
+    const finalCode = storedCode || generateTeamCode(combined.id || activeTeamMembership.id);
     return { 
       ...combined, 
       code: finalCode,
       teamCode: finalCode,
       inviteCode: finalCode
     } as Team;
-  }, [activeTeamMembership, activeTeamDoc]);
+  }, [activeTeamMembership, activeTeamDoc, generateTeamCode]);
 
   const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: membersData, isLoading: isMembersInitialLoading } = useCollection<Member>(membersQuery);
@@ -1737,6 +1747,72 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       }
     } catch (e) {
       console.warn("Identity sweep partial failure:", e);
+    }
+
+    // Email-Match Auto-Enrollment: Scan leagues where coachEmail matches the registrant's email.
+    // When found, link the new teamId into the league so their matches auto-appear on their dashboard.
+    // Outside (non-school) teams are given Starter plan access only.
+    const registrantEmail = (coachEmail || firebaseUser.email || userProfile?.email || '').toLowerCase().trim();
+    if (registrantEmail && type !== 'school' && type !== 'school_squad') {
+      try {
+        // Search all leagues for a team slot with matching coachEmail
+        const leaguesSnap = await getDocs(collection(db, 'leagues'));
+        const emailLinkBatch = writeBatch(db);
+        let linkedCount = 0;
+
+        for (const leagueDoc of leaguesSnap.docs) {
+          const leagueData = leagueDoc.data();
+          const teamsMap = leagueData.teams || {};
+          const memberTeamIds: string[] = leagueData.memberTeamIds || [];
+
+          // Find any team slot in this league where coachEmail matches
+          let matched = false;
+          for (const [slotTeamId, slotTeamData] of Object.entries(teamsMap)) {
+            const slotEmail = ((slotTeamData as any).coachEmail || '').toLowerCase().trim();
+            if (slotEmail && slotEmail === registrantEmail && !memberTeamIds.includes(tid)) {
+              // Link: add the new real teamId to memberTeamIds and stamp the slot with registeredTeamId
+              emailLinkBatch.update(leagueDoc.ref, {
+                memberTeamIds: arrayUnion(tid),
+                [`teams.${slotTeamId}.registeredTeamId`]: tid,
+                [`teams.${slotTeamId}.status`]: 'registered',
+              });
+              // Ensure the new team gets Starter plan access (not Pro)
+              emailLinkBatch.update(doc(db, 'teams', tid), { planId: resolvedPlanId === 'free' ? 'free' : resolvedPlanId });
+              matched = true;
+              linkedCount++;
+              break;
+            }
+          }
+
+          // Also check tournamentTeamsData emails in events subcollection would require a separate pass
+          // We handle that in a separate sweep below (non-blocking)
+        }
+
+        if (linkedCount > 0) {
+          await emailLinkBatch.commit();
+          console.log(`[AutoSync] Linked new team ${tid} to ${linkedCount} league(s) via email match`);
+          toast({ title: "Auto-Enrolled!", description: `Your team was automatically added to ${linkedCount} league(s) based on your registration email.` });
+        }
+
+        // Non-blocking: check tournament events for email matches
+        // (tournaments store team email under tournamentTeamsData[].email)
+        getDocs(query(collectionGroup(db, 'events'), where('isTournament', '==', true))).then(async eventsSnap => {
+          const tournBatch = writeBatch(db);
+          let tLinked = 0;
+          for (const evDoc of eventsSnap.docs) {
+            const evData = evDoc.data();
+            const teamsData: any[] = evData.tournamentTeamsData || [];
+            const matched = teamsData.some(t => (t.email || '').toLowerCase().trim() === registrantEmail);
+            if (matched && !(evData.linkedTeamIds || []).includes(tid)) {
+              tournBatch.update(evDoc.ref, { linkedTeamIds: arrayUnion(tid) });
+              tLinked++;
+            }
+          }
+          if (tLinked > 0) await tournBatch.commit();
+        }).catch(e => console.warn("[AutoSync] Tournament email sweep failed:", e));
+      } catch (e) {
+        console.warn("[AutoSync] Email-match enrollment failed (non-blocking):", e);
+      }
     }
 
     toast({ title: "Team Created Successfully!", description: `Your new ${type.replace('_', ' ')} "${name}" is ready.` });

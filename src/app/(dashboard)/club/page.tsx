@@ -151,7 +151,7 @@ export default function ClubManagementPage() {
   const [isEditClubOpen, setIsEditOpen] = useState(false);
   const [isDeployProtocolOpen, setIsDeployProtocolOpen] = useState(false);
   const [isSubSquadModalOpen, setIsSubSquadModalOpen] = useState(false);
-  const [clubForm, setClubForm] = useState({ name: user?.clubName || '', description: user?.clubDescription || '' });
+  const [clubForm, setClubForm] = useState({ name: user?.schoolName || user?.clubName || '', description: user?.clubDescription || '', schoolName: user?.schoolName || user?.clubName || '', institutionTitle: user?.institutionTitle || (isSchoolMode ? 'Athletic Director' : '') });
   const [protocolForm, setProtocolForm] = useState({ title: '', content: '', type: 'waiver' as any });
   const [newSquadForm, setNewSquadForm] = useState({ name: '', coachName: '', coachEmail: '' });
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
@@ -361,7 +361,16 @@ export default function ClubManagementPage() {
   // Allow primary owners, school admins, and sub-squad members to access the Hub
   if (!hasSchoolHubAccess) return <AccessRestricted type="role" title="Institutional Hub Locked" description="Reserved for institutional staff and account owners." />;
 
-  const handleUpdateClub = async () => { await updateUser({ clubName: clubForm.name, clubDescription: clubForm.description }); setIsEditOpen(false); toast({ title: "Club Synchronized" }); };
+  const handleUpdateClub = async () => {
+    const updates: any = { clubName: clubForm.name, clubDescription: clubForm.description };
+    if (isSchoolMode && isPrimaryClubAuthority) {
+      if (clubForm.schoolName) updates.schoolName = clubForm.schoolName;
+      if (clubForm.institutionTitle) updates.institutionTitle = clubForm.institutionTitle;
+    }
+    await updateUser(updates);
+    setIsEditOpen(false);
+    toast({ title: isSchoolMode ? "School Identity Updated" : "Club Synchronized" });
+  };
 
   const handleDeployProtocol = async () => {
     if (!protocolForm.title || !protocolForm.content) return;
@@ -421,9 +430,11 @@ export default function ClubManagementPage() {
           <div className="space-y-3">
             <Badge className="bg-primary text-white border-none font-black uppercase tracking-[0.2em] text-[10px] h-7 px-4 shadow-lg">Institutional Command</Badge>
             <h1 className="text-4xl md:text-6xl font-black tracking-tighter uppercase leading-[0.8] text-white">
-              {user?.clubName || (isSchoolMode ? 'School Hub' : 'Club Hub')}
+              {user?.schoolName || user?.clubName || (isSchoolMode ? 'School Hub' : 'Club Hub')}
             </h1>
-            <p className="text-white/60 font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Master Governance {isSchoolMode ? 'School Hub' : 'Club Hub'}</p>
+            <p className="text-white/60 font-bold uppercase tracking-[0.2em] text-[10px] ml-1">
+              {user?.institutionTitle || (isSchoolMode ? 'Athletic Director' : 'Club Authority')} &bull; {user?.name}
+            </p>
           </div>
           <div className="flex flex-wrap gap-3">
             <Button variant="outline" className="h-14 px-8 rounded-2xl border-white/20 bg-white/10 text-white hover:bg-white hover:text-black transition-all font-black uppercase text-xs" onClick={() => setIsEditOpen(true)}>
@@ -721,9 +732,14 @@ export default function ClubManagementPage() {
                          <AvatarImage src={coach.avatar} className="object-cover" />
                          <AvatarFallback className="font-black bg-primary/10 text-primary">{coach.name[0]}</AvatarFallback>
                        </Avatar>
-                       <div className="space-y-1 content-center flex-1">
+                       <div className="space-y-0.5 content-center flex-1">
                           <h3 className="text-xl font-black uppercase text-foreground">{coach.name}</h3>
-                          <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{coach.position} • {teams.find(t => t.id === coach.teamId)?.name}</p>
+                          <p className="text-[9px] font-black text-primary uppercase tracking-widest">{coach.position || 'Coach'}</p>
+                          <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+                            {coach.userId === user?.id
+                              ? (user?.schoolName || user?.clubName || teams[0]?.name || '')
+                              : (teams.find(t => t.id === coach.teamId)?.name || '')}
+                          </p>
                        </div>
                        <div className="ml-auto flex items-center gap-2">
                          <Tooltip>
@@ -1009,12 +1025,55 @@ export default function ClubManagementPage() {
         <DialogContent className="rounded-[3rem] p-0 overflow-hidden sm:max-w-md border-none shadow-2xl glass text-foreground">
           <div className="h-2 bg-black w-full" />
           <div className="p-10 space-y-8">
-            <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">Club Architect</DialogTitle><DialogDescription className="text-primary font-bold uppercase text-[10px] tracking-widest">Update institutional identity</DialogDescription></DialogHeader>
-            <div className="space-y-6">
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Official Club Name</Label><Input value={clubForm.name} onChange={e => setClubForm({...clubForm, name: e.target.value})} className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20" /></div>
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Mission Narrative</Label><Textarea value={clubForm.description} onChange={e => setClubForm({...clubForm, description: e.target.value})} className="min-h-[150px] rounded-2xl border-2 font-medium focus:border-primary/20 p-4 resize-none" placeholder="Describe the club's tactical mission..." /></div>
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight">
+                {isSchoolMode ? 'School Identity' : 'Club Architect'}
+              </DialogTitle>
+              <DialogDescription className="text-primary font-bold uppercase text-[10px] tracking-widest">
+                {isSchoolMode ? 'Edit institutional branding & your role' : 'Update institutional identity'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-5">
+              {isSchoolMode ? (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-foreground">School / Institution Name</Label>
+                    <Input
+                      value={clubForm.schoolName}
+                      onChange={e => setClubForm({...clubForm, schoolName: e.target.value, name: e.target.value})}
+                      placeholder="e.g. Westfield High School"
+                      className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20"
+                    />
+                    <p className="text-[9px] text-muted-foreground uppercase tracking-widest ml-1">Displays in sidebar, hub header, and admin profile</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Your Administrative Title</Label>
+                    <Select value={clubForm.institutionTitle} onValueChange={v => setClubForm({...clubForm, institutionTitle: v})}>
+                      <SelectTrigger className="h-14 rounded-2xl border-2 font-bold focus:border-primary/20"><SelectValue placeholder="Select your title..." /></SelectTrigger>
+                      <SelectContent className="rounded-2xl">
+                        <SelectItem value="Athletic Director" className="font-bold">Athletic Director</SelectItem>
+                        <SelectItem value="Principal" className="font-bold">Principal</SelectItem>
+                        <SelectItem value="Vice Principal" className="font-bold">Vice Principal</SelectItem>
+                        <SelectItem value="Program Director" className="font-bold">Program Director</SelectItem>
+                        <SelectItem value="Head of Sport" className="font-bold">Head of Sport</SelectItem>
+                        <SelectItem value="Club President" className="font-bold">Club President</SelectItem>
+                        <SelectItem value="General Manager" className="font-bold">General Manager</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Mission Narrative</Label>
+                    <Textarea value={clubForm.description} onChange={e => setClubForm({...clubForm, description: e.target.value})} className="min-h-[100px] rounded-2xl border-2 font-medium focus:border-primary/20 p-4 resize-none" placeholder="Describe the school's athletic program..." />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Official Club Name</Label><Input value={clubForm.name} onChange={e => setClubForm({...clubForm, name: e.target.value})} className="h-14 rounded-2xl border-2 font-black text-lg focus:border-primary/20" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Mission Narrative</Label><Textarea value={clubForm.description} onChange={e => setClubForm({...clubForm, description: e.target.value})} className="min-h-[150px] rounded-2xl border-2 font-medium focus:border-primary/20 p-4 resize-none" placeholder="Describe the club's tactical mission..." /></div>
+                </>
+              )}
             </div>
-            <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 border-none" onClick={handleUpdateClub}>Synchronize Hub</Button></DialogFooter>
+            <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 border-none" onClick={handleUpdateClub}>{isSchoolMode ? 'Save School Identity' : 'Synchronize Hub'}</Button></DialogFooter>
           </div>
         </DialogContent>
       </Dialog>

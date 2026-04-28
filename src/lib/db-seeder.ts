@@ -631,7 +631,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         ];
 
         for (const v of variants) {
-            const uniqueCode = `SQUAD-${v.id.toUpperCase().slice(-14)}`;
+            const uniqueCode = (h => Math.abs(h).toString(36).toUpperCase().padStart(8,'0'))(v.id.split('').reduce((h,c)=>(Math.imul(31,h)+c.charCodeAt(0))|0,0));
 
             // For player demos, teams are OWNED by a fictional coach, not the player.
             // This prevents proQuotaStatus from firing (player owns 0 teams).
@@ -894,7 +894,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         return strikerId;
     }
 
-    const teamVariants = isEliteDemo ? ['North', 'South', 'Academy'] : (isSchoolDemo ? ['Springfield High', 'Varsity', 'Junior Varsity', 'Freshman'] : ['']);
+    // School demo: 4 real squads get full data; the institution is a separate lightweight record
+    const teamVariants = isEliteDemo ? ['North', 'South', 'Academy'] : (isSchoolDemo ? ['Varsity', 'Junior Varsity', 'Freshman', 'Springfield High School'] : ['']);
     const leagueId = `demo_league_${userId.slice(-4)}`;
 
     // Create a league for non-parent demos to tie everything together
@@ -948,15 +949,49 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         }));
     }
 
+    // ── School Institution (lightweight record — no events, no roster) ────────
+    if (isSchoolDemo) {
+      const instId = `demo_${planId}_${userId.slice(-4)}_institution`;
+      const instCode = (h => Math.abs(h).toString(36).toUpperCase().padStart(8,'0'))(instId.split('').reduce((h,c)=>(Math.imul(31,h)+c.charCodeAt(0))|0,0));
+      batch.set(doc(db, 'teams', instId), clean({
+        id: instId,
+        name: 'Springfield High School',
+        teamName: 'Springfield High School',
+        code: instCode, teamCode: instCode, inviteCode: instCode,
+        ownerUserId: userId, isPro: true, planId: plan_type,
+        sport: 'Basketball', isDemo: true,
+        type: 'school',         // AD / institution level — NOT a playable squad
+        schoolId: instId,       // self-reference so squads can link back
+        isInstitution: true,    // explicit flag for UI guards
+        createdAt: now,
+        heroImageUrl: `https://picsum.photos/seed/${instId}hero/1200/400`,
+        teamLogoUrl: `https://picsum.photos/seed/${instId}logo/200/200`
+      }));
+      batch.set(doc(db, 'users', userId, 'teamMemberships', instId), clean({
+        teamId: instId, name: 'Springfield High School', role, isPro: true,
+        planId: plan_type, isDemo: true, joinedAt: now, ownerUserId: userId,
+        type: 'school', schoolId: instId, isInstitution: true
+      }));
+      batch.set(doc(db, 'teams', instId, 'members', userId), clean({
+        id: userId, userId, teamId: instId,
+        name: 'Guest Admin', role, position: 'Athletic Director', jersey: 'AD',
+        joinedAt: now, isDemo: true,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=guest`,
+        ownerUserId: userId, email: `admin@thesquad.pro`
+      }));
+      await batch.maybeCommit();
+    }
+
     for (let i = 0; i < teamVariants.length; i++) {
         const variant = teamVariants[i];
-        const isPrimary = i === 0;
-        let teamId = isPrimary && !variant ? `demo_${planId}_${userId.slice(-4)}` : `demo_${planId}_${userId.slice(-4)}_${(variant || 'main').toLowerCase().replace(/\s+/g, '')}`;
-        let name = isSchoolDemo ? (isPrimary ? 'Springfield High School' : `Springfield ${variant}`) : (variant ? `Elite Squad - ${variant}` : (isProTier ? 'Apex Demo Squad' : 'Grassroots Demo'));
-        let teamType = isSchoolDemo ? (isPrimary ? 'school' : 'school_squad') : 'youth';
-        let schoolId = isSchoolDemo ? (isPrimary ? teamId : `demo_${planId}_${userId.slice(-4)}_springfieldhigh`) : undefined;
+        let teamId = `demo_${planId}_${userId.slice(-4)}_${(variant || 'main').toLowerCase().replace(/\s+/g, '')}`;
+        let name = isSchoolDemo ? `Springfield ${variant}` : (variant ? `Elite Squad - ${variant}` : (isProTier ? 'Apex Demo Squad' : 'Grassroots Demo'));
+        // All school variants are squads — the institution is a separate record created above
+        let teamType = isSchoolDemo ? 'school_squad' : 'youth';
+        let schoolId = isSchoolDemo ? `demo_${planId}_${userId.slice(-4)}_institution` : undefined;
 
-        const uniqueCode = `SQUAD-${teamId.toUpperCase().slice(-14)}`; 
+
+        const uniqueCode = (h => Math.abs(h).toString(36).toUpperCase().padStart(8,'0'))(teamId.split('').reduce((h,c)=>(Math.imul(31,h)+c.charCodeAt(0))|0,0));
         batch.set(doc(db, 'teams', teamId), clean({ 
             id: teamId,
             name,       // canonical field used by Team type

@@ -48,7 +48,8 @@ import {
   UserX,
   ShieldAlert,
   User,
-  Medal
+  Medal,
+  Copy
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -109,6 +110,7 @@ import {
 const coordinationTabs = [
   { name: 'Feed', href: '/feed', icon: Radio, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
+  { name: 'Roster', href: '/roster', icon: Users, pro: false },
   { name: 'Practice', href: '/practice', icon: Dumbbell, pro: true },
   { name: 'Competition Hub', href: '/competition', icon: Medal, pro: false },
   { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: true },
@@ -163,61 +165,153 @@ const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boo
 });
 SidebarItem.displayName = "SidebarItem";
 
-function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user }: { activeTeam: any, teams: any[], setActiveTeam: any, router: any, user: any }) {
-  return (
-    <DropdownMenuContent align="start" className="w-72 p-2 rounded-2xl shadow-2xl bg-white">
-      <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground p-3">My Squads</DropdownMenuLabel>
-      <ScrollArea className="h-[300px]">
-        {teams.map(team => (
-          <DropdownMenuItem key={team.id} onClick={() => setActiveTeam(team)} className={cn("flex items-center gap-3 p-3 rounded-xl cursor-pointer", activeTeam?.id === team.id ? "bg-primary/5 text-primary" : "")}>
-            <Avatar className="h-8 w-8 rounded-lg shrink-0 shadow-sm">
-              <AvatarImage src={team.teamLogoUrl} className="object-cover" />
-              <AvatarFallback className="font-black text-[10px]">{team.name?.[0] || 'T'}</AvatarFallback>
-            </Avatar>
-            <div className="flex flex-col min-w-0 flex-1">
-              <span className="font-black text-sm truncate uppercase tracking-tight">{team.name}</span>
-              <div className="flex items-center gap-1.5 mt-0">
-                {['elite', 'league', 'school'].includes(team.planId) || team.isPro || team.type === 'school' || team.type === 'school_squad' ? (
-                  <Badge className="bg-primary/20 hover:bg-primary/30 text-primary border-primary/20 text-[10px] font-black h-5 px-2 tracking-widest transition-all">
-                    {(team.type === 'school' || team.type === 'school_squad' || team.planId === 'school') ? 'SCHOOL HUB' : 'ELITE PRO'}
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-[10px] font-bold h-5 px-2 border-black/10">STARTER</Badge>
-                )}
-                {team.ownerUserId === user?.id && (team.type === 'school' || team.type === 'school_squad' || ['elite', 'league', 'school'].includes(team.planId || '')) && (
-                  <Badge className="bg-black text-white text-[8px] font-black h-4 px-1.5 tracking-tighter rounded-sm flex items-center gap-1">
-                    <Star className="h-2 w-2 fill-current" /> {(team.type === 'school' || team.type === 'school_squad' || team.planId === 'school') ? 'DISTRICT' : 'PRIMARY'}
-                  </Badge>
-                )}
-              </div>
-            </div>
-            {activeTeam?.id === team.id && <CheckCircle2 className="h-4 w-4 ml-auto text-primary" />}
-          </DropdownMenuItem>
-        ))}
-      </ScrollArea>
-      
-      <DropdownMenuSeparator className="my-2" />
-      
-      <DropdownMenuItem onClick={() => router.push('/team')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
-        <Settings className="h-4 w-4 text-primary" /> View Squad Profile
-      </DropdownMenuItem>
-      
-      <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
-        <UserPlus className="h-4 w-4 text-primary" /> Portals
-      </DropdownMenuItem>
+function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isSchoolMode, isPrimaryClubAuthority }: { activeTeam: any, teams: any[], setActiveTeam: any, router: any, user: any, isSchoolMode?: boolean, isPrimaryClubAuthority?: boolean }) {
+  const primarySchoolTeam = isSchoolMode ? teams.find(t => t.type === 'school') : null;
+  // All non-primary teams are squads — catches school_squad and any other types
+  const squadList = isSchoolMode ? teams.filter(t => t.type !== 'school') : teams;
 
-      <DropdownMenuSeparator className="my-2" />
-      
-      <DropdownMenuItem onClick={() => router.push('/teams/new?tier=starter')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
-        <PlusCircle className="h-4 w-4 text-primary" /> Deploy Free Team
-      </DropdownMenuItem>
-      
-      <DropdownMenuItem onClick={() => router.push('/teams/new?tier=pro')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
-        <Zap className="h-4 w-4 text-amber-500" /> Deploy Elite Pro Team
-      </DropdownMenuItem>
+  return (
+    <DropdownMenuContent align="start" className="w-80 p-2 rounded-2xl shadow-2xl bg-white">
+
+      {/* ── SCHOOL MODE ────────────────────────────────────────────── */}
+      {isSchoolMode ? (
+        <>
+          {/* 1. Institution Card — fixed above the scroll, always visible */}
+          {primarySchoolTeam && (
+            <>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pt-2 pb-1.5">School Institution</p>
+              <button
+                onClick={() => setActiveTeam(primarySchoolTeam)}
+                className={cn(
+                  "w-full flex items-center gap-3 p-3 rounded-xl cursor-pointer border-2 transition-all text-left",
+                  activeTeam?.type === 'school'
+                    ? "bg-primary/10 border-primary/40 text-primary"
+                    : "bg-muted/30 border-muted hover:bg-primary/5 hover:border-primary/20"
+                )}
+              >
+                <div className={cn(
+                  "h-11 w-11 rounded-xl flex items-center justify-center shrink-0 font-black text-lg",
+                  activeTeam?.type === 'school' ? "bg-primary text-white" : "bg-primary/15 text-primary"
+                )}>
+                  {(user?.schoolName || user?.clubName || primarySchoolTeam.name || 'S')[0]}
+                </div>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="font-black text-sm truncate uppercase tracking-tight">
+                    {user?.schoolName || user?.clubName || primarySchoolTeam.name}
+                  </span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                    {user?.institutionTitle || 'Athletic Director'}
+                  </span>
+                </div>
+                {activeTeam?.type === 'school' && <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />}
+              </button>
+            </>
+          )}
+
+          <DropdownMenuSeparator className="my-2" />
+
+          {/* 2. Squads — scrollable list of individual cards */}
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pb-1.5">
+            Squads ({squadList.length})
+          </p>
+          <ScrollArea className="max-h-[300px] pr-1">
+            <div className="space-y-1.5 pb-1">
+              {squadList.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">No squads assigned yet.</p>
+              ) : squadList.map(team => {
+                const isActive = activeTeam?.id === team.id && activeTeam?.type !== 'school';
+                return (
+                  <button
+                    key={team.id}
+                    onClick={() => setActiveTeam(team)}
+                    className={cn(
+                      "w-full flex items-center gap-3 p-3 rounded-xl cursor-pointer border-2 transition-all text-left",
+                      isActive
+                        ? "bg-primary/10 border-primary/30 text-primary"
+                        : "border-muted/60 hover:bg-muted/40 hover:border-muted-foreground/20"
+                    )}
+                  >
+                    <Avatar className="h-9 w-9 rounded-lg shrink-0 shadow-sm border border-muted">
+                      <AvatarImage src={team.teamLogoUrl} className="object-cover" />
+                      <AvatarFallback className={cn("font-black text-xs", isActive ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground")}>
+                        {team.name?.[0] || 'T'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="font-black text-sm truncate uppercase tracking-tight">{team.name}</span>
+                      <span className="text-[10px] font-medium text-muted-foreground truncate">
+                        {team.code || team.teamCode || team.inviteCode || ''}
+                      </span>
+                    </div>
+                    {isActive && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </ScrollArea>
+
+          <DropdownMenuSeparator className="my-2" />
+          <DropdownMenuItem onClick={() => router.push('/club')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
+            <Building className="h-4 w-4" /> School Hub
+          </DropdownMenuItem>
+          <DropdownMenuSeparator className="my-2" />
+          <DropdownMenuItem onClick={() => router.push('/team')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+            <Settings className="h-4 w-4 text-primary" /> View Squad Profile
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+            <UserPlus className="h-4 w-4 text-primary" /> Portals
+          </DropdownMenuItem>
+        </>
+      ) : (
+        /* ── NON-SCHOOL MODE (unchanged) ──────────────────────────── */
+        <>
+          <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground p-3">My Squads</DropdownMenuLabel>
+          <ScrollArea className="max-h-[300px]">
+            {teams.map(team => (
+              <DropdownMenuItem key={team.id} onClick={() => setActiveTeam(team)} className={cn("flex items-center gap-3 p-3 rounded-xl cursor-pointer", activeTeam?.id === team.id ? "bg-primary/5 text-primary" : "")}>
+                <Avatar className="h-8 w-8 rounded-lg shrink-0 shadow-sm">
+                  <AvatarImage src={team.teamLogoUrl} className="object-cover" />
+                  <AvatarFallback className="font-black text-[10px]">{team.name?.[0] || 'T'}</AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="font-black text-sm truncate uppercase tracking-tight">{team.name}</span>
+                  <div className="flex items-center gap-1.5">
+                    {['elite', 'league', 'school'].includes(team.planId) || team.isPro ? (
+                      <Badge className="bg-primary/20 text-primary border-primary/20 text-[10px] font-black h-5 px-2 tracking-widest">ELITE PRO</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] font-bold h-5 px-2 border-black/10">STARTER</Badge>
+                    )}
+                    {team.ownerUserId === user?.id && ['elite', 'league', 'school'].includes(team.planId || '') && (
+                      <Badge className="bg-black text-white text-[8px] font-black h-4 px-1.5 tracking-tighter rounded-sm flex items-center gap-1">
+                        <Star className="h-2 w-2 fill-current" /> PRIMARY
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                {activeTeam?.id === team.id && <CheckCircle2 className="h-4 w-4 ml-auto text-primary" />}
+              </DropdownMenuItem>
+            ))}
+          </ScrollArea>
+          <DropdownMenuSeparator className="my-2" />
+          <DropdownMenuItem onClick={() => router.push('/team')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+            <Settings className="h-4 w-4 text-primary" /> View Squad Profile
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+            <UserPlus className="h-4 w-4 text-primary" /> Portals
+          </DropdownMenuItem>
+          <DropdownMenuSeparator className="my-2" />
+          <DropdownMenuItem onClick={() => router.push('/teams/new?tier=starter')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+            <PlusCircle className="h-4 w-4 text-primary" /> Deploy Free Team
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push('/teams/new?tier=pro')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+            <Zap className="h-4 w-4 text-amber-500" /> Deploy Elite Pro Team
+          </DropdownMenuItem>
+        </>
+      )}
     </DropdownMenuContent>
   );
 }
+
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -236,14 +330,20 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     .filter(tab => {
       // Feed is filtered by plan/feature
       if (tab.name === 'Feed') return hasFeature?.('live_feed_read');
+      // Roster: hide for school admins in institution mode (they use the School Hub instead)
+      if (tab.name === 'Roster' && isSchoolMode && isPrimaryClubAuthority && activeTeam?.type === 'school') return false;
       return true;
     })
     .map(tab => {
       if (tab.name === 'Competition Hub' && isSchoolMode) {
-        return { ...tab, name: 'Programs Hub' };
+        return { ...tab, name: 'Program League Hub' };
       }
       return tab;
     });
+
+  // School admin in institution mode: only the squad-selector button is shown in the sidebar.
+  // All nav items are hidden — they're managing the school hub, not a specific squad.
+  const isSchoolInstitutionMode = isSchoolMode && isPrimaryClubAuthority && activeTeam?.type === 'school';
 
   const bottomNavItems = [
     { name: 'Home', href: '/dashboard', icon: Home },
@@ -339,43 +439,102 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   <Button variant="outline" className="w-full justify-between h-14 px-3 border-2 border-muted-foreground/10 bg-background rounded-2xl shadow-sm hover:bg-muted/50 transition-all">
                     <div className="flex items-center gap-3 min-w-0">
                       <Avatar className="h-9 w-9 rounded-xl border-2 border-background shadow-md">
-                        <AvatarImage src={activeTeam?.teamLogoUrl} className="object-cover" />
-                        <AvatarFallback className="hero-gradient text-white font-black text-xs">{activeTeam?.name?.[0] || 'T'}</AvatarFallback>
+                        {isSchoolMode && isPrimaryClubAuthority && activeTeam?.type === 'school' ? (
+                          /* Institution mode — gradient shield */
+                          <AvatarFallback className="hero-gradient text-white font-black text-xs">
+                            {(user?.schoolName || user?.clubName || 'S')[0]}
+                          </AvatarFallback>
+                        ) : isSchoolMode && isPrimaryClubAuthority ? (
+                          /* Squad mode — show the squad's logo */
+                          <>
+                            <AvatarImage src={activeTeam?.teamLogoUrl} className="object-cover" />
+                            <AvatarFallback className="bg-primary/15 text-primary font-black text-xs">{activeTeam?.name?.[0] || 'T'}</AvatarFallback>
+                          </>
+                        ) : (
+                          <>
+                            <AvatarImage src={activeTeam?.teamLogoUrl} className="object-cover" />
+                            <AvatarFallback className="hero-gradient text-white font-black text-xs">{activeTeam?.name?.[0] || 'T'}</AvatarFallback>
+                          </>
+                        )}
                       </Avatar>
-                      <span className="font-black text-sm truncate uppercase tracking-tight text-foreground">{activeTeam?.name || 'Select Squad'}</span>
+                      <div className="flex flex-col min-w-0">
+                        {isSchoolMode && isPrimaryClubAuthority ? (
+                          <>
+                            {/* Always show school name as the top line */}
+                            <span className="font-black text-sm truncate uppercase tracking-tight text-foreground">
+                              {user?.schoolName || user?.clubName || 'School Hub'}
+                            </span>
+                            {activeTeam?.type === 'school' ? (
+                              /* Institution is active — prompt to pick a squad */
+                              <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest truncate flex items-center gap-1">
+                                Select a Squad
+                              </span>
+                            ) : (
+                              /* A specific squad is active */
+                              <span className="text-[9px] font-bold text-primary uppercase tracking-widest truncate">
+                                ↳ {activeTeam?.name || 'Squad'}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="font-black text-sm truncate uppercase tracking-tight text-foreground">
+                            {activeTeam?.name || 'Select Squad'}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <ChevronDown className="h-4 w-4 opacity-40 text-foreground" />
+                    <ChevronDown className="h-4 w-4 opacity-40 text-foreground shrink-0" />
                   </Button>
+
                 </DropdownMenuTrigger>
-                <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} />
+                                <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} />
               </DropdownMenu>
             </SidebarHeader>
 
             <SidebarContent className="px-4 py-2 bg-white">
-              <SidebarMenu className="space-y-6">
-                {isStaff && (
+              {/* School institution mode: hide all nav items; only the squad-selector above is shown */}
+              {!isSchoolInstitutionMode && (
+                <SidebarMenu className="space-y-6">
+                  {isStaff && (
+                    <div className="space-y-1.5">
+                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary px-2 mb-2">Command</p>
+                      {adminTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
+                    </div>
+                  )}
                   <div className="space-y-1.5">
-                    <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary px-2 mb-2">Command</p>
-                    {adminTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
+                    <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground px-2 mb-2">Operations</p>
+                    {filteredCoordTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
                   </div>
-                )}
-                <div className="space-y-1.5">
-                  <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground px-2 mb-2">Operations</p>
-                  {filteredCoordTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
+                </SidebarMenu>
+              )}
+              {isSchoolInstitutionMode && (
+                <div className="px-4 py-6 text-center space-y-3">
+                  <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground/50">
+                    Select a squad above to access team operations
+                  </p>
                 </div>
-              </SidebarMenu>
+              )}
             </SidebarContent>
 
             <SidebarFooter className="p-4 border-t bg-white space-y-4">
-              <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10">
-                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/60 mb-1">Squad Identity Code</p>
-                <p className={cn(
-                  "font-black text-primary tracking-widest",
-                  (activeTeam?.code || activeTeam?.teamCode || "").length > 12 ? "text-xs" : "text-xl"
-                )}>
-                  {activeTeam?.code || activeTeam?.teamCode || activeTeam?.inviteCode || '---'}
-                </p>
-              </div>
+              {/* Hide invite code for Athletic Director / primary school — they don't share a join code */}
+              {activeTeam?.type !== 'school' && (
+                <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10">
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/60 mb-1">Squad Identity Code</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-black text-primary tracking-wider text-sm truncate flex-1 min-w-0">
+                      {activeTeam?.code || activeTeam?.teamCode || activeTeam?.inviteCode || '---'}
+                    </p>
+                    <button
+                      className="shrink-0 text-primary/40 hover:text-primary transition-colors"
+                      onClick={async () => { await navigator.clipboard.writeText(activeTeam?.code || ''); }}
+                      title="Copy code"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
 
 
@@ -397,7 +556,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       </TooltipTrigger>
                       <TooltipContent side="bottom">Switch Squad</TooltipContent>
                     </Tooltip>
-                    <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} />
+                    <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} />
                   </DropdownMenu>
                 </div>
                 <div className="hidden md:block">
@@ -440,7 +599,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         </Avatar>
                         <div className="flex flex-col min-w-0">
                           <span className="font-black text-sm uppercase tracking-tight truncate">{user?.name}</span>
-                          <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest truncate">{user?.email}</span>
+                          {isPrimaryClubAuthority && (user?.schoolName || user?.clubName) ? (
+                            <span className="text-[9px] text-primary font-black uppercase tracking-widest truncate">
+                              {user.institutionTitle || 'Athletic Director'} · {user.schoolName || user.clubName}
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest truncate">{user?.email}</span>
+                          )}
                         </div>
                       </div>
                     </DropdownMenuLabel>

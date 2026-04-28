@@ -582,14 +582,14 @@ export default function TeamProfilePage() {
               
               <div className="p-6 bg-white/10 rounded-2xl border border-white/10 space-y-3 text-center transition-all group-hover:bg-white/20">
                 <p className="text-[10px] font-black uppercase tracking-widest text-white/50">Squad Identity Code</p>
-                <div className="flex items-center justify-center gap-4">
+                <div className="flex items-center justify-center gap-3">
                   <p className={cn(
-                    "font-black tracking-[0.2em] flex-1",
-                    (activeTeam.code || "").length > 12 ? "text-xl" : "text-4xl"
+                    "font-black break-all leading-tight flex-1",
+                    (activeTeam.code || "").length > 14 ? "text-base" : (activeTeam.code || "").length > 10 ? "text-2xl" : "text-4xl"
                   )}>
                     {activeTeam.code}
                   </p>
-                  <button onClick={async () => { await navigator.clipboard.writeText(activeTeam.code); toast({ title: "Code Copied" }); }}>
+                  <button onClick={async () => { await navigator.clipboard.writeText(activeTeam.code); toast({ title: "Code Copied" }); }} className="shrink-0">
                     <Copy className="h-5 w-5 text-white/40 hover:text-white" />
                   </button>
                 </div>
@@ -632,14 +632,23 @@ export default function TeamProfilePage() {
                 </DialogHeader>
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Proposed Squad Code</Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Proposed Squad Code</Label>
+                      <span className={cn(
+                        "text-[10px] font-black mr-1",
+                        newCode.length < 8 || newCode.length > 20 ? "text-destructive" : "text-primary"
+                      )}>{newCode.length}/20</span>
+                    </div>
                     <Input 
                       placeholder="e.g. VARSITY24" 
-                      className="h-14 rounded-2xl border-2 font-black text-xl uppercase tracking-tighter text-center bg-muted/20 focus:bg-white transition-all uppercase text-foreground"
+                      className="h-14 rounded-2xl border-2 font-black text-xl uppercase tracking-tighter text-center bg-muted/20 focus:bg-white transition-all text-foreground"
                       value={newCode}
                       maxLength={20}
                       onChange={e => setNewCode(e.target.value.toUpperCase().replace(/\s+/g, ''))}
                     />
+                    {newCode.length > 0 && newCode.length < 8 && (
+                      <p className="text-[10px] text-destructive font-bold ml-1">Minimum 8 characters ({8 - newCode.length} more needed)</p>
+                    )}
                   </div>
                   <div className="bg-amber-50 p-4 rounded-2xl flex items-start gap-3 border border-amber-100">
                     <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />

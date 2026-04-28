@@ -525,7 +525,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                     
                     <div className="space-y-4">
                       {form.teams.map((t, i) => (
-                        <div key={t.id} className="grid grid-cols-12 gap-4 bg-white/5 p-5 rounded-[2rem] border border-white/5 items-center hover:bg-white/10 transition-colors group relative overflow-hidden">
+                        <div key={t.id} className="bg-white/5 p-5 rounded-[2rem] border border-white/5 hover:bg-white/10 transition-colors group relative overflow-hidden space-y-3">
                           {t.source && (
                             <div className={cn(
                               "absolute top-0 right-12 px-3 py-1 text-[7px] font-black uppercase tracking-widest rounded-b-lg",
@@ -536,15 +536,26 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                               {t.source}
                             </div>
                           )}
-                          <div className="col-span-1 text-[10px] font-black opacity-20">T{i+1}</div>
-                          <div className="col-span-5">
-                            <Input value={t.name} onChange={e => {const n=[...form.teams]; n[i].name=e.target.value; setForm({...form, teams:n});}} placeholder="Squad Designation" className="h-12 bg-white/10 border-white/20 font-black uppercase rounded-xl text-white shadow-inner" />
+                          <div className="grid grid-cols-12 gap-3 items-center">
+                            <div className="col-span-1 text-[10px] font-black opacity-20">T{i+1}</div>
+                            <div className="col-span-5">
+                              <Input value={t.name} onChange={e => {const n=[...form.teams]; n[i].name=e.target.value; setForm({...form, teams:n});}} placeholder="Squad Designation" className="h-12 bg-white/10 border-white/20 font-black uppercase rounded-xl text-white shadow-inner" />
+                            </div>
+                            <div className="col-span-4">
+                              <Input value={t.coach} onChange={e => {const n=[...form.teams]; n[i].coach=e.target.value; setForm({...form, teams:n});}} placeholder="Operator / Coach" className="h-12 bg-white/10 border-white/20 font-bold text-sm rounded-xl text-white shadow-inner" />
+                            </div>
+                            <div className="col-span-2 flex justify-end">
+                               <Button variant="ghost" size="icon" onClick={() => setForm({...form, teams: form.teams.filter(x => x.id !== t.id)})} className="h-12 w-12 rounded-xl text-white/20 hover:text-red-500 hover:bg-red-500/10 transition-all"><X className="h-5 w-5" /></Button>
+                            </div>
                           </div>
-                          <div className="col-span-4">
-                            <Input value={t.coach} onChange={e => {const n=[...form.teams]; n[i].coach=e.target.value; setForm({...form, teams:n});}} placeholder="Operator / Coach" className="h-12 bg-white/10 border-white/20 font-bold text-sm rounded-xl text-white shadow-inner" />
-                          </div>
-                          <div className="col-span-2 flex justify-end">
-                             <Button variant="ghost" size="icon" onClick={() => setForm({...form, teams: form.teams.filter(x => x.id !== t.id)})} className="h-12 w-12 rounded-xl text-white/20 hover:text-red-500 hover:bg-red-500/10 transition-all"><X className="h-5 w-5" /></Button>
+                          <div className="pl-8 pr-2">
+                            <Input
+                              type="email"
+                              value={t.email || ''}
+                              onChange={e => {const n=[...form.teams]; n[i].email=e.target.value; setForm({...form, teams:n});}}
+                              placeholder="Team email — when they sign up with this email, matches auto-sync to their account (Starter plan)"
+                              className="h-10 bg-white/5 border-white/10 font-medium text-sm rounded-xl text-white shadow-inner placeholder:text-white/20"
+                            />
                           </div>
                         </div>
                       ))}
@@ -552,6 +563,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                         <div className="text-center py-20 border-2 border-dashed border-white/5 rounded-[3rem]">
                            <UserPlus className="h-10 w-10 mx-auto text-white/20 mb-4" />
                            <p className="text-white/40 font-black uppercase tracking-widest text-xs">No active squads engaged in the matrix.</p>
+                           <p className="text-white/20 font-bold text-[10px] uppercase tracking-widest mt-2">Add a team email — when they sign up, matches auto-sync. Outside teams get Starter plan access.</p>
                         </div>
                       )}
                     </div>
@@ -1889,9 +1901,9 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
         {events?.map(event => (
-          <Card key={event.id} className="rounded-[3rem] border-none shadow-xl ring-1 ring-black/5 bg-white p-10 space-y-8 group hover:shadow-2xl transition-all cursor-pointer relative overflow-hidden" onClick={() => setSelectedEventId(event.id)}>
+          <Card key={event.id} className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 bg-white p-6 sm:p-10 space-y-6 sm:space-y-8 group hover:shadow-2xl transition-all cursor-pointer relative overflow-hidden" onClick={() => setSelectedEventId(event.id)}>
             <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform duration-700 font-black italic text-8xl flex flex-col items-end pointer-events-none">
                <Trophy className="h-32 w-32" />
             </div>
@@ -1900,7 +1912,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
                 <Badge variant="outline" className="border-2 font-black text-[9px] uppercase tracking-widest bg-white">Tournament Series</Badge>
                 {event.isArchived && <Badge className="bg-amber-100 text-amber-700 border-none text-[8px] font-black uppercase px-2">Archived</Badge>}
               </div>
-              <h3 className="text-3xl font-black uppercase tracking-tight leading-none group-hover:text-primary transition-colors">{event.title}</h3>
+              <h3 className="text-xl sm:text-3xl font-black uppercase tracking-tight leading-tight group-hover:text-primary transition-colors">{event.title}</h3>
               <div className="flex flex-col gap-2 pt-4">
                 <div className="flex items-center gap-3 text-muted-foreground">
                    <CalendarDays className="h-4 w-4" />

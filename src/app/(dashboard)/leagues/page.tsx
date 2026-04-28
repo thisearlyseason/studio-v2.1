@@ -1521,15 +1521,15 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       {leagues && leagues.length > 0 && (
         <div className="flex flex-col gap-8">
           {!selectedLeagueId && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 animate-in fade-in duration-500">
               {leagues.map((league) => (
                 <Card 
                   key={league.id} 
-                  className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white flex flex-col group transition-all hover:shadow-2xl hover:ring-2 hover:ring-primary/10 cursor-pointer"
+                  className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white flex flex-col group transition-all hover:shadow-2xl hover:ring-2 hover:ring-primary/10 cursor-pointer"
                   onClick={() => setSelectedLeagueId(league.id)}
                 >
                   <div className="h-2 bg-black w-full" />
-                  <CardContent className="p-8 lg:p-10 space-y-8 flex-1">
+                  <CardContent className="p-5 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 flex-1">
                     <div className="flex justify-between items-start">
                       <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary shadow-inner">
                         <Trophy className="h-10 w-10" />
@@ -1539,7 +1539,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                       </Badge>
                     </div>
                     <div className="space-y-1">
-                      <h3 className="text-3xl font-black uppercase tracking-tight group-hover:text-primary transition-colors">{league.name}</h3>
+                      <h3 className="text-xl sm:text-3xl font-black uppercase tracking-tight group-hover:text-primary transition-colors leading-tight">{league.name}</h3>
                       <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
                         {Object.keys(league.teams || {}).length} squads • Hub ID: {league.id.slice(-6).toUpperCase()}
                       </p>

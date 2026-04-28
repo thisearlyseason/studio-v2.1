@@ -80,7 +80,7 @@ export default function SettingsPage() {
   const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   
-  const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', position: '', bio: '' });
+  const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', position: '', bio: '', schoolName: '', institutionTitle: '' });
 
   useEffect(() => {
     setMounted(true);
@@ -94,7 +94,9 @@ export default function SettingsPage() {
         email: user.email || '', 
         phone: user.phone || '',
         position: currentMember?.position || '',
-        bio: currentMember?.notes || ''
+        bio: currentMember?.notes || '',
+        schoolName: user.schoolName || user.clubName || '',
+        institutionTitle: user.institutionTitle || (user.plan_type === 'school' ? 'Athletic Director' : ''),
       });
     }
   }, [user, activeTeam, members]);
@@ -136,7 +138,12 @@ export default function SettingsPage() {
   const handleSaveProfile = async () => {
     setIsProcessing(true);
     try {
-      await updateUser({ name: editForm.name, email: editForm.email, phone: editForm.phone });
+      const updates: any = { name: editForm.name, email: editForm.email, phone: editForm.phone };
+      if (isPrimaryClubAuthority) {
+        updates.schoolName = editForm.schoolName || undefined;
+        updates.institutionTitle = editForm.institutionTitle || undefined;
+      }
+      await updateUser(updates);
       if (currentMember) { 
         await updateMember(currentMember.id, { position: editForm.position, notes: editForm.bio }); 
       }
@@ -230,9 +237,15 @@ export default function SettingsPage() {
               <h2 className="text-4xl font-black tracking-tight uppercase leading-none">{user.name}</h2>
               <div className="flex flex-wrap items-center justify-center gap-2">
                 <Badge className="bg-primary text-white border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">
-                  {user.role?.replace(/_/g, ' ')}
+                  {user.institutionTitle || user.role?.replace(/_/g, ' ')}
                 </Badge>
-                {activeTeam && (
+                {/* School/Club name badge — most prominent for institutional authorities */}
+                {isPrimaryClubAuthority && (user.schoolName || user.clubName) && (
+                  <Badge className="bg-black text-white border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">
+                    {user.schoolName || user.clubName}
+                  </Badge>
+                )}
+                {activeTeam && !isPrimaryClubAuthority && (
                   <Badge variant="outline" className="border-primary/20 text-primary font-black uppercase text-[9px] h-6 px-3">
                     {currentMember?.position || 'Teammate'} • #{currentMember?.jersey || 'HQ'}
                   </Badge>
@@ -282,6 +295,35 @@ export default function SettingsPage() {
                         <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label>
                         <Input type="email" className="h-12 rounded-xl border-2 font-bold bg-muted/10 focus:bg-white" value={editForm.email} onChange={e => setEditForm(prev => ({ ...prev, email: e.target.value }))} />
                       </div>
+                      {/* Institution fields — visible for school/club authorities */}
+                      {isPrimaryClubAuthority && (
+                        <>
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Institution Name</Label>
+                            <Input
+                              className="h-12 rounded-xl border-2 font-bold bg-muted/10 focus:bg-white transition-all"
+                              placeholder="e.g. Westfield High School"
+                              value={editForm.schoolName}
+                              onChange={e => setEditForm(prev => ({ ...prev, schoolName: e.target.value }))}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Your Title</Label>
+                            <Select value={editForm.institutionTitle} onValueChange={v => setEditForm(prev => ({ ...prev, institutionTitle: v }))}>
+                              <SelectTrigger className="h-12 rounded-xl border-2 font-bold bg-muted/10 focus:bg-white"><SelectValue placeholder="Select title..." /></SelectTrigger>
+                              <SelectContent className="rounded-xl">
+                                <SelectItem value="Athletic Director" className="font-bold">Athletic Director</SelectItem>
+                                <SelectItem value="Principal" className="font-bold">Principal</SelectItem>
+                                <SelectItem value="Vice Principal" className="font-bold">Vice Principal</SelectItem>
+                                <SelectItem value="Program Director" className="font-bold">Program Director</SelectItem>
+                                <SelectItem value="Head of Sport" className="font-bold">Head of Sport</SelectItem>
+                                <SelectItem value="Club President" className="font-bold">Club President</SelectItem>
+                                <SelectItem value="General Manager" className="font-bold">General Manager</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     <div className="space-y-6">
