@@ -173,7 +173,10 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
   const squadList = isSchoolMode ? teams.filter(t => t.type !== 'school') : teams;
 
   const squadTier = (team: any): 'primary' | 'pro' | 'starter' => {
-    if (['elite', 'league'].includes(team.planId || '') && team.ownerUserId === user?.id) return 'primary';
+    // Sub-squads (created under a club/school hub) should NOT inherit the hub's 'primary' tier.
+    // Only the hub-owner's TOP-LEVEL elite/league plan team gets 'primary'.
+    const isSubSquad = !!(team.clubId || team.schoolId || team.hubOwnerUserId);
+    if (!isSubSquad && ['elite', 'league'].includes(team.planId || '') && team.ownerUserId === user?.id) return 'primary';
     if (team.isPro || ['team', 'squad_pro', 'squad_pro_demo'].includes(team.planId || '')) return 'pro';
     return 'starter';
   };
@@ -274,7 +277,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                   key={team.id}
                   team={team}
                   isActive={activeTeam?.id === team.id && activeTeam?.type !== 'school'}
-                  onClick={() => setActiveTeam(team)}
+                  onClick={() => { setActiveTeam(team); router.push('/dashboard'); }}
                 />
               ))
             }
@@ -303,14 +306,14 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 name={user?.clubName || user?.schoolName || 'Elite Club'}
                 subtitle={user?.institutionTitle || 'Club Organizer'}
                 initial={(user?.clubName || user?.schoolName || 'E')[0]}
-                isActive={!activeTeam}
+                isActive={!activeTeam || activeTeam?.planId === 'elite' || activeTeam?.planId === 'league'}
                 onClick={() => { setActiveTeam(null); router.push('/club'); }}
                 variant="elite"
               />
               <DropdownMenuSeparator className="my-1.5" />
-              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pb-1">Squads ({teams.length})</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pb-1">Sub-Squads ({teams.length})</p>
               <div onWheel={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}
-                className="overflow-y-auto max-h-[160px] overscroll-contain space-y-0.5">
+                className="overflow-y-auto max-h-[220px] overscroll-contain space-y-0.5 pr-0.5">
                 {teams.length === 0
                   ? <p className="text-xs text-muted-foreground text-center py-3">No squads deployed yet.</p>
                   : teams.map(team => (
@@ -318,7 +321,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                       key={team.id}
                       team={team}
                       isActive={activeTeam?.id === team.id}
-                      onClick={() => setActiveTeam(team)}
+                      onClick={() => { setActiveTeam(team); router.push('/dashboard'); }}
                     />
                   ))
                 }

@@ -78,7 +78,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collectionGroup, query, where, orderBy, collection, getDocs, limit, doc, getDoc } from 'firebase/firestore';
+import { collectionGroup, query, where, orderBy, collection, getDocs, limit, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IncidentDetailDialog } from '@/app/(dashboard)/coaches-corner/page';
 import { format, parseISO } from 'date-fns';
@@ -341,6 +341,95 @@ export default function ClubManagementPage() {
     const compliance = clubMembers.length > 0 ? Math.round((cleared / clubMembers.length) * 100) : 0;
     return { owed, collected, total, rate, compliance };
   }, [clubMembers]);
+
+  // ─── FISCAL PULSE: Real enrollment fee + fundraiser data ────────────────────
+  const [enrollmentEntries, setEnrollmentEntries] = useState<any[]>([]);
+  const [fundraiserData, setFundraiserData] = useState<any[]>([]);
+  const [isFiscalLoading, setIsFiscalLoading] = useState(false);
+
+  const fetchFiscalData = useCallback(async () => {
+    if (!db || clubTeamIds.length === 0) return;
+    setIsFiscalLoading(true);
+    try {
+      // 1. Registration entries — check all leagues owned by this hub's teams
+      //    Strategy: query collectionGroup 'registrationEntries' where ownerUserId matches
+      const entries: any[] = [];
+      for (const tid of clubTeamIds) {
+        // Fetch all leagues where this team is listed as owner or member
+        const leagueSnap = await getDocs(query(collection(db, 'leagues'), where('ownerUserId', '==', user?.id)));
+        for (const leagueDoc of leagueSnap.docs) {
+          const entriesSnap = await getDocs(collection(db, 'leagues', leagueDoc.id, 'registrationEntries'));
+          entriesSnap.forEach(e => {
+            entries.push({
+              id: e.id,
+              leagueId: leagueDoc.id,
+              leagueName: leagueDoc.data()?.name || 'League',
+              registrationCost: parseFloat(leagueDoc.data()?.registration_cost || '0'),
+              ...e.data()
+            });
+          });
+        }
+      }
+      // Deduplicate
+      const seen = new Set<string>();
+      setEnrollmentEntries(entries.filter(e => { if (seen.has(e.id)) return false; seen.add(e.id); return true; }));
+
+      // 2. Fundraiser campaigns + their donations across all squads
+      const campaigns: any[] = [];
+      for (const tid of clubTeamIds) {
+        const teamSnap = clubTeams.find(t => t.id === tid);
+        const fundSnap = await getDocs(collection(db, 'teams', tid, 'fundraising'));
+        for (const fundDoc of fundSnap.docs) {
+          const donationSnap = await getDocs(collection(db, 'teams', tid, 'fundraising', fundDoc.id, 'donations'));
+          const donations: any[] = [];
+          donationSnap.forEach(d => donations.push({ id: d.id, ...d.data() }));
+          campaigns.push({
+            id: fundDoc.id,
+            teamId: tid,
+            teamName: teamSnap?.name || 'Unknown Squad',
+            donations,
+            ...fundDoc.data()
+          });
+        }
+      }
+      setFundraiserData(campaigns);
+    } catch (e) {
+      console.warn('Fiscal fetch error:', e);
+    } finally {
+      setIsFiscalLoading(false);
+    }
+  }, [db, clubTeamIds, user?.id, clubTeams]);
+
+  useEffect(() => { fetchFiscalData(); }, [fetchFiscalData]);
+
+  const fiscalSummary = useMemo(() => {
+    const enrolled = enrollmentEntries.length;
+    const paid = enrollmentEntries.filter(e => e.payment_received).length;
+    const unpaid = enrolled - paid;
+    const totalEnrollmentRevenue = enrollmentEntries.filter(e => e.payment_received).reduce((s, e) => s + (e.registrationCost || 0), 0);
+    const pendingEnrollmentRevenue = enrollmentEntries.filter(e => !e.payment_received).reduce((s, e) => s + (e.registrationCost || 0), 0);
+    const totalDonationsConfirmed = fundraiserData.reduce((s, c) => s + c.donations.filter((d: any) => d.status === 'verified').reduce((ds: number, d: any) => ds + (d.amount || 0), 0), 0);
+    const totalDonationsPending = fundraiserData.reduce((s, c) => s + c.donations.filter((d: any) => d.status !== 'verified').reduce((ds: number, d: any) => ds + (d.amount || 0), 0), 0);
+    return { enrolled, paid, unpaid, totalEnrollmentRevenue, pendingEnrollmentRevenue, totalDonationsConfirmed, totalDonationsPending };
+  }, [enrollmentEntries, fundraiserData]);
+
+  const handleTogglePayment = async (leagueId: string, entryId: string, paid: boolean) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { payment_received: !paid });
+    setEnrollmentEntries(prev => prev.map(e => e.id === entryId ? { ...e, payment_received: !paid } : e));
+    toast({ title: paid ? 'Marked as Unpaid' : 'Marked as Paid' });
+  };
+
+  const handleConfirmDonation = async (teamId: string, fundId: string, donationId: string, amount: number) => {
+    if (!db) return;
+    await updateDoc(doc(db, 'teams', teamId, 'fundraising', fundId, 'donations', donationId), { status: 'verified', amount });
+    setFundraiserData(prev => prev.map(c => c.id === fundId && c.teamId === teamId
+      ? { ...c, donations: c.donations.map((d: any) => d.id === donationId ? { ...d, status: 'verified', amount } : d) }
+      : c
+    ));
+    toast({ title: 'Donation Confirmed' });
+  };
+  // ───────────────────────────────────────────────────────────────────────────
 
   // Fetch admin profiles
   React.useEffect(() => {
@@ -629,15 +718,16 @@ export default function ClubManagementPage() {
 
       <Tabs defaultValue="squads" className="space-y-8">
         <TabsList className="bg-muted/50 rounded-xl p-1 h-12 inline-flex border-2 shadow-inner">
-          <TabsTrigger value="squads" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">{schoolHub ? 'Squads' : 'Squad Roster'}</TabsTrigger>
+          <TabsTrigger value="squads" className="rounded-lg font-black text-xs uppercase px-6 data-[state=active]:bg-black data-[state=active]:text-white">{schoolHub ? 'Squads' : 'Squad Roster'}</TabsTrigger>
           {schoolHub && (
-            <TabsTrigger value="coaches" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Coaches</TabsTrigger>
+            <TabsTrigger value="coaches" className="rounded-lg font-black text-xs uppercase px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Coaches</TabsTrigger>
           )}
           {schoolHub && (
-            <TabsTrigger value="admins" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Admins</TabsTrigger>
+            <TabsTrigger value="admins" className="rounded-lg font-black text-xs uppercase px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Admins</TabsTrigger>
           )}
-          <TabsTrigger value="compliance" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-black data-[state=active]:text-white">Waivers</TabsTrigger>
-          <TabsTrigger value="safety" className="rounded-lg font-black text-xs uppercase px-8 data-[state=active]:bg-primary data-[state=active]:text-white">Safety</TabsTrigger>
+          <TabsTrigger value="compliance" className="rounded-lg font-black text-xs uppercase px-6 data-[state=active]:bg-black data-[state=active]:text-white">Waivers</TabsTrigger>
+          <TabsTrigger value="finance" className="rounded-lg font-black text-xs uppercase px-6 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">Finance</TabsTrigger>
+          <TabsTrigger value="safety" className="rounded-lg font-black text-xs uppercase px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Safety</TabsTrigger>
         </TabsList>
 
         <TabsContent value="squads" className="space-y-12 mt-0">
@@ -988,6 +1078,189 @@ export default function ClubManagementPage() {
               </div>
             </div>
             <aside className="lg:col-span-4"><TeamComplianceCard teams={clubTeams} clubDocs={clubDocs} /></aside>
+          </div>
+        </TabsContent>
+
+        {/* ──────────────────── FINANCE TAB ──────────────────── */}
+        <TabsContent value="finance" className="space-y-10 mt-0">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="rounded-2xl border-none shadow-md bg-emerald-600 text-white p-6 space-y-1">
+              <p className="text-[9px] font-black uppercase tracking-widest opacity-70">Fees Collected</p>
+              <p className="text-3xl font-black">${fiscalSummary.totalEnrollmentRevenue.toLocaleString()}</p>
+              <p className="text-[9px] font-bold opacity-60 uppercase">{fiscalSummary.paid} paid entries</p>
+            </Card>
+            <Card className="rounded-2xl border-none shadow-md bg-amber-500 text-white p-6 space-y-1">
+              <p className="text-[9px] font-black uppercase tracking-widest opacity-70">Fees Outstanding</p>
+              <p className="text-3xl font-black">${fiscalSummary.pendingEnrollmentRevenue.toLocaleString()}</p>
+              <p className="text-[9px] font-bold opacity-60 uppercase">{fiscalSummary.unpaid} unpaid entries</p>
+            </Card>
+            <Card className="rounded-2xl border-none shadow-md bg-primary text-white p-6 space-y-1">
+              <p className="text-[9px] font-black uppercase tracking-widest opacity-70">Donations Confirmed</p>
+              <p className="text-3xl font-black">${fiscalSummary.totalDonationsConfirmed.toLocaleString()}</p>
+              <p className="text-[9px] font-bold opacity-60 uppercase">Verified contributions</p>
+            </Card>
+            <Card className="rounded-2xl border-none shadow-md bg-muted/30 p-6 space-y-1 ring-1 ring-black/5">
+              <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Donations Pending</p>
+              <p className="text-3xl font-black text-foreground">${fiscalSummary.totalDonationsPending.toLocaleString()}</p>
+              <p className="text-[9px] font-bold text-muted-foreground uppercase">Awaiting confirmation</p>
+            </Card>
+          </div>
+
+          {/* Enrollment Fee Ledger */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <div>
+                <h3 className="text-lg font-black uppercase tracking-tight">Enrollment Fee Ledger</h3>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Registration entries across all org leagues</p>
+              </div>
+              <Button variant="outline" size="sm" className="rounded-xl h-9 font-black uppercase text-[10px]" onClick={fetchFiscalData} disabled={isFiscalLoading}>
+                {isFiscalLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />}
+                <span className="ml-2">Refresh</span>
+              </Button>
+            </div>
+            <Card className="rounded-[2rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
+              {enrollmentEntries.length === 0 ? (
+                <div className="p-16 text-center space-y-3 opacity-30">
+                  <DollarSign className="h-10 w-10 mx-auto" />
+                  <p className="text-sm font-black uppercase tracking-widest">No enrollment entries found</p>
+                  <p className="text-xs text-muted-foreground">Registration fees will appear here once teams submit entries to leagues.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest text-muted-foreground border-b">
+                      <tr>
+                        <th className="px-6 py-4">Team / Applicant</th>
+                        <th className="px-4 py-4">League</th>
+                        <th className="px-4 py-4">Fee</th>
+                        <th className="px-4 py-4">Status</th>
+                        <th className="px-4 py-4">Submitted</th>
+                        <th className="px-4 py-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-muted/30">
+                      {enrollmentEntries.map(entry => (
+                        <tr key={entry.id} className="hover:bg-muted/10 transition-colors">
+                          <td className="px-6 py-4">
+                            <p className="font-black text-xs uppercase">{entry.answers?.teamName || entry.answers?.name || entry.answers?.fullName || '—'}</p>
+                            <p className="text-[9px] text-muted-foreground font-bold uppercase">{entry.answers?.email || ''}</p>
+                          </td>
+                          <td className="px-4 py-4 text-xs font-bold text-muted-foreground uppercase">{entry.leagueName}</td>
+                          <td className="px-4 py-4">
+                            <span className="font-black text-sm">{entry.registrationCost > 0 ? `$${entry.registrationCost}` : 'Free'}</span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <Badge className={cn('border-none font-black text-[9px] uppercase px-3 h-6',
+                              entry.payment_received ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                            )}>
+                              {entry.payment_received ? '✓ Paid' : '⏳ Unpaid'}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-4 text-[9px] font-bold text-muted-foreground uppercase">
+                            {entry.createdAt ? (() => { try { return format(new Date(entry.createdAt), 'MMM d, yyyy'); } catch { return '—'; } })() : '—'}
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className={cn('rounded-xl h-8 px-4 font-black uppercase text-[9px] transition-all',
+                                entry.payment_received ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                              )}
+                              onClick={() => handleTogglePayment(entry.leagueId, entry.id, entry.payment_received)}
+                            >
+                              {entry.payment_received ? 'Mark Unpaid' : 'Mark Paid'}
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {/* Fundraiser Donation Ledger */}
+          <div className="space-y-4">
+            <div className="px-1">
+              <h3 className="text-lg font-black uppercase tracking-tight">Fundraiser Donations</h3>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">All campaigns across all squads in the organization</p>
+            </div>
+            {fundraiserData.length === 0 ? (
+              <Card className="rounded-[2rem] border-none shadow-xl bg-white ring-1 ring-black/5">
+                <div className="p-16 text-center space-y-3 opacity-30">
+                  <TrendingUp className="h-10 w-10 mx-auto" />
+                  <p className="text-sm font-black uppercase tracking-widest">No fundraiser campaigns found</p>
+                </div>
+              </Card>
+            ) : (
+              <div className="space-y-6">
+                {fundraiserData.map(campaign => (
+                  <Card key={`${campaign.teamId}-${campaign.id}`} className="rounded-[2rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
+                    <div className="px-8 py-5 bg-primary/5 border-b flex items-center justify-between">
+                      <div>
+                        <p className="font-black text-base uppercase tracking-tight">{campaign.title || campaign.name || 'Campaign'}</p>
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{campaign.teamName} · {campaign.donations.length} donations</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] font-black uppercase text-muted-foreground">Confirmed</p>
+                        <p className="font-black text-primary">${campaign.donations.filter((d: any) => d.status === 'verified').reduce((s: number, d: any) => s + (d.amount || 0), 0).toLocaleString()}</p>
+                      </div>
+                    </div>
+                    {campaign.donations.length === 0 ? (
+                      <p className="px-8 py-6 text-[10px] font-bold text-muted-foreground uppercase opacity-40">No donations recorded yet.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead className="bg-muted/20 text-[9px] font-black uppercase tracking-widest text-muted-foreground border-b">
+                            <tr>
+                              <th className="px-6 py-3">Donor</th>
+                              <th className="px-4 py-3">Amount</th>
+                              <th className="px-4 py-3">Status</th>
+                              <th className="px-4 py-3">Date</th>
+                              <th className="px-4 py-3 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-muted/20">
+                            {campaign.donations.map((donation: any) => (
+                              <tr key={donation.id} className="hover:bg-muted/10 transition-colors">
+                                <td className="px-6 py-3">
+                                  <p className="font-black text-xs uppercase">{donation.donorName || donation.userName || 'Anonymous'}</p>
+                                  {donation.note && <p className="text-[9px] text-muted-foreground italic">{donation.note}</p>}
+                                </td>
+                                <td className="px-4 py-3 font-black text-sm">${(donation.amount || 0).toLocaleString()}</td>
+                                <td className="px-4 py-3">
+                                  <Badge className={cn('border-none font-black text-[9px] uppercase px-3 h-6',
+                                    donation.status === 'verified' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                                  )}>
+                                    {donation.status === 'verified' ? '✓ Confirmed' : '⏳ Pending'}
+                                  </Badge>
+                                </td>
+                                <td className="px-4 py-3 text-[9px] font-bold text-muted-foreground uppercase">
+                                  {donation.createdAt ? (() => { try { return format(new Date(donation.createdAt), 'MMM d, yyyy'); } catch { return '—'; } })() : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {donation.status !== 'verified' && (
+                                    <Button
+                                      size="sm"
+                                      className="rounded-xl h-8 px-4 font-black uppercase text-[9px] bg-emerald-600 text-white hover:bg-emerald-700"
+                                      onClick={() => handleConfirmDonation(campaign.teamId, campaign.id, donation.id, donation.amount || 0)}
+                                    >
+                                      Confirm
+                                    </Button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
         </TabsContent>
 
