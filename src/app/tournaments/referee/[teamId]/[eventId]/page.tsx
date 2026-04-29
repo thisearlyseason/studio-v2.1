@@ -50,7 +50,7 @@ interface EventData {
 export default function RefereePortalPage({ params: rawParams }: { params: Promise<{ teamId: string; eventId: string }> }) {
   const params = React.use(rawParams);
   const db = useFirestore();
-  const user = useUser();
+  const { user: firebaseUser } = useUser();
   const [event, setEvent] = useState<EventData | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchEmail, setSearchEmail] = useState('');
@@ -66,7 +66,7 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
   }, [db, params.teamId, params.eventId]);
 
   // Determine which referee we're viewing as
-  const activeEmail = user?.email || confirmedEmail;
+  const activeEmail = firebaseUser?.email || confirmedEmail;
   const activeRef = useMemo(() => {
     if (!event?.refereePool || !activeEmail) return null;
     return event.refereePool.find(r => r.email.toLowerCase() === activeEmail.toLowerCase()) ?? null;

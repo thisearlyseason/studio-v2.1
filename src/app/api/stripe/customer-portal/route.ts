@@ -1,28 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Stripe from 'stripe';
 import { initializeFirebase } from '@/firebase/core';
 import { doc, getDoc } from 'firebase/firestore';
+import { getStripe } from '@/lib/stripe-client';
+import { verifyFirebaseToken, assertOwner } from '@/lib/api-auth';
 
-function getStripeClient(): Stripe {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) throw new Error('STRIPE_SECRET_KEY is not set');
-  return new Stripe(key, { apiVersion: '2025-03-31.basil' });
-}
-
-/**
- * POST /api/stripe/customer-portal
- * Body: { userId: string }
- *
- * Creates a Stripe Customer Portal session for subscription management.
- */
 export async function POST(req: NextRequest) {
+  const auth = await verifyFirebaseToken(req);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { userId } = await req.json();
 
-    if (!userId) {
-      return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
-    }
+    if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
 
+    const ownerCheck = assertOwner(auth, userId);
+    if (ownerCheck) return ownerCheck;
+
+    const stripe = getStripe();
     const { firestore } = initializeFirebase();
     const userSnap = await getDoc(doc(firestore, 'users', userId));
 
@@ -33,11 +27,13 @@ export async function POST(req: NextRequest) {
     const stripeCustomerId: string | undefined = userSnap.data().stripe_customer_id;
 
     if (!stripeCustomerId) {
-      return NextResponse.json({ error: 'No Stripe customer found for this user. Please subscribe first.' }, { status: 400 });
+      return NextResponse.json({
+        error: 'No Stripe customer found for this user. Please subscribe first.',
+      }, { status: 400 });
     }
 
-    const stripe = getStripeClient();
-    const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:9002';
+    const origin =
+      req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:9002';
 
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: stripeCustomerId,
@@ -45,8 +41,8 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ url: portalSession.url });
-  } catch (error: any) {
-    console.error('[customer-portal] Error:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+  } catch (err: any) {
+    console.error('[stripe/customer-portal] Error:', err.message);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

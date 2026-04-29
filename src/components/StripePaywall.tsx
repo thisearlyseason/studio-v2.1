@@ -23,9 +23,12 @@ import {
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/firebase';
+import { getAuthToken, authHeader } from '@/lib/client-auth';
 
 export function StripePaywall() {
   const { isPaywallOpen, setIsPaywallOpen, user, isPro } = useTeam();
+  const auth = useAuth();
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
 
@@ -41,9 +44,10 @@ export function StripePaywall() {
     try {
       // Direct to Portal if already subscribed
       if (isPro && (user as any).stripe_customer_id) {
+        const token = await getAuthToken(auth);
         const res = await fetch('/api/stripe/customer-portal', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
           body: JSON.stringify({ userId: user.id }),
         });
         const data = await res.json();
@@ -54,9 +58,10 @@ export function StripePaywall() {
       }
 
       // Otherwise Checkout
+      const token = await getAuthToken(auth);
       const res = await fetch('/api/checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({ priceId, userId: user.id, billingCycle }),
       });
       const data = await res.json();

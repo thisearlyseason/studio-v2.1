@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTeam } from '@/components/providers/team-provider';
 import { useUser } from '@/firebase';
+import { useAuth } from '@/firebase';
+import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { PRICING_CONFIG, EXTRA_TEAM_CONFIG, Plan, BillingCycle } from '@/lib/pricing';
 import { 
   Check, 
@@ -28,8 +30,9 @@ import { toast } from '@/hooks/use-toast';
 
 export default function PricingPage() {
   const router = useRouter();
+  const auth = useAuth();
   const { user } = useUser();
-  const { isPro, user: userProfile } = useTeam();
+  const { isPro, userProfile } = useTeam();
   
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [extraTeams, setExtraTeams] = useState(0);
@@ -52,9 +55,10 @@ export default function PricingPage() {
     try {
       // If user is already pro, they should use the customer portal to manage their subscription
       if (isPro && (userProfile as any)?.stripe_customer_id) {
+         const token = await getAuthToken(auth);
          const res = await fetch('/api/stripe/customer-portal', {
            method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
+           headers: { 'Content-Type': 'application/json', ...authHeader(token) },
            body: JSON.stringify({ userId: user.uid }),
          });
          const data = await res.json();
@@ -64,9 +68,10 @@ export default function PricingPage() {
          }
       }
 
+      const token = await getAuthToken(auth);
       const response = await fetch('/api/checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({
           priceId,
           userId: user.uid,

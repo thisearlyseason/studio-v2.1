@@ -1,176 +1,179 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { initializeFirebase } from '@/firebase/core';
-import { doc, updateDoc, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, getDocs, setDoc, writeBatch } from 'firebase/firestore';
+import { getStripe } from '@/lib/stripe-client';
+import { PLAN_PRICE_MAP, EXTRA_TEAM_PRICE_IDS } from '@/lib/stripe-price-map';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
-  apiVersion: '2025-03-31.basil',
-});
+// Webhook endpoint secret — must be set; no silent fallback
+const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!;
-
-import { PRICING_CONFIG, EXTRA_TEAM_CONFIG } from '@/lib/pricing';
+/** Max body size: 512KB. Stripe events are typically <64KB. */
+const MAX_BODY_SIZE = 512_000;
 
 /**
- * Normalizes subscription data into Firestore.
- * Handles plan mapping, team limits, and add-on calculations.
+ * Normalizes subscription data into Firestore user doc + audit log.
+ * Called by all subscription lifecycle events.
  */
 async function syncSubscriptionToFirestore(subscription: Stripe.Subscription) {
   const { firestore } = initializeFirebase();
   const customerId = subscription.customer as string;
 
-  console.log(`[Webhook DEBUG] Syncing sub: ${subscription.id}, Customer: ${customerId}`);
-
-  // 1. Identify User: Prioritize firebase_uid in metadata, then fallback to customer ID lookup
+  // 1. Identify User — prefer firebase_uid metadata, fall back to customer index
   let userId = subscription.metadata?.firebase_uid;
-  console.log(`[Webhook DEBUG] Resolved userId from metadata: ${userId}`);
-  
+
   if (!userId) {
-    const usersRef = collection(firestore, 'users');
-    const q = query(usersRef, where('stripe_customer_id', '==', customerId));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
-      userId = querySnapshot.docs[0].id;
-      console.log(`[Webhook DEBUG] Resolved userId from customer index: ${userId}`);
-    }
+    const usersSnap = await getDocs(
+      query(collection(firestore, 'users'), where('stripe_customer_id', '==', customerId))
+    );
+    if (!usersSnap.empty) userId = usersSnap.docs[0].id;
   }
 
   if (!userId) {
-    console.warn(`[Webhook ERROR] Could not resolve userId for customer ${customerId}. Subscription: ${subscription.id}. Metadata: ${JSON.stringify(subscription.metadata)}`);
+    console.error(`[Webhook] Could not resolve userId for customer ${customerId}, sub ${subscription.id}`);
     return;
   }
 
-  // 2. Identify Plan & Calculate Limits
+  // 2. Map subscription items to plan + add-ons
   let planType = 'free';
   let baseLimit = 1;
   let extraTeams = 0;
 
-  console.log(`[Webhook DEBUG] Subscription items:`, subscription.items.data.map(i => i.price.id));
-
-  // Use a hardcoded map to avoid env var resolution issues in server contexts.
-  const PLAN_PRICE_MAP: Record<string, { id: string; teamLimit: number }> = {
-    'price_1TL4qyGu1UxxOYbPen5QOIJv': { id: 'team', teamLimit: 1 },
-    'price_1TL4qyGu1UxxOYbPxrnZKSd4': { id: 'team', teamLimit: 1 },
-    'price_1TL4vCGu1UxxOYbPc9MX6y8L': { id: 'elite', teamLimit: 8 },
-    'price_1TL4vCGu1UxxOYbPxiAlj9Jc': { id: 'elite', teamLimit: 8 },
-    'price_1TL55yGu1UxxOYbPcQvc6AZV': { id: 'league', teamLimit: 18 },
-    'price_1TL55yGu1UxxOYbPV7zlMKCQ': { id: 'league', teamLimit: 18 },
-    'price_1TL58qGu1UxxOYbPOUPCAqdz': { id: 'school', teamLimit: 10 },
-    'price_1TL58qGu1UxxOYbPWXLqlsyB': { id: 'school', teamLimit: 10 },
-  };
-
   for (const item of subscription.items.data) {
     const priceId = item.price.id;
-    
-    // Match against primary plans
-    const resolvedPlan = PLAN_PRICE_MAP[priceId];
-    
-    if (resolvedPlan) {
-      planType = resolvedPlan.id;
-      baseLimit = resolvedPlan.teamLimit;
-      console.log(`[Webhook DEBUG] Matched primary plan: ${planType} (Limit: ${baseLimit})`);
-    } 
-    // Match against add-ons
-    else if (priceId === EXTRA_TEAM_CONFIG.monthlyPriceId || priceId === EXTRA_TEAM_CONFIG.annualPriceId) {
-      extraTeams += (item.quantity || 0);
-      console.log(`[Webhook DEBUG] Found extra team add-ons: ${item.quantity}`);
+    const resolved = PLAN_PRICE_MAP[priceId];
+    if (resolved) {
+      planType = resolved.id;
+      baseLimit = resolved.teamLimit;
+    } else if (
+      priceId === EXTRA_TEAM_PRICE_IDS.monthly ||
+      priceId === EXTRA_TEAM_PRICE_IDS.annual
+    ) {
+      extraTeams += item.quantity || 0;
     } else {
-      console.warn(`[Webhook DEBUG] Unrecognized priceId: ${priceId}`);
+      console.warn(`[Webhook] Unrecognized priceId: ${priceId} — add to stripe-price-map.ts`);
     }
   }
 
-  // 3. Update User Context
-  const userRef = doc(firestore, 'users', userId);
   const status = subscription.status;
   const isActive = status === 'active' || status === 'past_due' || status === 'trialing';
+  const userRef = doc(firestore, 'users', userId);
 
-  console.log(`[Webhook DEBUG] Updating Firestore for ${userId}. Status: ${status}, Plan: ${planType}, Limit: ${baseLimit + extraTeams}`);
-
+  // 3. Update user plan data
   try {
     await updateDoc(userRef, {
       stripe_subscription_id: subscription.id,
       stripe_customer_id: customerId,
       subscription_status: status,
       plan_type: isActive ? planType : 'free',
-      team_limit: isActive ? (baseLimit + extraTeams) : 1,
+      team_limit: isActive ? baseLimit + extraTeams : 1,
       extra_teams: extraTeams,
-      last_webhook_sync: new Date().toISOString()
+      last_webhook_sync: new Date().toISOString(),
     });
-
-    // CASCADE: Update all teams owned by this user to reflect the new plan status
-    try {
-      const teamsRef = collection(firestore, 'teams');
-      const q = query(teamsRef, where('ownerUserId', '==', userId));
-      const teamsSnap = await getDocs(q);
-      
-      if (!teamsSnap.empty) {
-        const batch = writeBatch(firestore);
-        teamsSnap.docs.forEach(teamDoc => {
-          batch.update(teamDoc.ref, {
-            planId: planType,
-            isPro: isActive && planType !== 'free',
-            last_plan_sync: new Date().toISOString()
-          });
-        });
-        await batch.commit();
-        console.log(`[Webhook CASCADE] Updated ${teamsSnap.size} squads for user ${userId}`);
-      }
-    } catch (cascadeErr: any) {
-      console.error('[Webhook CASCADE Error]:', cascadeErr.message);
-    }
   } catch (err: any) {
-    console.error(`[Webhook ERROR] Failed to update user doc ${userId}:`, err.message);
-    // If updateDoc fails because doc doesn't exist, we skip
+    console.error(`[Webhook] Failed to update user doc ${userId}:`, err.message);
     if (err.code === 'not-found') return;
   }
 
-  // 4. Persistence for secondary audit log
+  // 4. CASCADE: Update all teams owned by this user (chunked to stay under 500-op limit)
   try {
-    const subDocRef = doc(firestore, 'subscriptions', subscription.id);
-    await setDoc(subDocRef, {
-      userId,
-      customerId,
-      status,
-      planType,
-      teamLimit: baseLimit + extraTeams,
-      extraTeams,
-      currentPeriodEnd: new Date(subscription.current_period_end * 1000).toISOString(),
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
-  } catch (err: any) {
-    console.error(`[Webhook ERROR] Failed to update audit log:`, err.message);
+    const teamsSnap = await getDocs(
+      query(collection(firestore, 'teams'), where('ownerUserId', '==', userId))
+    );
+
+    if (!teamsSnap.empty) {
+      // Chunk into groups of 400 to stay well under Firestore's 500-op batch limit
+      const CHUNK = 400;
+      for (let i = 0; i < teamsSnap.docs.length; i += CHUNK) {
+        const chunk = teamsSnap.docs.slice(i, i + CHUNK);
+        const batch = writeBatch(firestore);
+        chunk.forEach(teamDoc => {
+          batch.update(teamDoc.ref, {
+            planId: isActive ? planType : 'free',
+            isPro: isActive && planType !== 'free',
+            last_plan_sync: new Date().toISOString(),
+          });
+        });
+        await batch.commit();
+      }
+    }
+  } catch (cascadeErr: any) {
+    console.error('[Webhook] Team cascade error:', cascadeErr.message);
   }
 
-  console.log(`[Webhook SUCCESS] User ${userId} is now ${planType} (${status})`);
+  // 5. Write secondary audit log (server-side only — Firestore rules block client writes)
+  try {
+    await setDoc(
+      doc(firestore, 'subscriptions', subscription.id),
+      {
+        userId,
+        customerId,
+        status,
+        planType,
+        teamLimit: baseLimit + extraTeams,
+        extraTeams,
+        // current_period_end may be on subscription.items in newer Stripe API versions
+        currentPeriodEnd: (() => {
+          const ts = (subscription as any).current_period_end
+            ?? subscription.items?.data?.[0]?.current_period_end;
+          return ts ? new Date(ts * 1000).toISOString() : new Date().toISOString();
+        })(),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (err: any) {
+    console.error('[Webhook] Failed to write audit log:', err.message);
+  }
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.text();
-  const sig = req.headers.get('stripe-signature')!;
+  // Guard: reject oversized payloads before reading body
+  const contentLength = parseInt(req.headers.get('content-length') || '0', 10);
+  if (contentLength > MAX_BODY_SIZE) {
+    return NextResponse.json({ error: 'Payload too large.' }, { status: 413 });
+  }
 
-  console.log(`[Webhook] Received POST request. Signature length: ${sig?.length || 0}`);
+  const body = await req.text();
+
+  // Secondary size guard (content-length header can be spoofed)
+  if (body.length > MAX_BODY_SIZE) {
+    return NextResponse.json({ error: 'Payload too large.' }, { status: 413 });
+  }
+
+  if (!endpointSecret) {
+    console.error('[Webhook] STRIPE_WEBHOOK_SECRET is not set. Cannot verify webhook signatures.');
+    return NextResponse.json({ error: 'Webhook secret not configured.' }, { status: 500 });
+  }
+
+  const sig = req.headers.get('stripe-signature');
+  if (!sig) {
+    return NextResponse.json({ error: 'Missing stripe-signature header.' }, { status: 400 });
+  }
 
   let event: Stripe.Event;
 
   try {
+    const stripe = getStripe();
     event = stripe.webhooks.constructEvent(body, sig, endpointSecret);
   } catch (err: any) {
-    console.error(`[Webhook Error Signature]: ${err.message}. Ensure STRIPE_WEBHOOK_SECRET is correct.`);
+    console.error(`[Webhook] Signature verification failed: ${err.message}`);
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
   }
-
-  console.log(`[Webhook] Event verified: ${event.type} (ID: ${event.id})`);
 
   try {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
-        console.log(`[Webhook] Checkout session completed: ${session.id}, User: ${session.metadata?.firebase_uid}`);
         if (session.subscription) {
+          const stripe = getStripe();
           const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
-          // Prioritize metadata from session if subscription doesn't have it
+          // Propagate firebase_uid from session metadata if not on subscription
           if (!subscription.metadata?.firebase_uid && session.metadata?.firebase_uid) {
-             subscription.metadata = { ...subscription.metadata, firebase_uid: session.metadata.firebase_uid };
+            subscription.metadata = {
+              ...subscription.metadata,
+              firebase_uid: session.metadata.firebase_uid,
+            };
           }
           await syncSubscriptionToFirestore(subscription);
         }
@@ -188,20 +191,26 @@ export async function POST(req: NextRequest) {
       case 'invoice.paid':
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
-        if (invoice.subscription) {
-          const subscription = await stripe.subscriptions.retrieve(invoice.subscription as string);
+        // In Stripe Dahlia API, subscription moved to invoice.parent.subscription_details.subscription
+        const invoiceSubscriptionId =
+          (invoice as any).subscription ||
+          (invoice as any).parent?.subscription_details?.subscription;
+        if (invoiceSubscriptionId) {
+          const stripe = getStripe();
+          const subscription = await stripe.subscriptions.retrieve(invoiceSubscriptionId as string);
           await syncSubscriptionToFirestore(subscription);
         }
         break;
       }
 
       default:
-        console.log(`[Webhook] Unhandled event type ${event.type}`);
+        // Intentionally unhandled — not an error
+        break;
     }
 
     return NextResponse.json({ received: true });
   } catch (err: any) {
-    console.error(`[Webhook Process Error]: ${err.message}`);
+    console.error('[Webhook] Processing error:', err.message);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

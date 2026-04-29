@@ -83,12 +83,9 @@ async function callGemini(apiKey: string, model: string, prompt: string, frameUr
     const response = await ai.models.generateContent({
       model: model,
       contents: [{ role: 'user', parts: contents }],
-      generationConfig: {
-        responseMimeType: "application/json"
-      }
     });
 
-    return response.text;
+    return response.text ?? null;
   } catch (err: any) {
     console.warn(`[Gemini Fallback] Failed for ${model}:`, err.message);
     return null;

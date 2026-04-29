@@ -1,7 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
-import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage } from '@/firebase';
+import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage, useAuth } from '@/firebase';
+import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { 
   collection, 
   query, 
@@ -111,6 +112,11 @@ export type RecruitingProfile = {
   jerseyNumber?: string;
   bio: string;
   institutionalPulse?: string;
+  // Contact info embedded in profile
+  playerEmail?: string;
+  parentEmail?: string;
+  // Portfolio visibility controls
+  downloadsDisabled?: boolean;
   updatedAt: any;
 };
 
@@ -165,6 +171,8 @@ export type PlayerVideo = {
   title: string;
   type: "highlight" | "fullGame" | "skills" | "practice" | string;
   url: string;
+  thumbnailUrl?: string; // Video poster / thumbnail image URL
+  isTacticalClip?: boolean; // True if this is a coach-tagged tactical analysis clip
   comments?: VideoComment[];
   createdAt?: any;
   startAt?: number;
@@ -199,7 +207,7 @@ export type Team = {
   name: string;
   code: string;
   teamCode?: string;
-  type: "adult" | "youth" | "school" | "school_squad";
+  type: "adult" | "youth" | "school" | "school_squad" | "school_hub";
   sport?: string;
   description?: string;
   teamLogoUrl?: string;
@@ -222,6 +230,10 @@ export type Team = {
   rosterLimit?: number;
   isArchived?: boolean;
   division?: string;
+  // Invite / join code
+  inviteCode?: string;
+  teamName?: string; // Alias used in some contexts
+  lastCodeEditedAt?: string;
 };
 
 export type Club = {
@@ -307,6 +319,7 @@ export type TeamEvent = {
   description: string;
   eventType: string;
   isTournament?: boolean;
+  isTournamentMatch?: boolean; // Indicates this is a match within a tournament (not a standalone event)
   isLeagueGame?: boolean;
   isHome?: boolean;
   leagueId?: string;
@@ -330,6 +343,7 @@ export type TeamEvent = {
   drillIds?: string[]; // References to drills in the playbook/library
   isArchived?: boolean;
   division?: string;
+  round?: string | number; // Tournament round identifier
   refereePool?: TournamentReferee[];
   // ── Tournament deployment fields (set by TournamentDeploymentWizard) ──
   tournamentType?: 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout';
@@ -862,6 +876,17 @@ interface TeamContextType {
   getTeamByCode: (code: string, leagueId?: string) => Promise<any>;
   getLeagueMembers: (leagueId: string) => Promise<Member[]>;
   propagateLogoToLeagues: (teamId: string, logoUrl: string) => Promise<void>;
+  // Team code management
+  updateTeamCode: (teamId: string, newCode: string) => Promise<void>;
+  checkCodeUniqueness: (code: string) => Promise<boolean>;
+  // Calendar feed URL generator
+  getCalendarFeedUrl: (type: 'user' | 'team' | 'multi', targetId?: string, teamIds?: string[]) => Promise<string | null>;
+  // Inline member update handler (used in coaches-corner)
+  handleUpdateMemberField: (memberId: string, field: string, value: any) => Promise<void>;
+  // Alias for user — used by pricing page
+  userProfile: UserProfile | null;
+  // Pro quota shorthand
+  canAddProTeam?: boolean;
 }
 
 const TeamContext = createContext<TeamContextType | undefined>(undefined);
@@ -883,6 +908,7 @@ const clean = (obj: any): any => {
 
 export function TeamProvider({ children }: { children: ReactNode }) {
   const { user: firebaseUser, isAuthResolved } = useUser();
+  const firebaseAuth = useAuth();
   const db = useFirestore();
   const storage = useStorage();
   const router = useRouter();
@@ -2622,6 +2648,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       console.error("Error fetching config for waiver archive", e);
     }
 
+    // Snapshot the league's registration fee at submission time so Finance tab
+    // calculations remain accurate even if the league fee changes later.
+    let snapshotRegistrationCost = 0;
+    try {
+      const leagueSnap = await getDoc(doc(db, 'leagues', tId));
+      if (leagueSnap.exists()) {
+        const ld = leagueSnap.data();
+        snapshotRegistrationCost = parseFloat(ld?.registrationCost || ld?.registration_cost || '0') || 0;
+      }
+    } catch { /* non-blocking — fee defaults to 0 */ }
+
     const entryData: any = { 
       league_id: tId, 
       protocol_id: pId, 
@@ -2629,8 +2666,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       form_version: v, 
       waiver_signed_text: waiverTextToStore || signature, 
       signature_date: signature ? new Date().toISOString() : null,
-      status: 'pending', 
-      created_at: new Date().toISOString() 
+      status: 'pending',
+      registrationCost: snapshotRegistrationCost,   // ← snapshot fee at submission time
+      payment_received: false,                       // ← explicit default for filter queries
+      created_at: new Date().toISOString(),
+      createdAt: new Date().toISOString()            // ← both field names for compatibility
     };
     if (pId === 'team_config' && a.manual_enrollment) {
       entryData.status = 'accepted';
@@ -3265,9 +3305,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // If the user already has a Stripe customer, open the billing portal
     if (userProfile?.id && (userProfile as any).stripe_customer_id) {
       try {
+        const token = await getAuthToken(firebaseAuth);
         const res = await fetch('/api/stripe/customer-portal', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
           body: JSON.stringify({ userId: userProfile.id }),
         });
         const data = await res.json();
@@ -3281,7 +3322,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
     // Fall back to showing the upgrade paywall
     setIsPaywallOpen(true);
-  }, [userProfile]);
+  }, [userProfile, firebaseAuth]);
   const purchasePro = useCallback(() => { setIsPaywallOpen(true); }, []);
   const addLeaguePayment = useCallback(async (leagueId: string, teamId: string, data: any) => { if (!db) return; await addDoc(collection(db, 'leagues', leagueId, 'payments'), clean({ ...data, teamId, createdAt: new Date().toISOString() })); await updateDoc(doc(db, 'leagues', leagueId), { [`finances.${teamId}.totalPaid`]: increment(data.amount) }); }, [db]);
   const updateLeagueGlobalFees = useCallback(async (leagueId: string, fees: any) => { if (db) await updateDoc(doc(db, 'leagues', leagueId), { globalFees: clean(fees) }); }, [db]);
@@ -3355,7 +3396,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db, activeTeam, firebaseUser, myChildren, teamsRaw, userProfile]);
 
   const contextValue = useMemo(() => ({
-    db, user: userProfile, activeTeam, setActiveTeam, teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
+    db, user: userProfile, userProfile, activeTeam, setActiveTeam, teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
     currentMember: getMember(firebaseUser?.uid),
     isStaff, isPro, isStarter, isParent, 
     isPlayer,
@@ -3401,7 +3442,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addRegistration, addLeaguePayment, updateLeagueGlobalFees,
 
     getMember, firebaseUser, getTeamByCode, deleteMessage, getLeagueMembers, storage,
-    checkCodeUniqueness, updateTeamCode, propagateLogoToLeagues
+    checkCodeUniqueness, updateTeamCode, propagateLogoToLeagues,
+    handleUpdateMemberField: async (memberId: string, field: string, value: any) => {
+      const m = teamsRaw.length > 0 ? null : null; // just for dep tracking
+      if (!db || !activeTeam) return;
+      await updateMember(memberId, { [field]: value });
+    },
   }), [
     db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser, storage,
     isStaff, isPro, isStarter, householdEvents, householdGames, activeTeamEvents, games, myChildren, plans, isPlansLoading, isPaywallOpen,

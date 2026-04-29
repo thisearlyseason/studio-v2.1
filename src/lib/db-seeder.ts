@@ -361,14 +361,25 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
       { id: `vol2_${teamId}`, title: 'Match Day Photography', description: 'Capture high-quality action shots for the social feed.', date: later, startTime: '18:00', endTime: '20:00', spots: 2, hoursPerSlot: 2, pointsPerSlot: 25, signups: {} }
     ],
     fundraising: [
-      { id: `fund1_${teamId}`, title: 'Elite Performance Kits', description: 'Raising money for professional away kits and technical gear.', goalAmount: 5000, currentAmount: 3250, deadline: day(30), finances: {
-        totalCollected: 3250,
-        pendingVerification: 150,
-        donors: [
-          { name: 'Corporate Sponsor A', amount: 1000, date: weekAgo, method: 'external' },
-          { name: 'Smith Family', amount: 250, date: yesterday, method: 'etransfer' }
+      { 
+        id: `fund1_${teamId}`, 
+        title: 'Elite Performance Kits', 
+        description: 'Raising funds for professional away kits, warm-up gear, and technical equipment for the full squad.', 
+        goalAmount: 5000, 
+        currentAmount: 3250, 
+        raisedAmount: 3250,
+        deadline: day(30),
+        isShareable: true,
+        eTransferDetails: 'Send to team@squad.pro with campaign ID in memo.',
+        donations: [
+          { id: `don1_${teamId}`, donorName: 'Riverside Athletics Corp', amount: 1500, status: 'verified', method: 'bank_transfer', note: 'Annual club sponsorship commitment.', createdAt: day(-8) },
+          { id: `don2_${teamId}`, donorName: 'Smith Family', amount: 500, status: 'verified', method: 'etransfer', note: 'Go team!', createdAt: day(-5) },
+          { id: `don3_${teamId}`, donorName: 'Coach Rodriguez', amount: 250, status: 'verified', method: 'cash', note: 'Personal contribution.', createdAt: day(-3) },
+          { id: `don4_${teamId}`, donorName: 'Anonymous Supporter', amount: 1000, status: 'verified', method: 'external', note: '', createdAt: day(-1) },
+          { id: `don5_${teamId}`, donorName: 'Johnson Family', amount: 150, status: 'pending', method: 'etransfer', note: 'Sent via email transfer.', createdAt: day(-2) },
+          { id: `don6_${teamId}`, donorName: 'Metro Sports Foundation', amount: 200, status: 'pending', method: 'external', note: 'Grant application pending review.', createdAt: now.toISOString() },
         ]
-      } }
+      }
     ],
     equipment: [
       { id: `eq1_${teamId}`, name: 'Official Match Balls', category: 'Training Gear', totalQuantity: 30, availableQuantity: 24, status: 'Active', description: 'Institutional grade size 5 match balls. Serialized tracking.', assignments: { [`u3_${teamId}`]: { userId: `u3_${teamId}`, userName: playerPool[0].name, quantity: 6, date: yesterday } } },
@@ -717,7 +728,16 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             });
             await batch.maybeCommit();
             data.volunteers.forEach(vol => batch.set(doc(db, 'teams', v.id, 'volunteers', vol.id), clean(vol)));
-            data.fundraising.forEach(fund => batch.set(doc(db, 'teams', v.id, 'fundraising', fund.id), clean(fund)));
+            data.fundraising.forEach(fund => {
+              const { donations: _d, ...fundDoc } = fund;
+              batch.set(doc(db, 'teams', v.id, 'fundraising', fund.id), clean(fundDoc));
+            });
+            // Seed donation sub-docs for Audit Hub
+            for (const fund of data.fundraising) {
+              for (const don of (fund.donations || [])) {
+                batch.set(doc(db, 'teams', v.id, 'fundraising', fund.id, 'donations', don.id), clean(don));
+              }
+            }
             data.equipment.forEach(eq => batch.set(doc(db, 'teams', v.id, 'equipment', eq.id), clean(eq)));
             data.incidents.forEach(inc => batch.set(doc(db, 'teams', v.id, 'incidents', inc.id), clean(inc)));
             data.games.forEach(g => {
@@ -1032,9 +1052,9 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                     createdAt: now,
                     joinedTeamIds: [teamId],
                     avatar: m.avatar,
-                    school: m.school,
-                    gradYear: m.gradYear,
-                    gpa: m.gpa,
+                    school: (m as any).school,
+                    gradYear: (m as any).gradYear,
+                    gpa: (m as any).gpa,
                     primaryPosition: m.position,
                     sports: [isSchoolDemo ? 'Basketball' : 'Multi-Sport']
                 }));
@@ -1064,7 +1084,17 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         data.documents.forEach(d => batch.set(doc(db, 'teams', teamId, 'documents', d.id), clean({ ...d, ownerUserId: userId })));
         data.alerts.forEach(a => batch.set(doc(db, 'teams', teamId, 'alerts', a.id), clean(a)));
         data.volunteers.forEach(v => batch.set(doc(db, 'teams', teamId, 'volunteers', v.id), clean(v)));
-        data.fundraising.forEach(f => batch.set(doc(db, 'teams', teamId, 'fundraising', f.id), clean(f)));
+        data.fundraising.forEach(fund => {
+          const { donations: _d, ...fundDoc } = fund;
+          batch.set(doc(db, 'teams', teamId, 'fundraising', fund.id), clean(fundDoc));
+        });
+        // Seed donation sub-docs for Audit Hub
+        for (const fund of data.fundraising) {
+          for (const don of (fund.donations || [])) {
+            batch.set(doc(db, 'teams', teamId, 'fundraising', fund.id, 'donations', don.id), clean(don));
+          }
+        }
+
         data.equipment.forEach(eq => batch.set(doc(db, 'teams', teamId, 'equipment', eq.id), clean(eq)));
         data.incidents.forEach(inc => batch.set(doc(db, 'teams', teamId, 'incidents', inc.id), clean(inc)));
         // Seed game results for Scorekeeping page

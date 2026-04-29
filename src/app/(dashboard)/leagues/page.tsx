@@ -1701,7 +1701,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                               <SquadIdentity 
                                 teamId={team.id} 
                                 teamName={team.teamName} 
-                                logoUrl={(team as any).teamLogoUrl}
+                                logoUrl={team.teamLogoUrl || teamLogoMap[team.id]}
                                 logoClassName="h-10 w-10 rounded-xl shadow-sm border-2"
                                 showNameWithLogo
                                 horizontal

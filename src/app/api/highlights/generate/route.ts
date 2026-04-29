@@ -97,12 +97,11 @@ Format: [{"startTime": number, "endTime": number, "title": string, "description"
     if (!textResult && process.env.GOOGLE_AI_API_KEY && process.env.GOOGLE_AI_API_KEY !== 'your_gemini_api_key_here') {
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY });
-        const model = ai.models.get("gemini-1.5-flash");
-        const result = await model.generateContent({
+        const result = await ai.models.generateContent({
+          model: "gemini-1.5-flash",
           contents: [{ role: 'user', parts: [{ text: aiPrompt }] }],
-          generationConfig: { responseMimeType: "application/json" }
         });
-        textResult = result.text;
+        textResult = result.text ?? '';
       } catch (e: any) {
         lastError = `Gemini: ${e.message}`;
       }

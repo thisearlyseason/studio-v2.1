@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTeam } from '@/components/providers/team-provider';
+import { useAuth } from '@/firebase';
+import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { PRICING_CONFIG, EXTRA_TEAM_CONFIG, Plan, BillingCycle } from '@/lib/pricing';
 import { 
   CreditCard, 
@@ -31,6 +33,7 @@ import { SquadIdentity } from '@/components/SquadIdentity';
 
 export default function BillingDashboard() {
   const { user: userProfile, isPro, teams, proQuotaStatus, updateTeamPlan } = useTeam();
+  const auth = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [pendingSync, setPendingSync] = useState(false);
@@ -52,9 +55,10 @@ export default function BillingDashboard() {
     // If they DON'T have a subscription yet (Starter plan), they need a checkout session
     if (!isStripeLinked) {
       try {
+        const token = await getAuthToken(auth);
         const response = await fetch('/api/stripe/create-checkout', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
           body: JSON.stringify({
             userId: userProfile.id,
             priceId: newPlan ? (billingCycle === 'annual' ? newPlan.annualPriceId : newPlan.monthlyPriceId) : null,
@@ -84,9 +88,10 @@ export default function BillingDashboard() {
 
     try {
       const newPriceId = billingCycle === 'annual' ? newPlan.annualPriceId : newPlan.monthlyPriceId;
+      const token = await getAuthToken(auth);
       const response = await fetch('/api/subscription/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({
           userId: userProfile.id,
           newPriceId
@@ -123,9 +128,10 @@ export default function BillingDashboard() {
 
     setLoading('addon');
     try {
+      const token = await getAuthToken(auth);
       const response = await fetch('/api/subscription/addon', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({
           userId: userProfile.id,
           quantity: qty,
@@ -150,9 +156,10 @@ export default function BillingDashboard() {
     if (!userProfile?.id || !confirm('Are you sure you want to cancel? You will lose access at the end of the billing period.')) return;
     setLoading('cancel');
     try {
+      const token = await getAuthToken(auth);
       const response = await fetch('/api/subscription/cancel', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({ userId: userProfile.id })
       });
       const data = await response.json();
@@ -172,9 +179,10 @@ export default function BillingDashboard() {
     if (!userProfile?.id) return;
     setLoading('portal');
     try {
+      const token = await getAuthToken(auth);
       const res = await fetch('/api/stripe/customer-portal', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({ userId: userProfile.id }),
       });
       const data = await res.json();
@@ -190,10 +198,11 @@ export default function BillingDashboard() {
     if (!userProfile?.id) return;
     setLoading('sync');
     try {
+      const token = await getAuthToken(auth);
       const res = await fetch('/api/subscription/sync', {
         method: 'POST',
-        body: JSON.stringify({ userId: userProfile.id }),
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ userId: userProfile.id })
       });
       const data = await res.json();
       if (data.success) {
@@ -301,10 +310,11 @@ export default function BillingDashboard() {
                         onClick={async () => {
                           setLoading('sync');
                           try {
+                            const token = await getAuthToken(auth);
                             const res = await fetch('/api/subscription/sync', {
                               method: 'POST',
-                              body: JSON.stringify({ userId: userProfile.id }),
-                              headers: { 'Content-Type': 'application/json' }
+                              headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+                              body: JSON.stringify({ userId: userProfile.id })
                             });
                             const data = await res.json();
                             if (data.success) {
@@ -384,16 +394,18 @@ export default function BillingDashboard() {
                                  if (!confirm(`Add ${diff} extra squad seat${diff > 1 ? 's' : ''} for ${price}/squad per ${billingCycle === 'annual' ? 'year' : 'month'}? You will be taken to Stripe to complete payment.`)) return;
                                  // Route through checkout so Stripe collects payment
                                  setLoading('addon_init');
-                                 fetch('/api/stripe/create-checkout', {
-                                   method: 'POST',
-                                   headers: { 'Content-Type': 'application/json' },
-                                   body: JSON.stringify({
-                                     userId: userProfile.id,
-                                     priceId: null,
-                                     billingCycle,
-                                     extraTeamQty: diff
+                                 getAuthToken(auth).then(token => 
+                                   fetch('/api/stripe/create-checkout', {
+                                     method: 'POST',
+                                     headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+                                     body: JSON.stringify({
+                                       userId: userProfile.id,
+                                       priceId: null,
+                                       billingCycle,
+                                       extraTeamQty: diff
+                                     })
                                    })
-                                 }).then(r => r.json()).then(data => {
+                                 ).then(r => r.json()).then(data => {
                                    if (data.url) {
                                      window.location.href = data.url;
                                    } else {

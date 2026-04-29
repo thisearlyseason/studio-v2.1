@@ -68,7 +68,7 @@ import {
   LayoutGrid,
   Check,
   Calendar as CalendarIcon,
-  AlertHorizontal
+  AlertCircle as AlertHorizontal
 } from 'lucide-react';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where, getDocs } from 'firebase/firestore';
@@ -733,6 +733,7 @@ function VolunteerOpportunityManager() {
       {/* Personnel Management Modal */}
       <Dialog open={!!managingOpp} onOpenChange={(o) => { if(!o) setManagingOpp(null); }}>
         <DialogContent className="rounded-[4rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-3xl bg-[#fafafa]">
+          <DialogTitle className="sr-only">Mobilization Management — {managingOpp?.title}</DialogTitle>
           <div className="p-12 space-y-10">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
@@ -882,7 +883,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const [deletedStatIds, setDeletedStatIds] = useState<string[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [activeTeam] = useState(user?.clubName || 'Elite Academy'); // Fallback for prominent display
-  const [photos, setPhotos] = useState<{id?: string, url: string}[]>([]);
+  const [photos, setPhotos] = useState<string[]>([]);
   const loadData = useCallback(async (isSilent = false) => {
     if (!member.playerId) {
       setLoading(false);
@@ -901,8 +902,9 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       ]);
       if (p) {
         setProfile(p);
-        const pPhotos = (p.photos || []).map((url: string) => ({ url }));
-        const subPhotos = (v || []).filter(vid => vid.type === 'photo').map(vid => ({ id: vid.id, url: vid.url }));
+        // Combine profile gallery URLs + photo-type video URLs into a flat string array
+        const pPhotos: string[] = p.photos || [];
+        const subPhotos: string[] = (v || []).filter(vid => vid.type === 'photo').map(vid => vid.url);
         setPhotos([...pPhotos, ...subPhotos]);
       }
       if (m) setMetrics(m);
@@ -950,9 +952,6 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         description: "Athlete identity (playerId) not found. Verify this athlete is correctly assigned in the roster.", 
         variant: "destructive" 
       });
-      if (!getApps().length) {
-        initializeApp(firebaseConfig);
-      }
       console.warn("Recruiting sync failed: No playerId for member", member);
       return;
     }
@@ -983,7 +982,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
           ...profile, 
           graduationYear: profile.graduationYear ? Number(profile.graduationYear) : undefined,
           academicGPA: profile.academicGPA ? Number(profile.academicGPA) : undefined,
-          photos 
+          photos: photos // already string[]
         }),
         updateAthleticMetrics(member.playerId, {
           ...metrics,
@@ -1057,8 +1056,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
       // Refetch photos from the sub-collection to update UI
       const allVideos = await getPlayerVideos(member.playerId);
-      const subPhotos = allVideos.filter(vid => vid.type === 'photo').map(vid => ({ id: vid.id, url: vid.url }));
-      const pPhotos = (profile?.photos || []).map((url: string) => ({ url }));
+      const subPhotos: string[] = allVideos.filter(vid => vid.type === 'photo').map(vid => vid.url);
+      const pPhotos: string[] = profile?.photos || [];
       setPhotos([...pPhotos, ...subPhotos]);
       
       toast({ title: "Imagery Captured", description: "Strategic screenshot saved to athlete's persistent vault." });
@@ -1083,8 +1082,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         });
 
         const allVideos = await getPlayerVideos(member.playerId);
-        const subPhotos = allVideos.filter(vid => vid.type === 'photo').map(vid => ({ id: vid.id, url: vid.url }));
-        const pPhotos = (profile?.photos || []).map((url: string) => ({ url }));
+        const subPhotos: string[] = allVideos.filter(vid => vid.type === 'photo').map(vid => vid.url);
+        const pPhotos: string[] = profile?.photos || [];
         setPhotos([...pPhotos, ...subPhotos]);
         
         toast({ title: "Captured Locally", description: "HD imagery saved to persistent sub-vault." });
@@ -1171,7 +1170,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       await addPlayerVideo(member.playerId, { 
         title: filmTitle || 'Untitled', 
         url: finalUrl, 
-        thumbnailUrl, 
+        thumbnailUrl: thumbnailUrl ?? undefined, 
         type: filmType, 
         comments: [] 
       });
@@ -2367,26 +2366,18 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                      <p className="text-xs font-black uppercase tracking-[0.3em]">No Strategic Imagery Captured</p>
                   </div>
                 ) : (
-                  photos.map((pObj, i) => (
-                    <div key={i} className="group relative aspect-square rounded-[3rem] overflow-hidden bg-muted ring-1 ring-black/5 hover:shadow-2xl hover:shadow-primary/20 transition-all duration-500 cursor-pointer" onClick={() => window.open(pObj.url, '_blank')}>
-                      <img src={pObj.url} alt={`Tactical Capture ${i}`} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                  photos.map((photoUrl, i) => (
+                    <div key={i} className="group relative aspect-square rounded-[3rem] overflow-hidden bg-muted ring-1 ring-black/5 hover:shadow-2xl hover:shadow-primary/20 transition-all duration-500 cursor-pointer" onClick={() => window.open(photoUrl, '_blank')}>
+                      <img src={photoUrl} alt={`Tactical Capture ${i}`} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                       
                       {/* RED X DELETE BUTTON - TOP RIGHT */}
                       <button 
                         onClick={(e) => { 
                           e.stopPropagation();
-                          if (pObj.id) {
-                            deletePlayerVideo(member.playerId, pObj.id);
-                            setPhotos(prev => prev.filter(ph => ph.id !== pObj.id));
-                            toast({ title: "Imagery Purged" });
-                          } else {
-                            // Legacy profile photos removal logic
-                            const pPhotos = photos.filter(item => !item.id).map(item => item.url);
-                            const newPPhotos = pPhotos.filter(url => url !== pObj.url);
-                            updateRecruitingProfile(member.playerId, { photos: newPPhotos });
-                            setPhotos(prev => prev.filter(ph => ph.url !== pObj.url));
-                            toast({ title: "Legacy Photo Purged" });
-                          }
+                          const newPhotos = photos.filter(p => p !== photoUrl);
+                          setPhotos(newPhotos);
+                          if (member.playerId) updateRecruitingProfile(member.playerId, { photos: newPhotos });
+                          toast({ title: "Photo Purged" });
                         }}
                         className="absolute top-4 right-4 h-10 w-10 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg border-2 border-white opacity-0 group-hover:opacity-100 transition-opacity z-20 hover:scale-110 active:scale-95 translate-x-1 -translate-y-1"
                       >
@@ -2838,13 +2829,14 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
-                      {photos.map((pObj, i) => (
+                      {photos.map((photoUrl, i) => (
                         <div key={i} className="relative group aspect-square rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl ring-1 ring-black/5">
-                          <img src={pObj.url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={`Gallery ${i}`} />
+                          <img src={photoUrl} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={`Gallery ${i}`} />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                             <Button type="button" variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-2xl" onClick={() => {
-                              if (pObj.id) deletePlayerVideo(member.playerId, pObj.id);
-                              setPhotos(prev => prev.filter(ph => ph.url !== pObj.url));
+                              const newPhotos = photos.filter(p => p !== photoUrl);
+                              setPhotos(newPhotos);
+                              if (member.playerId) updateRecruitingProfile(member.playerId, { photos: newPhotos });
                               toast({ title: "Archival Asset Purged" });
                             }}>
                               <Trash2 className="h-6 w-6" />
@@ -3589,7 +3581,7 @@ export function IncidentDetailDialog({ incident, isOpen, onOpenChange, onEdit }:
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-[3.5rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-2xl bg-white text-foreground">
+      <DialogContent className="rounded-[3.5rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-3xl bg-white text-foreground">
         <DialogTitle className="sr-only">Incident Audit: {incident.title}</DialogTitle>
         <div className="h-2 bg-primary w-full" />
         <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
@@ -4100,7 +4092,6 @@ function SafetyHub() {
   );
 }
 
-import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 function SignatureAuditDialog({ proto }: { proto: any }) {
   const { db, activeTeam, members } = useTeam();
@@ -4271,7 +4262,11 @@ function StaffEvalPanel({
 
 export default function CoachesCornerPage() {
   const router = useRouter();
-  const { activeTeam, isStaff, isPro, isStarter, createTeamDocument, updateTeamDocument, deleteTeamDocument, db, members, createAlert, isSchoolMode, user, teams, getLeagueMembers } = useTeam();
+  const { activeTeam, isStaff, isPro, isStarter, createTeamDocument, updateTeamDocument, deleteTeamDocument, db, members, createAlert, isSchoolMode, user, teams, getLeagueMembers, updateMember } = useTeam();
+
+  const handleUpdateMemberField = async (memberId: string, field: string, value: any) => {
+    await updateMember(memberId, { [field]: value });
+  };
   
   const isPartOfLeague = useMemo(() => {
     return activeTeam?.leagueIds && Object.keys(activeTeam.leagueIds).length > 0;
@@ -4327,8 +4322,8 @@ export default function CoachesCornerPage() {
   const eRef = useMemoFirebase(() => db && activeTeam?.id ? query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'desc')) : null, [db, activeTeam?.id]);
   const { data: events } = useCollection<TeamEvent>(eRef);
 
-  if (!isStaff) return <AccessRestricted type="role" title="Coaches Hub Restricted" description="This tactical vault is reserved for Coaching Staff and Team Administrators." />;
-  if (!isPro && !isStarter) return <AccessRestricted type="tier" />;
+  if (!isStaff) return <AccessRestricted type="feature" />;
+  if (!isPro && !isStarter) return <AccessRestricted type="data" />;
 
   const handleSaveProtocolUpdate = async () => {
     if (!editingWaiver || !activeTeam) return;
@@ -4412,7 +4407,14 @@ export default function CoachesCornerPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8">
             <aside className="space-y-6 md:col-span-1">
               <div className="flex items-center gap-2 px-2"><Users className="h-4 w-4 text-primary" /><h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Select Athlete</h3></div>
-              <ScrollArea className="h-[600px] border-2 rounded-[2.5rem] bg-muted/10 p-2 shadow-inner">
+              <ScrollArea
+                className="h-[600px] border-2 rounded-[2.5rem] bg-muted/10 p-2 shadow-inner"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  const memberId = e.dataTransfer.getData('memberId');
+                  if (memberId) handleUpdateMemberField(memberId, 'status', 'active');
+                }}
+              >
                 <div className="space-y-1.5">
                   {members.filter(m => m.status !== 'removed' && !['Coach', 'Assistant Coach', 'Manager', 'Staff', 'Athletic Director'].includes(m.position)).map(m => (
                     <button key={m.id} onClick={() => setSelectedMemberId(m.id)} className={cn("w-full flex items-center gap-3 p-3 rounded-2xl transition-all font-black text-xs uppercase", selectedMemberId === m.id ? "bg-primary text-white shadow-lg" : "hover:bg-white text-foreground")}>
@@ -4431,13 +4433,33 @@ export default function CoachesCornerPage() {
                         <p className="text-[10px] font-black uppercase tracking-widest text-red-500/50">Removed Personnel</p>
                       </div>
                       {members.filter(m => m.status === 'removed').map(m => (
-                        <button key={m.id} onClick={() => setSelectedMemberId(m.id)} className={cn("w-full flex items-center gap-3 p-3 rounded-2xl transition-all font-black text-xs uppercase opacity-50 grayscale hover:grayscale-0 hover:opacity-100", selectedMemberId === m.id ? "bg-red-600 text-white shadow-lg grayscale-0 opacity-100" : "bg-white border-dashed border-red-100 text-foreground")}>
-                          <Avatar className="h-8 w-8 rounded-xl border shrink-0 opacity-40">
-                            <AvatarImage src={m.avatar} />
-                            <AvatarFallback className="font-black text-red-600/50">{m.name[0]}</AvatarFallback>
-                          </Avatar>
-                          <span className="truncate">{m.name}</span>
-                        </button>
+                        <div
+                          key={m.id}
+                          draggable
+                          onDragStart={(e) => e.dataTransfer.setData('memberId', m.id)}
+                          className="group/removed"
+                        >
+                          <button onClick={() => setSelectedMemberId(m.id)} className={cn("w-full flex items-center gap-3 p-3 rounded-2xl transition-all font-black text-xs uppercase opacity-50 grayscale hover:grayscale-0 hover:opacity-100", selectedMemberId === m.id ? "bg-red-600 text-white shadow-lg grayscale-0 opacity-100" : "bg-white border-dashed border-red-100 text-foreground")}>
+                            <Avatar className="h-8 w-8 rounded-xl border shrink-0 opacity-40">
+                              <AvatarImage src={m.avatar} />
+                              <AvatarFallback className="font-black text-red-600/50">{m.name[0]}</AvatarFallback>
+                            </Avatar>
+                            <span className="truncate flex-1 text-left">{m.name}</span>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              title="Re-commission athlete"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateMemberField(m.id, 'status', 'active');
+                              }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleUpdateMemberField(m.id, 'status', 'active'); } }}
+                              className="opacity-0 group-hover/removed:opacity-100 transition-opacity ml-auto bg-green-500 text-white rounded-lg px-2 py-0.5 text-[8px] font-black uppercase tracking-widest hover:bg-green-600 shrink-0 cursor-pointer"
+                            >
+                              Reinstate
+                            </span>
+                          </button>
+                        </div>
                       ))}
                     </div>
                   )}

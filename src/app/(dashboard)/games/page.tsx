@@ -102,37 +102,7 @@ export default function GamesPage() {
         }
       }
       
-      // 2. Tournament games
-      if (e.eventType === 'tournament' && e.tournamentGames && e.tournamentGames.length > 0) {
-        const teamName = activeTeam?.name || '';
-        e.tournamentGames.forEach((g: any, idx: number) => {
-          const gameId = g.id || `${e.id}_${idx}`;
-          const involvesUs = g.team1 === teamName || g.team1Id === activeTeam?.id || g.team2 === teamName || g.team2Id === activeTeam?.id;
-          
-          if (involvesUs && !recordedEventIds.has(gameId)) {
-            // Filter out TBD matchups unless we are specifically named
-            const isTBD = g.team1.includes('TBD') || g.team2.includes('TBD');
-            if (isTBD && !(g.team1 === teamName || g.team2 === teamName)) return;
-
-            let usName = teamName || 'Us';
-            let opp = g.team2;
-            if (g.team1 !== usName && g.team2 === usName) opp = g.team1;
-            else if (g.team1 !== usName && g.team2 !== usName) opp = `${g.team1} vs ${g.team2}`;
-            
-            items.push({
-              id: gameId,
-              eventId: gameId,
-              opponent: opp,
-              date: g.date || e.date, 
-              displayDate: new Date(g.date || e.date),
-              isRecorded: false,
-              location: g.location || e.location,
-              time: g.time,
-              subtitle: `[${e.title}] ${g.round || 'Match'}`
-            });
-          }
-        });
-      }
+      // Tournament games are managed by the tournament engine — exclude from team scorekeeping
     });
 
     return items.sort((a, b) => b.displayDate.getTime() - a.displayDate.getTime());

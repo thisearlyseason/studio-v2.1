@@ -264,10 +264,33 @@ export const onEventDelete = onDocumentDeleted("teams/{teamId}/events/{eventId}"
 import { onRequest } from "firebase-functions/v2/https";
 
 export const connectGoogleCalendar = onRequest({ cors: true }, async (req, res) => {
+  // Verify Firebase ID token from Authorization header
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).send('Unauthorized: Missing Firebase ID token.');
+    return;
+  }
+  const idToken = authHeader.slice(7);
+
+  let verifiedUid: string;
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    verifiedUid = decoded.uid;
+  } catch {
+    res.status(401).send('Unauthorized: Invalid or expired token.');
+    return;
+  }
+
   const { code, userId } = req.body;
 
   if (!code || !userId) {
-    res.status(400).send("Missing code or userId");
+    res.status(400).send('Missing code or userId');
+    return;
+  }
+
+  // Ensure the caller can only link their own account
+  if (verifiedUid !== userId) {
+    res.status(403).send('Forbidden: You may only link your own account.');
     return;
   }
 
@@ -280,22 +303,21 @@ export const connectGoogleCalendar = onRequest({ cors: true }, async (req, res) 
   try {
     const { tokens } = await oauth2Client.getToken(code);
     
-    // 1. Store tokens securely (backend only)
-    await db.collection("users").doc(userId).collection("tokens").doc("google").set({
+    // Store tokens securely in server-only subcollection
+    await db.collection('users').doc(userId).collection('tokens').doc('google').set({
       credentials: tokens,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // 2. Update user profile to reflect connection
-    await db.collection("users").doc(userId).update({
+    // Update user profile to reflect connection
+    await db.collection('users').doc(userId).update({
       googleConnected: true,
-      googleEmail: tokens.id_token ? "verified-email" : "connected" // In real use, decode id_token to get email
     });
 
-    res.send({ status: "success" });
+    res.send({ status: 'success' });
   } catch (error) {
-    console.error("OAuth Exchange failed:", error);
-    res.status(500).send("Authentication failed");
+    console.error('OAuth Exchange failed:', error);
+    res.status(500).send('Authentication failed');
   }
 });
 
@@ -326,12 +348,21 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
     let events: any[] = [];
     const teamNameMap: Record<string, string> = {};
 
-    // 2. Aggregate Intelligence (Events)
+    // 2. Aggregate Intelligence (Events) — filtered to last 3 months + next 12 months
+    const now = new Date();
+    const threeMonthsAgo = new Date(now);
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const oneYearAhead = new Date(now);
+    oneYearAhead.setFullYear(oneYearAhead.getFullYear() + 1);
+    const dateFrom = threeMonthsAgo.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+    const dateTo = oneYearAhead.toISOString().split('T')[0];
+
     if (type === "team" && teamId) {
       const teamDoc = await db.collection("teams").doc(teamId).get();
       teamNameMap[teamId] = teamDoc.data()?.name || "Team";
       
-      const snap = await db.collection("teams").doc(teamId).collection("events").get();
+      const snap = await db.collection("teams").doc(teamId).collection("events")
+        .where("date", ">=", dateFrom).where("date", "<=", dateTo).get();
       events = snap.docs.map(doc => ({ ...doc.data(), id: doc.id, teamId }));
     } else if (type === "user" && userId) {
       const membersSnap = await db.collectionGroup("members").where("userId", "==", userId).get();
@@ -342,7 +373,8 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
         teamDocs.forEach(td => { if(td.exists) teamNameMap[td.id] = td.data()?.name; });
 
         const eventPromises = resolvedTeamIds.map(tid => 
-          db.collection("teams").doc(tid).collection("events").get()
+          db.collection("teams").doc(tid).collection("events")
+            .where("date", ">=", dateFrom).where("date", "<=", dateTo).get()
         );
         const snaps = await Promise.all(eventPromises);
         events = snaps.flatMap((s, idx) => s.docs.map(doc => ({ ...doc.data(), id: doc.id, teamId: resolvedTeamIds[idx] })));
@@ -352,9 +384,10 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
       const teamDocs = await Promise.all(teamIds.map(tid => db.collection("teams").doc(tid).get()));
       teamDocs.forEach(td => { if(td.exists) teamNameMap[td.id] = td.data()?.name; });
 
-      // Fetch events from all selected teams
+      // Fetch events from all selected teams (date-filtered)
       const eventPromises = teamIds.map(tid => 
-        db.collection("teams").doc(tid).collection("events").get()
+        db.collection("teams").doc(tid).collection("events")
+          .where("date", ">=", dateFrom).where("date", "<=", dateTo).get()
       );
       const snaps = await Promise.all(eventPromises);
       events = snaps.flatMap((s, idx) => s.docs.map(doc => ({ ...doc.data(), id: doc.id, teamId: teamIds[idx] })));
@@ -426,7 +459,7 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
  */
 import { onSchedule } from "firebase-functions/v2/scheduler";
 
-export const cleanupAnonymousUsers = onSchedule("every 24 hours", async (event: any) => {
+export const cleanupAnonymousUsers = onSchedule('every 24 hours', async (_event: any) => {
   const auth = admin.auth();
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
   const now = Date.now();
@@ -443,20 +476,35 @@ export const cleanupAnonymousUsers = onSchedule("every 24 hours", async (event: 
         if (userRecord.providerData.length === 0) {
           const creationTime = Date.parse(userRecord.metadata.creationTime);
           if (now - creationTime > ONE_DAY_MS) {
-             usersToDelete.push(userRecord.uid);
+            usersToDelete.push(userRecord.uid);
           }
         }
       });
 
       if (usersToDelete.length > 0) {
+        // Delete Auth accounts
         await auth.deleteUsers(usersToDelete);
-        
-        // Optional: Also wipe associated demo data in Firestore to save database storage.
-        const batch = db.batch();
-        usersToDelete.forEach((uid: string) => {
-           batch.delete(db.collection("users").doc(uid));
-        });
-        await batch.commit();
+
+        // Recursively delete all Firestore data for each user
+        // This includes teams, events, members, and all subcollections
+        await Promise.allSettled(
+          usersToDelete.map(async (uid) => {
+            try {
+              // Delete user doc + all subcollections recursively
+              await db.recursiveDelete(db.collection('users').doc(uid));
+
+              // Delete all teams owned by this user
+              const teamsSnap = await db.collection('teams')
+                .where('ownerUserId', '==', uid).get();
+              
+              await Promise.allSettled(
+                teamsSnap.docs.map(teamDoc => db.recursiveDelete(teamDoc.ref))
+              );
+            } catch (err: any) {
+              console.error(`[cleanup] Failed to delete data for uid ${uid}:`, err.message);
+            }
+          })
+        );
 
         deletedCount += usersToDelete.length;
       }
@@ -464,8 +512,8 @@ export const cleanupAnonymousUsers = onSchedule("every 24 hours", async (event: 
       pageToken = listUsersResult.pageToken;
     } while (pageToken);
 
-    console.log(`Successfully swept ${deletedCount} stale anonymous demo accounts.`);
+    console.log(`Swept ${deletedCount} stale anonymous accounts and their data.`);
   } catch (error) {
-    console.error("Failed to execute cleanup routine:", error);
+    console.error('Failed to execute cleanup routine:', error);
   }
 });

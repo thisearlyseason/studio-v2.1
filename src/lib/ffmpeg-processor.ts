@@ -33,7 +33,7 @@ export async function loadFFmpeg(onProgress?: (ratio: number) => void): Promise<
     });
 
     if (onProgress) {
-      ffmpeg.on('progress', ({ ratio }) => onProgress(ratio));
+      ffmpeg.on('progress', (event: any) => onProgress(event.ratio ?? event.progress ?? 0));
     }
 
     const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
@@ -387,9 +387,9 @@ export async function extractFramesForAnalysis(
               '-f', 'image2',
               outputName,
             ]);
-            const data = await ffmpeg.readFile(outputName) as Uint8Array;
+            const data = await ffmpeg.readFile(outputName) as Uint8Array<ArrayBuffer>;
             // Convert to base64 efficiently
-            const blob = new Blob([data], { type: 'image/jpeg' });
+            const blob = new Blob([data.buffer], { type: 'image/jpeg' });
             const reader = new FileReader();
             const b64 = await new Promise<string>((resolve) => {
               reader.onload = () => resolve((reader.result as string).split(',')[1]);

@@ -1,11 +1,231 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{allPaths=**} {
-      // THE ABSOLUTE NUCLEAR BYPASS FOR DEBUGGING
-      // If a permission error happens after this, then the browser is NOT talking 
-      // to the Firestore instance we are currently deploying rules to.
-      allow read, write: if true;
+
+    // ─── Helpers ────────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+
+    function isTeamMember(teamId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
+    }
+
+    function isTeamOwner(teamId) {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid;
+    }
+
+    // ─── Users ──────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isSignedIn() && isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && isOwner(userId);
+      allow delete: if false; // Never allow client-side user deletion
+
+      // Google OAuth tokens — server-write only via Cloud Functions
+      match /tokens/{tokenId} {
+        allow read, write: if false;
+      }
+
+      // Team membership index — readable by owner
+      match /teamMemberships/{teamId} {
+        allow read: if isSignedIn() && isOwner(userId);
+        allow write: if isSignedIn() && isOwner(userId);
+      }
+    }
+
+    // ─── Teams ──────────────────────────────────────────────────────────────
+    match /teams/{teamId} {
+      // Owner or any authenticated member can read team doc
+      allow read: if isSignedIn() && (
+        resource.data.ownerUserId == request.auth.uid ||
+        isTeamMember(teamId)
+      );
+      // Only owner can create/update/delete the team doc
+      allow create: if isSignedIn() && request.resource.data.ownerUserId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        resource.data.ownerUserId == request.auth.uid ||
+        // Allow members to update specific fields (e.g. joining)
+        isTeamMember(teamId)
+      );
+      allow delete: if isSignedIn() && resource.data.ownerUserId == request.auth.uid;
+
+      // Sub-collections: only members can read; only owner can write
+      match /members/{memberId} {
+        allow read: if isSignedIn() && (
+          resource.data.ownerUserId == request.auth.uid ||
+          isTeamMember(teamId)
+        );
+        allow write: if isSignedIn() && isTeamOwner(teamId);
+      }
+
+      match /events/{eventId} {
+        allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+        allow write: if isSignedIn() && isTeamOwner(teamId);
+      }
+
+      match /incidents/{incidentId} {
+        allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+        allow write: if isSignedIn() && isTeamOwner(teamId);
+      }
+
+      match /games/{gameId} {
+        allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+        allow write: if isSignedIn() && isTeamOwner(teamId);
+      }
+
+      match /fundraising/{fundId} {
+        allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+        allow write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+
+        match /donations/{donationId} {
+          allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+          allow write: if isSignedIn();
+        }
+      }
+
+      match /equipment/{equipId} {
+        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+      }
+
+      match /documents/{docId} {
+        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+      }
+
+      match /files/{fileId} {
+        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+      }
+
+      match /groupChats/{chatId} {
+        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+
+        match /messages/{messageId} {
+          allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+        }
+      }
+
+      match /feedPosts/{postId} {
+        allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+        allow write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+      }
+
+      match /registrationEntries/{entryId} {
+        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+      }
+
+      match /archived_waivers/{waiverId} {
+        allow read, write: if isSignedIn() && isTeamOwner(teamId);
+      }
+
+      match /registration/{configId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && isTeamOwner(teamId);
+      }
+
+      // Catch-all for any other team sub-collections
+      match /{subCollection}/{docId} {
+        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+      }
+    }
+
+    // ─── Players (public scouting profiles) ─────────────────────────────────
+    match /players/{playerId} {
+      // Public read for recruiting portals
+      allow read: if true;
+      // Only authenticated users (coaches) can write player profiles
+      allow write: if isSignedIn();
+
+      match /{subCollection}/{docId} {
+        allow read: if true;
+        allow write: if isSignedIn();
+      }
+    }
+
+    // ─── Leagues ────────────────────────────────────────────────────────────
+    match /leagues/{leagueId} {
+      // Anyone signed in can read league docs (for registration/standings)
+      allow read: if isSignedIn();
+      // Only the creator can write league config
+      allow create: if isSignedIn() && request.resource.data.creatorId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.creatorId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.creatorId == request.auth.uid;
+
+      match /registrationEntries/{entryId} {
+        // Public write to allow team/player registration from public form
+        allow create: if true;
+        // Only league owner can read/update entries
+        allow read, update: if isSignedIn() && 
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid;
+        allow delete: if isSignedIn() && 
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid;
+      }
+
+      match /archived_waivers/{waiverId} {
+        allow read, write: if isSignedIn() && 
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid;
+      }
+
+      match /registration/{configId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && 
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid;
+      }
+
+      match /scores/{scoreId} {
+        allow read: if true;
+        allow write: if isSignedIn();
+      }
+
+      // Global invites collection
+      match /invites/{inviteId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    // ─── Leagues global invites ──────────────────────────────────────────────
+    match /leagues/global/invites/{inviteId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // ─── Subscriptions audit log (server-write only via webhook) ────────────
+    match /subscriptions/{subId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false; // Server-side only
+    }
+
+    // ─── Calendar feeds (token-gated) ───────────────────────────────────────
+    match /calendarFeeds/{feedId} {
+      allow read: if true; // Token is the secret — anyone with the token URL can read
+      allow write: if isSignedIn();
+    }
+
+    // ─── Volunteers ─────────────────────────────────────────────────────────
+    match /volunteerOpportunities/{oppId} {
+      allow read: if true; // Public volunteer listings
+      allow write: if isSignedIn();
+
+      match /signups/{signupId} {
+        allow read: if true;
+        allow write: if true; // Public sign-up flow
+      }
+    }
+
+    // ─── Signatures ─────────────────────────────────────────────────────────
+    match /signatures/{sigId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow write: if isSignedIn();
+    }
+
+    // ─── Alerts ─────────────────────────────────────────────────────────────
+    match /alerts/{alertId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
   }
 }

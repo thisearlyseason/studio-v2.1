@@ -15,6 +15,7 @@ import { signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { getAuthToken, authHeader } from '@/lib/client-auth';
 
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -42,8 +43,17 @@ function DemoSeedWrapper({
   const auth = useAuth();
   useEffect(() => {
     const demoPlanId = searchParams.get('seed_demo');
-    if (!user || isDemoInitializing || !demoPlanId || isTeamsLoading) return;
-
+    // Only allow known valid plan IDs to prevent arbitrary seeding
+    const ALLOWED_DEMO_PLANS = new Set([
+      // Homepage DEMO_OPTIONS
+      'starter_squad', 'squad_pro', 'elite_teams', 'school_demo', 'player_demo', 'parent_demo',
+      // Settings page
+      'elite',
+      // Legacy / generic
+      'free', 'team', 'league', 'school',
+    ]);
+    if (!demoPlanId || !ALLOWED_DEMO_PLANS.has(demoPlanId)) return;
+    if (!user || isDemoInitializing || isTeamsLoading) return;
     // Use sessionStorage so this guard survives React remounts within the same browser session.
     // Unlike a useRef, this persists across component teardown/remount cycles.
     const sessionAttemptKey = `${SEEDING_ATTEMPTED_KEY}_${demoPlanId}_${user.uid}`;
@@ -258,9 +268,10 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       
       const doSync = async () => {
         try {
+          const token = await getAuthToken(auth);
           await fetch('/api/subscription/sync', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...authHeader(token) },
             body: JSON.stringify({ userId: user.uid }),
           });
           
@@ -341,24 +352,26 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
               </p>
             </div>
 
-            {/* Developer Debug Indicator - helps identify which flag is stuck */}
-            <div className="flex flex-wrap justify-center gap-2 pt-4">
-              {[
-                { label: 'Auth', val: isAuthResolved, inverse: true },
-                { label: 'User', val: isUserLoading },
-                { label: 'Profile', val: !!userProfile, inverse: true },
-                { label: 'Teams', val: isTeamsLoading },
-                { label: 'Plan', val: isSyncingPlan },
-                { label: 'Demo', val: isDemoInitializing || isSeedingDemo }
-              ].map(f => (
-                <div key={f.label} className={cn(
-                  "px-2 py-1 rounded text-[8px] font-black uppercase border transition-colors",
-                  (f.inverse ? !f.val : f.val) ? "bg-amber-500/10 border-amber-500/50 text-amber-600 animate-pulse" : "bg-primary/5 border-primary/10 text-primary/40"
-                )}>
-                  {f.label}
-                </div>
-              ))}
-            </div>
+            {/* Developer Debug Indicator - only rendered client-side to prevent hydration mismatch */}
+            {mounted && (
+              <div className="flex flex-wrap justify-center gap-2 pt-4">
+                {[
+                  { label: 'Auth', val: isAuthResolved, inverse: true },
+                  { label: 'User', val: isUserLoading },
+                  { label: 'Profile', val: !!userProfile, inverse: true },
+                  { label: 'Teams', val: isTeamsLoading },
+                  { label: 'Plan', val: isSyncingPlan },
+                  { label: 'Demo', val: isDemoInitializing || isSeedingDemo }
+                ].map(f => (
+                  <div key={f.label} className={cn(
+                    "px-2 py-1 rounded text-[8px] font-black uppercase border transition-colors",
+                    (f.inverse ? !f.val : f.val) ? "bg-amber-500/10 border-amber-500/50 text-amber-600 animate-pulse" : "bg-primary/5 border-primary/10 text-primary/40"
+                  )}>
+                    {f.label}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {(isDemoInitializing || isSeedingDemo) && (
               <p className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-xl border border-dashed">

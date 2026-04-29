@@ -280,43 +280,19 @@ export default function ClubManagementPage() {
   const allCoaches = useMemo(() => {
     const staffKeywords = ['coach', 'director', 'coordinator', 'staff', 'manager', 'trainer'];
 
-    // Build a deduplicated set, keyed by userId (fictional coaches have unique u1_${teamId} keys)
+    // Build a deduplicated set, keyed by userId
     const seen = new Set<string>();
     const coaches: Member[] = [];
 
-    // 1. Athletic Director first (the logged-in user's own member records across squads — one entry)
-    if (user?.id) {
-      const adRecord = allRawMembers.find(m => m.userId === user.id || m.id === user.id);
-      if (adRecord) {
-        seen.add(user.id);
-        coaches.push(adRecord);
-      } else {
-        // Synthesise an AD card from the user profile if no member doc exists
-        const adSynth: Member = {
-          id: user.id,
-          userId: user.id,
-          teamId: teams[0]?.id || '',
-          name: user.name || 'Athletic Director',
-          role: 'Admin',
-          position: 'Athletic Director',
-          email: user.email || '',
-          avatar: user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`,
-          medicalClearance: true,
-          amountOwed: 0,
-          feesPaid: true,
-          totalFees: 0,
-          jersey: 'AD',
-        } as any;
-        seen.add(user.id);
-        coaches.push(adSynth);
-      }
-    }
+    // Skip the logged-in account owner — they are the Athletic Director / Club Organizer
+    // and should appear only in the Admins tab, not the Coaches list.
+    if (user?.id) seen.add(user.id);
 
-    // 2. All coaching staff from all squads
+    // All coaching staff from all squads (excluding the hub owner)
     for (const m of allRawMembers) {
       if (m.status === 'removed') continue;
       const key = m.userId || m.id;
-      if (seen.has(key)) continue;  // skip already-added AD or exact duplicate
+      if (seen.has(key)) continue;
       const pos = (m.position || '').toLowerCase();
       const role = (m.role || '').toLowerCase();
       const isStaff = staffKeywords.some(kw => pos.includes(kw)) || role === 'admin';
@@ -352,28 +328,58 @@ export default function ClubManagementPage() {
     if (!db || clubTeamIds.length === 0) return;
     setIsFiscalLoading(true);
     try {
-      // 1. Registration entries — check all leagues owned by this hub's teams
-      //    Strategy: query collectionGroup 'registrationEntries' where ownerUserId matches
+      // 1. Registration entries — query leagues this hub created OR leagues any sub-squad is in
       const entries: any[] = [];
-      for (const tid of clubTeamIds) {
-        // Fetch all leagues where this team is listed as owner or member
-        const leagueSnap = await getDocs(query(collection(db, 'leagues'), where('ownerUserId', '==', user?.id)));
-        for (const leagueDoc of leagueSnap.docs) {
-          const entriesSnap = await getDocs(collection(db, 'leagues', leagueDoc.id, 'registrationEntries'));
-          entriesSnap.forEach(e => {
-            entries.push({
-              id: e.id,
-              leagueId: leagueDoc.id,
-              leagueName: leagueDoc.data()?.name || 'League',
-              registrationCost: parseFloat(leagueDoc.data()?.registration_cost || '0'),
-              ...e.data()
-            });
-          });
-        }
+      const seenLeagueIds = new Set<string>();
+
+      // Primary: leagues created by this hub owner
+      const creatorSnap = await getDocs(query(collection(db, 'leagues'), where('creatorId', '==', user?.id)));
+      creatorSnap.docs.forEach(d => seenLeagueIds.add(d.id));
+
+      // Secondary: leagues any of the hub's teams are enrolled in (batch by team ID)
+      const chunkSize = 10; // Firestore `in` limit
+      for (let i = 0; i < clubTeamIds.length; i += chunkSize) {
+        const chunk = clubTeamIds.slice(i, i + chunkSize);
+        try {
+          const memberSnap = await getDocs(query(collection(db, 'leagues'), where('memberTeamIds', 'array-contains-any', chunk)));
+          memberSnap.docs.forEach(d => seenLeagueIds.add(d.id));
+        } catch { /* ignore — field may not exist on all leagues */ }
       }
-      // Deduplicate
-      const seen = new Set<string>();
-      setEnrollmentEntries(entries.filter(e => { if (seen.has(e.id)) return false; seen.add(e.id); return true; }));
+
+      // Fetch entries from all discovered leagues
+      for (const leagueId of seenLeagueIds) {
+        const leagueDoc = creatorSnap.docs.find(d => d.id === leagueId);
+        let leagueName = leagueDoc?.data()?.name || 'League';
+        let leagueFee = 0;
+        if (!leagueDoc) {
+          // Fetch the league doc if we only know its ID from memberTeamIds
+          try {
+            const ld = await getDoc(doc(db, 'leagues', leagueId));
+            if (ld.exists()) {
+              leagueName = ld.data()?.name || 'League';
+              leagueFee = parseFloat(ld.data()?.registrationCost || ld.data()?.registration_cost || '0') || 0;
+            }
+          } catch { /* skip */ }
+        } else {
+          leagueFee = parseFloat(leagueDoc.data()?.registrationCost || leagueDoc.data()?.registration_cost || '0') || 0;
+        }
+
+        const entriesSnap = await getDocs(collection(db, 'leagues', leagueId, 'registrationEntries'));
+        entriesSnap.forEach(e => {
+          const data = e.data();
+          // Prefer the snapshotted fee stored in the entry; fall back to current league fee
+          const entryFee = parseFloat(data?.registrationCost ?? data?.registration_cost ?? leagueFee) || leagueFee;
+          entries.push({
+            id: e.id,
+            leagueId,
+            leagueName,
+            registrationCost: entryFee,
+            ...data
+          });
+        });
+      }
+
+      setEnrollmentEntries(entries);
 
       // 2. Fundraiser campaigns + their donations across all squads
       const campaigns: any[] = [];
@@ -381,15 +387,30 @@ export default function ClubManagementPage() {
         const teamSnap = clubTeams.find(t => t.id === tid);
         const fundSnap = await getDocs(collection(db, 'teams', tid, 'fundraising'));
         for (const fundDoc of fundSnap.docs) {
+          const fundData = fundDoc.data();
           const donationSnap = await getDocs(collection(db, 'teams', tid, 'fundraising', fundDoc.id, 'donations'));
           const donations: any[] = [];
           donationSnap.forEach(d => donations.push({ id: d.id, ...d.data() }));
+
+          // If no sub-collection donations exist but the campaign doc has a
+          // denormalized raisedAmount (set by the team's fundraising page),
+          // synthesise a single verified donation entry so the hub totals match.
+          if (donations.length === 0 && (fundData.raisedAmount || 0) > 0) {
+            donations.push({
+              id: '_inline',
+              amount: fundData.raisedAmount,
+              status: 'verified',
+              donorName: 'Campaign Total',
+              note: 'Inline fundraiser total (no individual donation records)',
+            });
+          }
+
           campaigns.push({
             id: fundDoc.id,
             teamId: tid,
             teamName: teamSnap?.name || 'Unknown Squad',
             donations,
-            ...fundDoc.data()
+            ...fundData
           });
         }
       }
@@ -411,7 +432,11 @@ export default function ClubManagementPage() {
     const pendingEnrollmentRevenue = enrollmentEntries.filter(e => !e.payment_received).reduce((s, e) => s + (e.registrationCost || 0), 0);
     const totalDonationsConfirmed = fundraiserData.reduce((s, c) => s + c.donations.filter((d: any) => d.status === 'verified').reduce((ds: number, d: any) => ds + (d.amount || 0), 0), 0);
     const totalDonationsPending = fundraiserData.reduce((s, c) => s + c.donations.filter((d: any) => d.status !== 'verified').reduce((ds: number, d: any) => ds + (d.amount || 0), 0), 0);
-    return { enrolled, paid, unpaid, totalEnrollmentRevenue, pendingEnrollmentRevenue, totalDonationsConfirmed, totalDonationsPending };
+    // Unified fiscal pulse = all confirmed money in (enrollment fees + donations)
+    const fiscalPulseTotal = totalEnrollmentRevenue + totalDonationsConfirmed;
+    const fiscalPulsePotential = totalEnrollmentRevenue + pendingEnrollmentRevenue + totalDonationsConfirmed + totalDonationsPending;
+    const fiscalPulseRate = fiscalPulsePotential > 0 ? Math.round((fiscalPulseTotal / fiscalPulsePotential) * 100) : 0;
+    return { enrolled, paid, unpaid, totalEnrollmentRevenue, pendingEnrollmentRevenue, totalDonationsConfirmed, totalDonationsPending, fiscalPulseTotal, fiscalPulsePotential, fiscalPulseRate };
   }, [enrollmentEntries, fundraiserData]);
 
   const handleTogglePayment = async (leagueId: string, entryId: string, paid: boolean) => {
@@ -736,7 +761,18 @@ export default function ClubManagementPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="rounded-[2.5rem] border-none shadow-md bg-primary text-white p-8 space-y-2"><p className="text-[10px] font-black uppercase opacity-60 tracking-widest">Total Squads</p><p className="text-5xl font-black">{clubTeams.length}</p></Card>
-        <Card className="rounded-[2.5rem] border-none shadow-md bg-black text-white p-8 space-y-4"><p className="text-[10px] font-black uppercase opacity-60 tracking-widest">Fiscal Pulse</p><p className="text-3xl font-black">${stats.collected.toLocaleString()}</p><Progress value={stats.rate} className="h-1.5 bg-white/10" /></Card>
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-black text-white p-8 space-y-3">
+          <p className="text-[10px] font-black uppercase opacity-60 tracking-widest">Fiscal Pulse</p>
+          <p className="text-3xl font-black">${fiscalSummary.fiscalPulseTotal.toLocaleString()}</p>
+          <Progress value={fiscalSummary.fiscalPulseRate} className="h-1.5 bg-white/10" />
+          <div className="flex gap-3 pt-1">
+            <p className="text-[8px] font-bold opacity-40 uppercase tracking-widest">
+              Fees <span className="text-white/70">${fiscalSummary.totalEnrollmentRevenue.toLocaleString()}</span>
+              {' · '}
+              Donations <span className="text-white/70">${fiscalSummary.totalDonationsConfirmed.toLocaleString()}</span>
+            </p>
+          </div>
+        </Card>
         <Card className="rounded-[2.5rem] border-none shadow-md bg-white p-8 space-y-2 ring-1 ring-black/5"><p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Compliance Rating</p><p className="text-5xl font-black text-primary">{stats.compliance}%</p></Card>
         <Card className="rounded-[2.5rem] border-none shadow-md bg-muted/20 p-8 space-y-4"><div className="flex items-center gap-3"><ShieldAlert className="h-5 w-5 text-primary" /><p className="text-[10px] font-black uppercase text-foreground">Safety Oversights</p></div><p className="text-3xl font-black text-foreground">{clubIncidents.length}</p></Card>
       </div>
@@ -1168,7 +1204,71 @@ export default function ClubManagementPage() {
             </Card>
           </div>
 
-          {/* Enrollment Fee Ledger */}
+          {/* Per-Squad Breakdown */}
+          {clubTeams.length > 0 && (
+            <div className="space-y-4">
+              <div className="px-1">
+                <h3 className="text-lg font-black uppercase tracking-tight">Squad Breakdown</h3>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Individual financial summary per squad</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {clubTeams.map(team => {
+                  const teamEntries = enrollmentEntries.filter(e => {
+                    // Match entries where the team is the applicant
+                    const ans = e.answers || {};
+                    return (
+                      ans.team_id === team.id ||
+                      ans.teamId === team.id ||
+                      (team.name && (ans.teamName === team.name || ans.team_name === team.name))
+                    );
+                  });
+                  const teamCampaigns = fundraiserData.filter(c => c.teamId === team.id);
+                  const teamPaid = teamEntries.filter(e => e.payment_received).reduce((s: number, e: any) => s + (e.registrationCost || 0), 0);
+                  const teamUnpaid = teamEntries.filter(e => !e.payment_received).reduce((s: number, e: any) => s + (e.registrationCost || 0), 0);
+                  const teamDonationsConfirmed = teamCampaigns.reduce((s: number, c: any) => s + c.donations.filter((d: any) => d.status === 'verified').reduce((ds: number, d: any) => ds + (d.amount || 0), 0), 0);
+                  const teamDonationsPending = teamCampaigns.reduce((s: number, c: any) => s + c.donations.filter((d: any) => d.status !== 'verified').reduce((ds: number, d: any) => ds + (d.amount || 0), 0), 0);
+                  const grandTotal = teamPaid + teamDonationsConfirmed;
+                  return (
+                    <Card key={team.id} className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 p-6 space-y-5">
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-black text-sm uppercase tracking-tight truncate">{team.name}</p>
+                          <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">{teamEntries.length} registrations · {teamCampaigns.length} campaigns</p>
+                        </div>
+                        <div className="text-right shrink-0 ml-4">
+                          <p className="text-[8px] font-black uppercase text-muted-foreground">Total In</p>
+                          <p className="font-black text-lg text-emerald-600">${grandTotal.toLocaleString()}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-emerald-50 rounded-xl p-3 space-y-0.5">
+                          <p className="text-[8px] font-black uppercase text-emerald-700/70 tracking-widest">Fees Collected</p>
+                          <p className="font-black text-sm text-emerald-700">${teamPaid.toLocaleString()}</p>
+                          <p className="text-[7px] font-bold text-emerald-600/60 uppercase">{teamEntries.filter(e => e.payment_received).length} paid</p>
+                        </div>
+                        <div className="bg-amber-50 rounded-xl p-3 space-y-0.5">
+                          <p className="text-[8px] font-black uppercase text-amber-700/70 tracking-widest">Fees Unpaid</p>
+                          <p className="font-black text-sm text-amber-700">${teamUnpaid.toLocaleString()}</p>
+                          <p className="text-[7px] font-bold text-amber-600/60 uppercase">{teamEntries.filter(e => !e.payment_received).length} outstanding</p>
+                        </div>
+                        <div className="bg-primary/5 rounded-xl p-3 space-y-0.5">
+                          <p className="text-[8px] font-black uppercase text-primary/70 tracking-widest">Donations ✓</p>
+                          <p className="font-black text-sm text-primary">${teamDonationsConfirmed.toLocaleString()}</p>
+                          <p className="text-[7px] font-bold text-primary/60 uppercase">verified</p>
+                        </div>
+                        <div className="bg-muted/20 rounded-xl p-3 space-y-0.5">
+                          <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest">Donations ⏳</p>
+                          <p className="font-black text-sm">${teamDonationsPending.toLocaleString()}</p>
+                          <p className="text-[7px] font-bold text-muted-foreground uppercase">pending</p>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">
               <div>
@@ -1219,7 +1319,7 @@ export default function ClubManagementPage() {
                             </Badge>
                           </td>
                           <td className="px-4 py-4 text-[9px] font-bold text-muted-foreground uppercase">
-                            {entry.createdAt ? (() => { try { return format(new Date(entry.createdAt), 'MMM d, yyyy'); } catch { return '—'; } })() : '—'}
+                            {(entry.createdAt || entry.created_at) ? (() => { try { return format(new Date(entry.createdAt || entry.created_at), 'MMM d, yyyy'); } catch { return '—'; } })() : '—'}
                           </td>
                           <td className="px-4 py-4 text-right">
                             <Button
@@ -1423,7 +1523,7 @@ export default function ClubManagementPage() {
       </Dialog>
 
       <Dialog open={isDeployProtocolOpen} onOpenChange={setIsDeployProtocolOpen}>
-        <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-lg glass text-foreground">
+        <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-2xl bg-white text-foreground">
           <div className="h-2 bg-primary w-full" />
           <div className="p-10 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">Deploy Global Waiver</DialogTitle><DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Create or load a template — deploys to all squads in your organization</DialogDescription></DialogHeader>

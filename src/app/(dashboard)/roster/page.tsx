@@ -1171,6 +1171,7 @@ export default function RosterPage() {
 
       <Dialog open={!!activeVideo} onOpenChange={() => setActiveVideo(null)}>
         <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 border-none shadow-2xl overflow-hidden bg-white">
+          <DialogTitle className="sr-only">{activeVideo?.title || 'Video Viewer'}</DialogTitle>
           {activeVideo && (
             <div className="bg-black aspect-video relative flex items-center justify-center">
                 <iframe
