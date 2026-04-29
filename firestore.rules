@@ -11,6 +11,13 @@ service cloud.firestore {
       return request.auth.uid == uid;
     }
 
+    // Super admin: verified server-side via Firebase Custom Claims.
+    // Set with: admin.auth().setCustomUserClaims(uid, { role: 'superadmin' })
+    // This cannot be forged by clients — it's signed into the JWT by Firebase.
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.role == 'superadmin';
+    }
+
     function isTeamMember(teamId) {
       return isSignedIn() &&
         exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
@@ -23,9 +30,9 @@ service cloud.firestore {
 
     // ─── Users ──────────────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read: if isSignedIn() && isOwner(userId);
+      allow read: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
       allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && isOwner(userId);
+      allow update: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
       allow delete: if false; // Never allow client-side user deletion
 
       // Google OAuth tokens — server-write only via Cloud Functions
@@ -42,95 +49,55 @@ service cloud.firestore {
 
     // ─── Teams ──────────────────────────────────────────────────────────────
     match /teams/{teamId} {
-      // Owner or any authenticated member can read team doc
-      allow read: if isSignedIn() && (
+      // Owner, any authenticated member, or super admin can read team doc
+      allow read: if isSuperAdmin() || (isSignedIn() && (
         resource.data.ownerUserId == request.auth.uid ||
         isTeamMember(teamId)
-      );
-      // Only owner can create/update/delete the team doc
+      ));
       allow create: if isSignedIn() && request.resource.data.ownerUserId == request.auth.uid;
-      allow update: if isSignedIn() && (
+      allow update: if isSuperAdmin() || (isSignedIn() && (
         resource.data.ownerUserId == request.auth.uid ||
-        // Allow members to update specific fields (e.g. joining)
         isTeamMember(teamId)
-      );
-      allow delete: if isSignedIn() && resource.data.ownerUserId == request.auth.uid;
+      ));
+      allow delete: if isSuperAdmin() || (isSignedIn() && resource.data.ownerUserId == request.auth.uid);
 
       // Sub-collections: only members can read; only owner can write
       match /members/{memberId} {
-        allow read: if isSignedIn() && (
+        allow read: if isSuperAdmin() || (isSignedIn() && (
           resource.data.ownerUserId == request.auth.uid ||
           isTeamMember(teamId)
-        );
-        allow write: if isSignedIn() && isTeamOwner(teamId);
+        ));
+        allow write: if isSuperAdmin() || (isSignedIn() && isTeamOwner(teamId));
       }
 
       match /events/{eventId} {
-        allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-        allow write: if isSignedIn() && isTeamOwner(teamId);
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        allow write: if isSuperAdmin() || (isSignedIn() && isTeamOwner(teamId));
       }
 
       match /incidents/{incidentId} {
-        allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-        allow write: if isSignedIn() && isTeamOwner(teamId);
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        allow write: if isSuperAdmin() || (isSignedIn() && isTeamOwner(teamId));
       }
 
       match /games/{gameId} {
-        allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-        allow write: if isSignedIn() && isTeamOwner(teamId);
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        allow write: if isSuperAdmin() || (isSignedIn() && isTeamOwner(teamId));
       }
 
       match /fundraising/{fundId} {
-        allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-        allow write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        allow write: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
 
         match /donations/{donationId} {
-          allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-          allow write: if isSignedIn();
+          allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+          allow write: if isSuperAdmin() || isSignedIn();
         }
-      }
-
-      match /equipment/{equipId} {
-        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-      }
-
-      match /documents/{docId} {
-        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-      }
-
-      match /files/{fileId} {
-        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-      }
-
-      match /groupChats/{chatId} {
-        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-
-        match /messages/{messageId} {
-          allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-        }
-      }
-
-      match /feedPosts/{postId} {
-        allow read: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-        allow write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-      }
-
-      match /registrationEntries/{entryId} {
-        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
-      }
-
-      match /archived_waivers/{waiverId} {
-        allow read, write: if isSignedIn() && isTeamOwner(teamId);
-      }
-
-      match /registration/{configId} {
-        allow read: if isSignedIn();
-        allow write: if isSignedIn() && isTeamOwner(teamId);
       }
 
       // Catch-all for any other team sub-collections
       match /{subCollection}/{docId} {
-        allow read, write: if isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId));
+        allow read, write: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
       }
     }
 
@@ -195,7 +162,7 @@ service cloud.firestore {
 
     // ─── Subscriptions audit log (server-write only via webhook) ────────────
     match /subscriptions/{subId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow write: if false; // Server-side only
     }
 
