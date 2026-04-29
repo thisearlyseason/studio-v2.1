@@ -1845,10 +1845,6 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!member.playerId) {
-      toast({ title: "No Player ID", description: "Save the recruiting profile first to link an athlete ID.", variant: "destructive" });
-      return;
-    }
     if (file.size > 5 * 1024 * 1024) {
       toast({ title: "Asset Oversized", description: "Image exceeds 5MB. Please optimize the photo.", variant: "destructive" });
       return;
@@ -1857,18 +1853,51 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       toast({ title: "Images Only", description: "Only image files are allowed for the avatar upload.", variant: "destructive" });
       return;
     }
+
+    toast({ title: "Uploading Avatar", description: "Syncing to secure storage..." });
+
+    // --- Tier 1: Firebase Storage (preferred — gives a proper CDN URL) ---
+    if (member.playerId && storage) {
+      try {
+        const fileName = `avatar_${Date.now()}.${file.name.split('.').pop()}`;
+        const fileRef = ref(storage, `players/${member.playerId}/avatar/${fileName}`);
+        await uploadBytes(fileRef, file);
+        const url = await getDownloadURL(fileRef);
+        setProfile({ ...profile, photoURL: url });
+        toast({ title: "Avatar Updated ✓", description: "Profile photo synced to cloud storage." });
+        return;
+      } catch (storageErr: any) {
+        // Storage unauthorized (rules not yet deployed, or demo session) — fall through to base64
+        console.warn('Storage upload failed, falling back to local base64:', storageErr.code);
+      }
+    }
+
+    // --- Tier 2: Base64 fallback (works without Storage permissions) ---
     try {
-      toast({ title: "Uploading Avatar", description: "Syncing to secure storage..." });
-      const fileName = `avatar_${Date.now()}.${file.name.split('.').pop()}`;
-      const fileRef = ref(storage, `players/${member.playerId}/avatar/${fileName}`);
-      await uploadBytes(fileRef, file);
-      const url = await getDownloadURL(fileRef);
-      setProfile({ ...profile, photoURL: url });
-      toast({ title: "Avatar Updated", description: "Profile photo synced. Commit to save." });
+      const canvas = document.createElement('canvas');
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => {
+          const MAX = 256;
+          const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+          canvas.width = img.width * ratio;
+          canvas.height = img.height * ratio;
+          canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(objectUrl);
+          resolve();
+        };
+        img.onerror = reject;
+        img.src = objectUrl;
+      });
+      const base64 = canvas.toDataURL('image/jpeg', 0.82);
+      setProfile({ ...profile, photoURL: base64 });
+      toast({ title: "Avatar Updated ✓", description: "Photo saved locally. Deploy Storage rules for cloud sync." });
     } catch (err: any) {
-      toast({ title: "Upload Failed", description: err.message || "Storage permission error. Check Firebase Storage rules.", variant: "destructive" });
+      toast({ title: "Upload Failed", description: "Could not process the image. Try a smaller file.", variant: "destructive" });
     }
   };
+
 
   const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
