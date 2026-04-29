@@ -836,9 +836,11 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     updateAthleticMetrics, getPlayerStats, addPlayerStat, deletePlayerStat,
     getEvaluations, addEvaluation, getRecruitingContact, updateRecruitingContact,
     getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo, toggleRecruitingProfile,
-    updatePlayerStat, getStaffEvaluation, storage
+    updatePlayerStat, getStaffEvaluation, storage, updateMember
   } = useTeam();
   const { user } = useTeam();
+  const [skillInput, setSkillInput] = useState('');
+  const [achievementInput, setAchievementInput] = useState('');
 
   const [profile, setProfile] = useState<Partial<RecruitingProfile>>({});
   const [metrics, setMetrics] = useState<Partial<AthleticMetrics>>({});
@@ -1840,22 +1842,32 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     setStats(stats.map(s => s.id === id ? { ...s, [field]: val } : s));
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "Asset Oversized", description: "Image exceeds 5MB threshold. Optimize or use a hosted URL.", variant: "destructive" });
+    if (!member.playerId) {
+      toast({ title: "No Player ID", description: "Save the recruiting profile first to link an athlete ID.", variant: "destructive" });
       return;
     }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      setProfile({ ...profile, photoURL: base64 });
-      toast({ title: "Image Uploaded", description: "Recruiting photo updated locally. Commit to synchronize." });
-    };
-    reader.readAsDataURL(file);
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "Asset Oversized", description: "Image exceeds 5MB. Please optimize the photo.", variant: "destructive" });
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      toast({ title: "Images Only", description: "Only image files are allowed for the avatar upload.", variant: "destructive" });
+      return;
+    }
+    try {
+      toast({ title: "Uploading Avatar", description: "Syncing to secure storage..." });
+      const fileName = `avatar_${Date.now()}.${file.name.split('.').pop()}`;
+      const fileRef = ref(storage, `players/${member.playerId}/avatar/${fileName}`);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+      setProfile({ ...profile, photoURL: url });
+      toast({ title: "Avatar Updated", description: "Profile photo synced. Commit to save." });
+    } catch (err: any) {
+      toast({ title: "Upload Failed", description: err.message || "Storage permission error. Check Firebase Storage rules.", variant: "destructive" });
+    }
   };
 
   const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2029,6 +2041,13 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         { key: 'carryDistance', label: 'Carry Dist (yds)', type: 'number' }, { key: 'launchAngle', label: 'Launch Angle (°)', type: 'number' },
         { key: 'attackAngle', label: 'Attack Angle (°)', type: 'number' }, { key: 'clubPath', label: 'Club Path (°)', type: 'number' },
         { key: 'faceAngle', label: 'Face Angle (°)', type: 'number' }, { key: 'dynamicLoft', label: 'Dynamic Loft (°)', type: 'number' }
+      ];
+      case 'Cornhole': return [
+        { key: 'bagAccuracy', label: 'Bag Accuracy (%)', type: 'number' }, { key: 'holePercentage', label: 'Hole % (in bag)', type: 'number' },
+        { key: 'releaseSpeed', label: 'Release Speed (mph)', type: 'number' }, { key: 'consistency', label: 'Consistency (1-10)', type: 'number' },
+        { key: 'reactionTime', label: 'Reaction (ms)', type: 'number' }, { key: 'armEndurance', label: 'Arm Endurance (1-10)', type: 'number' },
+        { key: 'footwork', label: 'Footwork (1-10)', type: 'number' }, { key: 'wristSnap', label: 'Wrist Snap Rating', type: 'number' },
+        { key: 'mentalComposure', label: 'Mental Composure (1-10)', type: 'number' }, { key: 'cancellationRate', label: 'Cancellation Rate (%)', type: 'number' }
       ];
       case 'Custom':
       default: return [
@@ -2447,14 +2466,16 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       </Avatar>
                     </div>
                     <div className="space-y-2">
-                       <Label className="text-[10px] font-black uppercase ml-1">Recruiting Image URL <span className="opacity-40 normal-case">(Max 5MB)</span></Label>
+                       <Label className="text-[10px] font-black uppercase ml-1">Avatar Photo <span className="opacity-40 normal-case">(Image only, max 5MB)</span></Label>
                        <div className="flex gap-2">
-                         <Input value={profile.photoURL ?? ''} onChange={e => setProfile({...profile, photoURL: e.target.value})} className="h-10 border-2 rounded-xl font-bold text-[10px] flex-1" placeholder="https://image-hosting.com/photo.jpg" />
                          <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-                         <Button type="button" variant="outline" className="h-10 border-2 rounded-xl text-[8px] font-black uppercase transition-all hover:bg-primary hover:text-white" onClick={() => imageInputRef.current?.click()}>
-                           <Camera className="h-4 w-4 mr-1 text-primary group-hover:text-white" /> Upload
+                         <Button type="button" variant="outline" className="h-10 border-2 rounded-xl text-[8px] font-black uppercase transition-all hover:bg-primary hover:text-white flex-1" onClick={() => imageInputRef.current?.click()}>
+                           <Camera className="h-4 w-4 mr-2 text-primary" /> Upload Photo
                          </Button>
                        </div>
+                       {profile.photoURL && (
+                         <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-widest ml-1">✓ Photo synced to storage</p>
+                       )}
                     </div>
                     <div className="grid grid-cols-1 gap-4">
                       <div className="space-y-2">
@@ -2462,7 +2483,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                         <Select value={activeSport} onValueChange={(v: any) => setProfile({...profile, typeOfSport: v})}>
                           <SelectTrigger className="h-12 border-2 rounded-xl font-bold uppercase text-[10px]"><SelectValue /></SelectTrigger>
                           <SelectContent className="rounded-xl">
-                            {['Baseball', 'Softball', 'Basketball', 'Soccer', 'Football', 'Lacrosse', 'Hockey', 'Pickleball', 'Golf', 'Tennis', 'Custom'].map(s => (
+                            {['Baseball', 'Softball', 'Basketball', 'Soccer', 'Football', 'Lacrosse', 'Hockey', 'Pickleball', 'Golf', 'Tennis', 'Cornhole', 'Custom'].map(s => (
                               <SelectItem key={s} value={s} className="font-bold uppercase text-[10px]">{s}</SelectItem>
                             ))}
                           </SelectContent>
@@ -2485,122 +2506,215 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
               </div>
 
-              <div className="lg:col-span-2 space-y-10">
+              <div className="lg:col-span-2 space-y-8">
                 <Tabs defaultValue="overview" className="w-full">
-                  <TabsList className="bg-muted opacity-80 p-1 rounded-2xl h-14 w-full justify-start gap-2 px-2">
-                    <TabsTrigger value="overview" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Athlete Overview</TabsTrigger>
-                    <TabsTrigger value="athletic" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Athletic Metrics</TabsTrigger>
-                    <TabsTrigger value="seasonal" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Seasonal Analytics</TabsTrigger>
-                    <TabsTrigger value="gallery" className="rounded-xl h-10 px-8 font-black uppercase text-[10px] data-[state=active]:bg-white data-[state=active]:shadow-sm">Gallery</TabsTrigger>
-                  </TabsList>
+                  {/* ── Scrollable Tab Bar ───────────────────────── */}
+                  <div className="overflow-x-auto pb-1 -mx-1 px-1">
+                    <TabsList className="bg-muted/60 p-1 rounded-2xl h-12 inline-flex gap-1 min-w-max w-full">
+                      {[
+                        { value: 'overview', icon: '👤', label: 'Profile' },
+                        { value: 'athletic', icon: '⚡', label: 'Metrics' },
+                        { value: 'seasonal', icon: '📊', label: 'Stats' },
+                        { value: 'gallery', icon: '📷', label: 'Gallery' },
+                        { value: 'skills', icon: '🏅', label: 'Skills' },
+                      ].map(tab => (
+                        <TabsTrigger
+                          key={tab.value}
+                          value={tab.value}
+                          className="flex-1 rounded-xl h-10 font-black uppercase text-[10px] tracking-wider gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-md data-[state=active]:text-primary transition-all whitespace-nowrap px-3"
+                        >
+                          <span className="text-sm">{tab.icon}</span>
+                          <span className="hidden sm:inline">{tab.label}</span>
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </div>
 
-                  <TabsContent value="overview" className="mt-8 space-y-8">
-                     <div className="grid grid-cols-2 gap-x-8 gap-y-6">
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Primary Position</Label><Input placeholder="e.g. RHP / SS" value={profile.primaryPosition ?? ''} onChange={e => setProfile({...profile, primaryPosition: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Secondary Position</Label><Input placeholder="e.g. OF" value={profile.secondaryPosition ?? ''} onChange={e => setProfile({...profile, secondaryPosition: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Height</Label><Input placeholder="e.g. 6'2\" value={profile.height ?? ''} onChange={e => setProfile({...profile, height: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Weight (lbs)</Label><Input placeholder="e.g. 210" value={profile.weight ?? ''} onChange={e => setProfile({...profile, weight: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Dominant Hand</Label>
-                         <Select value={profile.dominantHand ?? ''} onValueChange={v => setProfile({...profile, dominantHand: v})}>
-                           <SelectTrigger className="h-12 border-2 rounded-xl font-bold text-[10px] uppercase"><SelectValue /></SelectTrigger>
-                           <SelectContent>
-                             <SelectItem value="Right" className="font-bold">RIGHT</SelectItem>
-                             <SelectItem value="Left" className="font-bold">LEFT</SelectItem>
-                             <SelectItem value="Ambi" className="font-bold">AMBIDEXTROUS</SelectItem>
-                           </SelectContent>
-                         </Select>
-                       </div>
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Institutional Team</Label><Input placeholder="e.g. Elite Baseball" value={profile.teamName ?? ''} onChange={e => setProfile({...profile, teamName: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Graduation Year</Label><Input type="number" placeholder="2024" value={profile.graduationYear ?? ''} onChange={e => setProfile({...profile, graduationYear: parseInt(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Hometown</Label><Input placeholder="City, State" value={profile.hometown ?? ''} onChange={e => setProfile({...profile, hometown: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Institutional Major</Label><Input placeholder="e.g. Business" value={profile.intendedMajor ?? ''} onChange={e => setProfile({...profile, intendedMajor: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">School</Label><Input placeholder="e.g. Highland High" value={profile.school ?? ''} onChange={e => setProfile({...profile, school: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">GPA</Label><Input type="number" step="0.01" value={profile.academicGPA ?? ''} onChange={e => setProfile({...profile, academicGPA: parseFloat(e.target.value)})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                       <div className="space-y-2"><Label className="text-[10px] font-black uppercase ml-1">Jersey Number</Label><Input placeholder="e.g. 24" value={profile.jerseyNumber ?? ''} onChange={e => setProfile({...profile, jerseyNumber: e.target.value})} className="h-12 border-2 rounded-xl font-bold" /></div>
-                     </div>
-                     
-                     <div className="space-y-4 pt-6 border-t border-dashed">
-                          <Label className="text-[10px] font-black uppercase ml-1 text-primary">Recruiting Contact Details</Label>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                               <Label className="text-[8px] font-bold uppercase ml-1 opacity-50">Player Email</Label>
-                               <Input type="email" placeholder="athlete@example.com" value={contact.playerEmail ?? ''} onChange={e => setContact({...contact, playerEmail: e.target.value})} className="h-10 border-2 rounded-xl font-medium" />
-                            </div>
-                            <div className="space-y-2">
-                               <Label className="text-[8px] font-bold uppercase ml-1 opacity-50">Parent/Guardian Email</Label>
-                               <Input type="email" placeholder="parent@example.com" value={contact.parentEmail ?? ''} onChange={e => setContact({...contact, parentEmail: e.target.value})} className="h-10 border-2 rounded-xl font-medium" />
-                            </div>
-                          </div>
+                  {/* ── ATHLETE OVERVIEW ─────────────────────────── */}
+                  <TabsContent value="overview" className="mt-6 space-y-5">
+
+                    {/* Group 1: Positioning */}
+                    <div className="rounded-2xl bg-muted/30 border border-muted/40 p-5 space-y-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">🎯</span>
+                        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-foreground">Positioning</p>
                       </div>
-
-                     <div className="space-y-2 pt-6">
-                         <Label className="text-[10px] font-black uppercase ml-1">Athlete Narrative / Bio</Label>
-                         <Textarea value={profile.bio ?? ''} onChange={e => setProfile({...profile, bio: e.target.value})} className="min-h-[150px] border-2 rounded-[2rem] font-medium p-6 resize-none" placeholder="Athlete recruitment summary..." />
-                       </div>
-
-                      <div className="space-y-4 pt-6 border-t border-dashed">
-                        <Label className="text-[10px] font-black uppercase ml-1 text-primary">Institutional Pulse (Coach Notes)</Label>
-                        <Textarea 
-                          value={profile.institutionalPulse ?? ''} 
-                          onChange={e => setProfile({...profile, institutionalPulse: e.target.value})} 
-                          className="min-h-[120px] border-2 rounded-[2rem] font-medium p-6 resize-none bg-muted/5" 
-                          placeholder="Institutional overview, coach feedback, or status update..." 
-                        />
-                        <p className="text-[9px] font-bold text-muted-foreground uppercase px-2 italic">This field updates the strategic pulse appearing on the public portal.</p>
-                      </div>
-
-                      {/* PHOTO GALLERY MANAGER */}
-                      <div className="space-y-4 pt-8 mt-8 border-t border-zinc-100">
-                        <div className="flex items-center justify-between">
-                           <div className="flex items-center gap-2">
-                              <Camera className="h-4 w-4 text-primary" />
-                              <Label className="text-[10px] font-black uppercase text-primary">Archival Photo Gallery</Label>
-                           </div>
-                           <Button 
-                             size="sm" 
-                             variant="outline" 
-                             className="h-8 rounded-xl text-[8px] font-black uppercase"
-                             onClick={() => document.getElementById('manual-photo-upload')?.click()}
-                           >
-                             <Plus className="h-3 w-3 mr-1" /> Add Photo
-                           </Button>
-                           <input 
-                             type="file" 
-                             id="manual-photo-upload" 
-                             className="hidden" 
-                             accept="image/*" 
-                             onChange={handleUploadPhoto} 
-                           />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Primary Position</Label>
+                          <Input placeholder="e.g. RHP / SS" value={profile.primaryPosition ?? ''} onChange={e => setProfile({...profile, primaryPosition: e.target.value})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
                         </div>
-                        
-                        {photos.length > 0 ? (
-                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                              {photos.map((pObj, i) => (
-                                <div key={i} className="aspect-square relative group rounded-[1.5rem] overflow-hidden bg-zinc-100 border border-zinc-100 shadow-sm">
-                                   <img src={pObj.url} className="w-full h-full object-cover" alt="Gallery" />
-                                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                      <Button 
-                                        size="icon" 
-                                        variant="destructive" 
-                                        className="h-8 w-8 rounded-xl shadow-lg hover:scale-105 transition-transform"
-                                        onClick={() => handleDeletePhoto(url)}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                   </div>
-                                </div>
-                              ))}
-                           </div>
-                        ) : (
-                           <div className="py-12 border-2 border-dashed border-zinc-100 rounded-[2.5rem] text-center bg-zinc-50/50">
-                              <div className="bg-white w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm">
-                                <Camera className="h-6 w-6 text-zinc-200" />
-                              </div>
-                              <p className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">No Archival Photos Yet</p>
-                              <p className="text-[10px] text-zinc-400 mt-1 max-w-[200px] mx-auto leading-relaxed">Capture frames from AI highlights or upload manual tactical shots.</p>
-                           </div>
-                        )}
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Secondary Position</Label>
+                          <Input placeholder="e.g. OF" value={profile.secondaryPosition ?? ''} onChange={e => setProfile({...profile, secondaryPosition: e.target.value})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Dominant Hand</Label>
+                          <Select value={profile.dominantHand ?? ''} onValueChange={v => setProfile({...profile, dominantHand: v})}>
+                            <SelectTrigger className="h-11 rounded-xl border font-bold bg-white text-[11px] uppercase focus:ring-2 focus:ring-primary/20"><SelectValue placeholder="Select…" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Right" className="font-bold">Right</SelectItem>
+                              <SelectItem value="Left" className="font-bold">Left</SelectItem>
+                              <SelectItem value="Ambi" className="font-bold">Ambidextrous</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Institutional Team</Label>
+                          <Input placeholder="e.g. Elite Baseball" value={profile.teamName ?? ''} onChange={e => setProfile({...profile, teamName: e.target.value})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
                       </div>
+                    </div>
+
+                    {/* Group 2: Physical Build */}
+                    <div className="rounded-2xl bg-muted/30 border border-muted/40 p-5 space-y-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">💪</span>
+                        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-foreground">Physical Build</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Height</Label>
+                          <Input placeholder="e.g. 6'2&quot;" value={profile.height ?? ''} onChange={e => setProfile({...profile, height: e.target.value})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Weight (lbs)</Label>
+                          <Input placeholder="e.g. 210" value={profile.weight ?? ''} onChange={e => setProfile({...profile, weight: e.target.value})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Group 3: Academic & Recruiting */}
+                    <div className="rounded-2xl bg-muted/30 border border-muted/40 p-5 space-y-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">🎓</span>
+                        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-foreground">Academic &amp; Recruiting</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Graduation Year</Label>
+                          <Input type="number" placeholder="2024" value={profile.graduationYear ?? ''} onChange={e => setProfile({...profile, graduationYear: parseInt(e.target.value)})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">GPA</Label>
+                          <Input type="number" step="0.01" placeholder="3.8" value={profile.academicGPA ?? ''} onChange={e => setProfile({...profile, academicGPA: parseFloat(e.target.value)})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">School</Label>
+                          <Input placeholder="e.g. Highland High" value={profile.school ?? ''} onChange={e => setProfile({...profile, school: e.target.value})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Intended Major</Label>
+                          <Input placeholder="e.g. Business" value={profile.intendedMajor ?? ''} onChange={e => setProfile({...profile, intendedMajor: e.target.value})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Hometown</Label>
+                          <Input placeholder="City, State" value={profile.hometown ?? ''} onChange={e => setProfile({...profile, hometown: e.target.value})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Jersey Number</Label>
+                          <Input placeholder="e.g. 24" value={profile.jerseyNumber ?? ''} onChange={e => setProfile({...profile, jerseyNumber: e.target.value})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Group 4: Contact */}
+                    <div className="rounded-2xl bg-muted/30 border border-muted/40 p-5 space-y-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">📬</span>
+                        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-foreground">Recruiting Contact</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Player Email</Label>
+                          <Input type="email" placeholder="athlete@example.com" value={contact.playerEmail ?? ''} onChange={e => setContact({...contact, playerEmail: e.target.value})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1">Parent / Guardian Email</Label>
+                          <Input type="email" placeholder="parent@example.com" value={contact.parentEmail ?? ''} onChange={e => setContact({...contact, parentEmail: e.target.value})} className="h-11 rounded-xl border font-bold bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Group 5: Narrative */}
+                    <div className="rounded-2xl bg-muted/30 border border-muted/40 p-5 space-y-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">📝</span>
+                        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-foreground">Athlete Narrative</p>
+                      </div>
+                      <Textarea value={profile.bio ?? ''} onChange={e => setProfile({...profile, bio: e.target.value})} className="min-h-[130px] rounded-xl border font-medium p-4 resize-none bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="Athlete recruitment summary, playing style, strengths…" />
+                    </div>
+
+                    {/* Group 6: Institutional Pulse */}
+                    <div className="rounded-2xl bg-primary/5 border border-primary/15 p-5 space-y-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-base">🔭</span>
+                        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-primary">Institutional Pulse</p>
+                        <span className="ml-auto text-[8px] font-black uppercase text-primary/50 tracking-wider bg-primary/10 px-2 py-0.5 rounded-full">Public</span>
+                      </div>
+                      <Textarea value={profile.institutionalPulse ?? ''} onChange={e => setProfile({...profile, institutionalPulse: e.target.value})} className="min-h-[110px] rounded-xl border border-primary/20 font-medium p-4 resize-none bg-white/60 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="Coach feedback, status update, or strategic notes visible on the scout portal…" />
+                      <p className="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Updates the strategic pulse on the public scout portal</p>
+                    </div>
+
+                  </TabsContent>
+
+                  {/* ─────── SKILLS & ACHIEVEMENTS TAB ─────── */}
+                  <TabsContent value="skills" className="mt-8 space-y-8">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-primary/10 p-2.5 rounded-2xl text-primary"><Star className="h-5 w-5" /></div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Operational Skills &amp; Achievements</p>
+                        <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">Shown on the Scout Portal and included in the Scouting PDF</p>
+                      </div>
+                    </div>
+
+                    {/* Current tags */}
+                    <div className="flex flex-wrap gap-2 min-h-[48px] p-4 bg-muted/10 rounded-2xl border border-dashed border-muted/60">
+                      {(member.skills || []).map((skill, idx) => (
+                        <span key={idx} className="inline-flex items-center gap-1.5 bg-white border border-muted text-foreground px-4 py-1.5 rounded-xl font-black text-[10px] uppercase shadow-sm group">
+                          {skill}
+                          <button type="button" onClick={() => updateMember(member.id, { skills: (member.skills || []).filter((_, i) => i !== idx) })} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-500 ml-1">&times;</button>
+                        </span>
+                      ))}
+                      {(member.achievements || []).map((award, idx) => (
+                        <span key={idx} className="inline-flex items-center gap-2 bg-amber-50 text-amber-700 border border-amber-200 px-4 py-1.5 rounded-xl font-black text-[10px] uppercase shadow-sm group">
+                          <Trophy className="h-3 w-3" /> {award}
+                          <button type="button" onClick={() => updateMember(member.id, { achievements: (member.achievements || []).filter((_, i) => i !== idx) })} className="opacity-0 group-hover:opacity-100 transition-opacity text-amber-400 hover:text-red-500 ml-1">&times;</button>
+                        </span>
+                      ))}
+                      {!(member.skills?.length) && !(member.achievements?.length) && (
+                        <p className="text-[10px] text-muted-foreground italic font-bold opacity-40 self-center">No skills or achievements added yet.</p>
+                      )}
+                    </div>
+
+                    {/* Add inputs */}
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Add a skill (e.g. Speed, Leadership, Vision)..."
+                          value={skillInput}
+                          onChange={e => setSkillInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && skillInput.trim()) { updateMember(member.id, { skills: [...(member.skills || []), skillInput.trim()] }); setSkillInput(''); } }}
+                          className="h-12 rounded-2xl border-2 font-bold text-sm flex-1"
+                        />
+                        <Button type="button" size="sm" variant="outline" className="h-12 px-5 rounded-2xl border-2 font-black uppercase text-[9px]" onClick={() => { if (skillInput.trim()) { updateMember(member.id, { skills: [...(member.skills || []), skillInput.trim()] }); setSkillInput(''); } }}>
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Add achievement (e.g. MVP 2024, All-State)..."
+                          value={achievementInput}
+                          onChange={e => setAchievementInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && achievementInput.trim()) { updateMember(member.id, { achievements: [...(member.achievements || []), achievementInput.trim()] }); setAchievementInput(''); } }}
+                          className="h-12 rounded-2xl border-2 font-bold text-sm flex-1"
+                        />
+                        <Button type="button" size="sm" variant="outline" className="h-12 px-5 rounded-2xl border-2 font-black uppercase text-[9px] border-amber-200 text-amber-600 hover:bg-amber-50" onClick={() => { if (achievementInput.trim()) { updateMember(member.id, { achievements: [...(member.achievements || []), achievementInput.trim()] }); setAchievementInput(''); } }}>
+                          <Trophy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-[9px] font-bold text-muted-foreground opacity-40 uppercase tracking-widest">Press Enter or + to add &bull; Hover badge to remove &bull; Saves immediately to roster &amp; scout portal</p>
+                    </div>
                   </TabsContent>
 
                   <TabsContent value="athletic" className="mt-8 space-y-8">

@@ -172,18 +172,18 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
   const primarySchoolTeam = isSchoolMode ? teams.find(t => t.type === 'school') : null;
   const squadList = isSchoolMode ? teams.filter(t => t.type !== 'school') : teams;
 
-  const squadTier = (team: any): 'primary' | 'pro' | 'starter' => {
+  const squadTier = (team: any, forceSubSquad = false): 'primary' | 'pro' | 'starter' => {
     // Sub-squads (created under a club/school hub) should NOT inherit the hub's 'primary' tier.
-    // Only the hub-owner's TOP-LEVEL elite/league plan team gets 'primary'.
-    const isSubSquad = !!(team.clubId || team.schoolId || team.hubOwnerUserId);
+    // Only the hub-owner's TOP-LEVEL elite/league plan team gets 'primary' — and only in non-hub view.
+    const isSubSquad = forceSubSquad || !!(team.clubId || team.schoolId || team.hubOwnerUserId);
     if (!isSubSquad && ['elite', 'league'].includes(team.planId || '') && team.ownerUserId === user?.id) return 'primary';
-    if (team.isPro || ['team', 'squad_pro', 'squad_pro_demo'].includes(team.planId || '')) return 'pro';
+    if (team.isPro || ['team', 'squad_pro', 'squad_pro_demo', 'elite', 'league'].includes(team.planId || '')) return 'pro';
     return 'starter';
   };
 
   // Compact squad row — ~44px tall, fits 3–4 in a tight scroll area
   const SquadRow = ({ team, isActive, onClick, tierOverride }: { team: any; isActive: boolean; onClick: () => void; tierOverride?: 'primary' | 'pro' | 'starter' }) => {
-    const tier = tierOverride || squadTier(team);
+    const tier = tierOverride ?? squadTier(team);
     return (
       <button
         onClick={onClick}
@@ -306,7 +306,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 name={user?.clubName || user?.schoolName || 'Elite Club'}
                 subtitle={user?.institutionTitle || 'Club Organizer'}
                 initial={(user?.clubName || user?.schoolName || 'E')[0]}
-                isActive={!activeTeam || activeTeam?.planId === 'elite' || activeTeam?.planId === 'league'}
+                isActive={!activeTeam}
                 onClick={() => { setActiveTeam(null); router.push('/club'); }}
                 variant="elite"
               />
@@ -321,6 +321,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                       key={team.id}
                       team={team}
                       isActive={activeTeam?.id === team.id}
+                      tierOverride={squadTier(team, true)}
                       onClick={() => { setActiveTeam(team); router.push('/dashboard'); }}
                     />
                   ))
@@ -358,6 +359,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                     key={team.id}
                     team={team}
                     isActive={activeTeam?.id === team.id}
+                    tierOverride={squadTier(team, true)}
                     onClick={() => setActiveTeam(team)}
                   />
                 ))}
@@ -418,12 +420,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   // School admin in institution mode: only the squad-selector is shown.
   const isSchoolInstitutionMode = isSchoolMode && isPrimaryClubAuthority && activeTeam?.type === 'school';
 
-  // Elite Club Organizer in hub mode: no squad is selected (primary Elite team is active or no active team).
-  // In this mode, nav is hidden just like school institution mode.
-  const primaryEliteTeamId = isEliteClubMode
-    ? teams.find(t => !t.clubId && t.ownerUserId === user?.id && ['elite', 'league'].includes(t.planId || ''))?.id
-    : null;
-  const isEliteHubMode = isEliteClubMode && (!activeTeam || activeTeam.id === primaryEliteTeamId);
+  // Elite Club Organizer in hub mode: nav is hidden only when NO squad is selected (organizer is on the Club Hub).
+  // When a sub-squad is selected, full navigation is shown for that squad.
+  const isEliteHubMode = isEliteClubMode && !activeTeam;
 
   const bottomNavItems = [
     { name: 'Home', href: '/dashboard', icon: Home },

@@ -98,7 +98,8 @@ const POSITION_OPTIONS = [
 ];
 
 export default function RosterPage() {
-  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro, getLeagueMembers, createChat, removeMember } = useTeam();
+  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro, getLeagueMembers, createChat, removeMember, getRecruitingProfile, getAthleticMetrics, getPlayerStats, getEvaluations, getRecruitingContact } = useTeam();
+
   const db = useFirestore();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -274,93 +275,246 @@ export default function RosterPage() {
     }
   };
 
-  const handleExportPortfolio = useCallback(() => {
+  const handleExportPortfolio = useCallback(async () => {
     if (!selectedMember) return;
+
+    toast({ title: "Building Scouting Pack", description: "Fetching full athlete profile..." });
+
+    // Fetch full recruiting data if playerId exists
+    let profile: any = {};
+    let metrics: any = {};
+    let stats: any[] = [];
+    let evals: any[] = [];
+    let contact: any = {};
+
+    if (selectedMember.playerId) {
+      try {
+        const [p, m, s, e, c] = await Promise.all([
+          getRecruitingProfile(selectedMember.playerId),
+          getAthleticMetrics(selectedMember.playerId),
+          getPlayerStats(selectedMember.playerId),
+          getEvaluations(selectedMember.playerId),
+          getRecruitingContact(selectedMember.playerId),
+        ]);
+        if (p) profile = p;
+        if (m) metrics = m;
+        stats = s || [];
+        evals = e || [];
+        if (c) contact = c;
+      } catch (err) {
+        console.warn('Could not fetch scouting data:', err);
+      }
+    }
     
     generateBrandedPDF({
-      title: "VERIFIED ATHLETE PORTFOLIO",
+      title: "VERIFIED ATHLETE SCOUTING PACK",
       subtitle: "SQUADFORGE RECRUITING COURIER • INSTITUTIONAL DATA",
-      filename: `SCOUTING_REPORT_${selectedMember.name.replace(/\s+/g, '_')}`
+      filename: `SCOUTING_${selectedMember.name.replace(/\s+/g, '_').toUpperCase()}`
     }, (doc, startY) => {
       const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
       
-      // Main Content Header
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(18);
-      doc.setFont("helvetica", "bold");
-      doc.text(selectedMember.name.toUpperCase(), 20, startY);
-      
-      doc.setFontSize(11);
-      doc.setTextColor(150, 150, 150);
-      doc.text(`${selectedMember.position}  |  #${selectedMember.jersey}`, 20, startY + 8);
-      
-      doc.setDrawColor(230, 230, 230);
-      doc.line(20, startY + 13, pageWidth - 20, startY + 13);
-
-      // --- Stats Grid ---
-      let y = startY + 25;
-      const drawStat = (label: string, value: string, x: number, currentY: number) => {
-        doc.setTextColor(150, 150, 150);
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "bold");
-        doc.text(label.toUpperCase(), x, currentY);
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(11);
-        doc.text(value || 'N/A', x, currentY + 6);
+      const checkPageBreak = (currentY: number, needed = 20) => {
+        if (currentY + needed > pageHeight - 25) { doc.addPage(); return 30; }
+        return currentY;
       };
 
-      drawStat("Graduation Class", selectedMember.gradYear || 'N/A', 20, y);
-      drawStat("Academic GPA", selectedMember.gpa || 'N/A', 80, y);
-      drawStat("Recruit Status", selectedMember.medicalClearance ? 'CLEARED' : 'VERIFIED', 140, y);
-      
-      y += 20;
-      drawStat("Sanctioned Sport", activeTeam?.sport || 'General', 20, y);
-      drawStat("Age Group", calculateAgeGroup(selectedMember.birthdate) || 'U18', 80, y);
-      drawStat("Division", selectedMember.division || 'N/A', 140, y);
-      drawStat("Institutional ID", selectedMember.id.slice(-8), 200, y); // Adjusted x to fit division
-
-      // --- Narrative Section ---
-      y += 25;
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
-      doc.text("ATHLETE NARRATIVE & EVALUATION", 20, y);
-      
-      y += 8;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      const bioLines = doc.splitTextToSize(selectedMember.notes || "This athlete is currently maintaining an active profile within the squad ecosystem.", pageWidth - 40);
-      doc.text(bioLines, 20, y);
-      
-      y += (bioLines.length * 6) + 10;
-      
-      // Staff Commentary
-      if (staffNote) {
+      const sectionHeader = (label: string, y: number) => {
+        doc.setFontSize(9);
         doc.setFont("helvetica", "bold");
-        doc.text("COMMANDER'S FIELD NOTES", 20, y);
-        y += 7;
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(80, 80, 80);
-        const noteLines = doc.splitTextToSize(staffNote, pageWidth - 40);
-        doc.text(noteLines, 20, y);
-        y += (noteLines.length * 6) + 10;
+        doc.setTextColor(120, 80, 255);
+        doc.text(label.toUpperCase(), 20, y);
+        doc.setDrawColor(200, 200, 200);
+        doc.line(20, y + 2, pageWidth - 20, y + 2);
+        return y + 10;
+      };
+
+      const drawField = (label: string, value: string, x: number, y: number, colWidth = 55) => {
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(150, 150, 150);
+        doc.text(label.toUpperCase(), x, y);
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(20, 20, 20);
+        const val = String(value || '—');
+        doc.text(val.length > 18 ? val.slice(0, 17) + '…' : val, x, y + 6);
+      };
+
+      // ── HEADER ─────────────────────────────────────────────
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(22);
+      doc.setFont("helvetica", "bold");
+      doc.text((profile.fullName || selectedMember.name).toUpperCase(), 20, startY);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(150, 150, 150);
+      const subline = [
+        selectedMember.position,
+        selectedMember.jersey ? `#${selectedMember.jersey}` : null,
+        activeTeam?.sport || null,
+        activeTeam?.name || null
+      ].filter(Boolean).join('  ·  ');
+      doc.text(subline, 20, startY + 9);
+      
+      doc.setDrawColor(200, 200, 200);
+      doc.line(20, startY + 14, pageWidth - 20, startY + 14);
+
+      // ── IDENTITY GRID ──────────────────────────────────────
+      let y = startY + 24;
+      y = sectionHeader('Identity & Academic', y);
+      drawField('Graduation Year', String(profile.graduationYear || metrics.graduationYear || selectedMember.gradYear || '—'), 20, y);
+      drawField('GPA', String(profile.academicGPA || metrics.academicGPA || selectedMember.gpa || '—'), 75, y);
+      drawField('Intended Major', profile.intendedMajor || '—', 130, y);
+      drawField('Recruit Status', (profile.status || 'Active').toUpperCase(), 185, y);
+      y += 18;
+      drawField('School', profile.school || metrics.school || '—', 20, y);
+      drawField('Hometown', profile.hometown || '—', 75, y);
+      drawField('Height', metrics.height || '—', 130, y);
+      drawField('Weight', metrics.weight || '—', 185, y);
+      y += 18;
+
+      // ── CONTACT ────────────────────────────────────────────
+      if (contact.email || contact.phone || contact.coachName) {
+        y = checkPageBreak(y);
+        y = sectionHeader('Recruiting Contact', y);
+        if (contact.coachName) { drawField('Coaching Contact', contact.coachName, 20, y); }
+        if (contact.email) { drawField('Email', contact.email, 75, y); }
+        if (contact.phone) { drawField('Phone', contact.phone, 150, y); }
+        y += 18;
       }
 
-      // Compliance Tracking
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(0, 0, 0);
-      doc.text("INSTITUTIONAL COMPLIANCE", 20, y);
-      y += 7;
-      doc.setFontSize(8);
+      // ── BIO ────────────────────────────────────────────────
+      y = checkPageBreak(y, 25);
+      y = sectionHeader('Athlete Narrative', y);
       doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(50, 50, 50);
+      const bio = profile.bio || selectedMember.notes || 'No narrative on file.';
+      const bioLines = doc.splitTextToSize(`"${bio}"`, pageWidth - 40);
+      doc.text(bioLines, 20, y);
+      y += bioLines.length * 5 + 10;
+
+      // ── ATHLETIC METRICS ───────────────────────────────────
+      const metricFields = [
+        ['40-Yard Dash', metrics.fortyYard], ['Vertical', metrics.vertical],
+        ['Bench Press', metrics.benchPress], ['Squat', metrics.squat],
+        ['Shuttle', metrics.shuttleRun], ['Speed Rating', metrics.speedRating],
+        ['Strength', metrics.strengthRating], ['Agility', metrics.agilityRating],
+        ['IQ Rating', metrics.footballIQ || metrics.basketballIQ || metrics.soccerIQ],
+        ['Passing', metrics.throwingAccuracy], ['Ball Handling', metrics.ballHandling],
+      ].filter(([_, v]) => v);
+
+      if (metricFields.length > 0) {
+        y = checkPageBreak(y);
+        y = sectionHeader('Athletic Metrics', y);
+        metricFields.forEach(([label, val], i) => {
+          const col = i % 4;
+          const row = Math.floor(i / 4);
+          if (col === 0 && i > 0) y += 16;
+          drawField(label as string, String(val), 20 + col * 47, y);
+        });
+        y += 24;
+      }
+
+      // ── SEASONAL STATS ─────────────────────────────────────
+      if (stats.length > 0) {
+        y = checkPageBreak(y, 30);
+        y = sectionHeader('Seasonal Analytics', y);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(100, 100, 100);
+        doc.text('SEASON', 20, y); doc.text('GP', 75, y); doc.text('PTS', 95, y); doc.text('AST', 115, y); doc.text('REB/YDS', 135, y); doc.text('EFF', 165, y);
+        y += 4;
+        doc.setDrawColor(230, 230, 230);
+        doc.line(20, y, pageWidth - 20, y);
+        y += 5;
+        stats.forEach(s => {
+          y = checkPageBreak(y, 8);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(9);
+          doc.setTextColor(20, 20, 20);
+          doc.text(s.season || '—', 20, y);
+          doc.text(String(s.gamesPlayed || '—'), 75, y);
+          doc.text(String(s.points || '—'), 95, y);
+          doc.text(String(s.assists || '—'), 115, y);
+          doc.text(String(s.rebounds || s.yards || '—'), 135, y);
+          const eff = s.gamesPlayed > 0 ? Math.round(((s.points || 0) + (s.assists || 0)) / s.gamesPlayed) : 0;
+          doc.text(`${eff} AVG`, 165, y);
+          y += 7;
+        });
+        y += 6;
+      }
+
+      // ── EVALUATIONS ────────────────────────────────────────
+      if (evals.length > 0) {
+        y = checkPageBreak(y, 30);
+        y = sectionHeader('Staff Evaluations', y);
+        evals.slice(0, 3).forEach(ev => {
+          y = checkPageBreak(y, 20);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(80, 80, 80);
+          doc.text(`${ev.coachName || 'Staff'} — Overall: ${ev.overall || '—'}/10  ·  Athleticism: ${ev.athleticism || '—'}  ·  Skill: ${ev.skillLevel || '—'}  ·  Coachability: ${ev.coachability || '—'}`, 20, y);
+          if (ev.notes) {
+            y += 5;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(100, 100, 100);
+            const evalLines = doc.splitTextToSize(`"${ev.notes}"`, pageWidth - 40);
+            doc.text(evalLines, 20, y);
+            y += evalLines.length * 4.5;
+          }
+          y += 6;
+        });
+      }
+
+      // ── SKILLS & ACHIEVEMENTS ─────────────────────────────
+      const skills = selectedMember.skills || [];
+      const achievements = selectedMember.achievements || [];
+      if (skills.length > 0 || achievements.length > 0) {
+        y = checkPageBreak(y);
+        y = sectionHeader('Skills & Achievements', y);
+        if (skills.length > 0) {
+          doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(120, 80, 255);
+          doc.text('SKILLS:', 20, y);
+          doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(20, 20, 20);
+          doc.text(skills.join('  ·  '), 44, y);
+          y += 8;
+        }
+        if (achievements.length > 0) {
+          doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(200, 140, 0);
+          doc.text('AWARDS:', 20, y);
+          doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(20, 20, 20);
+          doc.text(achievements.join('  ·  '), 44, y);
+          y += 8;
+        }
+        y += 4;
+      }
+
+      // ── STAFF NOTES ────────────────────────────────────────
+      if (staffNote) {
+        y = checkPageBreak(y, 20);
+        y = sectionHeader("Commander's Field Notes", y);
+        doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+        const noteLines = doc.splitTextToSize(staffNote, pageWidth - 40);
+        doc.text(noteLines, 20, y);
+        y += noteLines.length * 5 + 8;
+      }
+
+      // ── COMPLIANCE ─────────────────────────────────────────
+      y = checkPageBreak(y, 18);
+      y = sectionHeader('Institutional Compliance', y);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(20, 20, 20);
       doc.text(`Medical Clearance: ${selectedMember.medicalClearance ? 'VALID' : 'PENDING'}`, 20, y);
-      doc.text(`Institutional Waiver: ${signedDocIds.includes('default_medical') || signedDocIds.length > 0 ? 'EXECUTED' : 'PENDING'}`, 80, y);
+      doc.text(`Waivers: ${signedDocIds.length > 0 ? `${signedDocIds.length} EXECUTED` : 'PENDING'}`, 100, y);
+      doc.text(`Fees: ${selectedMember.feesPaid ? 'PAID' : 'OUTSTANDING'}`, 170, y);
 
       return y + 20;
     });
     
-    toast({ title: "Professional Portfolio Exported", description: "Modern PDF generated successfully." });
-  }, [selectedMember, staffNote, activeTeam, signedDocIds]);
+    toast({ title: "Scouting Pack Exported", description: `Full profile for ${selectedMember.name} generated successfully.` });
+  }, [selectedMember, staffNote, activeTeam, signedDocIds, getRecruitingProfile, getAthleticMetrics, getPlayerStats, getEvaluations, getRecruitingContact]);
 
   if (!mounted || !activeTeam || isMembersLoading) {
     return (
@@ -783,19 +937,31 @@ export default function RosterPage() {
                       </div>
                     </div>
 
-                    <div className="space-y-6">
-                      <div className="flex items-center gap-3"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Star className="h-5 w-5" /></div><h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Operational Skills & Achievements</h4></div>
-                      <div className="flex flex-wrap gap-2">
-                        {(selectedMember.skills || ['Speed', 'Communication', 'Technical Control']).map((skill, idx) => (
-                          <Badge key={idx} variant="secondary" className="rounded-xl px-4 py-1.5 font-black text-[10px] uppercase">{skill}</Badge>
-                        ))}
-                        {(selectedMember.achievements || ['MVP 2023', 'District Finals 2024']).map((award, idx) => (
-                          <Badge key={idx} className="bg-amber-100 text-amber-700 border-none rounded-xl px-4 py-1.5 font-black text-[10px] uppercase flex items-center gap-2">
-                            <Trophy className="h-3 w-3" /> {award}
-                          </Badge>
-                        ))}
+                    {/* Skills & Achievements — read-only in roster, editable in Pack Architect */}
+                    {((selectedMember.skills?.length || 0) > 0 || (selectedMember.achievements?.length || 0) > 0) && (
+                      <div className="space-y-3 pt-4 border-t border-muted/30">
+                        <div className="flex items-center gap-2">
+                          <Star className="h-4 w-4 text-primary" />
+                          <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground">Skills &amp; Achievements</h4>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {(selectedMember.skills || []).map((skill, idx) => (
+                            <Badge key={idx} variant="secondary" className="rounded-xl px-3 py-1 font-black text-[10px] uppercase">{skill}</Badge>
+                          ))}
+                          {(selectedMember.achievements || []).map((award, idx) => (
+                            <Badge key={idx} className="bg-amber-100 text-amber-700 border-none rounded-xl px-3 py-1 font-black text-[10px] uppercase flex items-center gap-1.5">
+                              <Trophy className="h-3 w-3" /> {award}
+                            </Badge>
+                          ))}
+                        </div>
+                        {isStaff && <p className="text-[9px] font-bold text-muted-foreground opacity-40 uppercase tracking-widest">Edit skills in Pack Architect (Coaches Corner &rarr; Recruit tab &rarr; Skills)</p>}
                       </div>
-                    </div>
+                    )}
+                    {selectedMember.playerId && (
+                      <a href={`/recruit/player/${selectedMember.playerId}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-primary hover:underline pt-2">
+                        <ExternalLink className="h-3 w-3" /> View Public Scout Portal
+                      </a>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-10">
                       <div className="space-y-6">

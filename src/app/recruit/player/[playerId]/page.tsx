@@ -49,6 +49,7 @@ import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { generateBrandedPDF } from '@/lib/pdf-utils';
 
 // CRITICAL BUILD FIX: Next.js 15 build safety for dynamic routes
 export const dynamic = 'force-dynamic';
@@ -87,6 +88,114 @@ export default function PublicScoutPortalPage() {
   const videoRef = React.useRef<HTMLVideoElement>(null);
 
   const isOwner = user && player && (user.uid === player.userId || user.uid === player.id);
+
+  const handleDownloadPack = () => {
+    const name = profile?.fullName || player?.name || 'Athlete';
+    generateBrandedPDF({
+      title: 'VERIFIED ATHLETE SCOUTING PACK',
+      subtitle: 'SQUADFORGE RECRUITING COURIER • INSTITUTIONAL DATA',
+      filename: `SCOUTING_${name.replace(/\s+/g, '_').toUpperCase()}`,
+    }, (doc, startY) => {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const checkPageBreak = (y: number, needed = 20) => { if (y + needed > pageHeight - 25) { doc.addPage(); return 30; } return y; };
+      const sectionHeader = (label: string, y: number) => {
+        doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(120, 80, 255);
+        doc.text(label.toUpperCase(), 20, y); doc.setDrawColor(200, 200, 200);
+        doc.line(20, y + 2, pageWidth - 20, y + 2); return y + 10;
+      };
+      const drawField = (label: string, value: string, x: number, y: number) => {
+        doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(150, 150, 150);
+        doc.text(label.toUpperCase(), x, y);
+        doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 20, 20);
+        const val = String(value || '—'); doc.text(val.length > 18 ? val.slice(0, 17) + '…' : val, x, y + 6);
+      };
+
+      // Header
+      doc.setTextColor(0,0,0); doc.setFontSize(22); doc.setFont('helvetica','bold');
+      doc.text(name.toUpperCase(), 20, startY);
+      doc.setFontSize(10); doc.setTextColor(150,150,150);
+      const sub = [profile?.typeOfSport, player?.position, player?.clubName].filter(Boolean).join('  ·  ');
+      doc.text(sub || 'Verified Athlete', 20, startY + 9);
+      doc.setDrawColor(200,200,200); doc.line(20, startY + 14, pageWidth - 20, startY + 14);
+
+      // Identity
+      let y = startY + 24;
+      y = sectionHeader('Identity & Academic', y);
+      drawField('Graduation Year', String(profile?.graduationYear || metrics?.graduationYear || '—'), 20, y);
+      drawField('GPA', String(profile?.academicGPA || metrics?.academicGPA || '—'), 75, y);
+      drawField('Intended Major', profile?.intendedMajor || '—', 130, y);
+      drawField('Recruit Status', (profile?.status || 'Active').toUpperCase(), 185, y);
+      y += 18;
+      drawField('School', profile?.school || metrics?.school || '—', 20, y);
+      drawField('Hometown', profile?.hometown || player?.hometown || '—', 75, y);
+      drawField('Height', metrics?.height || '—', 130, y);
+      drawField('Weight', metrics?.weight || '—', 185, y);
+      y += 18;
+
+      // Bio
+      y = checkPageBreak(y, 25); y = sectionHeader('Athlete Narrative', y);
+      doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(50,50,50);
+      const bio = profile?.bio || 'No narrative on file.';
+      const bioLines = doc.splitTextToSize(`"${bio}"`, pageWidth - 40);
+      doc.text(bioLines, 20, y); y += bioLines.length * 5 + 10;
+
+      // Athletic Metrics
+      const metricFields = [
+        ['40-Yard Dash', metrics?.fortyYard], ['Vertical', metrics?.vertical],
+        ['Bench Press', metrics?.benchPress], ['Speed', metrics?.speedRating],
+        ['Agility', metrics?.agilityRating], ['Strength', metrics?.strengthRating],
+      ].filter(([_, v]) => v);
+      if (metricFields.length > 0) {
+        y = checkPageBreak(y); y = sectionHeader('Athletic Metrics', y);
+        metricFields.forEach(([label, val], i) => {
+          if (i > 0 && i % 4 === 0) y += 16;
+          drawField(label as string, String(val), 20 + (i % 4) * 47, y);
+        });
+        y += 24;
+      }
+
+      // Seasonal Stats
+      if (stats.length > 0) {
+        y = checkPageBreak(y, 30); y = sectionHeader('Seasonal Analytics', y);
+        doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(100,100,100);
+        doc.text('SEASON',20,y); doc.text('GP',75,y); doc.text('PTS',95,y); doc.text('AST',115,y); doc.text('EFF',145,y);
+        y += 4; doc.setDrawColor(230,230,230); doc.line(20,y,pageWidth-20,y); y += 5;
+        stats.forEach((s: any) => {
+          y = checkPageBreak(y, 8);
+          doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(20,20,20);
+          doc.text(s.season||'—',20,y); doc.text(String(s.gamesPlayed||'—'),75,y);
+          doc.text(String(s.points||'—'),95,y); doc.text(String(s.assists||'—'),115,y);
+          const eff = s.gamesPlayed>0 ? Math.round(((s.points||0)+(s.assists||0))/s.gamesPlayed) : 0;
+          doc.text(`${eff} AVG`,145,y); y += 7;
+        });
+        y += 6;
+      }
+
+      // Staff Evals
+      if (evals.length > 0) {
+        y = checkPageBreak(y, 25); y = sectionHeader('Staff Evaluations', y);
+        evals.slice(0,3).forEach((ev: any) => {
+          y = checkPageBreak(y, 16);
+          doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(80,80,80);
+          doc.text(`${ev.coachName||'Staff'} — Overall: ${ev.overall||'—'}/10  ·  Athleticism: ${ev.athleticism||'—'}  ·  Skill: ${ev.skillLevel||'—'}`, 20, y);
+          y += 6;
+        });
+      }
+
+      // Skills & Achievements
+      const skills: string[] = player?.skills || [];
+      const achievements: string[] = player?.achievements || [];
+      if (skills.length > 0 || achievements.length > 0) {
+        y = checkPageBreak(y); y = sectionHeader('Skills & Achievements', y);
+        if (skills.length > 0) { doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(120,80,255); doc.text('SKILLS:', 20, y); doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(20,20,20); doc.text(skills.join('  ·  '),44,y); y+=8; }
+        if (achievements.length > 0) { doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(200,140,0); doc.text('AWARDS:', 20, y); doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(20,20,20); doc.text(achievements.join('  ·  '),44,y); y+=8; }
+        y += 4;
+      }
+
+      return y + 20;
+    });
+  };
 
   // Failsafe state to break out of loading if Firestore hangs
   const [loadingFailsafe, setLoadingFailsafe] = useState(false);
@@ -428,8 +537,8 @@ export default function PublicScoutPortalPage() {
                 </div>
               </div>
               <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-4">
-                <Button className="rounded-xl h-12 px-8 font-black uppercase text-[10px] bg-primary text-white hover:bg-primary/90 transition-all shadow-xl shadow-primary/20"><Download className="h-4 w-4 mr-2" /> Download Pack</Button>
-                <Button variant="outline" className="rounded-xl h-12 px-8 font-black uppercase text-[10px] border-white/20 bg-white/5 hover:bg-white/10 text-white"><Share2 className="h-4 w-4 mr-2" /> Copy Link</Button>
+                <Button onClick={handleDownloadPack} className="rounded-xl h-12 px-8 font-black uppercase text-[10px] bg-primary text-white hover:bg-primary/90 transition-all shadow-xl shadow-primary/20"><Download className="h-4 w-4 mr-2" /> Download Pack</Button>
+                <Button variant="outline" onClick={() => { navigator.clipboard.writeText(window.location.href); }} className="rounded-xl h-12 px-8 font-black uppercase text-[10px] border-white/20 bg-white/5 hover:bg-white/10 text-white"><Share2 className="h-4 w-4 mr-2" /> Copy Link</Button>
               </div>
             </div>
           </div>
@@ -578,6 +687,37 @@ export default function PublicScoutPortalPage() {
                 </div>
               </Card>
             </section>
+
+            {/* Skills & Achievements — only show if data exists */}
+            {((player?.skills?.length > 0) || (player?.achievements?.length > 0)) && (
+              <section className="space-y-6">
+                <div className="flex items-center gap-3 px-2"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Star className="h-5 w-5" /></div><h2 className="text-xl font-black uppercase tracking-tight">Operational Skills &amp; Achievements</h2></div>
+                <Card className="rounded-[3rem] border-none shadow-xl bg-white p-10 space-y-6">
+                  {(player?.skills?.length > 0) && (
+                    <div className="space-y-3">
+                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground">Skills</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(player.skills as string[]).map((skill: string, i: number) => (
+                          <span key={i} className="bg-muted/30 text-foreground border border-muted px-4 py-1.5 rounded-xl font-black text-[10px] uppercase">{skill}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(player?.achievements?.length > 0) && (
+                    <div className="space-y-3">
+                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground">Achievements</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(player.achievements as string[]).map((award: string, i: number) => (
+                          <span key={i} className="bg-amber-50 text-amber-700 border border-amber-200 px-4 py-1.5 rounded-xl font-black text-[10px] uppercase flex items-center gap-2">
+                            <Trophy className="h-3 w-3" /> {award}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              </section>
+            )}
 
             <section className="space-y-6">
               <div className="flex items-center gap-3 px-2"><div className="bg-primary/10 p-2 rounded-xl text-primary"><BarChart2 className="h-5 w-5" /></div><h2 className="text-xl font-black uppercase tracking-tight">Seasonal Analytics</h2></div>

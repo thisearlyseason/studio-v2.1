@@ -1,0 +1,25 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Players media: owner or authenticated coach can upload
+    match /players/{playerId}/{allPaths=**} {
+      allow read: if true; // Public read for scout portals
+      allow write: if request.auth != null;
+    }
+    // Team logos and branding
+    match /teams/{teamId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    // User profile media
+    match /users/{userId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    // General uploads (authenticated users only)
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}
