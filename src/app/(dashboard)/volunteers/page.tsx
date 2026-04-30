@@ -275,7 +275,9 @@ export default function VolunteerHubPage() {
         <div className="overflow-x-auto pb-4 -mx-4 px-4 no-scrollbar">
           <TabsList className="bg-muted/50 p-1.5 rounded-[2rem] h-auto border-2 border-black/5 inline-flex">
             <TabsTrigger value="board" className="rounded-2xl px-6 md:px-10 py-3 md:py-4 font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-lg transition-all">Mission Board</TabsTrigger>
-            <TabsTrigger value="ledger" className="rounded-2xl px-6 md:px-10 py-3 md:py-4 font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-lg transition-all">Audit Terminal</TabsTrigger>
+            {isStaff && (
+              <TabsTrigger value="ledger" className="rounded-2xl px-6 md:px-10 py-3 md:py-4 font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-lg transition-all">Audit Terminal</TabsTrigger>
+            )}
           </TabsList>
         </div>
 

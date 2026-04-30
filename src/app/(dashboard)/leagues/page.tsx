@@ -42,7 +42,8 @@ import {
   AlertCircle,
   FileText,
   Copy,
-  X
+  X,
+  Link2 as LinkIcon
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -478,7 +479,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
 }
 
 function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League, schedule: TournamentGame[], onOpenManualGame?: () => void }) {
-  const { isStaff, submitLeagueMatchScore, activeTeam } = useTeam();
+  const { isStaff, submitLeagueMatchScore, activeTeam, teams } = useTeam();
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [teamFilter, setTeamFilter] = useState<string>('all');
@@ -491,21 +492,29 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
   // Also index by teamName so logo lookup works when game.team1Id doesn't match.
   const teamLogoMap = useMemo(() => {
     const map: Record<string, string> = {};
-    // Primary: the current user's active team — always fresh from Firestore
+    // Layer 1: ALL of the user's own teams (sub-squads, active team, etc.)
+    (teams || []).forEach(t => {
+      if (t.id && t.teamLogoUrl) {
+        map[t.id] = t.teamLogoUrl;
+        if (t.name) map[t.name] = t.teamLogoUrl;
+      }
+    });
+    // Layer 2: activeTeam override (freshest Firestore data)
     if (activeTeam?.id && activeTeam?.teamLogoUrl) {
       map[activeTeam.id] = activeTeam.teamLogoUrl;
+      if (activeTeam.name) map[activeTeam.name] = activeTeam.teamLogoUrl;
     }
-    // Secondary: logos stored in the league document itself (set at enrollment/propagation time)
+    // Layer 3: logos stored in the league document itself (set at enrollment/propagation time)
     if (league?.teams) {
       Object.entries(league.teams).forEach(([id, t]) => {
         if ((t as any).teamLogoUrl) {
           map[id] = (t as any).teamLogoUrl;
-          map[(t as any).teamName] = (t as any).teamLogoUrl;
+          if ((t as any).teamName) map[(t as any).teamName] = (t as any).teamLogoUrl;
         }
       });
     }
     return map;
-  }, [league?.teams, activeTeam?.id, activeTeam?.teamLogoUrl]);
+  }, [league?.teams, activeTeam?.id, activeTeam?.teamLogoUrl, teams]);
 
   const gamesByDay = useMemo(() => {
     const map: Record<string, TournamentGame[]> = {};
@@ -631,8 +640,8 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
               {/* ── PREMIUM FIXTURE CARD GRID ── */}
               <div className="divide-y divide-muted/40">
                 {filteredSchedule.map(game => {
-                  const logo1 = teamLogoMap[game.team1Id || ''];
-                  const logo2 = teamLogoMap[game.team2Id || ''];
+                  const logo1 = teamLogoMap[game.team1Id || ''] || teamLogoMap[game.team1 || ''];
+                  const logo2 = teamLogoMap[game.team2Id || ''] || teamLogoMap[game.team2 || ''];
                   return (
                     <div
                       key={game.id}
@@ -725,8 +734,8 @@ function LeagueOverview({ league, schedule, onOpenManualGame }: { league: League
             
             <div className="grid grid-cols-1 gap-4">
               {filteredSchedule.map(game => {
-                const logo1 = teamLogoMap[game.team1Id || ''];
-                const logo2 = teamLogoMap[game.team2Id || ''];
+                const logo1 = teamLogoMap[game.team1Id || ''] || teamLogoMap[game.team1 || ''];
+                const logo2 = teamLogoMap[game.team2Id || ''] || teamLogoMap[game.team2 || ''];
                 return (
                   <Card
                     key={game.id}
@@ -986,7 +995,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   const { 
     activeTeam, createLeague, isStaff, isPro, purchasePro, 
     teams, removeTeamFromLeague, updateLeagueTeamDetails,
-    isPrimaryClubAuthority, updateLeaguePin, isSchoolMode
+    isPrimaryClubAuthority, updateLeaguePin, isSchoolMode, updateLeague
   } = useTeam();
   const db = useFirestore();
   const { user: authUser, isAuthResolved } = useUser();
@@ -1077,18 +1086,29 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   // teamMembership docs lack teamLogoUrl — only activeTeamDoc (merged into activeTeam) is live.
   const teamLogoMap = useMemo(() => {
     const map: Record<string, string> = {};
-    // Primary: live Firestore team doc for the current user's team
+    // Layer 1: ALL of the user's own squads (covers sub-squads and non-active teams)
+    (teams || []).forEach(t => {
+      if (t.id && t.teamLogoUrl) {
+        map[t.id] = t.teamLogoUrl;
+        if (t.name) map[t.name] = t.teamLogoUrl;
+      }
+    });
+    // Layer 2: activeTeam override (always freshest)
     if (activeTeam?.id && activeTeam?.teamLogoUrl) {
       map[activeTeam.id] = activeTeam.teamLogoUrl;
+      if (activeTeam.name) map[activeTeam.name] = activeTeam.teamLogoUrl;
     }
-    // Secondary: logos enrolled/propagated into the league document
+    // Layer 3: logos enrolled/propagated into the league document
     if (activeLeague?.teams) {
       Object.entries(activeLeague.teams).forEach(([id, t]) => {
-        if ((t as any).teamLogoUrl) map[id] = (t as any).teamLogoUrl;
+        if ((t as any).teamLogoUrl) {
+          map[id] = (t as any).teamLogoUrl;
+          if ((t as any).teamName) map[(t as any).teamName] = (t as any).teamLogoUrl;
+        }
       });
     }
     return map;
-  }, [activeLeague, activeTeam?.id, activeTeam?.teamLogoUrl]);
+  }, [activeLeague, activeTeam?.id, activeTeam?.teamLogoUrl, teams]);
 
   const waiversQuery = useMemoFirebase(() => {
     if (!db || !activeLeague?.id) return null;
@@ -1598,12 +1618,45 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
             <div className="flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
               <div className="flex items-center gap-6">
                 <div className="bg-primary p-5 rounded-[1.5rem] shadow-xl"><Trophy className="h-10 w-10 text-white" /></div>
-                <div>
+              <div>
                   <div className="flex items-center gap-3">
                     <h2 className="text-4xl font-black uppercase tracking-tight leading-none">{activeLeague.name}</h2>
                     <Badge variant="outline" className="border-white/20 text-white font-black text-[8px] h-5 px-2">ACTIVE HUB</Badge>
                   </div>
                   <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-2">{activeLeague.sport} • {Object.keys(activeLeague.teams || {}).length} Participating Squads</p>
+                  {/* Editable League ID/Slug */}
+                  <div className="flex items-center gap-2 mt-3">
+                    <div className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-lg px-3 h-9">
+                      <LinkIcon className="h-3 w-3 text-white/40 shrink-0" />
+                      {isStaff && activeLeague.creatorId === authUser?.uid ? (
+                        <input
+                          defaultValue={activeLeague.slug || activeLeague.id}
+                          onBlur={async (e) => {
+                            const newSlug = e.target.value.trim().toLowerCase().replace(/\s+/g, '-');
+                            if (newSlug && newSlug !== (activeLeague.slug || activeLeague.id)) {
+                              try {
+                                await updateLeague(activeLeague.id, { slug: newSlug });
+                                toast({ title: 'League ID Updated', description: `Portal URL now uses: ${newSlug}` });
+                              } catch (err) {
+                                toast({ title: 'Update Failed', variant: 'destructive' });
+                              }
+                            }
+                          }}
+                          className="bg-transparent text-white/80 font-black text-[10px] uppercase tracking-widest outline-none w-40 placeholder:text-white/30 border-b border-white/20 focus:border-primary pb-0.5"
+                          placeholder="league-slug"
+                        />
+                      ) : (
+                        <span className="text-white/60 font-black text-[10px] uppercase tracking-widest">{activeLeague.slug || activeLeague.id}</span>
+                      )}
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(activeLeague.slug || activeLeague.id); toast({ title: 'League ID Copied' }); }}
+                        className="text-white/30 hover:text-white transition-colors ml-1"
+                      >
+                        <Copy className="h-3 w-3" />
+                      </button>
+                    </div>
+                    <span className="text-white/30 text-[8px] font-bold uppercase tracking-widest">League ID / Slug</span>
+                  </div>
                 </div>
               </div>
               {isStaff && activeLeague.creatorId === authUser?.uid && (

@@ -444,8 +444,9 @@ export type FundraisingOpportunity = {
 export type DonationEntry = {
   id: string;
   donorName: string;
+  donorEmail?: string;
   amount: number;
-  method: 'external' | 'etransfer';
+  method: 'external' | 'etransfer' | 'e-transfer';
   status: 'pending' | 'verified';
   createdAt: string;
 };

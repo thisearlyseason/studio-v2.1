@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useTeam, FundraisingOpportunity, DonationEntry } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, doc, getDocs, increment, writeBatch } from 'firebase/firestore';
@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   PiggyBank, 
   Plus, 
@@ -32,7 +33,10 @@ import {
   ChevronRight,
   Zap,
   History,
-  Info
+  Info,
+  Download,
+  Filter,
+  ExternalLink
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -45,9 +49,171 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { format, isPast } from 'date-fns';
+import { format, isPast, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { Lock as LockIcon } from 'lucide-react';
 import { DatePicker } from "@/components/ui/date-picker";
+
+// ── View All Donations Modal ─────────────────────────────────────────────────
+function ViewAllDonationsModal({ fund, isOpen, onOpenChange }: { 
+  fund: FundraisingOpportunity | null; 
+  isOpen: boolean; 
+  onOpenChange: (o: boolean) => void;
+}) {
+  const { activeTeam, confirmExternalDonation } = useTeam();
+  const db = useFirestore();
+  const q = useMemoFirebase(() => (db && activeTeam?.id && fund?.id) 
+    ? query(collection(db, 'teams', activeTeam.id, 'fundraising', fund.id, 'donations'), orderBy('createdAt', 'desc')) 
+    : null, [db, activeTeam?.id, fund?.id]);
+  const { data: donations, isLoading } = useCollection<DonationEntry>(q);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 10;
+
+  const filtered = useMemo(() => {
+    if (!donations) return [];
+    return donations.filter(d => {
+      const matchesSearch = !searchTerm || 
+        d.donorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        d.donorEmail?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        format(new Date(d.createdAt), 'MMM d yyyy').toLowerCase().includes(searchTerm.toLowerCase());
+      let matchesDate = true;
+      if (dateFrom || dateTo) {
+        const donDate = new Date(d.createdAt);
+        if (dateFrom) matchesDate = matchesDate && donDate >= startOfDay(new Date(dateFrom));
+        if (dateTo) matchesDate = matchesDate && donDate <= endOfDay(new Date(dateTo));
+      }
+      return matchesSearch && matchesDate;
+    });
+  }, [donations, searchTerm, dateFrom, dateTo]);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalFiltered = filtered.reduce((sum, d) => sum + (d.amount || 0), 0);
+
+  const handleExportCSV = useCallback(() => {
+    if (!filtered.length || !fund) return;
+    const header = ['Donor Name', 'Email', 'Amount ($)', 'Method', 'Status', 'Date'];
+    const rows = filtered.map(d => [
+      d.donorName || '',
+      d.donorEmail || '',
+      d.amount?.toString() || '0',
+      d.method === 'external' ? 'Digital Hub' : 'E-Transfer',
+      d.status || 'pending',
+      format(new Date(d.createdAt), 'MMM d yyyy h:mm a')
+    ]);
+    const csv = [header, ...rows].map(r => r.map(v => `"${v.replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `DONATIONS_${(fund.title || 'fund').replace(/\s+/g, '_').toUpperCase()}_${format(new Date(), 'yyyyMMdd')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: 'CSV Exported', description: `${filtered.length} records downloaded.` });
+  }, [filtered, fund]);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(o) => { onOpenChange(o); if (!o) { setSearchTerm(''); setDateFrom(''); setDateTo(''); setPage(0); } }}>
+      <DialogContent className="rounded-[2.5rem] sm:max-w-3xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+        <DialogTitle className="sr-only">All Donations — {fund?.title}</DialogTitle>
+        <div className="h-2 bg-primary w-full" />
+        <div className="p-8 space-y-6">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><History className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">All Donations</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">{fund?.title}</DialogDescription>
+                </div>
+              </div>
+              <Button variant="outline" onClick={handleExportCSV} className="h-10 px-5 rounded-xl font-black uppercase text-[10px] border-2 gap-2">
+                <Download className="h-4 w-4" /> Export CSV
+              </Button>
+            </div>
+          </DialogHeader>
+
+          {/* Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="relative md:col-span-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search name, email, date..." 
+                value={searchTerm} 
+                onChange={e => { setSearchTerm(e.target.value); setPage(0); }}
+                className="pl-10 h-11 rounded-xl border-2 font-bold text-sm" 
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[8px] font-black uppercase tracking-widest text-muted-foreground ml-1">From</Label>
+              <Input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }} className="h-11 rounded-xl border-2 font-bold" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[8px] font-black uppercase tracking-widest text-muted-foreground ml-1">To</Label>
+              <Input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }} className="h-11 rounded-xl border-2 font-bold" />
+            </div>
+          </div>
+
+          {/* Summary bar */}
+          <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border border-primary/10">
+            <div className="flex items-center gap-3">
+              <Badge className="bg-primary text-white border-none font-black text-[9px] h-6 px-3">{filtered.length} Records</Badge>
+              {(searchTerm || dateFrom || dateTo) && (
+                <button onClick={() => { setSearchTerm(''); setDateFrom(''); setDateTo(''); setPage(0); }} className="text-[9px] font-black uppercase text-muted-foreground hover:text-primary transition-colors">Clear Filters</button>
+              )}
+            </div>
+            <p className="font-black text-primary text-sm">Total: ${totalFiltered.toLocaleString()}</p>
+          </div>
+
+          {/* Table */}
+          {isLoading ? (
+            <div className="py-16 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+          ) : (
+            <ScrollArea className="h-[360px]">
+              <div className="space-y-2 pr-2">
+                {paginated.length === 0 ? (
+                  <div className="py-16 text-center opacity-30">
+                    <BarChart3 className="h-12 w-12 mx-auto mb-3" />
+                    <p className="text-xs font-black uppercase">No records match your filters</p>
+                  </div>
+                ) : paginated.map(don => (
+                  <div key={don.id} className="p-4 bg-muted/20 rounded-2xl border flex items-center justify-between gap-4 hover:bg-primary/5 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-black text-sm uppercase truncate">{don.donorName}</p>
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                        {don.donorEmail || '—'} • {don.method === 'external' ? 'Digital Hub' : 'E-Transfer'} • {format(new Date(don.createdAt), 'MMM d, yyyy h:mm a')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="font-black text-primary">${don.amount?.toLocaleString()}</span>
+                      {don.status === 'pending' ? (
+                        <Button size="sm" className="h-8 px-4 rounded-xl font-black text-[8px] uppercase" onClick={() => confirmExternalDonation(fund!.id, don.id, don.amount)}>Confirm</Button>
+                      ) : (
+                        <Badge className="bg-green-100 text-green-700 border-none font-black text-[8px] h-6 px-3">VERIFIED</Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)} className="rounded-xl font-black text-[10px] uppercase border-2">← Prev</Button>
+              <span className="text-[10px] font-black uppercase text-muted-foreground">Page {page + 1} of {totalPages}</span>
+              <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)} className="rounded-xl font-black text-[10px] uppercase border-2">Next →</Button>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function DonationAuditLedger({ fundId }: { fundId: string }) {
   const { activeTeam, confirmExternalDonation } = useTeam();
@@ -90,6 +256,9 @@ export default function FundraisingPage() {
   const [editingFund, setEditingFund] = useState<FundraisingOpportunity | null>(null);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [selectedFundId, setSelectedFundId] = useState<string | null>(null);
+  // View All Modal
+  const [viewAllFund, setViewAllFund] = useState<FundraisingOpportunity | null>(null);
+  const [isViewAllOpen, setIsViewAllOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -332,18 +501,27 @@ export default function FundraisingPage() {
                   <Progress value={progress} className="h-3 rounded-full" />
                 </div>
                 {isStaff ? (
-                  <div className="flex gap-2 pt-4">
-                    <Button variant="outline" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px] border-2 group-hover:border-primary hover:text-black transition-all" onClick={() => { setSelectedFundId(fund.id); setIsAuditOpen(true); }}>
-                      <DollarSign className="h-4 w-4 mr-2" /> Audit Hub
-                    </Button>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-primary hover:bg-primary/5" onClick={() => { setEditingFund(fund); setIsEditOpen(true); }}>
-                        <Zap className="h-4 w-4" />
+                  <div className="flex flex-col gap-2 pt-4">
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px] border-2 group-hover:border-primary hover:text-black transition-all" onClick={() => { setSelectedFundId(fund.id); setIsAuditOpen(true); }}>
+                        <DollarSign className="h-4 w-4 mr-2" /> Audit Hub
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => deleteFundraisingOpportunity(fund.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-primary hover:bg-primary/5" onClick={() => { setEditingFund(fund); setIsEditOpen(true); }}>
+                          <Zap className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => deleteFundraisingOpportunity(fund.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
+                    <Button 
+                      variant="outline"
+                      className="w-full h-11 rounded-xl font-black uppercase text-[10px] border-2 border-primary/20 text-primary hover:bg-primary hover:text-white transition-all"
+                      onClick={() => { setViewAllFund(fund); setIsViewAllOpen(true); }}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" /> View All Donations
+                    </Button>
                   </div>
                 ) : (
                   <div className="pt-4">
@@ -366,6 +544,13 @@ export default function FundraisingPage() {
           </div>
         )}
       </div>
+
+      {/* View All Donations Modal */}
+      <ViewAllDonationsModal 
+        fund={viewAllFund} 
+        isOpen={isViewAllOpen} 
+        onOpenChange={setIsViewAllOpen} 
+      />
 
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="rounded-[3.5rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">

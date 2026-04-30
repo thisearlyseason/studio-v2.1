@@ -1778,7 +1778,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 }
 
 export function ManageTournamentsPageContent({ embedded = false }: { embedded?: boolean }) {
-  const { activeTeam, db, firebaseUser: user } = useTeam();
+  const { activeTeam, db, firebaseUser: user, isStaff, isPrimaryClubAuthority } = useTeam();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -1881,9 +1881,11 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
                   {showArchived ? 'Active Mode' : 'Historical Data'}
                 </Button>
               )}
-              <Button onClick={() => setIsWizardOpen(true)} className="h-14 px-8 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl transition-all active:scale-95 shrink-0 flex items-center">
-                Assemble Elite Series <Plus className="ml-3 h-4 w-4" />
-              </Button>
+              {(isStaff || isPrimaryClubAuthority) && (
+                <Button onClick={() => setIsWizardOpen(true)} className="h-14 px-8 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl transition-all active:scale-95 shrink-0 flex items-center">
+                  Assemble Elite Series <Plus className="ml-3 h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
         </header>
@@ -1895,9 +1897,11 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
               {showArchived ? 'Active' : 'Archived'}
             </Button>
           )}
-          <Button onClick={() => setIsWizardOpen(true)} className="h-11 px-6 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl flex items-center">
-            Assemble Elite Series <Plus className="ml-2 h-4 w-4" />
-          </Button>
+          {(isStaff || isPrimaryClubAuthority) && (
+            <Button onClick={() => setIsWizardOpen(true)} className="h-11 px-6 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl flex items-center">
+              Assemble Elite Series <Plus className="ml-2 h-4 w-4" />
+            </Button>
+          )}
         </div>
       )}
 
