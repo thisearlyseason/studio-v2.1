@@ -51,7 +51,7 @@ function NewTeamForm() {
   const handleCreate = async () => {
     if (!teamName.trim()) return;
 
-    // If the user selected Elite Pro and has no remaining quota, gate with paywall
+    // Paid plan selected but quota exhausted → open paywall/Stripe
     if (selectedPlan === 'team' && proQuotaStatus.remaining <= 0) {
       setIsPaywallOpen(true);
       return;

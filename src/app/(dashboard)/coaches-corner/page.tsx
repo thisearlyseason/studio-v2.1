@@ -17,6 +17,8 @@ import {
   Edit3, 
   Download, 
   Search, 
+  Heart,
+  DollarSign,
   Play, 
   Share2, 
   Clock, 
@@ -338,12 +340,7 @@ function TrackingMatrix({ members, protocols, volunteerOpps, events }: { members
                   {view === 'compliance' ? protocols.map(p => (
                     <TableHead key={p.id} className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">{p.title}</TableHead>
                   )) : (
-                    <>
-                      <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Total Points</TableHead>
-                      <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Assignments</TableHead>
-                      <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Status</TableHead>
-                      <TableHead className="text-center font-black uppercase text-[10px] tracking-widest text-primary/60">Readiness</TableHead>
-                    </>
+                    <TableHead className="font-black uppercase text-[10px] tracking-widest text-primary/60 pl-6">Claimed Opportunities</TableHead>
                   )}
                 </TableRow>
               </TableHeader>
@@ -406,54 +403,54 @@ function TrackingMatrix({ members, protocols, volunteerOpps, events }: { members
 
                       {view === 'compliance' ? protocols.map(p => {
                         const isSigned = !!signatures[p.id];
+                        const sigData = signatures[p.id];
+                        const signedAt = sigData?.signedAt;
                         return (
                           <TableCell key={p.id} className="text-center">
                             <div className="flex justify-center">
-                              <div className={cn(
-                                "h-10 w-10 rounded-xl flex items-center justify-center border-2 transition-all shadow-sm",
-                                isSigned ? "bg-green-50 border-green-200 text-green-600 shadow-green-600/5 rotate-0" : "bg-red-50/50 border-red-100 text-red-300 opacity-40 grayscale"
-                              )}>
-                                {isSigned ? <Check className="h-5 w-5" strokeWidth={3} /> : <AlertCircle className="h-5 w-5" />}
-                              </div>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className={cn(
+                                    "h-10 w-10 rounded-xl flex items-center justify-center border-2 transition-all shadow-sm cursor-pointer",
+                                    isSigned ? "bg-green-50 border-green-200 text-green-600" : "bg-red-50/50 border-red-100 text-red-300 opacity-40 grayscale"
+                                  )}>
+                                    {isSigned ? <Check className="h-5 w-5" strokeWidth={3} /> : <AlertCircle className="h-5 w-5" />}
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-[180px] text-center">
+                                  {isSigned
+                                    ? <><p className="font-black text-[10px] uppercase text-green-600">Verified ✓</p><p className="text-[9px] opacity-70">{signedAt ? format(new Date(signedAt), 'MMM d, yyyy h:mm a') : 'Signed'}</p></>
+                                    : <p className="text-[10px] font-bold uppercase opacity-70">Unsigned</p>
+                                  }
+                                </TooltipContent>
+                              </Tooltip>
                             </div>
                           </TableCell>
                         );
-                      }) : (
-                        <>
-                          <TableCell className="text-center">
-                            <Badge className="bg-primary/10 text-primary border-none font-black text-xs px-4 h-8 rounded-lg shadow-sm">
-                              {totalPoints} PTS
-                            </Badge>
+                      }) : (() => {
+                        // Build claimed opps for this member
+                        const claimedOpps = volunteerOpps.filter(opp => {
+                          const signup = (m.userId && opp.signups?.[m.userId]) ||
+                                        (m.parentId && opp.signups?.[m.parentId]);
+                          return !!signup;
+                        });
+                        return (
+                          <TableCell className="py-4 px-6">
+                            {claimedOpps.length === 0 ? (
+                              <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest italic opacity-40">No opportunities claimed</span>
+                            ) : (
+                              <div className="flex flex-wrap gap-2">
+                                {claimedOpps.map(opp => (
+                                  <div key={opp.id} className="flex items-center gap-1.5 bg-green-50 border border-green-100 rounded-xl px-3 py-1.5">
+                                    <span className="text-[9px] font-black uppercase tracking-tight text-green-800 truncate max-w-[120px]">{opp.title}</span>
+                                    <Badge className="bg-green-100 text-green-700 border-none text-[7px] font-black h-4 px-1.5 shrink-0">READY</Badge>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </TableCell>
-                          <TableCell className="text-center">
-                            <span className="text-xs font-black uppercase tracking-widest opacity-60">{activeAssignmentsCount} Active</span>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Badge className={cn(
-                              "border-none font-black text-[8px] uppercase px-3 h-6",
-                              totalPoints >= 100 ? "bg-green-100 text-green-700" : totalPoints > 0 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
-                            )}>
-                              {totalPoints >= 300 ? 'Commander' : totalPoints >= 150 ? 'Elite Tier' : totalPoints >= 50 ? 'Engaged' : totalPoints > 0 ? 'Recruit' : 'Cold'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {(() => {
-                              const isCompliant = protocols.every(p => !!signatures[p.id]);
-                              const isMobilized = totalPoints >= 50;
-                              const status = (isCompliant && isMobilized) ? 'READY' : (isCompliant || isMobilized) ? 'PARTIAL' : 'NOT READY';
-                              
-                              return (
-                                <Badge className={cn(
-                                  "border-none font-black text-[8px] uppercase px-3 h-6",
-                                  status === 'READY' ? "bg-green-500 text-white" : status === 'PARTIAL' ? "bg-amber-500 text-white" : "bg-destructive text-white"
-                                )}>
-                                  {status}
-                                </Badge>
-                              );
-                            })()}
-                          </TableCell>
-                        </>
-                      )}
+                        );
+                      })()}
                     </TableRow>
                   );
                 })}
@@ -4095,15 +4092,15 @@ function SafetyHub() {
 
 function SignatureAuditDialog({ proto }: { proto: any }) {
   const { db, activeTeam, members } = useTeam();
+  // Query the flat protocol_signatures collection (no composite index needed)
   const q = useMemoFirebase(() => (db && activeTeam?.id && proto?.id) ? 
     query(
-      collectionGroup(db, 'signatures'), 
-      where('teamId', '==', activeTeam.id), 
+      collection(db, 'teams', activeTeam.id, 'protocol_signatures'),
       where('docId', '==', proto.id)
     ) : null, [db, activeTeam?.id, proto?.id]);
   const { data: signatures } = useCollection<any>(q);
   
-  const signedMemberIds = signatures ? signatures.map(s => s.memberId) : [];
+  const signedMemberIds = signatures ? signatures.map((s: any) => s.memberId) : [];
   const assignedMembers = members.filter(m => 
     m.status !== 'removed' && (
       !proto?.assignedTo || 
@@ -4397,6 +4394,7 @@ export default function CoachesCornerPage() {
             <TabsTrigger value="compliance" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Legal Docs</TabsTrigger>
             <TabsTrigger value="archives" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Waiver Library</TabsTrigger>
             <TabsTrigger value="fundraising" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Fundraising</TabsTrigger>
+            {isPro && <TabsTrigger value="finances" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Finances</TabsTrigger>}
             <TabsTrigger value="safety" className="rounded-lg font-black text-[10px] uppercase px-6 h-10 data-[state=active]:bg-primary data-[state=active]:text-white">Safety Hub</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -4534,6 +4532,50 @@ export default function CoachesCornerPage() {
                  <h2 className="text-3xl font-black uppercase tracking-tight">Personnel Intelligence</h2>
                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Institutional Matrix for Compliance & Volunteer Mobilization</p>
                </div>
+
+               {/* ── Rapid Join Portal ── */}
+               <Card className="rounded-[2.5rem] border-none shadow-xl transition-all bg-black text-white p-8 overflow-hidden relative group">
+                 <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
+                   <Link2 className="h-32 w-32" />
+                 </div>
+                 <div className="flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
+                   <div className="space-y-2">
+                     <div className="flex items-center gap-3">
+                       <div className="bg-primary/20 p-2.5 rounded-xl text-primary">
+                         <Zap className="h-5 w-5" />
+                       </div>
+                       <div>
+                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Rapid Join Portal</p>
+                         <h3 className="text-xl font-black uppercase tracking-tighter leading-none">Onboarding Gateway</h3>
+                       </div>
+                     </div>
+                     <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-relaxed max-w-sm">
+                       Share this link so new members join and sign compliance documents in one step.
+                     </p>
+                   </div>
+                   <div className="flex items-center gap-3 shrink-0 w-full md:w-auto">
+                     <div className="bg-white/10 rounded-2xl h-14 flex items-center px-5 border border-white/10 flex-1 md:flex-none md:w-60 overflow-hidden shadow-inner">
+                       <span className="text-lg font-black tracking-[0.3em] ml-[0.15em]">{activeTeam?.teamCode || activeTeam?.code || '—'}</span>
+                     </div>
+                     <div className="bg-white/5 rounded-2xl h-14 flex items-center px-4 border border-white/10 flex-1 overflow-hidden">
+                       <span className="text-[10px] font-bold text-primary/60 font-mono truncate">
+                         {typeof window !== 'undefined' ? `${window.location.origin}/register/squad/${activeTeam?.id}` : `/register/squad/${activeTeam?.id}`}
+                       </span>
+                     </div>
+                     <Button
+                       className="h-14 w-14 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 shrink-0 transition-transform active:scale-95"
+                       onClick={() => {
+                         const link = `${window.location.origin}/register/squad/${activeTeam?.id}`;
+                         navigator.clipboard.writeText(link);
+                         toast({ title: "Link Copied", description: "Direct join link is ready to share." });
+                       }}
+                     >
+                       <Copy className="h-5 w-5" />
+                     </Button>
+                   </div>
+                 </div>
+               </Card>
+
                <TrackingMatrix 
                   members={members} 
                   protocols={[...DEFAULT_PROTOCOLS, ...customProtocols]} 
@@ -4643,71 +4685,6 @@ export default function CoachesCornerPage() {
             </section>
           )}
 
-          {!isPro ? null : (
-            <section className="space-y-6 pt-4 border-t-2 border-dashed border-primary/10 mt-10">
-              <div className="flex items-center gap-3 px-2">
-                <Zap className="h-5 w-5 text-primary" />
-                <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Rapid Join Portal</h2>
-              </div>
-              <Card className="rounded-[2.5rem] border-none shadow-xl transition-all bg-black text-white p-10 overflow-hidden relative group">
-                <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
-                  <Link2 className="h-40 w-40" />
-                </div>
-                
-                <div className="max-w-xl space-y-8 relative z-10">
-                  <div className="space-y-2">
-                    <h3 className="text-3xl font-black uppercase tracking-tighter leading-none">Onboarding Gateway</h3>
-                    <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-relaxed text-balance">
-                      Enable a public enrollment pipeline where new members can join your squad and execute mandatory compliance protocols in one step.
-                    </p>
-                  </div>
-  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pb-6 border-b border-white/10">
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">Squad Code</Label>
-                      <div className="bg-white/10 rounded-2xl h-16 flex items-center justify-center border border-white/10 shadow-inner group-hover:border-primary/20 transition-all">
-                        <span className="text-3xl font-black tracking-[0.3em] ml-[0.3em]">{activeTeam?.teamCode || activeTeam?.code || 'CODE'}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest text-white/40 ml-1">Portal Status</Label>
-                      <div className="bg-primary/20 rounded-2xl h-16 flex items-center px-6 border border-primary/30">
-                        <div className="h-2 w-2 rounded-full bg-primary animate-pulse mr-3" />
-                        <span className="text-sm font-black uppercase tracking-tight text-primary">Active Gateway</span>
-                      </div>
-                    </div>
-                  </div>
-  
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-end px-1">
-                      <Label className="text-[10px] font-black uppercase tracking-widest text-white/40">Magic Join Link</Label>
-                    </div>
-                    <div className="flex gap-2">
-                      <div className="bg-white/5 rounded-2xl h-14 flex items-center px-4 border border-white/10 flex-1 overflow-hidden shadow-inner font-mono text-primary/60">
-                        <span className="text-[10px] font-bold truncate">
-                          {typeof window !== 'undefined' ? `${window.location.origin}/register/squad/${activeTeam?.id}` : `/register/squad/${activeTeam?.id}`}
-                        </span>
-                      </div>
-                      <Button 
-                        className="h-14 w-14 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 shrink-0 transition-transform active:scale-95"
-                        onClick={() => {
-                          const link = `${window.location.origin}/register/squad/${activeTeam?.id}`;
-                          navigator.clipboard.writeText(link);
-                          toast({ title: "Link Copied", description: "Direct join link is ready to share." });
-                        }}
-                      >
-                        <Copy className="h-5 w-5" />
-                      </Button>
-                    </div>
-                    <p className="text-[9px] font-bold text-white/20 uppercase tracking-[0.05em] leading-relaxed">
-                      Share this unique institutional URL with parents and players to bypass manual coordination. 
-                      Successful enrollments will appear instantly in your member roster.
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            </section>
-          )}
         </TabsContent>
 
         <TabsContent value="archives" className="mt-0 space-y-8 animate-in fade-in duration-500">
@@ -4731,6 +4708,12 @@ export default function CoachesCornerPage() {
            </div>
            <FundraisingManager />
         </TabsContent>
+
+        {isPro && (
+          <TabsContent value="finances" className="mt-0 space-y-8 animate-in fade-in duration-500">
+            <SquadFinancialHub />
+          </TabsContent>
+        )}
 
         <TabsContent value="safety" className="mt-0">
           <SafetyHub />
@@ -4815,89 +4798,280 @@ export default function CoachesCornerPage() {
   );
 }
 
+function SquadFinancialHub() {
+  const { db, activeTeam, members, isPro } = useTeam();
+  const [searchQ, setSearchQ] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  // Enrollment registrations
+  const regRef = useMemoFirebase(() => db && activeTeam?.id
+    ? query(collection(db, 'teams', activeTeam.id, 'registrations'), orderBy('createdAt', 'desc'))
+    : null, [db, activeTeam?.id]);
+  const { data: registrations } = useCollection<any>(regRef);
+
+  // Donations
+  const donRef = useMemoFirebase(() => db && activeTeam?.id
+    ? query(collection(db, 'teams', activeTeam.id, 'donations'), orderBy('createdAt', 'desc'))
+    : null, [db, activeTeam?.id]);
+  const { data: donations } = useCollection<any>(donRef);
+
+  const allTx = useMemo(() => {
+    const regs = (registrations || []).map((r: any) => ({
+      id: r.id, type: 'enrollment', label: r.memberName || r.playerId || 'Member',
+      amount: r.feePaid || r.amount || 0, date: r.createdAt || r.date || '', email: r.email || '',
+    }));
+    const dons = (donations || []).map((d: any) => ({
+      id: d.id, type: 'donation', label: d.donorName || 'Donor',
+      amount: d.amount || 0, date: d.createdAt || d.date || '', email: d.donorEmail || '',
+    }));
+    return [...regs, ...dons].sort((a, b) => (b.date > a.date ? 1 : -1));
+  }, [registrations, donations]);
+
+  const filtered = useMemo(() => allTx.filter(tx => {
+    const q = searchQ.toLowerCase();
+    const matchQ = !q || tx.label.toLowerCase().includes(q) || tx.email.toLowerCase().includes(q);
+    const matchFrom = !dateFrom || tx.date >= dateFrom;
+    const matchTo = !dateTo || tx.date <= dateTo + 'T23:59:59';
+    return matchQ && matchFrom && matchTo;
+  }), [allTx, searchQ, dateFrom, dateTo]);
+
+  const totalRevenue = filtered.reduce((s, t) => s + (t.amount || 0), 0);
+  const totalEnrollment = filtered.filter(t => t.type === 'enrollment').reduce((s, t) => s + t.amount, 0);
+  const totalDonations = filtered.filter(t => t.type === 'donation').reduce((s, t) => s + t.amount, 0);
+
+  return (
+    <div className="space-y-8">
+      <div className="space-y-1">
+        <Badge className="bg-primary/5 text-primary border-none font-black uppercase text-[8px] h-5 px-2 tracking-widest">Squad Financials</Badge>
+        <h2 className="text-3xl font-black uppercase tracking-tight">Fiscal Pulse</h2>
+        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Squad-level enrollment fees & donation overview</p>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-black text-white p-8 relative overflow-hidden">
+          <DollarSign className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10" />
+          <p className="text-[10px] font-black uppercase opacity-60">Total Revenue</p>
+          <p className="text-4xl font-black mt-1">${totalRevenue.toLocaleString()}</p>
+        </Card>
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-primary text-white p-8 relative overflow-hidden">
+          <Users className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10" />
+          <p className="text-[10px] font-black uppercase opacity-60">Enrollment Fees</p>
+          <p className="text-4xl font-black mt-1">${totalEnrollment.toLocaleString()}</p>
+        </Card>
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-white p-8 ring-1 ring-black/5 relative overflow-hidden">
+          <Heart className="absolute -right-4 -bottom-4 h-24 w-24 opacity-5 text-primary" />
+          <p className="text-[10px] font-black uppercase text-muted-foreground">Donations</p>
+          <p className="text-4xl font-black mt-1 text-primary">${totalDonations.toLocaleString()}</p>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search by name or email..." value={searchQ} onChange={e => setSearchQ(e.target.value)} className="h-12 pl-9 rounded-2xl border-2 font-bold" />
+        </div>
+        <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-12 rounded-2xl border-2 font-bold w-auto" />
+        <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-12 rounded-2xl border-2 font-bold w-auto" />
+      </div>
+
+      {/* Transactions */}
+      <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest text-muted-foreground border-b">
+              <tr>
+                <th className="px-8 py-5">Name</th>
+                <th className="px-4 py-5">Type</th>
+                <th className="px-4 py-5">Email</th>
+                <th className="px-8 py-5 text-right">Amount</th>
+                <th className="px-8 py-5 text-right">Date</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {filtered.slice(0, 50).map(tx => (
+                <tr key={tx.id} className="hover:bg-primary/5 transition-colors">
+                  <td className="px-8 py-5 font-black text-sm uppercase tracking-tight">{tx.label}</td>
+                  <td className="px-4 py-5">
+                    <Badge className={cn("border-none font-black text-[8px] uppercase",
+                      tx.type === 'enrollment' ? "bg-primary/10 text-primary" : "bg-green-100 text-green-700"
+                    )}>{tx.type === 'enrollment' ? 'Enrollment' : 'Donation'}</Badge>
+                  </td>
+                  <td className="px-4 py-5 text-xs text-muted-foreground font-bold">{tx.email || '—'}</td>
+                  <td className="px-8 py-5 text-right font-black text-sm text-primary">${(tx.amount || 0).toLocaleString()}</td>
+                  <td className="px-8 py-5 text-right text-xs font-bold text-muted-foreground">
+                    {tx.date ? (() => { try { return format(new Date(tx.date), 'MMM d, yyyy'); } catch { return tx.date; } })() : '—'}
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr><td colSpan={5} className="py-20 text-center opacity-30 italic text-xs uppercase font-black">No financial records found.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function WaiverArchive() {
   const { db, activeTeam } = useTeam();
   const archRef = useMemoFirebase(() => db && activeTeam?.id ? query(collection(db, 'teams', activeTeam.id, 'archived_waivers'), orderBy('signedAt', 'desc')) : null, [db, activeTeam?.id]);
   const { data: archivedWaivers, isLoading } = useCollection(archRef);
+  const [selectedWaiver, setSelectedWaiver] = useState<string | null>(null);
+
+  // Group signatures by waiver title/documentId
+  const grouped = useMemo(() => {
+    if (!archivedWaivers) return [];
+    const map = new Map<string, { title: string; type: string; documentId: string; entries: any[] }>();
+    archivedWaivers.forEach(w => {
+      const key = w.documentId || w.title;
+      if (!map.has(key)) {
+        map.set(key, { title: w.title, type: w.type, documentId: w.documentId || key, entries: [] });
+      }
+      map.get(key)!.entries.push(w);
+    });
+    return Array.from(map.values());
+  }, [archivedWaivers]);
+
+  const selectedGroup = selectedWaiver ? grouped.find(g => g.documentId === selectedWaiver) : null;
 
   if (isLoading) return <div className="flex justify-center p-20"><Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" /></div>;
 
   return (
     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {archivedWaivers?.map(w => (
-          <Card key={w.id} className="rounded-[2.5rem] border-none shadow-xl bg-white p-8 space-y-4 group hover:shadow-2xl transition-all border-b-4 border-primary/20">
-            <div className="flex justify-between items-start">
-              <div className="bg-primary/10 p-3 rounded-2xl text-primary"><FileText className="h-6 w-6" /></div>
-              <Badge variant="outline" className="text-[7px] font-black uppercase text-primary border-primary/20 shrink-0">{w.type}</Badge>
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-lg font-black uppercase tracking-tight truncate leading-none">{w.title}</h4>
-              <p className="text-[7px] font-bold text-muted-foreground uppercase tracking-[0.2em] mt-1">Legally Verified Vault Entry</p>
-            </div>
-            <div className="bg-muted/30 p-4 rounded-2xl space-y-2 border">
-              <div className="flex justify-between items-center"><span className="text-[8px] font-black uppercase opacity-40">Signatory</span><span className="text-[9px] font-black uppercase truncate ml-2">{w.signer}</span></div>
-              <div className="flex justify-between items-center"><span className="text-[8px] font-black uppercase opacity-40">Executed</span><span className="text-[9px] font-bold opacity-60 ml-2">{w.signedAt ? format(new Date(w.signedAt), 'MMM d, p') : 'TBD'}</span></div>
-              <div className="flex justify-between items-center">
-                <span className="text-[8px] font-black uppercase opacity-40">Status</span>
-                <Badge className="bg-green-100/50 text-green-700 hover:bg-green-100/50 border-none h-4 px-1.5 text-[6px] font-black">LEGALLY BINDING</Badge>
+        {grouped.map(group => (
+          <button
+            key={group.documentId}
+            onClick={() => setSelectedWaiver(group.documentId)}
+            className="text-left"
+          >
+            <Card className="rounded-[2.5rem] border-none shadow-xl bg-white p-8 space-y-5 group hover:shadow-2xl hover:-translate-y-1 transition-all border-b-4 border-primary/20 cursor-pointer h-full">
+              <div className="flex justify-between items-start">
+                <div className="bg-primary/10 p-4 rounded-2xl text-primary group-hover:bg-primary group-hover:text-white transition-all">
+                  <FileText className="h-6 w-6" />
+                </div>
+                <Badge variant="outline" className="text-[7px] font-black uppercase text-primary border-primary/20 shrink-0">{group.type || 'Document'}</Badge>
               </div>
-            </div>
-            <Button variant="outline" className="w-full h-11 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-sm" onClick={() => {
-               generateBrandedPDF({
-                 title: "WAIVER COMPLIANCE RECEIPT",
-                 subtitle: "OFFICIAL INSTITUTIONAL ARCHIVE RECORD",
-                 filename: `waiver_archive_${w.id}`
-               }, (doc, startY) => {
-                 // Main Info
-                 doc.setTextColor(0, 0, 0);
-                 doc.setFontSize(14);
-                 doc.setFont("helvetica", "bold");
-                 doc.text("Protocol Metadata", 20, startY);
-                 
-                 doc.setFontSize(10);
-                 doc.setFont("helvetica", "normal");
-                 doc.text(`Title: ${w.title}`, 20, startY + 10);
-                 doc.text(`Waiver Type: ${w.type}`, 20, startY + 17);
-                 doc.text(`Signer: ${w.signer}`, 20, startY + 24);
-                 doc.text(`Timestamp: ${w.signedAt ? format(new Date(w.signedAt), 'PPP p') : 'TBD'}`, 20, startY + 31);
-                 
-                 doc.setDrawColor(200, 200, 200);
-                 doc.line(20, startY + 40, 190, startY + 40);
-
-                 // Answers Section
-                 doc.setFontSize(12);
-                 doc.setFont("helvetica", "bold");
-                 doc.text("Execution Responses", 20, startY + 50);
-                 doc.setFontSize(9);
-                 
-                 let yPos = startY + 60;
-                 Object.entries(w.answers || {}).forEach(([k, v]) => {
-                   const label = `${k}:`;
-                   const val = String(v);
-                   doc.setFont("helvetica", "bold");
-                   doc.text(label, 20, yPos);
-                   doc.setFont("helvetica", "normal");
-                   doc.text(val, 60, yPos);
-                   yPos += 7;
-                   if (yPos > 270) { doc.addPage(); yPos = 20; }
-                 });
-
-                 return yPos + 10;
-               });
-               toast({ title: "Audit Log Exported" });
-            }}>Download PDF Audit <Download className="ml-2 h-3 w-3" /></Button>
-          </Card>
+              <div className="space-y-1">
+                <h4 className="text-xl font-black uppercase tracking-tight leading-tight">{group.title}</h4>
+                <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Legally Verified Vault Entry</p>
+              </div>
+              <div className="bg-muted/30 p-4 rounded-2xl border flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-[9px] font-black uppercase text-green-700">Legally Binding</span>
+                </div>
+                <Badge className="bg-primary/10 text-primary border-none font-black text-[9px]">
+                  {group.entries.length} {group.entries.length === 1 ? 'Signatory' : 'Signatories'}
+                </Badge>
+              </div>
+              <p className="text-[9px] font-bold text-primary/50 uppercase tracking-widest group-hover:text-primary transition-colors">
+                Click to view signatories &rarr;
+              </p>
+            </Card>
+          </button>
         ))}
       </div>
-      {(!archivedWaivers || archivedWaivers.length === 0) && (
+
+      {(!grouped.length) && (
         <div className="text-center py-32 opacity-20 space-y-4">
            <Database className="h-16 w-16 mx-auto" />
            <p className="text-sm font-black uppercase tracking-widest leading-none">The Vault is empty.</p>
            <p className="text-[9px] font-bold uppercase tracking-[0.2em]">Executed agreements will appear here automatically.</p>
         </div>
       )}
+
+      {/* ── Signatories Modal ── */}
+      <Dialog open={!!selectedWaiver} onOpenChange={o => !o && setSelectedWaiver(null)}>
+        <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+          <DialogTitle className="sr-only">Waiver Signatories</DialogTitle>
+          <div className="h-2 bg-primary w-full" />
+          <div className="p-8 space-y-6 overflow-y-auto max-h-[85vh] custom-scrollbar">
+            {selectedGroup && (
+              <>
+                <DialogHeader>
+                  <div className="flex items-center gap-4">
+                    <div className="bg-primary/10 p-3 rounded-2xl text-primary">
+                      <FileText className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-2xl font-black uppercase tracking-tight">{selectedGroup.title}</DialogTitle>
+                      <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">
+                        {selectedGroup.entries.length} Execution{selectedGroup.entries.length !== 1 ? 's' : ''} on Record
+                      </DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                <div className="space-y-2">
+                  {selectedGroup.entries.map((entry, i) => (
+                    <div key={entry.id || i} className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border hover:bg-muted/30 transition-all">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-xl bg-green-100 flex items-center justify-center shrink-0">
+                          <Check className="h-4 w-4 text-green-600" strokeWidth={3} />
+                        </div>
+                        <div>
+                          <p className="font-black text-sm uppercase tracking-tight leading-none">{entry.memberName || entry.signer}</p>
+                          {entry.signedByParent && (
+                            <p className="text-[8px] font-bold text-primary/50 uppercase mt-0.5">Signed by Guardian</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase">{entry.signedAt ? format(new Date(entry.signedAt), 'MMM d, yyyy') : '—'}</p>
+                        <p className="text-[8px] font-bold text-muted-foreground/50 uppercase">{entry.signedAt ? format(new Date(entry.signedAt), 'h:mm a') : ''}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <Button
+                  variant="outline"
+                  className="w-full h-12 rounded-2xl text-[10px] font-black uppercase tracking-widest"
+                  onClick={() => {
+                    generateBrandedPDF({
+                      title: `${selectedGroup.title.toUpperCase()} — AUDIT REPORT`,
+                      subtitle: `VAULT COMPLIANCE RECORD — ${selectedGroup.entries.length} SIGNATOR${selectedGroup.entries.length !== 1 ? 'IES' : 'Y'}`,
+                      filename: `vault_audit_${selectedGroup.documentId}`
+                    }, (doc, startY) => {
+                      let y = startY;
+                      const pageW = doc.internal.pageSize.getWidth();
+                      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(0,0,0);
+                      doc.text('SIGNATORY REGISTER', 20, y); y += 8;
+                      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(120,120,120);
+                      doc.text(`Document: ${selectedGroup.title}`, 20, y); y += 6;
+                      doc.text(`Total Executions: ${selectedGroup.entries.length}`, 20, y); y += 10;
+                      doc.setDrawColor(220,220,220); doc.line(20, y, pageW - 20, y); y += 8;
+                      selectedGroup.entries.forEach((e, idx) => {
+                        if (y > 265) { doc.addPage(); y = 20; }
+                        doc.setTextColor(0,0,0); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+                        doc.text(`${idx + 1}. ${e.memberName || e.signer}`, 20, y);
+                        doc.setFont('helvetica','normal'); doc.setTextColor(120,120,120);
+                        doc.text(e.signedAt ? format(new Date(e.signedAt), 'PPP p') : 'Unknown date', pageW - 20, y, { align: 'right' });
+                        if (e.signedByParent) {
+                          y += 5; doc.setFontSize(8); doc.text('(Signed by Guardian)', 28, y);
+                        }
+                        y += 9;
+                      });
+                      return y;
+                    });
+                    toast({ title: "PDF Audit Exported", description: `${selectedGroup.title} signatory report downloaded.` });
+                  }}
+                >
+                  <Download className="h-4 w-4 mr-2" /> Download PDF Audit
+                </Button>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
 

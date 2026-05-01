@@ -268,8 +268,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
           )}
           <DropdownMenuSeparator className="my-1.5" />
           <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pb-1">Squads ({squadList.length})</p>
-          <div onWheel={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}
-            className="overflow-y-auto max-h-[160px] overscroll-contain space-y-0.5">
+          <div className="overflow-y-auto max-h-[160px] overscroll-contain space-y-0.5">
             {squadList.length === 0
               ? <p className="text-xs text-muted-foreground text-center py-3">No squads assigned yet.</p>
               : squadList.map(team => (
@@ -312,8 +311,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
               />
               <DropdownMenuSeparator className="my-1.5" />
               <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pb-1">Sub-Squads ({teams.length})</p>
-              <div onWheel={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}
-                className="overflow-y-auto max-h-[220px] overscroll-contain space-y-0.5 pr-0.5">
+              <div className="overflow-y-auto max-h-[220px] overscroll-contain space-y-0.5 pr-0.5">
                 {teams.length === 0
                   ? <p className="text-xs text-muted-foreground text-center py-3">No squads deployed yet.</p>
                   : teams.map(team => (
@@ -336,8 +334,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
           ) : isEliteAccount ? (
             <>
               <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-widest text-muted-foreground px-2 pt-1.5 pb-1">My Squads</DropdownMenuLabel>
-              <div onWheel={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}
-                className="overflow-y-auto max-h-[180px] overscroll-contain space-y-0.5">
+              <div className="overflow-y-auto max-h-[180px] overscroll-contain space-y-0.5">
                 {teams.map(team => (
                   <SquadRow
                     key={team.id}
@@ -352,8 +349,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
           ) : (
             <>
               <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-widest text-muted-foreground px-2 pt-1.5 pb-1">My Squads</DropdownMenuLabel>
-              <div onWheel={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}
-                className="overflow-y-auto max-h-[180px] overscroll-contain space-y-0.5">
+              <div className="overflow-y-auto max-h-[180px] overscroll-contain space-y-0.5">
                 {teams.map(team => (
                   <SquadRow
                     key={team.id}

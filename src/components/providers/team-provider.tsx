@@ -822,6 +822,7 @@ interface TeamContextType {
   addFile: (name: string, type: string, sizeBytes: number, url: string, category: string, description?: string) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   addFacility: (data: any) => Promise<void>;
+  updateFacility: (id: string, data: Partial<Facility>) => Promise<void>;
   deleteFacility: (id: string) => Promise<void>;
   addField: (facilityId: string, name: string) => Promise<void>;
   deleteField: (facilityId: string, fieldId: string) => Promise<void>;
@@ -837,7 +838,7 @@ interface TeamContextType {
   toggleRegistrationPaymentStatus: (leagueId: string, entryId: string, paid: boolean) => Promise<void>;
   respondToAssignment: (contextId: string, entryId: string, status: 'accepted' | 'declined') => Promise<void>;
   signPublicTournamentWaiver: (teamId: string, eventId: string, tournamentTeamName: string, coachName: string) => Promise<boolean>;
-  submitMatchScore: (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number) => Promise<void>;
+  submitMatchScore: (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => Promise<void>;
   submitLeagueMatchScore: (leagueId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => Promise<void>;
   updateLeaguePin: (leagueId: string, pin: string) => Promise<void>;
   disputeMatchScore: (teamId: string, eventId: string, gameId: string, notes: string) => Promise<void>;
@@ -1700,18 +1701,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => { 
     if (!firebaseUser || !db || !userProfile) return ''; 
 
-    // Enforce Pro Quota if creating a pro team
+    // Enforce Pro Quota only if the requested plan is a paid plan and quota is exhausted
     const isTargetPro = planId && planId !== 'free';
     if (isTargetPro && proQuotaStatus.remaining <= 0) {
       setIsPaywallOpen(true);
-      throw new Error("Pro team limit reached. Please upgrade or manage features in billing.");
+      throw new Error("Pro team limit reached. Please upgrade or manage your billing.");
     }
-
-    // Enforce Free limit (if they already have teams and are on a free plan)
-    if (!isTargetPro && teamsRaw.length >= 1 && (!userProfile.plan_type || userProfile.plan_type === 'free')) {
-      setIsPaywallOpen(true);
-      throw new Error("Free plan limit reached (1 team). Please upgrade to create more squads.");
-    }
+    // Free (starter) teams are always allowed — no per-user cap on free squads
 
     const tid = `team_${Date.now()}`; 
     const batch = writeBatch(db); 
@@ -2108,6 +2104,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       parentName: isParentSigning ? parentName : null,
       parentUid: isParentSigning ? firebaseUser.uid : null
     }); 
+
+    // ── CRITICAL: Update the member document's `signatures` map so that
+    // TrackingMatrix (Protocol Sync) picks this up instantly. The matrix reads
+    // m.signatures as a top-level field; without this write it stays stale.
+    batch.update(doc(db, 'teams', activeTeam.id, 'members', mid), {
+      [`signatures.${docId}`]: {
+        signedAt: new Date().toISOString(),
+        signature: finalSignature,
+        signedByParent: isParentSigning,
+      }
+    });
     
     batch.set(doc(db, 'teams', activeTeam.id, 'files', certId), { 
       id: certId, 
@@ -2142,9 +2149,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       signedByParent: isParentSigning
     }));
 
-    // Task D: Store signatures as protocolId + userId relation
+    // Task D: Store flat protocol_signatures doc (avoids collectionGroup index requirement)
     batch.set(doc(db, 'teams', activeTeam.id, 'protocol_signatures', `${docId}_${firebaseUser.uid}_${mid}`), clean({
       protocolId: docId,
+      docId,
+      teamId: activeTeam.id,
       userId: firebaseUser.uid,
       memberId: mid,
       signedAt: new Date().toISOString(),
@@ -2152,8 +2161,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }));
 
     await batch.commit(); 
+
+    // POST-COMMIT: Increment signatureCount on team doc + global club waiver doc.
+    // This updates the "X Verified Sigs" count in the Club/School Hub Waivers tab for ALL users.
+    try {
+      const { increment, getDoc: _getDoc, updateDoc: _updateDoc } = await import('firebase/firestore');
+      const ownerUserId = activeTeam.ownerUserId || firebaseUser.uid;
+      const teamDocRef = doc(db, 'teams', activeTeam.id, 'documents', docId);
+      const teamDocSnap = await _getDoc(teamDocRef);
+      if (teamDocSnap.exists()) await _updateDoc(teamDocRef, { signatureCount: increment(1) });
+      const clubDocRef = doc(db, 'users', ownerUserId, 'clubDocuments', docId);
+      const clubDocSnap = await _getDoc(clubDocRef);
+      if (clubDocSnap.exists()) await _updateDoc(clubDocRef, { signatureCount: increment(1) });
+    } catch (e) {
+      console.warn('[signTeamDocument] sig count increment failed (non-critical):', e);
+    }
+
     return true; 
   }, [db, activeTeam, firebaseUser, members, userProfile]);
+
   const addTeamDocument = useCallback(async (data: any) => { 
     if (!isStaff) {
       toast({ title: "Vault Access Denied", description: "Only staff can archive new organizational documents.", variant: "destructive" });
@@ -2442,6 +2468,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db, activeTeam, isStaff]);
 
   const addFacility = useCallback(async (d: any) => { if (firebaseUser && db) await addDoc(collection(db, 'facilities'), clean({ ...d, clubId: firebaseUser.uid })); }, [db, firebaseUser]);
+  const updateFacility = useCallback(async (id: string, d: Partial<Facility>) => { if(db) await updateDoc(doc(db, 'facilities', id), clean(d as any)); }, [db]);
   const deleteFacility = useCallback(async (id: string) => { if(db) await deleteDoc(doc(db, 'facilities', id)); }, [db]);
   const addField = useCallback(async (fid: string, n: string) => { if(db) await addDoc(collection(db, 'facilities', fid, 'fields'), { name: n, facilityId: fid }); }, [db]);
   const deleteFacilityField = useCallback(async (fid: string, id: string) => { if(id && db) await deleteDoc(doc(db, 'facilities', fid, 'fields', id)); }, [db]);
@@ -3176,13 +3203,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
 
 
-  const submitMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number) => { 
+  const submitMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => { 
     if (!db) return; 
     const eventRef = doc(db, 'teams', teamId, 'events', eventId);
     const snap = await getDoc(eventRef);
     if (!snap.exists()) return; 
     
     const data = snap.data();
+    // Validate scorekeeper code if the event has one set
+    const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'superadmin';
+    if ((data as any).scoringCode && pin !== (data as any).scoringCode && !isAdmin) {
+      throw new Error('UNAUTHORIZED_ACCESS: Invalid Scorekeeper Code.');
+    }
     let games = [...(data.tournamentGames || [])]; 
     const idx = games.findIndex((g: any) => g.id === gameId); 
     if (idx === -1) return; 
@@ -3447,7 +3479,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addLeagueGame,
     createAlert, deleteAlert, addDrill, updateDrill, deleteDrill, assignDrillsToEvent,
     addPracticeTemplate, updatePracticeTemplate, deletePracticeTemplate,
-    addFile, deleteFile, addFacility, deleteFacility,
+    addFile, deleteFile, addFacility, updateFacility, deleteFacility,
     addField, deleteField: deleteFacilityField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,
@@ -3487,7 +3519,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     addLeagueGame,
     createAlert, deleteAlert, addDrill, updateDrill, deleteDrill, assignDrillsToEvent, 
     addPracticeTemplate, updatePracticeTemplate, deletePracticeTemplate,
-    addFile, deleteFile, addFacility, deleteFacility,
+    addFile, deleteFile, addFacility, updateFacility, deleteFacility,
     addField, deleteFacilityField, 
     assignEquipment, returnEquipment,
     formatTime, manageSubscription, resolveQuota, exportAttendanceCSV, exportTournamentStandingsCSV, markMediaAsViewed,

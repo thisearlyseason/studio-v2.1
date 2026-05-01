@@ -1275,6 +1275,45 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
           </div>
           <div className="p-8 lg:p-14">
              <TabsContent value="architecture" className="mt-0 space-y-6">
+                {/* ── Registration Architect (moved to top) ── */}
+                <div className="bg-[#050505] rounded-[3rem] border border-white/10 overflow-hidden">
+                  <div className="h-0.5 bg-gradient-to-r from-white/20 via-white/5 to-transparent w-full" />
+                  <div className="p-10">
+                    <div className="flex items-center justify-between gap-6">
+                      <div className="flex items-center gap-4">
+                        <div className="border border-white/20 p-3 rounded-xl text-white shadow-[0_0_15px_rgba(255,255,255,0.05)]"><FileSignature className="h-5 w-5" /></div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">Form Builder</p>
+                          <h3 className="text-2xl font-black uppercase tracking-tight text-white">Registration Architect</h3>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Custom Intake Forms &amp; Documentation</p>
+                        </div>
+                      </div>
+                      <Button
+                        onClick={() => router.push(`/manage-tournaments/registration/${activeTeam?.id}/${event.id}`)}
+                        className="h-14 px-8 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest shadow-[0_0_20px_rgba(255,255,255,0.1)] shrink-0"
+                      >
+                        Launch Builder <ExternalLink className="ml-2 h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Scorekeeper Code ── */}
+                <div className="bg-[#050505] rounded-[3rem] border border-white/10 overflow-hidden">
+                  <div className="h-0.5 bg-gradient-to-r from-primary via-orange-500 to-transparent w-full" />
+                  <div className="p-10 space-y-6">
+                    <div className="flex items-center gap-4">
+                      <div className="border border-white/20 p-3 rounded-xl text-white shadow-[0_0_15px_rgba(255,255,255,0.05)]"><Lock className="h-5 w-5" /></div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">Access Control</p>
+                        <h3 className="text-2xl font-black uppercase tracking-tight text-white">Scorekeeper Code</h3>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Required to submit scores in the scorekeeper portal</p>
+                      </div>
+                    </div>
+                    <ScorekeeperCodeEditor event={event} />
+                  </div>
+                </div>
+
                 {/* ── DARK SYSTEM: Bracket Telemetry ── */}
                 <div className="bg-[#050505] rounded-[3rem] border border-white/10 overflow-hidden">
                   <div className="h-0.5 bg-gradient-to-r from-primary via-orange-500 to-transparent w-full" />
@@ -1284,7 +1323,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                       <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">Telemetry Engine</p>
                         <h3 className="text-2xl font-black uppercase tracking-tight text-white">Bracket Telemetry</h3>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Automated Seeding & Progression</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Automated Seeding &amp; Progression</p>
                       </div>
                     </div>
 
@@ -1299,7 +1338,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                           Initialize Seeds 1–4 <ArrowRight className="ml-2 h-4 w-4" />
                         </Button>
                         <Button variant="ghost" onClick={injectBracketSlots} className="w-full text-white/40 hover:text-white font-black uppercase text-[9px] tracking-widest hover:bg-white/5">
-                          Inject Missing Bracket Slots →
+                          Inject Missing Bracket Slots &rarr;
                         </Button>
                       </div>
 
@@ -1314,29 +1353,6 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Synchronization Active
                         </div>
                       </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* ── DARK SYSTEM: Registration Architect ── */}
-                <div className="bg-[#050505] rounded-[3rem] border border-white/10 overflow-hidden">
-                  <div className="h-0.5 bg-gradient-to-r from-white/20 via-white/5 to-transparent w-full" />
-                  <div className="p-10">
-                    <div className="flex items-center justify-between gap-6">
-                      <div className="flex items-center gap-4">
-                        <div className="border border-white/20 p-3 rounded-xl text-white shadow-[0_0_15px_rgba(255,255,255,0.05)]"><FileSignature className="h-5 w-5" /></div>
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-0.5">Form Builder</p>
-                          <h3 className="text-2xl font-black uppercase tracking-tight text-white">Registration Architect</h3>
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Custom Intake Forms & Documentation</p>
-                        </div>
-                      </div>
-                      <Button
-                        onClick={() => router.push(`/manage-tournaments/registration/${activeTeam?.id}/${event.id}`)}
-                        className="h-14 px-8 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest shadow-[0_0_20px_rgba(255,255,255,0.1)] shrink-0"
-                      >
-                        Launch Builder <ExternalLink className="ml-2 h-4 w-4" />
-                      </Button>
                     </div>
                   </div>
                 </div>
@@ -2006,4 +2022,51 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
 
 export default function ManageTournamentsPage() {
   return <ManageTournamentsPageContent />;
+}
+
+function ScorekeeperCodeEditor({ event }: { event: any }) {
+  const { db } = useTeam();
+  const [code, setCode] = useState((event as any).scoringCode || '');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!db || !event.teamId) return;
+    setSaving(true);
+    try {
+      const { doc, updateDoc } = await import('firebase/firestore');
+      await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { scoringCode: code.trim() });
+      toast({ title: 'Scorekeeper Code Updated', description: code.trim() ? `Code is now active.` : 'Code cleared — portal is open access.' });
+    } catch {
+      toast({ title: 'Update Failed', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+          <input
+            type="text"
+            value={code}
+            onChange={e => setCode(e.target.value)}
+            placeholder="Set scorekeeper access code..."
+            className="w-full h-14 pl-10 pr-4 rounded-2xl bg-white/10 border border-white/20 text-white font-black text-sm uppercase tracking-widest outline-none focus:border-primary placeholder:text-white/20 placeholder:uppercase placeholder:font-bold placeholder:text-xs"
+          />
+        </div>
+        <Button
+          onClick={handleSave}
+          disabled={saving}
+          className="h-14 px-8 rounded-2xl bg-primary text-white font-black uppercase text-xs tracking-widest shadow-xl"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
+        </Button>
+      </div>
+      <p className="text-[9px] font-bold text-white/25 uppercase tracking-widest pl-1">
+        Scorekeepers must enter this code to submit match results. Leave blank for open access.
+      </p>
+    </div>
+  );
 }

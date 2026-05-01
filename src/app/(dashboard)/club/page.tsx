@@ -532,32 +532,41 @@ export default function ClubManagementPage() {
   const handleAddAdmin = async () => {
     if (!newAdminEmail.trim() || !db || !schoolHub) return;
     setIsAddingAdmin(true);
+    const emailToAdd = newAdminEmail.trim().toLowerCase();
     try {
-      // Find user by email
-      const usersQuery = query(collection(db, 'users'), where('email', '==', newAdminEmail.trim().toLowerCase()), limit(1));
+      const usersQuery = query(collection(db, 'users'), where('email', '==', emailToAdd), limit(1));
       const snaps = await getDocs(usersQuery);
-      
-      if (snaps.empty) {
-        toast({ title: "User Not Found", description: "No user found with that email address. They must create an account first.", variant: "destructive" });
-        setIsAddingAdmin(false);
-        return;
-      }
-      
-      const newAdminId = snaps.docs[0].id;
       const currentAdmins = schoolHub.schoolAdminIds || [];
-      
-      if (currentAdmins.includes(newAdminId) || schoolHub.ownerUserId === newAdminId) {
-        toast({ title: "Already Admin", description: "This user is already an admin.", variant: "destructive" });
-      } else if (currentAdmins.length >= 3) {
-        toast({ title: "Limit Reached", description: "You can only have up to 3 additional school hub admins.", variant: "destructive" });
+      const pendingEmails: string[] = (schoolHub as any).pendingAdminEmails || [];
+      const totalSlots = currentAdmins.length + pendingEmails.length;
+
+      if (!snaps.empty) {
+        const newAdminId = snaps.docs[0].id;
+        if (currentAdmins.includes(newAdminId) || schoolHub.ownerUserId === newAdminId) {
+          toast({ title: 'Already Admin', description: 'This user is already an admin.', variant: 'destructive' });
+        } else if (totalSlots >= 3) {
+          toast({ title: 'Limit Reached', description: 'You can only have up to 3 additional hub admins.', variant: 'destructive' });
+        } else {
+          const updatedEmails = pendingEmails.includes(emailToAdd) ? pendingEmails : [...pendingEmails, emailToAdd];
+          await updateTeam(schoolHub.id, { schoolAdminIds: [...currentAdmins, newAdminId], pendingAdminEmails: updatedEmails });
+          toast({ title: 'Hub Admin Added', description: `${emailToAdd} now has Hub access.` });
+          setNewAdminEmail('');
+        }
       } else {
-        await updateTeam(schoolHub.id, { schoolAdminIds: [...currentAdmins, newAdminId] });
-        toast({ title: "Admin Added", description: "They now have Hub access." });
-        setNewAdminEmail('');
+        // User doesn't exist yet — store as pending so they auto-get access on signup
+        if (pendingEmails.includes(emailToAdd)) {
+          toast({ title: 'Already Pending', description: 'An invitation is already pending for this email.', variant: 'destructive' });
+        } else if (totalSlots >= 3) {
+          toast({ title: 'Limit Reached', description: 'You can only have up to 3 additional hub admins.', variant: 'destructive' });
+        } else {
+          await updateTeam(schoolHub.id, { pendingAdminEmails: [...pendingEmails, emailToAdd] });
+          toast({ title: 'Invitation Saved', description: `${emailToAdd} will get Hub access automatically when they sign up.` });
+          setNewAdminEmail('');
+        }
       }
     } catch (e) {
       console.error(e);
-      toast({ title: "Error", description: "Failed to add hub admin", variant: "destructive" });
+      toast({ title: 'Error', description: 'Failed to add hub admin', variant: 'destructive' });
     }
     setIsAddingAdmin(false);
   };
@@ -962,10 +971,10 @@ export default function ClubManagementPage() {
                     Only the primary account owner can manage co-administrators.
                   </div>
                 )}
-
+                
                 <div className="space-y-4">
                   <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground px-4">
-                    <span>Active Administrators {(schoolHub.schoolAdminIds?.length || 0)}/3</span>
+                    <span>Hub Administrators {((schoolHub.schoolAdminIds?.length || 0) + ((schoolHub as any).pendingAdminEmails?.length || 0))}/3</span>
                   </div>
                   
                   {/* Primary Owner is always an admin */}
@@ -975,11 +984,11 @@ export default function ClubManagementPage() {
                         <Shield className="h-6 w-6 text-primary" />
                       </div>
                       <div>
-                        <p className="text-sm font-black uppercase text-foreground">Primary Owner</p>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase">{schoolHub.name} Creator</p>
+                        <p className="text-sm font-black uppercase text-foreground">{user?.name || 'Primary Owner'}</p>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase">{user?.email} · {schoolHub.name} Creator</p>
                       </div>
                     </div>
-                    <Badge className="bg-black text-white h-6 px-3 uppercase text-[9px] font-black tracking-widest pointer-events-none line-clamp-1 truncate max-w-[150px]">Owner</Badge>
+                    <Badge className="bg-black text-white h-6 px-3 uppercase text-[9px] font-black tracking-widest pointer-events-none">Owner</Badge>
                   </div>
                   
                   {adminProfiles.map((admin) => (
@@ -987,10 +996,10 @@ export default function ClubManagementPage() {
                       <div className="flex items-center gap-4">
                         <Avatar className="h-12 w-12 border">
                           <AvatarImage src={admin.avatar} />
-                          <AvatarFallback className="font-bold text-primary">{admin.name?.[0]}</AvatarFallback>
+                          <AvatarFallback className="font-bold text-primary">{(admin.name || admin.email || 'A')[0].toUpperCase()}</AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="text-sm font-black uppercase text-foreground">{admin.name || 'Unknown User'}</p>
+                          <p className="text-sm font-black uppercase text-foreground">{admin.name || admin.email || 'Hub Admin'}</p>
                           <p className="text-[10px] font-bold text-muted-foreground uppercase">{admin.email}</p>
                         </div>
                       </div>
@@ -1001,9 +1010,7 @@ export default function ClubManagementPage() {
                               <XCircle className="h-5 w-5" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent className="bg-destructive">
-                            Revoke Admin Credentials
-                          </TooltipContent>
+                          <TooltipContent className="bg-destructive">Revoke Admin Credentials</TooltipContent>
                         </Tooltip>
                       )}
                     </div>

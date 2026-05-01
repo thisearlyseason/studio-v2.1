@@ -213,7 +213,7 @@ export default function PracticeManagementPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
-                    <Badge variant="secondary" className="bg-muted/50 text-[8px] font-black uppercase tracking-widest h-5">
+                    <Badge className="bg-primary/15 text-primary border border-primary/20 text-[8px] font-black uppercase tracking-widest h-5 px-2">
                       {template.drillIds?.length || 0} Drills
                     </Badge>
                     <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest h-5 border-primary/20 text-primary">

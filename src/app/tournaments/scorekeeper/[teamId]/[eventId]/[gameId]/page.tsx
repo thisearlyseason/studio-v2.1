@@ -39,6 +39,7 @@ export default function PublicScorekeeperEntryPage() {
   const [score1, setScore1] = useState<string>('');
   const [score2, setScore2] = useState<string>('');
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+  const [pin, setPin] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isDisputeOpen, setIsDisputeOpen] = useState(false);
@@ -70,7 +71,7 @@ export default function PublicScorekeeperEntryPage() {
     setIsSubmitting(true);
     const isTeam1 = selectedTeam === game.team1;
     try {
-      await submitMatchScore(teamId as string, eventId as string, gameId as string, isTeam1, parseInt(score1), parseInt(score2));
+      await submitMatchScore(teamId as string, eventId as string, gameId as string, isTeam1, parseInt(score1), parseInt(score2), pin);
       setIsSubmitted(true);
     } catch (err: any) {
       toast({ 
@@ -231,6 +232,20 @@ export default function PublicScorekeeperEntryPage() {
                     />
                   </div>
                 </div>
+
+                <div className="space-y-3">
+                  <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                    <Lock className="h-3 w-3" /> Scorekeeper Operations Key
+                  </Label>
+                  <Input 
+                    type="password" 
+                    placeholder="Enter access code" 
+                    value={pin}
+                    onChange={e => setPin(e.target.value)}
+                    className="h-16 text-center font-black text-2xl tracking-[0.5em] rounded-2xl border-2"
+                  />
+                  <p className="text-[8px] font-bold text-muted-foreground uppercase text-center opacity-40">Contact your tournament organizer for the scorekeeper code.</p>
+                </div>
               </div>
             )}
           </CardContent>
@@ -238,7 +253,7 @@ export default function PublicScorekeeperEntryPage() {
           <CardFooter className="p-8 lg:p-10 pt-0 flex flex-col gap-4">
             <Button 
               className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all"
-              disabled={!selectedTeam || score1 === '' || score2 === '' || isSubmitting}
+              disabled={!selectedTeam || score1 === '' || score2 === '' || !pin || isSubmitting}
               onClick={handleSubmit}
             >
               {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Score Result"}

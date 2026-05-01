@@ -4,42 +4,24 @@ import React, { useState, useMemo } from 'react';
 import { useTeam, Facility, Field } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { 
-  MapPin, 
-  Plus, 
-  Trash2, 
-  CalendarDays, 
-  Loader2, 
-  Globe, 
-  Info,
-  ChevronRight,
-  LayoutGrid,
-  Building,
-  AlertCircle,
-  Zap
+  MapPin, Plus, Trash2, CalendarDays, Loader2, Globe, Info,
+  LayoutGrid, Building, AlertCircle, Zap, Pencil, Check, X
 } from 'lucide-react';
 import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger,
-  DialogFooter, 
-  DialogDescription
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  DialogFooter, DialogDescription
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 function FacilityFieldManager({ facility }: { facility: Facility }) {
   const { addField, deleteField, isSuperAdmin, user } = useTeam();
@@ -99,6 +81,7 @@ function FacilityFieldManager({ facility }: { facility: Facility }) {
           placeholder="e.g. Field A, Court 1..." 
           value={newFieldName} 
           onChange={e => setNewFieldName(e.target.value)} 
+          onKeyDown={e => e.key === 'Enter' && handleAddField()}
           className="h-10 rounded-xl text-xs font-bold"
         />
         <Button size="sm" onClick={handleAddField} disabled={isProcessing || !newFieldName.trim()} className="h-10 rounded-xl px-4 font-black uppercase text-[10px]">
@@ -109,7 +92,77 @@ function FacilityFieldManager({ facility }: { facility: Facility }) {
   );
 }
 
-import { AccessRestricted } from '@/components/layout/AccessRestricted';
+function EditFacilityDialog({ facility }: { facility: Facility }) {
+  const { updateFacility, isSuperAdmin, user } = useTeam();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ name: facility.name, address: facility.address || '', notes: facility.notes || '' });
+  const [saving, setSaving] = useState(false);
+
+  const canEdit = facility.clubId === user?.id || isSuperAdmin;
+  if (!canEdit) return null;
+
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    await updateFacility(facility.id, { name: form.name, address: form.address, notes: form.notes });
+    setSaving(false);
+    setOpen(false);
+    toast({ title: "Facility Updated", description: `${form.name} details saved.` });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" className="text-primary hover:bg-primary/5 rounded-xl h-10 w-10">
+              <Pencil className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Edit Facility</TooltipContent>
+        </Tooltip>
+      </DialogTrigger>
+      <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+        <DialogTitle className="sr-only">Edit Facility</DialogTitle>
+        <div className="h-2 bg-primary w-full" />
+        <div className="p-8 lg:p-12 space-y-8">
+          <DialogHeader>
+            <div className="flex items-center gap-4 mb-2">
+              <div className="bg-primary/10 p-3 rounded-2xl text-primary">
+                <Building className="h-6 w-6" />
+              </div>
+              <div>
+                <DialogTitle className="text-3xl font-black uppercase tracking-tight">Edit Facility</DialogTitle>
+                <DialogDescription className="font-bold text-primary uppercase tracking-widest text-[10px]">Update venue details</DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Venue Name</Label>
+              <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="h-14 rounded-2xl font-bold border-2" placeholder="e.g. Metro Sports Complex" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Physical Address</Label>
+              <Input value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="h-14 rounded-2xl font-bold border-2" placeholder="123 Stadium Way..." />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Operational Notes</Label>
+              <Input value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="h-14 rounded-2xl font-bold border-2" placeholder="Parking, gate codes, etc." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} className="flex-1 h-14 rounded-2xl font-black">Cancel</Button>
+            <Button className="flex-1 h-14 rounded-2xl font-black shadow-xl shadow-primary/20" onClick={handleSave} disabled={saving || !form.name.trim()}>
+              {saving ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Check className="h-5 w-5 mr-2" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function FacilityManagementPage() {
   const { activeTeam, isStaff, isPro, addFacility, deleteFacility, isSuperAdmin, user } = useTeam();
@@ -154,7 +207,7 @@ export default function FacilityManagementPage() {
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black tracking-widest text-[9px] h-6 px-3 shadow-sm">Master Infrastructure</Badge>
           <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none text-foreground">Facilities</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Asset Scheduling & Venue Coordination</p>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Asset Scheduling &amp; Venue Coordination</p>
         </div>
 
         {isStaff && (
@@ -189,15 +242,15 @@ export default function FacilityManagementPage() {
                   </Alert>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Venue Name</Label>
-                    <Input placeholder="e.g. Metro Sports Complex" value={newFac.name} onChange={e => setNewFac({...newFac, name: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all text-foreground shadow-inner" />
+                    <Input placeholder="e.g. Metro Sports Complex" value={newFac.name} onChange={e => setNewFac({...newFac, name: e.target.value})} className="h-14 rounded-2xl font-bold border-2" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Physical Address</Label>
-                    <Input placeholder="123 Stadium Way..." value={newFac.address} onChange={e => setNewFac({...newFac, address: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all text-foreground shadow-inner" />
+                    <Input placeholder="123 Stadium Way..." value={newFac.address} onChange={e => setNewFac({...newFac, address: e.target.value})} className="h-14 rounded-2xl font-bold border-2" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Operational Notes</Label>
-                    <Input placeholder="Parking, gate codes, etc." value={newFac.notes} onChange={e => setNewFac({...newFac, notes: e.target.value})} className="h-14 rounded-2xl font-bold border-2 focus:border-primary/20 transition-all text-foreground shadow-inner" />
+                    <Input placeholder="Parking, gate codes, etc." value={newFac.notes} onChange={e => setNewFac({...newFac, notes: e.target.value})} className="h-14 rounded-2xl font-bold border-2" />
                   </div>
                 </div>
                 <DialogFooter className="pt-4">
@@ -221,21 +274,24 @@ export default function FacilityManagementPage() {
                   <MapPin className="h-10 w-10" />
                 </div>
                 {(facility.clubId === user?.id || isSuperAdmin) && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/5 rounded-xl h-10 w-10" onClick={() => deleteFacility(facility.id)}>
-                        <Trash2 className="h-5 w-5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Decommission Facility</TooltipContent>
-                  </Tooltip>
+                  <div className="flex items-center gap-1">
+                    <EditFacilityDialog facility={facility} />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/5 rounded-xl h-10 w-10" onClick={() => deleteFacility(facility.id)}>
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Decommission Facility</TooltipContent>
+                    </Tooltip>
+                  </div>
                 )}
               </div>
               
               <div className="space-y-2">
                 <h3 className="text-3xl font-black uppercase tracking-tight group-hover:text-primary transition-colors leading-none text-foreground">{facility.name}</h3>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-relaxed flex items-center gap-2">
-                  <Globe className="h-3 w-3" /> {facility.address}
+                  <Globe className="h-3 w-3" /> {facility.address || 'No address set'}
                 </p>
               </div>
 
