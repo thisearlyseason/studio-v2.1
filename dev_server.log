@@ -1,19 +1,15 @@
 
 > nextn@0.1.0 dev
-> next dev -p 9002 -p 9003
+> next dev -p 9002
 
-   ▲ Next.js 15.5.9
-   - Local:        http://localhost:9003
-   - Network:      http://192.168.100.18:9003
-   - Environments: .env.local
-
- ✓ Starting...
- ✓ Ready in 1082ms
- ✓ Compiled /middleware in 193ms (157 modules)
- ○ Compiling / ...
-
-warn - The class `ease-[cubic-bezier(0.2,0.8,0.2,1)]` is ambiguous and matches multiple utilities.
-warn - If this is content and not a class, replace it with `ease-&lsqb;cubic-bezier(0.2,0.8,0.2,1)&rsqb;` to silence this warning.
- ✓ Compiled / in 2.4s (1344 modules)
- GET / 200 in 2724ms
+ ⨯ Failed to start server
+Error: listen EADDRINUSE: address already in use :::9002
+    at <unknown> (Error: listen EADDRINUSE: address already in use :::9002)
+    at new Promise (<anonymous>) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 9002
+}
 [?25h

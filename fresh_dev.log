@@ -1,0 +1,32 @@
+
+> nextn@0.1.0 dev
+> next dev -p 9002
+
+   ▲ Next.js 15.5.9
+   - Local:        http://localhost:9002
+   - Network:      http://10.165.111.32:9002
+   - Environments: .env.local
+   - Experiments (use with caution):
+     ✓ webpackBuildWorker
+
+ ✓ Starting...
+ ✓ Ready in 2.1s
+ ✓ Compiled /middleware in 142ms (157 modules)
+ ○ Compiling /login ...
+
+warn - The class `ease-[cubic-bezier(0.2,0.8,0.2,1)]` is ambiguous and matches multiple utilities.
+warn - If this is content and not a class, replace it with `ease-&lsqb;cubic-bezier(0.2,0.8,0.2,1)&rsqb;` to silence this warning.
+ ✓ Compiled /login in 5.1s (1221 modules)
+ GET /login 200 in 6713ms
+ ✓ Compiled in 1656ms (461 modules)
+ ✓ Compiled /favicon.ico in 283ms (777 modules)
+ GET /favicon.ico 200 in 354ms
+ GET /login 200 in 1178ms
+ GET /favicon.ico 200 in 21ms
+ ○ Compiling / ...
+ ✓ Compiled / in 1170ms (1343 modules)
+ GET / 200 in 1483ms
+ GET /login 200 in 45ms
+ ✓ Compiled /dashboard in 404ms (1562 modules)
+ GET /dashboard 200 in 508ms
+ GET /login 200 in 278ms

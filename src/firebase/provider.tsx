@@ -87,6 +87,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     const unsubscribe = onAuthStateChanged(
       auth,
       (firebaseUser) => { // Auth state determined
+        console.log("FirebaseProvider: Auth state changed. User:", firebaseUser ? `${firebaseUser.uid} (${firebaseUser.email})` : "Logged out");
         if (!firebaseUser) {
           // If we log out, we must ensure any stale demo locks or session pointers are purged
           localStorage.removeItem('squad_seeding_lock');

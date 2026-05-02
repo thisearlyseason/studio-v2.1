@@ -1,0 +1,761 @@
+[
+  {
+    "id": "TC001",
+    "title": "Log in and reach the dashboard",
+    "description": "Verifies that a user can sign in with valid credentials and is redirected to the dashboard.",
+    "category": "User Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user lands on the dashboard"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC002",
+    "title": "Protected routes redirect unauthenticated users to login",
+    "description": "Verifies that unauthenticated access to protected pages is gated by redirecting to the login page.",
+    "category": "User Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /events"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user is on the login page"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /roster"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user is on the login page"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC003",
+    "title": "Deep link to protected page returns user to intended page after login",
+    "description": "Verifies that a logged-out user who deep-links to a protected page is redirected to login and then returned to the originally requested page after signing in.",
+    "category": "User Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /events"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user lands on the events page with events content displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC004",
+    "title": "Sign up creates an account and redirects to dashboard",
+    "description": "Verifies that a new user can create an account with valid email/password and is redirected to the dashboard.",
+    "category": "User Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /signup"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with a new valid email address"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with a valid password"
+      },
+      {
+        "type": "action",
+        "description": "Submit the signup form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user lands on the dashboard"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC005",
+    "title": "View events list while authenticated",
+    "description": "Verifies that an authenticated user can access the events page and see scheduled events content.",
+    "category": "Events Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to events"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify events content is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC006",
+    "title": "Open event details and RSVP updates within details",
+    "description": "Verifies that a user can open an event’s details and set an RSVP that is reflected in the event details view.",
+    "category": "Events Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to events"
+      },
+      {
+        "type": "action",
+        "description": "Open an event from the events list"
+      },
+      {
+        "type": "action",
+        "description": "Select an RSVP response"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the RSVP status is reflected in the event details"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC007",
+    "title": "Authenticated session persists across refresh on dashboard",
+    "description": "Verifies that an authenticated user remains signed in after refreshing a protected page.",
+    "category": "User Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Press Reload"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user remains on the dashboard and protected content is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC008",
+    "title": "RSVP persists after refresh and is reflected in list/details",
+    "description": "Verifies that updating an RSVP persists after refreshing the events page and remains reflected when reopening event details.",
+    "category": "Events Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to events"
+      },
+      {
+        "type": "action",
+        "description": "Open an event from the events list"
+      },
+      {
+        "type": "action",
+        "description": "Select an RSVP response different from the current state"
+      },
+      {
+        "type": "action",
+        "description": "Press Reload"
+      },
+      {
+        "type": "action",
+        "description": "Open the same event from the events list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the RSVP status remains set in the event details"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC009",
+    "title": "Staff can create a new event and see it in the schedule",
+    "description": "Verifies that a staff user can create an event, save it, and see the new event appear in the events list.",
+    "category": "Events Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to events"
+      },
+      {
+        "type": "action",
+        "description": "Start creating a new event"
+      },
+      {
+        "type": "action",
+        "description": "Fill a title into the event title field"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid date for the event"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid start time for the event"
+      },
+      {
+        "type": "action",
+        "description": "Save the event"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new event appears in the events list"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC010",
+    "title": "Add a roster member with required details",
+    "description": "Verifies that a staff user can add a new member with required fields and the new member appears in the roster list.",
+    "category": "Roster management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the roster area"
+      },
+      {
+        "type": "action",
+        "description": "Start adding a new roster member"
+      },
+      {
+        "type": "action",
+        "description": "Fill \"Test Member A\" into the member name field"
+      },
+      {
+        "type": "action",
+        "description": "Fill valid values into any other required member fields"
+      },
+      {
+        "type": "action",
+        "description": "Save the new member"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new member appears in the roster list"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC011",
+    "title": "Toggle between calendar and list views on events",
+    "description": "Verifies that a user can switch the events page between calendar and list views and still see events content in the selected view.",
+    "category": "Events Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to events"
+      },
+      {
+        "type": "action",
+        "description": "Toggle the events view mode"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify events content is displayed in the chosen view"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC012",
+    "title": "View roster list and open a member profile",
+    "description": "Verifies that an authenticated user can view the roster list and open a member profile showing member status/details.",
+    "category": "Roster management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the roster area"
+      },
+      {
+        "type": "action",
+        "description": "Select a member from the roster list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the member profile view is displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC013",
+    "title": "Search for a member and edit member details",
+    "description": "Verifies that a staff user can search/select a member, edit their details, save, and see the updated information reflected in the member profile.",
+    "category": "Roster management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the roster area"
+      },
+      {
+        "type": "action",
+        "description": "Start adding a new roster member"
+      },
+      {
+        "type": "action",
+        "description": "Fill \"Test Member Edit\" into the member name field"
+      },
+      {
+        "type": "action",
+        "description": "Fill valid values into any other required member fields"
+      },
+      {
+        "type": "action",
+        "description": "Save the new member"
+      },
+      {
+        "type": "action",
+        "description": "Use the roster search to find \"Test Member Edit\""
+      },
+      {
+        "type": "action",
+        "description": "Select the searched member from results"
+      },
+      {
+        "type": "action",
+        "description": "Enter edit mode for the member"
+      },
+      {
+        "type": "action",
+        "description": "Fill \"Test Member Edit Updated\" into the member name field"
+      },
+      {
+        "type": "action",
+        "description": "Save the member changes"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the member profile shows the updated member information"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC014",
+    "title": "Remove a roster member and show removed status",
+    "description": "Verifies that a staff user can remove a member and the UI shows the member as removed.",
+    "category": "Roster management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the roster area"
+      },
+      {
+        "type": "action",
+        "description": "Start adding a new roster member"
+      },
+      {
+        "type": "action",
+        "description": "Fill \"Test Member Remove\" into the member name field"
+      },
+      {
+        "type": "action",
+        "description": "Fill valid values into any other required member fields"
+      },
+      {
+        "type": "action",
+        "description": "Save the new member"
+      },
+      {
+        "type": "action",
+        "description": "Select \"Test Member Remove\" from the roster list"
+      },
+      {
+        "type": "action",
+        "description": "Remove the selected member"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the member is marked as removed in the member profile or roster list"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC015",
+    "title": "View league standings and open match details",
+    "description": "Verifies that an authenticated user can view league standings and open a match to see its details.",
+    "category": "League standings & matches",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to leagues"
+      },
+      {
+        "type": "action",
+        "description": "Open a match from the schedule"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify match details are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC016",
+    "title": "Browse match schedule and inspect an upcoming match",
+    "description": "Verifies that an authenticated user can browse the match schedule and open an upcoming match to inspect opponent and time details.",
+    "category": "League standings & matches",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to leagues"
+      },
+      {
+        "type": "action",
+        "description": "Scroll through the match schedule"
+      },
+      {
+        "type": "action",
+        "description": "Open an upcoming match from the schedule"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify opponent and scheduled time information are displayed for the match"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC017",
+    "title": "Sign up rejects invalid email format",
+    "description": "Verifies that entering an invalid email on signup prevents account creation and shows an email validation error.",
+    "category": "User Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /signup"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with invalid-email-format"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with a valid password"
+      },
+      {
+        "type": "action",
+        "description": "Submit the signup form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an email validation error is visible"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC018",
+    "title": "Validate required member name when adding a member",
+    "description": "Verifies that saving a new member without a required name is blocked and a validation error is shown.",
+    "category": "Roster management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the roster area"
+      },
+      {
+        "type": "action",
+        "description": "Start adding a new roster member"
+      },
+      {
+        "type": "action",
+        "description": "Leave the member name field empty"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to save the new member"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a required-field validation error is visible"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC019",
+    "title": "Handle no roster members empty state",
+    "description": "Verifies that when the roster has no members, the roster page shows an empty state rather than a broken list.",
+    "category": "Roster management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the navigation link to the roster area"
+      },
+      {
+        "type": "action",
+        "description": "Remove visible members one by one until no members remain"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an empty state is displayed for the roster list"
+      }
+    ],
+    "priority": "Low"
+  }
+]

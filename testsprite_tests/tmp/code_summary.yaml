@@ -1,0 +1,68 @@
+version: "2"
+type: frontend
+tech_stack:
+  - TypeScript
+  - Next.js 15
+  - Tailwind CSS
+  - Firebase
+  - Stripe
+  - Radix UI
+  - Lucide React
+routes:
+  - path: /login
+    file: src/app/login/page.tsx
+    auth_required: false
+    description: User login page
+  - path: /signup
+    file: src/app/signup/page.tsx
+    auth_required: false
+    description: User signup page
+  - path: /dashboard
+    file: src/app/(dashboard)/dashboard/page.tsx
+    auth_required: true
+    description: Main user dashboard
+  - path: /events
+    file: src/app/(dashboard)/events/page.tsx
+    auth_required: true
+    description: Events management and list
+  - path: /leagues
+    file: src/app/(dashboard)/leagues/page.tsx
+    auth_required: true
+    description: League management
+  - path: /roster
+    file: src/app/(dashboard)/roster/page.tsx
+    auth_required: true
+    description: Team roster management
+features:
+  - name: User Authentication
+    description: Login and signup using Firebase Auth
+    files:
+      - src/app/login/page.tsx
+      - src/app/signup/page.tsx
+    entry_route: /login
+    user_interactions:
+      - Fill email and password
+      - Click login/signup
+    auth_required: false
+  - name: Events Management
+    description: Create, view, and RSVP to team events
+    files:
+      - src/app/(dashboard)/events/page.tsx
+      - src/app/(dashboard)/events/EventDetailDialog.tsx
+    entry_route: /events
+    user_interactions:
+      - View event list
+      - Click event to see details
+      - RSVP to event
+      - Create new event (Staff only)
+    auth_required: true
+  - name: League Standing and Matches
+    description: View league standings and match results
+    files:
+      - src/app/(dashboard)/leagues/page.tsx
+    entry_route: /leagues
+    user_interactions:
+      - View standings table
+      - View match schedule
+    auth_required: true
+known_limitations: []

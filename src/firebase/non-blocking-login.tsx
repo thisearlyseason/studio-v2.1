@@ -9,21 +9,24 @@ import {
 
 /** Initiate anonymous sign-in (non-blocking). */
 export function initiateAnonymousSignIn(authInstance: Auth): void {
-  // CRITICAL: Call signInAnonymously directly. Do NOT use 'await signInAnonymously(...)'.
-  signInAnonymously(authInstance);
-  // Code continues immediately. Auth state change is handled by onAuthStateChanged listener.
+  console.log("Firebase: Initiating anonymous sign-in...");
+  signInAnonymously(authInstance).catch(err => {
+    console.error("Firebase: Anonymous sign-in failed:", err);
+  });
 }
 
 /** Initiate email/password sign-up (non-blocking). */
 export function initiateEmailSignUp(authInstance: Auth, email: string, password: string): void {
-  // CRITICAL: Call createUserWithEmailAndPassword directly. Do NOT use 'await createUserWithEmailAndPassword(...)'.
-  createUserWithEmailAndPassword(authInstance, email, password);
-  // Code continues immediately. Auth state change is handled by onAuthStateChanged listener.
+  console.log(`Firebase: Initiating sign-up for ${email}...`);
+  createUserWithEmailAndPassword(authInstance, email, password).catch(err => {
+    console.error("Firebase: Sign-up failed:", err);
+  });
 }
 
 /** Initiate email/password sign-in (non-blocking). */
 export function initiateEmailSignIn(authInstance: Auth, email: string, password: string): void {
-  // CRITICAL: Call signInWithEmailAndPassword directly. Do NOT use 'await signInWithEmailAndPassword(...)'.
-  signInWithEmailAndPassword(authInstance, email, password);
-  // Code continues immediately. Auth state change is handled by onAuthStateChanged listener.
+  console.log(`Firebase: Initiating sign-in for ${email}...`);
+  signInWithEmailAndPassword(authInstance, email, password).catch(err => {
+    console.error("Firebase: Sign-in failed:", err);
+  });
 }

@@ -1,0 +1,19 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:9002",
+  "executionArgs": {
+    "projectName": "studio",
+    "projectPath": "/Users/tylerans/.gemini/antigravity/scratch/studio",
+    "testIds": [
+      "TC001"
+    ],
+    "additionalInstruction": "Focus on TC001 and debug why the login redirect is failing. Check console logs for \"FirebaseProvider: Auth state changed\" and \"Firebase: Sign-in failed\".",
+    "serverMode": "development",
+    "envs": {
+      "API_KEY": "sk-user-NL7_8cu5uX5oAX0Iz1Pc8cBf_V1bO1UEgxiC4gNGXaepc9mpP0N3RQzZJi-Xs43CkY23yJgXYbQmQ32ChqXkxdE66jTYjbioxjVtT8W3tVGBDrIjJBXDaC0vNgZn-qTEmNE"
+    }
+  },
+  "serverPort": 60521
+}
