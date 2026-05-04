@@ -98,7 +98,7 @@ const POSITION_OPTIONS = [
 ];
 
 export default function RosterPage() {
-  const { activeTeam, user, members, isMembersLoading, isStaff, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro, getLeagueMembers, createChat, removeMember, getRecruitingProfile, getAthleticMetrics, getPlayerStats, getEvaluations, getRecruitingContact } = useTeam();
+  const { activeTeam, user, members, isMembersLoading, isStaff, isPlayer, isParent, myChildren, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro, getLeagueMembers, createChat, removeMember, getRecruitingProfile, getAthleticMetrics, getPlayerStats, getEvaluations, getRecruitingContact } = useTeam();
 
   const db = useFirestore();
   const router = useRouter();
@@ -516,6 +516,10 @@ export default function RosterPage() {
     toast({ title: "Scouting Pack Exported", description: `Full profile for ${selectedMember.name} generated successfully.` });
   }, [selectedMember, staffNote, activeTeam, signedDocIds, getRecruitingProfile, getAthleticMetrics, getPlayerStats, getEvaluations, getRecruitingContact]);
 
+  // All roles see the full roster list.
+  // Visibility restriction is applied at the *detail panel* level, not the list level.
+  const visibleMembers = useMemo(() => members, [members]);
+
   if (!mounted || !activeTeam || isMembersLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center animate-pulse">
@@ -526,8 +530,8 @@ export default function RosterPage() {
   }
 
   const isPro = activeTeam.isPro;
-  const filteredRoster = members.filter(member => 
-    member.status !== 'removed' && 
+  const filteredRoster = visibleMembers.filter(member =>
+    member.status !== 'removed' &&
     member.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -781,7 +785,48 @@ export default function RosterPage() {
         <DialogContent className="rounded-t-[3rem] sm:rounded-[3rem] sm:max-w-5xl border-none shadow-2xl p-0 flex flex-col bg-white overflow-y-auto max-h-[95dvh] sm:max-h-[90vh] custom-scrollbar text-foreground">
           <DialogTitle className="sr-only">Player Profile: {selectedMember?.name}</DialogTitle>
           <DialogDescription className="sr-only">Detailed athletic portfolio and personnel evaluation for {selectedMember?.name}</DialogDescription>
-          {selectedMember && (
+          {selectedMember && (() => {
+            // Determine if the viewer can see the full detail panel:
+            //   - Staff always can
+            //   - Players can only see their own full profile
+            //   - Parents can see full profiles of their linked children
+            const childUserIds = new Set((myChildren || []).map(c => c.userId).filter(Boolean));
+            const canViewFullDetail =
+              isStaff ||
+              (isPlayer && selectedMember.userId === user?.id) ||
+              (isParent && childUserIds.has(selectedMember.userId || selectedMember.id));
+
+            if (!canViewFullDetail) {
+              return (
+                <div className="flex flex-col items-center justify-center p-12 gap-6 text-center w-full">
+                  <Avatar className="h-28 w-28 rounded-[2.5rem] border-4 border-muted shadow-xl">
+                    <AvatarImage src={selectedMember.avatar} className="object-cover" />
+                    <AvatarFallback className="text-4xl font-black bg-muted/30">{selectedMember.name[0]}</AvatarFallback>
+                  </Avatar>
+                  <div className="space-y-1">
+                    <Badge className="bg-primary/10 text-primary border-none font-black text-[10px] uppercase h-6 px-4 mb-2">Teammate</Badge>
+                    <h2 className="text-3xl font-black tracking-tight uppercase">{selectedMember.name}</h2>
+                    <p className="text-sm font-black text-primary uppercase tracking-widest">
+                      {selectedMember.position}{selectedMember.jersey && selectedMember.jersey !== 'HQ' ? ` • #${selectedMember.jersey}` : ''}
+                    </p>
+                    {selectedMember.division && (
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{selectedMember.division}</p>
+                    )}
+                  </div>
+                  <div className="w-full max-w-xs bg-muted/30 rounded-3xl p-6 space-y-3 border-2 border-dashed">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Squad Status</p>
+                    <Badge className={cn("font-black uppercase text-[10px] h-7 px-4",
+                      selectedMember.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'
+                    )}>{selectedMember.status || 'Active'}</Badge>
+                  </div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40 italic">
+                    Full profile visible to coaches &amp; authorized guardians only
+                  </p>
+                </div>
+              );
+            }
+
+            return (
             <div className="flex flex-col lg:flex-row">
               <div className="w-full lg:w-5/12 bg-black text-white p-8 lg:p-12 space-y-8 shrink-0 flex flex-col relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none">
@@ -1115,7 +1160,8 @@ export default function RosterPage() {
                 )}
               </div>
             </div>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
 

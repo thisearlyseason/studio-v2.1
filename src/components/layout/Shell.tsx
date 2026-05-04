@@ -404,6 +404,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       if (tab.name === 'Feed') return hasFeature?.('live_feed_read');
       // Roster: hide for school admins in institution mode (they use the School Hub instead)
       if (tab.name === 'Roster' && isSchoolMode && isPrimaryClubAuthority && activeTeam?.type === 'school') return false;
+      // Fundraising: staff-only administrative module — players and parents cannot access it
+      if (tab.name === 'Fundraising' && !isStaff) return false;
       return true;
     })
     .map(tab => {

@@ -368,6 +368,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        {(isStaff || isPrimaryClubAuthority) && (
         <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
           <CardHeader className="bg-muted/30 border-b p-8 flex flex-row items-center justify-between">
             <div className="flex items-center gap-4">
@@ -401,12 +402,13 @@ export default function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
+        )}
       </div>
 
       <div className="space-y-4 pt-10 border-t">
         <h3 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground px-2">Account Logistics</h3>
         
-        {isPro && (
+        {isPro && (isStaff || isPrimaryClubAuthority) && (
           <button onClick={manageSubscription} className="w-full p-6 bg-white rounded-3xl flex items-center justify-between border-2 border-transparent hover:border-primary/20 shadow-sm transition-all group">
             <div className="flex items-center gap-4">
               <div className="bg-amber-100 p-3 rounded-2xl text-amber-600 group-hover:bg-primary group-hover:text-white transition-colors"><CreditCard className="h-6 w-6" /></div>
@@ -419,7 +421,7 @@ export default function SettingsPage() {
           </button>
         )}
 
-        {isDemo && (
+        {isDemo && isStaff && (
           <button onClick={() => setIsResetOpen(true)} className="w-full p-6 bg-white rounded-3xl flex items-center justify-between border-2 border-transparent hover:border-red-100 shadow-sm transition-all group">
             <div className="flex items-center gap-4">
               <div className="bg-red-100 p-3 rounded-2xl text-red-600 group-hover:bg-red-600 group-hover:text-white transition-colors"><RotateCcw className="h-6 w-6" /></div>

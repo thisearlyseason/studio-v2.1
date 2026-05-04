@@ -66,6 +66,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTeam, TeamEvent, TournamentGame, TournamentReferee, Member, Facility, Field, TeamDocument, League, RegistrationEntry } from '@/components/providers/team-provider';
+import { AccessRestricted } from '@/components/layout/AccessRestricted';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy, where, doc, updateDoc, getDoc, getDocs, collectionGroup } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
@@ -1951,6 +1952,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
             </div>
             <div className="flex flex-col gap-2 w-full">
               <Button variant="ghost" className="w-full h-14 rounded-2xl border-2 font-black uppercase text-xs tracking-widest group-hover:bg-primary group-hover:text-white group-hover:border-primary transition-all">Launch Hub <ChevronRight className="ml-2 h-4 w-4" /></Button>
+            {(isStaff || isPrimaryClubAuthority) && (
               <Button 
                 variant="outline" 
                 className="w-full h-14 px-6 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest hover:bg-black hover:text-white transition-all flex items-center justify-center gap-2" 
@@ -1963,6 +1965,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
               >
                 <Copy className="h-4 w-4" /> Clone Series
               </Button>
+            )}
             </div>
           </Card>
         ))}
@@ -2020,8 +2023,14 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
   );
 }
 
-export default function ManageTournamentsPage() {
+function ManageTournamentsPageGuard() {
+  const { isStaff, isPrimaryClubAuthority } = useTeam();
+  if (!isStaff && !isPrimaryClubAuthority) return <AccessRestricted />;
   return <ManageTournamentsPageContent />;
+}
+
+export default function ManageTournamentsPage() {
+  return <ManageTournamentsPageGuard />;
 }
 
 function ScorekeeperCodeEditor({ event }: { event: any }) {

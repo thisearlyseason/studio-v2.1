@@ -70,6 +70,7 @@ import { format, isSameDay, startOfDay, endOfDay } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { jsPDF } from 'jspdf';
 import { useTeam, League, TournamentGame, Field, Facility, LeagueArchiveWaiver } from '@/components/providers/team-provider';
+import { AccessRestricted } from '@/components/layout/AccessRestricted';
 import { Select, SelectContent, SelectItem,  SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
@@ -1493,6 +1494,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   </CardContent>
                 </Card>
               ))}
+              {isStaff && (
               <Card 
                 className="rounded-[3rem] border-2 border-dashed border-muted bg-transparent flex flex-col items-center justify-center p-12 group hover:border-primary/40 transition-all cursor-pointer"
                 onClick={() => setIsCreateOpen(true)}
@@ -1500,6 +1502,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                 <Plus className="h-12 w-12 text-muted-foreground group-hover:text-primary transition-all mb-4" />
                 <p className="text-xs font-black uppercase text-muted-foreground group-hover:text-primary">New {leagueLabel} Hub</p>
               </Card>
+              )}
             </div>
           )}
         </div>
@@ -2267,6 +2270,12 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   );
 }
 
-export default function LeaguesPage() {
+function LeaguesPageGuard() {
+  const { isStaff } = useTeam();
+  if (!isStaff) return <AccessRestricted />;
   return <LeaguesPageContent />;
+}
+
+export default function LeaguesPage() {
+  return <LeaguesPageGuard />;
 }
