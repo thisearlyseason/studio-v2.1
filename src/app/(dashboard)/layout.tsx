@@ -96,7 +96,14 @@ function DemoSeedWrapper({
         }, 2000);
 
       } catch (e: any) {
-        console.error(`[Demo] Seed attempt ${attempt} failed:`, e);
+        // Log every available detail so we can diagnose permission failures in production
+        console.error(`[Demo] Seed attempt ${attempt} failed:`, {
+          message: e?.message,
+          code: e?.code,
+          name: e?.name,
+          stack: e?.stack?.split('\n').slice(0,5).join('\n'),
+          raw: e
+        });
 
         if (e.code === 'resource-exhausted') {
           // Quota errors are not recoverable — surface immediately

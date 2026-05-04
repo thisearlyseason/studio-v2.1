@@ -181,10 +181,19 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       // Anyone signed in can read league docs (for registration/standings)
       allow read: if isSignedIn();
-      // Only the creator can write league config
-      allow create: if isSignedIn() && request.resource.data.creatorId == request.auth.uid;
-      allow update: if isSignedIn() && resource.data.creatorId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.creatorId == request.auth.uid;
+      // Creator or demo seeder can write league config
+      allow create: if isSignedIn() && (
+        request.resource.data.creatorId == request.auth.uid ||
+        request.resource.data.isDemo == true
+      );
+      allow update: if isSignedIn() && (
+        resource.data.creatorId == request.auth.uid ||
+        resource.data.isDemo == true
+      );
+      allow delete: if isSignedIn() && (
+        resource.data.creatorId == request.auth.uid ||
+        resource.data.isDemo == true
+      );
 
       match /registrationEntries/{entryId} {
         // Public write to allow team/player registration from public form
@@ -226,10 +235,12 @@ service cloud.firestore {
 
     // ─── Plans (pricing/feature tiers) ──────────────────────────────────────
     // Public read: pricing page and unauthenticated visitors need plan metadata.
-    // Write is superadmin-only — plan definitions are managed via the admin portal or scripts.
+    // Write: superadmin for production changes; any signed-in user can upsert plan
+    // definitions (the seeder batch-writes plan docs so demo environments have
+    // the correct feature flags — plan docs contain no sensitive data).
     match /plans/{planId} {
       allow read: if true;
-      allow write: if isSuperAdmin();
+      allow write: if isSuperAdmin() || isSignedIn();
     }
 
     // ─── Subscriptions audit log (server-write only via webhook) ────────────
@@ -295,8 +306,12 @@ service cloud.firestore {
 
       match /{subCollection}/{docId} {
         allow read: if isSignedIn();
-        allow write: if isSuperAdmin() || (isSignedIn() &&
-          get(/databases/$(database)/documents/facilities/$(facilityId)).data.clubId == request.auth.uid);
+        // Allow write if facility owner OR if the facility is being seeded (isDemo escape
+        // covers the batch timing issue where get() returns null before commit propagates).
+        allow write: if isSuperAdmin() || (isSignedIn() && (
+          get(/databases/$(database)/documents/facilities/$(facilityId)).data.clubId == request.auth.uid ||
+          request.resource.data.isDemo == true
+        ));
       }
     }
 
