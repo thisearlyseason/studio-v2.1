@@ -36,6 +36,9 @@ import {
   Trash2,
   AlertCircle,
   Clock,
+  CreditCard,
+  TrendingUp,
+  Receipt,
 } from 'lucide-react';
 import {
   Dialog,
@@ -853,6 +856,40 @@ export default function FamilyPage() {
     return Array.from(map.values());
   }, [teams, myChildren]);
 
+  // --- Household Budget Breakdown ---
+  const budgetBreakdown = useMemo(() => {
+    // Enrollment fees: one per team the children are enrolled in
+    const enrollmentItems: { label: string; amount: number }[] = [];
+    const seenTeams = new Set<string>();
+    myChildren.forEach(child => {
+      (child.joinedTeamIds || []).forEach(tid => {
+        if (seenTeams.has(tid)) return;
+        seenTeams.add(tid);
+        const team = teams.find(t => t.id === tid);
+        if (!team) return;
+        const fee = parseFloat((team as any).registrationCost || '0') || 0;
+        if (fee > 0) {
+          enrollmentItems.push({ label: `${team.name} Enrollment`, amount: fee });
+        }
+      });
+    });
+
+    // Outstanding dues per child
+    const dueItems: { label: string; amount: number }[] = [];
+    myChildren.forEach(child => {
+      const owed = (child as any).amountOwed || 0;
+      if (owed > 0) {
+        dueItems.push({ label: `${child.firstName} ${child.lastName} — Active Dues`, amount: owed });
+      }
+    });
+
+    const enrollmentTotal = enrollmentItems.reduce((s, i) => s + i.amount, 0);
+    const duesTotal = dueItems.reduce((s, i) => s + i.amount, 0);
+    const grandTotal = enrollmentTotal + duesTotal;
+
+    return { enrollmentItems, dueItems, enrollmentTotal, duesTotal, grandTotal };
+  }, [myChildren, teams]);
+
   const upcomingEvents = useMemo(() => {
     const rawEvents = householdEvents || [];
     const rawGames = householdGames || [];
@@ -1125,18 +1162,63 @@ export default function FamilyPage() {
       {/* Stats + Events Layer */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pt-4">
         <div className="lg:col-span-1 space-y-6">
+          {/* Household Budget Summary */}
           <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden group border-b-8 border-primary">
             <CardContent className="p-8 space-y-6">
               <div className="flex justify-between items-start">
                 <div className="bg-primary p-4 rounded-2xl shadow-lg ring-4 ring-primary/20"><DollarSign className="h-8 w-8 text-white" /></div>
-                <Badge className="bg-white/20 text-white border-none font-black text-[10px] uppercase tracking-widest px-3 h-6">Consolidated</Badge>
+                <Badge className="bg-white/20 text-white border-none font-black text-[10px] uppercase tracking-widest px-3 h-6">Household Budget</Badge>
               </div>
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.2em] opacity-60 mb-1">Household Balance</p>
-                <p className="text-5xl font-black tracking-tighter">${householdBalance?.toLocaleString() || '0'}</p>
+                <p className="text-xs font-black uppercase tracking-[0.2em] opacity-60 mb-1">Total Outstanding</p>
+                <p className="text-5xl font-black tracking-tighter">${budgetBreakdown.grandTotal.toLocaleString()}</p>
               </div>
+
+              {/* Fee Breakdown */}
+              {(budgetBreakdown.enrollmentItems.length > 0 || budgetBreakdown.dueItems.length > 0) && (
+                <div className="space-y-2 pt-4 border-t border-white/10">
+                  {budgetBreakdown.enrollmentItems.length > 0 && (
+                    <>
+                      <p className="text-[9px] font-black uppercase tracking-widest opacity-40 flex items-center gap-1.5">
+                        <Receipt className="h-3 w-3" /> Enrollment Fees
+                      </p>
+                      {budgetBreakdown.enrollmentItems.map((item, i) => (
+                        <div key={i} className="flex justify-between items-center bg-white/5 rounded-xl px-4 py-2.5">
+                          <span className="text-[10px] font-bold opacity-80 truncate pr-4">{item.label}</span>
+                          <span className="text-sm font-black text-primary shrink-0">${item.amount.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {budgetBreakdown.dueItems.length > 0 && (
+                    <>
+                      <p className="text-[9px] font-black uppercase tracking-widest opacity-40 flex items-center gap-1.5 mt-3">
+                        <TrendingUp className="h-3 w-3" /> Outstanding Dues
+                      </p>
+                      {budgetBreakdown.dueItems.map((item, i) => (
+                        <div key={i} className="flex justify-between items-center bg-white/5 rounded-xl px-4 py-2.5">
+                          <span className="text-[10px] font-bold opacity-80 truncate pr-4">{item.label}</span>
+                          <span className="text-sm font-black text-red-400 shrink-0">${item.amount.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  <div className="flex justify-between items-center border-t border-white/10 pt-3 mt-3">
+                    <span className="text-[10px] font-black uppercase tracking-widest opacity-60">Grand Total</span>
+                    <span className="text-lg font-black">${budgetBreakdown.grandTotal.toLocaleString()}</span>
+                  </div>
+                </div>
+              )}
+
+              {budgetBreakdown.grandTotal === 0 && (
+                <div className="flex items-center gap-2 bg-green-500/20 rounded-2xl px-4 py-3">
+                  <Check className="h-4 w-4 text-green-400 shrink-0" />
+                  <p className="text-[10px] font-black uppercase tracking-widest text-green-300">All fees settled — household in good standing</p>
+                </div>
+              )}
+
               <Button className="w-full h-14 rounded-2xl bg-white text-black font-black uppercase text-[10px] tracking-widest hover:bg-primary hover:text-white transition-all shadow-xl" onClick={() => router.push('/pricing')}>
-                Manage Payments Hub
+                <CreditCard className="h-4 w-4 mr-2" /> Manage Payments Hub
               </Button>
             </CardContent>
           </Card>

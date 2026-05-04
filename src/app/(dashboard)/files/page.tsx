@@ -450,7 +450,7 @@ export default function FilesPage() {
                           <h3 className="font-black text-sm uppercase tracking-tight truncate group-hover:text-primary transition-colors flex-1 min-w-0">{file.name}</h3>
                           <FileTypeBadge category={file.category} />
                         </div>
-                        <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60 mt-0.5">{file.size ? `${Math.round(Number(file.size)/1024)}KB · ` : ''}{format(new Date(file.date), 'MMM d, yyyy')}</p>
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60 mt-0.5">{file.size ? (file.size.includes('KB') || file.size.includes('MB') ? `${file.size} · ` : `${Math.round(Number(file.size)/1024)}KB · `) : ''}{format(new Date(file.date), 'MMM d, yyyy')}</p>
                       </CardHeader>
                       {file.description && (
                         <CardContent className="px-4 py-0">

@@ -1015,6 +1015,45 @@ export default function ClubManagementPage() {
                       )}
                     </div>
                   ))}
+
+                  {/* ── Pending Invitations ── users invited but not yet registered */}
+                  {((schoolHub as any).pendingAdminEmails?.length > 0) &&
+                    ((schoolHub as any).pendingAdminEmails as string[]).map((pendingEmail) => (
+                      <div key={pendingEmail} className="flex items-center justify-between p-6 rounded-3xl bg-amber-50 border-2 border-amber-100 group">
+                        <div className="flex items-center gap-4">
+                          <div className="h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                            <Mail className="h-5 w-5 text-amber-500" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-black uppercase text-foreground">{pendingEmail}</p>
+                            <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Invitation Pending · Access granted on sign-up</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Badge className="bg-amber-100 text-amber-700 border border-amber-200 h-6 px-3 uppercase text-[9px] font-black tracking-widest pointer-events-none">Pending</Badge>
+                          {schoolHub.ownerUserId === user?.id && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={async () => {
+                                    const updated = ((schoolHub as any).pendingAdminEmails as string[]).filter((e) => e !== pendingEmail);
+                                    await updateTeam(schoolHub.id, { pendingAdminEmails: updated });
+                                    toast({ title: 'Invite Revoked', description: `${pendingEmail} removed from pending invitations.` });
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:bg-destructive/10"
+                                >
+                                  <XCircle className="h-5 w-5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-destructive">Revoke Invitation</TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  }
                 </div>
               </CardContent>
             </Card>

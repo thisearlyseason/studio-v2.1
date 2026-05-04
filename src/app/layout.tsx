@@ -19,9 +19,15 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Font: preconnect for handshake, display=optional avoids render-blocking */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=optional" rel="stylesheet" />
+        {/* DNS prefetch for Firebase services — resolves hostnames before JS fires */}
+        <link rel="dns-prefetch" href="https://firestore.googleapis.com" />
+        <link rel="dns-prefetch" href="https://identitytoolkit.googleapis.com" />
+        <link rel="dns-prefetch" href="https://storage.googleapis.com" />
+        <link rel="preconnect" href="https://storage.googleapis.com" />
         <script dangerouslySetInnerHTML={{ __html: `
           (function() {
             const isPanic = (m) => m && (m.includes('INTERNAL ASSERTION FAILED') || m.includes('ca9') || m.includes('b815') || m.includes('ve: -1'));

@@ -842,22 +842,26 @@ export default function RosterPage() {
                     <div className="w-full pt-4 border-t border-white/10 space-y-3">
                       <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-white/40">
                         <span>Personnel Actions</span>
-                        <div className="flex gap-2">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/10" onClick={handleExportPortfolio}>
-                                <Download className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              Export Portfolio
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
+                        {isStaff && (
+                          <div className="flex gap-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/10" onClick={handleExportPortfolio}>
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                Export Portfolio
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        )}
                       </div>
                       
                       <div className="grid grid-cols-1 gap-3">
-                        <Button className="w-full h-11 rounded-xl bg-white text-black font-black uppercase text-[10px] shadow-xl hover:bg-white/90" onClick={handleExportPortfolio}>Generate Scouting Pack</Button>
+                        {isStaff && (
+                          <Button className="w-full h-11 rounded-xl bg-white text-black font-black uppercase text-[10px] shadow-xl hover:bg-white/90" onClick={handleExportPortfolio}>Generate Scouting Pack</Button>
+                        )}
                         
                         {activeTeam?.role === 'Admin' && (
                           <Dialog>
@@ -1029,45 +1033,49 @@ export default function RosterPage() {
                         </div>
                       </div>
 
-                      <div className="space-y-6">
-                        <div className="flex items-center gap-3">
-                          <div className="bg-primary/10 p-2 rounded-xl text-primary"><GraduationCap className="h-5 w-5" /></div>
-                          <h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Institutional Audit</h4>
-                        </div>
-                        <div className="grid grid-cols-1 gap-3">
-                          <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
-                            <span className="text-[10px] font-black uppercase opacity-40 text-foreground">Active Dues</span>
-                            <span className={cn("text-sm font-black", selectedMember.feesPaid ? "text-green-600" : "text-primary")}>${selectedMember.amountOwed || 0}</span>
+                      {isStaff && (
+                        <div className="space-y-6">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-primary/10 p-2 rounded-xl text-primary"><GraduationCap className="h-5 w-5" /></div>
+                            <h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Institutional Audit</h4>
                           </div>
-                          <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
-                            <span className="text-[10px] font-black uppercase opacity-40 text-foreground">Academic GPA</span>
-                            <span className="text-sm font-black uppercase text-foreground">{selectedMember.gpa || '3.8'}</span>
+                          <div className="grid grid-cols-1 gap-3">
+                            <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
+                              <span className="text-[10px] font-black uppercase opacity-40 text-foreground">Active Dues</span>
+                              <span className={cn("text-sm font-black", selectedMember.feesPaid ? "text-green-600" : "text-primary")}>${selectedMember.amountOwed || 0}</span>
+                            </div>
+                            <div className="bg-muted/30 p-4 rounded-2xl flex items-center justify-between border border-transparent">
+                              <span className="text-[10px] font-black uppercase opacity-40 text-foreground">Academic GPA</span>
+                              <span className="text-sm font-black uppercase text-foreground">{selectedMember.gpa || '3.8'}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </div>
 
-                    <div className="space-y-6 pt-6 border-t">
-                      <div className="flex items-center gap-3">
-                        <div className="bg-primary/10 p-2 rounded-xl text-primary"><Video className="h-5 w-5" /></div>
-                        <h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Highlight Reel</h4>
+                    {isStaff && (
+                      <div className="space-y-6 pt-6 border-t">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-primary/10 p-2 rounded-xl text-primary"><Video className="h-5 w-5" /></div>
+                          <h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Highlight Reel</h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {videos.length > 0 ? (
+                            videos.map(v => (
+                              <Card key={v.id} className="rounded-2xl border bg-muted/20 p-4 space-y-3 group hover:ring-1 hover:ring-primary cursor-pointer transition-all" onClick={() => setActiveVideo(v)}>
+                                <div className="bg-black aspect-video rounded-xl flex items-center justify-center relative overflow-hidden">
+                                  <Play className="h-8 w-8 text-white fill-current opacity-60" />
+                                  <Badge className="absolute top-2 left-2 bg-primary/80 border-none font-black text-[7px] uppercase h-4">{v.type}</Badge>
+                                </div>
+                                <p className="text-[10px] font-black uppercase truncate">{v.title}</p>
+                              </Card>
+                            ))
+                          ) : (
+                            <div className="col-span-full py-10 text-center opacity-30 italic text-xs uppercase font-black">No reel archived.</div>
+                          )}
+                        </div>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {videos.length > 0 ? (
-                          videos.map(v => (
-                            <Card key={v.id} className="rounded-2xl border bg-muted/20 p-4 space-y-3 group hover:ring-1 hover:ring-primary cursor-pointer transition-all" onClick={() => setActiveVideo(v)}>
-                              <div className="bg-black aspect-video rounded-xl flex items-center justify-center relative overflow-hidden">
-                                <Play className="h-8 w-8 text-white fill-current opacity-60" />
-                                <Badge className="absolute top-2 left-2 bg-primary/80 border-none font-black text-[7px] uppercase h-4">{v.type}</Badge>
-                              </div>
-                              <p className="text-[10px] font-black uppercase truncate">{v.title}</p>
-                            </Card>
-                          ))
-                        ) : (
-                          <div className="col-span-full py-10 text-center opacity-30 italic text-xs uppercase font-black">No reel archived.</div>
-                        )}
-                      </div>
-                    </div>
+                    )}
 
                     {isStaff && (
                       <div className="space-y-6 pt-10 border-t">

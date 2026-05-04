@@ -136,7 +136,7 @@ function DemoSeedWrapper({
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading, isAuthResolved } = useUser();
   const auth = useAuth();
-  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode } = useTeam();
+  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent } = useTeam();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -189,9 +189,11 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           sessionStorage.setItem(eliteLandingKey, 'true');
           router.push('/club');
         }
+      } else if (isParent) {
+        router.push('/family');
       }
     }
-  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode]);
+  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent]);
 
   useEffect(() => {
     if (!mounted || isSeedingDemo || isTeamsLoading || !user || isDemoInitializing) return;

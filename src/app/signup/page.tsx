@@ -30,9 +30,18 @@ export default function SignupPage() {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Client-side email format validation
+    const cleanEmail = email.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      toast({ title: "Invalid Email", description: "Please enter a valid email address (e.g. name@example.com).", variant: "destructive" });
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
       const user = userCredential.user;
       await updateProfile(user, { displayName: name });
 
@@ -43,7 +52,7 @@ export default function SignupPage() {
       await setDoc(doc(db, 'users', user.uid), {
         id: user.uid,
         fullName: name,
-        email: email,
+        email: cleanEmail,
         role: role,
         notificationsEnabled: true,
         createdAt: new Date().toISOString(),
@@ -74,7 +83,16 @@ export default function SignupPage() {
         router.push('/teams/join');
       }
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      const code = error?.code || '';
+      if (code === 'auth/email-already-in-use') {
+        toast({ title: "Email Already in Use", description: "Email already in use. Please log in or select a new email.", variant: "destructive" });
+      } else if (code === 'auth/invalid-email') {
+        toast({ title: "Invalid Email", description: "Please enter a valid email address.", variant: "destructive" });
+      } else if (code === 'auth/weak-password') {
+        toast({ title: "Weak Password", description: "Password must be at least 6 characters.", variant: "destructive" });
+      } else {
+        toast({ title: "Signup Error", description: error.message || "An unexpected error occurred.", variant: "destructive" });
+      }
     } finally {
       setIsLoading(false);
     }

@@ -30,3 +30,630 @@ warn - If this is content and not a class, replace it with `ease-&lsqb;cubic-bez
  ✓ Compiled /dashboard in 404ms (1562 modules)
  GET /dashboard 200 in 508ms
  GET /login 200 in 278ms
+ GET / 200 in 84ms
+ GET /login 200 in 27ms
+ GET / 200 in 25ms
+ ○ Compiling /signup ...
+ ✓ Compiled /signup in 1127ms (1571 modules)
+ GET /signup 200 in 1282ms
+ GET / 200 in 40ms
+ ✓ Compiled /privacy in 240ms (1580 modules)
+ GET /privacy 200 in 325ms
+ ✓ Compiled /terms in 217ms (1587 modules)
+ GET /terms 200 in 270ms
+ GET / 200 in 52ms
+ GET /signup 200 in 44ms
+ ○ Compiling /teams/new ...
+ ✓ Compiled /teams/new in 820ms (1585 modules)
+ GET /teams/new 200 in 966ms
+ ○ Compiling /feed ...
+ ✓ Compiled /feed in 821ms (1620 modules)
+ GET /feed 200 in 919ms
+ GET /feed 200 in 35ms
+ GET /teams/new?tier=pro 200 in 63ms
+ GET / 200 in 293ms
+ GET /signup 200 in 43ms
+ ✓ Compiled in 966ms (1628 modules)
+ GET /signup 200 in 103ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /signup 200 in 266ms
+ ✓ Compiled /favicon.ico in 163ms (984 modules)
+ GET /favicon.ico 200 in 244ms
+ ✓ Compiled in 375ms (1645 modules)
+ GET /signup 200 in 71ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET /signup 200 in 198ms
+ GET /favicon.ico 200 in 19ms
+ GET /teams/new 200 in 63ms
+ GET / 200 in 88ms
+ GET /dashboard?seed_demo=player_demo 200 in 119ms
+ GET /dashboard 200 in 56ms
+ ○ Compiling /competition ...
+ ✓ Compiled /competition in 1290ms (4056 modules)
+ GET /competition 200 in 1437ms
+ ○ Compiling /practice ...
+ ✓ Compiled /practice in 1517ms (4064 modules)
+ GET /practice 200 in 1629ms
+ GET /practice 200 in 11ms
+ ✓ Compiled /roster in 459ms (4096 modules)
+ GET /roster 200 in 609ms
+ ○ Compiling /events ...
+ ✓ Compiled /events in 998ms (4111 modules)
+ GET /events 200 in 1141ms
+ ○ Compiling /games ...
+ ✓ Compiled /games in 1715ms (5298 modules)
+ GET /games 200 in 1852ms
+ ○ Compiling /fundraising ...
+ ✓ Compiled /fundraising in 653ms (5304 modules)
+ GET /fundraising 200 in 748ms
+ GET /fundraising 200 in 18ms
+ ✓ Compiled /volunteers in 500ms (5314 modules)
+ GET /volunteers 200 in 642ms
+ GET /fundraising 200 in 31ms
+ ○ Compiling /chats ...
+ ✓ Compiled /chats in 525ms (5285 modules)
+ GET /chats 200 in 703ms
+ ○ Compiling /files ...
+ ✓ Compiled /files in 580ms (5310 modules)
+ GET /files 200 in 752ms
+ GET /events 200 in 64ms
+ ✓ Compiled /practice in 328ms (2812 modules)
+ GET /practice 200 in 411ms
+ ✓ Compiled /competition in 239ms (2845 modules)
+ GET /competition 200 in 364ms
+ ✓ Compiled / in 258ms (2858 modules)
+ GET / 200 in 688ms
+ ✓ Compiled /dashboard in 271ms (2867 modules)
+ GET /dashboard?seed_demo=parent_demo 200 in 656ms
+ ○ Compiling /family ...
+ ✓ Compiled /family in 666ms (5383 modules)
+ GET /family 200 in 791ms
+ GET /dashboard 200 in 259ms
+ GET /family 200 in 28ms
+ GET /events 200 in 64ms
+ ✓ Compiled /roster in 288ms (2296 modules)
+ GET /roster 200 in 373ms
+ GET /competition 200 in 48ms
+ ✓ Compiled /games in 250ms (2865 modules)
+ GET /games 200 in 342ms
+ ○ Compiling /drills ...
+ ✓ Compiled /drills in 658ms (5375 modules)
+ GET /drills 200 in 780ms
+ ✓ Compiled /volunteers in 300ms (2864 modules)
+ GET /volunteers 200 in 384ms
+ ✓ Compiled /fundraising in 292ms (2877 modules)
+ GET /fundraising 200 in 421ms
+ ✓ Compiled /chats in 324ms (2884 modules)
+ GET /chats 200 in 509ms
+ ✓ Compiled /files in 368ms (2895 modules)
+ GET /files 200 in 506ms
+ GET /family 200 in 51ms
+ ✓ Compiled /pricing in 485ms (5391 modules)
+ GET /pricing 200 in 627ms
+ ✓ Compiled /dashboard in 262ms (1939 modules)
+ GET /dashboard 200 in 436ms
+ GET /family 200 in 34ms
+ ✓ Compiled / in 176ms (1955 modules)
+ GET / 200 in 515ms
+ ✓ Compiled /signup in 363ms (1961 modules)
+ GET /signup 200 in 462ms
+ ✓ Compiled /teams/new in 321ms (1928 modules)
+ GET /teams/new 200 in 445ms
+ ✓ Compiled / in 160ms (1945 modules)
+ GET / 200 in 514ms
+ GET /signup 200 in 35ms
+ GET /teams/new 200 in 59ms
+ GET / 200 in 54ms
+ GET /signup 200 in 33ms
+ GET /family 200 in 60ms
+ ○ Compiling /competition ...
+ ✓ Compiled /competition in 926ms (2213 modules)
+ GET /competition 200 in 1071ms
+ ✓ Compiled /teams/join in 471ms (4734 modules)
+ GET /teams/join 200 in 663ms
+ GET / 200 in 308ms
+ GET /signup 200 in 56ms
+ ✓ Compiled in 668ms (2528 modules)
+ GET /signup 200 in 15ms
+ ✓ Compiled in 502ms (3474 modules)
+ GET /signup 200 in 107ms
+ ✓ Compiled in 928ms (2530 modules)
+ GET /signup 200 in 14ms
+ GET / 200 in 321ms
+ ✓ Compiled /privacy in 287ms (952 modules)
+ GET /privacy 200 in 374ms
+ ✓ Compiled /terms in 140ms (950 modules)
+ GET /terms 200 in 200ms
+ GET /signup 200 in 193ms
+ GET /teams/new 200 in 63ms
+ GET /signup 200 in 56ms
+ GET / 200 in 64ms
+ ✓ Compiled /dashboard in 429ms (959 modules)
+ GET /dashboard?seed_demo=elite_teams 200 in 603ms
+ GET /dashboard 200 in 45ms
+ ○ Compiling /club ...
+ ✓ Compiled /club in 3.4s (4792 modules)
+ GET /club 200 in 3519ms
+ GET /signup 200 in 291ms
+ GET / 200 in 75ms
+ ✓ Compiled /login in 296ms (2231 modules)
+ GET /login 200 in 580ms
+ GET /dashboard 200 in 54ms
+ GET /login 200 in 30ms
+ GET /login 200 in 43ms
+ GET /club 200 in 44ms
+ GET /login 200 in 12ms
+ GET /signup 200 in 58ms
+ GET /teams/new 200 in 55ms
+ ○ Compiling /feed ...
+ ✓ Compiled /feed in 853ms (2228 modules)
+ GET /feed 200 in 965ms
+ ○ Compiling /settings ...
+ ✓ Compiled /settings in 749ms (4784 modules)
+ GET /settings 200 in 825ms
+ ✓ Compiled / in 223ms (970 modules)
+ GET / 200 in 619ms
+ GET / 200 in 41ms
+ GET /signup 200 in 57ms
+ ✓ Compiled /teams/join in 280ms (972 modules)
+ GET /teams/join 200 in 395ms
+ ✓ Compiled /login in 143ms (978 modules)
+ GET /login 200 in 194ms
+ GET /login 200 in 11ms
+ GET /signup 200 in 36ms
+ ○ Compiling /signup/youth ...
+ ✓ Compiled /signup/youth in 725ms (3528 modules)
+ GET /signup/youth 200 in 1052ms
+ GET /login 200 in 38ms
+ GET /login 200 in 24ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 549ms (965 modules)
+ GET /dashboard 200 in 636ms
+ ✓ Compiled /settings in 183ms (963 modules)
+ GET /settings 200 in 320ms
+ GET /login 200 in 38ms
+ GET /login 200 in 12ms
+ GET /dashboard?seed_demo=squad_pro 200 in 263ms
+ GET /dashboard 200 in 53ms
+ GET /teams/join 200 in 56ms
+ ✓ Compiled /roster in 374ms (1256 modules)
+ GET /roster 200 in 540ms
+ ✓ Compiled /competition in 493ms (2231 modules)
+ GET /competition 200 in 624ms
+ GET /login 200 in 40ms
+ GET /login 200 in 15ms
+ GET /dashboard 200 in 52ms
+ GET /settings 200 in 47ms
+ ✓ Compiled /teams/new in 438ms (2228 modules)
+ GET /teams/new 200 in 652ms
+ ○ Compiling /feed ...
+ ✓ Compiled /feed in 580ms (2218 modules)
+ GET /feed 200 in 666ms
+ ✓ Compiled /roster in 182ms (2237 modules)
+ GET /roster 200 in 234ms
+ ✓ Compiled /teams/join in 190ms (1257 modules)
+ GET /teams/join?code=6GPEHRYXEU 200 in 465ms
+ GET /roster 200 in 115ms
+ ✓ Compiled /events in 282ms (2213 modules)
+ GET /events 200 in 390ms
+ ○ Compiling /equipment ...
+ ✓ Compiled /equipment in 1444ms (4786 modules)
+ GET /equipment 200 in 1508ms
+ ○ Compiling /facilities ...
+ ✓ Compiled /facilities in 549ms (4793 modules)
+ GET /facilities 200 in 763ms
+ GET /feed 200 in 50ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 567ms (2199 modules)
+ GET /login 200 in 639ms
+ GET /login 200 in 15ms
+ ✓ Compiled /dashboard in 261ms (2207 modules)
+ GET /dashboard?seed_demo=elite_teams 200 in 622ms
+ GET /dashboard 200 in 42ms
+ ○ Compiling /club ...
+ ✓ Compiled /club in 3.4s (2234 modules)
+ GET /club 200 in 3499ms
+ ○ Compiling /team ...
+ ✓ Compiled /team in 3.6s (4813 modules)
+ GET /team 200 in 3758ms
+ ✓ Compiled /coaches-corner in 367ms (4810 modules)
+ GET /coaches-corner 200 in 440ms
+ GET /coaches-corner 200 in 31ms
+ ○ Compiling /register/squad/[teamId] ...
+ ✓ Compiled /register/squad/[teamId] in 671ms (4811 modules)
+ GET /register/squad/demo_elite_teams_0fa2_academy 200 in 1347ms
+ ○ Compiling /files ...
+ ✓ Compiled /files in 1036ms (2234 modules)
+ GET /files 200 in 1118ms
+ ○ Compiling /fundraising ...
+ ✓ Compiled /fundraising in 983ms (2235 modules)
+ GET /fundraising 200 in 1046ms
+ GET /fundraising 200 in 236ms
+ ✓ Compiled /favicon.ico in 267ms (2242 modules)
+ GET /favicon.ico 200 in 442ms
+ ○ Compiling /_not-found ...
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled /_not-found in 741ms (4830 modules)
+ GET /favicon.ico 200 in 495ms
+ GET /chat 404 in 1121ms
+ GET /register/squad/demo_elite_teams_0fa2_academy 200 in 507ms
+ GET /favicon.ico 200 in 10ms
+ GET /favicon.ico 200 in 8ms
+ ✓ Compiled /dashboard in 227ms (2253 modules)
+ GET /dashboard 200 in 556ms
+ ✓ Compiled /chats in 282ms (2249 modules)
+ GET /chats 200 in 369ms
+ ○ Compiling /chats/[chatId] ...
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ GET /chats/chat1_demo_elite_teams_0fa2_academy 200 in 3606ms
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ GET /family 200 in 1542ms
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ GET /settings 200 in 309ms
+ GET /settings 200 in 194ms
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ GET /dashboard/billing 200 in 1815ms
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ GET /volunteer 404 in 766ms
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ GET /dashboard 200 in 352ms
+ ⚠ ./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+Module not found: Can't resolve '@opentelemetry/exporter-jaeger' in '/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/@opentelemetry/sdk-node/build/src'
+
+Import trace for requested module:
+./node_modules/@opentelemetry/sdk-node/build/src/TracerProviderWithEnvExporter.js
+./node_modules/@opentelemetry/sdk-node/build/src/sdk.js
+./node_modules/@opentelemetry/sdk-node/build/src/index.js
+./node_modules/@genkit-ai/core/lib/tracing/node-telemetry-provider.js
+./node_modules/@genkit-ai/core/lib/node.js
+./node_modules/genkit/lib/common.js
+./node_modules/genkit/lib/index.mjs
+./src/ai/flows/poll-question-and-option-suggestion.ts
+ ✓ Compiled /volunteers in 729ms (1933 modules)
+ GET /volunteers 200 in 877ms
+ GET /volunteers 200 in 185ms
+ GET /competitions 404 in 34ms
+ GET /dashboard 200 in 63ms
+ ○ Compiling /competition ...
+ ✓ Compiled /competition in 1702ms (2219 modules)
+ GET /competition 200 in 1852ms
+ GET /competition 200 in 290ms
+ ○ Compiling /teams/join ...
+ ✓ Compiled /teams/join in 603ms (2226 modules)
+ GET /teams/join 200 in 690ms
+ ○ Compiling /register/league/[leagueId] ...
+ ✓ Compiled /register/league/[leagueId] in 1739ms (4815 modules)
+ GET /register/league/test-league 200 in 2154ms
+ GET /architect 404 in 209ms
+ GET /club-hub 404 in 41ms
+ GET /dashboard 200 in 123ms
+ ✓ Compiled /settings in 214ms (2211 modules)
+ GET /settings 200 in 286ms
+ ✓ Compiled /dashboard/billing in 225ms (969 modules)
+ GET /dashboard/billing 200 in 375ms
+ ✓ Compiled /competition in 194ms (2219 modules)
+ GET /competition 200 in 445ms
+ GET /teams/join 200 in 51ms
+ ○ Compiling /practice ...
+ ✓ Compiled /practice in 1303ms (2225 modules)
+ GET /practice 200 in 1383ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 1112ms (1236 modules)
+ GET /login 200 in 1536ms
+ GET /login?reason=expired 200 in 1582ms
+ ✓ Compiled in 2.4s (3832 modules)
+ GET /login?reason=expired 200 in 80ms
+ GET /register/squad/demo_elite_teams_0fa2_academy 200 in 77ms
+ ✓ Compiled in 383ms (3832 modules)
+ GET /login?reason=expired 200 in 62ms
+ GET /register/squad/demo_elite_teams_0fa2_academy 200 in 60ms
+ ○ Compiling / ...
+ ✓ Compiled / in 733ms (1239 modules)
+ HEAD / 200 in 1250ms
+ GET / 200 in 43ms
+ GET /login 200 in 80ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 757ms (1243 modules)
+ ⨯ ReferenceError: isParent is not defined
+    at LayoutContent (src/app/(dashboard)/layout.tsx:196:131)
+  194 |       }
+  195 |     }
+> 196 |   }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent]);
+      |                                                                                                                                   ^
+  197 |
+  198 |   useEffect(() => {
+  199 |     if (!mounted || isSeedingDemo || isTeamsLoading || !user || isDemoInitializing) return; {
+  digest: '1590991675'
+}
+ GET /dashboard 200 in 684ms
+ GET /dashboard?seed_demo=squad_pro 200 in 1262ms
+ GET /login 200 in 79ms
+ GET /dashboard 200 in 27ms
+ ○ Compiling /signup ...
+ ✓ Compiled /signup in 630ms (1241 modules)
+ GET /signup 200 in 810ms
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled in 1291ms (3567 modules)
+ ✓ Compiled in 0ms (957 modules)
+ ✓ Compiled in 0ms (957 modules)
+ ✓ Compiled in 0ms (957 modules)
+ GET /dashboard 200 in 1032ms
+ GET /signup 200 in 632ms
+ GET /register/squad/demo_elite_teams_0fa2_academy 200 in 631ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 555ms (974 modules)
+ GET /favicon.ico 200 in 626ms
+ ✓ Compiled in 779ms (3584 modules)
+ GET /signup 200 in 523ms
+ GET /register/squad/demo_elite_teams_0fa2_academy 200 in 515ms
+ GET /dashboard 200 in 525ms
+ ✓ Compiled in 395ms (3584 modules)
+ GET /signup 200 in 84ms
+ GET /register/squad/demo_elite_teams_0fa2_academy 200 in 81ms
+ GET /dashboard 200 in 86ms
+ GET /signup 200 in 159ms
+ GET /login 200 in 153ms
+ GET /dashboard 200 in 35ms
+ GET /login 200 in 27ms
+ GET /login 200 in 13ms
+ GET /login 200 in 22ms
+ GET /dashboard?seed_demo=elite_teams 200 in 90ms
+ GET /dashboard 200 in 28ms
+ ○ Compiling /club ...
+ ✓ Compiled /club in 4.9s (2233 modules)
+ GET /club 200 in 5621ms
+ GET /dashboard 200 in 1363ms
+ GET /club 200 in 110ms
+ ○ Compiling /team ...
+ ✓ Compiled /team in 1466ms (2244 modules)
+ GET /team 200 in 1849ms
+ ○ Compiling /roster ...
+ ✓ Compiled /roster in 759ms (2241 modules)
+ GET /roster 200 in 897ms
+ ○ Compiling /events ...
+ ✓ Compiled /events in 675ms (2241 modules)
+ GET /events 200 in 765ms
+ GET /events 200 in 23ms
+ ○ Compiling /feed ...
+ ✓ Compiled /feed in 661ms (2245 modules)
+ GET /feed 200 in 724ms
+ GET /feed 200 in 32ms
+ GET /club 200 in 71ms
+ ✓ Compiled /dashboard in 172ms (2246 modules)
+ GET /dashboard 200 in 242ms
+ ✓ Compiled /teams/join in 181ms (2242 modules)
+ GET /teams/join 200 in 247ms
+ ✓ Compiled /settings in 187ms (2234 modules)
+ GET /settings 200 in 258ms
+ ○ Compiling /how-to ...
+ ✓ Compiled /how-to in 3.3s (4834 modules)
+ GET /how-to 200 in 3403ms
+ GET /settings 200 in 72ms
+ ✓ Compiled /practice in 240ms (2231 modules)
+ GET /practice 200 in 319ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 1697ms (2230 modules)
+ GET /login 200 in 1443ms
+ GET /login 200 in 1896ms
+ GET /login?reason=expired 200 in 2058ms
+ GET /login 200 in 27ms
+ ○ Compiling / ...
+ ✓ Compiled / in 864ms (2233 modules)
+ ⨯ Error: Could not find the module "/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/next-devtools/userspace/app/segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>) {
+  digest: '273491096'
+}
+ ⨯ Error: Could not find the module "/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/next-devtools/userspace/app/segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>)
+    at stringify (<anonymous>) {
+  digest: '616441084'
+}
+ ⨯ Error: Could not find the module "/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/next-devtools/userspace/app/segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>)
+    at stringify (<anonymous>) {
+  digest: '616441084'
+}
+ ⨯ Error: Could not find the module "/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/next-devtools/userspace/app/segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>)
+    at stringify (<anonymous>) {
+  digest: '616441084'
+}
+ ⨯ Error: Could not find the module "/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/next-devtools/userspace/app/segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>) {
+  digest: '273491096'
+}
+ ⨯ Error: Could not find the module "/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/next-devtools/userspace/app/segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>) {
+  digest: '273491096'
+}
+ ⨯ [TypeError: Cannot read properties of undefined (reading 'call')] {
+  digest: '2350964249'
+}
+ ⨯ Error: Could not find the module "/Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/next-devtools/userspace/app/segment-explorer-node.js#SegmentViewNode" in the React Client Manifest. This is probably a bug in the React Server Components bundler.
+    at stringify (<anonymous>) {
+  digest: '273491096'
+}
+[TypeError: Cannot read properties of undefined (reading 'call')]
+ ⨯ [TypeError: Cannot read properties of undefined (reading 'call')]
+ ⨯ [TypeError: Cannot read properties of undefined (reading 'call')] {
+  page: '/'
+}
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 1503ms (5174 modules)
+ GET /login 200 in 1652ms
+ GET /login?reason=expired 200 in 1652ms
+ GET /register/squad/demo_elite_teams_0fa2_academy 200 in 1642ms
+ GET /login 200 in 35ms
+ GET /login?reason=expired 200 in 36ms
+ GET /register/squad/demo_elite_teams_0fa2_academy 200 in 34ms
+ GET / 500 in 4962ms
+ ⨯ Failed to generate static paths for /register/squad/[teamId]:
+[Error: Cannot find module './vendor-chunks/date-fns.js'
+Require stack:
+- /Users/tylerans/.gemini/antigravity/scratch/studio/.next/server/webpack-runtime.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/.next/server/app/register/squad/[teamId]/page.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/server/require.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/server/load-components.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/build/utils.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/server/dev/static-paths-worker.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/compiled/jest-worker/processChild.js] {
+  type: 'Error',
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ Failed to generate static paths for /register/squad/[teamId]:
+[Error: Cannot find module './vendor-chunks/date-fns.js'
+Require stack:
+- /Users/tylerans/.gemini/antigravity/scratch/studio/.next/server/webpack-runtime.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/.next/server/app/register/squad/[teamId]/page.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/server/require.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/server/load-components.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/build/utils.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/server/dev/static-paths-worker.js
+- /Users/tylerans/.gemini/antigravity/scratch/studio/node_modules/next/dist/compiled/jest-worker/processChild.js] {
+  type: 'Error',
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ GET / 200 in 224ms
+ ○ Compiling /favicon.ico ...
+ ✓ Compiled /favicon.ico in 659ms (2439 modules)
+ GET /favicon.ico 200 in 734ms
+ GET / 200 in 176ms
+ GET /favicon.ico 200 in 8ms
+ GET /login 200 in 75ms
+ ○ Compiling /files ...
+ ✓ Compiled /files in 2.1s (2426 modules)
+ GET /files 200 in 2447ms
+ ✓ Compiled /competition in 341ms (2456 modules)
+ GET /competition 200 in 867ms
+ GET /club 200 in 181ms
+ ✓ Compiled /signup in 226ms (2462 modules)
+ GET /signup 200 in 424ms

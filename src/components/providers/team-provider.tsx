@@ -217,6 +217,7 @@ export type Team = {
   clubId?: string;
   schoolId?: string; // ID of the primary school team (for sub-squads)
   schoolAdminIds?: string[]; // IDs of additional school admins (for primary team)
+  pendingAdminEmails?: string[]; // Emails invited as admins, granted access on sign-up
   role?: 'Admin' | 'Member';
   ownerUserId?: string;
   parentChatEnabled?: boolean;
@@ -1426,17 +1427,31 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [teamsRaw, userProfile, members, firebaseUser?.uid]);
 
   const proQuotaStatus = useMemo(() => {
-    if (!userProfile?.id) return { current: 0, limit: 1, exceeded: false, remaining: 0 };
+    if (!userProfile?.id) return { current: 0, limit: 0, exceeded: false, remaining: 0 };
 
     // Parents and players are never team owners — quota management is irrelevant for them.
     // Guard here so the QuotaResolutionOverlay never fires for member-level roles.
     const memberOnlyRoles = ['parent', 'guardian', 'adult_player', 'youth_player', 'player'];
     if (memberOnlyRoles.includes(userProfile.role?.toLowerCase() || '')) {
-      return { current: 0, limit: 1, exceeded: false, remaining: 1 };
+      return { current: 0, limit: 0, exceeded: false, remaining: 0 };
     }
 
     const ownedProTeams = teamsRaw.filter(t => t.ownerUserId === userProfile.id && t.isPro);
-    const limit = userProfile.team_limit || 1; 
+
+    // Determine Pro team limit from the user document.
+    // Signup writes `proTeamLimit` (number); Stripe webhooks write `team_limit` (number).
+    // Starter/free plan users always have 0 Pro slots — never fall back to a non-zero default.
+    const rawData = userProfile as any;
+    const paidPlanTypes = ['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo'];
+    const isOnPaidPlan = paidPlanTypes.includes(rawData.plan_type || '') ||
+                         (rawData.activePlanId && rawData.activePlanId !== 'starter_squad' && rawData.activePlanId !== 'free');
+
+    // Read explicit numeric limit; fall back to 0 (never grant free Pro slots).
+    const explicitLimit = rawData.team_limit ?? rawData.proTeamLimit ?? null;
+    const limit = isOnPaidPlan
+      ? (typeof explicitLimit === 'number' ? explicitLimit : 1)
+      : 0;
+
     return { current: ownedProTeams.length, limit, exceeded: ownedProTeams.length > limit && (limit > 0), remaining: Math.max(0, limit - ownedProTeams.length) };
   }, [teamsRaw, userProfile]);
 
@@ -1701,8 +1716,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => { 
     if (!firebaseUser || !db || !userProfile) return ''; 
 
-    // Enforce Pro Quota only if the requested plan is a paid plan and quota is exhausted
-    const isTargetPro = planId && planId !== 'free';
+    // Enforce Pro Quota only if the requested plan is a paid/pro-tier plan and quota is exhausted.
+    // 'free' and 'starter_squad' are always allowed; all paid tiers require quota.
+    const freePlanIds = ['free', 'starter_squad', ''];
+    const isTargetPro = planId ? !freePlanIds.includes(planId) : false;
     if (isTargetPro && proQuotaStatus.remaining <= 0) {
       setIsPaywallOpen(true);
       throw new Error("Pro team limit reached. Please upgrade or manage your billing.");
