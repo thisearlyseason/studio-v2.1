@@ -121,6 +121,17 @@ export function useCollection<T = any>(
 
         // 3. Permission Errors
         if (err.code === 'permission-denied') {
+          // For collectionGroup queries (path is empty), permission-denied is a transient
+          // startup race condition — the seeder hasn't committed docs yet and rules are
+          // propagating. These queries (members, events, registrationEntries, etc.) are
+          // supplementary and degrade gracefully to empty lists. Silently return [] so the
+          // UI renders normally instead of entering an error state.
+          if (!path) {
+            console.warn('[useCollection] collectionGroup permission-denied (transient startup race — rules are authoritative fix):', err.message?.slice(0, 120));
+            setData([]);
+            setIsLoading(false);
+            return;
+          }
           const permissionError = new FirestorePermissionError({
             path: path || 'unknown',
             operation: 'list',

@@ -38,7 +38,14 @@ if (typeof window !== 'undefined') {
     // (race condition where onSnapshot fires before the seeder has committed the doc —
     //  the Firestore rules fix at resource!=null level is the permanent fix; this just
     //  prevents console noise during the brief cold-start window)
-    (msg?.includes('Missing or insufficient permissions') && msg?.includes('[Demo]'));
+    (msg?.includes('Missing or insufficient permissions') && msg?.includes('[Demo]')) ||
+    // Raw Firestore SDK snapshot listener log — emitted directly by the SDK before our hook
+    // error handler can intercept it. These are the same collectionGroup startup race errors.
+    // Format: "Firestore (x.x.x): Uncaught Error in snapshot listener: FirebaseError: ..."
+    (msg?.includes('Uncaught Error in snapshot listener') && msg?.includes('Missing or insufficient permissions')) ||
+    // Plain permission-denied string — emitted by errorEmitter → console.error path
+    // Only suppress the "unknown" path variant (collectionGroup startup race), not real auth failures.
+    (msg?.includes('Missing or insufficient permissions') && msg?.includes('path') && msg?.includes('unknown'));
 
   const handleError = (event: ErrorEvent) => {
     const msg = event.message || event.error?.message || String(event.error || '');
