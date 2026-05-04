@@ -57,6 +57,18 @@ service cloud.firestore {
         allow read: if isSignedIn() && isOwner(userId);
         allow write: if isSignedIn() && isOwner(userId);
       }
+
+      // Club/Elite document library — owned by the club admin (userId is the clubOwnerId)
+      match /clubDocuments/{docId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
+        allow write: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
+      }
+
+      // Catch-all for any other user sub-collections (notes, preferences, etc.)
+      match /{subCollection}/{docId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
+        allow write: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
+      }
     }
 
     // ─── Teams ──────────────────────────────────────────────────────────────

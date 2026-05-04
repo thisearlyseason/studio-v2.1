@@ -1086,6 +1086,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                     firstName: m.name.split(' ')[0],
                     lastName: m.name.split(' ')[1] || 'Guest',
                     isMinor: true,
+                    isDemo: true,
                     dateOfBirth: new Date(nowObj.getFullYear() - 15, 0, 1).toISOString().split('T')[0],
                     hasLogin: false,
                     createdAt: now,
@@ -1107,49 +1108,50 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                         thumbnail: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&q=80',
                         type: 'Highlight',
                         createdAt: yesterday,
-                        isPublic: true
+                        isPublic: true,
+                        isDemo: true
                     });
                 }
             }
         });
 
-        data.events.forEach(e => batch.set(doc(db, 'teams', teamId, 'events', e.id), clean({ ...e, teamId })));
+        data.events.forEach(e => batch.set(doc(db, 'teams', teamId, 'events', e.id), clean({ ...e, teamId, isDemo: true })));
         data.eventBrackets.forEach(eb => {
-            eb.brackets.forEach(b => batch.set(doc(db, 'teams', teamId, 'events', eb.eventId, 'brackets', b.id), clean(b)));
+            eb.brackets.forEach(b => batch.set(doc(db, 'teams', teamId, 'events', eb.eventId, 'brackets', b.id), clean({ ...b, isDemo: true })));
         });
-        data.drills.forEach(d => batch.set(doc(db, 'teams', teamId, 'drills', d.id), clean(d)));
-        data.practice_templates.forEach(pt => batch.set(doc(db, 'teams', teamId, 'practice_templates', pt.id), clean(pt)));
-        data.feed.forEach(p => batch.set(doc(db, 'teams', teamId, 'feedPosts', p.id), clean(p)));
-        data.documents.forEach(d => batch.set(doc(db, 'teams', teamId, 'documents', d.id), clean({ ...d, ownerUserId: userId })));
-        data.alerts.forEach(a => batch.set(doc(db, 'teams', teamId, 'alerts', a.id), clean(a)));
-        data.volunteers.forEach(v => batch.set(doc(db, 'teams', teamId, 'volunteers', v.id), clean(v)));
+        data.drills.forEach(d => batch.set(doc(db, 'teams', teamId, 'drills', d.id), clean({ ...d, isDemo: true })));
+        data.practice_templates.forEach(pt => batch.set(doc(db, 'teams', teamId, 'practice_templates', pt.id), clean({ ...pt, isDemo: true })));
+        data.feed.forEach(p => batch.set(doc(db, 'teams', teamId, 'feedPosts', p.id), clean({ ...p, isDemo: true })));
+        data.documents.forEach(d => batch.set(doc(db, 'teams', teamId, 'documents', d.id), clean({ ...d, ownerUserId: userId, isDemo: true })));
+        data.alerts.forEach(a => batch.set(doc(db, 'teams', teamId, 'alerts', a.id), clean({ ...a, isDemo: true })));
+        data.volunteers.forEach(v => batch.set(doc(db, 'teams', teamId, 'volunteers', v.id), clean({ ...v, isDemo: true })));
         data.fundraising.forEach(fund => {
           const { donations: _d, ...fundDoc } = fund;
-          batch.set(doc(db, 'teams', teamId, 'fundraising', fund.id), clean(fundDoc));
+          batch.set(doc(db, 'teams', teamId, 'fundraising', fund.id), clean({ ...fundDoc, isDemo: true }));
         });
         // Seed donation sub-docs for Audit Hub
         for (const fund of data.fundraising) {
           for (const don of (fund.donations || [])) {
-            batch.set(doc(db, 'teams', teamId, 'fundraising', fund.id, 'donations', don.id), clean(don));
+            batch.set(doc(db, 'teams', teamId, 'fundraising', fund.id, 'donations', don.id), clean({ ...don, isDemo: true }));
           }
         }
 
-        data.equipment.forEach(eq => batch.set(doc(db, 'teams', teamId, 'equipment', eq.id), clean(eq)));
-        data.incidents.forEach(inc => batch.set(doc(db, 'teams', teamId, 'incidents', inc.id), clean(inc)));
+        data.equipment.forEach(eq => batch.set(doc(db, 'teams', teamId, 'equipment', eq.id), clean({ ...eq, isDemo: true })));
+        data.incidents.forEach(inc => batch.set(doc(db, 'teams', teamId, 'incidents', inc.id), clean({ ...inc, isDemo: true })));
         // Seed game results for Scorekeeping page
         data.games.forEach(g => {
             const matchTeamIds = [teamId, 'mock_opp'].filter(Boolean);
-            batch.set(doc(db, 'teams', teamId, 'games', g.id), clean({ ...g, teamId, matchTeamIds, createdAt: now }));
+            batch.set(doc(db, 'teams', teamId, 'games', g.id), clean({ ...g, teamId, matchTeamIds, createdAt: now, isDemo: true }));
         });
         await batch.flush();
         // Seed files for Library
-        data.files.forEach(f => batch.set(doc(db, 'teams', teamId, 'files', f.id), clean({ ...f, teamId })));
+        data.files.forEach(f => batch.set(doc(db, 'teams', teamId, 'files', f.id), clean({ ...f, teamId, isDemo: true })));
         // Seed document signatures for Coaches Corner / Files
-        data.signatures.forEach(s => s.sigs.forEach(sig => batch.set(doc(db, 'teams', teamId, 'members', sig.userId, 'signatures', sig.documentId), clean(sig))));
+        data.signatures.forEach(s => s.sigs.forEach(sig => batch.set(doc(db, 'teams', teamId, 'members', sig.userId, 'signatures', sig.documentId), clean({ ...sig, isDemo: true }))));
         await batch.flush();
         data.chats.forEach(c => {
-            batch.set(doc(db, 'teams', teamId, 'groupChats', c.id), clean({ id: c.id, name: c.name, createdBy: c.createdBy, memberIds: c.memberIds, isDeleted: c.isDeleted, teamId: c.teamId, createdAt: c.createdAt }));
-            c.messages.forEach(m => batch.set(doc(db, 'teams', teamId, 'groupChats', c.id, 'messages', m.id), clean(m)));
+            batch.set(doc(db, 'teams', teamId, 'groupChats', c.id), clean({ id: c.id, name: c.name, createdBy: c.createdBy, memberIds: c.memberIds, isDeleted: c.isDeleted, teamId: c.teamId, createdAt: c.createdAt, isDemo: true }));
+            c.messages.forEach(m => batch.set(doc(db, 'teams', teamId, 'groupChats', c.id, 'messages', m.id), clean({ ...m, isDemo: true })));
         });
         await batch.flush();
     }
