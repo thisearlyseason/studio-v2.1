@@ -164,6 +164,14 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // ─── Plans (pricing/feature tiers) ──────────────────────────────────────
+    // Public read: pricing page and unauthenticated visitors need plan metadata.
+    // Write is superadmin-only — plan definitions are managed via the admin portal or scripts.
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
     // ─── Subscriptions audit log (server-write only via webhook) ────────────
     match /subscriptions/{subId} {
       allow read: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
