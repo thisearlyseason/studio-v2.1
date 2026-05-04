@@ -91,11 +91,29 @@ service cloud.firestore {
           // so we allow writes where the member record itself carries isDemo == true.
           request.resource.data.isDemo == true
         ));
+
+        // Waiver signatures nested under each member
+        // Path: teams/{teamId}/members/{memberId}/signatures/{sigId}
+        match /signatures/{sigId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+          allow write: if isSuperAdmin() || (isSignedIn() && (
+            isTeamOwner(teamId) ||
+            request.auth.uid == memberId ||
+            request.resource.data.isDemo == true
+          ));
+        }
       }
 
       match /events/{eventId} {
         allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
         allow write: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || request.resource.data.isDemo == true));
+
+        // Tournament bracket data nested under events
+        // Path: teams/{teamId}/events/{eventId}/brackets/{bracketId}
+        match /brackets/{bracketId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+          allow write: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || request.resource.data.isDemo == true));
+        }
       }
 
       match /incidents/{incidentId} {
@@ -118,7 +136,8 @@ service cloud.firestore {
         }
       }
 
-      // Catch-all for any other team sub-collections (drills, alerts, equipment, feed, etc.)
+      // Catch-all for any other team sub-collections (drills, alerts, equipment, feed, files,
+      // documents, practice_templates, volunteers, feedPosts, groupChats, etc.)
       // isDemo flag allows the seeder to write in the same batch before team ownership propagates.
       match /{subCollection}/{docId} {
         allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
@@ -127,6 +146,17 @@ service cloud.firestore {
           isTeamMember(teamId) ||
           request.resource.data.isDemo == true
         ));
+
+        // Recursive catch-all for any sub-sub-collection (e.g. groupChats/messages, etc.)
+        // Path: teams/{teamId}/{subCollection}/{docId}/{subSubCollection}/{subDocId}
+        match /{subSubCollection}/{subDocId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+          allow write: if isSuperAdmin() || (isSignedIn() && (
+            isTeamOwner(teamId) ||
+            isTeamMember(teamId) ||
+            request.resource.data.isDemo == true
+          ));
+        }
       }
     }
 
