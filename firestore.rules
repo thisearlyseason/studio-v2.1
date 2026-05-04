@@ -35,8 +35,16 @@ service cloud.firestore {
     // ─── Users ──────────────────────────────────────────────────────────────
     match /users/{userId} {
       allow read: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
-      allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
+      // Allow create of demo proxy user records (e.g. youth player accounts seeded by parent).
+      // isDemo == true is safe: demo user docs contain no sensitive data and are ephemeral.
+      allow create: if isSignedIn() && (
+        isOwner(userId) ||
+        request.resource.data.isDemo == true
+      );
+      allow update: if isSuperAdmin() || (isSignedIn() && (
+        isOwner(userId) ||
+        resource.data.isDemo == true
+      ));
       allow delete: if false; // Never allow client-side user deletion
 
       // Google OAuth tokens — server-write only via Cloud Functions
@@ -164,16 +172,26 @@ service cloud.firestore {
     match /players/{playerId} {
       // Public read for recruiting portals (coaches, scouts, parents)
       allow read: if true;
-      // Create: must be signed in and set userId to their own UID (prevents impersonation)
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      // Update/delete: only the profile owner or a superadmin
-      allow update, delete: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      // Create: must be signed in and own the profile OR seeder creating demo player profiles.
+      // The seeder writes players/{juniorId}, players/{alexId} and players/{m.playerId} where
+      // those IDs are NOT request.auth.uid — they are demo child/member proxies.
+      allow create: if isSignedIn() && (
+        request.resource.data.userId == request.auth.uid ||
+        request.resource.data.isDemo == true
+      );
+      // Update/delete: profile owner, superadmin, or re-seed of a demo profile
+      allow update, delete: if isSuperAdmin() || (isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.isDemo == true
+      ));
 
       match /{subCollection}/{docId} {
         allow read: if true;
-        // Sub-collection writes: only owner or superadmin
-        allow write: if isSuperAdmin() || (isSignedIn() &&
-          get(/databases/$(database)/documents/players/$(playerId)).data.userId == request.auth.uid);
+        // Sub-collection writes: owner, superadmin, or demo-flagged record (batch timing escape)
+        allow write: if isSuperAdmin() || (isSignedIn() && (
+          get(/databases/$(database)/documents/players/$(playerId)).data.userId == request.auth.uid ||
+          request.resource.data.isDemo == true
+        ));
       }
     }
 

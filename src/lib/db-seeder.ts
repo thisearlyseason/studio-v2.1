@@ -17,12 +17,14 @@ import { format, parseISO } from 'date-fns';
 /**
  * BatchHelper — safely accumulates Firestore writes and auto-commits every
  * CHUNK_SIZE operations to stay well under the 500-op hard limit.
+ * Tracks the last 20 document paths per chunk for permission-denied diagnostics.
  */
 class BatchHelper {
   private db: Firestore;
   private batch: WriteBatch;
   private opCount = 0;
   private readonly CHUNK_SIZE = 400;
+  private chunkPaths: string[] = [];  // paths in current chunk for debugging
 
   constructor(db: Firestore) {
     this.db = db;
@@ -30,6 +32,10 @@ class BatchHelper {
   }
 
   set(ref: any, data: any, opts?: any) {
+    // Track up to 20 paths per chunk so we know what was in the failing commit
+    if (this.chunkPaths.length < 20) {
+      this.chunkPaths.push(ref.path ?? ref._key?.path?.segments?.join('/') ?? String(ref));
+    }
     if (opts) {
       this.batch.set(ref, data, opts);
     } else {
@@ -41,17 +47,28 @@ class BatchHelper {
 
   async maybeCommit() {
     if (this.opCount >= this.CHUNK_SIZE) {
-      await this.batch.commit();
-      this.batch = writeBatch(this.db);
-      this.opCount = 0;
+      await this._commitChunk();
     }
   }
 
   async commit() {
     if (this.opCount > 0) {
-      await this.batch.commit();
-      this.opCount = 0;
+      await this._commitChunk();
     }
+  }
+
+  private async _commitChunk() {
+    const paths = [...this.chunkPaths];
+    console.log(`[Demo] Committing batch chunk (${this.opCount} ops). Paths sampled:`, paths);
+    try {
+      await this.batch.commit();
+    } catch (err: any) {
+      console.error('[Demo] Batch chunk FAILED. Paths in this chunk:', paths);
+      throw err;
+    }
+    this.batch = writeBatch(this.db);
+    this.opCount = 0;
+    this.chunkPaths = [];
   }
 }
 
