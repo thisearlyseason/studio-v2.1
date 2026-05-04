@@ -464,17 +464,25 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   // --- PRE-FLIGHT CLEANUP ROUTINE ---
   // If the user is running the seeder multiple times, ghost events and overlapping teams pile up.
   // We wipe their existing team memberships and attached events for a clean slate.
+  // NOTE: Each team is wrapped in its own try/catch. If a team was seeded by a prior session
+  // (different UID or institution record), Firestore may deny the read — we skip it gracefully
+  // rather than aborting the entire seeder with a permission error.
   try {
     const membershipsSnapshot = await getDocs(collection(db, 'users', userId, 'teamMemberships'));
     for (const membershipDoc of membershipsSnapshot.docs) {
       const existingTeamId = membershipDoc.id;
-      // Wipe all events attached to this team to prevent itinerary overlap
-      const eventsRef = collection(db, 'teams', existingTeamId, 'events');
-      const eventsSnap = await getDocs(eventsRef);
-      for (const eDoc of eventsSnap.docs) {
-        await deleteDoc(doc(db, 'teams', existingTeamId, 'events', eDoc.id));
+      try {
+        // Wipe all events attached to this team to prevent itinerary overlap
+        const eventsRef = collection(db, 'teams', existingTeamId, 'events');
+        const eventsSnap = await getDocs(eventsRef);
+        for (const eDoc of eventsSnap.docs) {
+          await deleteDoc(doc(db, 'teams', existingTeamId, 'events', eDoc.id));
+        }
+      } catch (teamErr) {
+        // Permission denied on a team we don't own (e.g. institution from prior session) — skip
+        console.warn(`[Demo] Cleanup skipped for team ${existingTeamId} (insufficient permissions — safe to ignore):`, teamErr);
       }
-      // Sever the membership
+      // Always sever the membership record regardless of events cleanup success
       await deleteDoc(doc(db, 'users', userId, 'teamMemberships', existingTeamId));
     }
   } catch (err) {

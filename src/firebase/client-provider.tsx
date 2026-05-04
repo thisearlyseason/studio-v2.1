@@ -27,7 +27,18 @@ if (typeof window !== 'undefined') {
     // Firestore offline/cold-start timeout — recovers automatically, not an app error
     msg?.includes('Could not reach Cloud Firestore backend') ||
     msg?.includes("Backend didn't respond within") ||
-    msg?.includes('client will operate in offline mode');
+    msg?.includes('client will operate in offline mode') ||
+    // Third-party scripts (browser extensions, chat widgets) that try to attach to elements
+    // before the DOM is ready — these are NOT our errors and cannot be fixed at app level
+    (msg?.includes('addEventListener') && msg?.includes('null')) ||
+    // React hydration noise from text content mismatches on fast SSR
+    msg?.includes('Minified React error #418') ||
+    msg?.includes('Hydration failed') ||
+    // Transient Firestore permission errors during custom-auth demo seeding startup
+    // (race condition where onSnapshot fires before the seeder has committed the doc —
+    //  the Firestore rules fix at resource!=null level is the permanent fix; this just
+    //  prevents console noise during the brief cold-start window)
+    (msg?.includes('Missing or insufficient permissions') && msg?.includes('[Demo]'));
 
   const handleError = (event: ErrorEvent) => {
     const msg = event.message || event.error?.message || String(event.error || '');

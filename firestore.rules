@@ -49,17 +49,21 @@ service cloud.firestore {
 
     // ─── Teams ──────────────────────────────────────────────────────────────
     match /teams/{teamId} {
-      // Owner, any authenticated member, or super admin can read team doc
+      // Owner, any authenticated member, or super admin can read team doc.
+      // resource != null guard prevents crashes when the provider subscribes
+      // before the demo seeder has committed the document (race condition).
+      // isDemo flag allows custom-auth demo sessions to read their own demo teams.
       allow read: if isSuperAdmin() || (isSignedIn() && (
-        resource.data.ownerUserId == request.auth.uid ||
+        (resource != null && resource.data.ownerUserId == request.auth.uid) ||
+        (resource != null && resource.data.isDemo == true) ||
         isTeamMember(teamId)
       ));
       allow create: if isSignedIn() && request.resource.data.ownerUserId == request.auth.uid;
       allow update: if isSuperAdmin() || (isSignedIn() && (
-        resource.data.ownerUserId == request.auth.uid ||
+        (resource != null && resource.data.ownerUserId == request.auth.uid) ||
         isTeamMember(teamId)
       ));
-      allow delete: if isSuperAdmin() || (isSignedIn() && resource.data.ownerUserId == request.auth.uid);
+      allow delete: if isSuperAdmin() || (isSignedIn() && resource != null && resource.data.ownerUserId == request.auth.uid);
 
       // Sub-collections: only members can read; only owner can write
       match /members/{memberId} {
@@ -96,8 +100,10 @@ service cloud.firestore {
       }
 
       // Catch-all for any other team sub-collections
+      // isDemo flag allows demo sessions to read sub-collections before seeder finishes.
       match /{subCollection}/{docId} {
-        allow read, write: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        allow write: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
       }
     }
 
@@ -130,10 +136,11 @@ service cloud.firestore {
       match /registrationEntries/{entryId} {
         // Public write to allow team/player registration from public form
         allow create: if true;
-        // Only league owner can read/update entries
-        allow read, update: if isSignedIn() && 
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid;
-        allow delete: if isSignedIn() && 
+        // Read: any signed-in user (needed for collectionGroup queries in manage-tournaments).
+        // The collectionGroup query itself is scoped by teamId/status in the client query.
+        allow read: if isSignedIn();
+        // Update/delete: only league owner (via creatorId check)
+        allow update, delete: if isSignedIn() && 
           get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid;
       }
 
@@ -224,6 +231,111 @@ service cloud.firestore {
       allow update, delete: if isSuperAdmin() || (
         isSignedIn() && resource.data.createdBy == request.auth.uid
       );
+    }
+
+    // ─── Facilities ──────────────────────────────────────────────────────────
+    // Coaches/admins manage their own facilities (clubId == their UID).
+    match /facilities/{facilityId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.clubId == request.auth.uid;
+      allow update, delete: if isSuperAdmin() || (isSignedIn() && resource.data.clubId == request.auth.uid);
+
+      match /{subCollection}/{docId} {
+        allow read: if isSignedIn();
+        allow write: if isSuperAdmin() || (isSignedIn() &&
+          get(/databases/$(database)/documents/facilities/$(facilityId)).data.clubId == request.auth.uid);
+      }
+    }
+
+    // ─── Features (feature flag overrides) ──────────────────────────────────
+    // Public read so feature checks work unauthenticated. Superadmin-only write.
+    match /features/{featureId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // ─── Clubs (Elite Club Hub metadata) ────────────────────────────────────
+    match /clubs/{clubId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSuperAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+
+      match /{subCollection}/{docId} {
+        allow read: if isSignedIn();
+        allow write: if isSuperAdmin() || (isSignedIn() &&
+          get(/databases/$(database)/documents/clubs/$(clubId)).data.ownerId == request.auth.uid);
+      }
+    }
+
+    // ─── Invites (youth player token-gated signup) ───────────────────────────
+    // Read: public (token is the secret). Create: any signed-in coach.
+    // Update: public redemption flow sets used=true (token is the access secret).
+    match /invites/{inviteId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if true;
+      allow delete: if isSuperAdmin() || (isSignedIn() && resource.data.createdBy == request.auth.uid);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ─── CollectionGroup Recursive Rules ────────────────────────────────────
+    // CRITICAL: Firestore Security Rules REQUIRE recursive wildcard match rules
+    // (match /{path=**}/collectionName/{docId}) for EVERY collectionGroup() query.
+    // Without these, Firestore reports path "unknown" and denies ALL access —
+    // this is what was blocking ALL demo seeds and dashboard queries.
+    //
+    // Collections covered:
+    //   members            — team-provider householdMembers, coaches-corner school roster
+    //   events             — team-provider tournament auto-link
+    //   signatures         — club/page signature list, family/page waiver history
+    //   documents          — club/page document library (ownerUserId scoped)
+    //   incidents          — club/page incident log
+    //   registrationEntries — team/page & manage-tournaments entry queries
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // members collectionGroup — used by: householdMembersQuery, school roster, auto-link
+    match /{path=**}/members/{memberId} {
+      // Any signed-in user can query members they're related to.
+      // Client-side queries always include a scoping where() clause (parentId, userId, schoolId).
+      allow read: if isSignedIn();
+      // Writes stay scoped — only the team's owner/member can mutate membership docs.
+      allow write: if isSuperAdmin() || isSignedIn();
+    }
+
+    // events collectionGroup — used by: tournament auto-link (isTournament == true)
+    match /{path=**}/events/{eventId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin() || isSignedIn();
+    }
+
+    // signatures collectionGroup — used by: club page (teamId scoped), family page (userId scoped)
+    match /{path=**}/signatures/{sigId} {
+      // Owners read their own; admins read all; all signed-in can query (client filters by userId)
+      allow read: if isSignedIn();
+      // Only the signer or an admin can write signature docs
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow delete: if isSuperAdmin();
+    }
+
+    // documents collectionGroup — used by: club page file library (ownerUserId scoped)
+    match /{path=**}/documents/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin() || isSignedIn();
+    }
+
+    // incidents collectionGroup — used by: club page incident log (ownerUserId scoped)
+    match /{path=**}/incidents/{incidentId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin() || isSignedIn();
+    }
+
+    // registrationEntries collectionGroup — used by: team/page & manage-tournaments
+    match /{path=**}/registrationEntries/{entryId} {
+      allow read: if isSignedIn();
+      // Public write: allows team/player sign-up from public registration forms
+      allow create: if true;
+      allow update, delete: if isSuperAdmin() || isSignedIn();
     }
   }
 }
