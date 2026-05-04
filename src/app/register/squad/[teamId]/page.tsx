@@ -124,28 +124,52 @@ function RapidJoinForm() {
       
       if (!success) throw new Error("Join failed");
 
-      // 2. Archive the waiver signature if applicable
+      // 2. Archive the waiver signature — full sync matching signTeamDocument() write pattern
       if (activeWaiver && signature) {
-        // We could call a more specific 'signWaiver' here, but for 'rapid join' 
-        // we'll just archive it via the team's membership or documents
-        // Using TeamProvider's signTeamDocument logic (simplified)
-        // For now, let's assume joining is enough for 'quick' flow, 
-        // but we should store the signature somewhere.
-        // The joinTeamWithCode doesn't take a signature.
-        
-        // Let's use a custom write to archived_waivers
         const archId = `arch_join_${Date.now()}_${playerId}`;
-        const { setDoc } = await import('firebase/firestore');
-        await setDoc(doc(db, 'teams', teamId as string, 'archived_waivers', archId), {
-            id: archId,
-            playerId,
-            signer: signature,
-            signedAt: new Date().toISOString(),
-            protocolId: activeWaiver.id,
-            protocolTitle: activeWaiver.title,
-            type: 'Rapid Entry Waiver'
+        const memberDocId = playerId || user?.id || 'unknown';
+        const { setDoc, updateDoc, doc: _doc, getDoc, increment: _increment, writeBatch: _writeBatch } = await import('firebase/firestore');
+        const batch2 = _writeBatch(db);
+
+        // A. Canonical archived_waivers entry (Coaches Corner Vault)
+        batch2.set(_doc(db, 'teams', teamId as string, 'archived_waivers', archId), {
+          id: archId,
+          documentId: activeWaiver.id,
+          title: activeWaiver.title || 'Rapid Entry Waiver',
+          signer: signature,
+          signedAt: new Date().toISOString(),
+          type: 'Rapid Entry Waiver',
+          memberId: memberDocId,
+          memberName: formData.name,
+          signedByParent: false,
         });
+
+        // B. protocol_signatures flat doc (avoids collectionGroup index requirement)
+        batch2.set(_doc(db, 'teams', teamId as string, 'protocol_signatures', `${activeWaiver.id}_${user?.id || 'guest'}_${memberDocId}`), {
+          protocolId: activeWaiver.id,
+          docId: activeWaiver.id,
+          teamId: teamId as string,
+          userId: user?.id || 'guest',
+          memberId: memberDocId,
+          signedAt: new Date().toISOString(),
+          signerName: signature,
+        });
+
+        await batch2.commit();
+
+        // C. Increment signatureCount on the team document (non-critical, best-effort)
+        try {
+          const teamDocRef = _doc(db, 'teams', teamId as string, 'documents', activeWaiver.id);
+          const teamDocSnap = await getDoc(teamDocRef);
+          if (teamDocSnap.exists()) {
+            await updateDoc(teamDocRef, { signatureCount: _increment(1) });
+          }
+        } catch (e) {
+          // Non-critical — count display will be off by one until next write
+          console.warn('[RapidJoin] signatureCount increment failed:', e);
+        }
       }
+
 
       setIsSuccess(true);
     } catch (error) {

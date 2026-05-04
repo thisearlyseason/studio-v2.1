@@ -103,14 +103,18 @@ service cloud.firestore {
 
     // ─── Players (public scouting profiles) ─────────────────────────────────
     match /players/{playerId} {
-      // Public read for recruiting portals
+      // Public read for recruiting portals (coaches, scouts, parents)
       allow read: if true;
-      // Only authenticated users (coaches) can write player profiles
-      allow write: if isSignedIn();
+      // Create: must be signed in and set userId to their own UID (prevents impersonation)
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      // Update/delete: only the profile owner or a superadmin
+      allow update, delete: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
 
       match /{subCollection}/{docId} {
         allow read: if true;
-        allow write: if isSignedIn();
+        // Sub-collection writes: only owner or superadmin
+        allow write: if isSuperAdmin() || (isSignedIn() &&
+          get(/databases/$(database)/documents/players/$(playerId)).data.userId == request.auth.uid);
       }
     }
 
@@ -183,16 +187,35 @@ service cloud.firestore {
       }
     }
 
-    // ─── Signatures ─────────────────────────────────────────────────────────
+    // ─── Signatures (global top-level — distinct from team sub-collection) ────
     match /signatures/{sigId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow write: if isSignedIn();
+      // Owners can read their own; superadmins can read any
+      allow read: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      // Only the signer themselves can write — userId field must match auth uid
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow delete: if isSuperAdmin();
     }
 
     // ─── Alerts ─────────────────────────────────────────────────────────────
     match /alerts/{alertId} {
+      // All signed-in users can read alerts for their teams (client-side filters by teamId)
       allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      // Write: only superadmin or team owner/member (teamId field must match a team they belong to)
+      // This prevents arbitrary alert injection from any signed-in account.
+      allow create: if isSuperAdmin() || (
+        isSignedIn() && (
+          request.resource.data.createdBy == request.auth.uid &&
+          (
+            request.resource.data.teamId == null ||
+            isTeamMember(request.resource.data.teamId) ||
+            isTeamOwner(request.resource.data.teamId)
+          )
+        )
+      );
+      allow update, delete: if isSuperAdmin() || (
+        isSignedIn() && resource.data.createdBy == request.auth.uid
+      );
     }
   }
 }
