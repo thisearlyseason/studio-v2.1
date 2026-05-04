@@ -585,7 +585,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       batch.set(doc(db, 'facilities', facId, 'fields', fid), clean({
         id: fid,
         facilityId: facId,
-        name: fn
+        name: fn,
+        isDemo: true
       }));
     });
 
@@ -608,7 +609,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         batch.set(doc(db, 'facilities', fac2Id, 'fields', fid), clean({
           id: fid,
           facilityId: fac2Id,
-          name: fn
+          name: fn,
+          isDemo: true
         }));
       });
     }

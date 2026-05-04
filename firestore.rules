@@ -319,8 +319,16 @@ service cloud.firestore {
     // Coaches/admins manage their own facilities (clubId == their UID).
     match /facilities/{facilityId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.clubId == request.auth.uid;
-      allow update, delete: if isSuperAdmin() || (isSignedIn() && resource.data.clubId == request.auth.uid);
+      allow create: if isSignedIn() && (
+        request.resource.data.clubId == request.auth.uid ||
+        // Demo seeder writes facilities in the same batch as team docs — isDemo
+        // escape ensures the batch succeeds before ownership propagates.
+        request.resource.data.isDemo == true
+      );
+      allow update, delete: if isSuperAdmin() || (isSignedIn() && (
+        resource.data.clubId == request.auth.uid ||
+        resource.data.isDemo == true
+      ));
 
       match /{subCollection}/{docId} {
         allow read: if isSignedIn();
