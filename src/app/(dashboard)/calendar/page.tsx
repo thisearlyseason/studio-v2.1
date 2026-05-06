@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   format, 
@@ -46,7 +46,8 @@ import {
   Loader2,
   Eye,
   Check,
-  Copy
+  Copy,
+  Smartphone
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -97,6 +98,195 @@ const formatDateRange = (start: string | Date, end?: string | Date) => {
   }
   return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Schedule App Promo Banner
+// ─────────────────────────────────────────────────────────────────────────────
+const BANNER_DISMISSED_KEY = 'squad_schedule_app_banner_v1';
+
+function ScheduleAppBanner({ onOpen }: { onOpen: () => void }) {
+  const [visible, setVisible] = useState(false);
+  const [animOut, setAnimOut] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(BANNER_DISMISSED_KEY) !== '1') setVisible(true);
+    } catch { setVisible(true); }
+  }, []);
+
+  const dismiss = () => {
+    setAnimOut(true);
+    setTimeout(() => {
+      setVisible(false);
+      try { localStorage.setItem(BANNER_DISMISSED_KEY, '1'); } catch {}
+    }, 400);
+  };
+
+  if (!visible) return null;
+
+  return (
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-[2.5rem] border border-white/10',
+        'transition-all duration-400',
+        animOut ? 'opacity-0 scale-95 -translate-y-2' : 'opacity-100 scale-100 translate-y-0'
+      )}
+      style={{
+        background: 'linear-gradient(135deg, #09090b 0%, #1c1030 40%, #0f172a 100%)',
+      }}
+    >
+      {/* ── Animated background orbs ── */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className="absolute -top-16 -left-16 h-64 w-64 rounded-full opacity-20 blur-3xl"
+          style={{ background: 'radial-gradient(circle, #7c3aed, transparent 70%)' }}
+        />
+        <div
+          className="absolute -bottom-10 -right-10 h-48 w-48 rounded-full opacity-15 blur-3xl"
+          style={{ background: 'radial-gradient(circle, #3b82f6, transparent 70%)' }}
+        />
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-32 w-32 rounded-full opacity-10 blur-2xl"
+          style={{ background: 'radial-gradient(circle, #f59e0b, transparent 70%)' }}
+        />
+        {/* Grid overlay */}
+        <div
+          className="absolute inset-0 opacity-5"
+          style={{
+            backgroundImage: 'linear-gradient(rgba(255,255,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.3) 1px, transparent 1px)',
+            backgroundSize: '32px 32px',
+          }}
+        />
+      </div>
+
+      {/* ── Main content ── */}
+      <div className="relative z-10 p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center gap-6 md:gap-10">
+
+        {/* Icon cluster */}
+        <div className="shrink-0 flex items-center gap-3">
+          <div className="relative">
+            <div className="h-16 w-16 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-2xl ring-1 ring-white/5">
+              <Smartphone className="h-8 w-8 text-white" />
+            </div>
+            {/* Live pulse dot */}
+            <span className="absolute -top-1 -right-1 flex h-4 w-4">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-4 w-4 bg-violet-500 border-2 border-black/30" />
+            </span>
+          </div>
+          {/* Mini icons stacked */}
+          <div className="flex flex-col gap-2 opacity-60">
+            <div className="h-8 w-8 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center">
+              <CalendarDays className="h-4 w-4 text-violet-300" />
+            </div>
+            <div className="h-8 w-8 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+            </div>
+          </div>
+        </div>
+
+        {/* Text content */}
+        <div className="flex-1 min-w-0 space-y-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 bg-violet-500/20 border border-violet-400/30 text-violet-300 text-[9px] font-black uppercase tracking-[0.2em] rounded-full px-3 py-1">
+              <Zap className="h-2.5 w-2.5" /> New Feature
+            </span>
+            <span className="text-[9px] font-black uppercase tracking-widest text-white/30">Installable · Works Offline</span>
+          </div>
+
+          <div>
+            <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-white leading-tight">
+              Your Schedule &amp; To-Dos,{' '}
+              <span className="text-transparent bg-clip-text" style={{ backgroundImage: 'linear-gradient(90deg, #a78bfa, #60a5fa)' }}>
+                Always With You
+              </span>
+            </h2>
+            <p className="text-xs font-medium text-white/50 mt-1.5 leading-relaxed max-w-md">
+              One app, two superpowers. Never miss a game and never forget a task — all synced live from the dashboard, even offline.
+            </p>
+          </div>
+
+          {/* Two-column feature highlight */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white/5 border border-violet-400/20 rounded-2xl p-3 space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-base">📅</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-violet-300">My Schedule</span>
+              </div>
+              <p className="text-[10px] text-white/40 leading-relaxed">Live-synced team events, game times, locations, and opponent details — all in one glance.</p>
+            </div>
+            <div className="bg-white/5 border border-emerald-400/20 rounded-2xl p-3 space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-base">✅</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-300">To-Do List</span>
+              </div>
+              <p className="text-[10px] text-white/40 leading-relaxed">Personal task manager built for athletes. Check off gear, drills, or team assignments on the go.</p>
+            </div>
+          </div>
+
+          {/* Feature pills */}
+          <div className="flex flex-wrap gap-2">
+            {[
+              { icon: '📲', label: 'Install to Home Screen' },
+              { icon: '🔌', label: 'Offline Ready' },
+              { icon: '🔄', label: 'Auto-Syncs' },
+              { icon: '🔔', label: 'Stay Updated' },
+            ].map(f => (
+              <span
+                key={f.label}
+                className="inline-flex items-center gap-1.5 bg-white/5 border border-white/10 text-white/60 text-[9px] font-black uppercase tracking-wide rounded-full px-3 py-1.5"
+              >
+                <span>{f.icon}</span> {f.label}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* CTA + Dismiss */}
+        <div className="flex flex-col gap-3 shrink-0 w-full md:w-auto">
+          <button
+            onClick={onOpen}
+            className={cn(
+              'group relative overflow-hidden h-14 px-8 rounded-2xl font-black text-xs uppercase tracking-widest',
+              'text-white transition-all duration-200 active:scale-95',
+              'shadow-2xl',
+            )}
+            style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #4f46e5 100%)' }}
+          >
+            {/* Shimmer sweep on hover */}
+            <span className="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
+            <span className="relative flex items-center gap-2">
+              <Smartphone className="h-4 w-4" />
+              Open Schedule App
+              <ArrowUpRight className="h-3.5 w-3.5 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </span>
+          </button>
+
+          <button
+            onClick={dismiss}
+            className="text-[9px] font-black uppercase tracking-widest text-white/25 hover:text-white/50 transition-colors text-center"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+
+      {/* ── Bottom ticker strip ── */}
+      <div className="relative z-10 border-t border-white/5 bg-white/[0.02] px-8 py-3 flex items-center gap-6 overflow-hidden">
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">Live Sync Active</span>
+        </div>
+        <div className="flex items-center gap-8 overflow-hidden">
+          {['iOS Safari', 'Android Chrome', 'My Schedule', 'To-Do List', 'Offline Ready', 'Auto-Sync'].map((item, i) => (
+            <span key={i} className="text-[9px] font-black uppercase tracking-widest text-white/20 shrink-0">{item}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], onClick: () => void }) {
   const team = teams.find(t => t.id === event.teamId);
@@ -798,6 +988,48 @@ export default function MasterCalendarPage() {
     });
   }, [allEvents, selectedTeamIds, selectedEventTypes, searchTerm]);
 
+  // ── Auto-sync: keep localStorage fresh whenever events load ──────────────
+  useEffect(() => {
+    if (!allEvents || allEvents.length === 0) return;
+    const now = new Date();
+    const max = new Date(); max.setDate(max.getDate() + 90);
+    const upcoming = allEvents
+      .filter(e => {
+        const d = new Date(e.date + 'T00:00:00');
+        return d >= new Date(now.toDateString()) && d <= max;
+      })
+      .map(e => ({
+        id: e.id,
+        title: e.title,
+        date: e.date,
+        startTime: e.startTime,
+        location: e.location,
+        eventType: e.eventType || 'other',
+      }));
+    try { localStorage.setItem('squad_schedule_events', JSON.stringify(upcoming)); } catch {}
+  }, [allEvents]);
+
+  const handleOpenScheduleApp = useCallback(() => {
+    const now = new Date();
+    const max = new Date(); max.setDate(max.getDate() + 90);
+    const upcoming = allEvents
+      .filter(e => {
+        const d = new Date(e.date + 'T00:00:00');
+        return d >= new Date(now.toDateString()) && d <= max;
+      })
+      .map(e => ({
+        id: e.id,
+        title: e.title,
+        date: e.date,
+        startTime: e.startTime,
+        location: e.location,
+        eventType: e.eventType || 'other',
+      }));
+    // Write directly to localStorage — avoids URL length limits
+    try { localStorage.setItem('squad_schedule_events', JSON.stringify(upcoming)); } catch {}
+    window.open('/schedule-app', '_blank');
+  }, [allEvents]);
+
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
   const calendarStart = startOfWeek(monthStart);
@@ -930,6 +1162,12 @@ export default function MasterCalendarPage() {
             <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-4 rounded-lg font-black text-[10px] uppercase"><List className="h-3.5 w-3.5 mr-2" /> Agenda</Button>
           </div>
           <CalendarSubscriptionDialog />
+          <Button
+            onClick={handleOpenScheduleApp}
+            className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2 bg-black text-white hover:bg-black/80 shadow-lg shadow-black/20 border-black"
+          >
+            <Smartphone className="h-4 w-4" /> Schedule App
+          </Button>
           <Popover>
             <PopoverTrigger asChild><Button variant="outline" className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2 text-foreground"><Filter className="h-4 w-4" /> Filters</Button></PopoverTrigger>
             <PopoverContent className="w-80 rounded-2xl shadow-2xl p-6" align="end">
@@ -950,6 +1188,9 @@ export default function MasterCalendarPage() {
           </Popover>
         </div>
       </div>
+
+      {/* ── SCHEDULE APP PROMO BANNER ─────────────────────────────────────── */}
+      <ScheduleAppBanner onOpen={handleOpenScheduleApp} />
 
       <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white">
         <div className="bg-black text-white p-6 flex items-center justify-between">
