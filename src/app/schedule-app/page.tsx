@@ -127,7 +127,7 @@ export default function ScheduleApp() {
     root: { minHeight: '100dvh', background: bg, color: text, fontFamily: 'Inter, system-ui, sans-serif', transition: 'background 0.3s, color 0.3s' } as React.CSSProperties,
     header: { background: dark ? 'rgba(9,9,11,0.97)' : 'rgba(255,255,255,0.97)', backdropFilter: 'blur(12px)', borderBottom: `2px solid ${RED}`, position: 'sticky' as const, top: 0, zIndex: 50, padding: '12px 16px' },
     btn: (accent?: string) => ({ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 20, border: `1px solid ${accent || border}`, background: accent ? accent + '22' : 'transparent', color: accent || text, cursor: 'pointer', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' as const, letterSpacing: '0.08em' }),
-    card: { background: cardBg, borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1, borderStyle: 'solid', borderColor: border, borderRadius: 16, padding: '14px 16px', marginBottom: 10, cursor: 'pointer' } as React.CSSProperties,
+    card: { background: cardBg, borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1, borderStyle: 'solid', borderTopColor: border, borderRightColor: border, borderBottomColor: border, borderLeftColor: border, borderRadius: 16, padding: '14px 16px', marginBottom: 10, cursor: 'pointer' } as React.CSSProperties,
     input: { width: '100%', background: dark ? '#09090b' : '#f4f4f5', border: `1px solid ${border}`, borderRadius: 10, padding: '10px 12px', color: text, fontSize: 14, boxSizing: 'border-box' as const },
   };
 
@@ -212,7 +212,7 @@ export default function ScheduleApp() {
       </div>
 
       {/* Content */}
-      <main style={{ maxWidth: 600, margin: '0 auto', padding: '16px 16px 100px' }}>
+      <main style={{ maxWidth: 600, margin: '0 auto', padding: '16px 16px 32px' }}>
 
         {/* SCHEDULE TAB */}
         {tab === 'schedule' && (
@@ -240,7 +240,7 @@ export default function ScheduleApp() {
               const isToday = ev.date === todayStr();
               return (
                 <div key={ev.id} onClick={() => setSelectedEvent(ev)}
-                  style={{ ...S.card, borderLeftWidth: 4, borderLeftColor: color, background: isToday ? (dark ? '#1a0a0a' : '#fff5f5') : cardBg }}>
+                  style={{ ...S.card, borderLeftWidth: 4, borderTopColor: color, borderRightColor: color, borderBottomColor: color, borderLeftColor: color, background: isToday ? (dark ? '#1a0a0a' : '#fff5f5') : cardBg }}>
                   {isToday && <div style={{ fontSize: 10, fontWeight: 900, color: RED, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>● TODAY</div>}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                     <div style={{ flex: 1 }}>
@@ -284,7 +284,7 @@ export default function ScheduleApp() {
                 {pending.map(item => {
                   const overdue = new Date(item.dueDate + 'T23:59:59') < new Date();
                   return (
-                    <div key={item.id} style={{ ...S.card, borderColor: overdue ? '#ef444460' : border }}>
+                    <div key={item.id} style={{ ...S.card, borderTopColor: overdue ? '#ef444460' : border, borderRightColor: overdue ? '#ef444460' : border, borderBottomColor: overdue ? '#ef444460' : border, borderLeftColor: overdue ? '#ef444460' : border }}>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                         <input type="checkbox" checked={false} onChange={() => setTodos(p => p.map(t => t.id === item.id ? { ...t, completed: true } : t))} style={{ marginTop: 2, accentColor: '#7c3aed', width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} />
                         <div style={{ flex: 1 }}>
@@ -404,6 +404,83 @@ export default function ScheduleApp() {
           </div>
         );
       })()}
+
+      {/* ── PWA Footer ── */}
+      <footer style={{
+        borderTop: `1px solid ${border}`,
+        background: dark ? '#0a0a0a' : '#f9f9f9',
+        padding: '28px 20px',
+        paddingBottom: 'calc(28px + env(safe-area-inset-bottom))',
+        marginTop: 24,
+      }}>
+        <div style={{ maxWidth: 600, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+
+          {/* Logo wordmark */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Icon mark */}
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: RED,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: `0 4px 12px ${RED}55`,
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <path d="M2 17l10 5 10-5"/>
+                <path d="M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            {/* Wordmark */}
+            <div>
+              <p style={{ margin: 0, fontSize: 16, fontWeight: 900, letterSpacing: '-0.03em', textTransform: 'uppercase', color: text, lineHeight: 1 }}>
+                The Squad
+              </p>
+              <p style={{ margin: 0, fontSize: 8, fontWeight: 800, letterSpacing: '0.2em', textTransform: 'uppercase', color: RED, lineHeight: 1.4 }}>
+                CHAMPIONSHIP PLATFORM
+              </p>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: 40, height: 2, borderRadius: 2, background: RED, opacity: 0.4 }} />
+
+          {/* Tagline */}
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '-0.01em', color: text }}>
+              Championship Operations
+            </p>
+            <p style={{ margin: 0, fontSize: 11, color: muted, fontWeight: 500, lineHeight: 1.6 }}>
+              Built for athletes. Powered by your team.
+            </p>
+          </div>
+
+          {/* Feature pills */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {['📅 Live Schedule', '✅ Task List', '🔌 Works Offline', '📲 Installable'].map(label => (
+              <span key={label} style={{
+                fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em',
+                color: muted, background: dark ? '#ffffff08' : '#00000008',
+                border: `1px solid ${border}`, borderRadius: 20, padding: '4px 10px',
+              }}>{label}</span>
+            ))}
+          </div>
+
+          {/* Bottom links + copyright */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+            <a
+              href="https://thesquad.pro"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: RED, textDecoration: 'none' }}
+            >
+              thesquad.pro ↗
+            </a>
+            <p style={{ margin: 0, fontSize: 9, color: muted, fontWeight: 600 }}>
+              © {new Date().getFullYear()} The Squad · operations@thesquad.pro
+            </p>
+          </div>
+        </div>
+      </footer>
 
       {/* iOS Install Sheet */}
       {showInstall && (

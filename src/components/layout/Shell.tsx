@@ -165,9 +165,10 @@ const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boo
 });
 SidebarItem.displayName = "SidebarItem";
 
-function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isSchoolMode, isPrimaryClubAuthority, isEliteAccount, isEliteClubMode }: {
+function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isSchoolMode, isPrimaryClubAuthority, isEliteAccount, isEliteClubMode, onClose }: {
   activeTeam: any; teams: any[]; setActiveTeam: any; router: any; user: any;
   isSchoolMode?: boolean; isPrimaryClubAuthority?: boolean; isEliteAccount?: boolean; isEliteClubMode?: boolean;
+  onClose?: () => void;
 }) {
   const primarySchoolTeam = isSchoolMode ? teams.find(t => t.type === 'school') : null;
   const squadList = isSchoolMode ? teams.filter(t => t.type !== 'school') : teams;
@@ -261,7 +262,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 subtitle={user?.institutionTitle || 'Athletic Director'}
                 initial={(user?.schoolName || user?.clubName || primarySchoolTeam.name || 'S')[0]}
                 isActive={activeTeam?.type === 'school'}
-                onClick={() => setActiveTeam(primarySchoolTeam)}
+                onClick={() => { setActiveTeam(primarySchoolTeam); onClose?.(); }}
                 variant="school"
               />
             </>
@@ -276,7 +277,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                   key={team.id}
                   team={team}
                   isActive={activeTeam?.id === team.id && activeTeam?.type !== 'school'}
-                  onClick={() => { setActiveTeam(team); router.push('/dashboard'); }}
+                  onClick={() => { setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
                 />
               ))
             }
@@ -306,7 +307,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 subtitle={user?.institutionTitle || 'Club Organizer'}
                 initial={(user?.clubName || user?.schoolName || 'E')[0]}
                 isActive={!activeTeam}
-                onClick={() => { setActiveTeam(null); router.push('/club'); }}
+                onClick={() => { setActiveTeam(null); router.push('/club'); onClose?.(); }}
                 variant="elite"
               />
               <DropdownMenuSeparator className="my-1.5" />
@@ -320,7 +321,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                       team={team}
                       isActive={activeTeam?.id === team.id}
                       tierOverride={squadTier(team, true)}
-                      onClick={() => { setActiveTeam(team); router.push('/dashboard'); }}
+                      onClick={() => { setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
                     />
                   ))
                 }
@@ -340,7 +341,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                     key={team.id}
                     team={team}
                     isActive={activeTeam?.id === team.id}
-                    onClick={() => setActiveTeam(team)}
+                    onClick={() => { setActiveTeam(team); onClose?.(); }}
                   />
                 ))}
               </div>
@@ -356,7 +357,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                     team={team}
                     isActive={activeTeam?.id === team.id}
                     tierOverride={squadTier(team, true)}
-                    onClick={() => setActiveTeam(team)}
+                    onClick={() => { setActiveTeam(team); onClose?.(); }}
                   />
                 ))}
               </div>
@@ -397,6 +398,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
 
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  // Controlled open state for both squad switcher instances
+  const [sidebarSwitcherOpen, setSidebarSwitcherOpen] = useState(false);
+  const [mobileSwitcherOpen, setMobileSwitcherOpen] = useState(false);
 
   const filteredCoordTabs = coordinationTabs
     .filter(tab => {
@@ -511,7 +515,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 )}
               </SidebarMenu>
 
-              <DropdownMenu>
+              <DropdownMenu open={sidebarSwitcherOpen} onOpenChange={setSidebarSwitcherOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" className="w-full justify-between h-14 px-3 border-2 border-muted-foreground/10 bg-background rounded-2xl shadow-sm hover:bg-muted/50 transition-all">
                     <div className="flex items-center gap-3 min-w-0">
@@ -591,7 +595,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </Button>
 
                 </DropdownMenuTrigger>
-                   <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} />
+                   <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setSidebarSwitcherOpen(false)} />
               </DropdownMenu>
             </SidebarHeader>
 
@@ -649,7 +653,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between text-foreground">
               <div className="flex items-center gap-4">
                 <div className="md:hidden">
-                  <DropdownMenu>
+                  <DropdownMenu open={mobileSwitcherOpen} onOpenChange={setMobileSwitcherOpen}>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <DropdownMenuTrigger asChild>
@@ -660,7 +664,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       </TooltipTrigger>
                       <TooltipContent side="bottom">Switch Squad</TooltipContent>
                     </Tooltip>
-                    <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} />
+                    <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(false)} />
                   </DropdownMenu>
                 </div>
                 <div className="hidden md:block">
