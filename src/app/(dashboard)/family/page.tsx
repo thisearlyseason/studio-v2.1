@@ -348,6 +348,16 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
   const router = useRouter();
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLoginInfoOpen, setIsLoginInfoOpen] = useState(false);
+
+  // Navigate to the waiver library for the specific team this child belongs to
+  const handleExecuteWaivers = () => {
+    const childTeams = (teams || []).filter(t => child.joinedTeamIds?.includes(t.id));
+    if (childTeams.length > 0) {
+      // Switch active team to the child's team so /files shows their waivers
+      setActiveTeam(childTeams[0]);
+    }
+    router.push('/files');
+  };
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [isInviting, setIsInviting] = useState(false);
@@ -508,7 +518,7 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
 
         {/* Action Buttons */}
         <div className="grid grid-cols-2 gap-3 pt-2">
-          <Button variant="outline" className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 hover:border-primary transition-all" onClick={() => router.push('/files')}>
+          <Button variant="outline" className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 hover:border-primary transition-all" onClick={handleExecuteWaivers}>
             <Signature className="h-4 w-4" />
             <span>Execute Waivers</span>
           </Button>
@@ -779,6 +789,10 @@ export default function FamilyPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [newChild, setNewChild] = useState({ firstName: '', lastName: '', dob: '', teamCode: '', email: '' });
 
+  // Single collectionGroup query is safe — the write side now always stamps
+  // userId: firebaseUser.uid on every signature doc (both direct and parent-guardian),
+  // so one listener is enough. Two concurrent collectionGroup listeners on the same
+  // collection trigger a Firestore SDK internal assertion (ca9/b815).
   const sigsQuery = useMemoFirebase(() => {
     if (!db || !user?.id) return null;
     return query(collectionGroup(db, 'signatures'), where('userId', '==', user.id));
@@ -1240,7 +1254,7 @@ export default function FamilyPage() {
               </div>
               <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border shadow-inner">
                 <div>
-                  <p className="text-[10px] font-black uppercase opacity-40">Verified Docs</p>
+                  <p className="text-[10px] font-black uppercase opacity-40">Signed Waivers</p>
                   <p className="text-xl font-black text-green-600 font-black">{signatures?.length || 0}</p>
                 </div>
                 <FileSignature className="h-6 w-6 text-primary/40" />

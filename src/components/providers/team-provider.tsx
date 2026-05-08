@@ -1049,7 +1049,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // --- Default: first available team ---
     return teamsRaw[0] || null;
   }, [teamsRaw, activeTeamId]);
-  const activeTeamDocRef = useMemoFirebase(() => (db && activeTeamMembership?.id) ? doc(db, 'teams', activeTeamMembership.id) : null, [db, activeTeamMembership?.id]);
+  const activeTeamDocRef = useMemoFirebase(() => (isAuthResolved && firebaseUser && db && activeTeamMembership?.id) ? doc(db, 'teams', activeTeamMembership.id) : null, [isAuthResolved, firebaseUser, db, activeTeamMembership?.id]);
   const { data: activeTeamDoc } = useDoc<Team>(activeTeamDocRef);
 
   const activeTeam = useMemo(() => {
@@ -2119,7 +2119,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       signedAt: new Date().toISOString(),
       signedByParent: isParentSigning,
       parentName: isParentSigning ? parentName : null,
-      parentUid: isParentSigning ? firebaseUser.uid : null
+      parentUid: isParentSigning ? firebaseUser.uid : null,
+      // userId is always the UID of whoever executed this signing action,
+      // making the family-page collectionGroup query (userId == user.id) work
+      // for both direct member signings and parent-as-guardian signings.
+      userId: firebaseUser.uid,
     }); 
 
     // ── CRITICAL: Update the member document's `signatures` map so that
