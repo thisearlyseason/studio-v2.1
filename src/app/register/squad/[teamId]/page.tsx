@@ -80,10 +80,11 @@ function RapidJoinForm() {
   const currentStepId = useMemo(() => activeSteps[step - 1]?.id || 'identity', [activeSteps, step]);
 
   useEffect(() => {
-    if (user) {
-      setFormData(prev => ({ ...prev, name: user.name, email: user.email }));
+    if (user?.name || user?.email) {
+      setFormData(prev => ({ ...prev, name: user.name ?? prev.name, email: user.email ?? prev.email }));
     }
-  }, [user]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.name, user?.email]);
 
   const handleNextStep = (e?: React.MouseEvent) => {
     if (step < totalSteps) {

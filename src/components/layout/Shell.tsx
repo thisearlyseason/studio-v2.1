@@ -123,7 +123,7 @@ const coordinationTabs = [
 
 const adminTabs = [
   { name: 'Coaches Corner', href: '/coaches-corner', icon: PenTool, pro: true, desc: 'Waivers & Docs' },
-  { name: 'Facilities', href: '/facilities', icon: MapPin, pro: true, desc: 'Venue Control' },
+  { name: 'Facilities', href: '/facilities', icon: MapPin, pro: false, desc: 'Venue Control' },
   { name: 'Equipment', href: '/equipment', icon: Package, pro: true, desc: 'Inventory Vault' },
 ];
 

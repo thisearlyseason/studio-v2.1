@@ -38,7 +38,6 @@ import {
   ExternalLink,
   Users,
   Share2,
-  Lock as LockIcon,
   AlertCircle,
   FileText,
   Copy,
@@ -889,7 +888,7 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
 
 export function LeaguesPageContent({ embedded = false }: { embedded?: boolean }) {
   const { 
-    activeTeam, createLeague, isStaff, isPro, purchasePro, 
+    activeTeam, createLeague, isStaff, isPro, purchasePro, isStarter,
     teams, removeTeamFromLeague, updateLeagueTeamDetails,
     isPrimaryClubAuthority, updateLeaguePin, isSchoolMode, updateLeague
   } = useTeam();
@@ -1564,7 +1563,6 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                 <div className="flex flex-wrap gap-2 justify-end">
                   <Button 
                     onClick={() => {
-                      if (!isPro) { purchasePro(); return; }
                       navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.slug || activeLeague.id}?protocol=team_config`);
                       toast({ title: "Public Link Copied", description: "The registration portal link is ready to share." });
                     }} 
@@ -1572,13 +1570,13 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                     size="icon" 
                     className="h-12 w-12 rounded-xl border-white/20 border hover:bg-white/10 text-white transition-all"
                   >
-                    {!isPro ? <LockIcon className="h-5 w-5 opacity-40" /> : <Share2 className="h-5 w-5" />}
+                    <Share2 className="h-5 w-5" />
                   </Button>
                   <Button onClick={handleEditLeague} variant="ghost" size="icon" className="h-12 w-12 rounded-xl border-white/20 border hover:bg-white/10 text-white transition-all"><Settings className="h-5 w-5" /></Button>
-                  <Button onClick={() => isPro ? setIsSeasonOpen(true) : purchasePro()} variant="outline" className="rounded-xl h-12 px-6 border-white/20 bg-white/5 text-white hover:bg-white hover:text-black transition-all flex items-center gap-2">
-                    {!isPro && <LockIcon className="h-3 w-3" />}
+                  <Button onClick={() => setIsSeasonOpen(true)} variant="outline" className="rounded-xl h-12 px-6 border-white/20 bg-white/5 text-white hover:bg-white hover:text-black transition-all flex items-center gap-2">
                     Season Architect
                   </Button>
+                  {!isStarter && (
                   <Button 
                     variant="default" 
                     className="rounded-xl h-12 px-6 font-black uppercase text-xs shadow-xl flex items-center gap-2 hover:text-black transition-all"
@@ -1587,6 +1585,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                     <FileText className="h-4 w-4" />
                     Portal Architect
                   </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -1599,8 +1598,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   <Button variant={activeTab === 'teams' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('teams')}>Teams</Button>
                   <Button variant={activeTab === 'schedule' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('schedule')}>Schedule</Button>
                   {isStaff && <Button variant={activeTab === 'players' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('players')}>Players</Button>}
-                  {isStaff && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('portals')}>Portals</Button>}
-                  {isStaff && <Button variant={activeTab === 'compliance' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('compliance')}>Compliance</Button>}
+                  {isStaff && !isStarter && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('portals')}>Portals</Button>}
+                  {isStaff && !isStarter && <Button variant={activeTab === 'compliance' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('compliance')}>Compliance</Button>}
                 </div>
                 
                 {activeTab === 'teams' && activeLeague.divisions && activeLeague.divisions.length > 0 && (
@@ -1818,9 +1817,11 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                             <td className="px-4 py-6 font-black text-xs uppercase">{waiver.signer}</td>
                             <td className="px-4 py-6 text-[10px] font-bold text-muted-foreground uppercase">{format(new Date(waiver.signedAt), 'MMM d, h:mm a')}</td>
                             <td className="px-10 py-6 text-right">
+                              {!isStarter && (
                               <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-primary/10 text-primary" onClick={() => exportWaiver(waiver)}>
                                 <Download className="h-5 w-5" />
                               </Button>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -2139,7 +2140,13 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                       </div>
                     </div>
 
-                    <div className="space-y-5 pt-8 border-t border-white/10 font-black">
+                    <div className="space-y-5 pt-8 border-t border-white/10 font-black relative">
+                      {/* Coming Soon overlay — Division Architect is not yet active */}
+                      <div className="absolute inset-0 z-10 rounded-2xl flex flex-col items-center justify-center gap-3 pointer-events-all cursor-not-allowed" style={{backdropFilter:'blur(2px)', background:'rgba(0,0,0,0.55)'}}>
+                        <span className="text-[9px] font-black uppercase tracking-[0.25em] text-white/40">Feature In Development</span>
+                        <span className="bg-amber-400 text-black text-[9px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg">Coming Soon</span>
+                      </div>
+                      <div className="pointer-events-none select-none">
                       <div>
                         <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-2">Division Architect</Label>
                         <p className="text-[10px] font-medium text-white/40 italic leading-relaxed px-2">Define competitive tiers (e.g. Gold, Silver, U12) to partition squads and participants.</p>
@@ -2170,6 +2177,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                             <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest italic">No divisions defined. Single-tier hub active.</p>
                           </div>
                         )}
+                      </div>
                       </div>
                     </div>
 

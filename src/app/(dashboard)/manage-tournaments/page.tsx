@@ -197,7 +197,7 @@ function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { fa
 }
 
 function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEvent }: { isOpen: boolean, onOpenChange: (o: boolean) => void, onComplete: () => void, editEvent?: TeamEvent }) {
-  const { activeTeam, user, hasFeature } = useTeam();
+  const { activeTeam, user, hasFeature, isStarter } = useTeam();
   const db = useFirestore();
   const { addEvent } = useTeam();
 
@@ -582,6 +582,12 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                     <div className="bg-white/5 p-8 rounded-[3rem] border border-white/5 grid grid-cols-1 md:grid-cols-2 gap-8">
                        <div className="space-y-3">
                           <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Tournament Architecture</Label>
+                          {isStarter ? (
+                            <div className="h-16 rounded-2xl bg-white/5 border border-white/10 px-6 flex items-center justify-between">
+                              <span className="font-black uppercase tracking-tight text-white text-sm">Basic (Round Robin)</span>
+                              <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-white/40"><Lock className="h-3 w-3" /> Pro Formats Locked</span>
+                            </div>
+                          ) : (
                           <Select value={form.tournamentType} onValueChange={(v: any) => {
                             if (editEvent && v !== editEvent.tournamentType) {
                               setTypeChangeWarning(true);
@@ -602,6 +608,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                               <SelectItem value="double_elimination" className="focus:bg-primary focus:text-white">Double Elimination Topology</SelectItem>
                             </SelectContent>
                           </Select>
+                          )}
                        </div>
                        
                        <div className="space-y-3">
@@ -735,7 +742,7 @@ function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEven
 }
 
 function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () => void }) {
-  const { isStaff: isTeamStaff, activeTeam, db, user } = useTeam();
+  const { isStaff: isTeamStaff, activeTeam, db, user, isStarter } = useTeam();
   const isStaff = isTeamStaff || !!(event.adminEmails && user?.email && event.adminEmails.includes(user.email));
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('itinerary');
@@ -1090,10 +1097,13 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
             {/* ── Quick Access ── */}
             <div className="flex flex-wrap items-center gap-2 pt-5 border-t border-white/10">
                <span className="text-[9px] font-black uppercase tracking-widest opacity-40 mr-1">Quick Access</span>
-               <Button size="sm" onClick={() => window.open(`/tournaments/spectator/${activeTeam?.id}/${event.id}`, '_blank')} className="h-8 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/10 font-black uppercase text-[9px] tracking-widest">
-                  <Zap className="h-3 w-3 mr-1.5" /> Spectator
-               </Button>
-               {isStaff && (<>
+               {/* Starter plan: no premium portals */}
+               {!isStarter && (
+                 <Button size="sm" onClick={() => window.open(`/tournaments/spectator/${activeTeam?.id}/${event.id}`, '_blank')} className="h-8 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/10 font-black uppercase text-[9px] tracking-widest">
+                    <Zap className="h-3 w-3 mr-1.5" /> Spectator
+                 </Button>
+               )}
+               {isStaff && !isStarter && (<>
                   <Button size="sm" onClick={() => window.open(`/tournaments/scorekeeper/${activeTeam?.id}/${event.id}`, '_blank')} className="h-8 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/10 font-black uppercase text-[9px] tracking-widest">
                      <Lock className="h-3 w-3 mr-1.5" /> Scorekeeper
                   </Button>
@@ -1104,6 +1114,11 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
                      <Share2 className="h-3 w-3 mr-1.5" /> Registration
                   </Button>
                </>)}
+               {isStarter && (
+                 <span className="text-[9px] font-black uppercase tracking-widest text-white/30 flex items-center gap-1.5">
+                   <Lock className="h-3 w-3" /> Upgrade to Pro to unlock portals
+                 </span>
+               )}
             </div>
         </div>
       </div>
@@ -1267,11 +1282,11 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
           <div className="bg-muted/30 p-8 border-b">
             <TabsList className="bg-white/50 h-auto p-2 rounded-[2rem] border-2 w-full flex-wrap gap-1 shadow-inner">
               <TabsTrigger value="itinerary" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Matches</TabsTrigger>
-              <TabsTrigger value="officials" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-blue-600 data-[state=active]:text-white">Officials</TabsTrigger>
+              {!isStarter && <TabsTrigger value="officials" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-blue-600 data-[state=active]:text-white">Officials</TabsTrigger>}
               <TabsTrigger value="bracket" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Brackets</TabsTrigger>
               <TabsTrigger value="standings" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Standings</TabsTrigger>
               <TabsTrigger value="roster" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Roster</TabsTrigger>
-              <TabsTrigger value="architecture" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-orange-600 data-[state=active]:text-white">Architecture</TabsTrigger>
+              {!isStarter && <TabsTrigger value="architecture" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-orange-600 data-[state=active]:text-white">Architecture</TabsTrigger>}
             </TabsList>
           </div>
           <div className="p-8 lg:p-14">
@@ -1795,7 +1810,7 @@ function TournamentDetailView({ event, onBack }: { event: TeamEvent, onBack: () 
 }
 
 export function ManageTournamentsPageContent({ embedded = false }: { embedded?: boolean }) {
-  const { activeTeam, db, firebaseUser: user, isStaff, isPrimaryClubAuthority } = useTeam();
+  const { activeTeam, db, firebaseUser: user, isStaff, isPrimaryClubAuthority, isStarter } = useTeam();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -1888,7 +1903,11 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
           <div className="space-y-2">
             <Badge className="bg-primary text-white border-none font-black text-[10px] px-4 h-7 uppercase tracking-[0.2em] shadow-xl">Series Operations Hub</Badge>
             <h1 className="text-4xl md:text-7xl font-black uppercase tracking-tighter leading-none italic">Manage Tournaments</h1>
-            <p className="text-sm font-medium text-muted-foreground leading-relaxed italic max-w-2xl">Elite-level institutional Series Architect for managing multi-field tournaments, synchronized officiating, and live bracket telemetry.</p>
+            <p className="text-sm font-medium text-muted-foreground leading-relaxed italic max-w-2xl">
+              {isStarter
+                ? 'Create basic tournaments with manual team entry. Upgrade to Pro for advanced formats, portals, and officiating tools.'
+                : 'Elite-level institutional Series Architect for managing multi-field tournaments, synchronized officiating, and live bracket telemetry.'}
+            </p>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex gap-2 justify-end">
@@ -1900,7 +1919,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
               )}
               {(isStaff || isPrimaryClubAuthority) && (
                 <Button onClick={() => setIsWizardOpen(true)} className="h-14 px-8 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl transition-all active:scale-95 shrink-0 flex items-center">
-                  Assemble Elite Series <Plus className="ml-3 h-4 w-4" />
+                  {isStarter ? 'Create Basic Tournament' : 'Assemble Elite Series'} <Plus className="ml-3 h-4 w-4" />
                 </Button>
               )}
             </div>
@@ -1916,7 +1935,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
           )}
           {(isStaff || isPrimaryClubAuthority) && (
             <Button onClick={() => setIsWizardOpen(true)} className="h-11 px-6 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl flex items-center">
-              Assemble Elite Series <Plus className="ml-2 h-4 w-4" />
+              {isStarter ? 'Create Basic Tournament' : 'Assemble Elite Series'} <Plus className="ml-2 h-4 w-4" />
             </Button>
           )}
         </div>

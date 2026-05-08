@@ -77,7 +77,8 @@ export default function LeagueRegistrationAdminPage() {
     saveLeagueRegistrationConfig, 
     assignEntryToTeam, 
     activeTeam, 
-    submitRegistrationEntry 
+    submitRegistrationEntry,
+    isStarter
   } = useTeam();
   const db = useFirestore();
 
@@ -816,7 +817,7 @@ export default function LeagueRegistrationAdminPage() {
                         </div>
                       </div>
 
-                      <div className="space-y-8">
+                      {!isStarter && <div className="space-y-8">
                          <div className="flex items-center justify-between px-1">
                             <div className="space-y-1">
                                <p className="text-[11px] font-black uppercase text-rose-700 tracking-widest">Coaches Corner Libraries</p>
@@ -874,7 +875,7 @@ export default function LeagueRegistrationAdminPage() {
                               </div>
                             </div>
                          </div>
-                      </div>
+                      </div>}
                   </div>
                 </CardContent>
               </Card>
