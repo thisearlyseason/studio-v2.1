@@ -787,7 +787,8 @@ export default function ClubManagementPage() {
       </div>
 
       <Tabs defaultValue="squads" className="space-y-8">
-        <TabsList className="bg-muted/50 rounded-xl p-1 h-12 inline-flex border-2 shadow-inner">
+        <div className="overflow-x-auto -mx-1 px-1 pb-1 scrollbar-none">
+        <TabsList className="bg-muted/50 rounded-xl p-1 h-12 inline-flex border-2 shadow-inner whitespace-nowrap min-w-max">
           <TabsTrigger value="squads" className="rounded-lg font-black text-xs uppercase px-6 data-[state=active]:bg-black data-[state=active]:text-white">{schoolHub ? 'Squads' : 'Squad Roster'}</TabsTrigger>
           {schoolHub && (
             <TabsTrigger value="coaches" className="rounded-lg font-black text-xs uppercase px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Coaches</TabsTrigger>
@@ -799,6 +800,7 @@ export default function ClubManagementPage() {
           <TabsTrigger value="finance" className="rounded-lg font-black text-xs uppercase px-6 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">Finance</TabsTrigger>
           <TabsTrigger value="safety" className="rounded-lg font-black text-xs uppercase px-6 data-[state=active]:bg-primary data-[state=active]:text-white">Safety</TabsTrigger>
         </TabsList>
+        </div>
 
         <TabsContent value="squads" className="space-y-12 mt-0">
           <div className="space-y-6">

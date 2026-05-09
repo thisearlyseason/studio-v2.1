@@ -420,18 +420,23 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     });
 
   // School admin in institution mode: only the squad-selector is shown.
-  const isSchoolInstitutionMode = isSchoolMode && isPrimaryClubAuthority && activeTeam?.type === 'school';
+  // This covers: (a) when the explicit school hub record is active, or (b) when no squad has been chosen yet.
+  const isSchoolInstitutionMode = isSchoolMode && isPrimaryClubAuthority && (!activeTeam || activeTeam?.type === 'school');
 
   // Elite Club Organizer in hub mode: nav is hidden only when NO squad is selected (organizer is on the Club Hub).
   // When a sub-squad is selected, full navigation is shown for that squad.
   const isEliteHubMode = isEliteClubMode && !activeTeam;
 
-  const bottomNavItems = [
-    { name: 'Home', href: '/dashboard', icon: Home },
-    { name: 'Schedule', href: '/events', icon: CalendarDays },
-    { name: 'Feed', href: '/feed', icon: LayoutDashboard, gate: () => hasFeature?.('live_feed_read') },
-    { name: 'Tactical Chat', href: '/chats', icon: MessageCircle },
-  ];
+  const bottomNavItems = (
+    isSchoolInstitutionMode || isEliteHubMode
+      ? [] // hide all operational shortcuts until a squad is selected
+      : [
+          { name: 'Home', href: '/dashboard', icon: Home },
+          { name: 'Schedule', href: '/events', icon: CalendarDays },
+          { name: 'Feed', href: '/feed', icon: LayoutDashboard, gate: () => hasFeature?.('live_feed_read') },
+          { name: 'Tactical Chat', href: '/chats', icon: MessageCircle },
+        ]
+  );
 
   if (!activeTeam && !user) return null;
 
@@ -847,146 +852,174 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     </SheetHeader>
                     <ScrollArea className="flex-1 px-6 pb-10">
                       <div className="space-y-8 pt-4">
-                        <div className="space-y-3">
-                          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Operational Hub</p>
-                          <div className="grid grid-cols-2 gap-3">
-                            {filteredCoordTabs.map((tab) => {
-                              if (bottomNavItems.find(item => item.href === tab.href)) return null;
-                              const isLocked = tab.pro && !isPro;
-                              
-                              const handleClick = (e: React.MouseEvent) => {
-                                if (isLocked) {
-                                  e.preventDefault();
-                                  purchasePro();
-                                } else {
-                                  setIsMoreMenuOpen(false);
-                                }
-                              };
 
-                              return (
-                                <Link 
-                                  key={tab.name} 
-                                  href={isLocked ? '#' : tab.href}
-                                  onClick={handleClick}
-                                  className={cn(
-                                    "flex items-center gap-3 p-4 rounded-2xl border transition-all group active:scale-95",
-                                    pathname === tab.href ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:bg-white hover:border-primary/20",
-                                    isLocked && "opacity-80"
-                                  )}
-                                >
-                                  <div className={cn(
-                                    "p-2 rounded-xl transition-colors",
-                                    pathname === tab.href ? "bg-primary text-white" : "bg-white text-muted-foreground group-hover:text-primary"
-                                  )}>
-                                    <tab.icon className="h-4 w-4" />
-                                  </div>
-                                  <div className="flex flex-col min-w-0">
-                                    <span className={cn(
-                                      "text-[10px] font-black uppercase tracking-tight truncate",
-                                      pathname === tab.href ? "text-primary" : "text-foreground"
-                                    )}>
-                                      {tab.name}
-                                    </span>
-                                    {isLocked && <span className="text-[7px] font-bold text-muted-foreground flex items-center gap-1 uppercase tracking-tighter"><Lock className="h-2 w-2" /> PRO</span>}
-                                  </div>
-                                </Link>
-                              );
-                            })}
+                        {/* Institution/Hub mode: squad-select prompt instead of operational nav */}
+                        {(isSchoolInstitutionMode || isEliteHubMode) ? (
+                          <div className="flex flex-col items-center justify-center py-10 gap-4 text-center">
+                            <div className="h-16 w-16 rounded-3xl bg-primary/10 flex items-center justify-center">
+                              <Building className="h-8 w-8 text-primary" />
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-sm font-black uppercase tracking-tight text-foreground">
+                                {isSchoolMode ? 'School Hub Mode' : 'Club Hub Mode'}
+                              </p>
+                              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                                Select a squad above to access<br />team operations
+                              </p>
+                            </div>
+                            <Link
+                              href="/club"
+                              onClick={() => setIsMoreMenuOpen(false)}
+                              className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-primary text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all"
+                            >
+                              <Building className="h-4 w-4" />
+                              {isSchoolMode ? 'School Hub' : 'Club Hub'}
+                            </Link>
                           </div>
-                        </div>
-
-                        {(isEliteAccount || isSchoolAdmin || isParent) && (
+                        ) : (
+                          <>
                             <div className="space-y-3">
-                              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Management Hubs</p>
-                              <div className="grid grid-cols-1 gap-2">
-                                 {hasFeature?.('club_management') && (
-                                  <Link 
-                                    href="/club"
-                                    onClick={() => setIsMoreMenuOpen(false)}
-                                    className={cn(
-                                      "flex items-center justify-between p-4 rounded-2xl border bg-primary text-white transition-all active:scale-[0.98]",
-                                      pathname === '/club' ? "ring-2 ring-white ring-offset-2 ring-offset-primary" : ""
+                              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Operational Hub</p>
+                              <div className="grid grid-cols-2 gap-3">
+                                {filteredCoordTabs.map((tab) => {
+                                  if (bottomNavItems.find((item: any) => item.href === tab.href)) return null;
+                                  const isLocked = tab.pro && !isPro;
+                                  
+                                  const handleClick = (e: React.MouseEvent) => {
+                                    if (isLocked) {
+                                      e.preventDefault();
+                                      purchasePro();
+                                    } else {
+                                      setIsMoreMenuOpen(false);
+                                    }
+                                  };
+
+                                  return (
+                                    <Link 
+                                      key={tab.name} 
+                                      href={isLocked ? '#' : tab.href}
+                                      onClick={handleClick}
+                                      className={cn(
+                                        "flex items-center gap-3 p-4 rounded-2xl border transition-all group active:scale-95",
+                                        pathname === tab.href ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:bg-white hover:border-primary/20",
+                                        isLocked && "opacity-80"
+                                      )}
+                                    >
+                                      <div className={cn(
+                                        "p-2 rounded-xl transition-colors",
+                                        pathname === tab.href ? "bg-primary text-white" : "bg-white text-muted-foreground group-hover:text-primary"
+                                      )}>
+                                        <tab.icon className="h-4 w-4" />
+                                      </div>
+                                      <div className="flex flex-col min-w-0">
+                                        <span className={cn(
+                                          "text-[10px] font-black uppercase tracking-tight truncate",
+                                          pathname === tab.href ? "text-primary" : "text-foreground"
+                                        )}>
+                                          {tab.name}
+                                        </span>
+                                        {isLocked && <span className="text-[7px] font-bold text-muted-foreground flex items-center gap-1 uppercase tracking-tighter"><Lock className="h-2 w-2" /> PRO</span>}
+                                      </div>
+                                    </Link>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {(isEliteAccount || isSchoolAdmin || isParent) && (
+                                <div className="space-y-3">
+                                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Management Hubs</p>
+                                  <div className="grid grid-cols-1 gap-2">
+                                     {hasFeature?.('club_management') && (
+                                      <Link 
+                                        href="/club"
+                                        onClick={() => setIsMoreMenuOpen(false)}
+                                        className={cn(
+                                          "flex items-center justify-between p-4 rounded-2xl border bg-primary text-white transition-all active:scale-[0.98]",
+                                          pathname === '/club' ? "ring-2 ring-white ring-offset-2 ring-offset-primary" : ""
+                                        )}
+                                      >
+                                        <div className="flex items-center gap-4">
+                                          <div className="bg-white/20 p-2 rounded-xl text-white">
+                                            <Building className="h-5 w-5" />
+                                          </div>
+                                          <div className="flex flex-col">
+                                            <span className="text-xs font-black uppercase tracking-widest">{isSchoolMode ? 'School Hub' : 'Club Hub'}</span>
+                                            <span className="text-[8px] font-bold text-white/60 uppercase">Institutional Analytics</span>
+                                          </div>
+                                        </div>
+                                        <ChevronRight className="h-4 w-4 text-white/20" />
+                                      </Link>
                                     )}
-                                  >
-                                    <div className="flex items-center gap-4">
-                                      <div className="bg-white/20 p-2 rounded-xl text-white">
-                                        <Building className="h-5 w-5" />
+                                  {isParent && (
+                                    <Link 
+                                      href="/family"
+                                      onClick={() => setIsMoreMenuOpen(false)}
+                                      className={cn(
+                                        "flex items-center justify-between p-4 rounded-2xl border bg-black text-white transition-all active:scale-[0.98]",
+                                        pathname === '/family' ? "ring-2 ring-primary ring-offset-2" : ""
+                                      )}
+                                    >
+                                      <div className="flex items-center gap-4">
+                                        <div className="bg-primary/20 p-2 rounded-xl text-primary">
+                                          <Baby className="h-5 w-5" />
+                                        </div>
+                                        <div className="flex flex-col">
+                                          <span className="text-xs font-black uppercase tracking-widest">Family Hub</span>
+                                          <span className="text-[8px] font-bold text-white/40 uppercase">Household Command</span>
+                                        </div>
                                       </div>
-                                      <div className="flex flex-col">
-                                        <span className="text-xs font-black uppercase tracking-widest">{isSchoolMode ? 'School Hub' : 'Club Hub'}</span>
-                                        <span className="text-[8px] font-bold text-white/60 uppercase">Institutional Analytics</span>
-                                      </div>
-                                    </div>
-                                    <ChevronRight className="h-4 w-4 text-white/20" />
-                                  </Link>
-                                )}
-                              {isParent && (
-                                <Link 
-                                  href="/family"
-                                  onClick={() => setIsMoreMenuOpen(false)}
-                                  className={cn(
-                                    "flex items-center justify-between p-4 rounded-2xl border bg-black text-white transition-all active:scale-[0.98]",
-                                    pathname === '/family' ? "ring-2 ring-primary ring-offset-2" : ""
+                                      <ChevronRight className="h-4 w-4 text-white/20" />
+                                    </Link>
                                   )}
-                                >
-                                  <div className="flex items-center gap-4">
-                                    <div className="bg-primary/20 p-2 rounded-xl text-primary">
-                                      <Baby className="h-5 w-5" />
-                                    </div>
-                                    <div className="flex flex-col">
-                                      <span className="text-xs font-black uppercase tracking-widest">Family Hub</span>
-                                      <span className="text-[8px] font-bold text-white/40 uppercase">Household Command</span>
-                                    </div>
-                                  </div>
-                                  <ChevronRight className="h-4 w-4 text-white/20" />
-                                </Link>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                                </div>
+                              </div>
+                            )}
 
-                        {isStaff && (
-                          <div className="space-y-3">
-                            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Command Hub</p>
-                            <div className="grid grid-cols-1 gap-2">
-                              {adminTabs.map((tab) => {
-                                const isLocked = tab.pro && !isPro;
-                                
-                                const handleClick = (e: React.MouseEvent) => {
-                                  if (isLocked) {
-                                    e.preventDefault();
-                                    purchasePro();
-                                  } else {
-                                    setIsMoreMenuOpen(false);
-                                  }
-                                };
+                            {isStaff && (
+                              <div className="space-y-3">
+                                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Command Hub</p>
+                                <div className="grid grid-cols-1 gap-2">
+                                  {adminTabs.map((tab) => {
+                                    const isLocked = tab.pro && !isPro;
+                                    
+                                    const handleClick = (e: React.MouseEvent) => {
+                                      if (isLocked) {
+                                        e.preventDefault();
+                                        purchasePro();
+                                      } else {
+                                        setIsMoreMenuOpen(false);
+                                      }
+                                    };
 
-                                return (
-                                  <Link 
-                                    key={tab.name} 
-                                    href={isLocked ? '#' : tab.href}
-                                    onClick={handleClick}
-                                    className={cn(
-                                      "flex items-center justify-between p-4 rounded-2xl border bg-muted/30 text-foreground transition-all active:scale-[0.98]",
-                                      pathname === tab.href ? "bg-white ring-2 ring-primary ring-offset-2" : "",
-                                      isLocked && "opacity-80"
-                                    )}
-                                  >
-                                    <div className="flex items-center gap-4">
-                                      <div className="bg-primary/10 p-2 rounded-xl text-primary">
-                                        <tab.icon className="h-5 w-5" />
-                                      </div>
-                                      <div className="flex flex-col">
-                                        <span className="text-xs font-black uppercase tracking-widest">{tab.name}</span>
-                                        <span className="text-[8px] font-bold text-muted-foreground uppercase">{tab.desc}</span>
-                                      </div>
-                                    </div>
-                                    {isLocked ? <Lock className="h-4 w-4 text-muted-foreground/20" /> : <ChevronRight className="h-4 w-4 text-muted-foreground/20" />}
-                                  </Link>
-                                );
-                              })}
-                            </div>
-                          </div>
+                                    return (
+                                      <Link 
+                                        key={tab.name} 
+                                        href={isLocked ? '#' : tab.href}
+                                        onClick={handleClick}
+                                        className={cn(
+                                          "flex items-center justify-between p-4 rounded-2xl border bg-muted/30 text-foreground transition-all active:scale-[0.98]",
+                                          pathname === tab.href ? "bg-white ring-2 ring-primary ring-offset-2" : "",
+                                          isLocked && "opacity-80"
+                                        )}
+                                      >
+                                        <div className="flex items-center gap-4">
+                                          <div className="bg-primary/10 p-2 rounded-xl text-primary">
+                                            <tab.icon className="h-5 w-5" />
+                                          </div>
+                                          <div className="flex flex-col">
+                                            <span className="text-xs font-black uppercase tracking-widest">{tab.name}</span>
+                                            <span className="text-[8px] font-bold text-muted-foreground uppercase">{tab.desc}</span>
+                                          </div>
+                                        </div>
+                                        {isLocked ? <Lock className="h-4 w-4 text-muted-foreground/20" /> : <ChevronRight className="h-4 w-4 text-muted-foreground/20" />}
+                                      </Link>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </>
                         )}
 
                         <div className="space-y-3">
