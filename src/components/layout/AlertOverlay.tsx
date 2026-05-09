@@ -91,7 +91,7 @@ export function AlertOverlay() {
     <Dialog open={isAlertOpen} onOpenChange={(open) => {
       if (!open) handleUnderstood();
     }}>
-      <DialogContent className="sm:max-w-lg p-0 rounded-[3rem] overflow-hidden border-none shadow-[0_30px_100px_rgba(255,0,0,0.2)] bg-white">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-lg p-0 rounded-[2rem] sm:rounded-[3rem] overflow-hidden border-none shadow-[0_30px_100px_rgba(255,0,0,0.2)] bg-white max-h-[90vh] overflow-y-auto">
         <DialogTitle className="sr-only">High Priority Squad Alert</DialogTitle>
         <DialogDescription className="sr-only">Important directive from squad command</DialogDescription>
         {/* Championship Header */}

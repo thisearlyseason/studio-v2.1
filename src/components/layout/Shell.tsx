@@ -262,7 +262,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 subtitle={user?.institutionTitle || 'Athletic Director'}
                 initial={(user?.schoolName || user?.clubName || primarySchoolTeam.name || 'S')[0]}
                 isActive={activeTeam?.type === 'school'}
-                onClick={() => { setActiveTeam(primarySchoolTeam); onClose?.(); }}
+                onClick={() => { setActiveTeam(primarySchoolTeam); router.push('/club'); onClose?.(); }}
                 variant="school"
               />
             </>
