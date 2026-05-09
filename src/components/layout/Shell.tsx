@@ -881,8 +881,23 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                             <div className="space-y-3">
                               <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Operational Hub</p>
                               <div className="grid grid-cols-2 gap-3">
+                                {/* Dashboard — always first */}
+                                <Link
+                                  href="/dashboard"
+                                  onClick={() => setIsMoreMenuOpen(false)}
+                                  className={cn(
+                                    "flex items-center gap-3 p-4 rounded-2xl border transition-all group active:scale-95",
+                                    pathname === '/dashboard' ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/30 border-transparent hover:bg-white hover:border-primary/20"
+                                  )}
+                                >
+                                  <div className={cn("p-2 rounded-xl transition-colors", pathname === '/dashboard' ? "bg-primary text-white" : "bg-white text-muted-foreground group-hover:text-primary")}>
+                                    <Home className="h-4 w-4" />
+                                  </div>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className={cn("text-[10px] font-black uppercase tracking-tight truncate", pathname === '/dashboard' ? "text-primary" : "text-foreground")}>Dashboard</span>
+                                  </div>
+                                </Link>
                                 {filteredCoordTabs.map((tab) => {
-                                  if (bottomNavItems.find((item: any) => item.href === tab.href)) return null;
                                   const isLocked = tab.pro && !isPro;
                                   
                                   const handleClick = (e: React.MouseEvent) => {
