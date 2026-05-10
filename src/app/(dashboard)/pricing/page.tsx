@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useTeam } from '@/components/providers/team-provider';
 import { useUser } from '@/firebase';
@@ -101,19 +102,34 @@ export default function PricingPage() {
           <div className="absolute inset-0 hero-gradient" />
         </div>
         
-        <div className="max-w-7xl mx-auto px-6 relative text-center space-y-6">
-          <Badge className="bg-primary/10 text-primary border-primary/20 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.2em] animate-in fade-in slide-in-from-bottom-4 duration-700">
-            System Infrastructure
-          </Badge>
-          <h1 className="text-5xl lg:text-7xl font-black tracking-tighter leading-[0.9] animate-in fade-in slide-in-from-bottom-6 duration-1000 delay-100">
+        <motion.div
+          className="max-w-7xl mx-auto px-6 relative text-center space-y-6"
+          initial="hidden" animate="visible"
+          variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.13 } } }}
+        >
+          <motion.div variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.55 } } }}>
+            <Badge className="bg-primary/10 text-primary border-primary/20 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.2em]">
+              System Infrastructure
+            </Badge>
+          </motion.div>
+          <motion.h1
+            className="text-5xl lg:text-7xl font-black tracking-tighter leading-[0.9]"
+            variants={{ hidden: { opacity: 0, y: 36, scale: 0.97 }, visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.75, ease: [0.16, 1, 0.3, 1] } } }}
+          >
             DEPLOY YOUR <span className="text-primary italic">SQUAD HUB.</span>
-          </h1>
-          <p className="max-w-2xl mx-auto text-muted-foreground font-medium text-lg leading-relaxed animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-200">
+          </motion.h1>
+          <motion.p
+            className="max-w-2xl mx-auto text-muted-foreground font-medium text-lg leading-relaxed"
+            variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0, transition: { duration: 0.6 } } }}
+          >
             Secure, institutional-grade management infrastructure. Scaling from grassroots squads to national premier leagues.
-          </p>
+          </motion.p>
 
           {/* Billing Toggle */}
-          <div className="flex items-center justify-center gap-4 pt-8 animate-in fade-in slide-in-from-bottom-10 duration-1000 delay-300">
+          <motion.div
+            className="flex items-center justify-center gap-4 pt-8"
+            variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.5 } } }}
+          >
             <span className={cn("text-sm font-black uppercase tracking-widest transition-opacity", billingCycle === 'annual' ? 'opacity-40' : 'opacity-100')}>Monthly</span>
             <button 
               onClick={() => setBillingCycle(prev => prev === 'monthly' ? 'annual' : 'monthly')}
@@ -125,17 +141,27 @@ export default function PricingPage() {
               <span className={cn("text-sm font-black uppercase tracking-widest transition-opacity", billingCycle === 'monthly' ? 'opacity-40' : 'opacity-100')}>Annual</span>
               <Badge className="bg-green-100 text-green-700 border-none font-black text-[10px] px-2 h-5">SAVE 20%</Badge>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </div>
 
       {/* Plans Grid */}
-      <div className="max-w-7xl mx-auto px-6 -mt-12 relative z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <motion.div
+        className="max-w-7xl mx-auto px-6 -mt-12 relative z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+        initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.1 }}
+        variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.1 } } }}
+      >
         {PRICING_CONFIG.map((plan) => (
+          <motion.div
+            key={plan.id}
+            variants={{ hidden: { opacity: 0, y: 40 }, visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] as [number,number,number,number] } } }}
+            whileHover={{ y: plan.highlight ? -12 : -8, scale: plan.highlight ? 1.03 : 1.015 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 22 }}
+            className="flex flex-col"
+          >
           <Card 
-            key={plan.id} 
             className={cn(
-              "rounded-[2.5rem] overflow-hidden border-2 transition-all duration-300 flex flex-col group",
+              "rounded-[2.5rem] overflow-hidden border-2 transition-all duration-300 flex flex-col group h-full",
               plan.highlight 
                 ? "border-primary bg-black text-white shadow-2xl shadow-primary/20 scale-[1.02]" 
                 : "border-border/40 bg-white hover:border-primary/40"
@@ -204,11 +230,17 @@ export default function PricingPage() {
               </Button>
             </CardFooter>
           </Card>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
 
       {/* Add-ons Section */}
-      <div className="max-w-4xl mx-auto px-6 mt-16 lg:mt-24 space-y-8">
+      <motion.div
+        className="max-w-4xl mx-auto px-6 mt-16 lg:mt-24 space-y-8"
+        initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+        viewport={{ once: true, amount: 0.2 }}
+      >
         <div className="text-center space-y-2">
           <Badge variant="outline" className="border-primary/20 text-primary font-black text-[10px] px-3 uppercase tracking-widest">Expansion Protocol</Badge>
           <h2 className="text-3xl font-black uppercase tracking-tight italic">Incremental Add-ons</h2>
@@ -256,7 +288,12 @@ export default function PricingPage() {
           </div>
         </Card>
 
-        <div className="bg-primary/5 rounded-[2rem] p-6 lg:p-8 flex flex-col md:flex-row items-center justify-between gap-6 border border-primary/10">
+        <motion.div
+          className="bg-primary/5 rounded-[2rem] p-6 lg:p-8 flex flex-col md:flex-row items-center justify-between gap-6 border border-primary/10"
+          initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.15 }}
+          viewport={{ once: true }}
+        >
           <div className="space-y-1">
             <h3 className="font-black text-xl uppercase tracking-tight">Need a Custom Tactical Deployment?</h3>
             <p className="text-sm font-medium text-muted-foreground">For organizations with 50+ teams, we offer custom infrastructure builds.</p>
@@ -264,11 +301,15 @@ export default function PricingPage() {
           <Button variant="outline" className="h-14 px-8 rounded-xl font-black uppercase tracking-[0.2em] border-2 shadow-sm whitespace-nowrap">
             Contact Enterprise <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* Trust Footer */}
-      <div className="max-w-2xl mx-auto px-6 mt-16 text-center space-y-6 opacity-60">
+      <motion.div
+        className="max-w-2xl mx-auto px-6 mt-16 text-center space-y-6 opacity-60"
+        initial={{ opacity: 0 }} whileInView={{ opacity: 0.6 }}
+        transition={{ duration: 0.8 }} viewport={{ once: true }}
+      >
         <div className="flex items-center justify-center gap-8 grayscale brightness-0">
           <div className="font-black italic text-xl">STRIPE</div>
           <div className="font-black italic text-xl">SECURE</div>
@@ -277,7 +318,7 @@ export default function PricingPage() {
         <p className="text-[10px] font-medium leading-loose max-w-sm mx-auto uppercase tracking-widest">
           Subscription management handled via encrypted Stripe infrastructure. Cancel or modify protocols at any time through the secure billing gateway.
         </p>
-      </div>
+      </motion.div>
     </div>
   );
 }

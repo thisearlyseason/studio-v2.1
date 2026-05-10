@@ -2,6 +2,7 @@
 "use client"; 
 
 import React, { useState, useEffect } from 'react';
+import { motion, useInView } from 'framer-motion';
 import Link from 'next/link';
 import Script from 'next/script';
 import { useRouter } from 'next/navigation';
@@ -88,6 +89,38 @@ const DEMO_OPTIONS = [
   { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Guardian safety view' }
 ];
 
+// ── Shared animation helpers ──────────────────────────────────────────────
+const fadeUp = { hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0, transition: { duration: 0.65, ease: [0.16, 1, 0.3, 1] as [number,number,number,number] } } };
+
+function SectionHeader({ badge, title, subtitle }: { badge: string; title: React.ReactNode; subtitle: React.ReactNode }) {
+  return (
+    <motion.div
+      className="text-center space-y-4 mb-24 max-w-3xl mx-auto"
+      initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.3 }}
+      variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.12 } } }}
+    >
+      <motion.div variants={fadeUp}>
+        <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-black px-4 py-1 uppercase tracking-widest text-[10px]">{badge}</Badge>
+      </motion.div>
+      <motion.h3 variants={fadeUp} className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.9]">{title}</motion.h3>
+      <motion.div variants={fadeUp} className="text-muted-foreground font-medium text-lg pt-4 leading-relaxed">{subtitle}</motion.div>
+    </motion.div>
+  );
+}
+
+function StaggerGrid({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <motion.div
+      className={className}
+      initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }}
+      variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.1 } } }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+// ──────────────────────────────────────────────────────────────────────────
+
 export default function LandingPage() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -107,28 +140,70 @@ export default function LandingPage() {
     return () => clearTimeout(timer);
   }, []);
 
-  const sportsImages = [
-    "https://images.unsplash.com/photo-1508088062105-17d61307629d?auto=format&fit=crop&q=80&w=1200",
-    "https://images.unsplash.com/photo-1504450758481-7338eba7524a?auto=format&fit=crop&q=80&w=1200",
-    "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&q=80&w=1200",
-    "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&q=80&w=1200"
+  const sportsVideos = [
+    {
+      sport: "Baseball",
+      src: "https://assets.mixkit.co/videos/853/853-720.mp4",
+      poster: "https://images.unsplash.com/photo-1508088062105-17d61307629d?auto=format&fit=crop&q=80&w=1200"
+    },
+    {
+      sport: "Soccer",
+      src: "https://assets.mixkit.co/videos/43494/43494-720.mp4",
+      poster: "https://images.unsplash.com/photo-1504450758481-7338eba7524a?auto=format&fit=crop&q=80&w=1200"
+    },
+    {
+      sport: "Football",
+      src: "https://assets.mixkit.co/videos/42554/42554-720.mp4",
+      poster: "https://images.unsplash.com/photo-1560272564-c83b66b1ad12?auto=format&fit=crop&q=80&w=1200"
+    },
+    {
+      sport: "Golf",
+      src: "https://cdn.pixabay.com/video/2018/10/02/18528-293467377_large.mp4",
+      poster: "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?auto=format&fit=crop&q=80&w=1200"
+    },
+    {
+      sport: "Hockey",
+      src: "https://assets.mixkit.co/videos/48383/48383-720.mp4",
+      poster: "https://images.unsplash.com/photo-1515703407324-5f753afd8be8?auto=format&fit=crop&q=80&w=1200"
+    },
   ];
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentImageIndex((prev) => (prev + 1) % sportsImages.length);
-    }, 5000);
+  const videoRefs = React.useRef<(HTMLVideoElement | null)[]>([]);
 
+  const handleVideoEnded = React.useCallback(() => {
+    setCurrentImageIndex((prev) => (prev + 1) % sportsVideos.length);
+  }, [sportsVideos.length]);
+
+  useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
     };
-
     window.addEventListener('scroll', handleScroll);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('scroll', handleScroll);
-    };
-  }, [sportsImages.length]);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const clipTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Play the active video, pause others, and auto-advance after 5 s
+  useEffect(() => {
+    if (clipTimerRef.current) clearTimeout(clipTimerRef.current);
+
+    videoRefs.current.forEach((vid, i) => {
+      if (!vid) return;
+      if (i === currentImageIndex) {
+        vid.currentTime = 0;
+        vid.play().catch(() => {});
+      } else {
+        vid.pause();
+      }
+    });
+
+    clipTimerRef.current = setTimeout(() => {
+      setCurrentImageIndex((prev) => (prev + 1) % sportsVideos.length);
+    }, 5000);
+
+    return () => { if (clipTimerRef.current) clearTimeout(clipTimerRef.current); };
+  }, [currentImageIndex, sportsVideos.length]);
 
   const handleLaunchDemo = async (planId: string) => {
     setIsDemoLoading(true);
@@ -246,37 +321,109 @@ export default function LandingPage() {
       </nav>
 
       <section className="relative h-screen flex items-center justify-center overflow-hidden">
-        {sportsImages.map((img, idx) => (
-          <div 
+        {sportsVideos.map((clip, idx) => (
+          <div
             key={idx}
             className={cn(
               "absolute inset-0 transition-opacity duration-1000 ease-in-out",
               currentImageIndex === idx ? "opacity-100" : "opacity-0"
             )}
           >
-            <Image 
-              src={img} 
-              alt="Sports Background" 
-              fill
-              className="object-cover scale-105"
-              data-ai-hint="stadium crowd"
-              priority={idx === 0}
+            <video
+              ref={(el) => { videoRefs.current[idx] = el; }}
+              src={clip.src}
+              poster={clip.poster}
+              muted
+              playsInline
+              autoPlay={idx === 0}
+              onEnded={handleVideoEnded}
+              className="absolute inset-0 w-full h-full object-cover scale-105"
             />
-            <div className="absolute inset-0 bg-black/60 bg-gradient-to-b from-black/40 via-transparent to-black/80" />
+            <div className="absolute inset-0 bg-black/55 bg-gradient-to-b from-black/50 via-black/20 to-black/80" />
           </div>
         ))}
 
-        <div className="container relative z-10 px-6 text-center space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-1000">
-          <Badge className="bg-primary/20 backdrop-blur-md text-primary-foreground border-primary/30 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.2em] animate-pulse">
-            Institutional Team Infrastructure
-          </Badge>
-          <h1 className="text-5xl md:text-8xl font-black text-white tracking-tighter leading-[0.9] max-w-4xl mx-auto drop-shadow-2xl">
-            DOMINATE <br className="hidden md:block" /> YOUR <span className="text-primary italic">SEASON.</span>
-          </h1>
-          <p className="text-lg md:text-xl text-white/70 max-w-2xl mx-auto font-medium leading-relaxed">
+        {/* Sport indicators */}
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+          {sportsVideos.map((clip, idx) => (
+            <button
+              key={idx}
+              onClick={() => setCurrentImageIndex(idx)}
+              className={cn(
+                "transition-all duration-300 font-black uppercase tracking-widest text-white rounded-full border",
+                currentImageIndex === idx
+                  ? "bg-primary border-primary px-4 py-1.5 text-[9px] shadow-lg shadow-primary/30"
+                  : "bg-white/10 border-white/20 backdrop-blur-sm px-3 py-1 text-[8px] opacity-60 hover:opacity-100"
+              )}
+            >
+              {clip.sport}
+            </button>
+          ))}
+        </div>
+
+
+        <motion.div
+          className="container relative z-10 px-6 text-center space-y-8"
+          initial="hidden"
+          animate="visible"
+          variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.15 } } }}
+        >
+          {/* Badge — drops from above */}
+          <motion.div
+            variants={{
+              hidden: { opacity: 0, y: -18 },
+              visible: { opacity: 1, y: 0, transition: { duration: 0.55, ease: 'easeOut' } }
+            }}
+          >
+            <Badge className="bg-primary/20 backdrop-blur-md text-primary-foreground border-primary/30 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.2em]">
+              Institutional Team Infrastructure
+            </Badge>
+          </motion.div>
+
+          {/* Headline — word-by-word masked slide-up */}
+          <motion.div
+            className="text-5xl md:text-8xl font-black text-white tracking-tighter leading-[0.88] max-w-5xl mx-auto drop-shadow-2xl"
+            variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.13, delayChildren: 0.05 } } }}
+          >
+            {/* Line 1 */}
+            <div className="overflow-hidden pb-1">
+              <motion.span
+                className="block"
+                variants={{ hidden: { y: '105%', opacity: 0 }, visible: { y: 0, opacity: 1, transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] as [number,number,number,number] } } }}
+              >
+                DOMINATE
+              </motion.span>
+            </div>
+            {/* Line 2 */}
+            <div className="overflow-hidden pb-1 flex items-baseline justify-center gap-4 md:gap-6 flex-wrap">
+              <motion.span
+                className="inline-block"
+                variants={{ hidden: { y: '105%', opacity: 0 }, visible: { y: 0, opacity: 1, transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] as [number,number,number,number] } } }}
+              >
+                YOUR
+              </motion.span>
+              <motion.span
+                className="inline-block text-primary italic"
+                variants={{ hidden: { y: '105%', opacity: 0, scale: 0.95 }, visible: { y: 0, opacity: 1, scale: 1, transition: { duration: 0.75, ease: [0.16, 1, 0.3, 1] as [number,number,number,number] } } }}
+              >
+                SEASON.
+              </motion.span>
+            </div>
+          </motion.div>
+
+          {/* Subtitle — blur-to-clear fade */}
+          <motion.p
+            className="text-lg md:text-xl text-white/70 max-w-2xl mx-auto font-medium leading-relaxed"
+            variants={{ hidden: { opacity: 0, filter: 'blur(8px)', y: 12 }, visible: { opacity: 1, filter: 'blur(0px)', y: 0, transition: { duration: 0.9, ease: 'easeOut' } } }}
+          >
             The all-in-one tactical platform for elite sports organizations. Coordinate rosters, automate brackets, and verify performance.
-          </p>
-          <div className="flex flex-col items-center justify-center gap-3 pt-4 w-full max-w-xs mx-auto">
+          </motion.p>
+
+          {/* Buttons — scale up from below */}
+          <motion.div
+            className="flex flex-col items-center justify-center gap-3 pt-4 w-full max-w-xs mx-auto"
+            variants={{ hidden: { opacity: 0, scale: 0.92, y: 16 }, visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] as [number,number,number,number] } } }}
+          >
             {user ? (
               <Link href="/dashboard" className="w-full">
                 <Button size="lg" className="h-12 px-8 rounded-full text-sm font-black shadow-2xl shadow-primary/40 active:scale-95 transition-all w-full">
@@ -330,26 +477,21 @@ export default function LandingPage() {
                 </div>
               </DialogContent>
             </Dialog>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </section>
 
       <section id="features" className="py-32 bg-white relative overflow-hidden">
         <div className="container mx-auto px-6">
-          <div className="text-center space-y-4 mb-24 max-w-3xl mx-auto">
-            <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-black px-4 py-1 uppercase tracking-widest text-[10px]">
-              Institutional Suite
-            </Badge>
-            <h3 className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.9]">
-              PROFESSIONAL <br /> <span className="text-primary italic">INFRASTRUCTURE.</span>
-            </h3>
-            <p className="text-muted-foreground font-medium text-lg pt-4 leading-relaxed">
-              The Squad provides the foundational protocols and advanced modules required to scale from a single team to an entire league.
-            </p>
-          </div>
+          <SectionHeader
+            badge="Institutional Suite"
+            title={<>PROFESSIONAL <br /> <span className="text-primary italic">INFRASTRUCTURE.</span></>}
+            subtitle="The Squad provides the foundational protocols and advanced modules required to scale from a single team to an entire league."
+          />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:bg-black hover:text-white transition-all duration-500">
+          <StaggerGrid className="grid grid-cols-1 md:grid-cols-2 gap-10">
+            <motion.div whileHover={{ y: -6, scale: 1.01 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
+            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:bg-black hover:text-white transition-all duration-500 h-full">
               <div className="bg-primary p-4 rounded-2xl w-fit shadow-lg shadow-primary/20">
                 <TableIcon className="h-8 w-8 text-white" />
               </div>
@@ -362,8 +504,10 @@ export default function LandingPage() {
                 <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Multi-Team Conflicts</li>
               </ul>
             </Card>
+            </motion.div>
 
-            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:bg-black hover:text-white transition-all duration-500">
+            <motion.div whileHover={{ y: -6, scale: 1.01 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
+            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:bg-black hover:text-white transition-all duration-500 h-full">
               <div className="bg-primary p-4 rounded-2xl w-fit shadow-lg shadow-primary/20">
                 <PenTool className="h-8 w-8 text-white" />
               </div>
@@ -376,8 +520,10 @@ export default function LandingPage() {
                 <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Institutional Branding</li>
               </ul>
             </Card>
+            </motion.div>
 
-            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:bg-black hover:text-white transition-all duration-500">
+            <motion.div whileHover={{ y: -6, scale: 1.01 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
+            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:bg-black hover:text-white transition-all duration-500 h-full">
               <div className="bg-primary p-4 rounded-2xl w-fit shadow-lg shadow-primary/20">
                 <Video className="h-8 w-8 text-white" />
               </div>
@@ -390,8 +536,10 @@ export default function LandingPage() {
                 <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Verified Compliance</li>
               </ul>
             </Card>
+            </motion.div>
 
-            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:bg-black hover:text-white transition-all duration-500">
+            <motion.div whileHover={{ y: -6, scale: 1.01 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
+            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:bg-black hover:text-white transition-all duration-500 h-full">
               <div className="bg-primary p-4 rounded-2xl w-fit shadow-lg shadow-primary/20">
                 <ClipboardList className="h-8 w-8 text-white" />
               </div>
@@ -404,19 +552,18 @@ export default function LandingPage() {
                 <li className="flex items-center gap-3 text-xs font-bold uppercase"><CheckCircle2 className="h-4 w-4 text-primary" /> Performance Export</li>
               </ul>
             </Card>
-          </div>
+            </motion.div>
+          </StaggerGrid>
         </div>
       </section>
 
       <section id="comparison" className="py-32 bg-white relative">
         <div className="container mx-auto px-6">
-          <div className="text-center space-y-4 mb-24 max-w-3xl mx-auto">
-            <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-black px-4 py-1 uppercase tracking-widest text-[10px]">Market Intelligence</Badge>
-            <h3 className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.9]">COMPETITIVE <br /> <span className="text-primary italic">ADVANTAGE.</span></h3>
-            <p className="text-muted-foreground font-medium text-lg pt-4 leading-relaxed">
-              Legacy tools are for hobbyists. The Squad is built for organizations that demand absolute operational visibility and high-performance metrics.
-            </p>
-          </div>
+          <SectionHeader
+            badge="Market Intelligence"
+            title={<>COMPETITIVE <br /> <span className="text-primary italic">ADVANTAGE.</span></>}
+            subtitle="Legacy tools are for hobbyists. The Squad is built for organizations that demand absolute operational visibility and high-performance metrics."
+          />
           
           <div className="relative group">
             <div className="absolute inset-0 bg-primary/5 blur-[100px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
@@ -565,54 +712,52 @@ export default function LandingPage() {
 
       <section id="roles" className="py-32 bg-white relative overflow-hidden">
         <div className="container mx-auto px-6 relative z-10">
-          <div className="max-w-3xl space-y-6 mb-16 mx-auto text-center">
-            <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-black px-4 h-7 uppercase tracking-widest text-[10px]">
-              Specialized Interfaces
-            </Badge>
-            <h3 className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase">Tailored <br /> <span className="text-primary italic">Account Roles.</span></h3>
-            <p className="text-muted-foreground font-medium text-lg leading-relaxed">
-              Every member of the organization receives a custom dashboard optimized for their specific operational objectives.
-            </p>
-          </div>
+          <SectionHeader
+            badge="Specialized Interfaces"
+            title={<>Tailored <br /> <span className="text-primary italic">Account Roles.</span></>}
+            subtitle="Every member of the organization receives a custom dashboard optimized for their specific operational objectives."
+          />
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:translate-y-[-8px] transition-all duration-500">
-              <Trophy className="h-12 w-12 text-primary" />
-              <h5 className="text-2xl font-black uppercase tracking-tight">Coaches & Managers</h5>
-              <p className="text-sm font-medium text-muted-foreground leading-relaxed">Full command of the roster, scheduling, and tactical playbooks. Launch broadcasts, auto-generate brackets, and track personnel performance.</p>
-            </Card>
-            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:translate-y-[-8px] transition-all duration-500">
-              <Baby className="h-12 w-12 text-primary" />
-              <h5 className="text-2xl font-black uppercase tracking-tight">Guardian Hub</h5>
-              <p className="text-sm font-medium text-muted-foreground leading-relaxed">Manage multiple children from one unified **Household Hub**. Track consolidated dues, verify digital waivers, and manage volunteer assignments globally.</p>
-            </Card>
-            <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 group hover:translate-y-[-8px] transition-all duration-500">
-              <User className="h-12 w-12 text-primary" />
-              <h5 className="text-2xl font-black uppercase tracking-tight">Athlete Performance</h5>
-              <p className="text-sm font-medium text-muted-foreground leading-relaxed">A personal dashboard. Sign waivers, watch study film, track match results, and manage your <strong>Professional Recruiting Portfolio</strong>.</p>
-            </Card>
-          </div>
+          <StaggerGrid className="grid grid-cols-1 md:grid-cols-3 gap-10">
+            <motion.div whileHover={{ y: -10, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
+              <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 h-full">
+                <Trophy className="h-12 w-12 text-primary" />
+                <h5 className="text-2xl font-black uppercase tracking-tight">Coaches & Managers</h5>
+                <p className="text-sm font-medium text-muted-foreground leading-relaxed">Full command of the roster, scheduling, and tactical playbooks. Launch broadcasts, auto-generate brackets, and track personnel performance.</p>
+              </Card>
+            </motion.div>
+            <motion.div whileHover={{ y: -10, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
+              <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 h-full">
+                <Baby className="h-12 w-12 text-primary" />
+                <h5 className="text-2xl font-black uppercase tracking-tight">Guardian Hub</h5>
+                <p className="text-sm font-medium text-muted-foreground leading-relaxed">Manage multiple children from one unified **Household Hub**. Track consolidated dues, verify digital waivers, and manage volunteer assignments globally.</p>
+              </Card>
+            </motion.div>
+            <motion.div whileHover={{ y: -10, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
+              <Card className="rounded-[3rem] border-none shadow-xl bg-muted/20 p-10 space-y-6 h-full">
+                <User className="h-12 w-12 text-primary" />
+                <h5 className="text-2xl font-black uppercase tracking-tight">Athlete Performance</h5>
+                <p className="text-sm font-medium text-muted-foreground leading-relaxed">A personal dashboard. Sign waivers, watch study film, track match results, and manage your <strong>Professional Recruiting Portfolio</strong>.</p>
+              </Card>
+            </motion.div>
+          </StaggerGrid>
         </div>
       </section>
 
       <section id="pricing" className="py-32 bg-muted/30 relative">
         <div className="container mx-auto px-6">
-          <div className="text-center space-y-4 mb-16">
-            <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Transparent Institutional Tiers</h2>
-            <h3 className="text-4xl md:text-5xl font-black tracking-tight">Scale Your Organization</h3>
-            <div className="flex flex-col items-center gap-2 pt-2">
-              <div className="flex items-center gap-2 text-primary font-black uppercase tracking-widest text-[10px] bg-white px-4 py-2 rounded-full border border-primary/10 shadow-sm">
-                <AlertCircle className="h-3 w-3" />
-                <span>Limited Introductory Pricing • Competitive Advantage Locked</span>
-              </div>
-            </div>
-          </div>
+          <SectionHeader
+            badge="Transparent Institutional Tiers"
+            title="Scale Your Organization"
+            subtitle={<div className="flex items-center gap-2 text-primary font-black uppercase tracking-widest text-[10px] bg-white px-4 py-2 rounded-full border border-primary/10 shadow-sm w-fit mx-auto"><AlertCircle className="h-3 w-3" /><span>Limited Introductory Pricing • Competitive Advantage Locked</span></div>}
+          />
 
           <div className="max-w-7xl mx-auto">
             {/* Row 1: 3 cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch mb-6">
+            <StaggerGrid className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch mb-6">
               {/* Starter */}
-              <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden flex flex-col bg-white ring-1 ring-black/5">
+              <motion.div whileHover={{ y: -6, scale: 1.01 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
+              <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden flex flex-col bg-white ring-1 ring-black/5 h-full">
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/20 text-primary w-fit">GRASSROOTS</Badge>
                   <div className="space-y-1">
@@ -637,9 +782,11 @@ export default function LandingPage() {
                   </Link>
                 </CardFooter>
               </Card>
+              </motion.div>
 
               {/* Squad Pro */}
-              <Card className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden flex flex-col bg-black text-white ring-4 ring-primary relative">
+              <motion.div whileHover={{ y: -10, scale: 1.02 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
+              <Card className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden flex flex-col bg-black text-white ring-4 ring-primary relative h-full">
                 <div className="absolute top-0 right-0 p-4 opacity-10 -rotate-12 pointer-events-none"><Zap className="h-20 w-20" /></div>
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <Badge className="bg-primary text-white border-none font-black text-[8px] px-3 h-5 uppercase w-fit">ELITE SQUAD</Badge>
@@ -668,9 +815,11 @@ export default function LandingPage() {
                   </Link>
                 </CardFooter>
               </Card>
+              </motion.div>
 
               {/* Elite Teams */}
-              <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden flex flex-col bg-white ring-1 ring-black/5">
+              <motion.div whileHover={{ y: -6, scale: 1.01 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
+              <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden flex flex-col bg-white ring-1 ring-black/5 h-full">
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/20 text-primary w-fit">ORGANIZATION</Badge>
                   <div className="space-y-1">
@@ -698,12 +847,14 @@ export default function LandingPage() {
                   </Link>
                 </CardFooter>
               </Card>
-            </div>
+              </motion.div>
+            </StaggerGrid>
 
-            {/* Row 2: 2 cardscentered on desktop, stacked on mobile */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch max-w-5xl mx-auto">
+            {/* Row 2: 2 cards centered on desktop, stacked on mobile */}
+            <StaggerGrid className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch max-w-5xl mx-auto">
               {/* Elite League */}
-              <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden flex flex-col bg-white ring-1 ring-black/5 w-full max-w-[400px]">
+              <motion.div whileHover={{ y: -6, scale: 1.01 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
+              <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden flex flex-col bg-white ring-1 ring-black/5 w-full max-w-[400px] h-full">
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/20 text-primary w-fit">INSTITUTIONAL</Badge>
                   <div className="space-y-1">
@@ -731,9 +882,11 @@ export default function LandingPage() {
                   </Link>
                 </CardFooter>
               </Card>
+              </motion.div>
 
               {/* School District */}
-              <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden flex flex-col bg-white ring-1 ring-black/5 w-full max-w-[400px]">
+              <motion.div whileHover={{ y: -6, scale: 1.01 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
+              <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden flex flex-col bg-white ring-1 ring-black/5 w-full max-w-[400px] h-full">
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-[#10b981]/20 text-[#10b981] w-fit">K-12 DISTRICT</Badge>
                   <div className="space-y-1">
@@ -761,7 +914,8 @@ export default function LandingPage() {
                   </Link>
                 </CardFooter>
               </Card>
-            </div>
+              </motion.div>
+            </StaggerGrid>
           </div>
           <div className="mt-8 text-center">
             <p className="text-[10px] font-black uppercase text-red-600 tracking-widest">All pricing is presented and billed in USD.</p>
