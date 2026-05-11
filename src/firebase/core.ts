@@ -54,17 +54,13 @@ export function getSdks(firebaseApp: FirebaseApp) {
     }
 
     try {
-      // First try to initialize with our custom robust settings (memory cache to prevent ID:ca9 bug)
-      firestore = initializeFirestore(firebaseApp, {
-        localCache: memoryLocalCache(),
-        experimentalAutoDetectLongPolling: true,
-      });
-      console.log('[Firestore] Initialized fresh Firestore instance');
+      const { getFirestore } = require('firebase/firestore');
+      firestore = getFirestore(firebaseApp);
+      console.log('[Firestore] Initialized fresh Firestore instance (Default Cache)');
     } catch (e: any) {
-      // If it throws "already initialized", just grab the existing instance
       if (e.message && e.message.includes('already been initialized')) {
+        const { getFirestore } = require('firebase/firestore');
         firestore = getFirestore(firebaseApp);
-        console.log('[Firestore] Re-using existing instance');
       } else {
         throw e;
       }

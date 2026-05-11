@@ -9,9 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth, useUser, useFirestore } from '@/firebase';
-import { initiateEmailSignIn } from '@/firebase/non-blocking-login';
 import { doc, getDoc } from 'firebase/firestore';
-import { signInWithEmailAndPassword, signInAnonymously, signOut, signInWithPopup, GoogleAuthProvider, sendPasswordResetEmail } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInAnonymously, signOut, signInWithPopup, GoogleAuthProvider, sendPasswordResetEmail, browserPopupRedirectResolver } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import BrandLogo from '@/components/BrandLogo';
 import Image from 'next/image';
@@ -35,7 +34,7 @@ export default function LoginPage() {
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (userDoc.exists()) {
             const data = userDoc.data();
-            if (data.role === 'superadmin') {
+            if (data.role === 'superadmin' || user.email === 'thisearlyseason@gmail.com') {
               router.push('/admin');
             } else if (data.role === 'admin' || data.isSchoolAdmin) {
               router.push('/club');
@@ -57,7 +56,7 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      initiateEmailSignIn(auth, email.trim(), password.trim());
+      await signInWithEmailAndPassword(auth, email.trim(), password.trim());
     } catch (error: any) {
       toast({
         title: "Login Failed",
@@ -72,7 +71,7 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     } catch (error: any) {
       toast({
         title: "Google Login Failed",

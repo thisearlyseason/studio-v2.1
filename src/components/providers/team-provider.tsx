@@ -950,10 +950,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return onSnapshot(userRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
+        
+        // Explicitly inject Elite League overrides for Superadmin into the global userProfile state
+        const isSuper = data.email === 'thisearlyseason@gmail.com' || data.role === 'superadmin';
+        
         setUserProfile({ 
           ...data, 
           id: snap.id,
           name: data.fullName || data.name || 'User',
+          plan_type: isSuper ? 'league' : data.plan_type,
+          team_limit: isSuper ? 100 : data.team_limit,
+          role: isSuper ? 'superadmin' : data.role,
           avatar: data.avatarUrl || data.avatar || `https://picsum.photos/seed/${snap.id}/150/150`
         } as UserProfile);
       } else {
@@ -1455,6 +1462,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // Beta Testers automatically receive 1 Squad Pro team
     if (rawData.isBetaTester) {
       limit = Math.max(limit, 1);
+    }
+    
+    // Superadmin gets Elite League plan limits
+    if (rawData.email === 'thisearlyseason@gmail.com' || rawData.role === 'superadmin') {
+      limit = Math.max(limit, 100);
     }
 
     return { current: ownedProTeams.length, limit, exceeded: ownedProTeams.length > limit && (limit > 0), remaining: Math.max(0, limit - ownedProTeams.length) };
