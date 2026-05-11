@@ -10,11 +10,15 @@ import {
 
 let cachedSdks: any = null;
 
+// Next.js HMR clears module state but preserves globalThis.
+// Storing this globally ensures we don't re-initialize Firestore or Auth repeatedly.
+const globalSdks = globalThis as any;
+
 /**
  * Initializes Firebase in a way that is safe for both Client (Browser) and Server (Node.js/Next.js).
  */
 export function initializeFirebase() {
-  // If we already have the SDKs cached for this session, return them immediately
+  if (globalSdks.firebaseSdks) return globalSdks.firebaseSdks;
   if (cachedSdks) return cachedSdks;
 
   const apps = getApps();
@@ -27,6 +31,7 @@ export function initializeFirebase() {
   }
 
   cachedSdks = getSdks(firebaseApp);
+  globalSdks.firebaseSdks = cachedSdks;
   return cachedSdks;
 }
 
@@ -49,17 +54,20 @@ export function getSdks(firebaseApp: FirebaseApp) {
     }
 
     try {
-      // Check if Firestore is already initialized to avoid "Firestore has already been initialized" errors
-      firestore = getFirestore(firebaseApp);
-      console.log('[Firestore] Re-using existing instance');
-    } catch (e) {
-      console.log('[Firestore] Initializing fresh Firestore instance');
+      // First try to initialize with our custom robust settings (memory cache to prevent ID:ca9 bug)
       firestore = initializeFirestore(firebaseApp, {
         localCache: memoryLocalCache(),
-        // Auto-detect picks the best transport (WebSocket vs long-poll).
-        // Do NOT combine with experimentalForceLongPolling — they conflict.
         experimentalAutoDetectLongPolling: true,
       });
+      console.log('[Firestore] Initialized fresh Firestore instance');
+    } catch (e: any) {
+      // If it throws "already initialized", just grab the existing instance
+      if (e.message && e.message.includes('already been initialized')) {
+        firestore = getFirestore(firebaseApp);
+        console.log('[Firestore] Re-using existing instance');
+      } else {
+        throw e;
+      }
     }
   } else {
     // On server, initialize without persistence

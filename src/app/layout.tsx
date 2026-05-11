@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { TeamProvider } from '@/components/providers/team-provider';
 import { TooltipProvider } from "@/components/ui/tooltip";
+import BugReporter from '@/components/BugReporter';
 
 export const metadata: Metadata = {
   title: 'The Squad - Ultimate Team Hub',
@@ -36,6 +37,7 @@ export default function RootLayout({
             <TooltipProvider delayDuration={0}>
               <TeamProvider>
                 {children}
+                <BugReporter />
                 <Toaster />
               </TeamProvider>
             </TooltipProvider>

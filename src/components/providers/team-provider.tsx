@@ -1448,9 +1448,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
     // Read explicit numeric limit; fall back to 0 (never grant free Pro slots).
     const explicitLimit = rawData.team_limit ?? rawData.proTeamLimit ?? null;
-    const limit = isOnPaidPlan
+    let limit = isOnPaidPlan
       ? (typeof explicitLimit === 'number' ? explicitLimit : 1)
       : 0;
+      
+    // Beta Testers automatically receive 1 Squad Pro team
+    if (rawData.isBetaTester) {
+      limit = Math.max(limit, 1);
+    }
 
     return { current: ownedProTeams.length, limit, exceeded: ownedProTeams.length > limit && (limit > 0), remaining: Math.max(0, limit - ownedProTeams.length) };
   }, [teamsRaw, userProfile]);
