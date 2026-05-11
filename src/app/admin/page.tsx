@@ -73,6 +73,7 @@ export default function AdminPortalPage() {
   const [betaApps, setBetaApps] = useState<any[]>([]);
   const [selectedBetaApp, setSelectedBetaApp] = useState<any | null>(null);
   const [betaPassword, setBetaPassword] = useState('');
+  const [betaPlanType, setBetaPlanType] = useState('free');
   const [processingBeta, setProcessingBeta] = useState(false);
   const [loadingBeta, setLoadingBeta] = useState(false);
 
@@ -141,6 +142,8 @@ export default function AdminPortalPage() {
         role: selectedBetaApp.role,
         organization: selectedBetaApp.organization,
         isBetaTester: true,
+        plan_type: betaPlanType,
+        team_limit: betaPlanType === 'elite' ? 5 : (betaPlanType === 'league' || betaPlanType === 'school' ? 100 : (betaPlanType === 'team' ? 1 : 0)),
         createdAt: new Date().toISOString()
       });
       
@@ -150,6 +153,7 @@ export default function AdminPortalPage() {
       setBetaApps(prev => prev.map(a => a.id === selectedBetaApp.id ? { ...a, status: 'approved' } : a));
       setSelectedBetaApp(null);
       setBetaPassword('');
+      setBetaPlanType('free');
       toast({ title: 'Beta User Approved', description: 'Account created successfully.' });
     } catch (e: any) {
       toast({ title: 'Approval Failed', description: e.message, variant: 'destructive' });
@@ -258,7 +262,8 @@ export default function AdminPortalPage() {
     if (!db || !selectedUser || !newPlan) return;
     setUpdatingPlan(true);
     try {
-      await updateDoc(doc(db, 'users', selectedUser.id), { plan_type: newPlan });
+      const newLimit = newPlan === 'elite' ? 5 : (newPlan === 'league' || newPlan === 'school' ? 100 : (newPlan === 'team' ? 1 : 0));
+      await updateDoc(doc(db, 'users', selectedUser.id), { plan_type: newPlan, team_limit: newLimit });
       setSelectedUser(prev => prev ? { ...prev, plan_type: newPlan } : null);
       setResults(prev => prev.map(r => r.id === selectedUser.id ? { ...r, plan_type: newPlan } : r));
       toast({ title: 'Plan Updated', description: `${selectedUser.name || selectedUser.email} → ${PLAN_LABELS[newPlan]?.label || newPlan}` });
@@ -769,12 +774,25 @@ export default function AdminPortalPage() {
                           </div>
                           
                           <div className="relative z-10 space-y-1.5">
+                            <Label className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-white/40 ml-1">Subscription Tier Override</Label>
+                            <Select value={betaPlanType} onValueChange={setBetaPlanType}>
+                              <SelectTrigger className="bg-white dark:bg-white/5 border-2 border-gray-200 dark:border-white/20 h-14 rounded-xl font-bold text-sm text-gray-900 dark:text-white focus:ring-primary shadow-inner">
+                                <SelectValue placeholder="Select plan type..." />
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl">
+                                {Object.entries(PLAN_LABELS).map(([key, { label }]) => (
+                                  <SelectItem key={key} value={key} className="font-bold uppercase text-xs">{label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="relative z-10 space-y-1.5">
                             <Label className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-white/40 ml-1">Assign Access Password</Label>
                             <Input 
                               value={betaPassword} 
                               onChange={(e) => setBetaPassword(e.target.value)} 
                               placeholder="Type a password for the new user account" 
-                              className="bg-gray-50 dark:bg-white/5 border-2 border-primary/40 h-14 rounded-xl font-mono text-base focus-visible:ring-primary shadow-inner"
+                              className="bg-white dark:bg-[#0a0a0a] border-2 border-gray-200 dark:border-white/20 h-14 rounded-xl font-mono text-base focus-visible:ring-primary shadow-inner text-gray-900 dark:text-white"
                             />
                           </div>
                           <div className="relative z-10 flex flex-col gap-3 pt-2">
