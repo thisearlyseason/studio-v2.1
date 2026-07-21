@@ -4,7 +4,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, useInView, useScroll, useTransform, useMotionValue, useSpring } from 'framer-motion';
 import Link from 'next/link';
-import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { 
   ChevronRight, 
@@ -57,6 +56,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import BrandLogo from '@/components/BrandLogo';
+import { LandingChatbot } from '@/components/LandingChatbot';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { useUser, useAuth } from '@/firebase';
@@ -1915,9 +1915,8 @@ export default function LandingPage() {
         </div>
       </footer>
 
-      {/* Elfsight AI Chatbot | Squad Pro */}
-      <Script src="https://elfsightcdn.com/platform.js" async />
-      <div className="elfsight-app-4f8f60bc-5748-46cb-914c-1b03d7c8826e" data-elfsight-app-lazy></div>
+      {/* Elfsight AI Chatbot | Squad Pro — landing page only */}
+      <LandingChatbot />
     </div>
   );
 }

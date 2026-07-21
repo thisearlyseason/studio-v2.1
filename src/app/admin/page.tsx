@@ -283,58 +283,35 @@ export default function AdminPortalPage() {
 
   // ── Sports Hub Firestore helpers ─────────────────────────────────────────────
   const fetchSportsHubData = async () => {
-    if (!db) return;
+    if (!firebaseUser) return;
     setLoadingSH(true);
-    const results = await Promise.allSettled([
-        getDocs(query(collection(db, 'sports_hub_rss_feeds'), orderBy('createdAt', 'desc'), limit(50))),
-        getDocs(query(collection(db, 'sports_hub_articles'), orderBy('publishedAt', 'desc'), limit(100))),
-        getDocs(query(collection(db, 'sports_hub_newsletter_subscribers'), orderBy('subscribedAt', 'desc'), limit(200))),
-        getDocs(query(collection(db, 'newsletter_subscribers'), limit(500))),
-      ]);
-
-    const [feedsResult, articlesResult, legacySubscribersResult, canonicalSubscribersResult] = results;
-    setShFeeds(feedsResult.status === 'fulfilled'
-      ? feedsResult.value.docs.map(d => ({ id: d.id, ...d.data() }))
-      : []);
-    setShArticles(articlesResult.status === 'fulfilled'
-      ? articlesResult.value.docs.map(d => ({ id: d.id, ...d.data() }))
-      : []);
-
-    const legacySubscribers = legacySubscribersResult.status === 'fulfilled'
-      ? legacySubscribersResult.value.docs.map(d => ({ id: d.id, ...d.data() } as any))
-      : [];
-    const canonicalSubscribers = canonicalSubscribersResult.status === 'fulfilled'
-      ? canonicalSubscribersResult.value.docs
-          .map(d => ({ id: d.id, ...d.data() } as any))
-          .filter(subscriber => subscriber.source === 'sports_hub' || subscriber.sources?.includes?.('sports_hub'))
-      : [];
-    const subscribersByEmail = new Map<string, any>();
-    [...legacySubscribers, ...canonicalSubscribers].forEach(subscriber => {
-      const email = typeof subscriber.email === 'string' ? subscriber.email.trim().toLowerCase() : '';
-      if (!email) return;
-      const existing = subscribersByEmail.get(email);
-      subscribersByEmail.set(email, {
-        ...existing,
-        ...subscriber,
-        email,
-        isActive: (existing?.isActive !== false) && subscriber.isActive !== false,
+    try {
+      const token = await firebaseUser.getIdToken();
+      const response = await fetch('/api/admin/sports-hub', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
       });
-    });
-    setShNewsletters([...subscribersByEmail.values()]);
-
-    const failedSources: string[] = [];
-    if (feedsResult.status === 'rejected') failedSources.push('RSS feeds');
-    if (articlesResult.status === 'rejected') failedSources.push('custom articles');
-    if (legacySubscribersResult.status === 'rejected') failedSources.push('legacy subscribers');
-    if (canonicalSubscribersResult.status === 'rejected') failedSources.push('newsletter subscribers');
-    if (failedSources.length) {
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to load Sports Hub data.');
+      setShFeeds(Array.isArray(payload.feeds) ? payload.feeds : []);
+      setShArticles(Array.isArray(payload.articles) ? payload.articles : []);
+      setShNewsletters(Array.isArray(payload.subscribers) ? payload.subscribers : []);
+      if (Array.isArray(payload.failedSources) && payload.failedSources.length) {
+        toast({
+          title: 'Sports Hub Data Partially Loaded',
+          description: `Unable to read: ${payload.failedSources.join(', ')}.`,
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
       toast({
-        title: 'Sports Hub Data Partially Loaded',
-        description: `Unable to read: ${failedSources.join(', ')}.`,
+        title: 'Sports Hub Load Failed',
+        description: error instanceof Error ? error.message : 'Unable to load Sports Hub data.',
         variant: 'destructive',
       });
+    } finally {
+      setLoadingSH(false);
     }
-    setLoadingSH(false);
   };
 
   const addRSSFeed = async () => {

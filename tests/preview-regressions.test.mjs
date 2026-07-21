@@ -187,6 +187,7 @@ test('embed hub exposes frameable public cards without weakening other pages', a
 
 test('Sports Hub admin combines built-in and custom articles without one failed query clearing all data', async () => {
   const admin = await readSource('../src/app/admin/page.tsx');
+  const adminRoute = await readSource('../src/app/api/admin/sports-hub/route.ts');
   const publicRoute = await readSource('../src/app/api/sports-hub/articles/route.ts');
   const publicCatalog = await readSource('../src/hooks/use-sports-hub-articles.ts');
   const articlePage = await readSource('../src/app/sports-hub/articles/[slug]/page.tsx');
@@ -194,16 +195,51 @@ test('Sports Hub admin combines built-in and custom articles without one failed 
   const catalog = await import('../src/lib/sports-hub-articles.ts');
 
   assert.equal(metadata.STATIC_SPORTS_HUB_ARTICLE_COUNT, catalog.ARTICLES_LIST.length);
-  assert.match(admin, /Promise\.allSettled/);
+  assert.match(admin, /fetch\('\/api\/admin\/sports-hub'/);
   assert.match(admin, /STATIC_SPORTS_HUB_ARTICLE_COUNT \+ shArticles\.length/);
-  assert.match(admin, /collection\(db, 'newsletter_subscribers'\)/);
-  assert.match(admin, /subscriber\.source === 'sports_hub'/);
+  assert.match(adminRoute, /verifyFirebaseToken/);
+  assert.match(adminRoute, /auth\.role === 'superadmin'/);
+  assert.match(adminRoute, /Promise\.allSettled/);
+  assert.match(adminRoute, /collection\('newsletter_subscribers'\)/);
+  assert.match(adminRoute, /subscriber\.source === 'sports_hub'/);
   assert.match(admin, /<RichTextEditor/);
   assert.match(admin, /content: shComposeContent/);
   assert.match(publicRoute, /listPublicSportsHubArticles/);
   assert.match(publicCatalog, /fetch\('\/api\/sports-hub\/articles'/);
   assert.match(articlePage, /getPublicSportsHubArticle/);
   assert.match(articlePage, /renderSafeRichTextInline/);
+});
+
+test('Sports Hub exposes every category without horizontal scrolling and includes 20 parent articles', async () => {
+  const sectionNav = await readSource('../src/components/sports-hub/SectionNav.tsx');
+  const news = await readSource('../src/app/sports-hub/news/page.tsx');
+  const parentsPage = await readSource('../src/app/sports-hub/parents/page.tsx');
+  const catalog = await import('../src/lib/sports-hub-articles.ts');
+  const parentArticles = catalog.ARTICLES_LIST.filter(article => article.categories.includes('Parents'));
+
+  assert.equal(parentArticles.length, 20);
+  assert.equal(parentArticles.every(article => article.section === 'parents'), true);
+  assert.equal(parentArticles.every(article => article.content.includes('## What You Can Do This Week')), true);
+  assert.match(sectionNav, /name: 'Parents'/);
+  assert.match(sectionNav, /flex flex-wrap/);
+  assert.doesNotMatch(sectionNav, /overflow-x-auto/);
+  assert.match(news, /label: 'Parents'/);
+  assert.match(news, /flex flex-wrap gap-2/);
+  assert.doesNotMatch(news, /overflow-x-auto pb-1/);
+  assert.match(parentsPage, /parentArticles\.length/);
+});
+
+test('the Elfsight chatbot and beta reporter are restricted to the landing page', async () => {
+  const landing = await readSource('../src/app/page.tsx');
+  const chatbot = await readSource('../src/components/LandingChatbot.tsx');
+  const reporter = await readSource('../src/components/BugReporter.tsx');
+  const dashboardLayout = await readSource('../src/app/(dashboard)/layout.tsx');
+
+  assert.match(landing, /<LandingChatbot/);
+  assert.match(chatbot, /Elfsight mounts parts of the widget directly under <body>/);
+  assert.match(chatbot, /iframe\[src\*="elfsight"\]/);
+  assert.match(reporter, /pathname !== '\/'/);
+  assert.doesNotMatch(dashboardLayout, /LandingChatbot|elfsight/);
 });
 
 test('Resend webhook verifies raw signed payloads and processes each delivery once', async () => {

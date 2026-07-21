@@ -1,3 +1,5 @@
+import { PARENT_ARTICLES } from './sports-hub-parent-articles';
+
 export interface Article {
   id: string;
   slug: string;
@@ -43,6 +45,8 @@ const AUTHORS = {
 // ─── Articles Database ────────────────────────────────────────────────────────
 
 export const ARTICLES_DB: Record<string, Article> = {
+
+  ...PARENT_ARTICLES,
 
   'building-championship-culture': {
     id: 'building-championship-culture',

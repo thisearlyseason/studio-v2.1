@@ -209,6 +209,7 @@ export default async function ArticlePage({ params }: Params) {
     coaching: '/sports-hub/coaching',
     'team-management': '/sports-hub/team-management',
     tournaments: '/sports-hub/tournaments',
+    parents: '/sports-hub/parents',
     news: '/sports-hub/news',
   }[article.section] || '/sports-hub';
 
@@ -216,6 +217,7 @@ export default async function ArticlePage({ params }: Params) {
     coaching: 'Coaching',
     'team-management': 'Team Management',
     tournaments: 'Tournaments',
+    parents: 'Parents',
     news: 'Latest News',
   }[article.section] || 'Sports Hub';
 

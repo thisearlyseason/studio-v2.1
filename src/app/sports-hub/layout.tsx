@@ -80,7 +80,7 @@ export default function SportsHubLayout({ children }: { children: React.ReactNod
             <div>
               <p className="text-[9px] font-black uppercase tracking-[0.3em] text-background/40 mb-4">Sections</p>
               <div className="space-y-2">
-                {['The Hub', 'Latest News', 'Coaching', 'Team Management', 'Tournaments', 'Resources', 'Playbook', 'Featured'].map((s) => (
+                {['The Hub', 'Latest News', 'Coaching', 'Team Management', 'Parents', 'Tournaments', 'Resources', 'Playbook', 'Featured'].map((s) => (
                   <Link
                     key={s}
                     href={`/sports-hub${s === 'The Hub' ? '' : '/' + s.toLowerCase().replace(/ /g, '-')}`}

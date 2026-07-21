@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   BookOpen, Search, Bookmark, BookmarkCheck, Share2, Link2,
   Clock, ChevronRight, Check, Filter, X, Users, Trophy,
-  Apple, FlaskConical, Dumbbell, Brain, Zap,
+  Apple, FlaskConical, Dumbbell, Brain, Zap, HeartHandshake,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +26,7 @@ const CATEGORY_CONFIG = [
   { label: 'Sports Science',        icon: FlaskConical, color: 'text-purple-500' },
   { label: 'Strength & Conditioning', icon: Dumbbell,   color: 'text-rose-500' },
   { label: 'Mental Performance',    icon: Brain,        color: 'text-indigo-500' },
+  { label: 'Parents',               icon: HeartHandshake, color: 'text-pink-600' },
 ] as const;
 
 const SORT_OPTIONS = [
@@ -362,7 +363,7 @@ export default function NewsPage() {
         </div>
 
         {/* Category pills */}
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+        <div className="flex flex-wrap gap-2 pb-1">
           {CATEGORY_CONFIG.map(cat => (
             <CategoryPill
               key={cat.label}
