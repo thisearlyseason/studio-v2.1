@@ -158,6 +158,18 @@
 - Regression: `tests/account-creation-policy.test.mjs`; live Preview creation and Starter-plan second-squad limit.
 - Status: Fixed.
 
+## AQ-016 — Vercel Preview Firebase client/server project mismatch
+
+- Severity: High (authentication availability)
+- Affected: Git-associated Vercel Preview deployments.
+- Reproduce: sign in through the QA branch Preview and exchange the Firebase ID token for a server session.
+- Expected: the public Firebase client and Firebase Admin session verifier use the same isolated audit project.
+- Actual: the public client used `the-squad-audit-preview`, while the inherited branch-scoped Admin credential used `studio-6850142148-fe343`; the API correctly rejected the project mismatch and displayed `Session Setup Failed`.
+- Root cause: the Preview Admin credential remained scoped to a superseded branch and referenced a different Firebase project.
+- Fix: the Vercel Git Preview credential is now scoped to `codex/qa-production-audit` and uses a dedicated `vercel-qa-preview` service account in `the-squad-audit-preview`. Its IAM roles are limited to Firebase Authentication administration and Firestore data access. Production variables were not changed.
+- Regression: Git-associated Vercel deployment `dpl_Gg618MNr6D8QRXQ8da2hNhp8wNyd`; live email/password login, session exchange, dashboard access, logout, and post-logout protected-route rejection.
+- Status: Fixed.
+
 ## Changed implementation areas
 
-Authentication and verification, server sessions, signup rollback, API token checks, Firestore/Storage account gates, membership policy, team join/chat, youth/league invitations, server-mediated team/league creation, settings email verification, alert authorization, onboarding error handling, and regression tests.
+Authentication and verification, server sessions, signup rollback, API token checks, Firestore/Storage account gates, membership policy, team join/chat, youth/league invitations, server-mediated team/league creation, settings email verification, alert authorization, onboarding error handling, Vercel Preview identity configuration, and regression tests.

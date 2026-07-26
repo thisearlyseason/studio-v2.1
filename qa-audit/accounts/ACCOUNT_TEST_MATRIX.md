@@ -42,6 +42,16 @@ The isolated Firebase App Hosting audit Preview was exercised on July 26, 2026:
 - Security headers were present on the hosted response.
 - All disposable identities and squad data created by this run were deleted and verified absent.
 
+The Git-associated Vercel Preview was then exercised at the stable QA branch alias:
+
+- Deployment `dpl_Gg618MNr6D8QRXQ8da2hNhp8wNyd` reached `READY` from commit `a0d7f89a`.
+- Protected direct routes redirected to login with a safe encoded return path.
+- The hosted response supplied HSTS, CSP, `nosniff`, `SAMEORIGIN`, Permissions Policy, and Referrer Policy headers.
+- The landing page had no horizontal overflow at 390px mobile, 820px tablet, or 1592px desktop widths.
+- A verified disposable audit identity completed login, server session exchange, dashboard and billing-page access, logout, and post-logout rejection.
+- Vercel runtime logs confirmed Firebase Admin initialized with the branch-scoped audit-project credential.
+- The disposable Vercel identity was deleted and verified absent.
+
 ## Execution order
 
 1. Identity creation, normalization, duplicate submission, and verification.
