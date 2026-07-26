@@ -2,9 +2,9 @@
 
 ## Status
 
-**READY WITH CONDITIONS**
+**READY WITH CONDITIONS — LIVE AUDIT PREVIEW VERIFIED**
 
-All confirmed critical/high account-security and authorization defects found in this audit are fixed and locally verified. Production approval remains conditional on the required Vercel Preview identity-provider and Stripe test-mode run, plus an explicit rollout decision for existing unverified accounts.
+All confirmed critical/high account-security, authorization, and account-lifecycle defects found in this audit are fixed and verified by automated tests. Core signup, session, onboarding, notification, access-gate, billing-failure, and responsive flows were also exercised in an isolated Firebase App Hosting Preview. Production approval remains conditional on provider-backed lifecycle testing, Stripe test-mode testing, and an explicit rollout decision for existing unverified accounts.
 
 ## Completed
 
@@ -28,11 +28,20 @@ All confirmed critical/high account-security and authorization defects found in 
 - [x] Protected direct URLs require revocation-checked HTTP-only server sessions.
 - [x] Signup requires matching password confirmation and accurately describes verification-before-payment.
 - [x] Local desktop/tablet/mobile landing checks have no horizontal overflow; mobile login/signup and direct-route behavior were browser-verified.
+- [x] Hosted Preview session creation, protected-route admission, logout, and subsequent login work.
+- [x] Hosted Preview signup failure removes the partial Authentication identity and profile.
+- [x] Hosted Preview coach onboarding creates the supported squad type and enforces the Starter squad limit.
+- [x] Hosted Preview notification badge, inbox, acknowledgement, and history remain consistent.
+- [x] Hosted Preview without Stripe configuration fails checkout safely with a generic user-facing error.
+- [x] Disposable Preview identities and squad data were deleted and verified absent after testing.
 - [x] TypeScript, lint (warnings only), unit, emulator rules, Next production build, and Functions build pass.
 
 ## Deployment conditions
 
-- [ ] Run the Vercel Preview test matrix against isolated Firebase identities and Stripe test mode.
+- [ ] Authenticate the Vercel CLI/integration and run the current PR in Vercel Preview; the GitHub Vercel suite remained queued, so Firebase App Hosting was used for the isolated live run.
+- [ ] Configure isolated Stripe test-mode keys, prices, and webhook secret; execute checkout, upgrade, downgrade, failure, cancellation, and stale-session scenarios.
+- [ ] Configure a safe test inbox/email provider and execute verification, password-reset, invitation, and resend/expiry/reuse scenarios.
+- [ ] Execute Google OAuth, multi-device revocation, and push-notification lifecycle scenarios with disposable identities/devices.
 - [ ] Define rollout behavior for pre-existing accounts whose Firebase email is currently unverified.
 
 ## Manual Preview scenarios (30)
@@ -76,18 +85,18 @@ All confirmed critical/high account-security and authorization defects found in 
 | Global roles found | 7 |
 | Subscription plans found | 5 |
 | Account/billing states represented in automated policy tests | 14 |
-| Focused account tests | 41 |
-| Focused tests passed | 41 |
+| Focused account tests | 42 |
+| Focused tests passed | 42 |
 | Focused tests failed | 0 |
 | Manual scenarios blocked/pending | 30 |
-| Full unit + rules tests | 159 passed, 0 failed |
+| Full unit + rules tests | 160 passed, 0 failed |
 | Critical bugs found/fixed/unresolved | 2 / 2 / 0 |
-| High bugs found/fixed/unresolved | 7 / 7 / 0 |
+| High bugs found/fixed/unresolved | 10 / 10 / 0 |
 | Medium bugs found/fixed/unresolved | 3 / 2 / 1 blocked external verification |
 | Low bugs | 0 |
-| Total bugs fixed | 11 |
+| Total bugs fixed | 14 |
 | Total bugs unresolved | 0 confirmed code defects |
-| External verification conditions | 2 |
+| External verification conditions | 5 |
 | Confirmed cross-account breaches remaining | 0 |
 | Confirmed cross-organization breaches remaining | 0 |
 | Automated subscription-policy failures remaining | 0 |
@@ -97,4 +106,4 @@ All confirmed critical/high account-security and authorization defects found in 
 
 ## Required release decision
 
-Do not promote the Preview deployment to production until the existing-user verification rollout is decided and all 30 manual scenarios pass with isolated Firebase identities and Stripe test mode. This audit does not claim the application has no other bugs.
+Do not promote to production until the existing-user verification rollout is decided and the remaining provider-, email-, device-, and Stripe-backed manual scenarios pass in an isolated environment. The isolated audit Preview had no Stripe or email-delivery secrets, and the current Vercel PR deployment did not start. This audit does not claim the application has no other bugs or that security can be proven absolute.

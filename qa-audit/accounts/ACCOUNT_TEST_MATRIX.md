@@ -26,6 +26,22 @@ Legend: **Pass** = automated evidence; **Blocked** = requires Preview/provider i
 | `password-reset-a` | verified | generic, single-use provider reset | request behavior reviewed; token lifecycle not executed | Blocked | M-05 |
 | `multi-org-a` | owner A, member B | switch without cache bleed | data rules scoped; browser history/tab behavior untested | Blocked | M-20 |
 
+## Live audit Preview evidence
+
+The isolated Firebase App Hosting audit Preview was exercised on July 26, 2026:
+
+- Anonymous protected routes redirected to login while the public event-registration route remained accessible.
+- Email/password signup created an unverified account, enforced the verification gate, then admitted the account after audit-only administrator verification.
+- A forced verification-delivery failure retained neither the Authentication identity nor profile data.
+- Login, secure session exchange, protected navigation, logout, and subsequent login succeeded.
+- Coach onboarding created an adult squad; a second Starter-plan squad was rejected with a visible limit message.
+- The Starter account saw the expected Coaches Corner upgrade gate rather than an identity-link error.
+- Demo notification badge, inbox acknowledgement, clear state, and history used the same broadcast.
+- Missing Stripe configuration failed safely with a generic checkout error and did not leave the application.
+- Billing/navigation rendered at desktop, 820px tablet, and 390px mobile widths.
+- Security headers were present on the hosted response.
+- All disposable identities and squad data created by this run were deleted and verified absent.
+
 ## Execution order
 
 1. Identity creation, normalization, duplicate submission, and verification.
@@ -39,8 +55,8 @@ Legend: **Pass** = automated evidence; **Blocked** = requires Preview/provider i
 
 ## Automated totals
 
-- Focused account-policy tests: 15 passed, 0 failed.
+- Focused account tests: 42 passed, 0 failed.
 - Firestore/Storage authorization tests: 26 passed, 0 failed.
-- Full repository unit suite: 133 passed, 0 failed.
-- Combined repository unit plus rules suite: 159 passed, 0 failed.
+- Full repository unit suite: 134 passed, 0 failed.
+- Combined repository unit plus rules suite: 160 passed, 0 failed.
 - Manual account scenarios remaining: 30 (see release checklist).

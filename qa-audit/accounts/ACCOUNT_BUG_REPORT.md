@@ -122,6 +122,42 @@
 - Fix: execute Preview matrix using isolated Firebase identities.
 - Status: Blocked manual verification.
 
+## AQ-013 — Session middleware depended on a same-origin HTTP subrequest
+
+- Severity: High (authentication availability)
+- Affected: authenticated users on Firebase App Hosting.
+- Reproduce: create a valid server session and navigate to a protected route in the audit Preview.
+- Expected: middleware verifies the session and serves the protected route.
+- Actual: the same-origin `/api/auth/session` middleware subrequest did not preserve the App Hosting session reliably, so valid sessions were rejected.
+- Root cause: the authorization boundary depended on a deployment-specific loopback HTTP request.
+- Fix: Node middleware verifies the Firebase session cookie directly with revocation checking and preserves the verified-email gate and safe return path.
+- Regression: `tests/account-session.test.mjs`; live Preview login and protected-route navigation.
+- Status: Fixed.
+
+## AQ-014 — Failed verification delivery retained a partial account
+
+- Severity: High (account lifecycle)
+- Affected: new email/password registrations when verification delivery fails.
+- Reproduce: submit signup while the verification continue URL is unauthorized.
+- Expected: signup fails without retaining an unusable identity or profile.
+- Actual: Firebase Authentication and profile data could be created before verification delivery failed.
+- Root cause: identity creation, verification delivery, and profile persistence were not ordered as a compensating transaction.
+- Fix: verification is sent before batched profile writes; any post-create failure clears session state and deletes the new Authentication identity.
+- Regression: `tests/account-authentication.test.mjs`; live Preview rollback test with the audit hostname temporarily removed and restored.
+- Status: Fixed.
+
+## AQ-015 — Coach onboarding sent unsupported squad types
+
+- Severity: High (functional)
+- Affected: coaches creating adult or youth squads.
+- Reproduce: complete coach onboarding and create an adult or youth squad.
+- Expected: the server accepts the UI's supported squad type.
+- Actual: the UI sent `adult` or `youth`, while the creation API rejected both with HTTP 400.
+- Root cause: client and server team-type allowlists diverged.
+- Fix: the API accepts the two onboarding types and the UI reports server failures in a visible destructive notification.
+- Regression: `tests/account-creation-policy.test.mjs`; live Preview creation and Starter-plan second-squad limit.
+- Status: Fixed.
+
 ## Changed implementation areas
 
-Authentication and verification, API token checks, Firestore/Storage account gates, membership policy, team join/chat, youth/league invitations, server-mediated team/league creation, settings email verification, alert authorization, and regression tests.
+Authentication and verification, server sessions, signup rollback, API token checks, Firestore/Storage account gates, membership policy, team join/chat, youth/league invitations, server-mediated team/league creation, settings email verification, alert authorization, onboarding error handling, and regression tests.
