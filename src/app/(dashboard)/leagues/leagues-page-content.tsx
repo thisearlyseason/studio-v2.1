@@ -1291,7 +1291,7 @@ function ManualPlayerDialog({ league, isOpen, onOpenChange }: { league: League, 
 
 export function LeaguesPageContent({ embedded = false }: { embedded?: boolean }) {
   const { 
-    activeTeam, createLeague, isStaff, isSuperAdmin, isPro, purchasePro, isStarter,
+    activeTeam, user: userProfile, createLeague, isStaff, isSuperAdmin, isPro, purchasePro, isStarter,
     teams, removeTeamFromLeague, updateLeagueTeamDetails,
     isPrimaryClubAuthority, updateLeaguePin, isSchoolMode, updateLeague,
     updateLeagueSchedule
@@ -1302,6 +1302,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   
   const leagueLabel = isSchoolMode ? 'Program' : 'League';
   const leaguesLabel = isSchoolMode ? 'Programs' : 'Leagues';
+  const canCreateLeague = isPrimaryClubAuthority || userProfile?.role === 'league_creator';
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSeasonOpen, setIsSeasonOpen] = useState(false);
@@ -1423,6 +1424,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState<'portals' | 'teams' | 'players' | 'compliance' | 'schedule'>('teams');
   const [mounted, setMounted] = useState(false);
+  const [loadingGraceExpired, setLoadingGraceExpired] = useState(false);
   const [selectedDivision, setSelectedDivision] = useState<string | null>(null);
 
   const [editingTeam, setEditingTeam] = useState<any>(null);
@@ -1480,6 +1482,16 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     return Array.from(merged.values());
   }, [ownedLeagues, memberLeagues]);
   const isLeaguesLoading = ownedLeaguesLoading || memberLeaguesLoading;
+
+  useEffect(() => {
+    if (!isAuthResolved || !isLeaguesLoading) {
+      setLoadingGraceExpired(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => setLoadingGraceExpired(true), 8000);
+    return () => window.clearTimeout(timer);
+  }, [isAuthResolved, isLeaguesLoading]);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const searchParams = useSearchParams();
@@ -1726,7 +1738,9 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     doc.save(`${activeLeague.name.replace(/\s+/g, '_')}_WAIVER_ARCHIVE.pdf`);
   }, [activeLeague, waivers]);
 
-  const showLoading = !mounted || isLeaguesLoading || (!activeTeam && !isStaff);
+  // A cold auth handoff can occasionally leave a Firestore listener pending.
+  // Valid free accounts should always recover to a useful empty state.
+  const showLoading = !mounted || !isAuthResolved || (isLeaguesLoading && !loadingGraceExpired);
 
   const handleEditLeague = () => {
     if (!activeLeague) return;
@@ -1991,7 +2005,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                  {showArchived ? 'View Active Hubs' : 'View Archived Hubs'}
               </Button>
             ) : null}
-            {!activeLeague && isPrimaryClubAuthority && (
+            {!activeLeague && canCreateLeague && (
               <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
                 <Plus className="h-5 w-5 mr-2" /> Launch {leagueLabel} Architect
               </Button>
@@ -2006,7 +2020,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                {showArchived ? 'Active Hubs' : 'Archived Hubs'}
             </Button>
           ) : null}
-          {!activeLeague && isPrimaryClubAuthority && (
+          {!activeLeague && canCreateLeague && (
             <Button className="h-11 px-6 rounded-2xl font-black shadow-xl shadow-primary/20 text-xs" onClick={() => setIsCreateOpen(true)}>
               <Plus className="h-4 w-4 mr-2" /> Launch {leagueLabel} Architect
             </Button>
@@ -2688,8 +2702,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
             <h3 className="text-2xl font-black uppercase">No Competitive Enrollment</h3>
             <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto leading-relaxed">Initialize your own {leagueLabel.toLowerCase()} architect to begin the competitive season.</p>
           </div>
-          {isStaff && (
-            <Button onClick={() => setIsCreateOpen(true)} variant="outline" className="rounded-full px-10 h-12 border-2 font-black uppercase text-xs">Initialize Hub</Button>
+          {canCreateLeague && (
+            <Button onClick={() => setIsCreateOpen(true)} variant="outline" className="rounded-full px-10 h-12 border-2 font-black uppercase text-xs">Initialize Free {leagueLabel}</Button>
           )}
         </div>
       )}

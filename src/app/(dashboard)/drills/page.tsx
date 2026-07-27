@@ -55,6 +55,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format } from 'date-fns';
+import { NoActiveTeamState } from '@/components/layout/NoActiveTeamState';
 
 const getYoutubeThumbnail = (url: string) => {
   if (!url) return null;
@@ -66,7 +67,7 @@ const getYoutubeThumbnail = (url: string) => {
 };
 
 export default function PlaybookAndGamePlayPage() {
-  const { activeTeam, addDrill, updateDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro, members } = useTeam();
+  const { activeTeam, isTeamsLoading, addDrill, updateDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro, members } = useTeam();
   const db = useFirestore();
 
   const [viewMode, setViewMode] = useState<'drills' | 'gameplay'>('drills');
@@ -374,6 +375,8 @@ export default function PlaybookAndGamePlayPage() {
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentText, setEditingCommentText] = useState<string>('');
 
+  if (isTeamsLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Tactical Hub...</p></div>;
+  if (!activeTeam) return <NoActiveTeamState title="Build Your Tactical Hub" description="Tactical playbooks and game film belong to a squad. Create your free squad or join one to open this workspace." />;
   if (isDrillsLoading || isFilesLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Tactical Hub...</p></div>;
 
   const renderWatchBadge = (item: any) => {

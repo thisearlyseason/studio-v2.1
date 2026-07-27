@@ -5,18 +5,31 @@ import test from 'node:test';
 const source = path => readFile(new URL(path, import.meta.url), 'utf8');
 
 test('email-password signup requires verification before plan or tenant access', async () => {
-  const signup = await source('../src/app/signup/page.tsx');
+  const [signup, clientAuth, verificationRoute, templates] = await Promise.all([
+    source('../src/app/signup/page.tsx'),
+    source('../src/lib/client-auth.ts'),
+    source('../src/app/api/email/verify-email/route.ts'),
+    source('../src/lib/email-templates.ts'),
+  ]);
   const auth = await source('../src/lib/api-auth.ts');
   const rules = await source('../firestore.rules');
 
-  assert.match(signup, /sendEmailVerification/);
+  assert.match(signup, /sendBrandedVerificationEmail/);
   assert.match(signup, /router\.push\('\/verify-email'\)/);
   assert.match(signup, /password !== passwordConfirmation/);
   assert.match(signup, /Confirm Password/);
-  assert.match(signup, /sendEmailVerification[\s\S]*writeBatch/);
+  assert.match(signup, /sendBrandedVerificationEmail[\s\S]*writeBatch/);
   assert.match(signup, /await deleteUser\(createdUser\)/);
   assert.doesNotMatch(signup, /description: error\.message/);
+  assert.match(clientAuth, /\/api\/email\/verify-email/);
+  assert.match(verificationRoute, /allowUnverifiedEmail: true/);
+  assert.match(verificationRoute, /generateEmailVerificationLink/);
+  assert.match(verificationRoute, /noreply@thesquad\.pro/);
+  assert.match(verificationRoute, /verification-email/);
+  assert.match(templates, /export function verificationEmail/);
+  assert.match(templates, /Verify My Email/);
   assert.match(auth, /auth\/email-not-verified/);
+  assert.match(auth, /!options\.allowUnverifiedEmail/);
   assert.match(rules, /email_verified/);
   assert.match(rules, /hasActiveAccount/);
 });
@@ -42,7 +55,7 @@ test('existing unverified accounts are preserved but locked until verification',
   assert.match(verification, /Account access stays locked until/);
   assert.match(verification, /Resend Verification/);
   assert.match(verification, /RESEND_COOLDOWN_MS = 60_000/);
-  assert.match(verification, /sendEmailVerification\(auth\.currentUser/);
+  assert.match(verification, /sendBrandedVerificationEmail\(auth\.currentUser/);
   assert.match(verification, /Use another account/);
   assert.match(middleware, /decoded\.email_verified !== true/);
   assert.match(sessionRoute, /decoded\.email_verified !== true/);

@@ -46,7 +46,7 @@ export default function UniversalAccountDashboard() {
     user, activeTeam, activeTeamEvents, 
     householdBalance, isYouth, isParent,
     householdEvents, householdGames, myChildren, teams,
-    isPrimaryClubAuthority, isSchoolMode, isEliteClubMode
+    isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isStaff
   } = useTeam();
   const router = useRouter();
   const db = useFirestore();
@@ -335,12 +335,25 @@ export default function UniversalAccountDashboard() {
                   </Card>
                 );
               }) : (
-                <div className="flex flex-col items-center justify-center py-16 bg-muted/5 rounded-[2.5rem] border-2 border-dashed border-muted/20 text-center space-y-3 opacity-60">
-                  <CalendarDays className="h-10 w-10 text-muted-foreground opacity-20" />
+                <div className="flex flex-col items-center justify-center py-12 px-6 bg-muted/5 rounded-[2.5rem] border-2 border-dashed border-muted/20 text-center space-y-4">
+                  <CalendarDays className="h-10 w-10 text-primary/40" />
                   <div>
                     <h4 className="text-lg font-black uppercase tracking-tight text-muted-foreground">Tactical Silence</h4>
                     <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mt-1">No upcoming squad directives found</p>
                   </div>
+                  <Button
+                    className="h-11 rounded-full px-7 text-[10px] font-black uppercase tracking-widest"
+                    onClick={() => router.push(
+                      activeTeam
+                        ? (isStaff ? '/events' : '/calendar')
+                        : (user.role === 'coach' ? '/teams/new' : '/teams/join')
+                    )}
+                  >
+                    {activeTeam
+                      ? (isStaff ? 'Schedule First Event' : 'Open Master Schedule')
+                      : (user.role === 'coach' ? 'Create Your Squad' : 'Join a Squad')}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
                 </div>
               )}
             </div>

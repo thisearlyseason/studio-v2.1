@@ -24,6 +24,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
+import { NoActiveTeamState } from '@/components/layout/NoActiveTeamState';
 
 
 function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: any, onSign: (id: string, sig: string, mid: string) => Promise<boolean>, members: Member[], onComplete: () => void }) {
@@ -120,7 +121,7 @@ function FileThumbnail({ file }: { file: any }) {
 
 
 export default function FilesPage() {
-  const { activeTeam, addFile, deleteFile, user, isPro, purchasePro, isStaff, members, signTeamDocument } = useTeam();
+  const { activeTeam, isTeamsLoading, addFile, deleteFile, user, isPro, purchasePro, isStaff, members, signTeamDocument } = useTeam();
   const db = useFirestore();
   const [mounted, setMounted] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
@@ -175,7 +176,10 @@ export default function FilesPage() {
   }, [visibleSignedFiles]);
 
   useEffect(() => { setMounted(true); }, []);
-  if (!mounted || !activeTeam) return null;
+  if (!mounted || isTeamsLoading) {
+    return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Library...</p></div>;
+  }
+  if (!activeTeam) return <NoActiveTeamState title="Start Your Squad Library" description="Files, waivers, photos, and links are stored inside a squad. Create a free squad or join one to begin your library." />;
 
   const handleAddLink = async () => {
     if (!linkUrl.trim() || !linkTitle.trim()) return;
