@@ -27,6 +27,14 @@ beforeEach(async () => {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
     await Promise.all([
+      setDoc(doc(db, 'users', 'owner'), { role: 'coach' }),
+      setDoc(doc(db, 'users', 'parent'), { role: 'parent' }),
+      setDoc(doc(db, 'users', 'player'), { role: 'adult_player' }),
+      setDoc(doc(db, 'users', 'outsider'), { role: 'adult_player' }),
+      setDoc(doc(db, 'users', 'suspended'), {
+        role: 'adult_player',
+        accountStatus: 'suspended',
+      }),
       setDoc(doc(db, 'teams', 'team-a'), { ownerUserId: 'owner' }),
       setDoc(doc(db, 'players', 'private-player'), {
         userId: 'player',
@@ -59,7 +67,10 @@ after(async () => {
 });
 
 function storageFor(uid, claims = {}) {
-  return testEnv.authenticatedContext(uid, claims).storage();
+  return testEnv.authenticatedContext(uid, {
+    email_verified: true,
+    ...claims,
+  }).storage();
 }
 
 test('disabled recruiting media is private while enabled profiles are public', async () => {
@@ -119,5 +130,17 @@ test('unsupported storage paths are denied by default', async () => {
   await assertFails(
     ownerStorage.ref('unscoped/private.txt')
       .putString('private', 'raw', { contentType: 'text/plain' }),
+  );
+});
+
+test('unverified and suspended accounts cannot read private account media', async () => {
+  const unverifiedStorage = storageFor('parent', { email_verified: false });
+  const suspendedStorage = storageFor('suspended');
+
+  await assertFails(
+    unverifiedStorage.ref('players/private-player/avatar/private.png').getMetadata(),
+  );
+  await assertFails(
+    suspendedStorage.ref('players/private-player/avatar/private.png').getMetadata(),
   );
 });

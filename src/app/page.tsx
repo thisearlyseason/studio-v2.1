@@ -61,6 +61,7 @@ import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { useUser, useAuth } from '@/firebase';
 import { signInAnonymously, signOut } from 'firebase/auth';
+import { clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
 import { toast } from '@/hooks/use-toast';
 import { 
   Dialog, 
@@ -464,6 +465,7 @@ export default function LandingPage() {
     setIsDemoLoading(true);
     try {
       // Clear current session first to prevent state pollution
+      await clearBrowserSession();
       await signOut(auth);
       // Brief delay to ensure auth state clean
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -473,7 +475,8 @@ export default function LandingPage() {
       localStorage.removeItem('sf_session_team_id');
       sessionStorage.removeItem('squad_demo_start_time');
       
-      await signInAnonymously(auth);
+      const demoCredential = await signInAnonymously(auth);
+      await establishBrowserSession(demoCredential.user);
       
       // Use window.replace to bypass internal router cache 
       // and ensure DashboardLayout initializes with fresh demo parameters

@@ -9,12 +9,13 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth, useUser, useFirestore } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signInAnonymously, signOut, signInWithPopup, GoogleAuthProvider, sendPasswordResetEmail, browserPopupRedirectResolver } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import BrandLogo from '@/components/BrandLogo';
 import Image from 'next/image';
 import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap, Eye, EyeOff } from 'lucide-react';
+import { clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -37,8 +38,31 @@ export default function LoginPage() {
   const router = useRouter();
 
   React.useEffect(() => {
+    const returnTo = new URLSearchParams(window.location.search).get('returnTo');
+    if (returnTo?.startsWith('/') && !returnTo.startsWith('//')) {
+      sessionStorage.setItem('squad_return_path', returnTo);
+    }
+  }, []);
+
+  React.useEffect(() => {
     if (!isUserLoading && user) {
       const fetchRole = async () => {
+        if (!user.isAnonymous && !user.emailVerified) {
+          await clearBrowserSession();
+          router.replace('/verify-email');
+          return;
+        }
+        try {
+          await establishBrowserSession(user);
+        } catch {
+          setIsLoading(false);
+          toast({
+            title: 'Session Setup Failed',
+            description: 'Your login could not be secured. Please try again.',
+            variant: 'destructive',
+          });
+          return;
+        }
         const returnPath = sessionStorage.getItem('squad_return_path');
         if (returnPath?.startsWith('/') && !returnPath.startsWith('//')) {
           sessionStorage.removeItem('squad_return_path');
@@ -49,6 +73,9 @@ export default function LoginPage() {
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (userDoc.exists()) {
             const data = userDoc.data();
+            if (user.email && data.email !== user.email) {
+              await updateDoc(userDoc.ref, { email: user.email });
+            }
             const tokenResult = await user.getIdTokenResult();
             if (tokenResult.claims.role === 'superadmin') {
               router.push('/admin');
@@ -72,11 +99,11 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password.trim());
+      await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
     } catch (error: any) {
       toast({
         title: "Login Failed",
-        description: error.message || "Invalid credentials.",
+        description: "The email or password is incorrect, or this account is unavailable.",
         variant: "destructive",
       });
       setIsLoading(false);
@@ -132,6 +159,7 @@ export default function LoginPage() {
     setIsDemoLoading(true);
     try {
       // Clear current session first to prevent state pollution
+      await clearBrowserSession();
       await signOut(auth);
       // Brief delay to ensure auth state clean
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -141,7 +169,8 @@ export default function LoginPage() {
       localStorage.removeItem('sf_session_team_id');
       sessionStorage.removeItem('squad_demo_start_time');
       
-      await signInAnonymously(auth);
+      const demoCredential = await signInAnonymously(auth);
+      await establishBrowserSession(demoCredential.user);
       
       // Use window.location.replace to bypass internal router cache 
       // and ensure DashboardLayout initializes with fresh demo parameters

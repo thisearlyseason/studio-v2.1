@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
+import { findActiveTeamMember } from '@/lib/server-team-access';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -29,16 +30,12 @@ export async function POST(req: NextRequest) {
 
     const teamRef = adminDb.collection('teams').doc(teamId);
     const chatRef = teamRef.collection('groupChats').doc(chatId);
-    const [team, chat, memberships, profile] = await Promise.all([
+    const [team, chat, activeMembership, profile] = await Promise.all([
       teamRef.get(),
       chatRef.get(),
-      adminDb.collectionGroup('members').where('userId', '==', auth.uid).limit(50).get(),
+      findActiveTeamMember(teamId, auth.uid),
       adminDb.collection('users').doc(auth.uid).get(),
     ]);
-    const activeMembership = memberships.docs.find(member => {
-      const data = member.data();
-      return data.status !== 'removed' && data.isDeleted !== true;
-    });
     const chatMembers = Array.isArray(chat.data()?.memberIds) ? chat.data()?.memberIds : [];
     const isOwner = team.data()?.ownerUserId === auth.uid;
     if (!team.exists || !chat.exists || (!isOwner && (!activeMembership || !chatMembers.includes(auth.uid)))) {
@@ -69,7 +66,7 @@ export async function POST(req: NextRequest) {
     const author = String(
       profile.data()?.name ||
       profile.data()?.fullName ||
-      activeMembership?.data().name ||
+      activeMembership?.data.name ||
       auth.email ||
       'Squad Member'
     ).slice(0, 120);

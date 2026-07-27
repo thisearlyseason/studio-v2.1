@@ -7,7 +7,7 @@
  *     headers: { 'Content-Type': 'application/json', ...authHeader(token) }
  *   })
  */
-import type { Auth } from 'firebase/auth';
+import type { Auth, User } from 'firebase/auth';
 
 /** Gets the current user's Firebase ID token. Returns null if not authenticated. */
 export async function getAuthToken(auth: Auth): Promise<string | null> {
@@ -25,4 +25,20 @@ export async function getAuthToken(auth: Auth): Promise<string | null> {
 export function authHeader(token: string | null): Record<string, string> {
   if (!token) return {};
   return { Authorization: `Bearer ${token}` };
+}
+
+export async function establishBrowserSession(user: User): Promise<void> {
+  const token = await user.getIdToken(true);
+  const response = await fetch('/api/auth/session', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) throw new Error('Unable to establish a secure browser session.');
+}
+
+export async function clearBrowserSession(): Promise<void> {
+  await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
 }

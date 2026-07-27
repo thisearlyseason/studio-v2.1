@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebase-admin'; // Ensures admin app is initialized
+import { getTeamAuthority } from '@/lib/server-team-access';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -64,8 +65,8 @@ export async function POST(req: NextRequest) {
     let tokens: string[] = [];
     if (!isInternal) {
       if (recipientUserIds.length > 500) return NextResponse.json({ error: 'Too many recipients.' }, { status: 400 });
-      const teamSnap = await adminDb.collection('teams').doc(teamId).get();
-      if (!teamSnap.exists || (authResult!.role !== 'superadmin' && teamSnap.data()!.ownerUserId !== authResult!.uid)) {
+      const authority = await getTeamAuthority(teamId, authResult!.uid, authResult!.role);
+      if (!authority?.isStaff) {
         return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
       }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebase-admin';
 import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
+import { safeJoinPosition } from '@/lib/account-membership-policy';
 import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
 
 const CODE_PATTERN = /^[A-Z0-9_-]{4,32}$/;
@@ -47,8 +48,6 @@ export async function POST(req: NextRequest) {
     const requestedPlayerId = typeof body.playerId === 'string' ? body.playerId : '';
     const playerId = requestedPlayerId || `p_${auth.uid}`;
     if (!/^p_[A-Za-z0-9_-]{1,200}$/.test(playerId)) return NextResponse.json({ error: 'Invalid athlete identity.' }, { status: 400 });
-    const position = typeof body.position === 'string' && body.position.length <= 80 ? body.position : 'Athlete';
-
     const teamSnapshot = await findTeamByCode(code);
     if (!teamSnapshot) return NextResponse.json({ error: 'Squad code not found.' }, { status: 404 });
     const team = teamSnapshot.data() || {};
@@ -65,6 +64,10 @@ export async function POST(req: NextRequest) {
       const user = userSnapshot.data() || {};
       const existingPlayer = playerSnapshot.data() || {};
       if (playerId !== `p_${auth.uid}` && existingPlayer.parentId !== auth.uid) throw new Error('CHILD_FORBIDDEN');
+      const position = safeJoinPosition({
+        profileRole: user.role,
+        joiningLinkedChild: playerId !== `p_${auth.uid}`,
+      });
       const displayName = String(
         existingPlayer.firstName
           ? `${existingPlayer.firstName} ${existingPlayer.lastName || ''}`.trim()

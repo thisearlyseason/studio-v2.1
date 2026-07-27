@@ -2,8 +2,31 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function isSignedIn() {
+    function isAuthenticated() {
       return request.auth != null;
+    }
+
+    function isAnonymousSession() {
+      return isAuthenticated() &&
+        request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'anonymous';
+    }
+
+    function isSignedIn() {
+      let user = firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)
+      );
+      return isAuthenticated() && (
+        isAnonymousSession() ||
+        (
+          (
+            request.auth.token.get('email_verified', false) == true ||
+            request.auth.token.get('role', '') == 'superadmin'
+          ) &&
+          user.data.get('accountStatus', 'active') != 'suspended' &&
+          user.data.get('accountStatus', 'active') != 'pending_deletion' &&
+          user.data.get('deletionStatus', '') != 'pending'
+        )
+      );
     }
 
     function isSuperAdmin() {

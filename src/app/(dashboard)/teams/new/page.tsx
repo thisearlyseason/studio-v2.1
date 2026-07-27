@@ -19,6 +19,7 @@ import { useTeam } from '@/components/providers/team-provider';
 import { ChevronLeft, Trophy, Users, ShieldCheck, Zap, Check, ArrowRight, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
 
 function NewTeamForm() {
   const router = useRouter();
@@ -68,6 +69,11 @@ function NewTeamForm() {
       }
     } catch (e: any) {
       console.error(e);
+      toast({
+        title: 'Squad Creation Failed',
+        description: e?.message || 'Unable to create the squad. Please try again.',
+        variant: 'destructive',
+      });
       setIsProcessing(false);
     }
   };

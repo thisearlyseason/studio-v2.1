@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
+import { getTeamAuthority } from '@/lib/server-team-access';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -63,8 +64,8 @@ export async function POST(req: NextRequest) {
     );
     if (rateLimit) return rateLimit;
 
-    const teamSnap = await adminDb.collection('teams').doc(teamId).get();
-    if (!teamSnap.exists || (authResult.role !== 'superadmin' && teamSnap.data()!.ownerUserId !== authResult.uid)) {
+    const authority = await getTeamAuthority(teamId, authResult.uid, authResult.role);
+    if (!authority?.isStaff) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
     }
 

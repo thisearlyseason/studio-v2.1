@@ -1,11 +1,16 @@
 import { getOrInitializeFirebaseApp } from '@/firebase/config';
 import { FirebaseApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getStorage } from 'firebase/storage';
+import {
+  browserLocalPersistence,
+  connectAuthEmulator,
+  getAuth,
+  indexedDBLocalPersistence,
+  initializeAuth,
+} from 'firebase/auth';
+import { connectStorageEmulator, getStorage } from 'firebase/storage';
 import { 
-  initializeFirestore, 
-  getFirestore, 
-  memoryLocalCache 
+  connectFirestoreEmulator,
+  getFirestore,
 } from 'firebase/firestore'
 
 let cachedSdks: any = null;
@@ -37,8 +42,6 @@ export function getSdks(firebaseApp: FirebaseApp) {
   
   // Initialize Firestore with settings to mitigate the 'ID: ca9' assertion bug
   if (typeof window !== 'undefined') {
-    const { initializeAuth, browserLocalPersistence, getAuth, indexedDBLocalPersistence } = require('firebase/auth');
-    
     // Auth Hardening: Explicitly manage persistence to avoid 'network-request-failed' hangs in restricted environments
     try {
       auth = getAuth(firebaseApp);
@@ -50,12 +53,10 @@ export function getSdks(firebaseApp: FirebaseApp) {
     }
 
     try {
-      const { getFirestore } = require('firebase/firestore');
       firestore = getFirestore(firebaseApp);
       console.log('[Firestore] Initialized fresh Firestore instance (Default Cache)');
     } catch (e: any) {
       if (e.message && e.message.includes('already been initialized')) {
-        const { getFirestore } = require('firebase/firestore');
         firestore = getFirestore(firebaseApp);
       } else {
         throw e;
@@ -74,12 +75,10 @@ export function getSdks(firebaseApp: FirebaseApp) {
   if (typeof window !== 'undefined' &&
       process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true' &&
       !globalSdks.firebaseEmulatorsConnected) {
-    const { connectAuthEmulator } = require('firebase/auth');
-    const { connectFirestoreEmulator } = require('firebase/firestore');
-    const { connectStorageEmulator } = require('firebase/storage');
-    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
-    connectFirestoreEmulator(firestore, '127.0.0.1', 8080);
-    connectStorageEmulator(storage, '127.0.0.1', 9199);
+    const emulatorHost = window.location.hostname || '127.0.0.1';
+    connectAuthEmulator(auth, `http://${emulatorHost}:9099`, { disableWarnings: true });
+    connectFirestoreEmulator(firestore, emulatorHost, 8080);
+    connectStorageEmulator(storage, emulatorHost, 9199);
     globalSdks.firebaseEmulatorsConnected = true;
     console.info('[Firebase] Connected to local Auth, Firestore, and Storage emulators.');
   }

@@ -184,6 +184,9 @@ export async function PUT(req: NextRequest) {
       email: invite.email,
       password,
       displayName,
+      // Possession of the single-use invitation delivered to this address is
+      // the verification ceremony for a youth account.
+      emailVerified: true,
     });
     createdUid = userRecord.uid;
 

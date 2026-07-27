@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
 import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage, useAuth } from '@/firebase';
-import { getAuthToken, authHeader } from '@/lib/client-auth';
+import { clearBrowserSession, getAuthToken, authHeader } from '@/lib/client-auth';
 import { isAlertRelevantToRecipient } from '@/lib/alert-audience';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 
@@ -1836,102 +1836,28 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeam, db]);
 
   const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => { 
-    if (!firebaseUser || !db || !userProfile) return ''; 
-
-    // New teams always begin on the free tier. Pro access is assigned later by
-    // the server after the owner upgrades and selects this existing team.
-
-    const tid = `team_${Date.now()}`; 
-    const batch = writeBatch(db); 
-    
-    // High-Capacity Squad Identity Code: 10-character token (quadrillions of combinations)
-    const generateSecureCode = () => {
-      const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      const randomValues = new Uint32Array(10);
-      window.crypto.getRandomValues(randomValues);
-      let ret = '';
-      for (let i = 0; i < 10; i++) {
-        ret += charset.charAt(randomValues[i] % charset.length);
-      }
-      return ret;
-    };
-
-    let teamCode = generateSecureCode();
-    // Ensure uniqueness for the new team code
-    let isUnique = await checkCodeUniqueness(teamCode);
-    let attempts = 0;
-    while (!isUnique && attempts < 5) {
-      teamCode = generateSecureCode();
-      isUnique = await checkCodeUniqueness(teamCode);
-      attempts++;
-    }
-    const isSchool = type === 'school' || type === 'school_squad';
-    
-    const schoolIdToUse = schoolId || (type === 'school_squad' && activeTeam?.id ? activeTeam.id : null);
-    const resolvedOwnerId = overrideOwnerId || firebaseUser.uid;
-
-    const resolvedPlanId = 'free';
-
-    batch.set(doc(db, 'teams', tid), clean({ 
-      id: tid, 
-      teamName: name, 
-      code: teamCode,
-      teamCode: teamCode, 
-      inviteCode: teamCode, 
-      type, sport: isSchool ? 'Basketball' : 'General', 
-      description, createdBy: firebaseUser.uid, ownerUserId: resolvedOwnerId, 
-      planId: resolvedPlanId, 
-      // isPro is true only for explicitly paid/pro-tier plans.
-      // 'free' and 'starter' must NOT be auto-promoted, even for Elite Club accounts.
-      isPro: ['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo'].includes(resolvedPlanId), 
-      createdAt: new Date().toISOString(),
-      schoolId: schoolIdToUse
-    })); 
-    
-    if (customWaiverTitle && customWaiverContent) {
-      batch.set(doc(db, 'teams', tid, 'documents', 'custom_1'), clean({
-        id: 'custom_1', title: customWaiverTitle, content: customWaiverContent, type: 'waiver', isActive: true, assignedTo: ['all'], createdAt: new Date().toISOString()
-      }));
-    }
-    
-    batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid), clean({ 
-      teamId: tid, 
-      name, 
-      role: 'Admin', 
-      code: teamCode, 
-      joinedAt: new Date().toISOString(),
-      type,
-      isPro: ['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo'].includes(resolvedPlanId),
-      planId: resolvedPlanId,
-      schoolId: schoolIdToUse,
-      ownerUserId: resolvedOwnerId
-    })); 
-    
-    batch.set(doc(db, 'teams', tid, 'members', firebaseUser.uid), clean({ 
-      id: firebaseUser.uid, userId: firebaseUser.uid, playerId: `p_${firebaseUser.uid}`, 
-      name: firebaseUser.displayName || userProfile?.name, role: 'Admin', position: pos, 
-      joinedAt: new Date().toISOString(), avatar: userProfile?.avatar || '',
-      ownerUserId: resolvedOwnerId, teamId: tid,
-      schoolId: schoolIdToUse,
-      email: firebaseUser.email || userProfile?.email
-    })); 
-
-    if (coachName && coachEmail) {
-      const dummyId = `member_${Date.now()}`;
-      batch.set(doc(db, 'teams', tid, 'members', dummyId), clean({
-        id: dummyId,
-        teamId: tid,
-        name: coachName,
-        email: coachEmail,
-        position: 'Head Coach',
-        role: 'Member',
-        joinedAt: new Date().toISOString(),
-        ownerUserId: resolvedOwnerId,
-        schoolId: schoolIdToUse
-      }));
-    }
-
-    await batch.commit(); 
+    if (!firebaseUser || !firebaseAuth || !db || !userProfile) return '';
+    const token = await getAuthToken(firebaseAuth);
+    const response = await fetch('/api/teams/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({
+        name,
+        type,
+        position: pos,
+        description,
+        customWaiverTitle,
+        customWaiverContent,
+        schoolId:
+          schoolId || (type === 'school_squad' && activeTeam?.id ? activeTeam.id : undefined),
+        coachName,
+        coachEmail,
+        overrideOwnerId,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Unable to create the team.');
+    const tid = result.teamId as string;
 
     // Paid subscriptions may automatically allocate one available seat to a
     // newly created squad. The API derives eligibility and capacity server-side.
@@ -1975,7 +1901,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
     toast({ title: "Team Created Successfully!", description: `Your new ${type.replace('_', ' ')} "${name}" is ready.` });
     return tid; 
-  }, [firebaseUser, firebaseAuth, db, userProfile, proQuotaStatus, teamsRaw, setIsPaywallOpen, activeTeam]);
+  }, [firebaseUser, firebaseAuth, db, userProfile, proQuotaStatus, activeTeam]);
 
   const joinTeamWithCode = useCallback(async (code: string, playerId: string, position: string) => { 
     if (!firebaseUser || !firebaseAuth) return false;
@@ -2845,57 +2771,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseAuth]);
 
   const createLeague = useCallback(async (name: string, divisionTitle?: string, sport?: string) => { 
-    if (!firebaseUser || !db) return ''; 
+    if (!firebaseUser || !firebaseAuth || !db) return '';
     if (!activeTeam && userProfile?.role !== 'league_creator') return '';
-
-    // Enforce Capacity Limits
-    let leagueCount = 0;
-    // School / Squad Organization accounts have higher capacity
-    let isHighCapacity = isSchoolMode || userProfile?.plan_type === 'school';
-
-    if (activeTeam) {
-      leagueCount = activeTeam.leagueIds ? Object.keys(activeTeam.leagueIds).length : 0;
-      isHighCapacity = isHighCapacity || activeTeam?.planId === 'school';
-    } else {
-      const leaguesSnap = await getDocs(query(collection(db, 'leagues'), where('creatorId', '==', firebaseUser.uid)));
-      leagueCount = leaguesSnap.size;
-    }
-    
-    const limit = isHighCapacity ? 20 : 1;
-    
-    if (leagueCount >= limit) {
-      throw new Error(`League limit (${limit}) reached. Upgrade to an Elite or School plan for more.`);
-    }
-
-    const lid = `league_${Date.now()}`; 
-    const batch = writeBatch(db); 
-    
-    const initialTeams = activeTeam ? { 
-      [activeTeam.id]: { teamName: activeTeam.name, teamLogoUrl: activeTeam.teamLogoUrl || '', wins: 0, losses: 0, ties: 0, points: 0, status: 'accepted' } 
-    } : {};
-    
-    const initialMemberTeamIds = activeTeam ? [activeTeam.id] : [];
-
-    batch.set(doc(db, 'leagues', lid), clean({ 
-      id: lid, 
-      name, 
-      divisionTitle: divisionTitle || '',
-      creatorId: firebaseUser.uid, 
-      sport: sport || activeTeam?.sport || 'General', 
-      teams: initialTeams, 
-      memberTeamIds: initialMemberTeamIds, 
-      memberUserIds: [firebaseUser.uid],
-      finances: {}, 
-      inviteCode: lid.slice(-6).toUpperCase(), 
-      createdAt: new Date().toISOString() 
-    })); 
-    
-    if (activeTeam) {
-      batch.update(doc(db, 'teams', activeTeam.id), { [`leagueIds.${lid}`]: true }); 
-    }
-    await batch.commit(); 
-    return lid; 
-  }, [firebaseUser, db, activeTeam, userProfile, isSchoolMode]);
+    const token = await getAuthToken(firebaseAuth);
+    const response = await fetch('/api/leagues/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({
+        name,
+        divisionTitle,
+        sport: sport || activeTeam?.sport,
+        teamId: activeTeam?.id,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Unable to create the league.');
+    return result.leagueId as string;
+  }, [firebaseUser, firebaseAuth, db, activeTeam, userProfile]);
   
   const updateLeague = useCallback(async (leagueId: string, updates: Partial<League>) => { 
     if (!db) return; 
@@ -3023,7 +2915,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     toast({ title: "Squad Excised", description: "Team removed from league standings." });
   }, [db]);
 
-  const inviteTeamToLeague = useCallback(async (lId: string, lN: string, e: string, tN?: string) => { if (db) await addDoc(collection(db, 'leagues', 'global', 'invites'), clean({ leagueId: lId, leagueName: lN, invitedEmail: e, teamName: tN, status: 'pending', createdAt: new Date().toISOString() })); }, [db]);
+  const inviteTeamToLeague = useCallback(async (lId: string, lN: string, e: string, tN?: string) => {
+    if (db) {
+      await addDoc(collection(db, 'leagues', lId, 'invites'), clean({
+        leagueId: lId,
+        leagueName: lN,
+        invitedEmail: e.trim().toLowerCase(),
+        teamName: tN,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      }));
+    }
+  }, [db]);
   const manuallyAddTeamToLeague = useCallback(async (lId: string, n: string, e?: string) => { 
     if (db) {
       const tid = `manual_${Date.now()}`;
@@ -3546,6 +3449,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!response.ok) throw new Error(payload.error || 'Unable to schedule account deletion.');
 
       const { signOut } = await import('firebase/auth');
+      await clearBrowserSession();
       await signOut(firebaseAuth);
       toast({
         title: 'Account Deletion Scheduled',

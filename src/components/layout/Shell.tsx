@@ -113,6 +113,7 @@ import { signOut } from 'firebase/auth';
 import { useAuth } from '@/firebase';
 import { toast } from '@/hooks/use-toast';
 import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
+import { clearBrowserSession } from '@/lib/client-auth';
 import {
   Tooltip,
   TooltipContent,
@@ -568,6 +569,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const handleLogout = async () => {
     try {
+      await clearBrowserSession();
       await signOut(auth);
       router.push('/login');
     } catch (error) {

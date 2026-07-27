@@ -17,6 +17,7 @@ import { ensureAdminInit, getAdminProjectId } from '@/lib/firebase-admin';
 export interface DecodedToken {
   uid: string;
   email?: string;
+  emailVerified?: boolean;
   role?: string;
   authTime?: number;
   signInProvider?: string;
@@ -64,13 +65,29 @@ export async function verifyFirebaseToken(
     const decodedToken = await admin.auth().verifyIdToken(idToken, true);
 
     const role = (decodedToken as any).role as string | undefined;
+    const signInProvider = (decodedToken.firebase as { sign_in_provider?: string } | undefined)?.sign_in_provider;
+
+    if (
+      signInProvider !== 'anonymous' &&
+      role !== 'superadmin' &&
+      decodedToken.email_verified !== true
+    ) {
+      return NextResponse.json(
+        {
+          error: 'Verify your email address before accessing this account.',
+          code: 'auth/email-not-verified',
+        },
+        { status: 403 }
+      );
+    }
 
     return {
       uid: decodedToken.uid,
       email: decodedToken.email,
+      emailVerified: decodedToken.email_verified,
       role,
       authTime: decodedToken.auth_time,
-      signInProvider: (decodedToken.firebase as { sign_in_provider?: string } | undefined)?.sign_in_provider,
+      signInProvider,
     };
   } catch (err: any) {
     let tokenProjectId: string | null = null;

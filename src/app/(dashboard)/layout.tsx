@@ -17,7 +17,7 @@ import { signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { getAuthToken, authHeader } from '@/lib/client-auth';
+import { getAuthToken, authHeader, clearBrowserSession } from '@/lib/client-auth';
 
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -410,7 +410,9 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       setTimeLeft(remaining);
       if (remaining <= 0) {
         sessionStorage.removeItem(DEMO_START_KEY);
-        signOut(auth).then(() => window.location.href = `/login?reason=expired`);
+        void clearBrowserSession()
+          .then(() => signOut(auth))
+          .finally(() => { window.location.href = `/login?reason=expired`; });
       }
     };
     checkSession();

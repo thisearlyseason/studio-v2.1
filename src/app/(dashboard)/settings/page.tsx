@@ -66,7 +66,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useTeam } from '@/components/providers/team-provider';
 import { useAuth, useStorage } from '@/firebase';
-import { signOut, reauthenticateWithCredential, EmailAuthProvider, updateEmail } from 'firebase/auth';
+import { signOut, reauthenticateWithCredential, EmailAuthProvider, verifyBeforeUpdateEmail } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
@@ -77,6 +77,7 @@ import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
 import { deleteFCMToken } from '@/lib/fcm-client';
+import { clearBrowserSession } from '@/lib/client-auth';
 
 export default function SettingsPage() {
   const { 
@@ -257,10 +258,18 @@ export default function SettingsPage() {
         reauthPassword
       );
       await reauthenticateWithCredential(auth.currentUser, credential);
-      await updateEmail(auth.currentUser, editForm.email.trim().toLowerCase());
-      await saveProfileFields(true);
+      await verifyBeforeUpdateEmail(
+        auth.currentUser,
+        editForm.email.trim().toLowerCase(),
+        { url: `${window.location.origin}/login?email_updated=1` },
+      );
+      await saveProfileFields(false);
       setIsReauthOpen(false);
       setReauthPassword('');
+      toast({
+        title: 'Verify New Email',
+        description: 'Your current email remains active until you approve the link sent to the new address.',
+      });
     } catch (err: any) {
       const msg = err.code === 'auth/wrong-password' ? 'Incorrect password.' :
                   err.code === 'auth/email-already-in-use' ? 'This email is already in use.' :
@@ -277,6 +286,7 @@ export default function SettingsPage() {
       if (user?.id) {
         deleteFCMToken(user.id).catch(() => {});
       }
+      await clearBrowserSession();
       await signOut(auth);
       router.push('/login');
     } catch (error) {

@@ -156,6 +156,14 @@ exports.redeemLeagueInvite = (0, https_1.onCall)(async (request) => {
     if (!request.auth) {
         throw new https_1.HttpsError("unauthenticated", "Sign in before joining a league.");
     }
+    const provider = request.auth.token.firebase?.sign_in_provider;
+    if (provider === "anonymous") {
+        throw new https_1.HttpsError("permission-denied", "Use a registered account to join a league.");
+    }
+    if (request.auth.token.email_verified !== true &&
+        request.auth.token.role !== "superadmin") {
+        throw new https_1.HttpsError("permission-denied", "Verify your email before joining a league.");
+    }
     const inviteCode = typeof request.data?.inviteCode === "string"
         ? request.data.inviteCode.trim().toUpperCase()
         : "";
