@@ -86,6 +86,9 @@ export async function POST(req: NextRequest) {
       }
       const userSnaps = await Promise.all(allowedRecipients.map(id => adminDb.collection('users').doc(id).get()));
       tokens = userSnaps.flatMap(snap => {
+        // A token can remain briefly after a user disables notifications or signs
+        // out in another tab. The saved preference is authoritative for delivery.
+        if (snap.data()?.notificationsEnabled === false) return [];
         const savedTokens = snap.data()?.fcmTokens;
         return Array.isArray(savedTokens) ? savedTokens.filter((token: unknown): token is string => typeof token === 'string') : [];
       });

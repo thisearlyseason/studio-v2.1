@@ -17,7 +17,10 @@ const VAPID_KEY = process.env.NEXT_PUBLIC_FCM_VAPID_KEY;
  * Safe to call multiple times — only stores if token changed.
  * Returns the FCM token or null if permission denied / not supported.
  */
-export async function initFCM(userId: string): Promise<string | null> {
+export async function initFCM(
+  userId: string,
+  { requestPermission = false }: { requestPermission?: boolean } = {}
+): Promise<string | null> {
   // Only works in browser, not in SSR
   if (typeof window === 'undefined') return null;
   if (!('Notification' in window)) return null;
@@ -27,9 +30,11 @@ export async function initFCM(userId: string): Promise<string | null> {
   }
 
   try {
-    const permission = await Notification.requestPermission();
+    const permission = requestPermission
+      ? await Notification.requestPermission()
+      : Notification.permission;
     if (permission !== 'granted') {
-      console.log('[FCM] Notification permission denied');
+      console.log('[FCM] Notification permission has not been granted');
       return null;
     }
 

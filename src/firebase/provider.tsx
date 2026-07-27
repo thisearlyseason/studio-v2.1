@@ -7,6 +7,7 @@ import { Auth, User, onAuthStateChanged } from 'firebase/auth';
 import { FirebaseStorage } from 'firebase/storage';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener'
 import { usePathname } from 'next/navigation';
+import { toast } from '@/hooks/use-toast';
 
 interface FirebaseProviderProps {
   children: ReactNode;
@@ -107,7 +108,8 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     return () => unsubscribe(); // Cleanup
   }, [auth]); // Depends on the auth instance
 
-  // Initialize FCM push notifications when user is signed in and not on a public/spectator page
+  // Register an already-authorized device without prompting during navigation.
+  // Permission is requested explicitly from Settings, where browsers permit a user-gesture prompt.
   useEffect(() => {
     const firebaseUser = userAuthState.user;
     if (firebaseUser && !userAuthState.isUserLoading && pathname) {
@@ -130,6 +132,26 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       }
     }
   }, [userAuthState.user, userAuthState.isUserLoading, pathname]);
+
+  // FCM does not display notification payloads while the page is focused.
+  // Surface them in the app so foreground deliveries are not silently lost.
+  useEffect(() => {
+    if (!userAuthState.user || userAuthState.isUserLoading) return;
+
+    let unsubscribe = () => {};
+    let disposed = false;
+    import('@/lib/fcm-client').then(({ onForegroundMessage }) => {
+      const listener = onForegroundMessage(({ title, body }) => {
+        toast({ title: title || 'The Squad Pro', description: body || undefined });
+      });
+      if (disposed) listener();
+      else unsubscribe = listener;
+    });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [userAuthState.user, userAuthState.isUserLoading]);
 
   // Memoize the context value
   const contextValue = useMemo((): FirebaseContextState => {

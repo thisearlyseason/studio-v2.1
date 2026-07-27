@@ -76,7 +76,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
-import { deleteFCMToken } from '@/lib/fcm-client';
+import { deleteFCMToken, initFCM } from '@/lib/fcm-client';
 
 export default function SettingsPage() {
   const { 
@@ -288,6 +288,16 @@ export default function SettingsPage() {
           setIsNotifLoading(false);
           return;
         }
+
+        // A permission grant alone does not create an FCM registration token.
+        // Register this device while the toggle click still counts as a user gesture.
+        const token = await initFCM(user.id);
+        if (!token) {
+          throw new Error('Could not register this device for push notifications.');
+        }
+      } else if (!enabled) {
+        // Remove this browser's token as well as honoring the server-side preference.
+        await deleteFCMToken(user.id);
       }
       setNotifications(enabled);
       await updateUser({ notificationsEnabled: enabled });
