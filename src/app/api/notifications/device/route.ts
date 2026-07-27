@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { verifyFirebaseToken } from '@/lib/api-auth';
+import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import {
   enforceUserRateLimit,
@@ -23,6 +23,8 @@ function validToken(value: unknown): value is string {
 async function authenticate(req: NextRequest) {
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
+  const anonymousError = assertNonAnonymous(auth);
+  if (anonymousError) return anonymousError;
   const rateLimit = await enforceUserRateLimit(
     auth.uid,
     'notification-device',

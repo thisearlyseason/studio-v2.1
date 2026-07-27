@@ -88,6 +88,7 @@ test('push opt-in is branded, explicit, and registers the device through a prote
   assert.match(client, /serviceWorkerUrl\(\)/);
   assert.doesNotMatch(client, /updateDoc\(doc\(db, 'users'/);
   assert.match(deviceRoute, /verifyFirebaseToken/);
+  assert.match(deviceRoute, /assertNonAnonymous/);
   assert.match(deviceRoute, /MAX_DEVICES_PER_ACCOUNT = 10/);
   assert.match(deviceRoute, /notificationDeviceTokens/);
   assert.match(serviceWorker, /searchParams\.get\('firebaseConfig'\)/);
