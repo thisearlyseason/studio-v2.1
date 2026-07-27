@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { CardFooter, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuth, useFirestore } from '@/firebase';
-import { createUserWithEmailAndPassword, deleteUser, sendEmailVerification, updateProfile, type User as FirebaseUser } from 'firebase/auth';
+import { createUserWithEmailAndPassword, deleteUser, updateProfile, type User as FirebaseUser } from 'firebase/auth';
 import { doc, writeBatch } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import {
@@ -19,6 +19,7 @@ import {
 import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { PRICING_CONFIG } from '@/lib/pricing';
+import { sendBrandedVerificationEmail } from '@/lib/client-auth';
 
 type RegTarget = 'self' | 'child' | 'coach' | 'league_creator' | 'school_ad' | null;
 type PlanChoice = 'starter' | 'pro_team' | 'elite_teams' | 'elite_league' | 'school' | null;
@@ -226,9 +227,7 @@ export default function SignupPage() {
                   ? '/teams/new'
                   : '/teams/join';
       sessionStorage.setItem('squad_post_verify_path', postVerificationPath);
-      await sendEmailVerification(user, {
-        url: `${window.location.origin}/login?verified=1`,
-      });
+      await sendBrandedVerificationEmail(user);
 
       const profileBatch = writeBatch(db);
       profileBatch.set(doc(db, 'users', user.uid), {

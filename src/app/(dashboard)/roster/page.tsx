@@ -63,6 +63,7 @@ import { X } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
+import { NoActiveTeamState } from '@/components/layout/NoActiveTeamState';
 import { 
   Select, 
   SelectContent, 
@@ -101,7 +102,7 @@ const POSITION_OPTIONS = [
 ];
 
 export default function RosterPage() {
-  const { activeTeam, user, members, isMembersLoading, isStaff, isPlayer, isParent, myChildren, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro, getLeagueMembers, createChat, removeMember, getRecruitingProfile, getAthleticMetrics, getPlayerStats, getEvaluations, getRecruitingContact, isPrimaryClubAuthority, isSuperAdmin } = useTeam();
+  const { activeTeam, isTeamsLoading, user, members, isMembersLoading, isStaff, isPlayer, isParent, myChildren, updateStaffEvaluation, getStaffEvaluation, updateMember, updateTeam, purchasePro, getLeagueMembers, createChat, removeMember, getRecruitingProfile, getAthleticMetrics, getPlayerStats, getEvaluations, getRecruitingContact, isPrimaryClubAuthority, isSuperAdmin } = useTeam();
 
   const db = useFirestore();
   const router = useRouter();
@@ -542,7 +543,16 @@ export default function RosterPage() {
   // Visibility restriction is applied at the *detail panel* level, not the list level.
   const visibleMembers = useMemo(() => members, [members]);
 
-  if (!mounted || !activeTeam || isMembersLoading) {
+  if (!mounted || isTeamsLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center animate-pulse">
+        <div className="h-12 w-12 bg-primary/10 rounded-full mb-4" />
+        <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Calling the squad...</p>
+      </div>
+    );
+  }
+  if (!activeTeam) return <NoActiveTeamState title="Build Your First Roster" description="A roster belongs to a squad. Create your free squad or join an existing squad to add athletes, staff, and guardians." />;
+  if (isMembersLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center animate-pulse">
         <div className="h-12 w-12 bg-primary/10 rounded-full mb-4" />

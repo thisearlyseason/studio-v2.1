@@ -23,6 +23,10 @@ export interface DecodedToken {
   signInProvider?: string;
 }
 
+export interface VerifyFirebaseTokenOptions {
+  allowUnverifiedEmail?: boolean;
+}
+
 export function assertNonAnonymous(authResult: DecodedToken): NextResponse | null {
   if (authResult.signInProvider === 'anonymous') {
     return NextResponse.json(
@@ -43,7 +47,8 @@ export function assertNonAnonymous(authResult: DecodedToken): NextResponse | nul
  *   const { uid } = authResult;
  */
 export async function verifyFirebaseToken(
-  req: NextRequest
+  req: NextRequest,
+  options: VerifyFirebaseTokenOptions = {}
 ): Promise<DecodedToken | NextResponse> {
   const authHeader = req.headers.get('authorization');
   if (!authHeader?.startsWith('Bearer ')) {
@@ -70,6 +75,7 @@ export async function verifyFirebaseToken(
     if (
       signInProvider !== 'anonymous' &&
       role !== 'superadmin' &&
+      !options.allowUnverifiedEmail &&
       decodedToken.email_verified !== true
     ) {
       return NextResponse.json(

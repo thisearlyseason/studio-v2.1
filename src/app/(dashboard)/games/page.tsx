@@ -36,6 +36,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DatePicker } from "@/components/ui/date-picker";
 import { useAuth } from '@/firebase';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
+import { NoActiveTeamState } from '@/components/layout/NoActiveTeamState';
 
 const chartConfig = {
   myScore: { label: "Our Score", color: "hsl(var(--primary))" },
@@ -43,7 +44,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export default function GamesPage() {
-  const { activeTeam, isSuperAdmin, purchasePro, hasFeature, isStaff, activeTeamEvents, isPro } = useTeam();
+  const { activeTeam, isTeamsLoading, isSuperAdmin, purchasePro, hasFeature, isStaff, activeTeamEvents, isPro } = useTeam();
   const db = useFirestore();
   const auth = useAuth();
   const { toast } = useToast();
@@ -165,6 +166,8 @@ export default function GamesPage() {
     return { wins, losses, ties };
   }, [games]);
 
+  if (isTeamsLoading) return <div className="flex flex-col items-center justify-center py-20 animate-pulse"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase mt-4">Syncing Ledger...</p></div>;
+  if (!activeTeam) return <NoActiveTeamState title="Connect a Squad to Score Matches" description="Basic scorekeeping is included with your free account. Create or join a squad, then record opponents and final scores here." />;
   if (isLoading) return <div className="flex flex-col items-center justify-center py-20 animate-pulse"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase mt-4">Syncing Ledger...</p></div>;
 
   const isAdmin = isStaff || isSuperAdmin;

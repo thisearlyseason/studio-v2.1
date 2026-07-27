@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { sendEmailVerification, signOut } from 'firebase/auth';
+import { signOut } from 'firebase/auth';
 import { Loader2, MailCheck } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth, useUser } from '@/firebase';
 import { toast } from '@/hooks/use-toast';
-import { clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
+import { clearBrowserSession, establishBrowserSession, sendBrandedVerificationEmail } from '@/lib/client-auth';
 
 const RESEND_COOLDOWN_MS = 60_000;
 
@@ -61,9 +61,7 @@ export default function VerifyEmailPage() {
   const resend = async () => {
     if (!auth.currentUser || Date.now() < cooldownUntil) return;
     try {
-      await sendEmailVerification(auth.currentUser, {
-        url: `${window.location.origin}/login?verified=1`,
-      });
+      await sendBrandedVerificationEmail(auth.currentUser);
       setCooldownUntil(Date.now() + RESEND_COOLDOWN_MS);
       toast({ title: 'Verification Sent', description: 'Check your inbox and spam folder.' });
     } catch {
