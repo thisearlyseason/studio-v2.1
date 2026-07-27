@@ -29,6 +29,25 @@ test('login preserves password whitespace and returns a non-enumerating error', 
   assert.match(login, /The email or password is incorrect, or this account is unavailable/);
 });
 
+test('existing unverified accounts are preserved but locked until verification', async () => {
+  const [login, verification, middleware, sessionRoute] = await Promise.all([
+    source('../src/app/login/page.tsx'),
+    source('../src/app/verify-email/page.tsx'),
+    source('../src/middleware.ts'),
+    source('../src/app/api/auth/session/route.ts'),
+  ]);
+
+  assert.match(login, /!user\.isAnonymous && !user\.emailVerified/);
+  assert.match(login, /clearBrowserSession\(\)[\s\S]*router\.replace\('\/verify-email'\)/);
+  assert.match(verification, /Account access stays locked until/);
+  assert.match(verification, /Resend Verification/);
+  assert.match(verification, /RESEND_COOLDOWN_MS = 60_000/);
+  assert.match(verification, /sendEmailVerification\(auth\.currentUser/);
+  assert.match(verification, /Use another account/);
+  assert.match(middleware, /decoded\.email_verified !== true/);
+  assert.match(sessionRoute, /decoded\.email_verified !== true/);
+});
+
 test('email changes require verification before the stored profile email changes', async () => {
   const settings = await source('../src/app/(dashboard)/settings/page.tsx');
 

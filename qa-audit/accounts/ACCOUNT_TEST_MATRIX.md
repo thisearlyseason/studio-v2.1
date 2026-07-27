@@ -21,9 +21,9 @@ Legend: **Pass** = automated evidence; **Blocked** = requires Preview/provider i
 | `elite-active` | active elite, limit 8 | eight creation slots | policy returns 8 | Pass | account creation policy |
 | `school-trial` | trialing school + 2 add-ons | seventeen slots | policy returns 17 | Pass | account creation policy |
 | `elite-past-due` | past_due elite | free entitlement only | policy returns 1 | Pass | account creation policy |
-| `email-password-new` | unverified signup | one account, then verify | code path sends verification and gates tenant work | Pass | static regression; provider link lifecycle blocked |
+| `email-password-new` | unverified signup | one account, then verify | code path sends verification and gates tenant work; valid verification code applies and reuse/modification fails | Pass | static regression and isolated provider lifecycle |
 | `oauth-new` | Google | verified profile and correct role | not executed against isolated provider | Blocked | M-03 |
-| `password-reset-a` | verified | generic, single-use provider reset | request behavior reviewed; token lifecycle not executed | Blocked | M-05 |
+| `password-reset-a` | verified | generic, single-use provider reset | valid reset applies; reuse/modification fails; Resend accepts the message at its safe sink | Pass | isolated provider lifecycle and hosted API |
 | `multi-org-a` | owner A, member B | switch without cache bleed | data rules scoped; browser history/tab behavior untested | Blocked | M-20 |
 
 ## Live audit Preview evidence
@@ -50,6 +50,10 @@ The Git-associated Vercel Preview was then exercised at the stable QA branch ali
 - The landing page had no horizontal overflow at 390px mobile, 820px tablet, or 1592px desktop widths.
 - A verified disposable audit identity completed login, server session exchange, dashboard and billing-page access, logout, and post-logout rejection.
 - Vercel runtime logs confirmed Firebase Admin initialized with the branch-scoped audit-project credential.
+- Valid verification and password-reset links applied successfully; reused and modified codes were rejected.
+- Two simultaneous session cookies were valid before administrator revocation and both were rejected afterward.
+- The stable QA alias was authorized and branch-scoped as `NEXT_PUBLIC_APP_URL`; Resend accepted the hosted password-reset message at its non-delivery test sink.
+- Redeployment `dpl_5LMRZUbtT4qYdPtyxmzBvgquimVH` reached `READY` with the corrected action-link configuration.
 - The disposable Vercel identity was deleted and verified absent.
 
 ## Execution order
@@ -65,8 +69,8 @@ The Git-associated Vercel Preview was then exercised at the stable QA branch ali
 
 ## Automated totals
 
-- Focused account tests: 42 passed, 0 failed.
+- Focused account tests: 43 passed, 0 failed.
 - Firestore/Storage authorization tests: 26 passed, 0 failed.
-- Full repository unit suite: 134 passed, 0 failed.
-- Combined repository unit plus rules suite: 160 passed, 0 failed.
-- Manual account scenarios remaining: 30 (see release checklist).
+- Full repository unit suite: 135 passed, 0 failed.
+- Combined repository unit plus rules suite: 161 passed, 0 failed.
+- Manual account scenarios remaining: 29 (see release checklist).

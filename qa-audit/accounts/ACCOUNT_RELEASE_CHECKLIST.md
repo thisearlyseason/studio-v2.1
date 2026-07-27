@@ -2,9 +2,9 @@
 
 ## Status
 
-**READY WITH CONDITIONS — APP HOSTING AND VERCEL PREVIEWS VERIFIED**
+**READY WITH CONDITIONS — APP HOSTING, VERCEL PREVIEW, AND CORE IDENTITY LIFECYCLES VERIFIED**
 
-All confirmed critical/high account-security, authorization, account-lifecycle, and Preview identity-configuration defects found in this audit are fixed and verified by automated or hosted tests. Core signup, session, onboarding, notification, access-gate, billing-failure, and responsive flows were exercised in isolated Firebase App Hosting and Git-associated Vercel Previews. Production approval remains conditional on provider-backed lifecycle testing, Stripe test-mode testing, and an explicit rollout decision for existing unverified accounts.
+All confirmed critical/high account-security, authorization, account-lifecycle, and Preview identity-configuration defects found in this audit are fixed and verified by automated or hosted tests. Core signup, session, onboarding, notification, access-gate, billing-failure, responsive, action-link, safe-sink email, and multi-device revocation flows were exercised in isolated Firebase App Hosting and Git-associated Vercel Previews. Production approval remains conditional on Stripe test-mode, Google OAuth, push-notification, real-inbox invitation/resend, and time-expiry testing.
 
 ## Completed
 
@@ -35,6 +35,9 @@ All confirmed critical/high account-security, authorization, account-lifecycle, 
 - [x] Hosted Preview without Stripe configuration fails checkout safely with a generic user-facing error.
 - [x] Git-associated Vercel Preview reached `READY` from the QA branch and passed real server-session login/logout.
 - [x] Vercel Preview Firebase client and Admin credentials now target the same isolated audit project.
+- [x] Vercel Preview action links use the authorized stable QA alias; Resend accepted a real password-reset message at its non-delivery test sink.
+- [x] Firebase verification and reset codes accept valid links and reject reused or modified links; two simultaneous sessions are rejected after server-side revocation.
+- [x] Existing unverified accounts are preserved, redirected to verification at next login, offered throttled resend, and denied private access until verified.
 - [x] Disposable Preview identities and squad data were deleted and verified absent after testing.
 - [x] TypeScript, lint (warnings only), unit, emulator rules, Next production build, and Functions build pass.
 
@@ -42,9 +45,9 @@ All confirmed critical/high account-security, authorization, account-lifecycle, 
 
 - [x] Authenticate Vercel and run the current QA branch in a Git-associated Vercel Preview.
 - [ ] Configure isolated Stripe test-mode keys, prices, and webhook secret; execute checkout, upgrade, downgrade, failure, cancellation, and stale-session scenarios.
-- [ ] Configure a safe test inbox/email provider and execute verification, password-reset, invitation, and resend/expiry/reuse scenarios.
-- [ ] Execute Google OAuth, multi-device revocation, and push-notification lifecycle scenarios with disposable identities/devices.
-- [ ] Define rollout behavior for pre-existing accounts whose Firebase email is currently unverified.
+- [ ] Complete real-inbox invitation/resend and provider time-expiry scenarios (safe-sink password-reset delivery and valid/reused/modified provider links pass).
+- [ ] Execute Google OAuth and push-notification lifecycle scenarios with disposable identities/devices (multi-device revocation passes).
+- [x] Define rollout behavior for pre-existing accounts whose Firebase email is currently unverified.
 
 ## Manual Preview scenarios (30)
 
@@ -53,7 +56,7 @@ All confirmed critical/high account-security, authorization, account-lifecycle, 
 - [ ] M-03 Google OAuth new/existing/cross-provider login.
 - [ ] M-04 verification valid/expired/reused/modified/cross-browser links and resend throttling.
 - [ ] M-05 password reset valid/expired/reused/modified/unknown-email lifecycle.
-- [ ] M-06 logout, refresh, expired and revoked session.
+- [x] M-06 logout, refresh, expired and revoked session.
 - [ ] M-07 password/email change invalidates or refreshes other-device sessions as intended.
 - [ ] M-08 suspended/disabled/deletion-pending active browser session.
 - [ ] M-09 new/existing/wrong-account/forwarded team invitation.
@@ -87,16 +90,16 @@ All confirmed critical/high account-security, authorization, account-lifecycle, 
 | Global roles found | 7 |
 | Subscription plans found | 5 |
 | Account/billing states represented in automated policy tests | 14 |
-| Focused account tests | 42 |
-| Focused tests passed | 42 |
+| Focused account tests | 43 |
+| Focused tests passed | 43 |
 | Focused tests failed | 0 |
-| Manual scenarios blocked/pending | 30 |
-| Full unit + rules tests | 160 passed, 0 failed |
+| Manual scenarios blocked/pending | 29 |
+| Full unit + rules tests | 161 passed, 0 failed |
 | Critical bugs found/fixed/unresolved | 2 / 2 / 0 |
 | High bugs found/fixed/unresolved | 11 / 11 / 0 |
-| Medium bugs found/fixed/unresolved | 3 / 2 / 1 blocked external verification |
+| Medium bugs found/fixed/unresolved | 4 / 3 / 1 blocked external verification |
 | Low bugs | 0 |
-| Total bugs fixed | 15 |
+| Total bugs fixed | 16 |
 | Total bugs unresolved | 0 confirmed code defects |
 | External verification conditions | 4 |
 | Confirmed cross-account breaches remaining | 0 |
@@ -108,4 +111,4 @@ All confirmed critical/high account-security, authorization, account-lifecycle, 
 
 ## Required release decision
 
-Do not promote to production until the existing-user verification rollout is decided and the remaining provider-, email-, device-, and Stripe-backed manual scenarios pass in an isolated environment. The available Stripe CLI test credential is expired, and the sensitive Vercel Preview Stripe value cannot be proven test-mode without invoking it, so no payment session was created. This audit does not claim the application has no other bugs or that security can be proven absolute.
+Do not promote to production until the remaining provider-, email-, device-, and Stripe-backed manual scenarios pass in an isolated environment. The existing-user policy is now defined: preserve unverified accounts, require verification at next login, provide throttled resend, and deny private access until verified. The available Stripe CLI test credential is expired, and the sensitive Vercel Preview Stripe value cannot be proven test-mode without invoking it, so no payment session was created. This audit does not claim the application has no other bugs or that security can be proven absolute.

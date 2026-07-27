@@ -170,6 +170,18 @@
 - Regression: Git-associated Vercel deployment `dpl_Gg618MNr6D8QRXQ8da2hNhp8wNyd`; live email/password login, session exchange, dashboard access, logout, and post-logout protected-route rejection.
 - Status: Fixed.
 
+## AQ-017 — Preview password-reset links used an unauthorized continue domain
+
+- Severity: Medium (provider configuration)
+- Affected: password-reset email generation in the Git-associated Vercel Preview.
+- Reproduce: request a password reset for an existing isolated Preview identity.
+- Expected: Firebase generates a reset link and Resend accepts the message.
+- Actual: Firebase rejected link generation with `Domain not allowlisted by project`.
+- Root cause: Preview inherited the production `NEXT_PUBLIC_APP_URL` instead of using the Firebase-authorized stable QA branch alias.
+- Fix: `NEXT_PUBLIC_APP_URL` is now branch-scoped to the stable QA alias; the alias remains authorized in the isolated Firebase project. Production configuration was not changed.
+- Regression: redeployment `dpl_5LMRZUbtT4qYdPtyxmzBvgquimVH`; hosted password-reset request accepted by Resend at its non-delivery test sink.
+- Status: Fixed.
+
 ## Changed implementation areas
 
-Authentication and verification, server sessions, signup rollback, API token checks, Firestore/Storage account gates, membership policy, team join/chat, youth/league invitations, server-mediated team/league creation, settings email verification, alert authorization, onboarding error handling, Vercel Preview identity configuration, and regression tests.
+Authentication and verification, server sessions, signup rollback, API token checks, Firestore/Storage account gates, membership policy, team join/chat, youth/league invitations, server-mediated team/league creation, settings email verification, alert authorization, onboarding error handling, Vercel Preview identity/action-link configuration, and regression tests.
