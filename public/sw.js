@@ -51,14 +51,23 @@ self.addEventListener('fetch', (event) => {
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
 
-firebase.initializeApp({
+const fallbackFirebaseConfig = {
   apiKey: 'AIzaSyA8G2_7gu0WK8efQ9sl7UJG6tsrC7iOCdU',
   authDomain: 'studio-6850142148-fe343.firebaseapp.com',
   projectId: 'studio-6850142148-fe343',
   storageBucket: 'studio-6850142148-fe343.firebasestorage.app',
   messagingSenderId: '61782012212',
   appId: '1:61782012212:web:8913d2b40fd9843148f561',
-});
+};
+
+let firebaseConfig = fallbackFirebaseConfig;
+try {
+  const configured = new URL(self.location.href).searchParams.get('firebaseConfig');
+  if (configured) firebaseConfig = JSON.parse(configured);
+} catch {
+  // Keep the production fallback if a stale or malformed registration is found.
+}
+firebase.initializeApp(firebaseConfig);
 
 const messaging = firebase.messaging();
 

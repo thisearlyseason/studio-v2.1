@@ -12,6 +12,7 @@ exports.USER_DOCUMENT_TARGETS = [
     { scope: "collection", collection: "calendarSync", field: "userId" },
     { scope: "collection", collection: "alerts", field: "createdBy" },
     { scope: "collection", collection: "bug_reports", field: "userId" },
+    { scope: "collection", collection: "notificationDeviceTokens", field: "userId" },
     { scope: "collection", collection: "invites", field: "createdBy" },
     { scope: "collection", collection: "invites", field: "parentId" },
     { scope: "collectionGroup", collection: "members", field: "userId" },

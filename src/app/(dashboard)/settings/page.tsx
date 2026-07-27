@@ -76,7 +76,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
-import { deleteFCMToken } from '@/lib/fcm-client';
+import { deleteFCMToken, initFCM } from '@/lib/fcm-client';
 import { clearBrowserSession } from '@/lib/client-auth';
 
 export default function SettingsPage() {
@@ -89,8 +89,12 @@ export default function SettingsPage() {
   const router = useRouter();
   const [notifications, setNotifications] = useState(false);
   const [isNotifLoading, setIsNotifLoading] = useState(false);
-  const [upcomingEventNotifications, setUpcomingEventNotifications] = useState(true);
+  const [upcomingEventNotifications, setUpcomingEventNotifications] = useState(false);
   const [isUpcomingEventNotifLoading, setIsUpcomingEventNotifLoading] = useState(false);
+  const [isNotificationConsentOpen, setIsNotificationConsentOpen] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<
+    NotificationPermission | 'unsupported'
+  >('default');
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isResetOpen, setIsResetOpen] = useState(false);
   const [isDoubleConfirmOpen, setIsDoubleConfirmOpen] = useState(false);
@@ -159,8 +163,17 @@ export default function SettingsPage() {
         institutionTitle: user.institutionTitle || (user.plan_type === 'school' ? 'Athletic Director' : ''),
       });
       // Initialize notifications from user preferences
-      setNotifications((user as any).notificationsEnabled ?? true);
-      setUpcomingEventNotifications(user.upcomingEventNotificationsEnabled ?? true);
+      const permissionGranted =
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        Notification.permission === 'granted';
+      setNotificationPermission(
+        typeof window !== 'undefined' && 'Notification' in window
+          ? Notification.permission
+          : 'unsupported'
+      );
+      setNotifications(Boolean((user as any).notificationsEnabled) && permissionGranted);
+      setUpcomingEventNotifications(Boolean(user.upcomingEventNotificationsEnabled));
     }
   }, [user, activeTeam, members]);
 
@@ -294,20 +307,59 @@ export default function SettingsPage() {
     }
   };
 
-  const handleNotificationsToggle = async (enabled: boolean) => {
+  const enableNotifications = async () => {
     setIsNotifLoading(true);
     try {
-      if (enabled && 'Notification' in window) {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          toast({ title: 'Notifications Blocked', description: 'Allow notifications in your browser settings to enable this.', variant: 'destructive' });
-          setIsNotifLoading(false);
-          return;
-        }
+      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+        toast({
+          title: 'Notifications Unavailable',
+          description: 'This browser does not support web notifications. On iPhone or iPad, install The Squad to your Home Screen first.',
+          variant: 'destructive',
+        });
+        return;
       }
-      setNotifications(enabled);
-      await updateUser({ notificationsEnabled: enabled });
-      toast({ title: enabled ? 'Notifications Enabled' : 'Notifications Disabled' });
+      const token = await initFCM(user.id);
+      setNotificationPermission(Notification.permission);
+      if (!token) {
+        const blocked = Notification.permission === 'denied';
+        toast({
+          title: blocked ? 'Notifications Blocked' : 'Notifications Could Not Be Enabled',
+          description: blocked
+            ? 'Open this site in your browser settings, allow notifications for The Squad, then try again.'
+            : 'The Squad could not register this device. Refresh the page and try again.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      setNotifications(true);
+      await updateUser({ notificationsEnabled: true });
+      toast({
+        title: 'Notifications Enabled',
+        description: 'The Squad can now send alerts to this device.',
+      });
+    } catch {
+      toast({ title: 'Failed to update notifications', variant: 'destructive' });
+    } finally {
+      setIsNotifLoading(false);
+    }
+  };
+
+  const handleNotificationsToggle = async (enabled: boolean) => {
+    if (enabled) {
+      setIsNotificationConsentOpen(true);
+      return;
+    }
+
+    setIsNotifLoading(true);
+    try {
+      await deleteFCMToken(user.id);
+      setNotifications(false);
+      setUpcomingEventNotifications(false);
+      await updateUser({
+        notificationsEnabled: false,
+        upcomingEventNotificationsEnabled: false,
+      });
+      toast({ title: 'Notifications Disabled' });
     } catch {
       toast({ title: 'Failed to update notifications', variant: 'destructive' });
     } finally {
@@ -318,17 +370,6 @@ export default function SettingsPage() {
   const handleUpcomingEventNotificationsToggle = async (enabled: boolean) => {
     setIsUpcomingEventNotifLoading(true);
     try {
-      if (enabled && 'Notification' in window) {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          toast({
-            title: 'Notifications Blocked',
-            description: 'Allow notifications in your browser settings to receive game-day reminders.',
-            variant: 'destructive',
-          });
-          return;
-        }
-      }
       setUpcomingEventNotifications(enabled);
       await updateUser({ upcomingEventNotificationsEnabled: enabled });
       toast({
@@ -553,6 +594,23 @@ export default function SettingsPage() {
             <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed">
               Global system for push notifications covering feed updates, match schedule changes, and real-time coordinator alerts.
             </p>
+            {notificationPermission === 'denied' && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left">
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-800">
+                  The Squad notifications are blocked in this browser
+                </p>
+                <p className="mt-2 text-xs font-medium leading-relaxed text-amber-900/80">
+                  Open your browser&apos;s site settings for The Squad, change Notifications to Allow, then return here and turn Tactical Alerts on.
+                </p>
+              </div>
+            )}
+            {notificationPermission === 'unsupported' && (
+              <div className="rounded-2xl border border-muted bg-muted/30 p-4 text-left">
+                <p className="text-xs font-medium leading-relaxed text-muted-foreground">
+                  Notifications are unavailable in this browser. On iPhone or iPad, add The Squad to your Home Screen and open the installed app.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -841,6 +899,33 @@ export default function SettingsPage() {
           <AlertDialogFooter className="mt-6">
             <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleFinalReset} className="rounded-xl font-black bg-red-600 hover:bg-red-700">Purge Permanently</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isNotificationConsentOpen} onOpenChange={setIsNotificationConsentOpen}>
+        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
+          <AlertDialogHeader>
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Bell className="h-7 w-7" />
+            </div>
+            <AlertDialogTitle className="text-center text-2xl font-black tracking-tight">
+              The Squad wants to send you notifications
+            </AlertDialogTitle>
+            <AlertDialogDescription className="pt-2 text-center text-sm font-medium leading-relaxed text-foreground/70">
+              Get team updates, schedule changes, game-day reminders, and coordinator alerts on this device. You can turn them off anytime in Settings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 sm:justify-center">
+            <AlertDialogCancel className="rounded-full border-2 px-7 font-black">
+              Not Now
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-full px-7 font-black"
+              onClick={() => void enableNotifications()}
+            >
+              Allow Notifications
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

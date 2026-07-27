@@ -235,8 +235,8 @@ export default function SignupPage() {
         fullName: cleanName,
         email: cleanEmail,
         role,
-        notificationsEnabled: true,
-        upcomingEventNotificationsEnabled: true,
+        notificationsEnabled: false,
+        upcomingEventNotificationsEnabled: false,
         createdAt: new Date().toISOString(),
         avatarUrl: `https://picsum.photos/seed/${user.uid}/150/150`,
       });
