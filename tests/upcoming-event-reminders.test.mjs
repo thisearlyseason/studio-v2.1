@@ -71,3 +71,25 @@ test('notification controls are enforced by the UI, API, rules, and scheduler', 
   assert.match(scheduler, /eventReminderDeliveries/);
   assert.match(scheduler, /user\.upcomingEventNotificationsEnabled === false/);
 });
+
+test('push opt-in is branded, explicit, and registers the device through a protected route', () => {
+  const settings = fs.readFileSync(new URL('../src/app/(dashboard)/settings/page.tsx', import.meta.url), 'utf8');
+  const provider = fs.readFileSync(new URL('../src/firebase/provider.tsx', import.meta.url), 'utf8');
+  const client = fs.readFileSync(new URL('../src/lib/fcm-client.ts', import.meta.url), 'utf8');
+  const deviceRoute = fs.readFileSync(new URL('../src/app/api/notifications/device/route.ts', import.meta.url), 'utf8');
+  const serviceWorker = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  const signup = fs.readFileSync(new URL('../src/app/signup/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(settings, /The Squad wants to send you notifications/);
+  assert.match(settings, /Allow Notifications/);
+  assert.match(settings, /await initFCM\(user\.id\)/);
+  assert.doesNotMatch(provider, /initFCM/);
+  assert.match(client, /\/api\/notifications\/device/);
+  assert.match(client, /serviceWorkerUrl\(\)/);
+  assert.doesNotMatch(client, /updateDoc\(doc\(db, 'users'/);
+  assert.match(deviceRoute, /verifyFirebaseToken/);
+  assert.match(deviceRoute, /MAX_DEVICES_PER_ACCOUNT = 10/);
+  assert.match(deviceRoute, /notificationDeviceTokens/);
+  assert.match(serviceWorker, /searchParams\.get\('firebaseConfig'\)/);
+  assert.match(signup, /notificationsEnabled: false/);
+});

@@ -16,6 +16,7 @@ test('account purge covers personal profiles, memberships, messages, invites, an
   for (const expected of [
     'calendarFeeds:userId',
     'calendarSync:userId',
+    'notificationDeviceTokens:userId',
     'members:userId',
     'messages:authorId',
     'signatures:userId',
