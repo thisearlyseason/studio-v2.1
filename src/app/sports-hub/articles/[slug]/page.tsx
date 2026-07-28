@@ -27,6 +27,7 @@ export async function generateMetadata({ params }: Params) {
   return {
     title: article.seoTitle || `${article.title} | Sports Hub`,
     description: article.seoDescription || article.excerpt,
+    alternates: { canonical: `/sports-hub/articles/${slug}` },
   };
 }
 

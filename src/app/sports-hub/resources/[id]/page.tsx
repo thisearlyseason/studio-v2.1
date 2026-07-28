@@ -50,6 +50,7 @@ export async function generateMetadata({ params }: Params) {
   return {
     title: `${resource.title} | Sports Hub Playbook`,
     description: resource.description,
+    alternates: { canonical: `/sports-hub/resources/${id}` },
   };
 }
 

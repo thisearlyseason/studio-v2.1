@@ -55,7 +55,7 @@ export function BrandedPDFContent({ id, title, subtitle, category, children }: B
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Generated {today}</div>
-          <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.05em' }}>thesquad.app/sports-hub</div>
+          <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.05em' }}>thesquad.pro/sports-hub</div>
         </div>
       </div>
 
@@ -83,7 +83,7 @@ export function BrandedPDFContent({ id, title, subtitle, category, children }: B
         backgroundColor: '#ffffff',
       }}>
         <span style={{ fontSize: '9px', color: BRAND_GRAY }}>© {new Date().getFullYear()} The Squad · Free to use, not for resale</span>
-        <span style={{ fontSize: '9px', color: BRAND_GRAY }}>Sports Hub · thesquad.app</span>
+        <span style={{ fontSize: '9px', color: BRAND_GRAY }}>Sports Hub · thesquad.pro</span>
       </div>
     </div>
   );

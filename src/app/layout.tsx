@@ -65,10 +65,6 @@ export const metadata: Metadata = {
     },
   },
 
-  alternates: {
-    canonical: 'https://thesquad.pro',
-  },
-
   // ── Open Graph ──────────────────────────────────────────────────────────────
   openGraph: {
     type: 'website',
