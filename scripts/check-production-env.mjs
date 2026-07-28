@@ -16,6 +16,7 @@ const required = [
   'STRIPE_CONNECT_WEBHOOK_SECRET',
   'RESEND_API_KEY',
   'RESEND_WEBHOOK_SECRET',
+  'NEWSLETTER_UNSUBSCRIBE_SECRET',
   'STRAICO_API_KEY',
   'GOOGLE_AI_API_KEY',
   'INTERNAL_API_SECRET',
@@ -79,6 +80,11 @@ for (const name of ['STRIPE_WEBHOOK_SECRET', 'STRIPE_CONNECT_WEBHOOK_SECRET']) {
 const resendWebhookSecret = process.env.RESEND_WEBHOOK_SECRET?.trim();
 if (resendWebhookSecret && !resendWebhookSecret.startsWith('whsec_')) {
   invalid.push('RESEND_WEBHOOK_SECRET has an unexpected format');
+}
+
+const newsletterUnsubscribeSecret = process.env.NEWSLETTER_UNSUBSCRIBE_SECRET?.trim();
+if (newsletterUnsubscribeSecret && newsletterUnsubscribeSecret.length < 32) {
+  invalid.push('NEWSLETTER_UNSUBSCRIBE_SECRET must be at least 32 characters');
 }
 
 for (const name of required.filter((key) => key.includes('STRIPE_PRICE_'))) {

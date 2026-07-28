@@ -9,7 +9,7 @@ import BugReporter from '@/components/BugReporter';
 
 // ─── SEO Metadata ────────────────────────────────────────────────────────────
 export const metadata: Metadata = {
-  metadataBase: new URL('https://thesquad.pro'),
+  metadataBase: new URL('https://www.thesquad.pro'),
 
   title: {
     default: 'The Squad — Elite Sports Team Management Platform',
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
     'sports team app',
   ],
 
-  authors: [{ name: 'The Squad', url: 'https://thesquad.pro' }],
+  authors: [{ name: 'The Squad', url: 'https://www.thesquad.pro' }],
   creator: 'The Squad',
   publisher: 'The Squad',
 
@@ -72,7 +72,7 @@ export const metadata: Metadata = {
   // ── Open Graph ──────────────────────────────────────────────────────────────
   openGraph: {
     type: 'website',
-    url: 'https://thesquad.pro',
+    url: 'https://www.thesquad.pro',
     title: 'The Squad — Elite Sports Team Management Platform',
     description:
       'Coordinate rosters, automate brackets, verify film compliance, and recruit athletes — the all-in-one institutional sports hub trusted by coaches, ADs, and club organizers.',
@@ -81,8 +81,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: '/og-image.png',
-        width: 1200,
-        height: 630,
+        width: 1376,
+        height: 768,
         alt: 'The Squad — Elite Sports Team Management Platform',
         type: 'image/png',
       },
@@ -137,15 +137,14 @@ const organizationSchema = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
   name: 'The Squad',
-  url: 'https://thesquad.pro',
-  logo: 'https://thesquad.pro/favicon-512.png',
+  url: 'https://www.thesquad.pro',
+  logo: 'https://www.thesquad.pro/favicon-512.png',
   contactPoint: {
     '@type': 'ContactPoint',
-    email: 'teams@thesquad.pro',
+    email: 'team@thesquad.pro',
     contactType: 'customer support',
     availableLanguage: 'English',
   },
-  sameAs: [],
 };
 
 const softwareSchema = {
@@ -154,7 +153,7 @@ const softwareSchema = {
   name: 'The Squad',
   applicationCategory: 'SportsApplication',
   operatingSystem: 'Web, iOS, Android',
-  url: 'https://thesquad.pro',
+  url: 'https://www.thesquad.pro',
   description:
     'The all-in-one institutional platform for elite sports organizations. Manage rosters, automate tournament brackets, verify film compliance, and recruit athletes.',
   offers: {
@@ -166,7 +165,7 @@ const softwareSchema = {
   provider: {
     '@type': 'Organization',
     name: 'The Squad',
-    url: 'https://thesquad.pro',
+    url: 'https://www.thesquad.pro',
   },
 };
 

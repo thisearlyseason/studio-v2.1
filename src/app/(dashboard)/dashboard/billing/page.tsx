@@ -257,7 +257,10 @@ export default function BillingDashboard() {
       const res = await fetch('/api/subscription/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ userId: userProfile.id }),
+        body: JSON.stringify({
+          userId: userProfile.id,
+          operationId: crypto.randomUUID(),
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -294,7 +297,7 @@ export default function BillingDashboard() {
 
   // Helpers
   const currentPlanIndex = PRICING_CONFIG.findIndex(p => p.id === userProfile.plan_type);
-  const isCancelling = userProfile.subscription_status === 'cancel_at_period_end' || (userProfile as any).cancel_at_period_end;
+  const isCancelling = userProfile.cancel_at_period_end === true;
 
   const getPlanAction = (plan: Plan) => {
     if (plan.id === userProfile.plan_type) return 'current';

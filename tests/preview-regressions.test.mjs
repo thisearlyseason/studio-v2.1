@@ -291,7 +291,8 @@ test('contact inquiries use a protected server delivery route', async () => {
   assert.match(route, /CONTACT_RECIPIENT = 'team@thesquad\.pro'/);
   assert.match(route, /replyTo: email/);
   assert.match(route, /escapeHtml\(inquiry\)/);
-  assert.match(route, /deliveryStatus: 'sent'/);
+  assert.match(route, /deliveryStatus: 'accepted'/);
+  assert.match(route, /resendEmailId: data\.id/);
   assert.match(route, /deliveryStatus: 'failed'/);
 });
 

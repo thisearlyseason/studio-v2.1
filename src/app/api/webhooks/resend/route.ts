@@ -160,6 +160,35 @@ async function processEmailEvent(event: WebhookEventPayload) {
       }, { merge: true });
     }
   }
+
+  const inquiries = await adminDb.collection('contact_inquiries')
+    .where('resendEmailId', '==', emailId)
+    .limit(1)
+    .get();
+  if (!inquiries.empty) {
+    const contactStatus: Record<string, string> = {
+      'email.sent': 'accepted',
+      'email.delivered': 'delivered',
+      'email.delivery_delayed': 'delayed',
+      'email.bounced': 'bounced',
+      'email.failed': 'failed',
+      'email.suppressed': 'suppressed',
+    };
+    const status = contactStatus[event.type];
+    const existingStatus = inquiries.docs[0].data().deliveryStatus;
+    const terminalStatuses = ['delivered', 'bounced', 'failed', 'suppressed'];
+    const wouldRegressTerminalStatus = terminalStatuses.includes(existingStatus) &&
+      (status === 'accepted' || status === 'delayed');
+    if (status && !wouldRegressTerminalStatus) {
+      batch.set(inquiries.docs[0].ref, {
+        deliveryStatus: status,
+        lastDeliveryEvent: event.type,
+        lastDeliveryEventAt: eventAt,
+        ...(event.type === 'email.delivered' ? { deliveredAt: eventAt } : {}),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+  }
   await batch.commit();
 
   if (blocksNewsletterDelivery(event.type)) {
@@ -251,4 +280,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Webhook processing failed.' }, { status: 500 });
   }
 }
-

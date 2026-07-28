@@ -55,7 +55,7 @@ export default function BetaApplicationPage() {
       setIsSubmitted(true);
 
       // Trigger admin notification asynchronously
-      fetch('/api/public/notify-admin', {
+      void fetch('/api/public/notify-admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -68,6 +68,11 @@ export default function BetaApplicationPage() {
           scale: data.scale,
           whyBeta: data.whyBeta,
         }),
+      }).then(async response => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.error || 'Admin notification failed.');
+        }
       }).catch(err => console.error('Admin notification failed:', err));
     } catch (err: any) {
       toast({ title: 'Application Failed', description: err.message, variant: 'destructive' });

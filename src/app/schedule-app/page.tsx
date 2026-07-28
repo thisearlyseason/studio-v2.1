@@ -468,7 +468,7 @@ export default function ScheduleApp() {
           {/* Bottom links + copyright */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, paddingTop: 4 }}>
             <a
-              href="https://thesquad.pro"
+              href="https://www.thesquad.pro"
               target="_blank"
               rel="noopener noreferrer"
               style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: RED, textDecoration: 'none' }}
@@ -476,7 +476,7 @@ export default function ScheduleApp() {
               thesquad.pro ↗
             </a>
             <p style={{ margin: 0, fontSize: 9, color: muted, fontWeight: 600 }}>
-              © {new Date().getFullYear()} The Squad · teams@thesquad.pro
+              © {new Date().getFullYear()} The Squad · team@thesquad.pro
             </p>
           </div>
         </div>

@@ -5,8 +5,21 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/api/', '/admin/'],
+      disallow: [
+        '/api/',
+        '/admin/',
+        '/dashboard/',
+        '/embed/',
+        '/events/register/',
+        '/leagues/scorekeeper/',
+        '/leagues/spectator/',
+        '/recruit/player/',
+        '/register/',
+        '/schedule-app/',
+        '/tournaments/',
+      ],
     },
     sitemap: 'https://www.thesquad.pro/sitemap.xml',
+    host: 'www.thesquad.pro',
   }
 }

@@ -40,15 +40,20 @@ async function dispatchNotification({
 
     // 1. The server resolves member device tokens so clients never need access
     // to other users' notification data.
-    fetch('/api/notify', {
+    void fetch('/api/notify', {
       method: 'POST',
       headers,
       body: JSON.stringify({ teamId, recipientUserIds: memberUserIds, title, body, url }),
+    }).then(async response => {
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || 'Push notification request failed.');
+      }
     }).catch((e) => console.warn('[Push] dispatch error:', e));
 
     // 2. The server likewise resolves member email addresses from membership data.
     if (emailSubject && emailHtml) {
-      fetch('/api/email/send', {
+      void fetch('/api/email/send', {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -57,6 +62,11 @@ async function dispatchNotification({
           subject: emailSubject,
           html: emailHtml,
         }),
+      }).then(async response => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.error || 'Email notification request failed.');
+        }
       }).catch((e) => console.warn('[Email] dispatch error:', e));
     }
   } catch (e) {
@@ -110,6 +120,7 @@ export type UserProfile = {
   team_limit?: number | null;
   extra_teams?: number | null;
   subscription_status?: string | null;
+  cancel_at_period_end?: boolean;
   billing_cycle?: 'monthly' | 'annual' | null;
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
@@ -3713,7 +3724,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await updateDoc(doc(db, 'leagues', leagueId), { schedule }); 
   }, [db]);
 
-  const resolveQuota = useCallback(async (selectedTeamIds: string[]) => { if (!db || !userProfile?.id) return; const batch = writeBatch(db); const ownedProTeams = teamsRaw.filter(t => t.ownerUserId === userProfile.id && t.isPro && isBillableSquadSeat(t)); ownedProTeams.forEach(t => { if (!selectedTeamIds.includes(t.id)) { batch.update(doc(db, 'teams', t.id), { isPro: false, planId: 'free' }); } }); await batch.commit(); }, [db, userProfile, teamsRaw]);
+  const resolveQuota = useCallback(async (selectedTeamIds: string[]) => {
+    if (!firebaseAuth || !userProfile?.id) return;
+    const token = await getAuthToken(firebaseAuth);
+    const response = await fetch('/api/teams/resolve-quota', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ selectedTeamIds }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'Unable to resolve the team quota.');
+    }
+  }, [firebaseAuth, userProfile]);
   const exportAttendanceCSV = useCallback(async (eventId: string) => { if (!db || !activeTeam?.id) return; const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'events', eventId)); if (!snap.exists()) return; const rsvps = snap.data().userRsvps || {}; const rows = [["Name", "Status"]]; members.forEach(m => { rows.push([m.name, rsvps[m.userId] || 'no_response']); }); const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n"); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `attendance_${eventId}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); }, [db, activeTeam, members]);
   const exportTournamentStandingsCSV = useCallback(async (tournamentId: string) => { if (!db || !activeTeam?.id) return; const rows = [["Team", "Wins", "Losses", "Ties", "Points"]]; const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n"); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `standings_${tournamentId}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); }, [db, activeTeam]);
 

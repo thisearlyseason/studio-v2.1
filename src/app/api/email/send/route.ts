@@ -11,6 +11,7 @@ import {
 
 const FROM = 'The Squad Pro <noreply@thesquad.pro>';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
+const RESEND_BATCH_SIZE = 100;
 
 function getResend() {
   const apiKey = process.env.RESEND_API_KEY;
@@ -70,7 +71,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
     }
 
-    const uniqueRecipients = [...new Set(recipientUserIds.filter((id): id is string => typeof id === 'string'))];
+    const uniqueRecipients = [...new Set(recipientUserIds
+      .filter((id): id is string => typeof id === 'string')
+      .map(id => id.trim())
+      .filter(Boolean))];
+    if (!uniqueRecipients.length) {
+      return NextResponse.json({ error: 'No valid recipients were provided.' }, { status: 400 });
+    }
     const memberSnaps = await Promise.all(uniqueRecipients.map(id =>
       adminDb.collection('teams').doc(teamId).collection('members').doc(id).get()
     ));
@@ -81,26 +88,43 @@ export async function POST(req: NextRequest) {
     )) {
       return NextResponse.json({ error: 'Recipients must be current team members.' }, { status: 403 });
     }
-    const to = memberSnaps.flatMap(member => {
-      const email = typeof member.data()?.email === 'string' ? member.data()?.email.trim() : '';
+    const to = [...new Set(memberSnaps.flatMap(member => {
+      const email = typeof member.data()?.email === 'string' ? member.data()?.email.trim().toLowerCase() : '';
       return EMAIL_PATTERN.test(email) ? [email] : [];
-    });
+    }))];
     if (!to.length) return NextResponse.json({ error: 'No recipient email addresses are available.' }, { status: 400 });
 
-    const { data, error } = await getResend().emails.send({
-      from: FROM,
-      to,
-      subject,
-      html,
-      ...(replyTo ? { replyTo } : {}),
-    });
+    const resend = getResend();
+    const ids: string[] = [];
+    for (let offset = 0; offset < to.length; offset += RESEND_BATCH_SIZE) {
+      const recipients = to.slice(offset, offset + RESEND_BATCH_SIZE);
+      const { data, error } = await resend.batch.send(recipients.map(recipient => ({
+        from: FROM,
+        to: [recipient],
+        subject,
+        html,
+        ...(replyTo ? { replyTo } : {}),
+      })));
 
-    if (error) {
-      console.error('[Resend] Send error:', error);
-      return NextResponse.json({ error: 'Email delivery failed.' }, { status: 502 });
+      if (error) {
+        console.error('[Resend] Batch send error:', error);
+        return NextResponse.json(
+          { error: 'Email delivery failed.', acceptedCount: ids.length },
+          { status: 502 }
+        );
+      }
+      const batchIds = (data?.data || []).map(message => message.id).filter(Boolean);
+      if (batchIds.length !== recipients.length) {
+        console.error('[Resend] Batch response did not include every accepted email ID.');
+        return NextResponse.json(
+          { error: 'Email delivery could not be confirmed.', acceptedCount: ids.length },
+          { status: 502 }
+        );
+      }
+      ids.push(...batchIds);
     }
 
-    return NextResponse.json({ id: data?.id });
+    return NextResponse.json({ id: ids[0], ids, acceptedCount: ids.length });
   } catch (err: any) {
     if (err instanceof RequestBodyError) {
       return NextResponse.json({ error: err.message }, { status: err.status });

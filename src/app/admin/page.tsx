@@ -516,12 +516,15 @@ export default function AdminPortalPage() {
       // Update beta app status
       await updateDoc(doc(db, 'beta_applications', selectedBetaApp.id), { status: 'approved' });
 
-      // Send branded welcome email via Resend (fire-and-forget, don't block UI)
+      // Send the welcome email before reporting its delivery status.
+      let welcomeEmailSent = false;
+      let welcomeEmailError = '';
       if (firebaseUser) {
-        firebaseUser.getIdToken().then((idToken: string) => {
-          fetch('/api/email/welcome', {
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          const welcomeResponse = await fetch('/api/email/welcome', {
             method: 'POST',
-            headers: { 
+            headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${idToken}`
             },
@@ -530,15 +533,31 @@ export default function AdminPortalPage() {
               email: selectedBetaApp.email,
               planType: betaPlanType,
             }),
-          }).catch((err) => console.warn('[Welcome Email] Failed to send:', err));
-        }).catch((err: any) => console.warn('[Welcome Email] Failed to get ID token:', err));
+          });
+          const welcomePayload = await welcomeResponse.json().catch(() => ({}));
+          if (!welcomeResponse.ok) {
+            throw new Error(welcomePayload.error || 'Resend did not accept the welcome email.');
+          }
+          welcomeEmailSent = true;
+        } catch (error) {
+          welcomeEmailError = error instanceof Error ? error.message : 'Unknown email error';
+          console.warn('[Welcome Email] Failed to send:', error);
+        }
+      } else {
+        welcomeEmailError = 'Admin authentication was unavailable.';
       }
 
       setBetaApps(prev => prev.map(a => a.id === selectedBetaApp.id ? { ...a, status: 'approved' } : a));
       setSelectedBetaApp(null);
       setBetaPassword('');
       setBetaPlanType('free');
-      toast({ title: 'Beta User Approved', description: 'Account created. Welcome email sent via Resend.' });
+      toast({
+        title: 'Beta User Approved',
+        description: welcomeEmailSent
+          ? 'Account created. Resend accepted the welcome email.'
+          : `Account created, but the welcome email was not sent: ${welcomeEmailError}`,
+        ...(!welcomeEmailSent ? { variant: 'destructive' as const } : {}),
+      });
     } catch (e: any) {
       toast({ title: 'Approval Failed', description: e.message, variant: 'destructive' });
     } finally {

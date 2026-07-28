@@ -1,4 +1,5 @@
 import React from 'react';
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Clock, ChevronLeft, Calendar, Tag, ArrowRight } from 'lucide-react';
@@ -20,13 +21,30 @@ export async function generateStaticParams() {
   return Object.keys(ARTICLES_DB).map((slug) => ({ slug }));
 }
 
-export async function generateMetadata({ params }: Params) {
+const SITE_URL = 'https://www.thesquad.pro';
+
+export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const article = ARTICLES_DB[slug] || await getPublicSportsHubArticle(slug).catch(() => null);
-  if (!article) return { title: 'Article Not Found | Sports Hub' };
+  if (!article) return { title: 'Article Not Found | Sports Hub', robots: { index: false, follow: false } };
+  const title = article.seoTitle || `${article.title} | Sports Hub`;
+  const description = article.seoDescription || article.excerpt;
+  const url = `${SITE_URL}/sports-hub/articles/${slug}`;
   return {
-    title: article.seoTitle || `${article.title} | Sports Hub`,
-    description: article.seoDescription || article.excerpt,
+    title,
+    description,
+    alternates: { canonical: `/sports-hub/articles/${slug}` },
+    openGraph: {
+      type: 'article',
+      url,
+      title,
+      description,
+      siteName: 'The Squad',
+      publishedTime: article.publishedAt,
+      authors: [article.author.name],
+      tags: article.tags,
+    },
+    twitter: { card: 'summary_large_image', title, description },
   };
 }
 
@@ -221,8 +239,38 @@ export default async function ArticlePage({ params }: Params) {
     news: 'Latest News',
   }[article.section] || 'Sports Hub';
 
+  const articleUrl = `${SITE_URL}/sports-hub/articles/${slug}`;
+  const structuredData = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Article',
+      headline: article.title,
+      description: article.seoDescription || article.excerpt,
+      datePublished: article.publishedAt,
+      mainEntityOfPage: articleUrl,
+      author: { '@type': 'Person', name: article.author.name },
+      publisher: {
+        '@type': 'Organization',
+        name: 'The Squad',
+        url: SITE_URL,
+        logo: { '@type': 'ImageObject', url: `${SITE_URL}/favicon-512.png` },
+      },
+      keywords: article.tags.join(', '),
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Sports Hub', item: `${SITE_URL}/sports-hub` },
+        { '@type': 'ListItem', position: 2, name: sectionLabel, item: `${SITE_URL}${sectionHref}` },
+        { '@type': 'ListItem', position: 3, name: article.title, item: articleUrl },
+      ],
+    },
+  ];
+
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
       <ReadingProgress />
       <div className="max-w-4xl mx-auto px-4 md:px-8 py-8 md:py-12">
 

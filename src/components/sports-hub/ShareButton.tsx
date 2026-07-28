@@ -16,7 +16,7 @@ export function ShareButton({ url, title, className }: ShareButtonProps) {
   const handleShare = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const fullUrl = `${typeof window !== 'undefined' ? window.location.origin : 'https://thesquad.pro'}${url}`;
+    const fullUrl = `${typeof window !== 'undefined' ? window.location.origin : 'https://www.thesquad.pro'}${url}`;
     if (navigator.share) {
       try { await navigator.share({ title, url: fullUrl }); } catch {}
     } else {

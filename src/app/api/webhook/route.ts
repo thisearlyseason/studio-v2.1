@@ -180,6 +180,7 @@ async function syncSubscriptionToFirestore(
         stripe_subscription_id: subscription.id,
         stripe_customer_id: customerId,
         subscription_status: status,
+        cancel_at_period_end: subscription.cancel_at_period_end,
         billing_cycle: billingCycle,
         plan_type: hasPaidEntitlement ? planType : 'free',
         team_limit: paidTeamLimit,
@@ -209,6 +210,7 @@ async function syncSubscriptionToFirestore(
         userId,
         customerId,
         status,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
         planType,
         billingCycle,
         teamLimit: paidTeamLimit,
@@ -265,22 +267,22 @@ export async function POST(req: NextRequest) {
   // Stripe retries deliveries. Atomically claim each verified event before any
   // subscription or notification side effect to prevent duplicate records.
   const eventRef = adminDb.collection('stripeWebhookEvents').doc(event.id);
-  const duplicate = await adminDb.runTransaction(async transaction => {
+  const claimResult = await adminDb.runTransaction(async transaction => {
     const existing = await transaction.get(eventRef);
     const processingStartedAt = new Date().toISOString();
     if (existing.exists) {
       const existingData = existing.data() || {};
       const previousStatus = existingData.status;
       // A failed attempt must remain eligible for Stripe's retry. Completed
-      // events and actively leased deliveries are safe to acknowledge. A stale
-      // processing lease is reclaimed after a crash so the event is not lost.
-      if (previousStatus === 'completed') return true;
+      // events can be acknowledged. Active leases return a retryable non-2xx;
+      // stale processing leases are reclaimed after a crash.
+      if (previousStatus === 'completed') return 'completed' as const;
       if (previousStatus === 'processing') {
         const leaseStarted = Date.parse(
           existingData.processingStartedAt || existingData.receivedAt || ''
         );
         if (Number.isFinite(leaseStarted) && Date.now() - leaseStarted < WEBHOOK_PROCESSING_LEASE_MS) {
-          return true;
+          return 'active' as const;
         }
       }
       transaction.update(eventRef, {
@@ -289,7 +291,7 @@ export async function POST(req: NextRequest) {
         attempt: Number(existingData.attempt || 1) + 1,
         retriedAt: new Date().toISOString(),
       });
-      return false;
+      return 'claimed' as const;
     }
     transaction.set(eventRef, {
       type: event.type,
@@ -298,9 +300,17 @@ export async function POST(req: NextRequest) {
       attempt: 1,
       receivedAt: new Date().toISOString(),
     });
-    return false;
+    return 'claimed' as const;
   });
-  if (duplicate) return NextResponse.json({ received: true, duplicate: true });
+  if (claimResult === 'completed') {
+    return NextResponse.json({ received: true, duplicate: true });
+  }
+  if (claimResult === 'active') {
+    return NextResponse.json(
+      { error: 'Webhook event is already being processed. Retry later.' },
+      { status: 409 }
+    );
+  }
 
   try {
     switch (event.type) {
