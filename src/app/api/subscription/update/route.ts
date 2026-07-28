@@ -186,6 +186,7 @@ export async function POST(req: NextRequest) {
         team_limit: totalTeamLimit,
         extra_teams: isEntitled ? extraTeams : 0,
         subscription_status: updatedSubscription.status,
+        cancel_at_period_end: updatedSubscription.cancel_at_period_end,
         billing_cycle: billingCycle,
         last_sync_method: 'direct_upgrade',
         last_webhook_sync: new Date().toISOString(),

@@ -76,7 +76,11 @@ export default function PricingPage() {
         const res = await fetch('/api/subscription/update', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-          body: JSON.stringify({ userId: user.uid, newPriceId: priceId }),
+          body: JSON.stringify({
+            userId: user.uid,
+            newPriceId: priceId,
+            operationId: crypto.randomUUID(),
+          }),
         });
         const data = await res.json();
         if (data.success) {

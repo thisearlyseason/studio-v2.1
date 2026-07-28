@@ -374,7 +374,7 @@ export default function LandingPage() {
       toast({ title: "You Got it!", description: "We'll keep you in the loop. 🏆" });
 
       // Trigger admin notification asynchronously
-      fetch('/api/public/notify-admin', {
+      void fetch('/api/public/notify-admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -382,6 +382,11 @@ export default function LandingPage() {
           name: nameVal,
           email: emailVal,
         }),
+      }).then(async response => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.error || 'Admin notification failed.');
+        }
       }).catch(err => console.error('Admin notification failed:', err));
     } catch (err: any) {
       toast({ title: 'Oops!', description: err.message || 'Something went wrong.', variant: 'destructive' });

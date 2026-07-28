@@ -93,7 +93,7 @@ function ArticleCard({
   onCopy: () => void;
   isCopied: boolean;
 }) {
-  const url = `https://thesquad.pro/sports-hub/articles/${article.slug}`;
+  const url = `https://www.thesquad.pro/sports-hub/articles/${article.slug}`;
 
   const handleShare = async (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
@@ -399,7 +399,7 @@ export default function NewsPage() {
                 article={a}
                 isBookmarked={bookmarks.has(a.id)}
                 onBookmark={() => toggleBookmark(a.id)}
-                onCopy={() => copy(a.id, `https://thesquad.pro/sports-hub/articles/${a.slug}`)}
+                onCopy={() => copy(a.id, `https://www.thesquad.pro/sports-hub/articles/${a.slug}`)}
                 isCopied={copiedId === a.id}
               />
             ))}
@@ -450,7 +450,7 @@ export default function NewsPage() {
                   article={a}
                   isBookmarked={bookmarks.has(a.id)}
                   onBookmark={() => toggleBookmark(a.id)}
-                onCopy={() => copy(a.id, `https://thesquad.pro/sports-hub/articles/${a.slug}`)}
+                onCopy={() => copy(a.id, `https://www.thesquad.pro/sports-hub/articles/${a.slug}`)}
                   isCopied={copiedId === a.id}
                 />
               ))}

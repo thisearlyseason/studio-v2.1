@@ -240,23 +240,36 @@ export async function POST(req: NextRequest) {
             </div>
           `);
 
-      const { error } = await getResend().emails.send({
-        from: FROM,
-        to: [...adminEmails],
-        subject: emailSubject,
-        html: emailHtml,
-      });
+      const recipients = [...adminEmails];
+      const resend = getResend();
+      emailSent = true;
+      for (let offset = 0; offset < recipients.length; offset += 100) {
+        const chunk = recipients.slice(offset, offset + 100);
+        const { data, error } = await resend.batch.send(chunk.map(recipient => ({
+          from: FROM,
+          to: [recipient],
+          subject: emailSubject,
+          html: emailHtml,
+        })));
 
-      if (error) {
-        console.error('[Notify Admin] Resend API error:', error);
-      } else {
-        emailSent = true;
+        if (error || data?.data.length !== chunk.length) {
+          console.error('[Notify Admin] Resend API error:', error);
+          emailSent = false;
+          break;
+        }
       }
     } catch (resendErr) {
+      emailSent = false;
       console.error('[Notify Admin] Email dispatch failed:', resendErr);
     }
 
-    return NextResponse.json({ ok: true, pushSent, emailSent });
+    if (!emailSent) {
+      return NextResponse.json(
+        { error: 'Admin email notification failed.', pushSent, emailSent: false },
+        { status: 502 }
+      );
+    }
+    return NextResponse.json({ ok: true, pushSent, emailSent: true });
 
   } catch (err: any) {
     if (err instanceof RequestBodyError) {

@@ -53,6 +53,11 @@ export async function POST(req: NextRequest) {
       cancel_at_period_end: true,
     }, { idempotencyKey: mutationKey });
 
+    await userRef.update({
+      cancel_at_period_end: updatedSubscription.cancel_at_period_end,
+      last_webhook_sync: new Date().toISOString(),
+    });
+
     return NextResponse.json({
       success: true,
       message: 'Subscription will be canceled at the end of the current billing period.',

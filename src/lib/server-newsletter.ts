@@ -1,11 +1,15 @@
 import 'server-only';
 
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { Resend } from 'resend';
 import { adminDb } from '@/lib/firebase-admin';
 import { parseNewsletterDraft } from '@/lib/newsletter-draft-validation';
 import { renderNewsletterHtml, renderNewsletterText } from '@/lib/newsletter-content';
+import {
+  createNewsletterUnsubscribeToken,
+  matchesNewsletterUnsubscribeToken,
+} from '@/lib/newsletter-unsubscribe';
 
 const SEGMENT_NAME = 'The Squad Newsletter';
 const CONFIG_REF = () => adminDb.collection('newsletter_system').doc('resend');
@@ -61,24 +65,31 @@ function publicAppUrl(): string {
   return 'https://www.thesquad.pro';
 }
 
-function unsubscribeToken(email: string): string {
-  const secret = process.env.RESEND_API_KEY;
-  if (!secret) throw new Error('RESEND_API_KEY is not configured.');
-  return createHmac('sha256', secret).update(`newsletter-unsubscribe:${email}`).digest('hex');
+function unsubscribeSecrets(): { signing: string; validation: string[] } {
+  const stableSecret = process.env.NEWSLETTER_UNSUBSCRIBE_SECRET?.trim();
+  const legacySecret = process.env.RESEND_API_KEY?.trim();
+  const signing = stableSecret || legacySecret;
+  if (!signing) {
+    throw new Error('NEWSLETTER_UNSUBSCRIBE_SECRET is not configured.');
+  }
+  return {
+    signing,
+    validation: [...new Set([stableSecret, legacySecret].filter((secret): secret is string => Boolean(secret)))],
+  };
 }
 
 export function newsletterUnsubscribeUrl(emailValue: string): string {
   const email = normalizeEmail(emailValue);
-  const params = new URLSearchParams({ email, token: unsubscribeToken(email) });
+  const { signing } = unsubscribeSecrets();
+  const token = createNewsletterUnsubscribeToken(email, signing);
+  const params = new URLSearchParams({ email, token });
   return `${publicAppUrl()}/api/newsletter/unsubscribe?${params.toString()}`;
 }
 
 export function validNewsletterUnsubscribeToken(emailValue: string, token: string): boolean {
   const email = normalizeEmail(emailValue);
-  if (!email || !/^[a-f0-9]{64}$/.test(token)) return false;
-  const expected = Buffer.from(unsubscribeToken(email), 'hex');
-  const supplied = Buffer.from(token, 'hex');
-  return expected.length === supplied.length && timingSafeEqual(expected, supplied);
+  const { validation } = unsubscribeSecrets();
+  return matchesNewsletterUnsubscribeToken(email, token, validation);
 }
 
 function toIso(value: unknown): string {

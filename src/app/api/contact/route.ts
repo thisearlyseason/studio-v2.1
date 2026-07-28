@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const reservation = await adminDb.runTransaction(async transaction => {
       const snapshot = await transaction.get(inquiryRef);
       const existing = snapshot.data();
-      if (existing?.deliveryStatus === 'sent') return 'sent';
+      if (['accepted', 'delivered'].includes(existing?.deliveryStatus)) return 'accepted';
       if (
         existing?.deliveryStatus === 'pending' &&
         typeof existing?.deliveryStartedAt === 'number' &&
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
       return 'reserved';
     });
 
-    if (reservation === 'sent') {
+    if (reservation === 'accepted') {
       return NextResponse.json({ success: true, duplicate: true });
     }
     if (reservation === 'pending') {
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     const subjectName = name.replace(/[\r\n]/g, ' ');
     try {
-      const { error } = await resendClient().emails.send({
+      const { data, error } = await resendClient().emails.send({
         from: FROM,
         to: CONTACT_RECIPIENT,
         replyTo: email,
@@ -112,8 +112,19 @@ export async function POST(request: NextRequest) {
           </div>
         `,
         text: `New website inquiry\n\nName: ${name}\nEmail: ${email}\nOrganization: ${organization || 'Not provided'}\n\n${inquiry}`,
-      });
+      }, { idempotencyKey: documentId });
       if (error) throw new Error(error.message || 'Resend rejected the inquiry email.');
+      if (!data?.id) throw new Error('Resend did not return an email identifier.');
+
+      await inquiryRef.set({
+        deliveryStatus: 'accepted',
+        resendEmailId: data.id,
+        acceptedBy: 'resend',
+        acceptedAt: new Date(),
+        deliveredTo: CONTACT_RECIPIENT,
+        deliveryError: null,
+        updatedAt: new Date(),
+      }, { merge: true });
     } catch (deliveryError) {
       await inquiryRef.set({
         deliveryStatus: 'failed',
@@ -122,13 +133,6 @@ export async function POST(request: NextRequest) {
       }, { merge: true });
       throw deliveryError;
     }
-
-    await inquiryRef.set({
-      deliveryStatus: 'sent',
-      deliveredTo: CONTACT_RECIPIENT,
-      deliveredAt: new Date(),
-      updatedAt: new Date(),
-    }, { merge: true });
 
     return NextResponse.json({ success: true });
   } catch (error) {

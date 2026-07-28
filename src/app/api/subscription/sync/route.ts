@@ -128,6 +128,7 @@ export async function POST(req: NextRequest) {
       userUpdates: {
         stripe_subscription_id: activeSub?.id || null,
         subscription_status: subscriptionStatus,
+        cancel_at_period_end: activeSub?.cancel_at_period_end === true,
         billing_cycle: billingCycle,
         plan_type: hasPaidEntitlement ? planType : 'free',
         team_limit: totalTeamLimit,

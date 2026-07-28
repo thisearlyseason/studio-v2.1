@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { assertNonAnonymous, verifyFirebaseToken, assertOwner } from '@/lib/api-auth';
@@ -14,6 +15,7 @@ import {
 } from '@/lib/server-request-guards';
 import {
   buildCheckoutIdempotencyKey,
+  calculateSignupTrialDays,
   hasBlockingSubscription,
 } from '@/lib/checkout-policy';
 import {
@@ -142,6 +144,14 @@ export async function POST(req: NextRequest) {
         { status: 409 }
       );
     }
+    const authUser = await admin.auth().getUser(userId);
+    const accountCreatedAt = Date.parse(authUser.metadata.creationTime);
+    const serverTrialDays = calculateSignupTrialDays({
+      accountCreatedAt,
+      now: Date.now(),
+      hasStripeSubscriptionId: Boolean(userData.stripe_subscription_id),
+      priorSubscriptionCount: priorSubscriptions.data.length,
+    });
 
     const origin = process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin;
 
@@ -211,7 +221,10 @@ export async function POST(req: NextRequest) {
       success_url: `${origin}/dashboard/billing?stripe_success=true`,
       cancel_url: `${origin}/dashboard/billing?stripe_canceled=true`,
       metadata: { firebase_uid: userId, ...(targetTeamId ? { team_id: targetTeamId } : {}) },
-      subscription_data: { metadata: { firebase_uid: userId, ...(targetTeamId ? { team_id: targetTeamId } : {}) } },
+      subscription_data: {
+        metadata: { firebase_uid: userId, ...(targetTeamId ? { team_id: targetTeamId } : {}) },
+        ...(serverTrialDays > 0 ? { trial_period_days: serverTrialDays } : {}),
+      },
       allow_promotion_codes: true,
     }, {
       idempotencyKey,

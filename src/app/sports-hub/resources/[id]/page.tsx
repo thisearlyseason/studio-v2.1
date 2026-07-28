@@ -1,4 +1,5 @@
 import React from 'react';
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft, Eye, BookOpen, Play, Tag, ExternalLink, FileText } from 'lucide-react';
@@ -43,14 +44,20 @@ export async function generateStaticParams() {
   return RESOURCES.map((r) => ({ id: r.id }));
 }
 
-export async function generateMetadata({ params }: Params) {
+const SITE_URL = 'https://www.thesquad.pro';
+
+export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { id } = await params;
   const resource = getResourceById(id);
-  if (!resource) return { title: 'Resource Not Found | Sports Hub' };
+  if (!resource) return { title: 'Resource Not Found | Sports Hub', robots: { index: false, follow: false } };
+  const title = `${resource.title} | Sports Hub Playbook`;
+  const url = `${SITE_URL}/sports-hub/resources/${id}`;
   return {
-    title: `${resource.title} | Sports Hub Playbook`,
+    title,
     description: resource.description,
     alternates: { canonical: `/sports-hub/resources/${id}` },
+    openGraph: { type: 'article', url, title, description: resource.description, siteName: 'The Squad' },
+    twitter: { card: 'summary_large_image', title, description: resource.description },
   };
 }
 
@@ -203,9 +210,33 @@ export default async function ResourceViewerPage({ params }: Params) {
 
   const pdfFilename = `TheSquad-${resource.title.replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-').slice(0, 50)}.pdf`;
   const category = TYPE_LABELS[resource.type] ?? resource.type;
+  const resourceUrl = `${SITE_URL}/sports-hub/resources/${id}`;
+  const structuredData = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'LearningResource',
+      name: resource.title,
+      description: resource.description,
+      url: resourceUrl,
+      learningResourceType: category,
+      provider: { '@type': 'Organization', name: 'The Squad', url: SITE_URL },
+      isAccessibleForFree: true,
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Sports Hub', item: `${SITE_URL}/sports-hub` },
+        { '@type': 'ListItem', position: 2, name: 'Resources', item: `${SITE_URL}/sports-hub/resources` },
+        { '@type': 'ListItem', position: 3, name: resource.title, item: resourceUrl },
+      ],
+    },
+  ];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-8 py-8 md:py-12">
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
+      <div className="max-w-4xl mx-auto px-4 md:px-8 py-8 md:py-12">
 
       {/* Back nav */}
       <div className="mb-8">
@@ -332,6 +363,7 @@ export default async function ResourceViewerPage({ params }: Params) {
       )}
 
       <NewsletterSignup />
-    </div>
+      </div>
+    </>
   );
 }

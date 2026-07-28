@@ -23,6 +23,10 @@ The Resend webhook destination is
 delivery events and `contact.updated`/`contact.deleted`, then store its signing
 secret as `RESEND_WEBHOOK_SECRET`.
 
+Set a long, random `NEWSLETTER_UNSUBSCRIBE_SECRET` for newsletter unsubscribe links. During
+migration, links previously signed with `RESEND_API_KEY` remain valid; new links use the dedicated
+secret as soon as it is configured.
+
 After configuration, verify Stripe, Stripe Connect, and Resend webhook destinations,
 Firebase authorized domains, Google OAuth redirect URIs, Resend sender-domain
 verification, and FCM delivery from the deployed audit preview.
