@@ -2,6 +2,7 @@ import { MetadataRoute } from 'next'
 import { ARTICLES_LIST } from '@/lib/sports-hub-articles'
 import { RESOURCES } from '@/lib/sports-hub-resources'
 import { SPORTS_HUB_TEMPLATES } from '@/lib/sports-hub-template-catalog'
+import { AUDIENCE_SLUGS } from '@/lib/audience-landing'
 
 const baseUrl = 'https://www.thesquad.pro'
 
@@ -25,6 +26,7 @@ const staticPages: Array<{
   { path: '/privacy', changeFrequency: 'yearly', priority: 0.3 },
   { path: '/terms', changeFrequency: 'yearly', priority: 0.3 },
   { path: '/safety', changeFrequency: 'yearly', priority: 0.3 },
+  { path: '/refer-a-coach', changeFrequency: 'monthly', priority: 0.6 },
 ]
  
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -33,6 +35,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: `${baseUrl}${page.path}`,
       changeFrequency: page.changeFrequency,
       priority: page.priority,
+    })),
+    ...AUDIENCE_SLUGS.map(audience => ({
+      url: `${baseUrl}/for/${audience}`,
+      changeFrequency: 'monthly' as const,
+      priority: 0.7,
     })),
     ...ARTICLES_LIST.map(article => ({
       url: `${baseUrl}/sports-hub/articles/${article.slug}`,
