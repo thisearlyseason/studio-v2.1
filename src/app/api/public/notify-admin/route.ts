@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
     if (
       (type !== 'newsletter' && type !== 'beta') ||
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      !/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(email)
     ) {
       return NextResponse.json({ error: 'Missing required fields: type, email' }, { status: 400 });
     }
@@ -100,24 +100,18 @@ export async function POST(req: NextRequest) {
     const adminsSnap = await db.collection('users').where('role', '==', 'superadmin').get();
     if (adminsSnap.empty) {
       console.warn('[Notify Admin] No superadmin users found in database.');
-      return NextResponse.json({ ok: true, message: 'No superadmins found to notify' });
     }
 
-    const adminEmails: string[] = [];
+    const adminEmails = new Set<string>(['team@thesquad.pro']);
     const fcmTokens: string[] = [];
 
     adminsSnap.docs.forEach(doc => {
       const data = doc.data();
-      if (data.email) adminEmails.push(data.email);
+      if (typeof data.email === 'string' && data.email.includes('@')) adminEmails.add(data.email);
       if (Array.isArray(data.fcmTokens)) {
         fcmTokens.push(...data.fcmTokens);
       }
     });
-
-    // Make sure we have at least the default admin email as fallback if none found
-    if (adminEmails.length === 0) {
-      adminEmails.push('admin@thesquad.pro');
-    }
 
     // 3. Prepare Notification Content
     const title = type === 'beta' ? 'New Beta Application! 🚀' : 'New Newsletter Signup! 🏆';
@@ -245,7 +239,7 @@ export async function POST(req: NextRequest) {
 
       const { error } = await getResend().emails.send({
         from: FROM,
-        to: adminEmails,
+        to: [...adminEmails],
         subject: emailSubject,
         html: emailHtml,
       });

@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     if (
       typeof email !== 'string' ||
       email.length > 254 ||
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      !/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(email)
     ) {
       return NextResponse.json({ error: 'Invalid email' }, { status: 400 });
     }
@@ -45,6 +45,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error('[Sports Hub] Newsletter signup error:', error);
-    return NextResponse.json({ error: 'Unable to save subscription.' }, { status: 500 });
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : 'Unable to save subscription.',
+    }, { status: 503 });
   }
 }

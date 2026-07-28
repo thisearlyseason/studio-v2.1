@@ -8,7 +8,7 @@ import { readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-gu
 const WELCOME_REF = () => adminDb.collection('newsletter_system').doc('welcome_email');
 
 const defaultWelcome = {
-  enabled: false,
+  enabled: true,
   subject: 'Welcome to The Squad',
   previewText: 'You are officially on The Squad newsletter list.',
   title: 'Welcome to The Squad',

@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     if (
       typeof email !== 'string' ||
       email.length > 254 ||
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      !/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(email)
     ) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }

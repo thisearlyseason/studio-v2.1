@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       /[\r\n]/.test(subject) ||
       typeof html !== 'string' ||
       html.length > 200_000 ||
-      (replyTo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyTo))
+      (replyTo && !/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(replyTo))
     ) {
       return NextResponse.json({ error: 'Invalid email content.' }, { status: 400 });
     }
