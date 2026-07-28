@@ -356,10 +356,13 @@ export default function LandingPage() {
 
   const handleNewsletterSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newsletterEmail.trim()) return;
+    const emailVal = newsletterEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(emailVal)) {
+      toast({ title: 'Enter a valid email', description: 'Please use an address such as name@example.com.', variant: 'destructive' });
+      return;
+    }
     setNewsletterLoading(true);
     try {
-      const emailVal = newsletterEmail.trim().toLowerCase();
       const nameVal = newsletterName.trim();
       const response = await fetch('/api/newsletter/subscribe', {
         method: 'POST',

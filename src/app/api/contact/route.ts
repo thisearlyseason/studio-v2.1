@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     const inquiry = cleanText(body.inquiry, 4_000);
     const submissionId = cleanText(body.submissionId, 100);
 
-    if (!name || !inquiry || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!name || !inquiry || !/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(email)) {
       return NextResponse.json(
         { error: 'Enter your name, a valid email address, and your inquiry.' },
         { status: 400 }

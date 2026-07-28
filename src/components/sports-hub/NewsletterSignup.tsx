@@ -23,10 +23,11 @@ export function NewsletterSignup({ className }: { className?: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      if (!res.ok) throw new Error('Subscription failed');
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'Subscription failed');
       setSuccess(true);
-    } catch {
-      setError('Something went wrong. Please try again.');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }

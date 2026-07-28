@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const source = body.source === 'sports_hub' ? 'sports_hub' : 'landing_page';
 
-    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(email)) {
       return NextResponse.json({ error: 'Enter a valid email address.' }, { status: 400 });
     }
     if (name.length > 120) {
@@ -39,6 +39,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error('[Newsletter] Signup failed:', error);
-    return NextResponse.json({ error: 'Unable to save your subscription.' }, { status: 500 });
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : 'Unable to save your subscription.',
+    }, { status: 503 });
   }
 }

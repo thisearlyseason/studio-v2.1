@@ -11,6 +11,24 @@ const SEGMENT_NAME = 'The Squad Newsletter';
 const CONFIG_REF = () => adminDb.collection('newsletter_system').doc('resend');
 const WELCOME_REF = () => adminDb.collection('newsletter_system').doc('welcome_email');
 const FROM = 'The Squad <noreply@thesquad.pro>';
+const DEFAULT_WELCOME_DRAFT = {
+  subject: 'Welcome to The Squad',
+  previewText: 'You are officially on The Squad newsletter list.',
+  title: 'Welcome to The Squad',
+  blocks: [
+    {
+      id: 'welcome-intro',
+      type: 'paragraph' as const,
+      text: 'Thanks for subscribing. You will now receive product news, sports insights, and updates from **The Squad**.',
+    },
+    {
+      id: 'welcome-hub',
+      type: 'button' as const,
+      label: 'Explore the Sports Hub',
+      url: 'https://www.thesquad.pro/sports-hub',
+    },
+  ],
+};
 const SUBSCRIBER_COLLECTIONS = [
   { name: 'newsletter_subscribers', dateField: 'subscribedAt', fallbackSource: 'newsletter' },
   { name: 'newsletter_signups', dateField: 'createdAt', fallbackSource: 'landing_page' },
@@ -148,8 +166,9 @@ async function syncResendContact(input: {
 async function sendWelcomeEmailIfNeeded(email: string, name: string): Promise<void> {
   const configSnapshot = await WELCOME_REF().get();
   const config = configSnapshot.data();
-  const draft = parseNewsletterDraft(config);
-  if (!configSnapshot.exists || config?.enabled !== true || !draft) return;
+  if (configSnapshot.exists && config?.enabled !== true) return;
+  const draft = parseNewsletterDraft(configSnapshot.exists ? config : DEFAULT_WELCOME_DRAFT);
+  if (!draft) throw new Error('The newsletter welcome email configuration is invalid.');
 
   const id = createHash('sha256').update(email).digest('hex');
   const subscriberRef = adminDb.collection('newsletter_subscribers').doc(id);
@@ -235,17 +254,22 @@ export async function subscribeToNewsletter(input: {
 
   try {
     await syncResendContact({ email, name, reactivate: true });
-    await ref.set({ resendSyncedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await ref.set({
+      resendSyncedAt: FieldValue.serverTimestamp(),
+      resendSyncPending: FieldValue.delete(),
+      resendSyncFailureReason: FieldValue.delete(),
+    }, { merge: true });
   } catch (error) {
     console.error('[Newsletter] Subscriber saved, but Resend sync failed:', error);
-    await ref.set({ resendSyncPending: true }, { merge: true });
+    await ref.set({
+      resendSyncPending: true,
+      resendSyncFailureReason: error instanceof Error ? error.message.slice(0, 500) : 'Unknown Resend sync error',
+      resendSyncFailedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    throw new Error('Your subscription was saved, but email delivery is temporarily unavailable. Please try again later.');
   }
 
-  try {
-    await sendWelcomeEmailIfNeeded(email, name);
-  } catch (error) {
-    console.error('[Newsletter] Subscriber saved, but welcome email delivery failed:', error);
-  }
+  await sendWelcomeEmailIfNeeded(email, name);
 }
 
 export async function unsubscribeNewsletterSubscriber(emailValue: string): Promise<void> {

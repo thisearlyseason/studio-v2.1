@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       name.length > 120 ||
       typeof email !== 'string' ||
       email.length > 254 ||
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+      !/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(email) ||
       typeof planType !== 'string' ||
       planType.length > 40
     ) {

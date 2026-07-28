@@ -52,15 +52,17 @@ async function notifyOwnerPush(title: string, body: string, url?: string) {
  * Requires OWNER_NOTIFICATION_EMAIL + RESEND_API_KEY env vars.
  */
 async function notifyOwnerEmail(subject: string, html: string) {
-  if (!OWNER_EMAIL) return;
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (!OWNER_EMAIL || !resendApiKey) return;
   try {
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    await resend.emails.send({
+    const resend = new Resend(resendApiKey);
+    const { error } = await resend.emails.send({
       from: 'The Squad Pro Alerts <noreply@thesquad.pro>',
       to: [OWNER_EMAIL],
       subject,
       html,
     });
+    if (error) throw new Error(error.message || 'Resend rejected the owner notification.');
   } catch (err) {
     console.warn('[Webhook] Owner email notification failed (non-critical):', err);
   }
