@@ -1,8 +1,14 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getSportsHubTemplate } from '@/lib/sports-hub-template-catalog';
+import { getSportsHubTemplate, SPORTS_HUB_TEMPLATES } from '@/lib/sports-hub-template-catalog';
 
 const SITE_URL = 'https://www.thesquad.pro';
+
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return SPORTS_HUB_TEMPLATES.map(template => ({ slug: template.slug }));
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
