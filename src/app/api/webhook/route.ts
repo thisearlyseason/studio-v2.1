@@ -24,6 +24,7 @@ const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 /** Owner notification config — set these in .env.local / App Hosting secrets */
 const OWNER_EMAIL = process.env.OWNER_NOTIFICATION_EMAIL;
 const OWNER_FCM_TOKEN = process.env.OWNER_FCM_TOKEN; // optional — push to owner's device
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
 
 /** Max body size: 512KB. Stripe events are typically <64KB. */
 const MAX_BODY_SIZE = 512_000;
@@ -53,12 +54,12 @@ async function notifyOwnerPush(title: string, body: string, url?: string) {
  */
 async function notifyOwnerEmail(subject: string, html: string) {
   const resendApiKey = process.env.RESEND_API_KEY;
-  if (!OWNER_EMAIL || !resendApiKey) return;
+  if (!OWNER_EMAIL || !resendApiKey || !EMAIL_PATTERN.test(OWNER_EMAIL.trim())) return;
   try {
     const resend = new Resend(resendApiKey);
     const { error } = await resend.emails.send({
       from: 'The Squad Pro Alerts <noreply@thesquad.pro>',
-      to: [OWNER_EMAIL],
+      to: [OWNER_EMAIL.trim().toLowerCase()],
       subject,
       html,
     });

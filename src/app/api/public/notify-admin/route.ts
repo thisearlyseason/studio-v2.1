@@ -11,6 +11,7 @@ import {
 } from '@/lib/server-request-guards';
 
 const FROM = 'The Squad Pro <noreply@thesquad.pro>';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
 
 function getResend() {
   const apiKey = process.env.RESEND_API_KEY;
@@ -107,7 +108,9 @@ export async function POST(req: NextRequest) {
 
     adminsSnap.docs.forEach(doc => {
       const data = doc.data();
-      if (typeof data.email === 'string' && data.email.includes('@')) adminEmails.add(data.email);
+      if (typeof data.email === 'string' && EMAIL_PATTERN.test(data.email.trim())) {
+        adminEmails.add(data.email.trim().toLowerCase());
+      }
       if (Array.isArray(data.fcmTokens)) {
         fcmTokens.push(...data.fcmTokens);
       }

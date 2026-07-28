@@ -9,6 +9,7 @@ import {
 } from '@/lib/server-request-guards';
 
 const FROM = 'The Squad Pro <noreply@thesquad.pro>';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
 
 function getResend() {
   const apiKey = process.env.RESEND_API_KEY;
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
       /[\r\n]/.test(subject) ||
       typeof html !== 'string' ||
       html.length > 200_000 ||
-      (replyTo && !/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(replyTo))
+      (replyTo && !EMAIL_PATTERN.test(replyTo))
     ) {
       return NextResponse.json({ error: 'Invalid email content.' }, { status: 400 });
     }
@@ -80,8 +81,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Recipients must be current team members.' }, { status: 403 });
     }
     const to = memberSnaps.flatMap(member => {
-      const email = member.data()?.email;
-      return typeof email === 'string' && email.includes('@') ? [email] : [];
+      const email = typeof member.data()?.email === 'string' ? member.data()?.email.trim() : '';
+      return EMAIL_PATTERN.test(email) ? [email] : [];
     });
     if (!to.length) return NextResponse.json({ error: 'No recipient email addresses are available.' }, { status: 400 });
 
