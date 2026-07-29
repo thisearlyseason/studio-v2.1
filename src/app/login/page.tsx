@@ -16,6 +16,15 @@ import BrandLogo from '@/components/BrandLogo';
 import Image from 'next/image';
 import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap, Eye, EyeOff } from 'lucide-react';
 
+function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      window.setTimeout(() => reject(new Error(message)), milliseconds);
+    }),
+  ]);
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -46,7 +55,11 @@ export default function LoginPage() {
           return;
         }
         try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          const userDoc = await withTimeout(
+            getDoc(doc(db, 'users', user.uid)),
+            8000,
+            'Profile lookup timed out',
+          );
           if (userDoc.exists()) {
             const data = userDoc.data();
             const tokenResult = await user.getIdTokenResult();
@@ -62,6 +75,8 @@ export default function LoginPage() {
           }
         } catch (e) {
           router.push('/dashboard');
+        } finally {
+          setIsLoading(false);
         }
       };
       fetchRole();
@@ -72,13 +87,18 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password.trim());
+      await withTimeout(
+        signInWithEmailAndPassword(auth, email.trim(), password.trim()),
+        15000,
+        'Login request timed out. Check your connection and try again.',
+      );
     } catch (error: any) {
       toast({
         title: "Login Failed",
         description: error.message || "Invalid credentials.",
         variant: "destructive",
       });
+    } finally {
       setIsLoading(false);
     }
   };
@@ -90,13 +110,18 @@ export default function LoginPage() {
       // Auth is initialized through the shared provider. Supplying the browser
       // resolver from this same ESM module keeps the provider/resolver class
       // identities aligned so Firebase includes providerId in the handler URL.
-      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+      await withTimeout(
+        signInWithPopup(auth, provider, browserPopupRedirectResolver),
+        15000,
+        'Google login timed out. Check your connection and try again.',
+      );
     } catch (error: any) {
       toast({
         title: "Google Login Failed",
         description: error.message || "Could not sign in with Google.",
         variant: "destructive",
       });
+    } finally {
       setIsLoading(false);
     }
   };
