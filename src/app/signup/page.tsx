@@ -297,12 +297,7 @@ export default function SignupPage() {
   })();
 
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-start lg:justify-center p-6 relative overflow-y-auto overflow-x-hidden">
-      {/* Ambient gradient orbs */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-primary/10 blur-[120px]" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-primary/5 blur-[100px]" />
-      </div>
+    <div className="min-h-screen bg-black flex flex-col items-center justify-start lg:justify-center p-4 sm:p-6 relative overflow-y-auto overflow-x-hidden">
 
       {/* Back Button */}
       <div className="relative z-30 w-full max-w-md flex items-start mb-4">
@@ -313,10 +308,10 @@ export default function SignupPage() {
         </Link>
       </div>
 
-      <BrandLogo variant="dark-background" className="h-12 w-40 mb-8 relative z-10" />
+      <BrandLogo variant="dark-background" className="h-12 w-40 mb-6 sm:mb-8 relative z-10" priority />
 
       {/* Step breadcrumb */}
-      <div className="relative z-10 flex items-center gap-2 mb-6">
+      <div className="relative z-10 flex items-center gap-2 mb-6" aria-label="Signup progress">
         {activeSteps.map((s, i) => (
           <React.Fragment key={s}>
             <span className={cn(
@@ -326,7 +321,7 @@ export default function SignupPage() {
                 : activeSteps.indexOf(step) > i
                   ? 'bg-white/20 text-white/80'
                   : 'bg-white/5 text-white/30'
-            )}>
+            )} aria-current={step === s ? 'step' : undefined}>
               {stepLabels[s]}
             </span>
             {i < activeSteps.length - 1 && (
@@ -343,30 +338,34 @@ export default function SignupPage() {
 
           {/* ── STEP 1: WHO'S JOINING ── */}
           {step === 'target' && (
-            <div className="p-8 space-y-6 animate-in fade-in duration-500">
+            <div className="p-5 sm:p-8 space-y-5 sm:space-y-6 animate-in fade-in duration-500">
               <div className="text-center space-y-1.5">
-                <CardTitle className="text-2xl font-black uppercase tracking-tight">Who&apos;s Joining?</CardTitle>
+                <CardTitle id="signup-role-heading" className="text-2xl font-black uppercase tracking-tight">Who&apos;s Joining?</CardTitle>
                 <CardDescription className="text-[11px] font-semibold text-muted-foreground">
                   Choose your role — you can always update this later
                 </CardDescription>
               </div>
 
-              <div className="space-y-2.5">
+              <div className="space-y-2.5" role="radiogroup" aria-labelledby="signup-role-heading">
                 {SIGNUP_OPTIONS.map((opt) => {
                   const Icon = opt.icon;
                   const isSelected = regTarget === opt.id;
                   return (
                     <button
+                      type="button"
                       key={opt.id as string}
                       onClick={() => setRegTarget(opt.id)}
+                      role="radio"
+                      aria-checked={isSelected}
+                      aria-label={`${opt.label}: ${opt.desc}`}
                       className={cn(
-                        "w-full p-4 rounded-2xl border-2 transition-all text-left flex items-center justify-between group",
+                        "w-full p-3 sm:p-4 rounded-2xl border-2 transition-all text-left flex items-center justify-between group",
                         isSelected
                           ? "border-primary bg-primary/5 ring-4 ring-primary/10"
                           : "border-muted bg-white hover:border-primary/30 hover:bg-primary/[0.02]"
                       )}
                     >
-                      <div className="flex items-center gap-3.5">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div className={cn(
                           "p-2.5 rounded-xl transition-colors shrink-0",
                           isSelected
@@ -375,7 +374,7 @@ export default function SignupPage() {
                         )}>
                           <Icon className="h-5 w-5" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <p className="font-black text-sm uppercase tracking-tight leading-none mb-0.5">{opt.label}</p>
                           <p className="text-[10px] font-semibold text-muted-foreground leading-none">{opt.desc}</p>
                         </div>

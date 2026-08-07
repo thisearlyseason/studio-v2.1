@@ -221,7 +221,7 @@ export default function LoginPage() {
   ];
 
   return (
-    <div className="flex flex-col items-center justify-start lg:justify-center min-h-screen bg-black p-6 relative overflow-y-auto overflow-x-hidden">
+    <div className="flex flex-col items-center justify-start lg:justify-center min-h-screen bg-black p-4 sm:p-6 relative overflow-y-auto overflow-x-hidden">
       <div className="absolute inset-0 w-full h-full">
         <Image 
           src="https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&q=80&w=1600" 
@@ -247,9 +247,9 @@ export default function LoginPage() {
       </div>
 
       <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center relative z-10">
-        <Card className="border-none shadow-2xl rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm">
-          <CardHeader className="space-y-2 pt-12 text-center">
-            <CardTitle className="text-4xl font-black tracking-tighter uppercase">
+        <Card className="border-none shadow-2xl rounded-[2rem] sm:rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm">
+          <CardHeader className="space-y-2 pt-8 sm:pt-12 text-center">
+            <CardTitle className="text-3xl sm:text-4xl font-black tracking-tighter uppercase">
               {forgotMode ? 'Reset Password' : 'Authorized Access'}
             </CardTitle>
             <CardDescription className="text-base font-bold uppercase tracking-widest text-primary/60 text-[10px]">
@@ -300,7 +300,7 @@ export default function LoginPage() {
             </form>
           ) : (
           <form onSubmit={handleLogin}>
-            <CardContent className="space-y-6 px-10">
+            <CardContent className="space-y-6 px-6 sm:px-10">
               
               {BETA_MODE ? (
                 <div className="w-full h-14 rounded-2xl bg-muted/50 border border-dashed border-muted-foreground/20 flex items-center justify-center gap-3 text-muted-foreground cursor-not-allowed opacity-60" title="Google Sign-In temporarily unavailable during private beta. Please use email & password.">
@@ -368,6 +368,8 @@ export default function LoginPage() {
                   <button 
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-gray-900 transition-colors"
                   >
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -375,7 +377,7 @@ export default function LoginPage() {
                 </div>
               </div>
             </CardContent>
-            <CardFooter className="flex flex-col space-y-6 pb-12 px-10 pt-4">
+            <CardFooter className="flex flex-col space-y-6 pb-10 sm:pb-12 px-6 sm:px-10 pt-4">
               <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={isLoading || isDemoLoading}>
                 {isLoading ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Verify Identity"}
               </Button>
@@ -411,6 +413,7 @@ export default function LoginPage() {
                 className="h-24 rounded-[2rem] bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20 transition-all flex items-center justify-between px-8 backdrop-blur-md group"
                 onClick={() => handleLaunchDemo(demo.id)}
                 disabled={isLoading || isDemoLoading}
+                aria-label={`Open ${demo.name}: ${demo.desc}`}
               >
                 <div className="flex items-center gap-6">
                   <div className="bg-white/10 p-4 rounded-2xl group-hover:bg-primary group-hover:text-white transition-colors">
