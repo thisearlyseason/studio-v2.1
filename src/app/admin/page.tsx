@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
 import { Search, Shield, Users, CreditCard, Building2, ChevronRight, X, RefreshCw, AlertTriangle, CheckCircle2, Clock, CheckCircle, XCircle, HelpCircle, LogOut, Loader2, ExternalLink, Copy, Bug, FileText, Bell, Send, MapPin, BarChart3, TrendingUp, ArrowUpDown, ArrowUp, ArrowDown, Download, Mail, Newspaper, BookOpen, Rss, PenLine, ToggleLeft, ToggleRight, Globe, Star } from 'lucide-react';
+import { getPlanTeamLimit } from '@/lib/plan-catalog';
 
 const PLAN_LABELS: Record<string, { label: string; color: string }> = {
   free:    { label: 'Free',          color: 'bg-gray-100 text-gray-700' },
@@ -473,7 +474,7 @@ export default function AdminPortalPage() {
         organization: selectedBetaApp.organization,
         isBetaTester: true,
         plan_type: betaPlanType,
-        team_limit: betaPlanType === 'elite' ? 5 : (betaPlanType === 'league' || betaPlanType === 'school' ? 100 : (betaPlanType === 'team' ? 1 : 0)),
+        team_limit: getPlanTeamLimit(betaPlanType),
         createdAt: new Date().toISOString()
       });
       
@@ -523,7 +524,7 @@ export default function AdminPortalPage() {
         await updateDoc(doc(db, 'users', existingUid), {
           isBetaTester: true,
           plan_type: pendingPlanType,
-          team_limit: pendingPlanType === 'elite' ? 5 : (pendingPlanType === 'league' || pendingPlanType === 'school' ? 100 : (pendingPlanType === 'team' ? 1 : 0)),
+          team_limit: getPlanTeamLimit(pendingPlanType),
           betaUpgradedAt: new Date().toISOString(),
         });
       }
@@ -564,7 +565,7 @@ export default function AdminPortalPage() {
         await updateDoc(doc(db, 'users', existingUid), {
           isBetaTester: true,
           plan_type: betaPlanType,
-          team_limit: betaPlanType === 'elite' ? 5 : (betaPlanType === 'league' || betaPlanType === 'school' ? 100 : (betaPlanType === 'team' ? 1 : 0)),
+          team_limit: getPlanTeamLimit(betaPlanType),
           betaUpgradedAt: new Date().toISOString(),
         });
       }
@@ -690,7 +691,7 @@ export default function AdminPortalPage() {
     if (!db || !selectedUser || !newPlan) return;
     setUpdatingPlan(true);
     try {
-      const newLimit = newPlan === 'elite' ? 5 : (newPlan === 'league' || newPlan === 'school' ? 100 : (newPlan === 'team' ? 1 : 0));
+      const newLimit = getPlanTeamLimit(newPlan);
       await updateDoc(doc(db, 'users', selectedUser.id), { plan_type: newPlan, team_limit: newLimit });
       setSelectedUser(prev => prev ? { ...prev, plan_type: newPlan } : null);
       setResults(prev => prev.map(r => r.id === selectedUser.id ? { ...r, plan_type: newPlan } : r));

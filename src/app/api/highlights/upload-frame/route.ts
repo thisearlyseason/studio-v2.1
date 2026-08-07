@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken } from '@/lib/api-auth';
+import {
+  enforceUserRateLimit,
+  readJsonBodyWithLimit,
+  RequestBodyError,
+} from '@/lib/server-request-guards';
+import { readResponseTextWithLimit } from '@/lib/public-network-url';
 
 /**
  * /api/highlights/upload-frame
@@ -29,33 +35,39 @@ export async function POST(req: NextRequest) {
   const authResult = await verifyFirebaseToken(req);
   if (authResult instanceof NextResponse) return authResult;
 
-  // ── Payload size guard ──────────────────────────────────────────────────
-  const contentLength = parseInt(req.headers.get('content-length') || '0', 10);
-  if (contentLength > MAX_BODY_BYTES) {
-    return NextResponse.json({ error: 'Frame too large (max 5MB).' }, { status: 413 });
-  }
-
   try {
-    const { base64 } = await req.json();
+    const limited = await enforceUserRateLimit(authResult.uid, 'highlight-frame-upload', 300, 60 * 60 * 1000);
+    if (limited) return limited;
 
-    if (!base64) {
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, MAX_BODY_BYTES);
+    const base64 = body.base64;
+
+    if (typeof base64 !== 'string' || !base64) {
       return NextResponse.json({ error: 'base64 image data required' }, { status: 400 });
+    }
+    const encoded = base64.replace(/^data:image\/(?:jpeg|jpg|png|webp);base64,/i, '');
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length > 4_800_000) {
+      return NextResponse.json({ error: 'Frame must be a valid JPEG, PNG, or WebP base64 image.' }, { status: 400 });
     }
 
     // Upload to freeimage.host using their form-based API
     const formData = new FormData();
     formData.append('key', FREEIMAGE_API_KEY);
-    formData.append('source', base64);
+    formData.append('source', encoded);
     formData.append('type', 'base64');
     formData.append('format', 'json');
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
     const uploadRes = await fetch(FREEIMAGE_ENDPOINT, {
       method: 'POST',
       body: formData,
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!uploadRes.ok) {
-      const errText = await uploadRes.text();
+      const errText = await readResponseTextWithLimit(uploadRes, 100_000);
       console.error('[Upload Frame] freeimage.host error:', uploadRes.status, errText.slice(0, 200));
       return NextResponse.json(
         { error: `Image host error: ${uploadRes.status}` },
@@ -63,7 +75,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const json = await uploadRes.json();
+    const json = JSON.parse(await readResponseTextWithLimit(uploadRes, 100_000));
     const url = json?.image?.url;
 
     if (!url) {
@@ -75,7 +87,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url });
 
   } catch (err: any) {
+    if (err instanceof RequestBodyError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[Upload Frame Error]:', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: 'Frame upload failed.' }, { status: 502 });
   }
 }

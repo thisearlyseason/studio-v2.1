@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
-import * as admin from 'firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
+import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
+import { getPlanTeamLimit } from '@/lib/plan-catalog';
 
 /**
  * POST /api/demo/seed
@@ -18,13 +20,11 @@ export async function POST(req: NextRequest) {
   if (authResult instanceof NextResponse) return authResult;
   const uid = authResult.uid;
 
-  let planId: string;
   try {
-    const body = await req.json();
-    planId = body.planId;
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+    const limited = await enforceUserRateLimit(uid, 'demo-seed', 20, 60 * 60 * 1000);
+    if (limited) return limited;
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 4_000);
+    const planId = body.planId;
 
   const ALLOWED_PLANS = new Set([
     'starter_squad', 'squad_pro', 'elite_teams', 'school_demo',
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     'pro_demo', 'coach_demo', 'basic_demo',
   ]);
 
-  if (!planId || !ALLOWED_PLANS.has(planId)) {
+  if (typeof planId !== 'string' || !ALLOWED_PLANS.has(planId)) {
     return NextResponse.json({ error: `Invalid planId: ${planId}` }, { status: 400 });
   }
 
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
   // 3. Generate a stable demo team ID
   const teamId = `demo_${planId}_${uid.slice(0, 8)}_${Date.now()}`;
-  const now = admin.firestore.FieldValue.serverTimestamp();
+  const now = FieldValue.serverTimestamp();
   const batch = adminDb.batch();
 
   // 4. Create the team document
@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
     planId: planId,
     plan_type: getPlanType(planId),
     isDemo: true,
+    demoOwnerUserId: uid,
     ownerUserId: uid,
     role: 'Admin',
     memberCount: 1,
@@ -102,7 +103,14 @@ export async function POST(req: NextRequest) {
 
   await batch.commit();
 
-  return NextResponse.json({ ok: true, teamId, planId });
+    return NextResponse.json({ ok: true, teamId, planId });
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    console.error('[demo/seed] Error:', error);
+    return NextResponse.json({ error: 'Could not create demo data.' }, { status: 500 });
+  }
 }
 
 function getDemoTeamName(planId: string): string {
@@ -129,13 +137,6 @@ function getPlanType(planId: string): string {
   if (planId.includes('parent')) return 'parent';
   if (planId.includes('pro')) return 'pro';
   return 'starter';
-}
-
-function getPlanTeamLimit(planId: string): number {
-  if (planId.includes('elite')) return 8;
-  if (planId.includes('school')) return 10;
-  if (planId.includes('league')) return 18;
-  return 1;
 }
 
 function getDemoFeatures(planId: string): string[] {

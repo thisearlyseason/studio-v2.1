@@ -9,20 +9,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useFirestore } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { useTeam, TeamEvent } from '@/components/providers/team-provider';
 import { CheckCircle2, AlertCircle, Clock, MapPin, Loader2 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
+
+type PublicEvent = {
+  id: string;
+  title: string;
+  date: string | null;
+  startTime: string;
+  location: string;
+  customFormFields: Array<{ id: string; label: string; type: 'short_text' | 'long_text' | 'checkbox'; required: boolean }>;
+};
 
 function RegistrationForm() {
   const { teamId } = useParams();
   const searchParams = useSearchParams();
   const eventId = searchParams.get('eventId');
-  const db = useFirestore();
-  const { addRegistration } = useTeam();
 
-  const [event, setEvent] = useState<TeamEvent | null>(null);
+  const [event, setEvent] = useState<PublicEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
@@ -31,12 +35,15 @@ function RegistrationForm() {
 
   useEffect(() => {
     async function loadEvent() {
-      if (!teamId || !eventId) return;
+      if (!teamId || !eventId) {
+        setLoading(false);
+        return;
+      }
       try {
-        const eventSnap = await getDoc(doc(db, 'teams', teamId as string, 'events', eventId));
-        if (eventSnap.exists()) {
-          setEvent({ id: eventSnap.id, ...eventSnap.data() } as TeamEvent);
-        }
+        const response = await fetch(`/api/public/event-registration?teamId=${encodeURIComponent(String(teamId))}&eventId=${encodeURIComponent(eventId)}`);
+        if (!response.ok) throw new Error('Event registration is unavailable.');
+        const result = await response.json();
+        setEvent(result.data as PublicEvent);
       } catch (e) {
         console.error("Error loading event details:", e);
       } finally {
@@ -44,7 +51,7 @@ function RegistrationForm() {
       }
     }
     loadEvent();
-  }, [db, teamId, eventId]);
+  }, [teamId, eventId]);
 
   const handleCustomChange = (id: string, value: any) => {
     setCustomResponses(prev => ({ ...prev, [id]: value }));
@@ -55,17 +62,20 @@ function RegistrationForm() {
     if (!formData.name || !formData.email || isSubmitting) return;
     
     setIsSubmitting(true);
-    const success = await addRegistration(teamId as string, eventId as string, {
-      ...formData,
-      responses: customResponses
-    });
-    
-    if (success) {
+    try {
+      const response = await fetch('/api/public/event-registration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamId, eventId, ...formData, responses: customResponses }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Registration failed.');
       setSubmitted(true);
-    } else {
-      alert("Failed to register. Please try again or contact the team organizer.");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to register. Please try again or contact the team organizer.');
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   };
 
   if (loading) return (
@@ -114,7 +124,7 @@ function RegistrationForm() {
           <div className="space-y-3 bg-muted/30 p-4 rounded-2xl">
             <div className="flex items-center gap-3 text-sm font-bold">
               <Clock className="h-4 w-4 text-primary" />
-              <span>{new Date(event.date).toLocaleDateString()} @ {event.startTime}</span>
+              <span>{event.date ? new Date(event.date).toLocaleDateString() : 'Date to be announced'} @ {event.startTime}</span>
             </div>
             <div className="flex items-center gap-3 text-sm font-bold">
               <MapPin className="h-4 w-4 text-primary" />

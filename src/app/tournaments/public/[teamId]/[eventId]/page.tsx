@@ -3,13 +3,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { useFirestore } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Trophy, CalendarDays, MapPin, Clock, Loader2, CheckCircle2, Shield } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { format } from 'date-fns';
+import { PortalStatus } from '@/components/public/PortalStatus';
 
 function calculateTournamentStandings(teams: string[], games: any[]) {
   const standings = teams.reduce((acc, team) => {
@@ -44,41 +44,12 @@ function calculateTournamentStandings(teams: string[], games: any[]) {
 
 export default function PublicSpectatorHub() {
   const { teamId, eventId } = useParams();
-  const db = useFirestore();
-  const [event, setEvent] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function loadEvent() {
-      if (!teamId || !eventId) return;
-      try {
-        const snap = await getDoc(doc(db, 'teams', teamId as string, 'events', eventId as string));
-        if (snap.exists()) {
-          setEvent({ id: snap.id, ...snap.data() });
-        }
-      } catch (e) {
-        console.error("Hub Load Error:", e);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadEvent();
-  }, [db, teamId, eventId]);
+  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
+  const { data: event, isLoading: loading, error, status, retry } = usePublicPortal<any>(portalUrl);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-muted/30"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
-  if (!event || !event.isTournamentPaid) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-muted/30">
-        <BrandLogo variant="light-background" className="h-10 w-40 mb-8" />
-        <Card className="max-w-md w-full text-center p-10 rounded-[2.5rem] shadow-2xl border-none">
-          <Shield className="h-12 w-12 text-primary/20 mx-auto mb-4" />
-          <h2 className="text-2xl font-black uppercase tracking-tight">Hub Not Active</h2>
-          <p className="text-muted-foreground mt-2 font-medium">The public spectator hub is only available for Elite Tournaments. Please contact the tournament organizer.</p>
-        </Card>
-      </div>
-    );
-  }
+  if (!event || !event.isTournament) return <PortalStatus status={status ?? (event ? 404 : null)} message={error} onRetry={retry} title={status === 404 || event ? 'Hub Not Active' : undefined} />;
 
   const standings = calculateTournamentStandings(event.tournamentTeams || [], event.tournamentGames || []);
   const groupedGames = event.tournamentGames?.reduce((acc: any, game: any) => {

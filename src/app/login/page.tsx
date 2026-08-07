@@ -15,6 +15,7 @@ import { toast } from '@/hooks/use-toast';
 import BrandLogo from '@/components/BrandLogo';
 import Image from 'next/image';
 import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap, Eye, EyeOff } from 'lucide-react';
+import { establishSession, signOutWithSession } from '@/lib/client-session';
 
 function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
   return Promise.race([
@@ -48,7 +49,16 @@ export default function LoginPage() {
   React.useEffect(() => {
     if (!isUserLoading && user) {
       const fetchRole = async () => {
-        const returnPath = sessionStorage.getItem('squad_return_path');
+        try {
+          await establishSession(user);
+        } catch {
+          await signOut(auth);
+          setIsLoading(false);
+          toast({ title: 'Session Expired', description: 'Please sign in again to continue.', variant: 'destructive' });
+          return;
+        }
+        const requestedPath = new URLSearchParams(window.location.search).get('returnTo');
+        const returnPath = requestedPath || sessionStorage.getItem('squad_return_path');
         if (returnPath?.startsWith('/') && !returnPath.startsWith('//')) {
           sessionStorage.removeItem('squad_return_path');
           router.push(returnPath);
@@ -81,7 +91,7 @@ export default function LoginPage() {
       };
       fetchRole();
     }
-  }, [user, isUserLoading, db, router]);
+  }, [user, isUserLoading, db, router, auth]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,7 +167,7 @@ export default function LoginPage() {
     setIsDemoLoading(true);
     try {
       // Clear current session first to prevent state pollution
-      await signOut(auth);
+      await signOutWithSession(auth);
       // Brief delay to ensure auth state clean
       await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -166,7 +176,8 @@ export default function LoginPage() {
       localStorage.removeItem('sf_session_team_id');
       sessionStorage.removeItem('squad_demo_start_time');
       
-      await signInAnonymously(auth);
+      const credential = await signInAnonymously(auth);
+      await establishSession(credential.user);
       
       // Use window.location.replace to bypass internal router cache 
       // and ensure DashboardLayout initializes with fresh demo parameters

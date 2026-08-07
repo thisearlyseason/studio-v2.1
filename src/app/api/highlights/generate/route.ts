@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from "@google/genai";
 import { verifyFirebaseToken } from '@/lib/api-auth';
+import {
+  enforceUserRateLimit,
+  readJsonBodyWithLimit,
+  RequestBodyError,
+} from '@/lib/server-request-guards';
+import { parseHighlightGenerateBody } from '@/lib/highlight-request-security';
+import { readResponseTextWithLimit } from '@/lib/public-network-url';
 
 /**
  * TEXT-ONLY FALLBACK route — used when only a URL is provided (no video upload).
@@ -17,11 +24,11 @@ export async function POST(req: NextRequest) {
   if (authResult instanceof NextResponse) return authResult;
 
   try {
-    const { videoUrl, prompt, videoDuration } = await req.json();
+    const limited = await enforceUserRateLimit(authResult.uid, 'highlight-generate', 20, 60 * 60 * 1000);
+    if (limited) return limited;
 
-    if (!videoUrl) {
-      return NextResponse.json({ error: 'Video URL is required' }, { status: 400 });
-    }
+    const body = await readJsonBodyWithLimit<unknown>(req, 20_000);
+    const { videoUrl, prompt, videoDuration } = parseHighlightGenerateBody(body);
 
     const apiKey = process.env.STRAICO_API_KEY;
     if (!apiKey) {
@@ -66,6 +73,8 @@ Format: [{"startTime": number, "endTime": number, "title": string, "description"
     // --- ATTEMPT 1: Straico ---
     for (const modelId of MODELS_TO_TRY) {
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25_000);
         const res = await fetch(STRAICO_ENDPOINT, {
           method: 'POST',
           headers: {
@@ -76,15 +85,17 @@ Format: [{"startTime": number, "endTime": number, "title": string, "description"
             models: [modelId],
             messages: [{ role: 'user', content: aiPrompt }],
           }),
+          signal: controller.signal,
         });
+        clearTimeout(timeout);
 
         if (!res.ok) {
-          const errText = await res.text();
+          const errText = await readResponseTextWithLimit(res, 1_000_000);
           lastError = errText;
           continue;
         }
 
-        const json = await res.json();
+        const json = JSON.parse(await readResponseTextWithLimit(res, 1_000_000));
         const content =
           json?.data?.completions?.[modelId]?.completion?.choices?.[0]?.message?.content;
 
@@ -132,6 +143,9 @@ Format: [{"startTime": number, "endTime": number, "title": string, "description"
       throw new Error('Failed to parse AI response as structured JSON.');
     }
   } catch (err: any) {
+    if (err instanceof RequestBodyError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[Highlights Fallback Error]:', err);
     return NextResponse.json({ error: err.message || 'Analysis Failed' }, { status: 500 });
   }

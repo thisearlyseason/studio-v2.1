@@ -97,6 +97,7 @@ import {
 } from "@/components/ui/dialog";
 import BrandLogo from '@/components/BrandLogo';
 import { BetaNotificationBanner } from '@/components/layout/BetaNotificationBanner';
+import TimeOutLauncher from '@/components/time-out/TimeOutLauncher';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   AlertDialog,
@@ -109,8 +110,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { signOut } from 'firebase/auth';
 import { useAuth } from '@/firebase';
+import { signOutWithSession } from '@/lib/client-session';
 import { toast } from '@/hooks/use-toast';
 import {
   Tooltip,
@@ -559,7 +560,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await signOutWithSession(auth);
       router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
@@ -913,6 +914,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="md:hidden"><BrandLogo variant="light-background" className="h-6 w-28" /></div>
               <div className="flex items-center gap-2 md:gap-3">
                 {isStaff && <CreateAlertButton />}
+                <TimeOutLauncher />
                 <AlertsHistoryDialog>
                   <Button variant="ghost" size="icon" className="h-10 w-10 md:h-11 md:w-11 rounded-2xl hover:bg-primary/5 text-foreground relative transition-all active:scale-95">
                     <Bell className="h-5 w-5" />

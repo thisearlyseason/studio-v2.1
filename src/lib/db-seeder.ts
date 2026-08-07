@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { generateTournamentSchedule } from '@/lib/scheduler-utils';
 import { format, parseISO } from 'date-fns';
+import { getPlanTeamLimit } from '@/lib/plan-catalog';
 
 /**
  * BatchHelper — safely accumulates Firestore writes and auto-commits every
@@ -587,14 +588,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   };
 
   const plan_type = planTypeMap[planId] || 'free';
-  const teamLimitMap: Record<string, number> = {
-    'free': 1,
-    'team': 1,
-    'elite': 8,
-    'league': 15,
-    'school': 10
-  };
-  const team_limit = teamLimitMap[plan_type] || 1;
+  const team_limit = getPlanTeamLimit(plan_type);
 
   const userRole = isSchoolDemo ? 'admin' : (isParentDemo ? 'parent' : (isPlayerDemo ? 'adult_player' : (isLeagueDemo ? 'league_creator' : 'coach')));
   const pos = isParentDemo ? 'Parent' : (isPlayerDemo ? 'Player' : (isSchoolDemo ? 'Athletic Director' : (isLeagueDemo ? 'League Creator' : 'Coach')));
@@ -630,6 +624,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         subscription_status: 'active',
         createdAt: now,
         isDemo: true,
+        demoOwnerUserId: userId,
         seenAlertIds: [],
         avatarUrl: `https://picsum.photos/seed/${userId}/150/150`,
         clubDescription: isEliteDemo ? 'Precision performance at a professional scale.' : (isSchoolDemo ? 'Secondary Athletic Program Command' : undefined),
@@ -773,6 +768,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                 planId: 'team',
                 sport: 'Basketball',
                 isDemo: true,
+                demoOwnerUserId: userId,
                 type: 'youth',
                 leagueId: leagueId,
                 createdAt: now,
@@ -832,7 +828,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                     avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=guestplayer`,
                     sports: ['Basketball'],
                     primaryPosition: 'Player',
-                    isDemo: true
+                    isDemo: true,
+                    demoOwnerUserId: userId,
                 }), { merge: true });
             }
 
@@ -881,6 +878,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         batch.set(doc(db, 'players', juniorId), clean({
             id: juniorId, firstName: 'Junior', lastName: 'Guest', isMinor: true, parentId: userId, userId: null,
             dateOfBirth: juniorDob, isDemo: true,
+            demoOwnerUserId: userId,
             hasLogin: false, createdAt: now, joinedTeamIds: [strikerId], ageGroup: 'U10', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=junior',
             sports: ['Basketball'], primaryPosition: 'Point Guard'
         }));
@@ -891,13 +889,14 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         batch.set(doc(db, 'players', alexId), clean({
             id: alexId, firstName: 'Alex', lastName: 'Guest', isMinor: true, parentId: userId, userId: alexId,
             dateOfBirth: alexDob, isDemo: true,
+            demoOwnerUserId: userId,
             hasLogin: true, pendingInviteEmail: alexEmail, createdAt: now, joinedTeamIds: [lakerId], ageGroup: 'U17', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=alex',
             sports: ['Basketball', 'Soccer', 'Cross Country'], primaryPosition: 'Striker'
         }));
 
         // Mock teen user
         batch.set(doc(db, 'users', alexId), clean({
-            id: alexId, fullName: 'Alex Guest', email: alexEmail, role: 'youth_player', isDemo: true, createdAt: now
+            id: alexId, fullName: 'Alex Guest', email: alexEmail, role: 'youth_player', isDemo: true, demoOwnerUserId: userId, createdAt: now
         }), { merge: true });
 
         // Link kids to teams as members
@@ -1128,7 +1127,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         name: 'Springfield High School',
         teamName: 'Springfield High School',
         code: instCode, teamCode: instCode, inviteCode: instCode,
-        ownerUserId: userId, isPro: true, planId: plan_type,
+        ownerUserId: userId, demoOwnerUserId: userId, isPro: true, planId: plan_type,
         sport: 'Basketball', isDemo: true,
         type: 'school',         // AD / institution level — NOT a playable squad
         schoolId: instId,       // self-reference so squads can link back
@@ -1167,7 +1166,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             name,       // canonical field used by Team type
             teamName: name, // legacy alias kept for compatibility
             code: uniqueCode, teamCode: uniqueCode, inviteCode: uniqueCode,
-            ownerUserId: userId, isPro: isProTier || isSchoolDemo, planId: plan_type, sport: isSchoolDemo ? 'Basketball' : 'Multi-Sport', 
+            ownerUserId: userId, demoOwnerUserId: userId, isPro: isProTier || isSchoolDemo, planId: plan_type, sport: isSchoolDemo ? 'Basketball' : 'Multi-Sport',
             isDemo: true, type: teamType, schoolId, leagueId: !isParentDemo ? leagueId : undefined,
             createdAt: now, heroImageUrl: `https://picsum.photos/seed/${teamId}hero/1200/400`,
             teamLogoUrl: `https://picsum.photos/seed/${teamId}logo/200/200`
@@ -1192,6 +1191,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
         const data = GET_DEMO_DATA(teamId, userId, variant, name, i);
         
+        const showcasePlayerVideos: Array<{ playerId: string; videoId: string; data: Record<string, unknown> }> = [];
+
         // Seed Roster Members & Player Profiles
         data.members.forEach(m => {
             batch.set(doc(db, 'teams', teamId, 'members', m.id), clean({ ...m, teamId, joinedAt: now, isDemo: true }));
@@ -1204,6 +1205,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                     lastName: m.name.split(' ')[1] || 'Guest',
                     isMinor: true,
                     isDemo: true,
+                    demoOwnerUserId: userId,
                     dateOfBirth: new Date(nowObj.getFullYear() - 15, 0, 1).toISOString().split('T')[0],
                     hasLogin: false,
                     createdAt: now,
@@ -1218,7 +1220,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
                 // Add recruiting content to one of the main players to showcase recruiting portal
                 if (m.name === 'Alex Rivera') {
-                    batch.set(doc(db, 'players', m.playerId, 'videos', `vid_${m.id}`), {
+                    showcasePlayerVideos.push({
+                      playerId: m.playerId,
+                      videoId: `vid_${m.id}`,
+                      data: {
                         id: `vid_${m.id}`,
                         title: 'Championship Winning Goal',
                         url: 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
@@ -1227,9 +1232,16 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                         createdAt: yesterday,
                         isPublic: true,
                         isDemo: true
+                      },
                     });
                 }
             }
+        });
+
+        // Player subcollections are authorized from the committed parent player doc.
+        await batch.flush();
+        showcasePlayerVideos.forEach(video => {
+          batch.set(doc(db, 'players', video.playerId, 'videos', video.videoId), video.data);
         });
 
         data.events.forEach(e => batch.set(doc(db, 'teams', teamId, 'events', e.id), clean({ ...e, teamId, isDemo: true })));

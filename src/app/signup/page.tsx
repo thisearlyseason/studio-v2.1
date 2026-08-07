@@ -20,6 +20,8 @@ import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { PRICING_CONFIG } from '@/lib/pricing';
+import { PLAN_TEAM_LIMITS } from '@/lib/plan-catalog';
+import { establishSession } from '@/lib/client-session';
 
 type RegTarget = 'self' | 'child' | 'coach' | 'league_creator' | 'school_ad' | null;
 type PlanChoice = 'starter' | 'pro_team' | 'elite_teams' | 'elite_league' | 'school' | null;
@@ -80,7 +82,7 @@ const PLAN_DEFS: Record<string, {
     monthlyPriceId: '', annualPriceId: '',
     desc: 'Core coordination tools, no commitment',
     features: ['1 Team Hub', 'Scheduling & Chats', 'Score Tracking'],
-    teamLimit: 1,
+    teamLimit: PLAN_TEAM_LIMITS.free,
   },
   pro_team: {
     id: 'pro_team', label: 'Pro Team',
@@ -89,7 +91,7 @@ const PLAN_DEFS: Record<string, {
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'team')?.annualPriceId  || '',
     desc: 'Championship tools for one competitive team',
     features: ['1 Pro Team Hub', 'Unlimited Athletes', 'Digital Waivers & Payments', 'Advanced Analytics'],
-    highlight: true, trial: true, teamLimit: 1, savingsLabel: 'Save ~17%',
+    highlight: true, trial: true, teamLimit: PLAN_TEAM_LIMITS.team, savingsLabel: 'Save ~17%',
   },
   elite_teams: {
     id: 'elite_teams', label: 'Elite Teams',
@@ -98,7 +100,7 @@ const PLAN_DEFS: Record<string, {
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'elite')?.annualPriceId  || '',
     desc: 'Multi-squad management for growing clubs',
     features: ['Up to 8 Pro Team Hubs', 'Master Club Dashboard', 'Staff Role Management', 'League & Tournament Architect'],
-    highlight: true, trial: true, teamLimit: 8, savingsLabel: 'Save ~22%',
+    highlight: true, trial: true, teamLimit: PLAN_TEAM_LIMITS.elite, savingsLabel: 'Save ~22%',
   },
   elite_league: {
     id: 'elite_league', label: 'Elite League',
@@ -107,7 +109,7 @@ const PLAN_DEFS: Record<string, {
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'league')?.annualPriceId  || '',
     desc: 'Institutional scale for series and leagues',
     features: ['Up to 18 Pro Team Hubs', 'League Series Architect', 'Global Tournament Hosting', 'Advanced Standings & Reporting'],
-    trial: true, teamLimit: 18, savingsLabel: 'Save ~17%',
+    trial: true, teamLimit: PLAN_TEAM_LIMITS.league, savingsLabel: 'Save ~17%',
   },
   school: {
     id: 'school', label: 'Schools Plan',
@@ -116,7 +118,7 @@ const PLAN_DEFS: Record<string, {
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'school')?.annualPriceId  || '',
     desc: '15 squads included · add more anytime at the lowest per-squad rate on the platform',
     features: ['15 Pro Squad Hubs Included', 'Athletic Director Dashboard', 'Academic Eligibility Sync', 'Extra squads at school-exclusive discount'],
-    highlight: true, trial: true, teamLimit: 15, savingsLabel: 'Save ~17%',
+    highlight: true, trial: true, teamLimit: PLAN_TEAM_LIMITS.school, savingsLabel: 'Save ~17%',
   },
 };
 
@@ -198,6 +200,7 @@ export default function SignupPage() {
         activePlanId: 'starter_squad',
         proTeamLimit: 0,
       });
+      await establishSession(user);
 
       // Adult player: create matching player record
       if (regTarget === 'self') {

@@ -1,4 +1,5 @@
 import { RSSArticle, RSSFeed, RSS_FILTER_BLOCKLIST } from './sports-hub-types';
+import { fetchPublicUrl, readResponseTextWithLimit } from './public-network-url';
 
 export interface ParsedRSSItem {
   title: string;
@@ -11,23 +12,22 @@ export interface ParsedRSSItem {
 
 // Normalize any feed format (RSS 2.0, Atom, JSON Feed) into ParsedRSSItem[]
 export async function fetchAndParseRSSFeed(feedUrl: string): Promise<ParsedRSSItem[]> {
-  const response = await fetch(feedUrl, {
+  const response = await fetchPublicUrl(feedUrl, {
     headers: { 'User-Agent': 'TheSquad-SportsHub/1.0', 'Accept': 'application/rss+xml, application/xml, application/json, text/xml' },
-    next: { revalidate: 3600 } // Cache for 1 hour
   });
 
   if (!response.ok) throw new Error(`Feed fetch failed: ${response.status}`);
 
   const contentType = response.headers.get('content-type') || '';
   
+  const content = await readResponseTextWithLimit(response);
   if (contentType.includes('json')) {
     // JSON Feed
-    const json = await response.json();
+    const json = JSON.parse(content);
     return parseJSONFeed(json, feedUrl);
   } else {
     // XML (RSS or Atom)
-    const text = await response.text();
-    return parseXMLFeed(text, feedUrl);
+    return parseXMLFeed(content, feedUrl);
   }
 }
 
@@ -134,7 +134,7 @@ export async function discoverRSSFeed(websiteUrl: string): Promise<string | null
   
   for (const candidate of candidates) {
     try {
-      const res = await fetch(candidate, { method: 'HEAD', headers: { 'User-Agent': 'TheSquad-SportsHub/1.0' } });
+      const res = await fetchPublicUrl(candidate, { method: 'HEAD', headers: { 'User-Agent': 'TheSquad-SportsHub/1.0' } });
       if (res.ok) {
         const ct = res.headers.get('content-type') || '';
         if (ct.includes('xml') || ct.includes('rss') || ct.includes('atom') || ct.includes('json')) {
@@ -148,9 +148,9 @@ export async function discoverRSSFeed(websiteUrl: string): Promise<string | null
   
   // Try parsing the HTML to find <link rel="alternate" type="application/rss+xml">
   try {
-    const res = await fetch(base, { headers: { 'User-Agent': 'TheSquad-SportsHub/1.0' } });
+    const res = await fetchPublicUrl(base, { headers: { 'User-Agent': 'TheSquad-SportsHub/1.0' } });
     if (res.ok) {
-      const html = await res.text();
+      const html = await readResponseTextWithLimit(res);
       const match = html.match(/<link[^>]+type=["']application\/(rss|atom)\+xml["'][^>]+href=["']([^"']+)["']/i)
         || html.match(/<link[^>]+href=["']([^"']+)["'][^>]+type=["']application\/(rss|atom)\+xml["']/i);
       if (match) {

@@ -103,6 +103,7 @@ import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { RASTER_IMAGE_ACCEPT, validateRasterImage } from '@/lib/storage-upload-policy';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -121,6 +122,7 @@ import { StripeConnectSetup } from '@/components/finance/StripeConnectSetup';
 import { PaymentItemsManager } from '@/components/finance/PaymentItemsManager';
 import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { useAuth } from '@/firebase';
+import { isRepairableAthlete } from '@/lib/player-link-repair';
 
 const DEFAULT_PROTOCOLS = [
   { id: 'default_medical', title: 'Medical Clearance', type: 'waiver' },
@@ -844,7 +846,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo, toggleRecruitingProfile,
     updatePlayerStat, getStaffEvaluation, storage, updateMember
   } = useTeam();
-  const { user } = useTeam();
+  const { user, activeTeam: currentSquad } = useTeam();
+  const auth = useAuth();
   const [skillInput, setSkillInput] = useState('');
   const [achievementInput, setAchievementInput] = useState('');
 
@@ -884,6 +887,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isRepairingIdentity, setIsRepairingIdentity] = useState(false);
   const [ffmpegPhase, setFfmpegPhase] = useState<'extracting' | 'uploading' | 'analyzing' | null>(null);
   const [deletedStatIds, setDeletedStatIds] = useState<string[]>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -927,6 +931,30 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const repairIdentityLink = async () => {
+    if (!currentSquad?.id || !auth) return;
+    setIsRepairingIdentity(true);
+    try {
+      const token = await getAuthToken(auth);
+      const response = await fetch('/api/teams/repair-player-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: currentSquad.id, memberId: member.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to create the player profile.');
+      const playerId = result.repairs?.[0]?.playerId;
+      if (!playerId) throw new Error('The athlete did not need repair, or is no longer active.');
+      await updateMember(member.id, { playerId });
+      toast({ title: 'Player profile linked', description: `${member.name} is ready for Talent Center.` });
+      window.location.reload();
+    } catch (error: any) {
+      toast({ title: 'Profile link repair failed', description: error.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setIsRepairingIdentity(false);
+    }
+  };
 
   // EFFECTIVE SEEKING LOGIC: Ensures the video always jumps to the correct highlight/timestamp
   useEffect(() => {
@@ -1114,6 +1142,12 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !member.playerId) return;
+    const validationError = validateRasterImage(file);
+    if (validationError) {
+      toast({ title: "Invalid Image", description: validationError, variant: "destructive" });
+      e.target.value = '';
+      return;
+    }
     
     try {
       toast({ title: "Uploading Photo", description: "Adding archival asset to pack..." });
@@ -1234,6 +1268,12 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
     try {
       let res: Response;
+      const token = await getAuthToken(auth);
+      if (!token) throw new Error('Your session expired. Please sign in again.');
+      const authenticatedJsonHeaders = {
+        'Content-Type': 'application/json',
+        ...authHeader(token),
+      };
 
       if (aiSourceFile && aiSourceDuration) {
         // ── Step 1: Extract frames via FFmpeg WASM / Canvas ──────────────
@@ -1271,7 +1311,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             try {
               const uploadRes = await fetch('/api/highlights/upload-frame', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authenticatedJsonHeaders,
                 body: JSON.stringify({ base64: frame.base64 }),
               });
 
@@ -1302,10 +1342,12 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         try {
           res = await fetch('/api/highlights/analyze', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: authenticatedJsonHeaders,
             body: JSON.stringify({
               frameUrls: frameUrls.length > 0 ? frameUrls : undefined,
-              frames: frameUrls.length === 0 ? frames : undefined,
+              frames: frameUrls.length === 0
+                ? frames.map(frame => ({ timestamp: frame.timestamp }))
+                : undefined,
               prompt: aiVideoPrompt,
               videoDuration: aiSourceDuration,
             }),
@@ -1340,7 +1382,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         });
         res = await fetch('/api/highlights/generate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authenticatedJsonHeaders,
           body: JSON.stringify({ videoUrl: aiSelectedVideoUrl, prompt: aiVideoPrompt, videoDuration: aiSourceDuration }),
         });
       }
@@ -1817,9 +1859,12 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         <div>
           <h3 className="text-xl font-black uppercase">Identity Link Missing</h3>
           <p className="text-xs font-bold uppercase tracking-widest mt-1 text-muted-foreground max-w-xs mx-auto">
-            This member does not have a linked player profile. Ensure they joined via a valid recruitment link.
+            This roster record predates its player profile. Create the secure link to use Talent Center.
           </p>
         </div>
+        <Button onClick={repairIdentityLink} disabled={isRepairingIdentity} className="rounded-xl font-black uppercase text-[10px] tracking-widest">
+          {isRepairingIdentity ? <><Loader2 className="h-4 w-4 animate-spin" /> Linking...</> : <><Link2 className="h-4 w-4" /> Create Player Profile</>}
+        </Button>
       </div>
     );
   }
@@ -1849,12 +1894,10 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "Asset Oversized", description: "Image exceeds 5MB. Please optimize the photo.", variant: "destructive" });
-      return;
-    }
-    if (!file.type.startsWith('image/')) {
-      toast({ title: "Images Only", description: "Only image files are allowed for the avatar upload.", variant: "destructive" });
+    const validationError = validateRasterImage(file);
+    if (validationError) {
+      toast({ title: "Invalid Image", description: validationError, variant: "destructive" });
+      e.target.value = '';
       return;
     }
 
@@ -1906,8 +1949,10 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "Asset Oversized", description: "Image exceeds 5MB threshold.", variant: "destructive" });
+    const validationError = validateRasterImage(file);
+    if (validationError) {
+      toast({ title: "Invalid Image", description: validationError, variant: "destructive" });
+      e.target.value = '';
       return;
     }
     const reader = new FileReader();
@@ -2757,7 +2802,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     <div className="space-y-2">
                        <Label className="text-[10px] font-black uppercase ml-1">Avatar Photo <span className="opacity-40 normal-case">(Image only, max 5MB)</span></Label>
                        <div className="flex gap-2">
-                         <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+                         <input type="file" ref={imageInputRef} className="hidden" accept={RASTER_IMAGE_ACCEPT} onChange={handleImageUpload} />
                          <Button type="button" variant="outline" className="h-10 border-2 rounded-xl text-[8px] font-black uppercase transition-all hover:bg-primary hover:text-white flex-1" onClick={() => imageInputRef.current?.click()}>
                            <Camera className="h-4 w-4 mr-2 text-primary" /> Upload Photo
                          </Button>
@@ -3129,7 +3174,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                         <p className="text-[10px] font-black uppercase tracking-widest text-primary opacity-60">Scouting Photo Gallery</p>
                         <p className="text-[8px] font-bold text-muted-foreground uppercase">Upload up to 5 strategic photos for recruiters (Max 5MB each).</p>
                       </div>
-                      <input type="file" id="gallery-upload" className="hidden" accept="image/*" onChange={handleGalleryUpload} disabled={photos.length >= 5} />
+                      <input type="file" id="gallery-upload" className="hidden" accept={RASTER_IMAGE_ACCEPT} onChange={handleGalleryUpload} disabled={photos.length >= 5} />
                       <Button type="button" size="sm" variant="outline" className="h-10 px-6 font-black uppercase text-[10px] rounded-xl border-2" onClick={() => document.getElementById('gallery-upload')?.click()} disabled={photos.length >= 5}>
                         <Camera className="h-4 w-4 mr-2" /> Add Photo
                       </Button>
@@ -4367,6 +4412,7 @@ function StaffEvalPanel({
 export default function CoachesCornerPage() {
   const router = useRouter();
   const { activeTeam, isStaff, isPro, isStarter, createTeamDocument, updateTeamDocument, deleteTeamDocument, db, members, createAlert, isSchoolMode, user, teams, getLeagueMembers, updateMember, signGlobalWaiverAsCoach } = useTeam();
+  const auth = useAuth();
 
   const handleUpdateMemberField = async (memberId: string, field: string, value: any) => {
     await updateMember(memberId, { [field]: value });
@@ -4409,6 +4455,7 @@ export default function CoachesCornerPage() {
 
   const [activeTab, setActiveTab] = useState('recruiting');
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [isRepairingPlayerLinks, setIsRepairingPlayerLinks] = useState(false);
   const [editingWaiver, setEditingWaiver] = useState<TeamDocument | null>(null);
 
   const docsQuery = useMemoFirebase(() => (activeTeam && db) ? query(collection(db, 'teams', activeTeam.id, 'documents'), orderBy('createdAt', 'desc')) : null, [activeTeam?.id, db]);
@@ -4459,6 +4506,31 @@ export default function CoachesCornerPage() {
   const customProtocols = useMemo(() => allDocuments?.filter(d => !defaultDocIds.includes(d.id) && d.type === 'waiver' && !d.isClubMaster) || [], [allDocuments, defaultDocIds]);
 
   const selectedMember = useMemo(() => members.find(m => m.id === selectedMemberId), [members, selectedMemberId]);
+  const missingPlayerLinks = useMemo(
+    () => members.filter(isRepairableAthlete),
+    [members]
+  );
+
+  const repairMissingPlayerLinks = async () => {
+    if (!activeTeam?.id || !auth || missingPlayerLinks.length === 0) return;
+    setIsRepairingPlayerLinks(true);
+    try {
+      const token = await getAuthToken(auth);
+      const response = await fetch('/api/teams/repair-player-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: activeTeam.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to repair player profiles.');
+      toast({ title: 'Athlete identities repaired', description: `${result.repaired} roster profile${result.repaired === 1 ? '' : 's'} linked.` });
+      window.location.reload();
+    } catch (error: any) {
+      toast({ title: 'Bulk profile repair failed', description: error.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setIsRepairingPlayerLinks(false);
+    }
+  };
 
   const vRef = useMemoFirebase(() => db && activeTeam?.id ? query(collection(db, 'teams', activeTeam.id, 'volunteers'), orderBy('date', 'desc')) : null, [db, activeTeam?.id]);
   const { data: volunteerOpps } = useCollection(vRef);
@@ -4608,6 +4680,17 @@ export default function CoachesCornerPage() {
 
       <Tabs value={activeTab} className="mt-0">
         <TabsContent value="recruiting" className="space-y-8 mt-0 animate-in fade-in duration-500">
+          {missingPlayerLinks.length > 0 && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-amber-900">{missingPlayerLinks.length} athlete profile{missingPlayerLinks.length === 1 ? '' : 's'} need linking</p>
+                <p className="text-[10px] font-bold text-amber-700 mt-1">Legacy roster records can be repaired safely without replacing athlete data.</p>
+              </div>
+              <Button onClick={repairMissingPlayerLinks} disabled={isRepairingPlayerLinks} className="shrink-0 rounded-xl font-black uppercase text-[10px] tracking-widest bg-amber-600 hover:bg-amber-700 text-white">
+                {isRepairingPlayerLinks ? <><Loader2 className="h-4 w-4 animate-spin" /> Repairing...</> : <><Link2 className="h-4 w-4" /> Repair athlete links</>}
+              </Button>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8">
             <aside className="space-y-6 md:col-span-1">
               <div className="flex items-center gap-2 px-2"><Users className="h-4 w-4 text-primary" /><h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Select Athlete</h3></div>
@@ -4765,13 +4848,13 @@ export default function CoachesCornerPage() {
                      </div>
                      <div className="bg-white/5 rounded-2xl h-14 flex items-center px-4 border border-white/10 flex-1 overflow-hidden">
                        <span className="text-[10px] font-bold text-primary/60 font-mono truncate">
-                         {typeof window !== 'undefined' ? `${window.location.origin}/register/squad/${activeTeam?.id}` : `/register/squad/${activeTeam?.id}`}
+                         {typeof window !== 'undefined' ? `${window.location.origin}/register/squad/${activeTeam?.id}?code=${encodeURIComponent(activeTeam?.teamCode || activeTeam?.code || '')}` : `/register/squad/${activeTeam?.id}`}
                        </span>
                      </div>
                      <Button
                        className="h-14 w-14 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 shrink-0 transition-transform active:scale-95"
                        onClick={() => {
-                         const link = `${window.location.origin}/register/squad/${activeTeam?.id}`;
+                         const link = `${window.location.origin}/register/squad/${activeTeam?.id}?code=${encodeURIComponent(activeTeam?.teamCode || activeTeam?.code || '')}`;
                          navigator.clipboard.writeText(link);
                          toast({ title: "Link Copied", description: "Direct join link is ready to share." });
                        }}
@@ -5604,5 +5687,3 @@ function WaiverArchive() {
     </div>
   );
 }
-
-

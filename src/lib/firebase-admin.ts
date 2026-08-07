@@ -13,17 +13,27 @@
  *   1. FIREBASE_SERVICE_ACCOUNT_JSON env var (full service-account JSON string OR base64)
  *   2. Application Default Credentials (GOOGLE_APPLICATION_CREDENTIALS / GCP metadata)
  */
-import * as admin from 'firebase-admin';
+import {
+  cert,
+  getApps,
+  initializeApp,
+  type App,
+  type ServiceAccount,
+} from 'firebase-admin/app';
+import { getAuth, type Auth } from 'firebase-admin/auth';
+import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { getMessaging, type Messaging } from 'firebase-admin/messaging';
 
-let _app: admin.app.App | null = null;
-let _db: admin.firestore.Firestore | null = null;
+let _app: App | null = null;
+let _db: Firestore | null = null;
 
-function initAdminApp(): admin.app.App {
+function initAdminApp(): App {
   if (_app) return _app;
 
   // Return existing app if already initialized by another module
-  if (admin.apps.length > 0) {
-    _app = admin.apps[0]!;
+  const apps = getApps();
+  if (apps.length > 0) {
+    _app = apps[0]!;
     return _app;
   }
 
@@ -66,8 +76,8 @@ function initAdminApp(): admin.app.App {
       );
     }
 
-    _app = admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+    _app = initializeApp({
+      credential: cert(serviceAccount as ServiceAccount),
     });
     console.info('[firebase-admin] Initialized with service account credentials.');
   } else {
@@ -76,31 +86,39 @@ function initAdminApp(): admin.app.App {
       '[firebase-admin] FIREBASE_SERVICE_ACCOUNT_JSON not set — using Application Default Credentials.',
       'This will FAIL on Vercel unless you set the env var.'
     );
-    _app = admin.initializeApp();
+    _app = initializeApp();
   }
 
   return _app;
 }
 
-function getDb(): admin.firestore.Firestore {
+function getDb(): Firestore {
   if (_db) return _db;
-  _db = initAdminApp().firestore();
+  _db = getFirestore(initAdminApp());
   return _db;
 }
 
 /**
  * Explicitly initializes the Firebase Admin SDK.
- * Call this before using admin.auth() in API routes that don't touch adminDb first.
+ * Call this before using an Admin service in code that does not touch adminDb first.
  */
 export function ensureAdminInit(): void {
   initAdminApp();
+}
+
+export function getAdminAuth(): Auth {
+  return getAuth(initAdminApp());
+}
+
+export function getAdminMessaging(): Messaging {
+  return getMessaging(initAdminApp());
 }
 
 /**
  * Lazily-initialized Firestore Admin instance.
  * Accessing any property triggers initialization on first use, not at build time.
  */
-export const adminDb = new Proxy({} as admin.firestore.Firestore, {
+export const adminDb = new Proxy({} as Firestore, {
   get(_target, prop: PropertyKey) {
     const db = getDb();
     const value = (db as any)[prop];

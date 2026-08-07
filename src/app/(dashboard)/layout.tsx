@@ -13,7 +13,7 @@ import { useTeam } from '@/components/providers/team-provider';
 import { Loader2, Timer } from 'lucide-react';
 import { seedGuestDemoTeam } from '@/lib/db-seeder';
 import { useFirestore } from '@/firebase';
-import { signOut } from 'firebase/auth';
+import { signOutWithSession } from '@/lib/client-session';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -387,7 +387,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       setTimeLeft(remaining);
       if (remaining <= 0) {
         sessionStorage.removeItem(DEMO_START_KEY);
-        signOut(auth).then(() => window.location.href = `/login?reason=expired`);
+        signOutWithSession(auth).then(() => window.location.href = `/login?reason=expired`);
       }
     };
     checkSession();

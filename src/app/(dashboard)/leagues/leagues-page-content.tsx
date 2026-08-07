@@ -1563,7 +1563,12 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
 
   const handleSavePin = async () => {
     if (!activeLeague) return;
-    await updateLeaguePin(activeLeague.id, leaguePin);
+    const normalizedPin = leaguePin.trim();
+    if (normalizedPin.length < 4) {
+      toast({ title: "PIN Required", description: "Use at least 4 characters for scorekeeper access.", variant: "destructive" });
+      return;
+    }
+    await updateLeaguePin(activeLeague.id, normalizedPin);
     toast({ title: "Operations Key Updated" });
   };
 
@@ -2635,7 +2640,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   <p className="text-xs text-white/60 font-medium leading-relaxed italic">Required for public scorekeepers to post official results.</p>
                   <div className="flex items-center gap-2">
                     <Input 
-                      placeholder="NO PIN SET" 
+                      placeholder="SET 4+ CHARACTER PIN"
                       value={leaguePin} 
                       onChange={e => setLeaguePin(e.target.value)}
                       className="h-12 rounded-xl bg-white/10 border-white/20 text-white placeholder:text-white/20 font-black text-center tracking-[0.2em]"

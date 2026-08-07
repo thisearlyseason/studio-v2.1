@@ -2970,11 +2970,16 @@ function ScorekeeperCodeEditor({ event }: { event: any }) {
 
   const handleSave = async () => {
     if (!db || !event.teamId) return;
+    const normalizedCode = code.trim();
+    if (normalizedCode.length < 4) {
+      toast({ title: 'Code Required', description: 'Use at least 4 characters for scorekeeper access.', variant: 'destructive' });
+      return;
+    }
     setSaving(true);
     try {
       const { doc, updateDoc } = await import('firebase/firestore');
-      await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { scoringCode: code.trim() });
-      toast({ title: 'Scorekeeper Code Updated', description: code.trim() ? `Code is now active.` : 'Code cleared — portal is open access.' });
+      await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { scoringCode: normalizedCode });
+      toast({ title: 'Scorekeeper Code Updated', description: 'Score submissions now require this code.' });
     } catch {
       toast({ title: 'Update Failed', variant: 'destructive' });
     } finally {

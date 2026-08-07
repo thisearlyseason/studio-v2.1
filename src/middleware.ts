@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { isProtectedDashboardPath } from '@/lib/dashboard-route-policy'
  
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -27,6 +28,20 @@ export function middleware(request: NextRequest) {
     if (!isServerAction) {
       return new NextResponse('Method Not Allowed', { status: 405 })
     }
+  }
+
+  if (isProtectedDashboardPath(pathname)) {
+    const sessionCookie = request.cookies.get('__session')?.value
+    if (!sessionCookie) {
+      const loginUrl = new URL('/login', request.url)
+      loginUrl.searchParams.set('reason', 'session')
+      loginUrl.searchParams.set('returnTo', `${pathname}${request.nextUrl.search}`)
+      return NextResponse.redirect(loginUrl)
+    }
+
+    const requestHeaders = new Headers(request.headers)
+    requestHeaders.set('x-squad-pathname', pathname)
+    return NextResponse.next({ request: { headers: requestHeaders } })
   }
  
   return NextResponse.next()

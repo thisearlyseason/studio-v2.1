@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { verifyFirebaseToken } from '@/lib/api-auth';
+import { enforceUserRateLimit } from '@/lib/server-request-guards';
 
 /**
  * GET /api/stripe/connect/status
@@ -21,6 +22,8 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
+    const limited = await enforceUserRateLimit(auth.uid, 'stripe-connect-status', 120, 60 * 60 * 1000);
+    if (limited) return limited;
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('userId');
     const teamId = searchParams.get('teamId');
@@ -28,6 +31,9 @@ export async function GET(req: NextRequest) {
 
     if (!userId) {
       return NextResponse.json({ error: 'Missing userId.' }, { status: 400 });
+    }
+    if (!['user', 'hub'].includes(mode) || (teamId && (teamId.includes('/') || teamId.length > 200))) {
+      return NextResponse.json({ error: 'Invalid mode or teamId.' }, { status: 400 });
     }
 
     if (auth.uid !== userId) {

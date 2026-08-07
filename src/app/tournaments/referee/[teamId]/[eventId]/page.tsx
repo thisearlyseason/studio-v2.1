@@ -5,8 +5,8 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useFirestore, useUser } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { useUser } from '@/firebase';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { format, parseISO } from 'date-fns';
 import { 
   UserCheck, Calendar, MapPin, Clock, 
@@ -14,6 +14,7 @@ import {
   Loader2, AlertCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { PortalStatus } from '@/components/public/PortalStatus';
 
 interface RefereeGame {
   id: string;
@@ -41,7 +42,8 @@ interface EventData {
   title: string;
   date: string;
   endDate?: string;
-  refereePool?: TournamentReferee[];
+  referees?: TournamentReferee[];
+  activeReferee?: TournamentReferee | null;
   tournamentGames?: RefereeGame[];
   logoUrl?: string;
   location?: string;
@@ -49,28 +51,15 @@ interface EventData {
 
 export default function RefereePortalPage({ params: rawParams }: { params: Promise<{ teamId: string; eventId: string }> }) {
   const params = React.use(rawParams);
-  const db = useFirestore();
   const { user: firebaseUser } = useUser();
-  const [event, setEvent] = useState<EventData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [searchEmail, setSearchEmail] = useState('');
   const [confirmedEmail, setConfirmedEmail] = useState('');
 
-  React.useEffect(() => {
-    if (!db) return;
-    (async () => {
-      const snap = await getDoc(doc(db, 'teams', params.teamId, 'events', params.eventId));
-      if (snap.exists()) setEvent(snap.data() as EventData);
-      setLoading(false);
-    })();
-  }, [db, params.teamId, params.eventId]);
-
   // Determine which referee we're viewing as
   const activeEmail = firebaseUser?.email || confirmedEmail;
-  const activeRef = useMemo(() => {
-    if (!event?.refereePool || !activeEmail) return null;
-    return event.refereePool.find(r => r.email.toLowerCase() === activeEmail.toLowerCase()) ?? null;
-  }, [event, activeEmail]);
+  const portalUrl = `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(params.teamId)}&eventId=${encodeURIComponent(params.eventId)}${activeEmail ? `&refereeEmail=${encodeURIComponent(activeEmail)}` : ''}`;
+  const { data: event, isLoading: loading, error, status, retry } = usePublicPortal<EventData>(portalUrl);
+  const activeRef = event?.activeReferee || null;
 
   // Games assigned to this referee
   const myGames = useMemo(() => {
@@ -96,16 +85,7 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
     );
   }
 
-  if (!event) {
-    return (
-      <div className="min-h-screen bg-[#f5f5f3] flex items-center justify-center">
-        <div className="text-center space-y-3 opacity-40">
-          <AlertCircle className="h-12 w-12 mx-auto" />
-          <p className="font-black uppercase tracking-widest text-sm">Event not found</p>
-        </div>
-      </div>
-    );
-  }
+  if (!event) return <PortalStatus status={status} message={error} onRetry={retry} title={status === 404 ? 'Event Not Found' : undefined} />;
 
   return (
     <div className="min-h-screen bg-[#f5f5f3]">
@@ -140,7 +120,7 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
               )}
               <span className="flex items-center gap-1.5">
                 <Trophy className="h-3 w-3" />
-                {(event.refereePool || []).length} Official{(event.refereePool || []).length !== 1 ? 's' : ''} · {(event.tournamentGames || []).length} Matches
+                {(event.referees || []).length} Official{(event.referees || []).length !== 1 ? 's' : ''} · {(event.tournamentGames || []).length} Matches
               </span>
             </div>
           )}
@@ -190,13 +170,13 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
             </div>
 
             {/* Show all officials as a hint */}
-            {(event.refereePool || []).length > 0 && (
+            {(event.referees || []).length > 0 && (
               <div className="border-t pt-6 space-y-3">
                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
-                  Registered Officials ({(event.refereePool || []).length})
+                  Registered Officials ({(event.referees || []).length})
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {(event.refereePool || []).map((ref: TournamentReferee) => (
+                  {(event.referees || []).map((ref: TournamentReferee) => (
                     <Badge key={ref.id} className="bg-muted text-foreground border font-black text-[9px] uppercase tracking-widest">
                       {ref.name}
                     </Badge>

@@ -1,9 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc, collection, addDoc } from 'firebase/firestore';
+import { useParams } from 'next/navigation';
 import { FundraisingOpportunity } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,8 +33,8 @@ import { toast } from '@/hooks/use-toast';
 
 export default function PublicDonationPortalPage() {
   const { teamId, fundId } = useParams();
-  const db = useFirestore();
-  const router = useRouter();
+  const [fund, setFund] = useState<FundraisingOpportunity | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [donorName, setDonorName] = useState('');
   const [amount, setAmount] = useState('');
@@ -44,8 +42,19 @@ export default function PublicDonationPortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const fundRef = useMemoFirebase(() => (db && teamId && fundId) ? doc(db, 'teams', teamId as string, 'fundraising', fundId as string) : null, [db, teamId, fundId]);
-  const { data: fund, isLoading } = useDoc<FundraisingOpportunity>(fundRef);
+  useEffect(() => {
+    if (!teamId || !fundId) return;
+    const controller = new AbortController();
+    setIsLoading(true);
+    fetch(`/api/public/donations?teamId=${encodeURIComponent(String(teamId))}&fundId=${encodeURIComponent(String(fundId))}`, {
+      signal: controller.signal,
+    })
+      .then(async response => response.ok ? response.json() : Promise.reject(new Error('inactive')))
+      .then(result => setFund(result.data))
+      .catch(error => { if (error.name !== 'AbortError') setFund(null); })
+      .finally(() => setIsLoading(false));
+    return () => controller.abort();
+  }, [teamId, fundId]);
 
   const progress = useMemo(() => {
     if (!fund) return 0;
@@ -58,27 +67,24 @@ export default function PublicDonationPortalPage() {
 
     setIsSubmitting(true);
     try {
-      // 1. Log the intent in the squad's donation ledger as "pending"
-      const donationRef = collection(db, 'teams', teamId as string, 'fundraising', fundId as string, 'donations');
-      await addDoc(donationRef, {
-        donorName,
-        amount: parseFloat(amount),
-        method,
-        status: 'pending',
-        createdAt: new Date().toISOString()
+      const response = await fetch('/api/public/donations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamId, fundId, donorName, amount: parseFloat(amount), method }),
       });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Unable to record donation intent.');
 
-      // 2. Tactical Redirection or Confirmation
-      if (method === 'external' && fund.externalLink) {
+      if (method === 'external' && result.redirectUrl) {
         toast({ title: "Dispatching to Secure Hub" });
         setTimeout(() => {
-          window.location.href = fund.externalLink!;
+          window.location.href = result.redirectUrl;
         }, 1500);
       } else {
         setIsSuccess(true);
       }
-    } catch (err) {
-      toast({ title: "Submission Failed", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Submission Failed", description: err.message, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -91,7 +97,7 @@ export default function PublicDonationPortalPage() {
     </div>
   );
 
-  if (!fund || (!fund.isShareable && !isPast(new Date(fund.deadline)))) return (
+  if (!fund || !fund.isShareable || isPast(new Date(fund.deadline))) return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10">
       <Card className="max-w-md text-center p-12 rounded-[3rem] border-none shadow-2xl">
         <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" />

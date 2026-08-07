@@ -2,9 +2,8 @@
 
 import React, { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
 import { TeamEvent, TournamentGame } from '@/components/providers/team-provider';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { AnimatedScore } from '@/components/ui/animated-score';
 import { SquadIdentity } from '@/components/SquadIdentity';
+import { PortalStatus } from '@/components/public/PortalStatus';
 
 function formatRoundName(name?: string) {
   if (!name) return '';
@@ -81,17 +81,12 @@ function calculateStandings(teams: string[], games: TournamentGame[]) {
 
 export default function PublicSpectatorHub() {
   const { teamId, eventId } = useParams();
-  const db = useFirestore();
   const [activeTab, setActiveTab] = useState('schedule');
   const [teamFilter, setTeamFilter] = useState<string | 'all'>('all');
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
-  const eventRef = useMemoFirebase(() => {
-    if (!db || !teamId || !eventId) return null;
-    return doc(db, 'teams', teamId as string, 'events', eventId as string);
-  }, [db, teamId, eventId]);
-
-  const { data: event, isLoading } = useDoc<TeamEvent>(eventRef);
+  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
+  const { data: event, isLoading, error, status, retry } = usePublicPortal<TeamEvent>(portalUrl);
 
   const filteredSchedule = useMemo(() => {
     if (!event?.tournamentGames) return [];
@@ -138,15 +133,7 @@ export default function PublicSpectatorHub() {
     </div>
   );
 
-  if (!event || !event.isTournament) return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10">
-      <Card className="max-w-md text-center p-10 rounded-[3rem] border-none shadow-2xl">
-        <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" />
-        <h2 className="text-2xl font-black uppercase tracking-tight">Tournament Not Found</h2>
-        <p className="text-muted-foreground font-medium mt-2">This hub is currently inactive or private.</p>
-      </Card>
-    </div>
-  );
+  if (!event || !event.isTournament) return <PortalStatus status={status} message={error} onRetry={retry} title={status === 404 ? 'Tournament Not Found' : undefined} />;
 
   return (
     <div className="min-h-screen bg-muted/5 flex flex-col items-center py-8 lg:py-12 px-4 md:px-6">

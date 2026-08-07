@@ -179,8 +179,6 @@ function EditFacilityDialog({ facility }: { facility: Facility }) {
 export default function FacilityManagementPage() {
   const { activeTeam, isStaff, isPro, addFacility, deleteFacility, isSuperAdmin, user } = useTeam();
   
-  if (!isStaff) return <AccessRestricted type="role" />;
-
   const db = useFirestore();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newFac, setNewFac] = useState({ name: '', address: '', notes: '' });
@@ -192,6 +190,8 @@ export default function FacilityManagementPage() {
   }, [db, user?.id]);
 
   const { data: facilities, isLoading } = useCollection<Facility>(facilitiesQuery);
+
+  if (!isStaff) return <AccessRestricted type="role" />;
 
   const handleAddFacility = async () => {
     if (!newFac.name || !newFac.address) return;

@@ -1,14 +1,14 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Download, Receipt, CreditCard, Banknote, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { collection, query, where, orderBy } from 'firebase/firestore';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { toast } from '@/hooks/use-toast';
 
@@ -46,22 +46,51 @@ interface MyPaymentsViewProps {
  */
 export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
   const db = useFirestore();
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const teamKey = teamIds.slice(0, 5).join('\u0000');
 
-  // Query payments across the user's first team (cross-team collectionGroup is
-  // complex to paginate; we query per-team. Most users are on 1–2 teams.)
-  // For simplicity, we query up to the first 5 teams.
-  const primaryTeamId = teamIds[0];
+  useEffect(() => {
+    const selectedTeamIds = teamKey ? teamKey.split('\u0000') : [];
+    if (!db || !userEmail || selectedTeamIds.length === 0) {
+      setPayments([]);
+      setIsLoading(false);
+      return;
+    }
 
-  const paymentsQuery = useMemoFirebase(() => {
-    if (!db || !primaryTeamId || !userEmail) return null;
-    return query(
-      collection(db, 'teams', primaryTeamId, 'payments'),
-      where('payer_email', '==', userEmail.toLowerCase()),
-      orderBy('createdAt', 'desc')
-    );
-  }, [db, primaryTeamId, userEmail]);
+    setIsLoading(true);
+    const results = new Map<string, Payment[]>();
+    const initialized = new Set<string>();
+    const publish = (teamId: string, values: Payment[]) => {
+      results.set(teamId, values);
+      initialized.add(teamId);
+      setPayments(
+        Array.from(results.values())
+          .flat()
+          .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      );
+      if (initialized.size === selectedTeamIds.length) setIsLoading(false);
+    };
 
-  const { data: payments, isLoading } = useCollection<Payment>(paymentsQuery);
+    const unsubscribes = selectedTeamIds.map(teamId => onSnapshot(
+      query(
+        collection(db, 'teams', teamId, 'payments'),
+        where('payer_email', '==', userEmail.toLowerCase()),
+        orderBy('createdAt', 'desc')
+      ),
+      snapshot => publish(teamId, snapshot.docs.map(docSnapshot => ({
+        id: docSnapshot.id,
+        teamId,
+        ...docSnapshot.data(),
+      } as Payment))),
+      error => {
+        console.error(`[MyPaymentsView] Unable to load payments for team ${teamId}:`, error);
+        publish(teamId, []);
+      }
+    ));
+
+    return () => unsubscribes.forEach(unsubscribe => unsubscribe());
+  }, [db, teamKey, userEmail]);
 
   const totalPaid = useMemo(() =>
     (payments || [])

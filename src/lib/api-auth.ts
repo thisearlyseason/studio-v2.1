@@ -11,8 +11,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import * as admin from 'firebase-admin';
-import { adminDb, ensureAdminInit } from '@/lib/firebase-admin';
+import { getApps } from 'firebase-admin/app';
+import { getAdminAuth } from '@/lib/firebase-admin';
 
 interface DecodedToken {
   uid: string;
@@ -43,13 +43,9 @@ export async function verifyFirebaseToken(
   const idToken = authHeader.slice(7); // Remove "Bearer "
 
   try {
-    // Explicitly initialize the Admin SDK before calling admin.auth().
-    // NOTE: `void adminDb` does NOT trigger the Proxy getter — must call ensureAdminInit().
-    ensureAdminInit();
-
     // Cryptographically verify the JWT signature and expiry.
     // This is the ONLY correct way to verify Firebase ID tokens server-side.
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const decodedToken = await getAdminAuth().verifyIdToken(idToken, true);
 
     const role = (decodedToken as any).role as string | undefined;
 
@@ -75,7 +71,7 @@ export async function verifyFirebaseToken(
       '[verifyFirebaseToken] Unexpected error — code:', err.code,
       '| message:', err.message,
       '| FIREBASE_SERVICE_ACCOUNT_JSON set:', !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
-      '| admin.apps.length:', admin.apps.length
+      '| admin apps:', getApps().length
     );
     return NextResponse.json(
       { error: `Authentication service error. Please try again. (code: ${err.code ?? 'unknown'})` },

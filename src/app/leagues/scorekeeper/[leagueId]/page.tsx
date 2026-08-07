@@ -2,9 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
 import { League, TournamentGame } from '@/components/providers/team-provider';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Clock, MapPin, ChevronRight, Loader2, AlertCircle, CalendarDays, Zap, Trophy, ShieldCheck, UserCheck } from 'lucide-react';
@@ -13,16 +12,16 @@ import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { SquadIdentity } from '@/components/SquadIdentity';
+import { PortalStatus } from '@/components/public/PortalStatus';
 
 export default function PublicLeagueScorekeeperHub() {
   const { leagueId } = useParams();
-  const db = useFirestore();
   const router = useRouter();
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-  const leagueRef = useMemoFirebase(() => (db && leagueId) ? doc(db, 'leagues', leagueId as string) : null, [db, leagueId]);
-  const { data: league, isLoading } = useDoc<League>(leagueRef);
+  const portalUrl = leagueId ? `/api/public/portals?kind=league&leagueId=${encodeURIComponent(leagueId as string)}` : null;
+  const { data: league, isLoading, error, status, retry } = usePublicPortal<League>(portalUrl);
 
   const schedule = useMemo(() => league?.schedule || [], [league]);
   
@@ -40,7 +39,8 @@ export default function PublicLeagueScorekeeperHub() {
   }, [schedule, selectedDate]);
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-muted/10"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
-  if (!league) return <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10"><Card className="max-w-md text-center p-10"><AlertCircle className="h-12 w-12 mx-auto mb-4 text-destructive" /><h2 className="text-xl font-bold">League Not Found</h2></Card></div>;
+  if (!league) return <PortalStatus status={status} message={error} onRetry={retry} />;
+  if ((league as any).scorekeeperConfigured === false) return <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10"><Card className="max-w-md text-center p-10 rounded-[2rem] border-none shadow-xl"><ShieldCheck className="h-12 w-12 mx-auto mb-4 text-primary" /><h2 className="text-xl font-black uppercase">Scorekeeper Access Not Configured</h2><p className="text-sm text-muted-foreground mt-3">The league organizer must set a scorekeeper PIN before results can be submitted.</p></Card></div>;
 
   return (
     <div className="min-h-screen bg-muted/10 flex flex-col items-center py-12 px-6">

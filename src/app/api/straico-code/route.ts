@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateWithStraico, USE_STRAICO } from '@/lib/straico';
 import { verifyFirebaseToken } from '@/lib/api-auth';
+import {
+  enforceUserRateLimit,
+  readJsonBodyWithLimit,
+  RequestBodyError,
+} from '@/lib/server-request-guards';
 
 export const runtime = 'nodejs';
 
@@ -10,12 +15,21 @@ export async function POST(req: NextRequest) {
   if (authResult instanceof NextResponse) return authResult;
 
   try {
-    const body = await req.json();
+    const limited = await enforceUserRateLimit(authResult.uid, 'straico-code', 30, 60 * 60 * 1000);
+    if (limited) return limited;
+
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 12_000);
     const { prompt } = body as { prompt?: string };
 
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
       return NextResponse.json(
         { error: 'Missing or empty "prompt" field.' },
+        { status: 400 }
+      );
+    }
+    if (prompt.length > 8_000) {
+      return NextResponse.json(
+        { error: 'Prompt must be 8000 characters or fewer.' },
         { status: 400 }
       );
     }
@@ -31,6 +45,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ response });
 
   } catch (err: any) {
+    if (err instanceof RequestBodyError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     // Distinguish "all failed" from other errors
     if (err?.message === 'STRAICO_ALL_FAILED') {
       return NextResponse.json(

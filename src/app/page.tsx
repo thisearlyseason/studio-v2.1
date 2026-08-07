@@ -59,9 +59,9 @@ import { Badge } from '@/components/ui/badge';
 import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
-import { useUser, useAuth, useFirestore } from '@/firebase';
-import { signInAnonymously, signOut } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useUser, useAuth } from '@/firebase';
+import { signInAnonymously } from 'firebase/auth';
+import { establishSession, signOutWithSession } from '@/lib/client-session';
 import { toast } from '@/hooks/use-toast';
 import { 
   Dialog, 
@@ -206,7 +206,7 @@ function PricingDisplay({ monthly, annual, annualMonthly, color, darkBg }: { mon
 }
 
 // ── Enterprise Contact Form ──────────────────────────────────────────────
-function ContactForm({ db }: { db: any }) {
+function ContactForm() {
   const [name, setName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [org, setOrg] = React.useState('');
@@ -221,15 +221,12 @@ function ContactForm({ db }: { db: any }) {
     }
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, 'contact_inquiries'), {
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        organization: org.trim(),
-        inquiry: inquiry.trim(),
-        createdAt: serverTimestamp(),
-        source: 'landing_page_contact',
-        status: 'new',
+      const response = await fetch('/api/public/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'contact', name, email, organization: org, inquiry }),
       });
+      if (!response.ok) throw new Error('Unable to submit right now.');
       setSubmitted(true);
       // Notify admin asynchronously
       fetch('/api/public/notify-admin', {
@@ -336,7 +333,6 @@ export default function LandingPage() {
   
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
-  const db = useFirestore();
   const router = useRouter();
 
   // ── Hero intro: curtain splits open after mount ──
@@ -356,12 +352,12 @@ export default function LandingPage() {
     try {
       const emailVal = newsletterEmail.trim().toLowerCase();
       const nameVal = newsletterName.trim();
-      await addDoc(collection(db, 'newsletter_signups'), {
-        name: nameVal,
-        email: emailVal,
-        createdAt: serverTimestamp(),
-        source: 'landing_page',
+      const response = await fetch('/api/public/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'newsletter', name: nameVal, email: emailVal }),
       });
+      if (!response.ok) throw new Error('Unable to submit right now.');
       setNewsletterDone(true);
       toast({ title: "You Got it!", description: "We'll keep you in the loop. 🏆" });
 
@@ -459,7 +455,7 @@ export default function LandingPage() {
     setIsDemoLoading(true);
     try {
       // Clear current session first to prevent state pollution
-      await signOut(auth);
+      await signOutWithSession(auth);
       // Brief delay to ensure auth state clean
       await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -468,7 +464,8 @@ export default function LandingPage() {
       localStorage.removeItem('sf_session_team_id');
       sessionStorage.removeItem('squad_demo_start_time');
       
-      await signInAnonymously(auth);
+      const credential = await signInAnonymously(auth);
+      await establishSession(credential.user);
       
       // Use window.replace to bypass internal router cache 
       // and ensure DashboardLayout initializes with fresh demo parameters
@@ -1743,7 +1740,7 @@ export default function LandingPage() {
             </div>
 
             <Card className="border-none shadow-2xl rounded-[3rem] p-8 md:p-12 overflow-hidden ring-1 ring-black/5 bg-background">
-              <ContactForm db={db} />
+              <ContactForm />
             </Card>
           </div>
         </div>

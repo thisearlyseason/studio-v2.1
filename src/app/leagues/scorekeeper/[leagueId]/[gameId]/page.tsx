@@ -2,9 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { useTeam, League, TournamentGame } from '@/components/providers/team-provider';
+import { League, TournamentGame } from '@/components/providers/team-provider';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,16 +16,14 @@ import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { SquadIdentity } from '@/components/SquadIdentity';
+import { PortalStatus } from '@/components/public/PortalStatus';
 import { format, parseISO } from 'date-fns';
 
 export default function PublicLeagueScorekeeperEntryPage() {
   const { leagueId, gameId } = useParams();
-  const db = useFirestore();
   const router = useRouter();
-  const { submitLeagueMatchScore, disputeLeagueMatchScore } = useTeam();
-
-  const leagueRef = useMemoFirebase(() => (db && leagueId) ? doc(db, 'leagues', leagueId as string) : null, [db, leagueId]);
-  const { data: league, isLoading } = useDoc<League>(leagueRef);
+  const portalUrl = leagueId ? `/api/public/portals?kind=league&leagueId=${encodeURIComponent(leagueId as string)}` : null;
+  const { data: league, isLoading, error, status, retry } = usePublicPortal<League>(portalUrl);
 
   const game = useMemo(() => {
     return league?.schedule?.find(g => g.id === gameId);
@@ -43,14 +40,20 @@ export default function PublicLeagueScorekeeperEntryPage() {
   const [disputeNotes, setDisputeNotes] = useState('');
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-  if (!league || !game) return <div className="min-h-screen flex items-center justify-center p-6"><Card className="max-w-md text-center p-10"><AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" /><h2 className="text-2xl font-black uppercase tracking-tight">Match Inactive</h2></Card></div>;
+  if (!league) return <PortalStatus status={status} message={error} onRetry={retry} />;
+  if (!game) return <PortalStatus status={404} title="Match Inactive" message="This match is no longer available in the league schedule." />;
 
   const handleSubmit = async () => {
     if (!selectedTeam || !score1 || !score2 || isSubmitting) return;
     setIsSubmitting(true);
     const isTeam1 = selectedTeam === game.team1;
     try {
-      await submitLeagueMatchScore(leagueId as string, gameId as string, isTeam1, parseInt(score1), parseInt(score2), pin);
+      const response = await fetch('/api/public/portals/action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'league', action: 'score', leagueId, gameId, score1: parseInt(score1), score2: parseInt(score2), code: pin, reportedBy: isTeam1 ? game.team1 : game.team2 }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Score could not be posted.');
       setIsSubmitted(true);
     } catch (err: any) {
       toast({ title: "Submission Error", description: err.message || "Invalid credentials.", variant: "destructive" });
@@ -63,7 +66,12 @@ export default function PublicLeagueScorekeeperEntryPage() {
     if (!disputeNotes.trim() || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      await disputeLeagueMatchScore(leagueId as string, gameId as string, disputeNotes);
+      const response = await fetch('/api/public/portals/action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'league', action: 'dispute', leagueId, gameId, notes: disputeNotes, code: pin }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Dispute could not be filed.');
       toast({ title: "Dispute Logged", description: "The league organizer has been alerted." });
       setIsDisputeOpen(false);
       router.push(`/leagues/scorekeeper/${leagueId}`);
@@ -169,7 +177,7 @@ export default function PublicLeagueScorekeeperEntryPage() {
                   <div className="space-y-3"><Label className="text-[10px] font-black uppercase">{game.team2}</Label><Input type="number" value={score2} onChange={e => setScore2(e.target.value)} className="h-16 text-center font-black text-3xl rounded-2xl border-2" /></div>
                 </div>
 
-                <div className="space-y-3">
+                {(league as any).requiresPin && <div className="space-y-3">
                   <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
                     <Lock className="h-3 w-3" /> Institutional Entry PIN
                   </Label>
@@ -181,12 +189,12 @@ export default function PublicLeagueScorekeeperEntryPage() {
                     className="h-16 text-center font-black text-2xl tracking-[0.5em] rounded-2xl border-2"
                   />
                   <p className="text-[8px] font-bold text-muted-foreground uppercase text-center opacity-40">Contact your league organizer for the operations key.</p>
-                </div>
+                </div>}
               </div>
             )}
           </CardContent>
           <CardFooter className="p-8 lg:p-10 pt-0 flex flex-col gap-4">
-            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" disabled={!selectedTeam || !score1 || !score2 || !pin || isSubmitting} onClick={handleSubmit}>{isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Score Result"}</Button>
+            <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" disabled={!selectedTeam || score1 === '' || score2 === '' || ((league as any).requiresPin && !pin) || isSubmitting} onClick={handleSubmit}>{isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Score Result"}</Button>
             
             <div className="flex items-center gap-4 w-full">
               <div className="h-px bg-muted flex-1" />

@@ -3,10 +3,11 @@
 import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
 import { FirebaseApp } from 'firebase/app';
 import { Firestore } from 'firebase/firestore';
-import { Auth, User, onAuthStateChanged } from 'firebase/auth';
+import { Auth, User, onIdTokenChanged } from 'firebase/auth';
 import { FirebaseStorage } from 'firebase/storage';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener'
 import { usePathname } from 'next/navigation';
+import { clearSession, establishSession } from '@/lib/client-session';
 
 interface FirebaseProviderProps {
   children: ReactNode;
@@ -87,7 +88,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
 
     setUserAuthState({ user: null, isUserLoading: true, userError: null }); // Reset on auth instance change
 
-    const unsubscribe = onAuthStateChanged(
+    const unsubscribe = onIdTokenChanged(
       auth,
       (firebaseUser) => { // Auth state determined
         console.log("FirebaseProvider: Auth state changed. User:", firebaseUser ? `${firebaseUser.uid} (${firebaseUser.email})` : "Logged out");
@@ -96,11 +97,18 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           localStorage.removeItem('squad_seeding_lock');
           localStorage.removeItem('sf_session_team_id');
           sessionStorage.removeItem('squad_demo_start_time');
+          void clearSession().catch(error => {
+            console.error('FirebaseProvider: Failed to clear server session:', error);
+          });
+        } else {
+          void establishSession(firebaseUser).catch(error => {
+            console.error('FirebaseProvider: Failed to synchronize server session:', error);
+          });
         }
         setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null });
       },
       (error) => { // Auth listener error
-        console.error("FirebaseProvider: onAuthStateChanged error:", error);
+        console.error("FirebaseProvider: onIdTokenChanged error:", error);
         setUserAuthState({ user: null, isUserLoading: false, userError: error });
       }
     );

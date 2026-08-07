@@ -66,7 +66,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useTeam } from '@/components/providers/team-provider';
 import { useAuth, useStorage } from '@/firebase';
-import { signOut, reauthenticateWithCredential, EmailAuthProvider, updateEmail } from 'firebase/auth';
+import { reauthenticateWithCredential, EmailAuthProvider, updateEmail } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
@@ -77,6 +77,8 @@ import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
 import { deleteFCMToken } from '@/lib/fcm-client';
+import { signOutWithSession } from '@/lib/client-session';
+import { RASTER_IMAGE_ACCEPT, validateRasterImage } from '@/lib/storage-upload-policy';
 
 export default function SettingsPage() {
   const { 
@@ -173,6 +175,12 @@ export default function SettingsPage() {
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
+    const validationError = validateRasterImage(file);
+    if (validationError) {
+      toast({ title: 'Invalid Image', description: validationError, variant: 'destructive' });
+      e.target.value = '';
+      return;
+    }
     setIsUpdatingAvatar(true);
     try {
       // Upload directly to Firebase Storage (avoids Firestore 1MB document limit)
@@ -271,7 +279,7 @@ export default function SettingsPage() {
       if (user?.id) {
         deleteFCMToken(user.id).catch(() => {});
       }
-      await signOut(auth);
+      await signOutWithSession(auth);
       router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
@@ -357,7 +365,7 @@ export default function SettingsPage() {
         <CardContent className="-mt-16 space-y-10 p-10 pt-0 relative z-10">
           <div className="flex flex-col items-center text-center space-y-6">
             <div className="relative group">
-              <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
+              <input type="file" ref={avatarInputRef} className="hidden" accept={RASTER_IMAGE_ACCEPT} onChange={handleAvatarChange} />
               <Avatar className="h-32 w-32 border-[6px] border-background shadow-2xl rounded-[2.5rem] transition-transform duration-500 group-hover:scale-105">
                 <AvatarImage src={user.avatar} className="object-cover" />
                 <AvatarFallback className="font-black text-2xl bg-muted">{user.name?.[0] || '?'}</AvatarFallback>

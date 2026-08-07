@@ -3,8 +3,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { useFirestore, useDoc, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { doc, collection, getDocs, orderBy, query, getDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useFirestore, useUser } from '@/firebase';
+import { doc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useTeam } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -58,29 +59,41 @@ export default function PublicScoutPortalPage() {
   const { playerId } = useParams();
   const db = useFirestore();
   const { user } = useUser();
+  const { myChildren } = useTeam();
   
   const [isEvalOpen, setIsEvalOpen] = useState(false); // kept for TS — not used on public page
   const [newEval, setNewEval] = useState({ athleticism: 5, skillLevel: 5, gameIQ: 5, leadership: 5 });
 
-  const playerRef = useMemoFirebase(() => playerId ? doc(db, 'players', playerId as string) : null, [db, playerId]);
-  const profileRef = useMemoFirebase(() => playerId ? doc(db, 'players', playerId as string, 'recruitingProfile', 'profile') : null, [db, playerId]);
-  const metricsRef = useMemoFirebase(() => playerId ? doc(db, 'players', playerId as string, 'recruitingProfile', 'metrics') : null, [db, playerId]);
-  const contactRef = useMemoFirebase(() => playerId ? doc(db, 'players', playerId as string, 'recruitingContact', 'contact') : null, [db, playerId]);
-  const statsRef = useMemoFirebase(() => playerId ? collection(db, 'players', playerId as string, 'stats') : null, [db, playerId]);
-  const evalsQuery = useMemoFirebase(() => playerId ? query(collection(db, 'players', playerId as string, 'evaluations'), orderBy('createdAt', 'desc')) : null, [db, playerId]);
-  const videosQuery = useMemoFirebase(() => playerId ? query(collection(db, 'players', playerId as string, 'videos'), orderBy('createdAt', 'desc')) : null, [db, playerId]);
+  const [publicData, setPublicData] = useState<any>(null);
+  const [playerLoading, setPlayerLoading] = useState(true);
+  const isOwner = useMemo(() => {
+    if (!user || !playerId) return false;
+    const id = String(playerId);
+    return id === user.uid || id === `p_${user.uid}` || myChildren.some(child => child.id === id);
+  }, [myChildren, playerId, user]);
 
-  const { data: player, isLoading: playerLoading } = useDoc(playerRef);
-  const { data: profile, isLoading: profileLoading } = useDoc(profileRef);
-  const { data: metrics, isLoading: metricsLoading } = useDoc(metricsRef);
-  const { data: contactData } = useDoc(contactRef);
-  const { data: statsData, isLoading: statsLoading } = useCollection(statsRef);
-  const { data: evalsData, isLoading: evalsLoading } = useCollection(evalsQuery);
-  const { data: videosData, isLoading: videosLoading } = useCollection(videosQuery);
+  useEffect(() => {
+    if (!playerId) return;
+    const controller = new AbortController();
+    setPlayerLoading(true);
+    fetch(`/api/public/recruiting/${encodeURIComponent(String(playerId))}`, { signal: controller.signal })
+      .then(async response => response.ok ? response.json() : null)
+      .then(data => setPublicData(data))
+      .catch(error => {
+        if (error?.name !== 'AbortError') setPublicData(null);
+      })
+      .finally(() => setPlayerLoading(false));
+    return () => controller.abort();
+  }, [playerId]);
 
-  const stats = statsData || [];
-  const evals = evalsData || [];
-  const videos = videosData || [];
+  const player = publicData?.player;
+  const profile = publicData?.profile;
+  const metrics = publicData?.metrics;
+  const contactData = publicData?.contact;
+  const stats = publicData?.stats || [];
+  const evals = publicData?.evaluations || [];
+  const videosData = publicData?.videos || [];
+  const videos = videosData;
 
   const [selectedPublicVideo, setSelectedPublicVideo] = useState<any>(null);
   const [isYtPlaying, setIsYtPlaying] = useState(false);
@@ -88,8 +101,6 @@ export default function PublicScoutPortalPage() {
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
   const [manualSeekTime, setManualSeekTime] = useState<number | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
-
-  const isOwner = user && player && (user.uid === player.userId || user.uid === player.id);
 
   const handleDownloadPack = () => {
     const name = profile?.fullName || player?.name || 'Athlete';
@@ -381,11 +392,11 @@ export default function PublicScoutPortalPage() {
   };
 
   const handleDeletePhoto = async (index: number) => {
-    if (!isOwner || !profileRef) return;
+    if (!isOwner || !playerId) return;
     const newPhotos = [...(profile.photos || [])];
     newPhotos.splice(index, 1);
     const { updateDoc } = await import('firebase/firestore');
-    await updateDoc(profileRef, { photos: newPhotos });
+    await updateDoc(doc(db, 'players', playerId as string, 'recruitingProfile', 'profile'), { photos: newPhotos });
   };
 
   const handleDeleteVideo = async (videoId: string) => {
@@ -589,7 +600,7 @@ export default function PublicScoutPortalPage() {
             <section className="space-y-6">
               <div className="flex items-center gap-3 px-2"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Video className="h-5 w-5" /></div><h2 className="text-xl font-black uppercase tracking-tight">Highlight Reels</h2></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {videos.length > 0 ? videos.map((v: any, i) => (
+                {videos.length > 0 ? videos.map((v: any, i: number) => (
                   <Card key={i} className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-black group cursor-pointer relative" onClick={() => setSelectedPublicVideo(v)}>
                     <div className="aspect-video relative">
                       {v.thumbnailUrl ? (
@@ -730,7 +741,7 @@ export default function PublicScoutPortalPage() {
                       <tr><th className="px-8 py-5">Season</th><th className="px-4 py-5 text-center">GP</th><th className="px-4 py-5 text-center">PTS</th><th className="px-4 py-5 text-center">AST</th><th className="px-8 py-5 text-right">EFF</th></tr>
                     </thead>
                     <tbody className="divide-y">
-                      {stats.map((s, i) => (
+                      {stats.map((s: any, i: number) => (
                         <tr key={i} className="hover:bg-primary/5 transition-colors">
                           <td className="px-8 py-6 font-black text-sm uppercase">{s.season}</td>
                           <td className="px-4 py-6 text-center font-bold">{s.gamesPlayed}</td>

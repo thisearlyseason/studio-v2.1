@@ -3,21 +3,30 @@ import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { verifyFirebaseToken, assertOwner } from '@/lib/api-auth';
 import { EXTRA_TEAM_PRICE_IDS } from '@/lib/stripe-price-map';
+import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
 
 export async function POST(req: NextRequest) {
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const { userId, quantity, billingCycle = 'monthly' } = await req.json();
+    const limited = await enforceUserRateLimit(auth.uid, 'subscription-addon', 20, 60 * 60 * 1000);
+    if (limited) return limited;
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
+    const userId = body.userId;
+    const quantity = body.quantity;
+    const billingCycle = body.billingCycle ?? 'monthly';
 
-    if (!userId || typeof quantity !== 'number') {
+    if (typeof userId !== 'string' || !userId || typeof quantity !== 'number') {
       return NextResponse.json({ error: 'userId and quantity are required.' }, { status: 400 });
     }
 
     // Validate quantity bounds
-    if (quantity < 0 || quantity > 50) {
+    if (!Number.isInteger(quantity) || quantity < 0 || quantity > 50) {
       return NextResponse.json({ error: 'quantity must be between 0 and 50.' }, { status: 400 });
+    }
+    if (!['monthly', 'annual'].includes(String(billingCycle))) {
+      return NextResponse.json({ error: 'billingCycle must be monthly or annual.' }, { status: 400 });
     }
 
     const ownerCheck = assertOwner(auth, userId);
@@ -74,6 +83,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, subscription: updatedSubscription });
   } catch (err: any) {
+    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error('[subscription/addon] Error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

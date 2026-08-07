@@ -2,9 +2,8 @@
 
 import React, { useState, useMemo, useEffect, Suspense, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { useTeam, LeagueRegistrationConfig, RegistrationFormField } from '@/components/providers/team-provider';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { LeagueRegistrationConfig, RegistrationFormField } from '@/components/providers/team-provider';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,6 +55,7 @@ import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { toast } from '@/hooks/use-toast';
+import { PortalStatus } from '@/components/public/PortalStatus';
 
 const REQUIRED_STEPS = [
   { id: 'identity', name: 'Identity', icon: Users, label: 'Identity' },
@@ -73,7 +73,6 @@ function RegistrationForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const protocolId = searchParams.get('protocol') || 'player_config';
-  const { submitRegistrationEntry, getTeamByCode, db } = useTeam();
 
   const [currentStep, setCurrentStep] = useState(1);
   const [answers, setAnswers] = useState<Record<string, any>>({});
@@ -86,12 +85,10 @@ function RegistrationForm() {
   const [validatingCode, setValidatingCode] = useState(false);
   const [validatedTeam, setValidatedTeam] = useState<any>(null);
 
-  const configRef = useMemoFirebase(() => db ? doc(db, 'leagues', leagueId as string, 'registration', protocolId) : null, [db, leagueId, protocolId]);
-  const leagueRef = useMemoFirebase(() => db ? doc(db, 'leagues', leagueId as string) : null, [db, leagueId]);
-  const { data: config, isLoading: isConfigLoading } = useDoc<LeagueRegistrationConfig>(configRef);
-  const { data: league, isLoading: isLeagueLoading } = useDoc<any>(leagueRef);
-
-  const isLoading = isConfigLoading || isLeagueLoading;
+  const portalUrl = leagueId ? `/api/public/portals?kind=league-registration&leagueId=${encodeURIComponent(leagueId as string)}&protocolId=${encodeURIComponent(protocolId)}` : null;
+  const { data: portal, isLoading, error, status, retry } = usePublicPortal<{ config: LeagueRegistrationConfig; league: any }>(portalUrl);
+  const config = portal?.config || null;
+  const league = portal?.league || null;
 
   const formSchema = config?.form_schema || [];
 
@@ -189,8 +186,12 @@ function RegistrationForm() {
     const timer = setTimeout(async () => {
       setValidatingCode(true);
       try {
-        const team = await getTeamByCode(teamCode, leagueId as string);
-        setValidatedTeam(team);
+        const response = await fetch('/api/public/portals/action', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'lookup-team', teamCode }),
+        });
+        const result = await response.json();
+        setValidatedTeam(response.ok ? result.team : null);
       } catch (err) {
         console.error(err);
       } finally {
@@ -198,7 +199,7 @@ function RegistrationForm() {
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [teamCode, getTeamByCode, leagueId]);
+  }, [teamCode]);
 
   const handleInputChange = useCallback((id: string, value: any) => {
     setAnswers(prev => {
@@ -230,7 +231,12 @@ function RegistrationForm() {
         team_name: validatedTeam?.name || validatedTeam?.teamName || null,
         team_id: validatedTeam?.id || null
       };
-      await submitRegistrationEntry(leagueId as string, config.id, finalAnswers, config.form_version || 0, signature, 'leagues');
+      const response = await fetch('/api/public/portals/action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'league', action: 'register', leagueId, protocolId: config.id, answers: finalAnswers, formVersion: config.form_version || 0, signature }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Submission failed.');
       setIsSuccess(true);
     } catch (error) {
       toast({ title: "Submission Failed", variant: "destructive" });
@@ -266,18 +272,7 @@ function RegistrationForm() {
     );
   }
   
-  if (!config) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-6 text-center">
-        <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
-        <Card className="max-w-md w-full border-none shadow-2xl rounded-[2.5rem] bg-white p-12">
-          <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-          <h2 className="text-xl font-black uppercase text-black">Portal not found</h2>
-          <Button className="mt-6 w-full h-12 rounded-xl" onClick={() => router.push('/')}>Back to Home</Button>
-        </Card>
-      </div>
-    );
-  }
+  if (!config) return <PortalStatus status={status} message={error} onRetry={retry} />;
 
   if (isSuccess) {
     return (

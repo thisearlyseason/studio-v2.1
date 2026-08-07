@@ -1,11 +1,9 @@
 
 "use client";
 
-import React, { useState, Suspense } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { useTeam, VolunteerOpportunity } from '@/components/providers/team-provider';
+import React, { useEffect, useState, Suspense } from 'react';
+import { useParams } from 'next/navigation';
+import { VolunteerOpportunity } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,15 +27,26 @@ import { toast } from '@/hooks/use-toast';
 
 function VolunteerSignupForm() {
   const { teamId, oppId } = useParams();
-  const db = useFirestore();
-  const { publicSignUpForVolunteer } = useTeam();
-
-  const oppRef = useMemoFirebase(() => (db && teamId && oppId) ? doc(db, 'teams', teamId as string, 'volunteers', oppId as string) : null, [db, teamId, oppId]);
-  const { data: opp, isLoading } = useDoc<VolunteerOpportunity>(oppRef);
+  const [opp, setOpp] = useState<VolunteerOpportunity | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!teamId || !oppId) return;
+    const controller = new AbortController();
+    setIsLoading(true);
+    fetch(`/api/public/volunteer?teamId=${encodeURIComponent(String(teamId))}&opportunityId=${encodeURIComponent(String(oppId))}`, {
+      signal: controller.signal,
+    })
+      .then(async response => response.ok ? response.json() : Promise.reject(new Error('inactive')))
+      .then(result => setOpp(result.data))
+      .catch(error => { if (error.name !== 'AbortError') setOpp(null); })
+      .finally(() => setIsLoading(false));
+    return () => controller.abort();
+  }, [teamId, oppId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,10 +54,18 @@ function VolunteerSignupForm() {
 
     setIsSubmitting(true);
     try {
-      await publicSignUpForVolunteer(teamId as string, oppId as string, formData);
+      const response = await fetch('/api/public/volunteer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamId, opportunityId: oppId, ...formData }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || 'Unable to register.');
+      }
       setIsSuccess(true);
-    } catch (err) {
-      toast({ title: "Submission Failed", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Submission Failed", description: err.message, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }

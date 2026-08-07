@@ -8,15 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/firebase';
-import { initializeFirebase } from '@/firebase';
 import {
-  isSignInWithEmailLink,
-  signInWithEmailLink,
   createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   updateProfile,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
+import { establishSession } from '@/lib/client-session';
 import BrandLogo from '@/components/BrandLogo';
 import {
   Baby,
@@ -55,28 +53,13 @@ function YouthSignupContent() {
       return;
     }
 
-    const { firestore } = initializeFirebase();
-    getDoc(doc(firestore, 'invites', token)).then((snap) => {
-      if (!snap.exists()) {
-        setInviteError('This invitation link is invalid or has already been used.');
-        setIsLoadingInvite(false);
-        return;
-      }
-      const data = snap.data();
-      if (data.used) {
-        setInviteError('This invitation has already been used. Please ask your parent to send a new one.');
-        setIsLoadingInvite(false);
-        return;
-      }
-      if (new Date(data.expiresAt) < new Date()) {
-        setInviteError('This invitation has expired. Please ask your parent to send a new one.');
-        setIsLoadingInvite(false);
-        return;
-      }
+    fetch(`/api/youth-invites?token=${encodeURIComponent(token)}`, { cache: 'no-store' }).then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to verify invitation.');
       setInvite(data);
       setIsLoadingInvite(false);
-    }).catch(() => {
-      setInviteError('Unable to verify invitation. Please try again.');
+    }).catch((error) => {
+      setInviteError(error.message || 'Unable to verify invitation. Please try again.');
       setIsLoadingInvite(false);
     });
   }, [token]);
@@ -97,37 +80,25 @@ function YouthSignupContent() {
 
     setIsSubmitting(true);
     try {
-      const { firestore } = initializeFirebase();
-
-      // Create Firebase Auth account
-      const credential = await createUserWithEmailAndPassword(auth, invite.email, password);
+      let credential;
+      try {
+        credential = await createUserWithEmailAndPassword(auth, invite.email, password);
+      } catch (error: any) {
+        if (error.code !== 'auth/email-already-in-use') throw error;
+        credential = await signInWithEmailAndPassword(auth, invite.email, password);
+      }
       const uid = credential.user.uid;
       const displayName = `${invite.childFirstName} ${invite.childLastName}`;
       await updateProfile(credential.user, { displayName });
-
-      // Write user profile
-      await setDoc(doc(firestore, 'users', uid), {
-        id: uid,
-        fullName: displayName,
-        email: invite.email,
-        role: 'youth_player',
-        linkedPlayerId: invite.childId,
-        parentId: invite.parentId,
-        createdAt: new Date().toISOString(),
-        avatarUrl: `https://picsum.photos/seed/${uid}/150/150`,
-        activePlanId: null,
-        notificationsEnabled: true,
+      const idToken = await credential.user.getIdToken();
+      const response = await fetch('/api/youth-invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ action: 'claim', token }),
       });
-
-      // Link UID back to the player doc
-      await updateDoc(doc(firestore, 'players', invite.childId), {
-        hasLogin: true,
-        userId: uid,
-        loginEmail: invite.email,
-      });
-
-      // Mark invite as used
-      await updateDoc(doc(firestore, 'invites', token), { used: true, usedAt: new Date().toISOString() });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to claim invitation.');
+      await establishSession(credential.user);
 
       setIsDone(true);
     } catch (error: any) {

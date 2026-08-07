@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
+import {
+  isSafeFirestoreId,
+  storedPaymentSourceMatches,
+  stripePaymentDocumentId,
+} from '@/lib/stripe-connect-webhook-security';
 
 /**
  * POST /api/stripe/connect/webhook
@@ -68,13 +73,13 @@ export async function POST(req: NextRequest) {
 
       case 'payment_intent.succeeded': {
         const pi = event.data.object as Stripe.PaymentIntent;
-        await handlePaymentIntentSucceeded(pi, event.id);
+        await handlePaymentIntentSucceeded(pi, connectedAccountId, event.id);
         break;
       }
 
       case 'payment_intent.payment_failed': {
         const pi = event.data.object as Stripe.PaymentIntent;
-        await handlePaymentIntentFailed(pi, event.id);
+        await handlePaymentIntentFailed(pi, connectedAccountId, event.id);
         break;
       }
 
@@ -90,6 +95,60 @@ export async function POST(req: NextRequest) {
   }
 }
 
+type VerifiedPaymentSource = { teamId: string; name: string };
+
+async function resolveVerifiedPaymentSource(
+  metadata: Stripe.Metadata | null | undefined,
+  connectedAccountId: string | undefined,
+  paymentLinkId?: string | null,
+): Promise<VerifiedPaymentSource | null> {
+  const teamId = metadata?.firebase_team_id;
+  if (!isSafeFirestoreId(teamId) || !connectedAccountId) return null;
+
+  const teamRef = adminDb.collection('teams').doc(teamId);
+  if (!(await teamRef.get()).exists) return null;
+
+  const paymentItemId = metadata?.firebase_payment_item_id;
+  if (isSafeFirestoreId(paymentItemId)) {
+    const itemSnap = await teamRef.collection('paymentItems').doc(paymentItemId).get();
+    if (itemSnap.exists && storedPaymentSourceMatches(itemSnap.data()!, connectedAccountId, paymentLinkId)) {
+      return { teamId, name: String(itemSnap.data()!.name || 'Online Payment') };
+    }
+  }
+
+  const campaignId = metadata?.firebase_campaign_id;
+  if (isSafeFirestoreId(campaignId)) {
+    const campaignSnap = await teamRef.collection('fundraising').doc(campaignId).get();
+    if (campaignSnap.exists && storedPaymentSourceMatches(campaignSnap.data()!, connectedAccountId, paymentLinkId)) {
+      return { teamId, name: String(campaignSnap.data()!.title || 'Fundraising Donation') };
+    }
+  }
+
+  // Legacy links did not include their Firestore item ID. A Payment Link ID is
+  // still sufficient to bind the signed event to a stored source and account.
+  if (paymentLinkId) {
+    const itemQuery = await teamRef.collection('paymentItems')
+      .where('stripePaymentLinkId', '==', paymentLinkId).limit(1).get();
+    if (!itemQuery.empty) {
+      const data = itemQuery.docs[0].data();
+      if (storedPaymentSourceMatches(data, connectedAccountId, paymentLinkId)) {
+        return { teamId, name: String(data.name || 'Online Payment') };
+      }
+    }
+
+    const campaignQuery = await teamRef.collection('fundraising')
+      .where('stripePaymentLinkId', '==', paymentLinkId).limit(1).get();
+    if (!campaignQuery.empty) {
+      const data = campaignQuery.docs[0].data();
+      if (storedPaymentSourceMatches(data, connectedAccountId, paymentLinkId)) {
+        return { teamId, name: String(data.title || 'Fundraising Donation') };
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * Handles a completed Stripe Checkout session originating from a Payment Link
  * on a connected account. Creates or updates a `payments` Firestore doc.
@@ -102,12 +161,16 @@ async function handleCheckoutCompleted(
   connectedAccountId: string | undefined,
   eventId: string
 ) {
-  const teamId: string | undefined = session.metadata?.firebase_team_id;
-  if (!teamId) {
+  const paymentLinkId = typeof session.payment_link === 'string'
+    ? session.payment_link
+    : session.payment_link?.id;
+  const source = await resolveVerifiedPaymentSource(session.metadata, connectedAccountId, paymentLinkId);
+  if (!source) {
     // This checkout session was not created through our payment items system;
     // could be a subscription session. Skip silently.
     return;
   }
+  const { teamId } = source;
 
   const payerEmail = session.customer_details?.email ?? session.customer_email ?? '';
   const payerName = session.customer_details?.name ?? '';
@@ -132,18 +195,19 @@ async function handleCheckoutCompleted(
 
   const now = new Date().toISOString();
 
-  // Use event ID as Firestore doc ID for idempotency
+  const paymentIntentId = typeof session.payment_intent === 'string'
+    ? session.payment_intent
+    : session.payment_intent?.id;
+  const paymentDocId = stripePaymentDocumentId(paymentIntentId, eventId);
   const docRef = adminDb
     .collection('teams').doc(teamId)
-    .collection('payments').doc(eventId);
+    .collection('payments').doc(paymentDocId);
 
   await docRef.set(
     {
-      id: eventId,
+      id: paymentDocId,
       teamId,
-      paymentItemName: session.metadata?.payment_item_category
-        ? `${session.metadata.payment_item_category} payment`
-        : 'Online Payment',
+      paymentItemName: source.name,
       payer_name: payerName,
       payer_email: payerEmail,
       amount: amountTotal,
@@ -168,26 +232,27 @@ async function handleCheckoutCompleted(
  */
 async function handlePaymentIntentSucceeded(
   pi: Stripe.PaymentIntent,
+  connectedAccountId: string | undefined,
   eventId: string
 ) {
-  const teamId: string | undefined = pi.metadata?.firebase_team_id;
-  if (!teamId) return;
+  const source = await resolveVerifiedPaymentSource(pi.metadata, connectedAccountId);
+  if (!source) return;
+  const paymentDocId = stripePaymentDocumentId(pi.id, eventId);
 
-  // Only update — the checkout.session.completed handler is primary
   await adminDb
-    .collection('teams').doc(teamId)
-    .collection('payments').doc(eventId)
+    .collection('teams').doc(source.teamId)
+    .collection('payments').doc(paymentDocId)
     .set(
       {
-        id: eventId,
-        teamId,
+        id: paymentDocId,
+        teamId: source.teamId,
         payment_method: 'online',
         status: 'paid',
         amount: pi.amount_received,
         currency: pi.currency,
         payer_email: pi.receipt_email ?? '',
         payer_name: '',
-        paymentItemName: 'Online Payment',
+        paymentItemName: source.name,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
@@ -200,25 +265,27 @@ async function handlePaymentIntentSucceeded(
  */
 async function handlePaymentIntentFailed(
   pi: Stripe.PaymentIntent,
+  connectedAccountId: string | undefined,
   eventId: string
 ) {
-  const teamId: string | undefined = pi.metadata?.firebase_team_id;
-  if (!teamId) return;
+  const source = await resolveVerifiedPaymentSource(pi.metadata, connectedAccountId);
+  if (!source) return;
+  const paymentDocId = stripePaymentDocumentId(pi.id, eventId);
 
   await adminDb
-    .collection('teams').doc(teamId)
-    .collection('payments').doc(eventId)
+    .collection('teams').doc(source.teamId)
+    .collection('payments').doc(paymentDocId)
     .set(
       {
-        id: eventId,
-        teamId,
+        id: paymentDocId,
+        teamId: source.teamId,
         payment_method: 'online',
         status: 'failed',
         amount: pi.amount,
         currency: pi.currency,
         payer_email: pi.receipt_email ?? '',
         payer_name: '',
-        paymentItemName: 'Online Payment',
+        paymentItemName: source.name,
         updatedAt: new Date().toISOString(),
       },
       { merge: true }

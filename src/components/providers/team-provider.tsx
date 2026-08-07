@@ -34,29 +34,17 @@ async function dispatchNotification({
 }) {
   try {
     // 1. Collect FCM tokens from users/{uid}.fcmTokens
-    const { getDocs: _getDocs, collection: _col, doc: _doc, getDoc: _getDoc } = await import('firebase/firestore');
-    const tokens: string[] = [];
-    await Promise.all(
-      memberUserIds.map(async (uid) => {
-        try {
-          const snap = await _getDoc(_doc(db, 'users', uid));
-          const userTokens: string[] = snap.data()?.fcmTokens || [];
-          tokens.push(...userTokens);
-        } catch { /* skip missing user docs */ }
-      })
-    );
-
     const headers = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
     };
 
     // 2. Send push notification
-    if (tokens.length) {
+    if (memberUserIds.length) {
       fetch('/api/notify', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ tokens, title, body, url }),
+        body: JSON.stringify({ teamId, recipientUserIds: memberUserIds, title, body, url }),
       }).catch((e) => console.warn('[Push] dispatch error:', e));
     }
 
@@ -69,6 +57,7 @@ async function dispatchNotification({
           to: memberEmails,
           subject: emailSubject,
           html: emailHtml,
+          teamId,
         }),
       }).catch((e) => console.warn('[Email] dispatch error:', e));
     }
@@ -99,7 +88,6 @@ import {
   deleteField,
   arrayRemove,
   or,
-  documentId
 } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { useRouter, usePathname } from 'next/navigation';
@@ -1206,41 +1194,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [hydratedMembers, setHydratedMembers] = useState<Member[]>([]);
   const [isHydrating, setIsHydrating] = useState(false);
 
-  const hydrateEmails = useCallback(async (membersList: Member[]): Promise<Member[]> => {
-    if (!db || !membersList || membersList.length === 0) return membersList || [];
-    const userIdsToFetch = new Set<string>();
-    membersList.forEach(m => {
-      const uid = m.userId || m.id;
-      if (uid && uid.length > 10) userIdsToFetch.add(uid);
-      if (m.parentId) userIdsToFetch.add(m.parentId);
-    });
-    if (userIdsToFetch.size === 0) return membersList;
-    const ids = Array.from(userIdsToFetch).filter(Boolean);
-    const userMap: Record<string, string> = {};
-    try {
-      for (let i = 0; i < ids.length; i += 30) {
-         const batch = ids.slice(i, i + 30);
-        const q = query(collection(db, 'users'), where(documentId(), 'in', batch));
-        const snap = await getDocs(q);
-        snap.forEach(d => {
-          const ud = d.data();
-          if (ud.email) userMap[d.id] = ud.email;
-        });
-      }
-    } catch (e) {
-      console.warn("[TeamProvider] Hydration partial failure:", e);
-    }
-    return membersList.map(m => {
-      const uid = m.userId || m.id;
-      const loginEmail = uid ? userMap[uid] : null;
-      const pEmail = m.parentId ? userMap[m.parentId] : null;
-      return {
-        ...m,
-        email: loginEmail || m.email,
-        parentEmail: pEmail || m.parentEmail
-      };
-    });
-  }, [db]);
+  // Membership documents already carry the contact fields needed by roster and
+  // notification views. Avoid hydrating unrelated users/{uid} documents here: the
+  // security rules intentionally restrict those documents to their own account.
+  const hydrateEmails = useCallback(async (membersList: Member[]): Promise<Member[]> => membersList || [], []);
 
   useEffect(() => {
     if (membersData) {
@@ -2037,79 +1994,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser, db, userProfile, proQuotaStatus, teamsRaw, setIsPaywallOpen, activeTeam]);
 
   const joinTeamWithCode = useCallback(async (code: string, playerId: string, position: string) => { 
-    if (!firebaseUser || !db || !userProfile) return false; 
-    const q = query(
-      collection(db, 'teams'), 
-      or(
-        where('teamCode', '==', code.toUpperCase()), 
-        where('code', '==', code.toUpperCase()),
-        where('inviteCode', '==', code.toUpperCase())
-      ), 
-      limit(1)
-    ); 
-    const snap = await getDocs(q); 
-    if (snap.empty) return false; 
-    const teamDoc = snap.docs[0]; 
-    const tid = teamDoc.id; 
-    const ownerId = teamDoc.data().ownerUserId;
-    const batch = writeBatch(db); 
-    const teamCodeValue = teamDoc.data().code || teamDoc.data().teamCode || teamDoc.data().inviteCode;
-
-    // Use playerId as the unique identifier for membership to support multi-child households
-    const isChild = playerId && !playerId.startsWith('p_');
-    const memberId = isChild ? playerId : firebaseUser.uid;
-    
-    // Resolve correct name and avatar for the member record
-    let memberName = firebaseUser.displayName || userProfile.name;
-    let memberAvatar = userProfile?.avatar || '';
-
-    if (isChild) {
-      const pSnap = await getDoc(doc(db, 'players', playerId));
-      if (pSnap.exists()) {
-        const pd = pSnap.data();
-        memberName = `${pd.firstName} ${pd.lastName}`;
-        memberAvatar = pd.photoURL || '';
-      }
-    }
-
-    // Record membership in user subcollection using a composite key to prevent overwrites
-    batch.set(doc(db, 'users', firebaseUser.uid, 'teamMemberships', `${tid}_${memberId}`), clean({ 
-      teamId: tid, 
-      playerId: memberId,
-      name: teamDoc.data().teamName, 
-      role: 'Member', 
-      code: teamCodeValue,
-      joinedAt: new Date().toISOString() 
-    })); 
-
-    // Write primary membership record to the team's directory
-    batch.set(doc(db, 'teams', tid, 'members', memberId), clean({ 
-      id: memberId, 
-      userId: firebaseUser.uid, 
-      playerId, 
-      parentId: firebaseUser.uid,
-      name: memberName, 
-      role: 'Member', 
-      position, 
-      joinedAt: new Date().toISOString(), 
-      avatar: memberAvatar, 
-      ownerUserId: ownerId, 
-      teamId: tid,
-      schoolId: teamDoc.data().schoolId || null,
-      email: userProfile.email || firebaseUser.email || null, 
-      parentEmail: isChild ? firebaseUser.email : null
-    })); 
-
-    // Always link the player doc to this team for Firestore rule lookups.
-    // isTeamCoachOfPlayer() uses players/{pid}.data.primaryTeamId to verify the coach.
-    // Without this, updateRecruitingProfile/metrics/contact all fail with permission-denied.
-    batch.update(doc(db, 'players', playerId), {
-      primaryTeamId: tid,
-      joinedTeamIds: arrayUnion(tid)
+    if (!firebaseUser || !firebaseAuth || !userProfile) return false;
+    const token = await getAuthToken(firebaseAuth);
+    const response = await fetch('/api/teams/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ code, playerId, position }),
     });
-
-    await batch.commit(); return true; 
-  }, [firebaseUser, db, userProfile]);
+    if (!response.ok) return false;
+    const result = await response.json();
+    return result.success === true;
+  }, [firebaseUser, firebaseAuth, userProfile]);
 
 
   const updateUser = useCallback(async (u: any) => { if (firebaseUser) await updateDoc(doc(db, 'users', firebaseUser.uid), clean(u)); }, [db, firebaseUser]);
@@ -2480,34 +2375,31 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
     console.log(`[RSVP] Updating RSVP: Event ${eventId}, Status ${status}, Team ${tid}, User ${uid}`);
-    if (tid && uid && db) {
-      await updateDoc(doc(db, 'teams', tid, 'events', eventId), { [`userRsvps.${uid}`]: status }); 
+    if (tid && uid && firebaseAuth) {
+      const token = await getAuthToken(firebaseAuth);
+      const response = await fetch('/api/teams/events/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ action: 'rsvp', teamId: tid, eventId, participantId: uid, status }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || 'Unable to update RSVP.');
+      }
     } else {
-      console.error(`[RSVP] Failed: tid=${tid}, uid=${uid}, db=${!!db}`);
+      console.error(`[RSVP] Failed: tid=${tid}, uid=${uid}, auth=${!!firebaseAuth}`);
     }
-  }, [db, activeTeam, firebaseUser, isParent, isStaff, myChildren]);
+  }, [activeTeam, firebaseUser, firebaseAuth, isParent, isStaff, myChildren]);
 
   const claimAssignment = useCallback(async (eventId: string, assignmentId: string) => {
-    if (!activeTeam?.id || !firebaseUser || !db) return false;
-    const eventRef = doc(db, 'teams', activeTeam.id, 'events', eventId);
-    const eventSnap = await getDoc(eventRef);
-    if (!eventSnap.exists()) return false;
-    
-    const eventData = eventSnap.data() as TeamEvent;
-    const assignments = eventData.assignments || [];
-    const updatedAssignments = assignments.map(a => {
-      if (a.id === assignmentId && (!a.assigneeId || a.status === 'open')) {
-        return {
-          ...a,
-          assigneeId: firebaseUser.uid,
-          assigneeName: userProfile?.name || firebaseUser.displayName || 'Anonymous SQUAD Member',
-          status: 'claimed' as const
-        };
-      }
-      return a;
+    if (!activeTeam?.id || !firebaseUser || !firebaseAuth) return false;
+    const token = await getAuthToken(firebaseAuth);
+    const response = await fetch('/api/teams/events/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'claim-assignment', teamId: activeTeam.id, eventId, assignmentId }),
     });
-
-    await updateDoc(eventRef, { assignments: updatedAssignments });
+    if (!response.ok) return false;
     
     // Notification Logic (Mock for now, normally triggers a push or email)
     toast({ 
@@ -2516,7 +2408,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
     
     return true;
-  }, [db, activeTeam, firebaseUser, userProfile]);
+  }, [activeTeam, firebaseUser, firebaseAuth]);
 
   const addMessage = useCallback(async (chatId: string, author: string, content: string, type: string, img?: string, poll?: any) => { 
     if (activeTeam?.id && firebaseUser && db) {
@@ -2591,24 +2483,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const deleteFundraisingOpportunity = useCallback(async (id: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'fundraising', id)); }, [activeTeam, db]);
   const signUpForFundraising = useCallback(async (fundId: string) => { if (activeTeam?.id && firebaseUser && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), { [`finances.${firebaseUser.uid}`]: { userId: firebaseUser.uid, userName: userProfile?.name, status: 'joined', contributed: 0, createdAt: new Date().toISOString() } }); }, [activeTeam, firebaseUser, db, userProfile]);
   const recordDonation = useCallback(async (fundId: string, amount: number, donorName: string, method: 'external' | 'e-transfer') => { 
-    if (!activeTeam?.id || !db) return; 
-    const donationId = `don_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`; 
-    await setDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId, 'donations', donationId), clean({ 
-      id: donationId, 
-      amount, 
-      donorName, 
-      method, 
-      status: 'pending', 
-      createdAt: new Date().toISOString() 
-    })); 
-    // Increment the shadow finances object if user is logged in
-    if (firebaseUser) {
-      await updateDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), {
-        [`finances.${firebaseUser.uid}.contributed`]: increment(amount),
-        [`finances.${firebaseUser.uid}.lastDonationAt`]: new Date().toISOString()
-      });
+    if (!activeTeam?.id) return;
+    const response = await fetch('/api/public/donations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ teamId: activeTeam.id, fundId, amount, donorName, method }),
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      throw new Error(result.error || 'Unable to record donation intent.');
     }
-  }, [db, activeTeam, firebaseUser]);
+  }, [activeTeam]);
   const confirmExternalDonation = useCallback(async (fundId: string, donationId: string, amount: number) => { if (!activeTeam?.id || !db) return; const batch = writeBatch(db); batch.update(doc(db, 'teams', activeTeam.id, 'fundraising', fundId, 'donations', donationId), { status: 'verified', amount }); batch.update(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), { currentAmount: increment(amount) }); await batch.commit(); }, [db, activeTeam]);
 
   const addGame = useCallback(async (data: any) => { if (activeTeam?.id && db) await addDoc(collection(db, 'teams', activeTeam.id, 'games'), clean({ ...data, teamId: activeTeam.id })); }, [activeTeam, db]);
@@ -3305,72 +3190,49 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
 
   const revokeChildInvite = useCallback(async (childId: string) => {
-    if (!db) return;
+    if (!firebaseAuth) return;
     try {
-      const playerDoc = await getDoc(doc(db, 'players', childId));
-      if (playerDoc.exists()) {
-        const data = playerDoc.data();
-        if (data.inviteToken) {
-          await deleteDoc(doc(db, 'invites', data.inviteToken));
-        }
-        await updateDoc(doc(db, 'players', childId), {
-          pendingInviteEmail: deleteField(),
-          inviteToken: deleteField(),
-          inviteSentAt: deleteField(),
-          inviteExpiresAt: deleteField()
-        });
-        toast({ title: "Invite Revoked", description: "The invitation has been canceled." });
-      }
+      const token = await getAuthToken(firebaseAuth);
+      const response = await fetch('/api/youth-invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ action: 'revoke', childId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to revoke invitation.');
+      toast({ title: "Invite Revoked", description: "The invitation has been canceled." });
     } catch (err) {
       console.error('[YouthInvite] Failed to revoke invite:', err);
       toast({ title: "Error", description: "Failed to revoke invitation.", variant: "destructive" });
     }
-  }, [db]);
+  }, [firebaseAuth]);
 
   const sendChildInvite = useCallback(async (child: PlayerProfile, email: string): Promise<string | null> => {
-    if (!db || !firebaseUser) return null;
+    if (!firebaseAuth || !firebaseUser) return null;
     
     // Diagnostic logging to catch permission mismatches
     console.log('[YouthInvite] Initiating invite for child:', child.id);
 
-    const token = Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, '0')).join('');
-    const sentAt = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
     try {
-      // 1. Attempt to write to invites collection
-      await setDoc(doc(db, 'invites', token), {
-        token,
-        childId: child.id,
-        childFirstName: child.firstName,
-        childLastName: child.lastName,
-        parentId: firebaseUser.uid,
-        email: email,
-        expiresAt: expiresAt,
-        used: false,
-        createdAt: serverTimestamp()
+      const token = await getAuthToken(firebaseAuth);
+      const response = await fetch('/api/youth-invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ action: 'create', childId: child.id, email }),
       });
-
-      // 2. Attempt to update players record
-      await updateDoc(doc(db, 'players', child.id), { 
-        pendingInviteEmail: email, 
-        inviteToken: token,
-        inviteSentAt: sentAt,
-        inviteExpiresAt: expiresAt
-      });
-
-      const signupUrl = `${window.location.origin}/signup/youth?token=${token}`;
-      return signupUrl;
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to create invitation.');
+      return `${window.location.origin}${result.signupUrl}`;
     } catch (err: any) {
       console.error('[YouthInvite] Error during invite flow:', err);
       toast({ 
         title: 'Invite Permission Error', 
-        description: `Failed to ${err.message.includes('invites') ? 'create invite token' : 'update player record'}. Ensure you are the primary guardian.`,
+        description: err.message || 'Ensure you are the linked guardian.',
         variant: 'destructive'
       });
       return null;
     }
-  }, [db, firebaseUser]);
+  }, [firebaseAuth, firebaseUser]);
   const assignManualPlan = useCallback(async (uid: string, planId: string, limit: number) => { if (db) await updateDoc(doc(db, 'users', uid), { activePlanId: planId, proTeamLimit: limit, planSource: 'manual' }); }, [db]);
 
   const addIncident = useCallback(async (data: any) => { if (activeTeam?.id && db && firebaseUser) await addDoc(collection(db, 'teams', activeTeam.id, 'incidents'), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId, teamName: activeTeam.name, reportedBy: firebaseUser.uid, createdAt: new Date().toISOString() })); }, [db, firebaseUser, activeTeam]);
@@ -3787,7 +3649,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateLeagueGlobalFees = useCallback(async (leagueId: string, fees: any) => { if (db) await updateDoc(doc(db, 'leagues', leagueId), { globalFees: clean(fees) }); }, [db]);
 
   const updateLeaguePin = useCallback(async (leagueId: string, pin: string) => { 
-    if (db) await updateDoc(doc(db, 'leagues', leagueId), { scorekeeperPin: pin }); 
+    const normalizedPin = pin.trim();
+    if (normalizedPin.length < 4) throw new Error('Scorekeeper PIN must be at least 4 characters.');
+    if (db) await updateDoc(doc(db, 'leagues', leagueId), { scorekeeperPin: normalizedPin });
   }, [db]);
 
 

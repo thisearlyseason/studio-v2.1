@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { verifyFirebaseToken } from '@/lib/api-auth';
+import {
+  enforceUserRateLimit,
+  getTrustedAppOrigin,
+  readJsonBodyWithLimit,
+  RequestBodyError,
+} from '@/lib/server-request-guards';
 
 /**
  * POST /api/stripe/connect/onboard
@@ -26,11 +32,20 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const { userId, teamId, mode = 'user' } = await req.json();
+    const limited = await enforceUserRateLimit(auth.uid, 'stripe-connect-onboard', 20, 60 * 60 * 1000);
+    if (limited) return limited;
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
+    const userId = body.userId;
+    const teamId = typeof body.teamId === 'string' ? body.teamId : undefined;
+    const requestedMode = body.mode ?? 'user';
 
-    if (!userId) {
+    if (typeof userId !== 'string' || !userId) {
       return NextResponse.json({ error: 'Missing userId.' }, { status: 400 });
     }
+    if (!['user', 'hub'].includes(String(requestedMode))) {
+      return NextResponse.json({ error: 'mode must be user or hub.' }, { status: 400 });
+    }
+    const mode: 'user' | 'hub' = requestedMode === 'hub' ? 'hub' : 'user';
 
     if (auth.uid !== userId) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
@@ -54,7 +69,7 @@ export async function POST(req: NextRequest) {
 
     // ── Hub mode: verify the user is the hub team owner ───────────────────────
     if (mode === 'hub') {
-      if (!teamId) {
+      if (!teamId || teamId.includes('/')) {
         return NextResponse.json({ error: 'teamId is required for hub mode.' }, { status: 400 });
       }
       const teamSnap = await adminDb.collection('teams').doc(teamId).get();
@@ -67,7 +82,7 @@ export async function POST(req: NextRequest) {
     }
 
     const stripe = getStripe();
-    const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:9002';
+    const origin = getTrustedAppOrigin(req);
 
     // Determine where the existing connect account ID is stored
     let connectAccountId: string | undefined;
@@ -80,19 +95,22 @@ export async function POST(req: NextRequest) {
 
     // Create Connect Express account if not already created
     if (!connectAccountId) {
-      const account = await stripe.accounts.create({
-        type: 'express',
-        email: userData.email,
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
+      const account = await stripe.accounts.create(
+        {
+          type: 'express',
+          email: userData.email,
+          capabilities: {
+            card_payments: { requested: true },
+            transfers: { requested: true },
+          },
+          business_type: 'individual',
+          metadata: {
+            firebase_uid: userId,
+            ...(mode === 'hub' && teamId ? { hub_team_id: teamId } : {}),
+          },
         },
-        business_type: 'individual',
-        metadata: {
-          firebase_uid: userId,
-          ...(mode === 'hub' && teamId ? { hub_team_id: teamId } : {}),
-        },
-      });
+        { idempotencyKey: `connect-${mode}-${mode === 'hub' ? teamId : userId}` },
+      );
       connectAccountId = account.id;
 
       // Store on the right document
@@ -128,6 +146,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: accountLink.url, connectAccountId });
   } catch (err: any) {
+    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error('[stripe/connect/onboard] Error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

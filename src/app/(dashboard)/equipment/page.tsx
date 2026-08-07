@@ -54,9 +54,6 @@ import { AccessRestricted } from '@/components/layout/AccessRestricted';
 export default function EquipmentPage() {
   const { activeTeam, isStaff, isPro, members, addEquipmentItem, updateEquipmentItem, deleteEquipmentItem, assignEquipment, returnEquipment, createAlert } = useTeam();
   
-  if (!isStaff) return <AccessRestricted type="role" />;
-  if (!isPro) return <AccessRestricted type="tier" />;
-
   const db = useFirestore();
   
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -85,6 +82,9 @@ export default function EquipmentPage() {
       return matchesSearch && matchesCat;
     });
   }, [equipment, searchTerm, activeCategory]);
+
+  if (!isStaff) return <AccessRestricted type="role" />;
+  if (!isPro) return <AccessRestricted type="tier" />;
 
   const handleAddItem = async () => {
     if (!formEq.name) return;

@@ -1197,7 +1197,9 @@ export default function LeagueRegistrationAdminPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t">
                 <div className="space-y-2">
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Assign to Squad</p>
-                  <Select value={inspectingEntry?.assigned_team_id || 'unassigned'} onValueChange={(tid) => assignEntryToTeam(leagueId as string, inspectingEntry?.id!, tid === 'unassigned' ? null : tid)}>
+                  <Select value={inspectingEntry?.assigned_team_id || 'unassigned'} onValueChange={(tid) => {
+                    if (inspectingEntry?.id) assignEntryToTeam(leagueId as string, inspectingEntry.id, tid === 'unassigned' ? null : tid);
+                  }}>
                     <SelectTrigger className="h-11 rounded-xl border-2 font-black text-sm"><SelectValue placeholder="Select Squad..." /></SelectTrigger>
                     <SelectContent className="rounded-xl border-2">
                       <SelectItem value="unassigned" className="font-bold uppercase text-[10px]">Unassigned Pool</SelectItem>

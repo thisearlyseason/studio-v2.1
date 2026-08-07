@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Resend } from 'resend';
 import { passwordResetEmail } from '@/lib/email-templates';
+import { getResend } from '@/lib/resend-client';
+import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
+import { getAdminAuth } from '@/lib/firebase-admin';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM = 'The Squad Pro <noreply@thesquad.pro>';
 
 /**
@@ -15,18 +16,21 @@ const FROM = 'The Squad Pro <noreply@thesquad.pro>';
  */
 export async function POST(req: NextRequest) {
   try {
-    const { email } = await req.json();
+    const fingerprint = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous';
+    const limited = await enforceUserRateLimit(fingerprint, 'password-reset', 8, 60 * 60 * 1000);
+    if (limited) return limited;
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 2_000);
+    const email = String(body.email || '').trim().toLowerCase();
 
-    if (!email || typeof email !== 'string') {
+    if (!/^[^\s@\r\n]+@[^\s@\r\n]+\.[^\s@\r\n]+$/.test(email) || email.length > 254) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }
 
     // Use Firebase Admin SDK to generate a password reset link
     // This avoids sending Firebase's ugly default email
-    const admin = await getFirebaseAdmin();
     let resetLink: string;
     try {
-      resetLink = await admin.auth().generatePasswordResetLink(email, {
+      resetLink = await getAdminAuth().generatePasswordResetLink(email, {
         url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.thesquad.pro'}/login`,
       });
     } catch (adminErr: any) {
@@ -46,7 +50,7 @@ export async function POST(req: NextRequest) {
 
     const { subject, html } = passwordResetEmail({ email, resetLink });
 
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: FROM,
       to: [email],
       subject,
@@ -60,23 +64,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
+    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error('[Reset Password] Error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
-}
-
-// Lazy-initialize Firebase Admin to avoid import errors in edge environments
-async function getFirebaseAdmin() {
-  const admin = await import('firebase-admin');
-  if (!admin.apps.length) {
-    const serviceAccountB64 = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-    if (!serviceAccountB64) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON env var not set');
-    const serviceAccount = JSON.parse(
-      Buffer.from(serviceAccountB64, 'base64').toString('utf8')
-    );
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
-  }
-  return admin;
 }

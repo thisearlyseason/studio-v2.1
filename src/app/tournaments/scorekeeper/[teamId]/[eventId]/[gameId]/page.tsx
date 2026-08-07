@@ -3,9 +3,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { useTeam, TeamEvent, TournamentGame } from '@/components/providers/team-provider';
+import { TeamEvent, TournamentGame } from '@/components/providers/team-provider';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,19 +17,13 @@ import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { SquadIdentity } from '@/components/SquadIdentity';
+import { PortalStatus } from '@/components/public/PortalStatus';
 
 export default function PublicScorekeeperEntryPage() {
   const { teamId, eventId, gameId } = useParams();
-  const db = useFirestore();
   const router = useRouter();
-  const { submitMatchScore, disputeMatchScore } = useTeam();
-
-  const eventRef = useMemoFirebase(() => {
-    if (!db || !teamId || !eventId) return null;
-    return doc(db, 'teams', teamId as string, 'events', eventId as string);
-  }, [db, teamId, eventId]);
-
-  const { data: event, isLoading } = useDoc<TeamEvent>(eventRef);
+  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
+  const { data: event, isLoading, error, status, retry } = usePublicPortal<TeamEvent & { requiresCode?: boolean }>(portalUrl);
 
   const game = useMemo(() => {
     return event?.tournamentGames?.find(g => g.id === gameId);
@@ -53,17 +46,24 @@ export default function PublicScorekeeperEntryPage() {
     }
   }, [game?.id]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setPin(sessionStorage.getItem(`scorer_verified_${eventId}`) || '');
+    }
+  }, [eventId]);
+
   // If this event uses a scoring code, bounce unauthenticated visitors back to the hub gate
   useEffect(() => {
     if (!event) return;
-    const hasCode = !!(event as any).scoringCode;
+    const hasCode = !!event.requiresCode;
     if (!hasCode) return;
-    const verified = typeof window !== 'undefined' && sessionStorage.getItem(`scorer_verified_${eventId}`) === 'true';
+    const verified = typeof window !== 'undefined' && sessionStorage.getItem(`scorer_verified_${eventId}`) !== null;
     if (!verified) router.replace(`/tournaments/scorekeeper/${teamId}/${eventId}`);
   }, [event, eventId, teamId, router]);
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-  if (!event || !game) return <div className="min-h-screen flex items-center justify-center p-6"><Card className="max-w-md text-center p-10"><AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" /><h2 className="text-2xl font-black uppercase tracking-tight">Match Inactive</h2></Card></div>;
+  if (!event) return <PortalStatus status={status} message={error} onRetry={retry} />;
+  if (!game) return <PortalStatus status={404} title="Match Inactive" message="This match is no longer available in the tournament schedule." />;
 
   const handleSubmit = async () => {
     // Use explicit empty-string check so a score of 0 is valid
@@ -71,7 +71,13 @@ export default function PublicScorekeeperEntryPage() {
     setIsSubmitting(true);
     const isTeam1 = selectedTeam === game.team1;
     try {
-      await submitMatchScore(teamId as string, eventId as string, gameId as string, isTeam1, parseInt(score1), parseInt(score2), pin);
+      const sessionCode = typeof window !== 'undefined' ? sessionStorage.getItem(`scorer_verified_${eventId}`) : null;
+      const response = await fetch('/api/public/portals/action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'tournament', action: 'score', teamId, eventId, gameId, score1: parseInt(score1), score2: parseInt(score2), code: pin || sessionCode || '' }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Score could not be posted.');
       setIsSubmitted(true);
     } catch (err: any) {
       toast({ 
@@ -88,7 +94,13 @@ export default function PublicScorekeeperEntryPage() {
     if (!disputeNotes.trim() || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      await disputeMatchScore(teamId as string, eventId as string, gameId as string, disputeNotes);
+      const sessionCode = typeof window !== 'undefined' ? sessionStorage.getItem(`scorer_verified_${eventId}`) : null;
+      const response = await fetch('/api/public/portals/action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'tournament', action: 'dispute', teamId, eventId, gameId, notes: disputeNotes, code: pin || sessionCode || '' }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Dispute could not be filed.');
       toast({ title: "Dispute Logged", description: "The organizer has been alerted." });
       setIsDisputeOpen(false);
       router.push(`/tournaments/scorekeeper/${teamId}/${eventId}`);
@@ -253,7 +265,7 @@ export default function PublicScorekeeperEntryPage() {
           <CardFooter className="p-8 lg:p-10 pt-0 flex flex-col gap-4">
             <Button 
               className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all"
-              disabled={!selectedTeam || score1 === '' || score2 === '' || !pin || isSubmitting}
+              disabled={!selectedTeam || score1 === '' || score2 === '' || (event.requiresCode && !pin) || isSubmitting}
               onClick={handleSubmit}
             >
               {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Score Result"}

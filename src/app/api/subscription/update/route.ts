@@ -3,6 +3,8 @@ import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { verifyFirebaseToken, assertOwner } from '@/lib/api-auth';
 import { PLAN_PRICE_MAP } from '@/lib/stripe-price-map';
+import { resolveSubscriptionEntitlements } from '@/lib/subscription-entitlements';
+import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
 
 export async function POST(req: NextRequest) {
   // Authenticate caller
@@ -10,9 +12,13 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const { userId, newPriceId } = await req.json();
+    const limited = await enforceUserRateLimit(auth.uid, 'subscription-update', 20, 60 * 60 * 1000);
+    if (limited) return limited;
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
+    const userId = body.userId;
+    const newPriceId = body.newPriceId;
 
-    if (!userId || !newPriceId) {
+    if (typeof userId !== 'string' || !userId || typeof newPriceId !== 'string' || !newPriceId) {
       return NextResponse.json({ error: 'userId and newPriceId are required' }, { status: 400 });
     }
 
@@ -54,11 +60,14 @@ export async function POST(req: NextRequest) {
       proration_behavior: 'always_invoice',
     });
 
-    // Sync new plan to Firestore
+    const entitlements = resolveSubscriptionEntitlements(updatedSubscription);
+
+    // Sync the Stripe-confirmed state to Firestore without dropping add-on teams.
     await userRef.update({
-      plan_type: resolvedPlan.id,
-      team_limit: resolvedPlan.teamLimit,
-      subscription_status: 'active',
+      plan_type: entitlements.planType,
+      team_limit: entitlements.teamLimit,
+      extra_teams: entitlements.extraTeams,
+      subscription_status: entitlements.subscriptionStatus,
       last_sync_method: 'direct_upgrade',
       last_webhook_sync: new Date().toISOString(),
     });
@@ -73,8 +82,8 @@ export async function POST(req: NextRequest) {
         const batch = adminDb.batch();
         teamsSnap.docs.forEach(teamDoc => {
           batch.update(teamDoc.ref, {
-            planId: resolvedPlan.id,
-            isPro: true,
+            planId: entitlements.planType,
+            isPro: entitlements.isEntitled,
             last_plan_sync: new Date().toISOString(),
           });
         });
@@ -86,6 +95,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, subscription: updatedSubscription });
   } catch (err: any) {
+    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error('[subscription/update] Error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

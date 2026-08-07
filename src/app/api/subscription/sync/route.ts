@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { verifyFirebaseToken, assertOwner } from '@/lib/api-auth';
-import { PLAN_PRICE_MAP, EXTRA_TEAM_PRICE_IDS } from '@/lib/stripe-price-map';
+import { resolveSubscriptionEntitlements, selectSubscriptionForSync } from '@/lib/subscription-entitlements';
+import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
+import { PLAN_TEAM_LIMITS } from '@/lib/plan-catalog';
 
 export async function POST(req: NextRequest) {
   // Authenticate caller
@@ -10,9 +12,12 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const { userId } = await req.json();
+    const limited = await enforceUserRateLimit(auth.uid, 'subscription-sync', 30, 60 * 60 * 1000);
+    if (limited) return limited;
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 4_000);
+    const userId = body.userId;
 
-    if (!userId) return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    if (typeof userId !== 'string' || !userId) return NextResponse.json({ error: 'userId is required' }, { status: 400 });
 
     // Verify the caller owns this account
     const ownerCheck = assertOwner(auth, userId);
@@ -38,37 +43,17 @@ export async function POST(req: NextRequest) {
       limit: 5,
     });
 
-    if (subscriptions.data.length === 0) {
-      return NextResponse.json({ message: 'No subscriptions found in Stripe.' });
-    }
-
-    const activeSub =
-      subscriptions.data.find(s => ['active', 'trialing', 'incomplete'].includes(s.status)) ||
-      subscriptions.data[0];
-
-    let planType = userData.plan_type || 'free';
-    let teamLimit = userData.team_limit || 1;
-    let extraTeams = 0;
-
-    for (const item of activeSub.items.data) {
-      const resolved = PLAN_PRICE_MAP[item.price.id];
-      if (resolved) {
-        planType = resolved.id;
-        teamLimit = resolved.teamLimit;
-      } else if (
-        item.price.id === EXTRA_TEAM_PRICE_IDS.monthly ||
-        item.price.id === EXTRA_TEAM_PRICE_IDS.annual
-      ) {
-        extraTeams = item.quantity || 0;
-      }
-    }
+    const selectedSubscription = selectSubscriptionForSync(subscriptions.data);
+    const entitlements = selectedSubscription
+      ? resolveSubscriptionEntitlements(selectedSubscription)
+      : { planType: 'free', teamLimit: PLAN_TEAM_LIMITS.free, extraTeams: 0, subscriptionStatus: 'none', isEntitled: false };
 
     await userRef.update({
-      stripe_subscription_id: activeSub.id,
-      subscription_status: activeSub.status,
-      plan_type: planType,
-      team_limit: teamLimit + extraTeams,
-      extra_teams: extraTeams,
+      stripe_subscription_id: selectedSubscription?.id || null,
+      subscription_status: entitlements.subscriptionStatus,
+      plan_type: entitlements.planType,
+      team_limit: entitlements.teamLimit,
+      extra_teams: entitlements.extraTeams,
       last_webhook_sync: new Date().toISOString(),
     });
 
@@ -85,8 +70,8 @@ export async function POST(req: NextRequest) {
           const batch = adminDb.batch();
           chunk.forEach(teamDoc => {
             batch.update(teamDoc.ref, {
-              planId: planType,
-              isPro: planType !== 'free',
+              planId: entitlements.planType,
+              isPro: entitlements.isEntitled,
               last_plan_sync: new Date().toISOString(),
             });
           });
@@ -97,8 +82,9 @@ export async function POST(req: NextRequest) {
       console.error('[subscription/sync] Team cascade error:', cascadeErr.message);
     }
 
-    return NextResponse.json({ success: true, subscriptionId: activeSub.id });
+    return NextResponse.json({ success: true, subscriptionId: selectedSubscription?.id || null });
   } catch (err: any) {
+    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error('[subscription/sync] Error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

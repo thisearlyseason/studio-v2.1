@@ -4,16 +4,15 @@
 import React, { useMemo, useState } from 'react';
 import { DateRange } from "react-day-picker";
 import { useParams } from 'next/navigation';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
 import { League, TournamentGame } from '@/components/providers/team-provider';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AnimatedScore } from '@/components/ui/animated-score';
 import { Trophy, CalendarDays, MapPin, Clock, Loader2, AlertCircle, List, ChevronRight } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
-import { format, isAfter, isBefore, isSameDay, parseISO, startOfDay, addDays } from 'date-fns';
+import { format, isAfter, isBefore, isSameDay, parseISO, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
@@ -21,19 +20,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { SquadIdentity } from '@/components/SquadIdentity';
+import { PortalStatus } from '@/components/public/PortalStatus';
 
 export default function PublicLeagueSpectatorHub() {
   const { leagueId } = useParams();
-  const db = useFirestore();
 
   const [teamFilter, setTeamFilter] = useState<string | 'all'>('all');
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: startOfDay(new Date()),
-    to: addDays(startOfDay(new Date()), 14)
-  });
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
-  const leagueRef = useMemoFirebase(() => (db && leagueId) ? doc(db, 'leagues', leagueId as string) : null, [db, leagueId]);
-  const { data: league, isLoading } = useDoc<League>(leagueRef);
+  const portalUrl = leagueId ? `/api/public/portals?kind=league&leagueId=${encodeURIComponent(leagueId as string)}` : null;
+  const { data: league, isLoading, error, status, retry } = usePublicPortal<League>(portalUrl);
 
   const filteredSchedule = useMemo(() => {
     if (!league?.schedule) return [];
@@ -89,7 +85,7 @@ export default function PublicLeagueSpectatorHub() {
   }, [filteredSchedule]);
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-muted/10"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
-  if (!league) return <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10"><Card className="max-w-md text-center p-10"><AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" /><h2 className="text-2xl font-black uppercase">League Not Found</h2></Card></div>;
+  if (!league) return <PortalStatus status={status} message={error} onRetry={retry} />;
 
   return (
     <div className="min-h-screen bg-muted/5 flex flex-col items-center py-8 lg:py-12 px-4 md:px-6">

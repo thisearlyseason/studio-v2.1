@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { PLAN_PRICE_MAP, EXTRA_TEAM_PRICE_IDS } from '@/lib/stripe-price-map';
+import { resolveSubscriptionEntitlements } from '@/lib/subscription-entitlements';
 import {
   ownerNewRegistrationEmail,
   ownerPaymentReceivedEmail,
@@ -81,29 +82,8 @@ async function syncSubscriptionToFirestore(subscription: Stripe.Subscription) {
     return;
   }
 
-  // 2. Map subscription items to plan + add-ons
-  let planType = 'free';
-  let baseLimit = 1;
-  let extraTeams = 0;
-
-  for (const item of subscription.items.data) {
-    const priceId = item.price.id;
-    const resolved = PLAN_PRICE_MAP[priceId];
-    if (resolved) {
-      planType = resolved.id;
-      baseLimit = resolved.teamLimit;
-    } else if (
-      priceId === EXTRA_TEAM_PRICE_IDS.monthly ||
-      priceId === EXTRA_TEAM_PRICE_IDS.annual
-    ) {
-      extraTeams += item.quantity || 0;
-    } else {
-      console.warn(`[Webhook] Unrecognized priceId: ${priceId} — add to stripe-price-map.ts`);
-    }
-  }
-
-  const status = subscription.status;
-  const isActive = status === 'active' || status === 'past_due' || status === 'trialing';
+  const entitlements = resolveSubscriptionEntitlements(subscription);
+  const status = entitlements.subscriptionStatus;
   const userRef = adminDb.collection('users').doc(userId);
 
   // 3. Update user plan data
@@ -112,9 +92,9 @@ async function syncSubscriptionToFirestore(subscription: Stripe.Subscription) {
       stripe_subscription_id: subscription.id,
       stripe_customer_id: customerId,
       subscription_status: status,
-      plan_type: isActive ? planType : 'free',
-      team_limit: isActive ? baseLimit + extraTeams : 1,
-      extra_teams: extraTeams,
+      plan_type: entitlements.planType,
+      team_limit: entitlements.teamLimit,
+      extra_teams: entitlements.extraTeams,
       last_webhook_sync: new Date().toISOString(),
     });
   } catch (err: any) {
@@ -137,8 +117,8 @@ async function syncSubscriptionToFirestore(subscription: Stripe.Subscription) {
         const batch = adminDb.batch();
         chunk.forEach(teamDoc => {
           batch.update(teamDoc.ref, {
-            planId: isActive ? planType : 'free',
-            isPro: isActive && planType !== 'free',
+            planId: entitlements.planType,
+            isPro: entitlements.isEntitled,
             last_plan_sync: new Date().toISOString(),
           });
         });
@@ -156,9 +136,9 @@ async function syncSubscriptionToFirestore(subscription: Stripe.Subscription) {
         userId,
         customerId,
         status,
-        planType,
-        teamLimit: baseLimit + extraTeams,
-        extraTeams,
+        planType: entitlements.planType,
+        teamLimit: entitlements.teamLimit,
+        extraTeams: entitlements.extraTeams,
         // current_period_end may be on subscription.items in newer Stripe API versions
         currentPeriodEnd: (() => {
           const ts = (subscription as any).current_period_end

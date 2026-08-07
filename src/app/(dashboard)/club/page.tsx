@@ -139,10 +139,6 @@ export default function ClubManagementPage() {
   const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, updateTeam, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, reinstateMember, isEliteAccount } = useTeam();
   const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
   
-  if (!isPrimaryClubAuthority) {
-    return <AccessRestricted type="role" title={isSchoolMode ? "School Hub Locked" : "Club Hub Locked"} description={isSchoolMode ? "This command center is reserved for School Hub Administrators." : "This command center is reserved for Institutional Stakeholders and Club Hub Administrators."} />;
-  }
-
   const router = useRouter();
   
   const [searchTerm, setSearchTerm] = useState('');
