@@ -10,11 +10,14 @@ const eslintConfig = [
   {
     ignores: [
       '.next/**',
+      '.next-stale-*/**',
+      '.playwright-cli/**',
       'functions/lib/**',
       'functions/node_modules/**',
       'next-env.d.ts',
       'node_modules/**',
       'public/sw.js',
+      'output/**',
       'scratch/**',
       'testsprite_tests/**',
     ],

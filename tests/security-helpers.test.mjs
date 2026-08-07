@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import safeExternalUrl from '../src/lib/safe-external-url.ts';
-import boundedJson from '../src/lib/bounded-json.ts';
-import checkoutPolicy from '../src/lib/checkout-policy.ts';
-import stripePriceMap from '../src/lib/stripe-price-map.ts';
-import htmlEscape from '../src/lib/html-escape.ts';
+import * as safeExternalUrl from '../src/lib/safe-external-url.ts';
+import * as boundedJson from '../src/lib/bounded-json.ts';
+import * as checkoutPolicy from '../src/lib/checkout-policy.ts';
+import * as stripePriceMap from '../src/lib/stripe-price-map.ts';
+import * as htmlEscape from '../src/lib/html-escape.ts';
 
 const { assertSafeExternalUrl, isPrivateNetworkAddress } = safeExternalUrl;
 const { readJsonBodyWithLimit, RequestBodyError } = boundedJson;

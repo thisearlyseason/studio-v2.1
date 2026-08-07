@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import accountDeletionPolicy from '../functions/src/account-deletion.ts';
+import * as accountDeletionPolicy from '../functions/src/account-deletion.ts';
 
 const {
   USER_ARRAY_TARGETS,

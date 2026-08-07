@@ -205,6 +205,9 @@ function AuthorizedEquipmentPage() {
     });
   }, [equipment, searchTerm, activeCategory]);
 
+  if (!isStaff) return <AccessRestricted type="role" />;
+  if (!isPro) return <AccessRestricted type="tier" />;
+
   const handleAddItem = async () => {
     if (!formEq.name) return;
     const configuredStock = buildSizeStock(sizeRows);
@@ -418,7 +421,7 @@ function AuthorizedEquipmentPage() {
                   <div className="flex justify-between items-start">
                     <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest border-primary/20 text-primary">{item.category}</Badge>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/5 text-primary" onClick={() => openEdit(item)}>
+                      <Button aria-label={`Edit ${item.name}`} variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/5 text-primary" onClick={() => openEdit(item)}>
                         <Edit3 className="h-4 w-4" />
                       </Button>
                       <Badge className={cn(
@@ -474,7 +477,7 @@ function AuthorizedEquipmentPage() {
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="text-[10px] font-black text-primary">QTY: {as.quantity}</span>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:bg-destructive/10" onClick={() => returnEquipment(item.id, as.userId)}>
+                            <Button aria-label={`Return ${item.name} from ${as.userName}`} variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:bg-destructive/10" onClick={() => returnEquipment(item.id, as.userId)}>
                               <RotateCcw className="h-3 w-3" />
                             </Button>
                           </div>
@@ -503,7 +506,7 @@ function AuthorizedEquipmentPage() {
                   >
                     <UserPlus className="h-4 w-4 mr-2" /> Assign to Player
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => deleteEquipmentItem(item.id)}>
+                  <Button aria-label={`Delete ${item.name}`} variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => deleteEquipmentItem(item.id)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </CardFooter>

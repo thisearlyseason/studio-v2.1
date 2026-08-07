@@ -45,6 +45,16 @@
       ]
     },
     {
+      "collectionGroup": "members",
+      "fieldPath": "schoolId",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
       "collectionGroup": "events",
       "fieldPath": "facilityId",
       "indexes": [
@@ -58,6 +68,14 @@
       "collectionGroup": "events",
       "fieldPath": "date",
       "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
         {
           "order": "ASCENDING",
           "queryScope": "COLLECTION_GROUP"

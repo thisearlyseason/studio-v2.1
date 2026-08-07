@@ -572,7 +572,7 @@ export default function PublicScoutPortalPage() {
             <section className="space-y-6">
               <div className="flex items-center gap-3 px-2"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Video className="h-5 w-5" /></div><h2 className="text-xl font-black uppercase tracking-tight">Highlight Reels</h2></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {videos.length > 0 ? videos.map((v: any, i) => (
+                {videos.length > 0 ? videos.map((v: any, i: number) => (
                   <Card key={i} className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-black group cursor-pointer relative" onClick={() => setSelectedPublicVideo(v)}>
                     <div className="aspect-video relative">
                       {v.thumbnailUrl ? (
@@ -703,7 +703,7 @@ export default function PublicScoutPortalPage() {
                       <tr><th className="px-8 py-5">Season</th><th className="px-4 py-5 text-center">GP</th><th className="px-4 py-5 text-center">PTS</th><th className="px-4 py-5 text-center">AST</th><th className="px-8 py-5 text-right">EFF</th></tr>
                     </thead>
                     <tbody className="divide-y">
-                      {stats.map((s, i) => (
+                      {stats.map((s: any, i: number) => (
                         <tr key={i} className="hover:bg-primary/5 transition-colors">
                           <td className="px-8 py-6 font-black text-sm uppercase">{s.season}</td>
                           <td className="px-4 py-6 text-center font-bold">{s.gamesPlayed}</td>

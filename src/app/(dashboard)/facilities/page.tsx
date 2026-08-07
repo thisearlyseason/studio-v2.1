@@ -375,6 +375,8 @@ function AuthorizedFacilityManagementPage() {
 
   const { data: facilities, isLoading } = useCollection<Facility>(facilitiesQuery);
 
+  if (!isStaff) return <AccessRestricted type="role" />;
+
   const handleAddFacility = async () => {
     if (!newFac.name || !newFac.address) return;
     setIsProcessing(true);

@@ -238,6 +238,15 @@ export default function TournamentRegistrationAdminPage() {
         if (updates.registration_cost !== undefined && eventRef) {
           await updateDoc(eventRef, { registration_cost: updates.registration_cost });
         }
+        // Scorekeeper credentials belong to the event itself, not the registration form.
+        // Keeping this write here makes the builder and public scorekeeper portal agree.
+        if ((updates as any).scoringCode !== undefined && eventRef) {
+          const scoringCode = String((updates as any).scoringCode).trim();
+          if (scoringCode.length > 0 && scoringCode.length < 4) {
+            throw new Error('Scorekeeper code must be at least 4 characters.');
+          }
+          await updateDoc(eventRef, { scoringCode });
+        }
         // Confirm activation/deactivation explicitly
         if (updates.is_active !== undefined) {
           toast({
@@ -472,11 +481,11 @@ export default function TournamentRegistrationAdminPage() {
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Series Headline</Label><Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-14 rounded-2xl border-2 font-black" /></div>
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Entry Fee ($)</Label><Input type="number" value={localConfig?.registration_cost || '0'} onChange={e => handleUpdateConfig({ registration_cost: e.target.value })} className="h-14 rounded-2xl border-2 font-black text-primary" /></div>
                   <div className="space-y-2 sm:col-span-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Scorekeeper Code <span className="text-muted-foreground font-medium normal-case tracking-normal">(optional — gates the public portal)</span></Label>
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Scorekeeper Code <span className="text-muted-foreground font-medium normal-case tracking-normal">(required for real score submissions)</span></Label>
                     <Input 
                       value={(localConfig as any)?.scoringCode || ''} 
                       onChange={e => handleUpdateConfig({ scoringCode: e.target.value } as any)} 
-                      placeholder="Leave blank for open access..." 
+                      placeholder="Set a 4+ character access code..."
                       className="h-14 rounded-2xl border-2 font-black uppercase tracking-widest" 
                     />
                     <p className="text-[10px] text-muted-foreground ml-1">Share this code with scorekeepers only. Guests must enter it before accessing match entry.</p>

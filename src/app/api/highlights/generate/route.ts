@@ -7,6 +7,7 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { readResponseTextWithLimit } from '@/lib/public-network-url';
 
 const MAX_BODY_BYTES = 32_000;
 
@@ -108,6 +109,8 @@ Format: [{"startTime": number, "endTime": number, "title": string, "description"
     // --- ATTEMPT 1: Straico ---
     for (const modelId of MODELS_TO_TRY) {
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25_000);
         const res = await fetch(STRAICO_ENDPOINT, {
           method: 'POST',
           headers: {
@@ -118,15 +121,17 @@ Format: [{"startTime": number, "endTime": number, "title": string, "description"
             models: [modelId],
             messages: [{ role: 'user', content: aiPrompt }],
           }),
+          signal: controller.signal,
         });
+        clearTimeout(timeout);
 
         if (!res.ok) {
-          const errText = await res.text();
+          const errText = await readResponseTextWithLimit(res, 1_000_000);
           lastError = errText;
           continue;
         }
 
-        const json = await res.json();
+        const json = JSON.parse(await readResponseTextWithLimit(res, 1_000_000));
         const content =
           json?.data?.completions?.[modelId]?.completion?.choices?.[0]?.message?.content;
 

@@ -303,7 +303,7 @@ function SectionHeader({ badge, title, subtitle }: { badge: string; title: React
       <motion.div variants={fadeUp}>
         <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-black px-4 py-1 uppercase tracking-widest text-[10px]">{badge}</Badge>
       </motion.div>
-      <motion.h2 variants={fadeUp} className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.9]">{title}</motion.h2>
+      <motion.h2 variants={fadeUp} className="text-3xl sm:text-5xl md:text-7xl font-black tracking-tighter leading-[0.9]">{title}</motion.h2>
       <motion.div variants={fadeUp} className="text-muted-foreground font-medium text-lg pt-4 leading-relaxed">{subtitle}</motion.div>
     </motion.div>
   );
@@ -331,14 +331,13 @@ export default function LandingPage() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isDemoDialogOpen, setIsDemoDialogOpen] = useState(false);
   const [isDemoLoading, setIsDemoLoading] = useState(false);
-  const [isAuthResolvedFailsafe, setIsAuthResolvedFailsafe] = useState(false);
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [newsletterName, setNewsletterName] = useState('');
   const [newsletterLoading, setNewsletterLoading] = useState(false);
   const [newsletterDone, setNewsletterDone] = useState(false);
   const [pricingCycle, setPricingCycle] = useState<'monthly' | 'annual'>('monthly');
   
-  const { user, isUserLoading } = useUser();
+  const { user } = useUser();
   const auth = useAuth();
   const router = useRouter();
   const accountHref = user ? '/dashboard' : '/login';
@@ -395,14 +394,6 @@ export default function LandingPage() {
       setNewsletterLoading(false);
     }
   };
-
-  useEffect(() => {
-    // Failsafe to hide loading spinner even if Auth is slow or hangs
-    const timer = setTimeout(() => {
-      setIsAuthResolvedFailsafe(true);
-    }, 4000); // 4 second threshold
-    return () => clearTimeout(timer);
-  }, []);
 
   const sportsVideos = [
     {
@@ -499,12 +490,6 @@ export default function LandingPage() {
     }
   };
 
-  if (isUserLoading && !isAuthResolvedFailsafe) return (
-    <div className="min-h-screen flex items-center justify-center bg-black">
-      <Loader2 className="h-10 w-10 animate-spin text-primary" />
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-background selection:bg-primary/20">
       <nav className={cn(
@@ -558,7 +543,7 @@ export default function LandingPage() {
             )}
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className={cn("rounded-xl h-10 w-10", isScrolled ? "text-foreground" : "text-white hover:bg-white/10")}>
+                <Button aria-label="Open navigation menu" variant="ghost" size="icon" className={cn("rounded-xl h-10 w-10", isScrolled ? "text-foreground" : "text-white hover:bg-white/10")}>
                   <Menu className="h-6 w-6" />
                 </Button>
               </SheetTrigger>
@@ -600,17 +585,17 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      <section className="relative h-screen flex items-center justify-center overflow-hidden" id="hero">
+      <section className="relative h-[calc(100svh-72px)] min-h-[620px] md:h-[calc(100vh-96px)] md:min-h-[720px] flex items-center justify-center overflow-hidden" id="hero">
 
         {/* ── CURTAIN: two black panels split open top/bottom ── */}
         <motion.div
-          className="absolute inset-x-0 top-0 h-1/2 bg-black z-50 origin-top"
+          className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-black z-50 origin-top"
           initial={{ scaleY: 1 }}
           animate={{ scaleY: heroRevealed ? 0 : 1 }}
           transition={{ duration: 1.1, ease: [0.76, 0, 0.24, 1] }}
         />
         <motion.div
-          className="absolute inset-x-0 bottom-0 h-1/2 bg-black z-50 origin-bottom"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-black z-50 origin-bottom"
           initial={{ scaleY: 1 }}
           animate={{ scaleY: heroRevealed ? 0 : 1 }}
           transition={{ duration: 1.1, ease: [0.76, 0, 0.24, 1] }}
@@ -682,13 +667,6 @@ export default function LandingPage() {
             animate={{ opacity: 0.6, scale: 1 }}
             transition={{ delay: 1.5, duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
           />
-          {/* Small glowing orb */}
-          <motion.div
-            className="absolute top-[25%] left-[6%] w-6 h-6 rounded-full bg-primary/60 blur-sm float-fast"
-            initial={{ opacity: 0, scale: 0 }}
-            animate={{ opacity: 0.7, scale: 1 }}
-            transition={{ delay: 1.6, duration: 0.7, type: 'spring', stiffness: 300 }}
-          />
           {/* Tiny diamond */}
           <motion.div
             className="absolute top-[40%] right-[20%] w-4 h-4 bg-primary/50 rotate-45 float-fast"
@@ -705,7 +683,7 @@ export default function LandingPage() {
           />
           {/* Bottom-right live match card */}
           <motion.div
-            className="absolute bottom-[20%] right-[8%] bg-white/8 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-3 text-white"
+            className="absolute bottom-[20%] right-[8%] bg-white/8 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-3 text-white hidden md:block"
             initial={{ opacity: 0, x: 60, rotateY: 20 }}
             animate={{ opacity: 1, x: 0, rotateY: 0 }}
             transition={{ delay: 1.8, duration: 0.9, type: 'spring', stiffness: 200, damping: 20 }}
@@ -732,7 +710,7 @@ export default function LandingPage() {
         </div>
 
         <motion.div
-          className="absolute bottom-8 left-0 right-0 z-20 flex items-center justify-center gap-2 px-4 flex-wrap"
+          className="absolute bottom-3 md:bottom-8 left-0 right-0 z-20 flex items-center justify-center gap-1.5 md:gap-2 px-3 md:px-4 flex-wrap"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 2.2, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
@@ -741,11 +719,13 @@ export default function LandingPage() {
             <button
               key={idx}
               onClick={() => setCurrentImageIndex(idx)}
+              aria-pressed={currentImageIndex === idx}
+              aria-label={`Show ${clip.sport} background`}
               className={cn(
                 "transition-all duration-300 font-black uppercase tracking-widest text-white rounded-full border",
                 currentImageIndex === idx
-                  ? "bg-primary border-primary px-4 py-1.5 text-[9px] shadow-lg shadow-primary/30"
-                  : "bg-white/10 border-white/20 backdrop-blur-sm px-3 py-1 text-[8px] opacity-60 hover:opacity-100"
+                  ? "bg-primary border-primary px-3 md:px-4 py-1 md:py-1.5 text-[8px] md:text-[9px] shadow-lg shadow-primary/30"
+                  : "bg-white/10 border-white/20 backdrop-blur-sm px-2.5 md:px-3 py-1 text-[7px] md:text-[8px] opacity-60 hover:opacity-100"
               )}
             >
               {clip.sport}
@@ -754,7 +734,7 @@ export default function LandingPage() {
         </motion.div>
 
         {/* ── MAIN HERO CONTENT — bold 3D entry ── */}
-        <div className="container relative z-20 px-6 text-center space-y-8" style={{ perspective: '1200px' }}>
+        <div className="container relative z-20 px-5 md:px-6 text-center space-y-5 md:space-y-8" style={{ perspective: '1200px' }}>
 
           {/* Badge */}
           <motion.div
@@ -763,7 +743,7 @@ export default function LandingPage() {
             transition={{ delay: 0.6, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
             style={{ transformStyle: 'preserve-3d' }}
           >
-            <Badge className="bg-primary/20 backdrop-blur-md text-primary-foreground border-primary/30 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.2em]">
+            <Badge className="bg-primary/20 backdrop-blur-md text-primary-foreground border-primary/30 px-3 md:px-4 py-1.5 rounded-full text-[10px] md:text-xs font-black uppercase tracking-[0.2em]">
               Institutional Team Infrastructure
             </Badge>
           </motion.div>
@@ -781,7 +761,7 @@ export default function LandingPage() {
             {/* DOMINATE — crashes straight down from above with extreme rotateX */}
             <div className="overflow-hidden pb-2">
               <motion.div
-                className="text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88]"
+                className="text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88]"
                 initial={{ y: '-120%', rotateX: -120, opacity: 0, scale: 1.4, filter: 'blur(8px)' }}
                 animate={{ y: 0, rotateX: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
                 transition={{ delay: 0.7, duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
@@ -792,9 +772,9 @@ export default function LandingPage() {
             </div>
 
             {/* YOUR SEASON — side-by-side, each slams in from the sides with huge rotateY */}
-            <div className="overflow-hidden pb-1 flex items-baseline justify-center gap-4 md:gap-6 flex-wrap">
+            <div className="overflow-hidden pb-1 flex items-baseline justify-center gap-2 md:gap-6 flex-wrap">
               <motion.span
-                className="inline-block text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88]"
+                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88]"
                 initial={{ x: -200, rotateY: 90, opacity: 0, scale: 0.7, filter: 'blur(10px)' }}
                 animate={{ x: 0, rotateY: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
                 transition={{ delay: 1.05, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
@@ -803,7 +783,7 @@ export default function LandingPage() {
                 YOUR
               </motion.span>
               <motion.span
-                className="inline-block text-5xl md:text-9xl font-black text-primary italic tracking-tighter leading-[0.88]"
+                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-primary italic tracking-tighter leading-[0.88]"
                 initial={{ x: 200, rotateY: -90, opacity: 0, scale: 0.5, filter: 'blur(12px)' }}
                 animate={{ x: 0, rotateY: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
                 transition={{ delay: 1.15, duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
@@ -824,7 +804,7 @@ export default function LandingPage() {
 
           {/* Subtitle */}
           <motion.p
-            className="text-lg md:text-xl text-white/70 max-w-2xl mx-auto font-medium leading-relaxed"
+            className="text-base md:text-xl text-white/70 max-w-2xl mx-auto font-medium leading-relaxed"
             initial={{ opacity: 0, filter: 'blur(12px)', y: 20 }}
             animate={{ opacity: 1, filter: 'blur(0px)', y: 0 }}
             transition={{ delay: 1.55, duration: 1.0, ease: 'easeOut' }}
@@ -834,7 +814,7 @@ export default function LandingPage() {
 
           {/* Buttons */}
           <motion.div
-            className="flex flex-col items-center justify-center gap-3 pt-4 w-full max-w-xs mx-auto"
+            className="flex flex-col items-center justify-center gap-2 md:gap-3 pt-1 md:pt-4 w-full max-w-xs mx-auto"
             initial={{ opacity: 0, y: 30, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ delay: 1.8, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
@@ -884,6 +864,7 @@ export default function LandingPage() {
                         className="h-24 rounded-[1.5rem] bg-muted/30 border-2 border-transparent hover:border-primary/20 hover:bg-white hover:text-foreground transition-all flex items-center justify-between px-6 group"
                         onClick={() => handleLaunchDemo(demo.id)}
                         disabled={isDemoLoading}
+                        aria-label={`Open ${demo.name}: ${demo.desc}`}
                       >
                         <div className="flex items-center gap-4">
                           <div className="bg-white p-3 rounded-2xl group-hover:bg-primary group-hover:text-white transition-colors shadow-sm">
@@ -906,13 +887,13 @@ export default function LandingPage() {
       </section>
 
       {/* ══ 3D STATS MARQUEE BAR ══ */}
-      <section className="relative py-20 bg-black overflow-hidden grid-beam">
+      <section className="relative py-8 md:py-12 bg-black overflow-hidden grid-beam">
         {/* Ambient glow behind stats */}
         <div className="absolute inset-0 bg-gradient-to-b from-black via-black to-black pointer-events-none" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-32 bg-primary/8 blur-[80px] pointer-events-none" />
         <motion.div
           className="container mx-auto px-6 relative z-10"
-          initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.4 }}
+          initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.1 }}
           variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.12 } } }}
         >
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-0 md:divide-x md:divide-white/10">
@@ -1498,7 +1479,7 @@ export default function LandingPage() {
             <motion.div variants={fadeUp}>
               <Badge className="bg-primary/20 text-primary border-primary/30 font-black px-4 py-1 uppercase tracking-widest text-[10px]">Transparent Institutional Tiers</Badge>
             </motion.div>
-            <motion.h2 variants={fadeUp} className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] text-white">
+            <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] text-white">
               SCALE YOUR <span className="text-primary italic">OPERATION.</span>
             </motion.h2>
             <motion.div variants={fadeUp} className="flex items-center gap-2 text-primary font-black uppercase tracking-widest text-[10px] bg-primary/10 px-4 py-2 rounded-full border border-primary/20 w-fit mx-auto">
@@ -1842,7 +1823,7 @@ export default function LandingPage() {
               <div className="inline-flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-primary">
                 <span className="h-2 w-2 rounded-full bg-primary" /> Stay in the game
               </div>
-              <h2 className="text-5xl font-black uppercase leading-[0.9] tracking-tighter md:text-7xl">
+              <h2 className="text-4xl font-black uppercase leading-[0.9] tracking-tighter sm:text-5xl md:text-7xl">
                 Sign up for our <span className="text-primary italic">newsletter.</span>
               </h2>
               <p className="max-w-xl text-base font-medium leading-relaxed text-white/60 md:text-lg">

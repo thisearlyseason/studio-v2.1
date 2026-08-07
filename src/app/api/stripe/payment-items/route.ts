@@ -36,7 +36,7 @@ const SAFE_OPERATION_ID = /^[A-Za-z0-9_-]{16,100}$/;
  *
  * Priority:
  * 1. If the team belongs to a hub with stripeConnectMode === 'shared' → use hub's account
- * 2. Otherwise → use the requesting user's personal connected account
+ * 2. Otherwise → use the team's owner's connected account
  *
  * Returns: { connectAccountId, isHubAccount, hubTeamId, hubTeamName, squadName }
  */
@@ -83,6 +83,12 @@ export async function POST(req: NextRequest) {
         { error: 'Invalid payment item request.' },
         { status: 400 }
       );
+    }
+    if (name.length > 200 || (description != null && (typeof description !== 'string' || description.length > 2_000))) {
+      return NextResponse.json({ error: 'Name or description is too long.' }, { status: 400 });
+    }
+    if (typeof currency !== 'string' || !['usd', 'cad'].includes(currency.toLowerCase())) {
+      return NextResponse.json({ error: 'Currency must be USD or CAD.' }, { status: 400 });
     }
 
     if (auth.uid !== userId) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
@@ -144,6 +150,7 @@ export async function POST(req: NextRequest) {
     // Build metadata — include squad info when routing through hub account
     const productMetadata: Record<string, string> = {
       firebase_team_id: teamId,
+      firebase_payment_item_id: itemRef.id,
       firebase_user_id: userId,
       category,
     };
@@ -184,6 +191,7 @@ export async function POST(req: NextRequest) {
         },
         metadata: {
           firebase_team_id: teamId,
+          firebase_payment_item_id: itemRef.id,
           firebase_user_id: userId,
           payment_item_category: category,
           ...(isHubAccount && squadName ? { squad_name: squadName } : {}),
@@ -233,10 +241,12 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
+    const limited = await enforceUserRateLimit(auth.uid, 'stripe-payment-item-list', 120, 60 * 60 * 1000);
+    if (limited) return limited;
     const { searchParams } = new URL(req.url);
     const teamId = searchParams.get('teamId');
 
-    if (!teamId) return NextResponse.json({ error: 'Missing teamId.' }, { status: 400 });
+    if (!teamId || teamId.includes('/') || teamId.length > 200) return NextResponse.json({ error: 'Missing or invalid teamId.' }, { status: 400 });
 
     const teamSnap = await adminDb.collection('teams').doc(teamId).get();
     if (!teamSnap.exists) return NextResponse.json({ error: 'Team not found.' }, { status: 404 });
@@ -302,9 +312,12 @@ export async function DELETE(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const { userId, teamId, itemId } = await req.json();
+    const limited = await enforceUserRateLimit(auth.uid, 'stripe-payment-item-delete', 40, 60 * 60 * 1000);
+    if (limited) return limited;
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
+    const { userId, teamId, itemId } = body;
 
-    if (!userId || !teamId || !itemId) {
+    if (typeof userId !== 'string' || !userId || typeof teamId !== 'string' || !teamId || teamId.includes('/') || typeof itemId !== 'string' || !itemId || itemId.includes('/')) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
     }
 
@@ -345,6 +358,7 @@ export async function DELETE(req: NextRequest) {
     await itemRef.update({ isActive: false, updatedAt: new Date().toISOString() });
     return NextResponse.json({ success: true });
   } catch (err: any) {
+    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error('[stripe/payment-items DELETE] Error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

@@ -7,7 +7,7 @@ const PROTECTED_ROOTS = new Set([
   'admin', 'calendar', 'chats', 'club', 'coaches-corner', 'competition',
   'dashboard', 'drills', 'equipment', 'events', 'facilities', 'family',
   'feed', 'files', 'fundraising', 'games', 'manage-tournaments', 'practice',
-  'roster', 'safety', 'settings', 'team', 'teams', 'volunteers',
+  'roster', 'settings', 'team', 'teams', 'volunteers',
 ]);
 
 function isProtectedPath(pathname: string) {

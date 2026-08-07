@@ -141,6 +141,16 @@ service cloud.firestore {
           ['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo'];
     }
 
+    function canReadPlayer(playerId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/players/$(playerId)) && (
+        get(/databases/$(database)/documents/players/$(playerId)).data.get('demoOwnerUserId', '') == request.auth.uid ||
+        get(/databases/$(database)/documents/players/$(playerId)).data.get('userId', '') == request.auth.uid ||
+        get(/databases/$(database)/documents/players/$(playerId)).data.get('parentId', '') == request.auth.uid ||
+        request.auth.uid in get(/databases/$(database)/documents/players/$(playerId)).data.get('guardianIds', []) ||
+        isTeamCoachOfPlayer(playerId)
+      );
+    }
+
     // ─── Users ──────────────────────────────────────────────────────────────
     match /users/{userId} {
       allow read: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
@@ -260,7 +270,7 @@ service cloud.firestore {
           allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
           allow write: if isSuperAdmin() || (isSignedIn() && (
             isTeamOwner(teamId) ||
-            request.auth.uid == memberId
+            (isTeamMember(teamId) && request.auth.uid == memberId)
           ));
         }
 
@@ -685,13 +695,11 @@ service cloud.firestore {
 
     // ─── Volunteers ──────────────────────────────────────────────────────────
     match /volunteerOpportunities/{oppId} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
 
       match /signups/{signupId} {
-        allow read: if true;
-        // FIX #3: Was `if true` (fully public) — now requires auth to prevent spam signups
-        allow write: if isSignedIn();
+        allow read, write: if isSuperAdmin();
       }
     }
 
@@ -797,7 +805,8 @@ service cloud.firestore {
 
     // ─── Beta Tester System ──────────────────────────────────────────────────
     match /beta_applications/{appId} {
-      allow create: if true;
+      // Public submissions are written by the server API using Admin SDK.
+      allow create: if false;
       allow read, update, delete: if isSuperAdmin();
     }
 
@@ -840,9 +849,6 @@ service cloud.firestore {
         resource.data.ownerUserId == request.auth.uid ||
         (resource.data.teamId != null && (isTeamOwner(resource.data.teamId) || isTeamMember(resource.data.teamId)))
       ));
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
-      allow delete: if isSuperAdmin();
     }
 
     match /{path=**}/documents/{docId} {

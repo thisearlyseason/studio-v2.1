@@ -1,3 +1,5 @@
+import { PLAN_TEAM_LIMITS } from '@/lib/plan-catalog';
+
 export type BillingCycle = 'monthly' | 'annual';
 
 export interface PlanFeature {
@@ -23,7 +25,7 @@ export const PRICING_CONFIG: Plan[] = [
     id: 'team',
     name: 'Pro Team',
     description: 'Perfect for single competitive squads.',
-    teamLimit: 1,
+    teamLimit: PLAN_TEAM_LIMITS.team,
     monthlyPrice: '$19.99',
     annualPrice: '$199',
     monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY || 'price_1TL4qyGu1UxxOYbPen5QOIJv',
@@ -41,7 +43,7 @@ export const PRICING_CONFIG: Plan[] = [
     id: 'elite',
     name: 'Elite Teams',
     description: 'For growing clubs with multiple squads.',
-    teamLimit: 8,
+    teamLimit: PLAN_TEAM_LIMITS.elite,
     monthlyPrice: '$119',
     annualPrice: '$1,119',
     monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ELITE_TEAMS_MONTHLY || 'price_1TL4vCGu1UxxOYbPc9MX6y8L',
@@ -59,7 +61,7 @@ export const PRICING_CONFIG: Plan[] = [
     id: 'league',
     name: 'Elite League',
     description: 'Institutional scale for series and leagues.',
-    teamLimit: 18,
+    teamLimit: PLAN_TEAM_LIMITS.league,
     monthlyPrice: '$279',
     annualPrice: '$2,790',
     monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_MONTHLY || process.env.STRIPE_PRICE_ELITE_LEAGUE_MONTHLY || 'price_1TL55yGu1UxxOYbPcQvc6AZV',
@@ -77,7 +79,7 @@ export const PRICING_CONFIG: Plan[] = [
     id: 'school',
     name: 'Schools Plan',
     description: 'K-12 Athletic Department command center.',
-    teamLimit: 15,
+    teamLimit: PLAN_TEAM_LIMITS.school,
     monthlyPrice: '$175',
     annualPrice: '$1,750',
     monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_MONTHLY || process.env.STRIPE_PRICE_SCHOOLS_MONTHLY || 'price_1TL58qGu1UxxOYbPOUPCAqdz',

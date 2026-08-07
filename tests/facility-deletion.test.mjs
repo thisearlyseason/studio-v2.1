@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import facilityDeletion from '../src/lib/facility-deletion.ts';
+import * as facilityDeletion from '../src/lib/facility-deletion.ts';
 
 const { getFacilityReferenceReasons } = facilityDeletion;
 

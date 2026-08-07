@@ -2323,7 +2323,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const eventRef = doc(db, 'teams', activeTeam.id, 'events', eventId);
     const eventSnap = await getDoc(eventRef);
     if (!eventSnap.exists()) return false;
-    
+
     const eventData = eventSnap.data() as TeamEvent;
     const assignments = eventData.assignments || [];
     const updatedAssignments = assignments.map(a => {
@@ -2443,17 +2443,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateFundraisingOpportunity = useCallback(async (fundId: string, updates: any) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), clean(updates)); }, [activeTeam, db]);
   const deleteFundraisingOpportunity = useCallback(async (id: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'fundraising', id)); }, [activeTeam, db]);
   const signUpForFundraising = useCallback(async (fundId: string) => { if (activeTeam?.id && firebaseUser && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), { [`finances.${firebaseUser.uid}`]: { userId: firebaseUser.uid, userName: userProfile?.name, status: 'joined', contributed: 0, createdAt: new Date().toISOString() } }); }, [activeTeam, firebaseUser, db, userProfile]);
-  const recordDonation = useCallback(async (fundId: string, amount: number, donorName: string, method: 'external' | 'e-transfer') => { 
-    if (!activeTeam?.id || !db) return; 
-    const donationId = `don_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`; 
-    await setDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId, 'donations', donationId), clean({ 
-      id: donationId, 
-      amount, 
-      donorName, 
-      method, 
-      status: 'pending', 
-      createdAt: new Date().toISOString() 
-    })); 
+  const recordDonation = useCallback(async (fundId: string, amount: number, donorName: string, method: 'external' | 'e-transfer') => {
+    if (!activeTeam?.id || !db) return;
+    const donationId = `don_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    await setDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId, 'donations', donationId), clean({
+      id: donationId,
+      amount,
+      donorName,
+      method,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    }));
     // Increment the shadow finances object if user is logged in
     if (firebaseUser) {
       await updateDoc(doc(db, 'teams', activeTeam.id, 'fundraising', fundId), {
@@ -3767,8 +3767,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addLeaguePayment = useCallback(async (leagueId: string, teamId: string, data: any) => { if (!db) return; await addDoc(collection(db, 'leagues', leagueId, 'payments'), clean({ ...data, teamId, createdAt: new Date().toISOString() })); await updateDoc(doc(db, 'leagues', leagueId), { [`finances.${teamId}.totalPaid`]: increment(data.amount) }); }, [db]);
   const updateLeagueGlobalFees = useCallback(async (leagueId: string, fees: any) => { if (db) await updateDoc(doc(db, 'leagues', leagueId), { globalFees: clean(fees) }); }, [db]);
 
-  const updateLeaguePin = useCallback(async (leagueId: string, pin: string) => { 
-    if (db) await updateDoc(doc(db, 'leagues', leagueId), { scorekeeperPin: pin }); 
+  const updateLeaguePin = useCallback(async (leagueId: string, pin: string) => {
+    if (db) await updateDoc(doc(db, 'leagues', leagueId), { scorekeeperPin: pin });
   }, [db]);
 
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import seatPolicy from '../src/lib/subscription-seat-policy.ts';
-import teamSeatPolicy from '../src/lib/team-seat-policy.ts';
+import * as seatPolicy from '../src/lib/subscription-seat-policy.ts';
+import * as teamSeatPolicy from '../src/lib/team-seat-policy.ts';
 
 const {
   chooseAuthoritativeSubscriptionId,

@@ -121,7 +121,7 @@ function GifPicker({ onSelect, onClose }: { onSelect: (url: string) => void; onC
             className="w-full h-9 rounded-xl bg-muted/50 pl-9 pr-4 text-xs font-bold border-none outline-none focus:ring-2 focus:ring-primary/30 transition-all"
           />
         </div>
-        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl shrink-0 text-muted-foreground hover:text-foreground" onClick={onClose}>
+        <Button variant="ghost" size="icon" aria-label="Close GIF picker" className="h-8 w-8 rounded-xl shrink-0 text-muted-foreground hover:text-foreground" onClick={onClose}>
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -153,6 +153,7 @@ function GifPicker({ onSelect, onClose }: { onSelect: (url: string) => void; onC
               return (
                 <button
                   key={gif.id}
+                  aria-label={`Select ${gif.title || 'GIF'}`}
                   onClick={() => { onSelect(full); onClose(); }}
                   className="break-inside-avoid w-full rounded-xl overflow-hidden ring-2 ring-transparent hover:ring-primary transition-all hover:scale-[1.02] active:scale-[0.98] duration-150"
                 >
@@ -200,7 +201,7 @@ function CommentList({ postId, teamId, isAdmin, currentUserId, canComment }: { p
                 {(isAdmin || comment.authorId === currentUserId) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity text-destructive" onClick={() => deleteDocumentNonBlocking(doc(db, 'teams', teamId, 'feedPosts', postId, 'comments', comment.id))}>
+                      <Button aria-label={`Delete comment by ${comment.authorName || 'squad member'}`} variant="ghost" size="icon" className="h-5 w-5 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-destructive" onClick={() => deleteDocumentNonBlocking(doc(db, 'teams', teamId, 'feedPosts', postId, 'comments', comment.id))}>
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </TooltipTrigger>
@@ -433,7 +434,7 @@ export default function FeedPage() {
                       <img src={imageUrl} className="w-full h-auto max-h-[300px] object-cover border" alt="Upload preview" />
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button variant="destructive" size="icon" className="absolute top-2 right-2 h-8 w-8 rounded-full shadow-lg opacity-0 group-hover/img:opacity-100 transition-opacity" onClick={() => setImageUrl(undefined)}>
+                          <Button aria-label="Remove attached image" variant="destructive" size="icon" className="absolute top-2 right-2 h-8 w-8 rounded-full shadow-lg opacity-100 md:opacity-0 md:group-hover/img:opacity-100 focus-visible:opacity-100 transition-opacity" onClick={() => setImageUrl(undefined)}>
                             <X className="h-4 w-4" />
                           </Button>
                         </TooltipTrigger>
@@ -452,7 +453,7 @@ export default function FeedPage() {
                     }} />
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => fileInputRef.current?.click()}>
+                        <Button aria-label="Attach image" variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => fileInputRef.current?.click()}>
                           <ImagePlus className="h-4 w-4 lg:h-5 lg:w-5" />
                         </Button>
                       </TooltipTrigger>
@@ -463,6 +464,7 @@ export default function FeedPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label={isGifOpen ? 'Close GIF picker' : 'Search GIFs'}
                           className={cn(
                             "h-10 w-10 lg:h-12 lg:w-12 rounded-full transition-all",
                             isGifOpen
@@ -478,7 +480,7 @@ export default function FeedPage() {
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => setIsPollDialogOpen(true)}>
+                        <Button aria-label="Create poll" variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => setIsPollDialogOpen(true)}>
                           <BarChart2 className="h-4 w-4 lg:h-5 lg:w-5" />
                         </Button>
                       </TooltipTrigger>
@@ -518,7 +520,7 @@ export default function FeedPage() {
                 {(isAdmin || post.authorId === user?.id) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 lg:h-10 lg:w-10 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:bg-destructive/10 rounded-full" onClick={() => deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'feedPosts', post.id))}>
+                      <Button aria-label={`Delete post by ${post.author?.name || 'squad member'}`} variant="ghost" size="icon" className="h-8 w-8 lg:h-10 lg:w-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-destructive hover:bg-destructive/10 rounded-full" onClick={() => deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'feedPosts', post.id))}>
                         <Trash2 className="h-4 w-4 lg:h-5 lg:w-5" />
                       </Button>
                     </TooltipTrigger>
@@ -578,6 +580,7 @@ export default function FeedPage() {
                     <TooltipTrigger asChild>
                       <Button 
                         size="icon" 
+                        aria-label="Post comment"
                         disabled={!canComment}
                         className="rounded-xl lg:rounded-2xl h-10 w-10 lg:h-12 lg:w-12 shrink-0 shadow-lg lg:shadow-xl shadow-primary/20" 
                         onClick={() => commentInputs[post.id]?.trim() && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts', post.id, 'comments'), { postId: post.id, content: commentInputs[post.id], authorId: user?.id, authorName: user?.name, createdAt: new Date().toISOString() }).then(() => setCommentInputs(p => ({ ...p, [post.id]: '' })))}
@@ -626,7 +629,7 @@ export default function FeedPage() {
                         <Input placeholder={`Option ${i+1}`} value={opt.text} onChange={e => { const n = [...pollOptions]; n[i].text = e.target.value; setPollOptions(n); }} className="rounded-xl h-10 lg:h-11 bg-muted/30 focus:bg-background" />
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-11 lg:w-11 rounded-xl bg-muted/20" onClick={() => { activeOptionIdxRef.current = i; optionImageInputRef.current?.click(); }}>
+                            <Button aria-label={`Attach image to option ${i + 1}`} variant="ghost" size="icon" className="h-10 w-10 lg:h-11 lg:w-11 rounded-xl bg-muted/20" onClick={() => { activeOptionIdxRef.current = i; optionImageInputRef.current?.click(); }}>
                               <ImageIcon className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>

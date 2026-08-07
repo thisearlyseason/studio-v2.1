@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import structuredResponse from '../src/lib/structured-ai-response.ts';
+import * as structuredResponse from '../src/lib/structured-ai-response.ts';
 
 const { parseStructuredAiResponse } = structuredResponse;
 

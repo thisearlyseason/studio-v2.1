@@ -87,6 +87,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid priceId.' }, { status: 400 });
     }
 
+    if (!['monthly', 'annual'].includes(String(billingCycle))) {
+      return NextResponse.json({ error: 'billingCycle must be monthly or annual.' }, { status: 400 });
+    }
+
     // Validate extraTeamQty bounds
     if (
       !Number.isInteger(extraTeamQty) ||

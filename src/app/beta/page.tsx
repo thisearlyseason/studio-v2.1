@@ -27,14 +27,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import BrandLogo from '@/components/BrandLogo';
-import { useFirestore } from '@/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 
 export default function BetaApplicationPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const db = useFirestore();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -46,11 +43,12 @@ export default function BetaApplicationPage() {
       data.devices = formData.getAll('devices');
       data.features = formData.getAll('features');
       
-      await addDoc(collection(db, 'beta_applications'), {
-        ...data,
-        createdAt: serverTimestamp(),
-        status: 'pending'
+      const response = await fetch('/api/public/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'beta', ...data }),
       });
+      if (!response.ok) throw new Error('Unable to submit right now.');
       
       setIsSubmitted(true);
 

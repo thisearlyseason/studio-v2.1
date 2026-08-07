@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import teamAccess from '../src/lib/server-team-access.ts';
+import * as teamAccess from '../src/lib/server-team-access.ts';
 
 const { isParentMember, isStaffMember } = teamAccess;
 

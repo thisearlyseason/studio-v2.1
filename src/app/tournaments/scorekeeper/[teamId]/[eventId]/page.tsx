@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
 import { TeamEvent } from '@/components/providers/team-provider';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,10 +14,10 @@ import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { SquadIdentity } from '@/components/SquadIdentity';
 import { toast } from '@/hooks/use-toast';
+import { PortalStatus } from '@/components/public/PortalStatus';
 
 export default function PublicScorekeeperHub() {
   const { teamId, eventId } = useParams();
-  const db = useFirestore();
   const router = useRouter();
 
   const [codeInput, setCodeInput] = useState('');
@@ -27,27 +26,28 @@ export default function PublicScorekeeperHub() {
   const sessionKey = `scorer_verified_${eventId}`;
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && sessionStorage.getItem(sessionKey) === 'true') {
+    if (typeof window !== 'undefined' && sessionStorage.getItem(sessionKey) !== null) {
       setIsVerified(true);
     }
   }, [sessionKey]);
 
-  const eventRef = useMemoFirebase(() => {
-    if (!db || !teamId || !eventId) return null;
-    return doc(db, 'teams', teamId as string, 'events', eventId as string);
-  }, [db, teamId, eventId]);
-
-  const { data: event, isLoading } = useDoc<TeamEvent>(eventRef);
+  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
+  const { data: event, isLoading, error, status, retry } = usePublicPortal<TeamEvent & { requiresCode?: boolean; scorekeeperConfigured?: boolean }>(portalUrl);
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-  if (!event || !event.isTournament) return <div className="min-h-screen flex items-center justify-center p-6"><Card className="max-w-md text-center p-10"><AlertCircle className="h-12 w-12 mx-auto mb-4 text-destructive" /><h2 className="text-xl font-bold">Portal Inactive</h2></Card></div>;
+  if (!event || !event.isTournament) return <PortalStatus status={status} message={error} onRetry={retry} title={status === 404 ? 'Portal Inactive' : undefined} />;
+  if (event.scorekeeperConfigured === false) return <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10"><Card className="max-w-md text-center p-10 rounded-[2rem] border-none shadow-xl"><Lock className="h-12 w-12 mx-auto mb-4 text-primary" /><h2 className="text-xl font-black uppercase">Scorekeeper Access Not Configured</h2><p className="text-sm text-muted-foreground mt-3">The tournament organizer must set a scorekeeper code before results can be submitted.</p></Card></div>;
 
   // Show code gate if event has a scoring code and user hasn't verified yet
-  const hasCode = !!(event as any).scoringCode;
+  const hasCode = !!event.requiresCode;
   if (hasCode && !isVerified) {
-    const handleVerify = () => {
-      if (codeInput.trim().toLowerCase() === ((event as any).scoringCode || '').toLowerCase()) {
-        sessionStorage.setItem(sessionKey, 'true');
+    const handleVerify = async () => {
+      const response = await fetch('/api/public/portals/action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'tournament', action: 'verify', teamId, eventId, code: codeInput }),
+      });
+      if (response.ok) {
+        sessionStorage.setItem(sessionKey, codeInput);
         setIsVerified(true);
       } else {
         toast({ title: 'Invalid Code', description: 'The operational code is incorrect.', variant: 'destructive' });
@@ -74,7 +74,7 @@ export default function PublicScorekeeperHub() {
                 placeholder="Enter code..."
                 value={codeInput}
                 onChange={e => setCodeInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleVerify()}
+                onKeyDown={e => e.key === 'Enter' && void handleVerify()}
                 className="h-14 rounded-2xl border-2 font-black text-center text-lg uppercase tracking-widest"
                 autoFocus
               />

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import facilityRename from '../src/lib/facility-rename.ts';
+import * as facilityRename from '../src/lib/facility-rename.ts';
 
 const {
   buildEventRenameUpdates,

@@ -1,0 +1,5 @@
+"use client";
+import dynamic from 'next/dynamic'; import { useRef, useState } from 'react'; import { CircleDot } from 'lucide-react';
+import { Button } from '@/components/ui/button'; import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+const TimeOutModal = dynamic(() => import('./TimeOutModal'), { ssr: false });
+export default function TimeOutLauncher(){ const [open,setOpen]=useState(false); const launcherRef=useRef<HTMLButtonElement>(null); const handleOpenChange=(next:boolean)=>{setOpen(next);if(!next)requestAnimationFrame(()=>launcherRef.current?.focus())}; return <><Tooltip><TooltipTrigger asChild><Button ref={launcherRef} variant="ghost" size="icon" aria-label="Open Time Out game" onClick={()=>setOpen(true)} className="h-10 w-10 md:h-11 md:w-11 rounded-2xl hover:bg-primary/5 text-foreground transition-all active:scale-95"><CircleDot className="h-5 w-5"/></Button></TooltipTrigger><TooltipContent side="bottom">Time Out</TooltipContent></Tooltip>{open&&<TimeOutModal open={open} onOpenChange={handleOpenChange}/>}</> }

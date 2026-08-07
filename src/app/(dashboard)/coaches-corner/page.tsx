@@ -103,6 +103,7 @@ import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { RASTER_IMAGE_ACCEPT, validateRasterImage } from '@/lib/storage-upload-policy';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -1156,6 +1157,12 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !member.playerId) return;
+    const validationError = validateRasterImage(file);
+    if (validationError) {
+      toast({ title: "Invalid Image", description: validationError, variant: "destructive" });
+      e.target.value = '';
+      return;
+    }
     
     try {
       toast({ title: "Uploading Photo", description: "Adding archival asset to pack..." });
@@ -1289,6 +1296,12 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         ...authHeader(authToken),
       };
       let res: Response;
+      const token = await getAuthToken(auth);
+      if (!token) throw new Error('Your session expired. Please sign in again.');
+      const authenticatedJsonHeaders = {
+        'Content-Type': 'application/json',
+        ...authHeader(token),
+      };
 
       if (aiSourceFile && aiSourceDuration) {
         // ── Step 1: Extract frames via FFmpeg WASM / Canvas ──────────────
@@ -1869,12 +1882,10 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "Asset Oversized", description: "Image exceeds 5MB. Please optimize the photo.", variant: "destructive" });
-      return;
-    }
-    if (!file.type.startsWith('image/')) {
-      toast({ title: "Images Only", description: "Only image files are allowed for the avatar upload.", variant: "destructive" });
+    const validationError = validateRasterImage(file);
+    if (validationError) {
+      toast({ title: "Invalid Image", description: validationError, variant: "destructive" });
+      e.target.value = '';
       return;
     }
 
@@ -1926,8 +1937,10 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "Asset Oversized", description: "Image exceeds 5MB threshold.", variant: "destructive" });
+    const validationError = validateRasterImage(file);
+    if (validationError) {
+      toast({ title: "Invalid Image", description: validationError, variant: "destructive" });
+      e.target.value = '';
       return;
     }
     const reader = new FileReader();
@@ -2777,7 +2790,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     <div className="space-y-2">
                        <Label className="text-[10px] font-black uppercase ml-1">Avatar Photo <span className="opacity-40 normal-case">(Image only, max 5MB)</span></Label>
                        <div className="flex gap-2">
-                         <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+                         <input type="file" ref={imageInputRef} className="hidden" accept={RASTER_IMAGE_ACCEPT} onChange={handleImageUpload} />
                          <Button type="button" variant="outline" className="h-10 border-2 rounded-xl text-[8px] font-black uppercase transition-all hover:bg-primary hover:text-white flex-1" onClick={() => imageInputRef.current?.click()}>
                            <Camera className="h-4 w-4 mr-2 text-primary" /> Upload Photo
                          </Button>
@@ -3149,7 +3162,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                         <p className="text-[10px] font-black uppercase tracking-widest text-primary opacity-60">Scouting Photo Gallery</p>
                         <p className="text-[8px] font-bold text-muted-foreground uppercase">Upload up to 5 strategic photos for recruiters (Max 5MB each).</p>
                       </div>
-                      <input type="file" id="gallery-upload" className="hidden" accept="image/*" onChange={handleGalleryUpload} disabled={photos.length >= 5} />
+                      <input type="file" id="gallery-upload" className="hidden" accept={RASTER_IMAGE_ACCEPT} onChange={handleGalleryUpload} disabled={photos.length >= 5} />
                       <Button type="button" size="sm" variant="outline" className="h-10 px-6 font-black uppercase text-[10px] rounded-xl border-2" onClick={() => document.getElementById('gallery-upload')?.click()} disabled={photos.length >= 5}>
                         <Camera className="h-4 w-4 mr-2" /> Add Photo
                       </Button>
@@ -4832,13 +4845,13 @@ export default function CoachesCornerPage() {
                      </div>
                      <div className="bg-white/5 rounded-2xl h-14 flex items-center px-4 border border-white/10 flex-1 overflow-hidden">
                        <span className="text-[10px] font-bold text-primary/60 font-mono truncate">
-                         {typeof window !== 'undefined' ? `${window.location.origin}/register/squad/${activeTeam?.id}` : `/register/squad/${activeTeam?.id}`}
+                         {typeof window !== 'undefined' ? `${window.location.origin}/register/squad/${activeTeam?.id}?code=${encodeURIComponent(activeTeam?.teamCode || activeTeam?.code || '')}` : `/register/squad/${activeTeam?.id}`}
                        </span>
                      </div>
                      <Button
                        className="h-14 w-14 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 shrink-0 transition-transform active:scale-95"
                        onClick={() => {
-                         const link = `${window.location.origin}/register/squad/${activeTeam?.id}`;
+                         const link = `${window.location.origin}/register/squad/${activeTeam?.id}?code=${encodeURIComponent(activeTeam?.teamCode || activeTeam?.code || '')}`;
                          navigator.clipboard.writeText(link);
                          toast({ title: "Link Copied", description: "Direct join link is ready to share." });
                        }}
@@ -5290,7 +5303,19 @@ function SquadFinancialHub() {
       </div>
 
       {/* ── Stripe Connect Setup (Pro only — free/starter never reach here) ── */}
-      {user?.id && activeTeam?.id && (
+      {(user?.isDemo || activeTeam?.isDemo) ? (
+        <Card className="rounded-[2rem] border-none shadow-md bg-muted/30 p-6">
+          <div className="flex items-start gap-3">
+            <CreditCard className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider text-foreground">Online Payments Disabled in Demo</p>
+              <p className="text-[10px] font-bold text-muted-foreground mt-1 leading-relaxed">
+                Stripe setup is available only in a live paid workspace. Demo data will not connect to or modify a payment account.
+              </p>
+            </div>
+          </div>
+        </Card>
+      ) : user?.id && activeTeam?.id && (
         <StripeConnectSetup
           userId={user.id}
           teamId={activeTeam.id}

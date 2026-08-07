@@ -2,9 +2,8 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { useTeam, TeamEvent } from '@/components/providers/team-provider';
+import { TeamEvent } from '@/components/providers/team-provider';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,11 +35,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import BrandLogo from '@/components/BrandLogo';
 import { format } from 'date-fns';
+import { PortalStatus } from '@/components/public/PortalStatus';
 
 export default function PublicTournamentWaiverPage() {
   const { teamId, eventId } = useParams();
-  const db = useFirestore();
-  const { signPublicTournamentWaiver } = useTeam();
 
   const [selectedTeam, setSelectedTeam] = useState<string>('');
   const [coachName, setCoachName] = useState('');
@@ -57,12 +55,8 @@ export default function PublicTournamentWaiverPage() {
     }
   }, []);
 
-  const eventRef = useMemoFirebase(() => {
-    if (!db || !teamId || !eventId) return null;
-    return doc(db, 'teams', teamId as string, 'events', eventId as string);
-  }, [db, teamId, eventId]);
-
-  const { data: event, isLoading } = useDoc<TeamEvent>(eventRef);
+  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
+  const { data: event, isLoading, error, status, retry } = usePublicPortal<TeamEvent>(portalUrl);
 
   const unsignedTeams = useMemo(() => {
     if (!event?.tournamentTeams) return [];
@@ -76,12 +70,13 @@ export default function PublicTournamentWaiverPage() {
 
     setIsSubmitting(true);
     try {
-      const success = await signPublicTournamentWaiver(teamId as string, eventId as string, selectedTeam, coachName);
-      if (success) {
-        setIsSigned(true);
-      } else {
-        alert("Verification failed. Please ensure the host squad is active.");
-      }
+      const response = await fetch('/api/public/portals/action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'tournament', action: 'waiver', teamId, eventId, teamName: selectedTeam, signer: coachName }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Verification failed.');
+      setIsSigned(true);
     } catch (err) {
       console.error(err);
     } finally {
@@ -98,17 +93,7 @@ export default function PublicTournamentWaiverPage() {
     );
   }
 
-  if (!event || !event.isTournament) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-6">
-        <Card className="max-w-md w-full text-center p-10 rounded-[3rem] border-none shadow-2xl">
-          <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" />
-          <h2 className="text-2xl font-black uppercase tracking-tight">Hub Not Found</h2>
-          <p className="text-muted-foreground font-medium mt-2">The tournament signature link is no longer active.</p>
-        </Card>
-      </div>
-    );
-  }
+  if (!event || !event.isTournament) return <PortalStatus status={status ?? (event ? 404 : null)} message={error} onRetry={retry} title={status === 404 || event ? 'Hub Not Found' : undefined} />;
 
   if (isSigned) {
     return (

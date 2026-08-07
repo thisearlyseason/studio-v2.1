@@ -2,10 +2,9 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { useTeam, Team } from '@/components/providers/team-provider';
-import { useFirestore, useDoc, useMemoFirebase, useCollection } from '@/firebase';
-import { doc, collection, query, where } from 'firebase/firestore';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useTeam } from '@/components/providers/team-provider';
+import { useAuth } from '@/firebase';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,17 +25,24 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
+
+type RapidJoinData = {
+  team: { id: string; name: string };
+  waiver: { id: string; title: string; content: string } | null;
+  sessionToken: string;
+  expiresAt: string;
+};
 
 function RapidJoinForm() {
   const { teamId } = useParams();
   const router = useRouter();
-  const { user, db, joinTeamWithCode, firebaseUser, isPlayer, isParent, myChildren } = useTeam();
-
-  const teamRef = useMemoFirebase(() => db ? doc(db, 'teams', teamId as string) : null, [db, teamId]);
-  const { data: team, isLoading: isTeamLoading } = useDoc<any>(teamRef);
-  
-  const protocolsRef = useMemoFirebase(() => db ? query(collection(db, 'teams', teamId as string, 'documents'), where('isActive', '==', true)) : null, [db, teamId]);
-  const { data: protocols, isLoading: isProtosLoading } = useCollection<any>(protocolsRef);
+  const searchParams = useSearchParams();
+  const code = searchParams.get('code');
+  const auth = useAuth();
+  const { user, firebaseUser, isPlayer, isParent, myChildren } = useTeam();
+  const [joinData, setJoinData] = useState<RapidJoinData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -63,7 +69,30 @@ function RapidJoinForm() {
     return age < 18;
   }, [formData.dateOfBirth]);
 
-  const activeWaiver = protocols?.find(p => p.type === 'waiver' || p.id.startsWith('default_')) || protocols?.[0];
+  const team = joinData?.team || null;
+  const activeWaiver = joinData?.waiver || null;
+
+  useEffect(() => {
+    if (!teamId || !code) {
+      setIsLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setIsLoading(true);
+    fetch(`/api/teams/join?teamId=${encodeURIComponent(String(teamId))}&code=${encodeURIComponent(code)}`, {
+      signal: controller.signal,
+    })
+      .then(async response => {
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Invalid squad invitation.');
+        setJoinData(result.data as RapidJoinData);
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError') setJoinData(null);
+      })
+      .finally(() => setIsLoading(false));
+    return () => controller.abort();
+  }, [teamId, code]);
 
   const activeSteps = useMemo(() => {
     const steps = [{ id: 'identity', label: 'Personal Data', icon: Users }];
@@ -119,68 +148,42 @@ function RapidJoinForm() {
       const playerId = isPlayer ? `p_${user?.id}` : formData.playerId;
       const role = isParent ? 'Parent' : 'Player';
       
-      // 1. Join the team
-      const success = await joinTeamWithCode(team.teamCode || team.code, playerId, role);
-      
-      if (!success) throw new Error("Join failed");
+      if (!firebaseUser || !joinData?.sessionToken) throw new Error('Sign in before joining this squad.');
+      const idToken = await getAuthToken(auth);
+      const joinResponse = await fetch('/api/teams/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(idToken) },
+        body: JSON.stringify({ sessionToken: joinData.sessionToken, playerId, position: role }),
+      });
+      const joinResult = await joinResponse.json().catch(() => ({}));
+      if (!joinResponse.ok) throw new Error(joinResult.error || 'Join failed.');
 
-      // 2. Archive the waiver signature — full sync matching signTeamDocument() write pattern
       if (activeWaiver && signature) {
-        const archId = `arch_join_${Date.now()}_${playerId}`;
-        const memberDocId = playerId || user?.id || 'unknown';
-        const { setDoc, updateDoc, doc: _doc, getDoc, increment: _increment, writeBatch: _writeBatch } = await import('firebase/firestore');
-        const batch2 = _writeBatch(db);
-
-        // A. Canonical archived_waivers entry (Coaches Corner Vault)
-        batch2.set(_doc(db, 'teams', teamId as string, 'archived_waivers', archId), {
-          id: archId,
-          documentId: activeWaiver.id,
-          title: activeWaiver.title || 'Rapid Entry Waiver',
-          signer: signature,
-          signedAt: new Date().toISOString(),
-          type: 'Rapid Entry Waiver',
-          memberId: memberDocId,
-          memberName: formData.name,
-          signedByParent: false,
+        const waiverResponse = await fetch('/api/teams/waivers/sign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader(idToken) },
+          body: JSON.stringify({
+            teamId,
+            memberId: joinResult.memberId,
+            documentId: activeWaiver.id,
+            signatureName: signature,
+          }),
         });
-
-        // B. protocol_signatures flat doc (avoids collectionGroup index requirement)
-        batch2.set(_doc(db, 'teams', teamId as string, 'protocol_signatures', `${activeWaiver.id}_${user?.id || 'guest'}_${memberDocId}`), {
-          protocolId: activeWaiver.id,
-          docId: activeWaiver.id,
-          teamId: teamId as string,
-          userId: user?.id || 'guest',
-          memberId: memberDocId,
-          signedAt: new Date().toISOString(),
-          signerName: signature,
-        });
-
-        await batch2.commit();
-
-        // C. Increment signatureCount on the team document (non-critical, best-effort)
-        try {
-          const teamDocRef = _doc(db, 'teams', teamId as string, 'documents', activeWaiver.id);
-          const teamDocSnap = await getDoc(teamDocRef);
-          if (teamDocSnap.exists()) {
-            await updateDoc(teamDocRef, { signatureCount: _increment(1) });
-          }
-        } catch (e) {
-          // Non-critical — count display will be off by one until next write
-          console.warn('[RapidJoin] signatureCount increment failed:', e);
-        }
+        const waiverResult = await waiverResponse.json().catch(() => ({}));
+        if (!waiverResponse.ok) throw new Error(waiverResult.error || 'Joined, but the waiver could not be recorded.');
       }
 
 
       setIsSuccess(true);
     } catch (error) {
       console.error(error);
-      toast({ title: "Enrollment Failed", variant: "destructive" });
+      toast({ title: "Enrollment Failed", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (isTeamLoading || isProtosLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-6">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -216,7 +219,7 @@ function RapidJoinForm() {
           <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 text-left">
             <p className="text-[10px] font-black uppercase text-primary">Confirmation</p>
             <p className="text-sm font-bold mt-1 leading-relaxed">
-              Your enrollment in {team.teamName || team.name} is complete. You can now access schedules, rosters, and team communications in your dashboard.
+              Your enrollment in {team.name} is complete. You can now access schedules, rosters, and team communications in your dashboard.
             </p>
           </div>
 
@@ -236,7 +239,7 @@ function RapidJoinForm() {
              <Zap className="h-4 w-4 fill-white" />
              <span className="text-[10px] font-black uppercase tracking-widest">Rapid Join Portal</span>
           </div>
-          <h1 className="text-5xl font-black tracking-tighter uppercase leading-[0.8]">{team.teamName || team.name}</h1>
+          <h1 className="text-5xl font-black tracking-tighter uppercase leading-[0.8]">{team.name}</h1>
           <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px]">Onboarding Handshake</p>
         </div>
 

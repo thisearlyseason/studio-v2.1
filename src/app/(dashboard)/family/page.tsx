@@ -55,9 +55,10 @@ import { format, differenceInYears, isFuture, isToday, isValid, parseISO, isAfte
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { query, where, collectionGroup, getDocs, collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { useAuth, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { query, where, collectionGroup, getDocs, collection } from 'firebase/firestore';
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 
 const COMMON_SPORTS = ['Soccer', 'Basketball', 'Baseball', 'Softball', 'Football', 'Hockey', 'Lacrosse', 'Tennis', 'Golf', 'Swimming', 'Track & Field', 'Volleyball', 'Wrestling', 'Cross Country', 'Gymnastics'];
 
@@ -780,6 +781,7 @@ export default function FamilyPage() {
   } = useTeam();
 
   const db = useFirestore();
+  const auth = useAuth();
   const router = useRouter();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -851,22 +853,23 @@ export default function FamilyPage() {
   }, [db, user?.id, myChildren, teams]);
 
   const handleSignWaiver = async () => {
-    if (!signingWaiver || !signatureText.trim() || !user?.id || !db) return;
+    if (!signingWaiver || !signatureText.trim() || !user?.id || !auth) return;
     setIsSigning(true);
     try {
       const childMemberId = myChildren.find(c => c.id === signingWaiver.childId)?.userId || signingWaiver.childId;
-      const sigRef = doc(db, 'teams', signingWaiver.teamId, 'members', childMemberId, 'signatures', signingWaiver.docId);
-      await setDoc(sigRef, {
-        id: `sig_${Date.now()}`,
-        documentId: signingWaiver.docId,
-        teamId: signingWaiver.teamId,
-        userId: childMemberId,
-        parentUserId: user.id,
-        userName: signingWaiver.childName,
-        signatureName: signatureText.trim(),
-        timestamp: new Date().toISOString(),
-        signedByParent: true,
+      const token = await getAuthToken(auth);
+      const response = await fetch('/api/teams/waivers/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({
+          teamId: signingWaiver.teamId,
+          memberId: childMemberId,
+          documentId: signingWaiver.docId,
+          signatureName: signatureText.trim(),
+        }),
       });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Unable to sign waiver.');
       // Remove from pending list
       setPendingWaivers(prev => prev.filter(w => !(w.docId === signingWaiver.docId && w.childId === signingWaiver.childId)));
       setSigningWaiver(null);

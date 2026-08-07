@@ -118,6 +118,10 @@ export function getAdminProjectId(): string | null {
   return _projectId || app.options.projectId || null;
 }
 
+export function getAdminAuth(): admin.auth.Auth {
+  return initAdminApp().auth();
+}
+
 /**
  * Lazily-initialized Firestore Admin instance.
  * Accessing any property triggers initialization on first use, not at build time.

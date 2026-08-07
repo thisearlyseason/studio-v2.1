@@ -4,9 +4,8 @@
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { cn } from '@/lib/utils';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { useTeam, LeagueRegistrationConfig, RegistrationFormField, TeamEvent } from '@/components/providers/team-provider';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { LeagueRegistrationConfig, RegistrationFormField, TeamEvent } from '@/components/providers/team-provider';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,19 +50,16 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import BrandLogo from '@/components/BrandLogo';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { PortalStatus } from '@/components/public/PortalStatus';
 
 function RegistrationForm() {
   const { teamId, eventId } = useParams();
   const searchParams = useSearchParams();
   const protocolId = searchParams.get('protocol') || 'team_config';
-  const { submitRegistrationEntry } = useTeam();
-  const db = useFirestore();
-
-  const eventRef = useMemoFirebase(() => db ? doc(db, 'teams', teamId as string, 'events', eventId as string) : null, [db, teamId, eventId]);
-  const { data: event, isLoading: isEventLoading } = useDoc<TeamEvent>(eventRef);
-
-  const configRef = useMemoFirebase(() => db ? doc(db, 'teams', teamId as string, 'events', eventId as string, 'registration', protocolId) : null, [db, teamId, eventId, protocolId]);
-  const { data: config, isLoading: isConfigLoading } = useDoc<LeagueRegistrationConfig>(configRef);
+  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament-registration&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}&protocolId=${encodeURIComponent(protocolId)}` : null;
+  const { data: portal, isLoading, error, status, retry } = usePublicPortal<{ config: LeagueRegistrationConfig; event: TeamEvent }>(portalUrl);
+  const config = portal?.config || null;
+  const event = portal?.event || null;
 
   const [step, setStep] = useState(1);
   const [answers, setAnswers] = useState<Record<string, any>>({});
@@ -141,7 +137,12 @@ function RegistrationForm() {
 
     setIsSubmitting(true);
     try {
-      await submitRegistrationEntry(teamId as string, config.id, answers, config.form_version || 0, signature, 'teams', eventId as string);
+      const response = await fetch('/api/public/portals/action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'tournament', action: 'register', teamId, eventId, protocolId: config.id, answers, formVersion: config.form_version || 0, signature }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Submission failed.');
       setIsSuccess(true);
     } catch (error) {
       toast({ title: "Submission Failed", variant: "destructive" });
@@ -162,7 +163,7 @@ function RegistrationForm() {
     setStep(prev => Math.max(prev - 1, 1));
   };
 
-  if (isEventLoading || isConfigLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-6">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -171,17 +172,7 @@ function RegistrationForm() {
     );
   }
 
-  if (!config || !config.is_active || !event) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-6 text-foreground">
-        <Card className="max-w-md w-full text-center p-12 rounded-[3.5rem] border-none shadow-2xl bg-white">
-          <Trophy className="h-20 w-20 text-muted mx-auto mb-8 opacity-20" />
-          <h2 className="text-2xl font-black uppercase tracking-tight">Series Locked</h2>
-          <p className="text-muted-foreground font-medium mt-2 leading-relaxed">The enrollment pipeline for this series is currently closed or restricted.</p>
-        </Card>
-      </div>
-    );
-  }
+  if (!config || !config.is_active || !event) return <PortalStatus status={status ?? (portal ? 404 : null)} message={error} onRetry={retry} title={status === 404 || portal ? 'Series Locked' : undefined} />;
 
   if (isSuccess) {
     return (

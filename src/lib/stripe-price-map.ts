@@ -1,3 +1,5 @@
+import { PLAN_TEAM_LIMITS } from '@/lib/plan-catalog';
+
 /**
  * Canonical Stripe Price ID → Plan mapping.
  * Single source of truth used by webhook, sync, and update routes.
@@ -34,14 +36,14 @@ const priceSchoolAnnual  = process.env.NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_ANNUAL
 
 export const PLAN_PRICE_MAP: Record<string, { id: string; teamLimit: number }> = {
   // Pro Team — Monthly & Annual
-  [priceTeamMonthly]:   { id: 'team',   teamLimit: 1  },
-  [priceTeamAnnual]:    { id: 'team',   teamLimit: 1  },
+  [priceTeamMonthly]:   { id: 'team',   teamLimit: PLAN_TEAM_LIMITS.team },
+  [priceTeamAnnual]:    { id: 'team',   teamLimit: PLAN_TEAM_LIMITS.team },
   // Elite Teams — Monthly & Annual
-  [priceEliteMonthly]:  { id: 'elite',  teamLimit: 8  },
-  [priceEliteAnnual]:   { id: 'elite',  teamLimit: 8  },
+  [priceEliteMonthly]:  { id: 'elite',  teamLimit: PLAN_TEAM_LIMITS.elite },
+  [priceEliteAnnual]:   { id: 'elite',  teamLimit: PLAN_TEAM_LIMITS.elite },
   // Elite League — Monthly & Annual
-  [priceLeagueMonthly]: { id: 'league', teamLimit: 18 },
-  [priceLeagueAnnual]:  { id: 'league', teamLimit: 18 },
+  [priceLeagueMonthly]: { id: 'league', teamLimit: PLAN_TEAM_LIMITS.league },
+  [priceLeagueAnnual]:  { id: 'league', teamLimit: PLAN_TEAM_LIMITS.league },
   // Schools Plan — Monthly & Annual
   [priceSchoolMonthly]: { id: 'school', teamLimit: 15 },
   [priceSchoolAnnual]:  { id: 'school', teamLimit: 15 },

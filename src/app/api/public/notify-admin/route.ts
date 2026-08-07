@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
         ? `[Beta Application] ${name || 'New applicant'} applied`
         : `[Newsletter Signup] ${email}`).replace(/[\r\n]/g, ' ');
 
-      const emailHtml = type === 'beta' 
+      const emailHtml = type === 'beta'
         ? htmlLayout('New Beta Application', `
             <p style="margin:0 0 8px;font-size:20px;font-weight:900;color:#18181b;">New Beta Application Received! 🚀</p>
             <p style="margin:0 0 24px;font-size:14px;color:#52525b;line-height:1.6;">

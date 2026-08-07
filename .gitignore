@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next-stale-*/
 /out/
 
 # production
@@ -58,6 +59,8 @@ testsprite_tests/__pycache__/
 testsprite_tests/screenshots/
 testsprite_tests/videos/
 testsprite_tests/*.har
+/.playwright-cli/
+/output/
 
 # Local QA/debug artifacts may contain credentials or production identifiers.
 /scratch/

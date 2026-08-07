@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'crypto';
 import { FEED_REGISTRY } from '@/lib/rss-feeds';
+import { fetchPublicUrl, readResponseTextWithLimit } from '@/lib/public-network-url';
+import { enforceUserRateLimit } from '@/lib/server-request-guards';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -118,19 +120,18 @@ async function fetchFeed(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    const res = await fetch(url, {
+    const res = await fetchPublicUrl(url, {
       signal: controller.signal,
       headers: {
         'User-Agent': 'The-Squad-SportsHub/2.0 (+https://www.thesquad.pro/sports-hub)',
         Accept: 'application/rss+xml, application/xml, application/atom+xml, text/xml, */*',
       },
-      next: { revalidate: 1800 },
     });
 
     clearTimeout(timer);
     if (!res.ok) return [];
 
-    const xml = await res.text();
+    const xml = await readResponseTextWithLimit(res);
     const items = parseRSS(xml, source, category, tags);
 
     // Apply keyword filter if keywords are specified
@@ -147,10 +148,15 @@ async function fetchFeed(
 
 // ─── Route ───────────────────────────────────────────────────────────────────
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const fingerprint = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const limited = await enforceUserRateLimit(fingerprint, 'sports-hub-rss', 300, 60 * 60 * 1000);
+  if (limited) return limited;
   const { searchParams } = new URL(request.url);
-  const category = searchParams.get('category') ?? 'all';
-  const limit = Math.min(parseInt(searchParams.get('limit') ?? '60', 10), 80);
+  const rawCategory = searchParams.get('category') ?? 'all';
+  const category = rawCategory.length <= 50 ? rawCategory : 'all';
+  const parsedLimit = Number.parseInt(searchParams.get('limit') ?? '60', 10);
+  const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 80)) : 60;
 
   const feeds = category === 'all'
     ? FEED_REGISTRY

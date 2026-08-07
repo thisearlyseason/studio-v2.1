@@ -457,9 +457,20 @@ function AuthorizedClubManagementPage() {
         const snapshots = await Promise.all(
           clubTeamIds.map(teamId => getDocs(collection(db, 'teams', teamId, 'incidents')))
         );
-        const incidents = snapshots.flatMap(snapshot =>
-          snapshot.docs.map(incident => ({ id: incident.id, ...incident.data() } as TeamIncident))
-        );
+        const incidents = snapshots.flatMap((snapshot, index) => {
+          const teamId = clubTeamIds[index];
+          const teamName = clubTeams.find(team => team.id === teamId)?.name || 'Unknown Squad';
+
+          return snapshot.docs.map(incident => {
+            const data = incident.data();
+            return {
+              id: incident.id,
+              ...data,
+              teamId: data.teamId || teamId,
+              teamName: data.teamName || teamName,
+            } as TeamIncident;
+          });
+        });
         const unique = Array.from(new Map(incidents.map(incident => [`${incident.teamId || ''}:${incident.id}`, incident])).values());
         unique.sort((a: any, b: any) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
         if (!cancelled) setClubIncidents(unique);
@@ -470,7 +481,7 @@ function AuthorizedClubManagementPage() {
     };
     fetchClubIncidents();
     return () => { cancelled = true; };
-  }, [db, clubTeamIds]);
+  }, [db, clubTeamIds, clubTeams]);
 
   const stats = useMemo(() => {
     let owed = 0, total = 0, cleared = 0;
@@ -1705,13 +1716,13 @@ function AuthorizedClubManagementPage() {
               {isSchoolMode ? (
                 <>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-foreground">School / Institution Name</Label>
-                    <Input value={clubForm.schoolName} onChange={e => setClubForm({...clubForm, schoolName: e.target.value, name: e.target.value})} placeholder="e.g. Westfield High School" className="h-12 rounded-2xl border-2 font-black text-base focus:border-primary/20" />
+                    <Label htmlFor="school-name" className="text-[10px] font-black uppercase tracking-widest text-foreground">School / Institution Name</Label>
+                    <Input id="school-name" value={clubForm.schoolName} onChange={e => setClubForm({...clubForm, schoolName: e.target.value, name: e.target.value})} placeholder="e.g. Westfield High School" className="h-12 rounded-2xl border-2 font-black text-base focus:border-primary/20" />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Your Administrative Title</Label>
+                    <Label htmlFor="institution-title" className="text-[10px] font-black uppercase tracking-widest text-foreground">Your Administrative Title</Label>
                     <Select value={clubForm.institutionTitle} onValueChange={v => setClubForm({...clubForm, institutionTitle: v})}>
-                      <SelectTrigger className="h-12 rounded-2xl border-2 font-bold focus:border-primary/20"><SelectValue placeholder="Select your title..." /></SelectTrigger>
+                      <SelectTrigger id="institution-title" className="h-12 rounded-2xl border-2 font-bold focus:border-primary/20"><SelectValue placeholder="Select your title..." /></SelectTrigger>
                       <SelectContent className="rounded-2xl">
                         <SelectItem value="Athletic Director" className="font-bold">Athletic Director</SelectItem>
                         <SelectItem value="Principal" className="font-bold">Principal</SelectItem>
@@ -1724,14 +1735,14 @@ function AuthorizedClubManagementPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Mission Narrative</Label>
-                    <Textarea value={clubForm.description} onChange={e => setClubForm({...clubForm, description: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium focus:border-primary/20 p-4 resize-none" placeholder="Describe the school's athletic program..." />
+                    <Label htmlFor="school-mission" className="text-[10px] font-black uppercase tracking-widest text-foreground">Mission Narrative</Label>
+                    <Textarea id="school-mission" value={clubForm.description} onChange={e => setClubForm({...clubForm, description: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium focus:border-primary/20 p-4 resize-none" placeholder="Describe the school's athletic program..." />
                   </div>
                 </>
               ) : (
                 <>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Official Club Name</Label><Input value={clubForm.name} onChange={e => setClubForm({...clubForm, name: e.target.value})} className="h-12 rounded-2xl border-2 font-black text-base focus:border-primary/20" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest text-foreground">Mission Narrative</Label><Textarea value={clubForm.description} onChange={e => setClubForm({...clubForm, description: e.target.value})} className="min-h-[120px] rounded-2xl border-2 font-medium focus:border-primary/20 p-4 resize-none" placeholder="Describe the club's tactical mission..." /></div>
+                  <div className="space-y-2"><Label htmlFor="club-name" className="text-[10px] font-black uppercase tracking-widest text-foreground">Official Club Name</Label><Input id="club-name" value={clubForm.name} onChange={e => setClubForm({...clubForm, name: e.target.value})} className="h-12 rounded-2xl border-2 font-black text-base focus:border-primary/20" /></div>
+                  <div className="space-y-2"><Label htmlFor="club-mission" className="text-[10px] font-black uppercase tracking-widest text-foreground">Mission Narrative</Label><Textarea id="club-mission" value={clubForm.description} onChange={e => setClubForm({...clubForm, description: e.target.value})} className="min-h-[120px] rounded-2xl border-2 font-medium focus:border-primary/20 p-4 resize-none" placeholder="Describe the club's tactical mission..." /></div>
                 </>
               )}
             </div>

@@ -7,6 +7,7 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { readResponseTextWithLimit } from '@/lib/public-network-url';
 
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
@@ -56,7 +57,7 @@ async function callStraico(apiKey: string, modelId: string, messages: any[]): Pr
       signal: controller.signal,
     });
     
-    const responseText = await res.text();
+    const responseText = await readResponseTextWithLimit(res, 1_000_000);
     clearTimeout(timeoutId);
 
     if (!res.ok) {
@@ -317,7 +318,7 @@ export async function POST(req: NextRequest) {
     const frameCount = hasUrls ? frameUrls!.length : frames!.length;
 
     const frameTimestamps = hasUrls
-      ? frameUrls!.map((f, i) => `Frame ${i + 1} @ ${f.timestamp.toFixed(1)}s`).join(', ')
+      ? frameUrls.map((f, i) => `Frame ${i + 1} @ ${f.timestamp.toFixed(1)}s`).join(', ')
       : frames!.map((f, i) => `Frame ${i + 1} @ ${f.timestamp.toFixed(1)}s`).join(', ');
 
     console.log(`[Straico] ${frameCount} frames (${hasUrls ? 'HTTPS vision' : 'text-only fallback'}), ${durationSecs}s video`);
@@ -350,8 +351,8 @@ EXAMPLE: [{"startTime":12.5,"endTime":28.0,"impactFrameTime":18.2,"title":"Elite
       // ── VISION PATH: Send HTTPS image URLs to Straico ──────────────────
       const visionContent: any[] = [{ type: 'text', text: scoutPrompt }];
 
-      for (let i = 0; i < frameUrls!.length; i++) {
-        const frame = frameUrls![i];
+      for (let i = 0; i < frameUrls.length; i++) {
+        const frame = frameUrls[i];
         visionContent.push({
           type: 'text',
           text: `\n[Frame ${i + 1} — at ${frame.timestamp.toFixed(1)}s]`,
