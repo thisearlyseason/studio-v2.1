@@ -589,13 +589,13 @@ export default function LandingPage() {
 
         {/* ── CURTAIN: two black panels split open top/bottom ── */}
         <motion.div
-          className="absolute inset-x-0 top-0 h-1/2 bg-black z-50 origin-top"
+          className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-black z-50 origin-top"
           initial={{ scaleY: 1 }}
           animate={{ scaleY: heroRevealed ? 0 : 1 }}
           transition={{ duration: 1.1, ease: [0.76, 0, 0.24, 1] }}
         />
         <motion.div
-          className="absolute inset-x-0 bottom-0 h-1/2 bg-black z-50 origin-bottom"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-black z-50 origin-bottom"
           initial={{ scaleY: 1 }}
           animate={{ scaleY: heroRevealed ? 0 : 1 }}
           transition={{ duration: 1.1, ease: [0.76, 0, 0.24, 1] }}

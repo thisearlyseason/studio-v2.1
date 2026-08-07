@@ -121,6 +121,41 @@ test('dashboard queues unsigned-document prompts behind unread broadcasts', asyn
   assert.match(dashboard, /\[pendingWaiversCount, hasUnreadAlert\]/);
 });
 
+test('school-wide member lookup declares its collection-group index', async () => {
+  const coachesCorner = await readSource('../src/app/(dashboard)/coaches-corner/page.tsx');
+  const indexes = JSON.parse(await readSource('../firestore.indexes.json'));
+
+  assert.match(
+    coachesCorner,
+    /collectionGroup\(db, 'members'\), where\('schoolId', '==', currentSchoolId\)/
+  );
+  assert.ok(indexes.fieldOverrides.some(override =>
+    override.collectionGroup === 'members' &&
+    override.fieldPath === 'schoolId' &&
+    override.indexes?.some(index =>
+      index.order === 'ASCENDING' && index.queryScope === 'COLLECTION_GROUP'
+    )
+  ));
+});
+
+test('event date override preserves collection sorting indexes', async () => {
+  const indexes = JSON.parse(await readSource('../firestore.indexes.json'));
+  const dateOverride = indexes.fieldOverrides.find(override =>
+    override.collectionGroup === 'events' && override.fieldPath === 'date'
+  );
+
+  assert.ok(dateOverride);
+  assert.ok(dateOverride.indexes.some(index =>
+    index.order === 'ASCENDING' && index.queryScope === 'COLLECTION'
+  ));
+  assert.ok(dateOverride.indexes.some(index =>
+    index.order === 'DESCENDING' && index.queryScope === 'COLLECTION'
+  ));
+  assert.ok(dateOverride.indexes.some(index =>
+    index.order === 'ASCENDING' && index.queryScope === 'COLLECTION_GROUP'
+  ));
+});
+
 test('demo role selector has an accessible description', async () => {
   const landing = await readSource('../src/app/page.tsx');
 
@@ -133,6 +168,13 @@ test('landing navigation sends authenticated users to the dashboard', async () =
   assert.match(landing, /const accountHref = user \? '\/dashboard' : '\/login'/);
   assert.match(landing, /const accountLabel = user \? 'Dashboard' : 'Log In'/);
   assert.equal((landing.match(/href=\{accountHref\}/g) || []).length, 3);
+});
+
+test('landing reveal curtain never blocks visible hero controls', async () => {
+  const landing = await readSource('../src/app/page.tsx');
+
+  assert.match(landing, /pointer-events-none absolute inset-x-0 top-0 h-1\/2 bg-black z-50 origin-top/);
+  assert.match(landing, /pointer-events-none absolute inset-x-0 bottom-0 h-1\/2 bg-black z-50 origin-bottom/);
 });
 
 test('newsletter subscription and sending are handled by protected server routes', async () => {
