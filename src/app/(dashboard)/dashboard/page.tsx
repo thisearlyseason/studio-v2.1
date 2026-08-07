@@ -46,7 +46,8 @@ export default function UniversalAccountDashboard() {
     user, activeTeam, activeTeamEvents, 
     householdBalance, isYouth, isParent,
     householdEvents, householdGames, myChildren, teams,
-    isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isStaff
+    isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isStaff,
+    alerts, seenAlertIds
   } = useTeam();
   const router = useRouter();
   const db = useFirestore();
@@ -83,16 +84,17 @@ export default function UniversalAccountDashboard() {
 
   const { pendingDocs } = usePendingWaivers();
   const pendingWaiversCount = pendingDocs.length;
+  const hasUnreadAlert = alerts.some(alert => !seenAlertIds.includes(alert.id));
   // Create a state to control the dialog so it doesn't get stuck if the user cancels
   const [showWaiverModal, setShowWaiverModal] = useState(false);
   
   useEffect(() => {
-    if (pendingWaiversCount > 0) {
+    if (pendingWaiversCount > 0 && !hasUnreadAlert) {
       setShowWaiverModal(true);
     } else {
       setShowWaiverModal(false);
     }
-  }, [pendingWaiversCount]);
+  }, [pendingWaiversCount, hasUnreadAlert]);
 
   const volQuery = useMemoFirebase(() => {
     if (!db || !activeTeam?.id) return null;

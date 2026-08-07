@@ -82,6 +82,8 @@ test('protected pages require a revocation-checked HTTP-only server session', as
   assert.match(middleware, /pathname\.startsWith\('\/events\/register\/'\).*return false/);
   assert.match(middleware, /pathname === '\/leagues'/);
   assert.match(middleware, /pathname === '\/tournaments'/);
+  const protectedRoots = middleware.match(/const PROTECTED_ROOTS = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? '';
+  assert.doesNotMatch(protectedRoots, /['"]safety['"]/, 'the public Safety Center must not require a session');
   assert.match(sessionRoute, /createSessionCookie/);
   assert.match(sessionRoute, /verifySessionCookie\(sessionCookie, true\)/);
   assert.match(sessionRoute, /httpOnly: true/);

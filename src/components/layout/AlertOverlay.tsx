@@ -174,7 +174,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
       <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
         <DialogTitle className="sr-only">Squad Alert Inbox</DialogTitle>
         <DialogClose asChild>
-          <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
+          <Button aria-label="Close broadcast inbox" variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
             <X className="h-5 w-5" />
           </Button>
         </DialogClose>
@@ -262,6 +262,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
                                 <Button 
                                   variant="ghost" 
                                   size="icon" 
+                                  aria-label={`Archive ${alert.title}`}
                                   className="h-8 w-8 rounded-xl bg-white/80 hover:bg-primary hover:text-white shadow-sm border border-black/5" 
                                   disabled={processingIds.includes(alert.id)}
                                   onClick={async (e) => {
@@ -290,6 +291,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
                                 <Button 
                                   variant="ghost" 
                                   size="icon" 
+                                  aria-label={`Remove ${alert.title} from inbox`}
                                   className="h-8 w-8 rounded-xl bg-white/80 hover:bg-black hover:text-white shadow-sm border border-black/5" 
                                   disabled={processingIds.includes(alert.id)}
                                   onClick={async (e) => {
@@ -318,6 +320,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
                                 <Button 
                                   variant="ghost" 
                                   size="icon" 
+                                  aria-label={`Permanently delete ${alert.title}`}
                                   className="h-8 w-8 rounded-xl bg-white/80 hover:bg-destructive hover:text-white shadow-sm border border-black/5" 
                                   disabled={processingIds.includes(alert.id)}
                                   onClick={async (e) => {
@@ -378,7 +381,13 @@ export function CreateAlertButton() {
 
   if (!canAlert) {
     return (
-      <Button variant="outline" size="icon" className="h-10 w-10 md:h-11 md:w-11 rounded-full border-primary/20 text-primary/40 opacity-50 relative" onClick={purchasePro}>
+      <Button
+        variant="outline"
+        size="icon"
+        aria-label="Upgrade to unlock squad broadcasts"
+        className="h-10 w-10 md:h-11 md:w-11 rounded-full border-primary/20 text-primary/40 opacity-50 relative"
+        onClick={purchasePro}
+      >
         <Megaphone className="h-5 w-5 md:h-4 md:w-4" />
         <Lock className="absolute -top-1 -right-1 h-3 w-3 bg-black text-white p-0.5 rounded-full border-2 border-background" />
       </Button>
@@ -409,7 +418,12 @@ export function CreateAlertButton() {
   return (
     <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="icon" className="h-10 w-10 md:h-11 md:w-11 rounded-full border-primary/20 text-primary hover:bg-primary/5 shadow-sm transition-all active:scale-95 group">
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Create squad broadcast"
+          className="h-10 w-10 md:h-11 md:w-11 rounded-full border-primary/20 text-primary hover:bg-primary/5 shadow-sm transition-all active:scale-95 group"
+        >
           <Megaphone className="h-5 w-5 md:h-4 md:w-4 group-hover:animate-pulse" />
         </Button>
       </DialogTrigger>

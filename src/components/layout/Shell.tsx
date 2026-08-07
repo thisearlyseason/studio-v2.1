@@ -888,7 +888,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-2xl hover:bg-primary/5 text-primary relative transition-all active:scale-95 border-2 border-primary/10">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Switch squad"
+                              className="h-10 w-10 rounded-2xl hover:bg-primary/5 text-primary relative transition-all active:scale-95 border-2 border-primary/10"
+                            >
                               <Zap className="h-5 w-5 fill-current" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -913,7 +918,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="flex items-center gap-2 md:gap-3">
                 {isStaff && <CreateAlertButton />}
                 <AlertsHistoryDialog>
-                  <Button variant="ghost" size="icon" className="h-10 w-10 md:h-11 md:w-11 rounded-2xl hover:bg-primary/5 text-foreground relative transition-all active:scale-95">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Open alerts${unreadAlertsCount > 0 ? `, ${unreadAlertsCount} unread` : ''}`}
+                    className="h-10 w-10 md:h-11 md:w-11 rounded-2xl hover:bg-primary/5 text-foreground relative transition-all active:scale-95"
+                  >
                     <Bell className="h-5 w-5" />
                     {unreadAlertsCount > 0 && (
                       <span className="absolute top-1 right-1 h-4 w-4 bg-primary text-[8px] font-black text-white rounded-full border-2 border-background flex items-center justify-center animate-pulse shadow-[0_0_10px_rgba(255,0,0,0.5)]">
@@ -924,7 +934,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 </AlertsHistoryDialog>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="hidden sm:block focus:outline-none flex items-center gap-2 group">
+                    <button
+                      aria-label="Open account menu"
+                      className="hidden sm:block focus:outline-none flex items-center gap-2 group"
+                    >
                       <Avatar className="h-8 w-8 md:h-10 md:w-10 border-2 border-background shadow-md transition-transform group-hover:scale-105 active:scale-95">
                         <AvatarImage src={user?.avatar} />
                         <AvatarFallback className="font-black text-xs">{user?.name?.[0]}</AvatarFallback>

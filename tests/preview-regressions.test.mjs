@@ -112,6 +112,15 @@ test('demo organization hubs do not call Stripe Connect', async () => {
   assert.match(club, /isDemo=\{user\.isDemo === true\}/);
 });
 
+test('dashboard queues unsigned-document prompts behind unread broadcasts', async () => {
+  const dashboard = await readSource('../src/app/(dashboard)/dashboard/page.tsx');
+
+  assert.match(dashboard, /alerts, seenAlertIds/);
+  assert.match(dashboard, /const hasUnreadAlert = alerts\.some\(alert => !seenAlertIds\.includes\(alert\.id\)\)/);
+  assert.match(dashboard, /pendingWaiversCount > 0 && !hasUnreadAlert/);
+  assert.match(dashboard, /\[pendingWaiversCount, hasUnreadAlert\]/);
+});
+
 test('demo role selector has an accessible description', async () => {
   const landing = await readSource('../src/app/page.tsx');
 

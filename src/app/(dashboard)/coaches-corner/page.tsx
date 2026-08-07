@@ -5303,7 +5303,19 @@ function SquadFinancialHub() {
       </div>
 
       {/* ── Stripe Connect Setup (Pro only — free/starter never reach here) ── */}
-      {user?.id && activeTeam?.id && (
+      {(user?.isDemo || activeTeam?.isDemo) ? (
+        <Card className="rounded-[2rem] border-none shadow-md bg-muted/30 p-6">
+          <div className="flex items-start gap-3">
+            <CreditCard className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider text-foreground">Online Payments Disabled in Demo</p>
+              <p className="text-[10px] font-bold text-muted-foreground mt-1 leading-relaxed">
+                Stripe setup is available only in a live paid workspace. Demo data will not connect to or modify a payment account.
+              </p>
+            </div>
+          </div>
+        </Card>
+      ) : user?.id && activeTeam?.id && (
         <StripeConnectSetup
           userId={user.id}
           teamId={activeTeam.id}

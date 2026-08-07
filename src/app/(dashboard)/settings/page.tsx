@@ -588,7 +588,7 @@ export default function SettingsPage() {
               <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><Bell className="h-5 w-5" /></div>
               <CardTitle className="text-sm font-black uppercase tracking-widest">Tactical Alerts</CardTitle>
             </div>
-            <Switch checked={notifications} onCheckedChange={handleNotificationsToggle} disabled={isNotifLoading} />
+            <Switch aria-label="Tactical alerts" checked={notifications} onCheckedChange={handleNotificationsToggle} disabled={isNotifLoading} />
           </CardHeader>
           <CardContent className="p-8 space-y-4">
             <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed">
@@ -731,7 +731,7 @@ export default function SettingsPage() {
                       {module.name}
                     </span>
                   </div>
-                  <Switch checked={isEnabled} onCheckedChange={handleToggle} />
+                  <Switch aria-label={`${module.name} visibility`} checked={isEnabled} onCheckedChange={handleToggle} />
                 </div>
               );
             })}
