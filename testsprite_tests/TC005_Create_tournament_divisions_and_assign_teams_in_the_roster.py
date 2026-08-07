@@ -3,6 +3,11 @@ import re
 from playwright import async_api
 from playwright.async_api import expect
 
+try:
+    from testsprite_tests.e2e_config import BASE_URL, league_code, test_email, test_password
+except ModuleNotFoundError:
+    from e2e_config import BASE_URL, league_code, test_email, test_password
+
 async def run_test():
     pw = None
     browser = None
@@ -34,38 +39,38 @@ async def run_test():
 
         # Interact with the page elements to simulate user flow
         # -> navigate
-        await page.goto("http://localhost:9002")
+        await page.goto(f"{BASE_URL}")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:
             pass
         
         # -> Open the Login page by navigating to the /login path (go to the application's Login page).
-        await page.goto("http://localhost:9002/login")
+        await page.goto(f"{BASE_URL}/login")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:
             pass
         
-        # -> Fill 'example@gmail.com' into the Official Email field, fill 'password123' into the Encrypted Password field, then click the 'Verify Identity' button to submit the login form.
+        # -> Fill test_email() into the Official Email field, fill test_password() into the Encrypted Password field, then click the 'Verify Identity' button to submit the login form.
         # name@organization.com email field
         elem = page.locator('[id="email"]')
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("example@gmail.com")
+        await elem.fill(test_email())
         
-        # -> Fill 'example@gmail.com' into the Official Email field, fill 'password123' into the Encrypted Password field, then click the 'Verify Identity' button to submit the login form.
+        # -> Fill test_email() into the Official Email field, fill test_password() into the Encrypted Password field, then click the 'Verify Identity' button to submit the login form.
         # password field
         elem = page.locator('[id="password"]')
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("password123")
+        await elem.fill(test_password())
         
-        # -> Fill 'example@gmail.com' into the Official Email field, fill 'password123' into the Encrypted Password field, then click the 'Verify Identity' button to submit the login form.
+        # -> Fill test_email() into the Official Email field, fill test_password() into the Encrypted Password field, then click the 'Verify Identity' button to submit the login form.
         # Verify Identity button
         elem = page.get_by_role('button', name='Verify Identity', exact=True)
         await elem.click(timeout=10000)
         
         # -> Open the Manage Tournaments page (navigate to the Manage Tournaments section or path, expected label 'Manage Tournaments' or URL /manage-tournaments) so the Architecture and Roster tabs can be accessed.
-        await page.goto("http://localhost:9002/manage-tournaments")
+        await page.goto(f"{BASE_URL}/manage-tournaments")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:

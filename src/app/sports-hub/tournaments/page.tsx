@@ -6,15 +6,8 @@ import Link from 'next/link';
 import { Trophy, User, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CategoryPills } from '@/components/sports-hub/CategoryPills';
-import { ARTICLES_LIST } from '@/lib/sports-hub-articles';
-
-// Pull all tournament articles from the central DB
-const ALL_TOURNAMENT = ARTICLES_LIST.filter(
-  (a) =>
-    a.categories?.includes('Tournament Management') ||
-    (a as { section?: string }).section === 'Tournament Management' ||
-    (a as { section?: string }).section === 'tournaments'
-);
+import type { Article } from '@/lib/sports-hub-articles';
+import { useSportsHubArticles } from '@/hooks/use-sports-hub-articles';
 
 // Tag-based subcategory mapping
 const SUB_CATEGORY_MAP: Record<string, string[]> = {
@@ -30,7 +23,7 @@ const SUB_CATEGORY_MAP: Record<string, string[]> = {
 
 const TOURNAMENT_CATEGORIES = ['All', ...Object.keys(SUB_CATEGORY_MAP)];
 
-function getSubCategory(article: typeof ARTICLES_LIST[0]): string {
+function getSubCategory(article: Article): string {
   const tagList = (article.tags || []).map((t: string) => t.toLowerCase());
   for (const [cat, keywords] of Object.entries(SUB_CATEGORY_MAP)) {
     if (keywords.some((kw) => tagList.some((t) => t.includes(kw)))) return cat;
@@ -45,15 +38,19 @@ const fadeUp = {
 
 export default function TournamentsPage() {
   const [activeCategory, setActiveCategory] = useState('All');
+  const articles = useSportsHubArticles();
+  const allTournament = useMemo(() => articles.filter(
+    article => article.categories?.includes('Tournament Management') || article.section === 'Tournament Management' || article.section === 'tournaments'
+  ), [articles]);
 
   const filtered = useMemo(() => {
-    if (activeCategory === 'All') return ALL_TOURNAMENT;
+    if (activeCategory === 'All') return allTournament;
     const keywords = SUB_CATEGORY_MAP[activeCategory] || [];
-    return ALL_TOURNAMENT.filter((a) => {
+    return allTournament.filter((a) => {
       const tagList = (a.tags || []).map((t: string) => t.toLowerCase());
       return keywords.some((kw) => tagList.some((t) => t.includes(kw)));
     });
-  }, [activeCategory]);
+  }, [activeCategory, allTournament]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-12">
@@ -71,7 +68,7 @@ export default function TournamentsPage() {
           Bracket management, scheduling, officials, scoring — everything you need to run professional-grade tournaments.
         </p>
         <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mt-2">
-          <span className="text-primary">{ALL_TOURNAMENT.length}</span> Articles
+          <span className="text-primary">{allTournament.length}</span> Articles
         </p>
       </motion.div>
 

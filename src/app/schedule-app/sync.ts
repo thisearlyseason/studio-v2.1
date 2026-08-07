@@ -1,7 +1,6 @@
-import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore';
-import { firebaseConfig } from '@/firebase/config';
+import { getOrInitializeFirebaseApp } from '@/firebase/config';
 
 export interface SyncEvent {
   id: string;
@@ -34,10 +33,6 @@ export interface SyncResult {
 const EVENTS_KEY = 'squad_schedule_events';
 const TEAM_KEY   = 'sf_session_team_id';
 
-function getApp() {
-  return getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-}
-
 function normaliseDate(raw: unknown): string {
   if (!raw) return '';
   if (typeof raw === 'object' && raw !== null && 'toDate' in raw) {
@@ -53,7 +48,7 @@ function getCached(): SyncEvent[] {
 
 export async function syncFromFirestore(): Promise<SyncResult> {
   try {
-    const app = getApp();
+    const app = getOrInitializeFirebaseApp();
     const auth = getAuth(app);
     const db   = getFirestore(app);
 

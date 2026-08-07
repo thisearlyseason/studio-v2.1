@@ -2,6 +2,11 @@ import asyncio
 from playwright import async_api
 from playwright.async_api import expect
 
+try:
+    from testsprite_tests.e2e_config import BASE_URL, league_code, test_email, test_password
+except ModuleNotFoundError:
+    from e2e_config import BASE_URL, league_code, test_email, test_password
+
 async def run_test():
     pw = None
     browser = None
@@ -30,11 +35,11 @@ async def run_test():
         page = await context.new_page()
 
         # Interact with the page elements to simulate user flow
-        # -> Navigate to http://localhost:9002
-        await page.goto("http://localhost:9002")
+        # -> Navigate to $E2E_BASE_URL
+        await page.goto(f"{BASE_URL}")
         
         # -> Navigate to /signup to reach the signup page and reveal the signup form.
-        await page.goto("http://localhost:9002/signup")
+        await page.goto(f"{BASE_URL}/signup")
         
         # -> Click the 'Myself (18+)' registration card to proceed to the next signup step (expect email/password fields to appear).
         frame = context.pages[-1]
@@ -63,12 +68,12 @@ async def run_test():
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[3]/form/div[2]/div[2]/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('automated+20260502T000000@example.com')
+        await asyncio.sleep(3); await elem.fill(test_email())
         
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[3]/form/div[2]/div[3]/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('Password123!')
+        await asyncio.sleep(3); await elem.fill(test_password())
         
         # -> Click the 'Begin Coordination' submit button to submit the signup form and then verify the app redirects to the dashboard.
         frame = context.pages[-1]

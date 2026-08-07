@@ -7,12 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useAuth } from '@/firebase';
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  updateProfile,
-} from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import { establishSession } from '@/lib/client-session';
 import BrandLogo from '@/components/BrandLogo';
@@ -32,7 +26,6 @@ import {
 function YouthSignupContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const auth = useAuth();
 
   const token = searchParams.get('token');
   const [invite, setInvite] = useState<any>(null);
@@ -53,15 +46,23 @@ function YouthSignupContent() {
       return;
     }
 
-    fetch(`/api/youth-invites?token=${encodeURIComponent(token)}`, { cache: 'no-store' }).then(async response => {
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to verify invitation.');
-      setInvite(data);
-      setIsLoadingInvite(false);
-    }).catch((error) => {
-      setInviteError(error.message || 'Unable to verify invitation. Please try again.');
-      setIsLoadingInvite(false);
-    });
+    const controller = new AbortController();
+    fetch(`/api/invites/youth?token=${encodeURIComponent(token)}`, {
+      signal: controller.signal,
+    })
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Invitation unavailable.');
+        setInvite(payload.invite);
+        setInviteError(null);
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError') {
+          setInviteError('This invitation is invalid, expired, or has already been used.');
+        }
+      })
+      .finally(() => setIsLoadingInvite(false));
+    return () => controller.abort();
   }, [token]);
 
   // ── 2. Handle account creation ──
@@ -80,32 +81,20 @@ function YouthSignupContent() {
 
     setIsSubmitting(true);
     try {
-      let credential;
-      try {
-        credential = await createUserWithEmailAndPassword(auth, invite.email, password);
-      } catch (error: any) {
-        if (error.code !== 'auth/email-already-in-use') throw error;
-        credential = await signInWithEmailAndPassword(auth, invite.email, password);
-      }
-      const uid = credential.user.uid;
-      const displayName = `${invite.childFirstName} ${invite.childLastName}`;
-      await updateProfile(credential.user, { displayName });
-      const idToken = await credential.user.getIdToken();
-      const response = await fetch('/api/youth-invites', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ action: 'claim', token }),
+      const response = await fetch('/api/invites/youth', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Unable to claim invitation.');
-      await establishSession(credential.user);
-
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to create account.');
+      setInvite((current: any) => ({
+        ...current,
+        childFirstName: payload.childFirstName || current?.childFirstName,
+      }));
       setIsDone(true);
     } catch (error: any) {
-      const msg = error.code === 'auth/email-already-in-use'
-        ? 'An account with this email already exists. Try logging in instead.'
-        : error.message;
-      toast({ title: 'Account Creation Failed', description: msg, variant: 'destructive' });
+      toast({ title: 'Account Creation Failed', description: error.message, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }

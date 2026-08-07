@@ -1,11 +1,16 @@
-import { firebaseConfig } from '@/firebase/config';
-import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getStorage } from 'firebase/storage';
+import { getOrInitializeFirebaseApp } from '@/firebase/config';
+import { FirebaseApp } from 'firebase/app';
+import {
+  browserLocalPersistence,
+  connectAuthEmulator,
+  getAuth,
+  indexedDBLocalPersistence,
+  initializeAuth,
+} from 'firebase/auth';
+import { connectStorageEmulator, getStorage } from 'firebase/storage';
 import { 
-  initializeFirestore, 
-  getFirestore, 
-  memoryLocalCache 
+  connectFirestoreEmulator,
+  getFirestore,
 } from 'firebase/firestore'
 
 let cachedSdks: any = null;
@@ -22,14 +27,7 @@ export function initializeFirebase() {
   if (isClient && globalSdks.firebaseSdks) return globalSdks.firebaseSdks;
   if (cachedSdks) return cachedSdks;
 
-  const apps = getApps();
-  let firebaseApp;
-
-  if (!apps.length) {
-    firebaseApp = initializeApp(firebaseConfig);
-  } else {
-    firebaseApp = getApp();
-  }
+  const firebaseApp = getOrInitializeFirebaseApp();
 
   cachedSdks = getSdks(firebaseApp);
   if (isClient) {
@@ -44,8 +42,6 @@ export function getSdks(firebaseApp: FirebaseApp) {
   
   // Initialize Firestore with settings to mitigate the 'ID: ca9' assertion bug
   if (typeof window !== 'undefined') {
-    const { initializeAuth, browserLocalPersistence, getAuth, indexedDBLocalPersistence } = require('firebase/auth');
-    
     // Auth Hardening: Explicitly manage persistence to avoid 'network-request-failed' hangs in restricted environments
     try {
       auth = getAuth(firebaseApp);
@@ -57,12 +53,10 @@ export function getSdks(firebaseApp: FirebaseApp) {
     }
 
     try {
-      const { getFirestore } = require('firebase/firestore');
       firestore = getFirestore(firebaseApp);
       console.log('[Firestore] Initialized fresh Firestore instance (Default Cache)');
     } catch (e: any) {
       if (e.message && e.message.includes('already been initialized')) {
-        const { getFirestore } = require('firebase/firestore');
         firestore = getFirestore(firebaseApp);
       } else {
         throw e;
@@ -74,10 +68,25 @@ export function getSdks(firebaseApp: FirebaseApp) {
     auth = getAuth(firebaseApp);
   }
 
+  const storage = getStorage(firebaseApp);
+
+  // Local QA can run against the Firebase Emulator Suite without reading or
+  // writing production Auth, Firestore, or Storage data.
+  if (typeof window !== 'undefined' &&
+      process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true' &&
+      !globalSdks.firebaseEmulatorsConnected) {
+    const emulatorHost = window.location.hostname || '127.0.0.1';
+    connectAuthEmulator(auth, `http://${emulatorHost}:9099`, { disableWarnings: true });
+    connectFirestoreEmulator(firestore, emulatorHost, 8080);
+    connectStorageEmulator(storage, emulatorHost, 9199);
+    globalSdks.firebaseEmulatorsConnected = true;
+    console.info('[Firebase] Connected to local Auth, Firestore, and Storage emulators.');
+  }
+
   return {
     firebaseApp,
     auth,
     firestore,
-    storage: getStorage(firebaseApp)
+    storage
   };
 }

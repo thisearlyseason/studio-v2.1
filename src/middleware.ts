@@ -1,8 +1,24 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { isProtectedDashboardPath } from '@/lib/dashboard-route-policy'
+import * as admin from 'firebase-admin'
+import { ensureAdminInit } from '@/lib/firebase-admin'
  
-export function middleware(request: NextRequest) {
+const PROTECTED_ROOTS = new Set([
+  'admin', 'calendar', 'chats', 'club', 'coaches-corner', 'competition',
+  'dashboard', 'drills', 'equipment', 'events', 'facilities', 'family',
+  'feed', 'files', 'fundraising', 'games', 'manage-tournaments', 'practice',
+  'roster', 'safety', 'settings', 'team', 'teams', 'volunteers',
+]);
+
+function isProtectedPath(pathname: string) {
+  if (pathname.startsWith('/events/register/')) return false;
+  if (pathname === '/leagues' || pathname === '/leagues/') return true;
+  if (pathname === '/tournaments' || pathname === '/tournaments/') return true;
+  const root = pathname.split('/').filter(Boolean)[0] || '';
+  return PROTECTED_ROOTS.has(root);
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   
   // 1. Mitigate log noise from common bot probes (WordPress, PHP, Env files)
@@ -30,24 +46,39 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  if (isProtectedDashboardPath(pathname)) {
-    const sessionCookie = request.cookies.get('__session')?.value
+  if (isProtectedPath(pathname)) {
+    const sessionCookie = request.cookies.get('__session')?.value;
     if (!sessionCookie) {
-      const loginUrl = new URL('/login', request.url)
-      loginUrl.searchParams.set('reason', 'session')
-      loginUrl.searchParams.set('returnTo', `${pathname}${request.nextUrl.search}`)
-      return NextResponse.redirect(loginUrl)
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('reason', 'expired');
+      loginUrl.searchParams.set('returnTo', `${pathname}${request.nextUrl.search}`);
+      return NextResponse.redirect(loginUrl);
     }
-
-    const requestHeaders = new Headers(request.headers)
-    requestHeaders.set('x-squad-pathname', pathname)
-    return NextResponse.next({ request: { headers: requestHeaders } })
+    try {
+      ensureAdminInit();
+      const decoded = await admin.auth().verifySessionCookie(sessionCookie, true);
+      if (
+        decoded.firebase?.sign_in_provider !== 'anonymous' &&
+        decoded.email_verified !== true &&
+        decoded.role !== 'superadmin'
+      ) {
+        throw new Error('EMAIL_NOT_VERIFIED');
+      }
+    } catch {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('reason', 'expired');
+      loginUrl.searchParams.set('returnTo', `${pathname}${request.nextUrl.search}`);
+      const response = NextResponse.redirect(loginUrl);
+      response.cookies.delete('__session');
+      return response;
+    }
   }
  
   return NextResponse.next()
 }
 
 export const config = {
+  runtime: 'nodejs',
   matcher: [
     /*
      * Match all request paths except for the ones starting with:

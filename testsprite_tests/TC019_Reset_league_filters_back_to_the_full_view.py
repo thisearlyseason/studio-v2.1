@@ -3,6 +3,11 @@ import re
 from playwright import async_api
 from playwright.async_api import expect
 
+try:
+    from testsprite_tests.e2e_config import BASE_URL, league_code, test_email, test_password
+except ModuleNotFoundError:
+    from e2e_config import BASE_URL, league_code, test_email, test_password
+
 async def run_test():
     pw = None
     browser = None
@@ -34,32 +39,32 @@ async def run_test():
 
         # Interact with the page elements to simulate user flow
         # -> navigate
-        await page.goto("http://localhost:9002")
+        await page.goto(f"{BASE_URL}")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:
             pass
         
-        # -> Navigate to http://localhost:9002/login so the login form can be filled.
-        await page.goto("http://localhost:9002/login")
+        # -> Navigate to $E2E_BASE_URL/login so the login form can be filled.
+        await page.goto(f"{BASE_URL}/login")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:
             pass
         
-        # -> Fill the email and password fields and submit the login form to authenticate as example@gmail.com/password123.
+        # -> Fill the email and password fields and submit the login form to authenticate as $E2E_TEST_EMAIL/$E2E_TEST_PASSWORD.
         # email input placeholder="name@organization.com"
         elem = page.locator("xpath=/html/body/div[2]/div[5]/div/form/div/div[2]/input").nth(0)
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("example@gmail.com")
+        await elem.fill(test_email())
         
-        # -> Fill the email and password fields and submit the login form to authenticate as example@gmail.com/password123.
+        # -> Fill the email and password fields and submit the login form to authenticate as $E2E_TEST_EMAIL/$E2E_TEST_PASSWORD.
         # password input
         elem = page.locator("xpath=/html/body/div[2]/div[5]/div/form/div/div[3]/div[2]/input").nth(0)
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("password123")
+        await elem.fill(test_password())
         
-        # -> Fill the email and password fields and submit the login form to authenticate as example@gmail.com/password123.
+        # -> Fill the email and password fields and submit the login form to authenticate as $E2E_TEST_EMAIL/$E2E_TEST_PASSWORD.
         # button "Verify Identity"
         elem = page.locator("xpath=/html/body/div[2]/div[5]/div/form/div[2]/button").nth(0)
         await elem.wait_for(state="visible", timeout=10000)

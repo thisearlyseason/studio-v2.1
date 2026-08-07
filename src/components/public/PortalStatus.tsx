@@ -1,6 +1,7 @@
 'use client';
 
 import { AlertCircle, ExternalLink, Lock, RefreshCw, ShieldAlert } from 'lucide-react';
+import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
@@ -36,9 +37,9 @@ export function PortalStatus({ status, message, title, onRetry }: PortalStatusPr
             </Button>
           )}
           <Button asChild className="rounded-xl font-black uppercase text-[10px] tracking-widest">
-            <a href="/">
+            <Link href="/">
               <ExternalLink className="h-3.5 w-3.5 mr-2" /> Return Home
-            </a>
+            </Link>
           </Button>
         </div>
       </Card>

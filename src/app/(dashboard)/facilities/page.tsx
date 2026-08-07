@@ -25,10 +25,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 function FacilityFieldManager({ facility }: { facility: Facility }) {
-  const { addField, deleteField, isSuperAdmin, user } = useTeam();
+  const { addField, updateField, deleteField, isSuperAdmin, firebaseUser } = useTeam();
   const db = useFirestore();
   const [newFieldName, setNewFieldName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [editingFieldName, setEditingFieldName] = useState('');
+  const [savingFieldId, setSavingFieldId] = useState<string | null>(null);
+  const [deletingFieldId, setDeletingFieldId] = useState<string | null>(null);
 
   const fieldsQuery = useMemoFirebase(() => {
     if (!db || !facility.id) return null;
@@ -36,38 +40,191 @@ function FacilityFieldManager({ facility }: { facility: Facility }) {
   }, [db, facility.id]);
 
   const { data: fields } = useCollection<Field>(fieldsQuery);
+  const canManage = facility.clubId === firebaseUser?.uid || isSuperAdmin;
 
   const handleAddField = async () => {
-    if (!newFieldName.trim()) return;
+    const fieldName = newFieldName.trim();
+    if (!fieldName) return;
     setIsProcessing(true);
-    await addField(facility.id, newFieldName);
-    setNewFieldName('');
-    setIsProcessing(false);
-    toast({ title: "Field Enrolled", description: `${newFieldName} added to ${facility.name}.` });
+    try {
+      await addField(facility.id, fieldName);
+      setNewFieldName('');
+      toast({ title: "Field Enrolled", description: `${fieldName} added to ${facility.name}.` });
+    } catch (error: any) {
+      toast({
+        title: 'Resource Creation Failed',
+        description: error.message || 'Could not add this field or court.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const beginRename = (field: Field) => {
+    setEditingFieldId(field.id);
+    setEditingFieldName(field.name);
+  };
+
+  const cancelRename = () => {
+    setEditingFieldId(null);
+    setEditingFieldName('');
+  };
+
+  const handleRenameField = async (field: Field) => {
+    const nextName = editingFieldName.trim();
+    if (!nextName || nextName === field.name) {
+      cancelRename();
+      return;
+    }
+
+    setSavingFieldId(field.id);
+    try {
+      await updateField(facility.id, field.id, nextName);
+      toast({
+        title: 'Resource Renamed',
+        description: `${field.name} is now ${nextName} everywhere it is scheduled or displayed.`,
+      });
+      cancelRename();
+    } catch (error: any) {
+      toast({
+        title: 'Rename Failed',
+        description: error.message || 'Could not rename this facility resource.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingFieldId(null);
+    }
+  };
+
+  const handleDeleteField = async (field: Field) => {
+    const confirmed = window.confirm(
+      `Delete "${field.name}" from ${facility.name}? This will only continue if it is not used by any event, tournament, or league schedule.`
+    );
+    if (!confirmed) return;
+
+    setDeletingFieldId(field.id);
+    try {
+      await deleteField(facility.id, field.id);
+      toast({
+        title: 'Resource Deleted',
+        description: `${field.name} was removed from ${facility.name}.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Resource Still In Use',
+        description: error.message || 'Could not safely delete this facility resource.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingFieldId(null);
+    }
   };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between px-1">
-        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Active Fields/Courts</p>
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Active Fields/Courts</p>
+          {canManage && (
+            <p className="mt-1 text-[8px] font-bold uppercase tracking-wider text-muted-foreground/70">
+              Select Edit to rename a resource
+            </p>
+          )}
+        </div>
         <Badge variant="outline" className="text-[8px] font-black">{fields?.length || 0} TOTAL</Badge>
       </div>
       <div className="grid grid-cols-1 gap-2">
-        {fields?.map(field => (
-          <div key={field.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-xl border border-transparent hover:border-primary/10 transition-all group">
-            <span className="text-xs font-black uppercase truncate">{field.name}</span>
-            {(facility.clubId === user?.id || isSuperAdmin) && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={() => deleteField(facility.id, field.id)}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Destroy Resource</TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-        ))}
+        {fields?.map(field => {
+          const isEditing = editingFieldId === field.id;
+          const isSaving = savingFieldId === field.id;
+          return (
+            <div key={field.id} className="flex items-center justify-between gap-2 p-3 bg-muted/30 rounded-xl border border-transparent hover:border-primary/10 transition-all group">
+              {isEditing ? (
+                <Input
+                  autoFocus
+                  value={editingFieldName}
+                  onChange={event => setEditingFieldName(event.target.value)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter') handleRenameField(field);
+                    if (event.key === 'Escape') cancelRename();
+                  }}
+                  className="h-8 rounded-lg text-xs font-black uppercase"
+                  maxLength={120}
+                  aria-label={`Rename ${field.name}`}
+                />
+              ) : (
+                <span className="text-xs font-black uppercase truncate">{field.name}</span>
+              )}
+
+              {canManage && (
+                <div className="flex items-center shrink-0">
+                  {isEditing ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 text-primary"
+                        onClick={() => handleRenameField(field)}
+                        disabled={isSaving || !editingFieldName.trim()}
+                        aria-label={`Save ${field.name} name`}
+                      >
+                        {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 text-muted-foreground"
+                        onClick={cancelRename}
+                        disabled={isSaving}
+                        aria-label="Cancel resource rename"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-10 rounded-xl px-3 text-[9px] font-black uppercase tracking-wider text-primary"
+                            onClick={() => beginRename(field)}
+                            aria-label={`Rename ${field.name}`}
+                          >
+                            <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                            Edit
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Rename Resource</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-10 w-10 text-destructive opacity-70 group-hover:opacity-100"
+                            onClick={() => handleDeleteField(field)}
+                            disabled={deletingFieldId === field.id}
+                            aria-label={`Delete ${field.name}`}
+                          >
+                            {deletingFieldId === field.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Destroy Resource</TooltipContent>
+                      </Tooltip>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
         {(!fields || fields.length === 0) && (
           <div className="bg-amber-50 p-4 rounded-xl border-2 border-dashed border-amber-200 flex flex-col items-center gap-2">
             <AlertCircle className="h-5 w-5 text-amber-600" />
@@ -84,6 +241,7 @@ function FacilityFieldManager({ facility }: { facility: Facility }) {
           onChange={e => setNewFieldName(e.target.value)} 
           onKeyDown={e => e.key === 'Enter' && handleAddField()}
           className="h-10 rounded-xl text-xs font-bold"
+          maxLength={120}
         />
         <Button size="sm" onClick={handleAddField} disabled={isProcessing || !newFieldName.trim()} className="h-10 rounded-xl px-4 font-black uppercase text-[10px]">
           Add Resource
@@ -94,7 +252,7 @@ function FacilityFieldManager({ facility }: { facility: Facility }) {
 }
 
 function EditFacilityDialog({ facility }: { facility: Facility }) {
-  const { updateFacility, isStaff, user } = useTeam();
+  const { updateFacility, isStaff } = useTeam();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: facility.name, address: facility.address || '', notes: facility.notes || '' });
   const [saving, setSaving] = useState(false);
@@ -111,10 +269,27 @@ function EditFacilityDialog({ facility }: { facility: Facility }) {
   const handleSave = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
-    await updateFacility(facility.id, { name: form.name, address: form.address, notes: form.notes });
-    setSaving(false);
-    setOpen(false);
-    toast({ title: 'Facility Updated', description: `${form.name} details saved. Any events using this facility will reflect the new information.` });
+    const nextName = form.name.trim();
+    try {
+      await updateFacility(facility.id, {
+        name: nextName,
+        address: form.address.trim(),
+        notes: form.notes.trim(),
+      });
+      setOpen(false);
+      toast({
+        title: 'Facility Updated',
+        description: `${nextName} was updated everywhere this facility is linked or displayed.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Update Failed',
+        description: error.message || 'Could not update this facility.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -177,17 +352,26 @@ function EditFacilityDialog({ facility }: { facility: Facility }) {
 }
 
 export default function FacilityManagementPage() {
-  const { activeTeam, isStaff, isPro, addFacility, deleteFacility, isSuperAdmin, user } = useTeam();
-  
+  const { isStaff } = useTeam();
+
+  if (!isStaff) return <AccessRestricted type="role" />;
+
+  return <AuthorizedFacilityManagementPage />;
+}
+
+function AuthorizedFacilityManagementPage() {
+  const { isStaff, addFacility, deleteFacility, firebaseUser } = useTeam();
+
   const db = useFirestore();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newFac, setNewFac] = useState({ name: '', address: '', notes: '' });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [deletingFacilityId, setDeletingFacilityId] = useState<string | null>(null);
 
   const facilitiesQuery = useMemoFirebase(() => {
-    if (!db || !user?.id) return null;
-    return query(collection(db, 'facilities'), where('clubId', '==', user.id));
-  }, [db, user?.id]);
+    if (!db || !firebaseUser?.uid) return null;
+    return query(collection(db, 'facilities'), where('clubId', '==', firebaseUser.uid));
+  }, [db, firebaseUser?.uid]);
 
   const { data: facilities, isLoading } = useCollection<Facility>(facilitiesQuery);
 
@@ -201,6 +385,32 @@ export default function FacilityManagementPage() {
     setIsAddOpen(false);
     setIsProcessing(false);
     toast({ title: "Facility Established", description: `${newFac.name} is now live.` });
+  };
+
+  const handleDeleteFacility = async (facility: Facility) => {
+    const confirmed = window.confirm(
+      `Decommission "${facility.name}"? Its fields and courts will also be deleted. This will only continue if none are used by an event, tournament, or league schedule.`
+    );
+    if (!confirmed) return;
+
+    setDeletingFacilityId(facility.id);
+    try {
+      await deleteFacility(facility.id);
+      toast({
+        title: 'Facility Decommissioned',
+        description: `${facility.name} and its unlinked resources were removed.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: error.message?.toLowerCase().includes('still in use')
+          ? 'Facility Still In Use'
+          : 'Facility Deletion Failed',
+        description: error.message || 'Could not safely delete this facility.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingFacilityId(null);
+    }
   };
 
   if (isLoading) {
@@ -294,8 +504,19 @@ export default function FacilityManagementPage() {
                     <EditFacilityDialog facility={facility} />
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/5 rounded-xl h-10 w-10" onClick={() => deleteFacility(facility.id)}>
-                          <Trash2 className="h-5 w-5" />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:bg-destructive/5 rounded-xl h-10 w-10"
+                          onClick={() => handleDeleteFacility(facility)}
+                          disabled={deletingFacilityId === facility.id}
+                          aria-label={`Decommission ${facility.name}`}
+                        >
+                          {deletingFacilityId === facility.id ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-5 w-5" />
+                          )}
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Decommission Facility</TooltipContent>

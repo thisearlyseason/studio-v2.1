@@ -136,7 +136,7 @@ function ChatRoomInner() {
 
   const handleSendMessage = () => {
     if ((!input.trim() && !chatImage) || !chatId || !user) return;
-    addMessage(chatId as string, user.name, input, chatImage ? 'image' : 'text', chatImage);
+    addMessage(chatId as string, user.name, input, chatImage ? 'image' : 'text', chatImage, undefined, effectiveTeamId || undefined);
     setInput('');
     setChatImage(undefined);
   };
@@ -197,7 +197,7 @@ function ChatRoomInner() {
     }
     if (!question || finalOptions.length < 2) return;
     const pollData = { id: 'p' + Date.now(), question, options: finalOptions.map(o => ({ text: o.text, imageUrl: o.image, votes: 0 })), totalVotes: 0, voters: {}, isClosed: false };
-    addMessage(chatId as string, user.name, '', 'poll', undefined, pollData);
+    addMessage(chatId as string, user.name, '', 'poll', undefined, pollData, effectiveTeamId || undefined);
     setIsPollDialogOpen(false); setSuggestedPoll(null); setPollPrompt(''); setPollOptions([{text: '', image: undefined}, {text: '', image: undefined}]);
   };
 
@@ -358,7 +358,7 @@ function ChatRoomInner() {
                           return (
                             <button 
                               key={i} 
-                              onClick={() => votePoll(chatId as string, msg.id, i)} 
+                              onClick={() => votePoll(chatId as string, msg.id, i, effectiveTeamId || undefined)}
                               className="w-full text-left space-y-2 group/opt active:scale-[0.98] transition-all"
                             >
                               <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest px-1">

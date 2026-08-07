@@ -112,7 +112,6 @@ function RapidJoinForm() {
     if (user?.name || user?.email) {
       setFormData(prev => ({ ...prev, name: user.name ?? prev.name, email: user.email ?? prev.email }));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.name, user?.email]);
 
   const handleNextStep = (e?: React.MouseEvent) => {

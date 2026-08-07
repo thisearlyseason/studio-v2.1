@@ -8,6 +8,7 @@ export interface User {
   phone?: string;
   avatarUrl?: string;
   notificationsEnabled: boolean;
+  upcomingEventNotificationsEnabled?: boolean;
   createdAt: string;
 }
 
@@ -24,6 +25,7 @@ export interface Team {
   inviteCode?: string;
   parentCommentsEnabled?: boolean;
   parentChatEnabled?: boolean;
+  parentFeedEnabled?: boolean;
   description?: string;
   contactEmail?: string;
   contactPhone?: string;

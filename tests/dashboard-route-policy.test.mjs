@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import routePolicyModule from '../src/lib/dashboard-route-policy.ts';
+import * as routePolicyModule from '../src/lib/dashboard-route-policy.ts';
 
 const { authorizeDashboardRoute, isProtectedDashboardPath, isSensitiveDashboardPath } = routePolicyModule;
 

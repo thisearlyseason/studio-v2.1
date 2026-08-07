@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     title: 'Industry News | Sports Hub',
     description: 'Live sports industry news from trusted sources — updated every 30 minutes.',
     type: 'website',
-    url: 'https://thesquad.app/sports-hub/news',
+    url: 'https://www.thesquad.pro/sports-hub/news',
     siteName: 'The Squad',
   },
   twitter: {
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     description: 'Live sports industry news from trusted sources — updated every 30 minutes.',
   },
   alternates: {
-    canonical: 'https://thesquad.app/sports-hub/news',
+    canonical: 'https://www.thesquad.pro/sports-hub/news',
   },
 };
 
@@ -36,11 +36,11 @@ export default function NewsLayout({ children }: { children: React.ReactNode }) 
             '@type': 'CollectionPage',
             name: 'Industry News | Sports Hub',
             description: 'Live sports industry news aggregated from trusted sources.',
-            url: 'https://thesquad.app/sports-hub/news',
+            url: 'https://www.thesquad.pro/sports-hub/news',
             publisher: {
               '@type': 'Organization',
               name: 'The Squad',
-              url: 'https://thesquad.app',
+              url: 'https://www.thesquad.pro',
             },
           }),
         }}

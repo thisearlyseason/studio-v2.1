@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, MessageSquare, ChevronRight, Hash, Lock, Sparkles, ShieldAlert, Users, Search, MessageCircle } from 'lucide-react';
+import { Plus, MessageSquare, ChevronRight, Hash, Lock, Sparkles, ShieldAlert, Users, Search, MessageCircle, Radio, UserRoundCheck } from 'lucide-react';
 import { useTeam } from '@/components/providers/team-provider';
 import { 
   Dialog, 
@@ -23,14 +23,27 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, where, getDocs } from 'firebase/firestore';
+import { collection, collectionGroup, query, orderBy, where, getDocs } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { useAuth } from '@/firebase';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { toast } from '@/hooks/use-toast';
+
+type ChatContext = {
+  id: string;
+  name: string;
+  type: 'team' | 'league' | 'tournament';
+  recipients: any[];
+};
 
 export default function ChatsPage() {
-  const { activeTeam, members, createChat, isStaff, isParent, isPlayer, isSuperAdmin, user, teams, isPrimaryClubAuthority, isSchoolMode, isEliteAccount } = useTeam();
+  const { activeTeam, setActiveTeam, members, createChat, isStaff, isParent, isPlayer, isSuperAdmin, user, teams, isPrimaryClubAuthority, isSchoolMode, isEliteAccount } = useTeam();
   const db = useFirestore();
+  const auth = useAuth();
   const router = useRouter();
   
   const [newChatName, setNewChatName] = useState('');
@@ -39,6 +52,10 @@ export default function ChatsPage() {
   const [mounted, setMounted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [allStaffMembers, setAllStaffMembers] = useState<any[]>([]);
+  const [chatContexts, setChatContexts] = useState<ChatContext[]>([]);
+  const [selectedContextId, setSelectedContextId] = useState('');
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
+  const [updatingParentSetting, setUpdatingParentSetting] = useState<string | null>(null);
 
   // Localized chat fetching for performance
   const chatsQuery = useMemoFirebase(() => {
@@ -63,14 +80,27 @@ export default function ChatsPage() {
   }, [activeTeam?.id, db, user?.id]);
 
   const { data: chatsData, isLoading: isChatsLoading } = useCollection(chatsQuery);
+  const sharedChatsQuery = useMemoFirebase(() => {
+    if (!db || !user?.id || activeTeam?.id.startsWith('demo_')) return null;
+    return query(collectionGroup(db, 'groupChats'), where('memberIds', 'array-contains', user.id));
+  }, [db, user?.id, activeTeam?.id]);
+  const { data: sharedChatsData, isLoading: isSharedChatsLoading } = useCollection(sharedChatsQuery);
   const teamChats = useMemo(() => {
-    const raw = chatsData || [];
+    const raw = Array.from(
+      new Map(
+        [...(chatsData || []), ...(sharedChatsData || [])]
+          .filter(chat => chat.isDeleted !== true)
+          .map(chat => [chat.id, chat])
+      ).values()
+    ).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
     if (!searchTerm.trim()) return raw;
     return raw.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [chatsData, searchTerm]);
+  }, [chatsData, sharedChatsData, searchTerm]);
 
   // Governance: Filter member list based on position
   const filteredMembers = useMemo(() => {
+    const serverContext = chatContexts.find(context => context.id === selectedContextId);
+    if (serverContext) return serverContext.recipients;
     // For AD or elite organizer: show all coaching staff from all teams
     if (isPrimaryClubAuthority && allStaffMembers.length > 0) return allStaffMembers;
     if (!activeTeam) return [];
@@ -92,7 +122,34 @@ export default function ChatsPage() {
     }
 
     return members;
-  }, [members, allStaffMembers, isPrimaryClubAuthority, isStaff, isParent, isPlayer, isSuperAdmin, activeTeam]);
+  }, [members, allStaffMembers, isPrimaryClubAuthority, isStaff, isParent, isPlayer, isSuperAdmin, activeTeam, chatContexts, selectedContextId]);
+
+  useEffect(() => {
+    if (!activeTeam?.id || !auth) return;
+    let cancelled = false;
+    getAuthToken(auth)
+      .then(token => {
+        if (!token) throw new Error('Your session has expired.');
+        return fetch(`/api/teams/chat?teamId=${encodeURIComponent(activeTeam.id)}`, {
+          headers: authHeader(token),
+        });
+      })
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Unable to load chat recipients.');
+        if (!cancelled) {
+          const contexts = payload.contexts as ChatContext[];
+          setChatContexts(contexts);
+          setSelectedContextId(current =>
+            contexts.some(context => context.id === current) ? current : (contexts[0]?.id || '')
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setChatContexts([]);
+      });
+    return () => { cancelled = true; };
+  }, [activeTeam?.id, auth]);
 
   // Fetch coaching staff from all teams for AD/elite organizer
   useEffect(() => {
@@ -130,7 +187,7 @@ export default function ChatsPage() {
     setMounted(true);
   }, []);
 
-  if (!mounted || !activeTeam || (isChatsLoading && !teamChats.length)) {
+  if (!mounted || !activeTeam || ((isChatsLoading || isSharedChatsLoading) && !teamChats.length)) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center animate-pulse">
         <div className="h-12 w-12 bg-primary/10 rounded-full mb-4 flex items-center justify-center">
@@ -142,12 +199,17 @@ export default function ChatsPage() {
   }
 
   const handleCreateChat = async () => {
-    if (!newChatName.trim()) return;
-    const chatId = await createChat(newChatName, selectedMembers);
-    setIsNewChatOpen(false);
-    setNewChatName('');
-    setSelectedMembers([]);
-    router.push(`/chats/${chatId}`);
+    if (!newChatName.trim() || !selectedContextId || isCreatingChat) return;
+    setIsCreatingChat(true);
+    try {
+      const chatId = await createChat(newChatName, selectedMembers, selectedContextId);
+      setIsNewChatOpen(false);
+      setNewChatName('');
+      setSelectedMembers([]);
+      router.push(`/chats/${chatId}`);
+    } finally {
+      setIsCreatingChat(false);
+    }
   };
 
   const getMemberId = (m: any) => m.userId || m.id;
@@ -158,6 +220,38 @@ export default function ChatsPage() {
         ? prev.filter(id => id !== memberId) 
         : [...prev, memberId]
     );
+  };
+
+  const updateParentAccess = async (
+    setting: 'parentChatEnabled' | 'parentCommentsEnabled' | 'parentFeedEnabled',
+    enabled: boolean
+  ) => {
+    if (!activeTeam?.id || !auth || updatingParentSetting) return;
+    setUpdatingParentSetting(setting);
+    try {
+      const token = await getAuthToken(auth);
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const response = await fetch('/api/teams/parent-access', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: activeTeam.id, [setting]: enabled }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to update parent access.');
+      setActiveTeam({ ...activeTeam, [setting]: enabled });
+      toast({
+        title: 'Parent Access Updated',
+        description: `${enabled ? 'Enabled' : 'Disabled'} successfully.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Access Update Failed',
+        description: error.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setUpdatingParentSetting(null);
+    }
   };
 
   return (
@@ -197,6 +291,31 @@ export default function ChatsPage() {
                   />
                 </div>
                 <div className="space-y-3">
+                  {chatContexts.length > 1 && (
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">
+                        Squad, League, or Tournament
+                      </Label>
+                      <Select
+                        value={selectedContextId}
+                        onValueChange={value => {
+                          setSelectedContextId(value);
+                          setSelectedMembers([]);
+                        }}
+                      >
+                        <SelectTrigger className="h-12 rounded-xl border-2 font-black">
+                          <SelectValue placeholder="Select messaging scope" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {chatContexts.map(context => (
+                            <SelectItem key={context.id} value={context.id}>
+                              {context.name} · {context.type}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between ml-1">
                     <Label className="text-[10px] font-black uppercase tracking-widest">Enroll Squad Members</Label>
                     {isParent && !activeTeam.parentChatEnabled && (
@@ -238,15 +357,86 @@ export default function ChatsPage() {
                 <Button 
                   className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" 
                   onClick={handleCreateChat}
-                  disabled={!newChatName.trim() || selectedMembers.length === 0}
+                  disabled={!newChatName.trim() || selectedMembers.length === 0 || !selectedContextId || isCreatingChat}
                 >
-                  Authorize Channel
+                  {isCreatingChat ? 'Authorizing…' : 'Authorize Channel'}
                 </Button>
               </DialogFooter>
             </div>
           </DialogContent>
         </Dialog>
       </div>
+
+      {isStaff && (
+        <Card className="overflow-hidden rounded-[2rem] border-2 border-primary/20 bg-white shadow-lg">
+          <div className="h-2 bg-primary" />
+          <CardContent className="p-6 md:p-8">
+            <div className="mb-6 flex items-start gap-4">
+              <div className="rounded-2xl bg-primary p-3 text-white">
+                <ShieldAlert className="h-6 w-6" />
+              </div>
+              <div>
+                <Badge className="mb-2 border-none bg-primary/10 text-primary">Coach & Organizer Controls</Badge>
+                <h2 className="text-2xl font-black uppercase tracking-tight">Parent Communication Access</h2>
+                <p className="mt-1 text-sm font-medium text-muted-foreground">
+                  These settings take effect immediately for this squad.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              {[
+                {
+                  setting: 'parentChatEnabled' as const,
+                  title: 'Parent-to-Parent Chat',
+                  description: 'Parents can start chats with other parents on this squad.',
+                  checked: activeTeam.parentChatEnabled === true,
+                  icon: UserRoundCheck,
+                },
+                {
+                  setting: 'parentFeedEnabled' as const,
+                  title: 'Parent Live Feed',
+                  description: 'Parents can open and view this squad’s live feed.',
+                  checked: activeTeam.parentFeedEnabled !== false,
+                  icon: Radio,
+                },
+                {
+                  setting: 'parentCommentsEnabled' as const,
+                  title: 'Parent Feed Comments',
+                  description: 'Parents can participate in live-feed discussions.',
+                  checked: activeTeam.parentCommentsEnabled === true,
+                  icon: MessageSquare,
+                },
+              ].map(control => {
+                const Icon = control.icon;
+                const isUpdating = updatingParentSetting === control.setting;
+                return (
+                  <div key={control.setting} className="flex items-center justify-between gap-4 rounded-2xl border bg-muted/20 p-5">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="rounded-xl bg-white p-2 text-primary shadow-sm">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black uppercase">{control.title}</p>
+                        <p className="mt-1 text-xs font-medium leading-relaxed text-muted-foreground">{control.description}</p>
+                        <p className={`mt-2 text-[10px] font-black uppercase ${control.checked ? 'text-green-600' : 'text-muted-foreground'}`}>
+                          {isUpdating ? 'Updating…' : control.checked ? 'Currently On' : 'Currently Off'}
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      aria-label={control.title}
+                      checked={control.checked}
+                      disabled={Boolean(updatingParentSetting)}
+                      onCheckedChange={enabled => updateParentAccess(control.setting, enabled)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <aside className="lg:col-span-1 space-y-6">
@@ -282,7 +472,7 @@ export default function ChatsPage() {
 
         <div className="lg:col-span-3 space-y-4">
           {teamChats.length > 0 ? teamChats.map((chat) => (
-            <Link key={chat.id} href={`/chats/${chat.id}`}>
+            <Link key={chat.id} href={`/chats/${chat.id}?teamId=${encodeURIComponent(chat.teamId || activeTeam.id)}`}>
               <Card className="hover:border-primary transition-all duration-300 cursor-pointer group rounded-3xl border-none shadow-sm hover:shadow-xl ring-1 ring-black/5 hover:ring-primary/20 overflow-hidden bg-white">
                 <CardContent className="p-5 flex items-center gap-5">
                   <div className="h-16 w-16 rounded-2xl bg-primary/5 flex items-center justify-center text-primary shrink-0 border border-primary/10 group-hover:bg-primary group-hover:text-white transition-all shadow-inner">

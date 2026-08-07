@@ -3,6 +3,11 @@ import re
 from playwright import async_api
 from playwright.async_api import expect
 
+try:
+    from testsprite_tests.e2e_config import BASE_URL, league_code, test_email, test_password
+except ModuleNotFoundError:
+    from e2e_config import BASE_URL, league_code, test_email, test_password
+
 async def run_test():
     pw = None
     browser = None
@@ -34,7 +39,7 @@ async def run_test():
 
         # Interact with the page elements to simulate user flow
         # -> navigate
-        await page.goto("http://localhost:9002")
+        await page.goto(f"{BASE_URL}")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:
@@ -50,13 +55,13 @@ async def run_test():
         # email input placeholder="name@organization.com"
         elem = page.locator("xpath=/html/body/div[2]/div[5]/div/form/div/div[2]/input").nth(0)
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("example@gmail.com")
+        await elem.fill(test_email())
         
         # -> Fill the email and password fields with credentials and click the 'Verify Identity' submit button to sign in.
         # password input
         elem = page.locator("xpath=/html/body/div[2]/div[5]/div/form/div/div[3]/div[2]/input").nth(0)
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("password123")
+        await elem.fill(test_password())
         
         # -> Fill the email and password fields with credentials and click the 'Verify Identity' submit button to sign in.
         # button "Verify Identity"
@@ -64,8 +69,8 @@ async def run_test():
         await elem.wait_for(state="visible", timeout=10000)
         await elem.click()
         
-        # -> Wait briefly for the login to settle, then navigate to http://localhost:9002/leagues to proceed to the Division Architect area.
-        await page.goto("http://localhost:9002/leagues")
+        # -> Wait briefly for the login to settle, then navigate to $E2E_BASE_URL/leagues to proceed to the Division Architect area.
+        await page.goto(f"{BASE_URL}/leagues")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:

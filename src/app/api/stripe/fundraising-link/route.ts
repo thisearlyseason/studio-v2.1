@@ -2,8 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { verifyFirebaseToken } from '@/lib/api-auth';
-import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
-import { isActiveTeamMembership } from '@/lib/team-membership-security';
+import { getTeamFinanceAccess } from '@/lib/server-team-entitlements';
+import { resolveTeamConnectAccount } from '@/lib/server-stripe-connect';
+import {
+  enforceUserRateLimit,
+  readJsonBodyWithLimit,
+  RequestBodyError,
+} from '@/lib/server-request-guards';
+
+const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/;
+const SAFE_OPERATION_ID = /^[A-Za-z0-9_-]{16,100}$/;
 
 /**
  * POST /api/stripe/fundraising-link
@@ -20,79 +28,67 @@ import { isActiveTeamMembership } from '@/lib/team-membership-security';
  * Returns: { paymentLinkUrl, paymentLinkId }
  */
 
-const PAID_PLAN_TYPES = new Set(['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo']);
-
-async function resolveConnectAccount(teamId: string): Promise<string | null> {
-  const teamSnap = await adminDb.collection('teams').doc(teamId).get();
-  const teamData = teamSnap.data();
-
-  const hubTeamId: string | null = teamData?.schoolId || teamData?.clubId || null;
-  if (hubTeamId) {
-    const hubSnap = await adminDb.collection('teams').doc(hubTeamId).get();
-    const hubData = hubSnap.data();
-    if (hubData?.stripeConnectMode === 'shared' && hubData?.stripeConnectAccountId) {
-      return hubData.stripeConnectAccountId;
-    }
-  }
-
-  // Standalone/per-squad payments always belong to the team owner, even when
-  // another authorized team admin creates the link.
-  const ownerUserId = teamData?.ownerUserId;
-  if (typeof ownerUserId !== 'string' || !ownerUserId) return null;
-  const userSnap = await adminDb.collection('users').doc(ownerUserId).get();
-  return userSnap.data()?.stripe_connect_account_id ?? null;
-}
-
 export async function POST(req: NextRequest) {
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const limited = await enforceUserRateLimit(auth.uid, 'stripe-fundraising-link', 30, 60 * 60 * 1000);
-    if (limited) return limited;
-    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 16_000);
-    const { userId, teamId, campaignId, campaignTitle, campaignDescription } = body;
+    const {
+      userId,
+      teamId,
+      campaignId,
+      campaignTitle,
+      campaignDescription,
+      operationId,
+    } = await readJsonBodyWithLimit<{
+      userId?: unknown;
+      teamId?: unknown;
+      campaignId?: unknown;
+      campaignTitle?: unknown;
+      campaignDescription?: unknown;
+      operationId?: unknown;
+    }>(req, 16_000);
 
     if (
-      typeof userId !== 'string' || !userId ||
-      typeof teamId !== 'string' || !teamId || teamId.includes('/') ||
-      typeof campaignId !== 'string' || !campaignId || campaignId.includes('/') ||
-      typeof campaignTitle !== 'string' || !campaignTitle.trim()
+      typeof userId !== 'string' ||
+      typeof teamId !== 'string' ||
+      typeof campaignId !== 'string' ||
+      typeof campaignTitle !== 'string' ||
+      typeof operationId !== 'string' ||
+      !SAFE_ID.test(userId) ||
+      !SAFE_ID.test(teamId) ||
+      !SAFE_ID.test(campaignId) ||
+      !SAFE_OPERATION_ID.test(operationId) ||
+      !campaignTitle.trim() ||
+      campaignTitle.trim().length > 120 ||
+      (campaignDescription !== undefined &&
+        (typeof campaignDescription !== 'string' || campaignDescription.length > 1_000))
     ) {
       return NextResponse.json(
-        { error: 'Missing required fields: userId, teamId, campaignId, campaignTitle.' },
+        { error: 'Invalid fundraising link request.' },
         { status: 400 }
       );
-    }
-    if (campaignTitle.length > 200 || (campaignDescription != null && (typeof campaignDescription !== 'string' || campaignDescription.length > 2_000))) {
-      return NextResponse.json({ error: 'Campaign title or description is too long.' }, { status: 400 });
     }
 
     if (auth.uid !== userId) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
     }
+    const rateLimit = await enforceUserRateLimit(
+      auth.uid,
+      'stripe-fundraising-link-create',
+      10,
+      60 * 60 * 1000
+    );
+    if (rateLimit) return rateLimit;
 
-    // Caller identity is checked here; the team entitlement is checked below.
-    const userSnap = await adminDb.collection('users').doc(userId).get();
-    if (!userSnap.exists) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
-    const userData = userSnap.data()!;
-    const isSuperAdmin = userData.role === 'superadmin';
-
-    // Verify team access
-    const teamSnap = await adminDb.collection('teams').doc(teamId).get();
-    if (!teamSnap.exists) return NextResponse.json({ error: 'Team not found.' }, { status: 404 });
-    const teamData = teamSnap.data()!;
-    const ownerSnap = await adminDb.collection('users').doc(teamData.ownerUserId || '__missing__').get();
-    const teamHasPaidPlan = PAID_PLAN_TYPES.has(teamData.planId || teamData.plan_type || '') ||
-      PAID_PLAN_TYPES.has(ownerSnap.data()?.plan_type || '');
-    if (!teamHasPaidPlan && !isSuperAdmin) {
-      return NextResponse.json({ error: 'Online payments require a paid team plan.' }, { status: 403 });
-    }
-    const isOwner = teamData.ownerUserId === userId;
-    const memberSnap = await adminDb.collection('teams').doc(teamId).collection('members').doc(userId).get();
-    const isAdmin = memberSnap.exists && isActiveTeamMembership(memberSnap.data()) && memberSnap.data()?.role === 'Admin';
-    if (!isOwner && !isAdmin && !isSuperAdmin) {
-      return NextResponse.json({ error: 'Forbidden: must be team owner or admin.' }, { status: 403 });
+    const access = await getTeamFinanceAccess(
+      userId,
+      teamId,
+      auth.role === 'superadmin',
+      true
+    );
+    if (!access.allowed) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     // Verify the campaign exists
@@ -101,45 +97,32 @@ export async function POST(req: NextRequest) {
     if (!campaignSnap.exists) {
       return NextResponse.json({ error: 'Campaign not found.' }, { status: 404 });
     }
-    const campaignData = campaignSnap.data()!;
+    const existingCampaign = campaignSnap.data() || {};
+    if (existingCampaign.stripeEnabled === true && existingCampaign.stripePaymentLinkUrl) {
+      return NextResponse.json({
+        paymentLinkUrl: existingCampaign.stripePaymentLinkUrl,
+        paymentLinkId: existingCampaign.stripePaymentLinkId,
+        duplicate: true,
+      });
+    }
 
     // Resolve Stripe account (hub shared or per-squad)
-    const connectAccountId = await resolveConnectAccount(teamId);
+    const { connectAccountId } = await resolveTeamConnectAccount(teamId);
     if (!connectAccountId) {
       return NextResponse.json(
         { error: 'No Stripe account connected. Connect Stripe from the Finance tab first.' },
         { status: 400 }
       );
     }
-    if (
-      campaignData.stripeEnabled === true &&
-      typeof campaignData.stripePaymentLinkUrl === 'string' &&
-      typeof campaignData.stripePaymentLinkId === 'string' &&
-      campaignData.stripeConnectAccountId === connectAccountId
-    ) {
-      return NextResponse.json({
-        paymentLinkUrl: campaignData.stripePaymentLinkUrl,
-        paymentLinkId: campaignData.stripePaymentLinkId,
-        alreadyExists: true,
-      });
-    }
 
     const stripe = getStripe();
-    const teamName = teamData.name || teamData.teamName || 'the team';
-    const storedTitle = typeof campaignData.title === 'string' && campaignData.title.trim()
-      ? campaignData.title.trim()
-      : campaignTitle.trim();
-    const storedDescription = typeof campaignData.description === 'string' && campaignData.description.trim()
-      ? campaignData.description.trim()
-      : typeof campaignDescription === 'string' ? campaignDescription.trim() : '';
+    const teamName = access.team?.name || 'the team';
 
     // 1. Create a Product for the fundraising campaign
     const product = await stripe.products.create(
       {
-        name: storedTitle,
-        description: storedDescription
-          ? storedDescription
-          : `Fundraising campaign for ${teamName}`,
+        name: campaignTitle.trim(),
+        description: campaignDescription || `Fundraising campaign for ${teamName}`,
         metadata: {
           firebase_team_id: teamId,
           firebase_campaign_id: campaignId,
@@ -147,7 +130,7 @@ export async function POST(req: NextRequest) {
           type: 'fundraising',
         },
       },
-      { stripeAccount: connectAccountId }
+      { stripeAccount: connectAccountId, idempotencyKey: `fundraising:${operationId}:product` }
     );
 
     // 2. Create a Price with custom_unit_amount (donor sets their own amount)
@@ -159,10 +142,9 @@ export async function POST(req: NextRequest) {
           enabled: true,
           minimum: 100,   // $1.00 minimum
           preset: 2500,   // $25.00 suggested default
-          maximum: 10_000_000, // $100,000 fraud/entry guard
         },
       },
-      { stripeAccount: connectAccountId }
+      { stripeAccount: connectAccountId, idempotencyKey: `fundraising:${operationId}:price` }
     );
 
     // 3. Create the Payment Link
@@ -181,9 +163,17 @@ export async function POST(req: NextRequest) {
           payment_item_category: 'donation',
           type: 'fundraising',
         },
+        payment_intent_data: {
+          metadata: {
+            firebase_team_id: teamId,
+            firebase_campaign_id: campaignId,
+            payment_item_category: 'donation',
+            type: 'fundraising',
+          },
+        },
         invoice_creation: { enabled: true },
       },
-      { stripeAccount: connectAccountId }
+      { stripeAccount: connectAccountId, idempotencyKey: `fundraising:${operationId}:link` }
     );
 
     // 4. Save the payment link to the campaign document
@@ -194,6 +184,8 @@ export async function POST(req: NextRequest) {
       stripePriceId: price.id,
       stripeConnectAccountId: connectAccountId,
       stripeEnabled: true,
+      externalLink: paymentLink.url,
+      paymentMethod: 'stripe',
       updatedAt: new Date().toISOString(),
     });
 
@@ -202,7 +194,9 @@ export async function POST(req: NextRequest) {
       paymentLinkId: paymentLink.id,
     }, { status: 201 });
   } catch (err: any) {
-    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof RequestBodyError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[stripe/fundraising-link POST] Error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -218,25 +212,21 @@ export async function DELETE(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const limited = await enforceUserRateLimit(auth.uid, 'stripe-fundraising-delete', 30, 60 * 60 * 1000);
-    if (limited) return limited;
-    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
-    const { userId, teamId, campaignId } = body;
+    const { userId, teamId, campaignId } = await req.json();
 
-    if (typeof userId !== 'string' || !userId || typeof teamId !== 'string' || !teamId || teamId.includes('/') || typeof campaignId !== 'string' || !campaignId || campaignId.includes('/')) {
+    if (!userId || !teamId || !campaignId) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
     }
     if (auth.uid !== userId) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
 
-    const teamSnap = await adminDb.collection('teams').doc(teamId).get();
-    if (!teamSnap.exists) return NextResponse.json({ error: 'Team not found.' }, { status: 404 });
-    const isOwner = teamSnap.data()!.ownerUserId === userId;
-    const memberSnap = await adminDb.collection('teams').doc(teamId).collection('members').doc(userId).get();
-    const isAdmin = memberSnap.exists && isActiveTeamMembership(memberSnap.data()) && memberSnap.data()?.role === 'Admin';
-    const userSnap = await adminDb.collection('users').doc(userId).get();
-    const isSuperAdmin = userSnap.data()?.role === 'superadmin';
-    if (!isOwner && !isAdmin && !isSuperAdmin) {
-      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
+    const access = await getTeamFinanceAccess(
+      userId,
+      teamId,
+      auth.role === 'superadmin',
+      false
+    );
+    if (!access.allowed) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     const campaignRef = adminDb.collection('teams').doc(teamId).collection('fundraising').doc(campaignId);
@@ -266,7 +256,6 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
-    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error('[stripe/fundraising-link DELETE] Error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

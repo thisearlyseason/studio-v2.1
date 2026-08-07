@@ -58,16 +58,20 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { collectionGroup, query, where, doc, updateDoc } from 'firebase/firestore';
 import { cn, compressImage } from '@/lib/utils';
-import { useUser, useCollection, useMemoFirebase } from '@/firebase';
+import { useUser, useCollection, useMemoFirebase, useAuth } from '@/firebase';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 import Link from 'next/link';
+import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
 
 export default function TeamProfilePage() {
   const { user: authUser } = useUser();
+  const firebaseAuth = useAuth();
   const { 
     activeTeam, setActiveTeam, teams, user, members, updateTeamDetails, 
     isSuperAdmin, plans, updateTeamPlan, isStaff, hasFeature, 
     respondToAssignment, db, updateTeamCode, checkCodeUniqueness, propagateLogoToLeagues 
   } = useTeam();
+  const canAccessCoachesCorner = hasCoachesCornerEntitlement(activeTeam, isSuperAdmin);
 
   
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -79,6 +83,29 @@ export default function TeamProfilePage() {
   const [newCode, setNewCode] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const updateParentAccess = async (updates: {
+    parentChatEnabled?: boolean;
+    parentCommentsEnabled?: boolean;
+    parentFeedEnabled?: boolean;
+  }) => {
+    if (!activeTeam?.id || !firebaseAuth) return;
+    try {
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired.');
+      const response = await fetch('/api/teams/parent-access', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: activeTeam.id, ...updates }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to update parent access.');
+      setActiveTeam({ ...activeTeam, ...updates });
+      toast({ title: 'Parent Access Updated' });
+    } catch (error: any) {
+      toast({ title: 'Access Update Failed', description: error.message, variant: 'destructive' });
+    }
+  };
 
   const assignmentsQuery = useMemoFirebase(() => {
     if (!db || !authUser?.uid || !activeTeam?.id || !isStaff || !hasFeature?.('league_registration')) return null;
@@ -128,10 +155,8 @@ export default function TeamProfilePage() {
 
   const recruitmentUrl = useMemo(() => {
     if (!activeTeam) return '';
-    if (activeTeam.registrationProtocolId) {
-      return `${window.location.origin}/register/league/${activeTeam.id}?protocol=${activeTeam.registrationProtocolId}`;
-    }
-    return `${window.location.origin}/teams/join?code=${activeTeam.code}`;
+    const inviteCode = activeTeam.code || activeTeam.teamCode || activeTeam.inviteCode || '';
+    return `${window.location.origin}/teams/join?code=${encodeURIComponent(inviteCode)}`;
   }, [activeTeam]);
 
   const handleCopyRecruitmentUrl = async () => {
@@ -274,15 +299,17 @@ export default function TeamProfilePage() {
           </CardHeader>
           <CardContent className="p-8 lg:p-10 relative z-10">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Button asChild variant="outline" className="h-20 rounded-2xl bg-white/5 border-white/10 hover:bg-white/10 text-white font-black uppercase text-[10px] tracking-widest justify-start gap-4 px-6 group/btn">
-                <Link href="/coaches-corner" className="flex items-center w-full">
-                  <PenTool className="h-6 w-6 text-primary group-hover/btn:scale-110 transition-transform" />
-                  <div className="flex flex-col items-start min-w-0 ml-3">
-                    <span>Coaches Corner</span>
-                    <span className="text-[7px] text-white/40">Docs & Waivers</span>
-                  </div>
-                </Link>
-              </Button>
+              {canAccessCoachesCorner && (
+                <Button asChild variant="outline" className="h-20 rounded-2xl bg-white/5 border-white/10 hover:bg-white/10 text-white font-black uppercase text-[10px] tracking-widest justify-start gap-4 px-6 group/btn">
+                  <Link href="/coaches-corner" className="flex items-center w-full">
+                    <PenTool className="h-6 w-6 text-primary group-hover/btn:scale-110 transition-transform" />
+                    <div className="flex flex-col items-start min-w-0 ml-3">
+                      <span>Coaches Corner</span>
+                      <span className="text-[7px] text-white/40">Docs & Waivers</span>
+                    </div>
+                  </Link>
+                </Button>
+              )}
               <Button asChild variant="outline" className="h-20 rounded-2xl bg-white/5 border-white/10 hover:bg-white/10 text-white font-black uppercase text-[10px] tracking-widest justify-start gap-4 px-6 group/btn">
                 <Link href="/leagues" className="flex items-center w-full">
                   <Shield className="h-6 w-6 text-primary group-hover/btn:scale-110 transition-transform" />
@@ -445,7 +472,21 @@ export default function TeamProfilePage() {
                   </div>
                   <Switch
                     checked={activeTeam.parentCommentsEnabled}
-                    onCheckedChange={(v) => updateTeamDetails({ parentCommentsEnabled: v })}
+                    onCheckedChange={(v) => updateParentAccess({ parentCommentsEnabled: v })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-6 bg-muted/20 rounded-3xl border-2 border-dashed">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-white p-3 rounded-2xl shadow-sm border"><Globe className="h-5 w-5 text-primary" /></div>
+                    <div>
+                      <p className="text-sm font-black uppercase leading-tight">Parent Live Feed Access</p>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">Allow parents to open the squad live feed</p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={activeTeam.parentFeedEnabled !== false}
+                    onCheckedChange={(v) => updateParentAccess({ parentFeedEnabled: v })}
                   />
                 </div>
 
@@ -459,7 +500,7 @@ export default function TeamProfilePage() {
                   </div>
                   <Switch
                     checked={activeTeam.parentChatEnabled}
-                    onCheckedChange={(v) => updateTeamDetails({ parentChatEnabled: v })}
+                    onCheckedChange={(v) => updateParentAccess({ parentChatEnabled: v })}
                   />
                 </div>
               </CardContent>

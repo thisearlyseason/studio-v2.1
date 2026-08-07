@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import publicPortalModule from '../src/lib/public-portal-data.ts';
+import * as publicPortalModule from '../src/lib/public-portal-data.ts';
 const {
   permitsLegacyOrPaidPortals,
   publicLeague,

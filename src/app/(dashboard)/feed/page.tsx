@@ -61,6 +61,7 @@ import {
   DialogFooter
 } from '@/components/ui/dialog';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { useToast } from '@/hooks/use-toast';
 
 // ─── Tenor GIF Picker ──────────────────────────────────────────────────────
 // Tenor v1 demo key — free, no registration needed for dev/demo use.
@@ -220,6 +221,18 @@ export default function FeedPage() {
   const { activeTeam, user, updateTeamHero, isSuperAdmin, purchasePro, hasFeature, isStaff, isParent, isPlayer } = useTeam();
   const db = useFirestore();
   const router = useRouter();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (isParent && activeTeam?.parentFeedEnabled === false) {
+      toast({
+        title: 'Live Feed Disabled',
+        description: 'A squad coach has disabled parent access to the live feed.',
+        variant: 'destructive',
+      });
+      router.replace('/dashboard');
+    }
+  }, [isParent, activeTeam?.parentFeedEnabled, router]);
   
   const postsQ = useMemoFirebase(() => {
     if (!db || !activeTeam?.id || !user?.id) return null;

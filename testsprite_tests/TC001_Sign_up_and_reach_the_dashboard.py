@@ -3,6 +3,11 @@ import re
 from playwright import async_api
 from playwright.async_api import expect
 
+try:
+    from testsprite_tests.e2e_config import BASE_URL, league_code, test_email, test_password
+except ModuleNotFoundError:
+    from e2e_config import BASE_URL, league_code, test_email, test_password
+
 async def run_test():
     pw = None
     browser = None
@@ -34,14 +39,14 @@ async def run_test():
 
         # Interact with the page elements to simulate user flow
         # -> navigate
-        await page.goto("http://localhost:9002")
+        await page.goto(f"{BASE_URL}")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:
             pass
         
         # -> Open the signup page by navigating to the application's '/signup' URL and load the registration form.
-        await page.goto("http://localhost:9002/signup")
+        await page.goto(f"{BASE_URL}/signup")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:
@@ -67,13 +72,13 @@ async def run_test():
         # you@example.com email field
         elem = page.get_by_placeholder('you@example.com', exact=True)
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("example@gmail.com")
+        await elem.fill(test_email())
         
         # -> Fill the 'Full Name', 'Email Address', and 'Password' fields on the Create Account form and click the 'CREATE ACCOUNT' button to submit the registration.
         # Min. 6 characters password field
         elem = page.get_by_placeholder('Min. 6 characters', exact=True)
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("password123")
+        await elem.fill(test_password())
         
         # -> Fill the 'Full Name', 'Email Address', and 'Password' fields on the Create Account form and click the 'CREATE ACCOUNT' button to submit the registration.
         # Create Account button
@@ -99,7 +104,7 @@ async def run_test():
         # you@example.com email field
         elem = page.get_by_placeholder('you@example.com', exact=True)
         await elem.wait_for(state="visible", timeout=10000)
-        await elem.fill("example+12345@gmail.com")
+        await elem.fill(test_email())
         
         # -> Fill the Email Address field with a unique address (e.g., example+12345@gmail.com) and click the 'CREATE ACCOUNT' button to attempt registration again and observe if the dashboard appears or an error becomes visible.
         # Create Account button
@@ -117,7 +122,7 @@ async def run_test():
         # Assert: The 'Dashboard' navigation link is visible in the authenticated workspace.
         await expect(page.locator("xpath=/html/body/div[2]/div/div/div/div/div[1]/div[2]/div/div[1]/ul/li/a").nth(0)).to_have_text("Dashboard", timeout=15000), "The 'Dashboard' navigation link is visible in the authenticated workspace."
         # Assert: The signed-in user's email (example+12345@gmail.com) is visible in the workspace header.
-        await expect(page.locator("xpath=/html/body/div[2]/div/div/div/div/div[2]/div[1]/main/div/div[2]/div/div[3]/div[1]/div/button").nth(0)).to_contain_text("example+12345@gmail.com", timeout=15000), "The signed-in user's email (example+12345@gmail.com) is visible in the workspace header."
+        await expect(page.locator("xpath=/html/body/div[2]/div/div/div/div/div[2]/div[1]/main/div/div[2]/div/div[3]/div[1]/div/button").nth(0)).to_contain_text(test_email(), timeout=15000), "The signed-in user's email (example+12345@gmail.com) is visible in the workspace header."
         await asyncio.sleep(5)
 
     finally:

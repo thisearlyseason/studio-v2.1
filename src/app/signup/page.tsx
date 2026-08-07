@@ -9,8 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { CardFooter, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuth, useFirestore } from '@/firebase';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, deleteUser, updateProfile, type User as FirebaseUser } from 'firebase/auth';
+import { doc, writeBatch } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import {
   User, Baby, ArrowRight, Check, ShieldCheck, Trophy, ChevronLeft,
@@ -18,10 +18,8 @@ import {
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
-import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { PRICING_CONFIG } from '@/lib/pricing';
-import { PLAN_TEAM_LIMITS } from '@/lib/plan-catalog';
-import { establishSession } from '@/lib/client-session';
+import { sendBrandedVerificationEmail } from '@/lib/client-auth';
 
 type RegTarget = 'self' | 'child' | 'coach' | 'league_creator' | 'school_ad' | null;
 type PlanChoice = 'starter' | 'pro_team' | 'elite_teams' | 'elite_league' | 'school' | null;
@@ -82,7 +80,7 @@ const PLAN_DEFS: Record<string, {
     monthlyPriceId: '', annualPriceId: '',
     desc: 'Core coordination tools, no commitment',
     features: ['1 Team Hub', 'Scheduling & Chats', 'Score Tracking'],
-    teamLimit: PLAN_TEAM_LIMITS.free,
+    teamLimit: 1,
   },
   pro_team: {
     id: 'pro_team', label: 'Pro Team',
@@ -91,7 +89,7 @@ const PLAN_DEFS: Record<string, {
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'team')?.annualPriceId  || '',
     desc: 'Championship tools for one competitive team',
     features: ['1 Pro Team Hub', 'Unlimited Athletes', 'Digital Waivers & Payments', 'Advanced Analytics'],
-    highlight: true, trial: true, teamLimit: PLAN_TEAM_LIMITS.team, savingsLabel: 'Save ~17%',
+    highlight: true, trial: true, teamLimit: 1, savingsLabel: 'Save ~17%',
   },
   elite_teams: {
     id: 'elite_teams', label: 'Elite Teams',
@@ -100,7 +98,7 @@ const PLAN_DEFS: Record<string, {
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'elite')?.annualPriceId  || '',
     desc: 'Multi-squad management for growing clubs',
     features: ['Up to 8 Pro Team Hubs', 'Master Club Dashboard', 'Staff Role Management', 'League & Tournament Architect'],
-    highlight: true, trial: true, teamLimit: PLAN_TEAM_LIMITS.elite, savingsLabel: 'Save ~22%',
+    highlight: true, trial: true, teamLimit: 8, savingsLabel: 'Save ~22%',
   },
   elite_league: {
     id: 'elite_league', label: 'Elite League',
@@ -109,7 +107,7 @@ const PLAN_DEFS: Record<string, {
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'league')?.annualPriceId  || '',
     desc: 'Institutional scale for series and leagues',
     features: ['Up to 18 Pro Team Hubs', 'League Series Architect', 'Global Tournament Hosting', 'Advanced Standings & Reporting'],
-    trial: true, teamLimit: PLAN_TEAM_LIMITS.league, savingsLabel: 'Save ~17%',
+    trial: true, teamLimit: 18, savingsLabel: 'Save ~17%',
   },
   school: {
     id: 'school', label: 'Schools Plan',
@@ -118,7 +116,7 @@ const PLAN_DEFS: Record<string, {
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'school')?.annualPriceId  || '',
     desc: '15 squads included · add more anytime at the lowest per-squad rate on the platform',
     features: ['15 Pro Squad Hubs Included', 'Athletic Director Dashboard', 'Academic Eligibility Sync', 'Extra squads at school-exclusive discount'],
-    highlight: true, trial: true, teamLimit: PLAN_TEAM_LIMITS.school, savingsLabel: 'Save ~17%',
+    highlight: true, trial: true, teamLimit: 15, savingsLabel: 'Save ~17%',
   },
 };
 
@@ -138,11 +136,23 @@ export default function SignupPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const auth = useAuth();
   const db = useFirestore();
   const router = useRouter();
+
+  React.useEffect(() => {
+    const returnPath = sessionStorage.getItem('squad_return_path');
+    if (!returnPath?.startsWith('/teams/join?')) return;
+    const queryIndex = returnPath.indexOf('?');
+    const linkedCode = new URLSearchParams(returnPath.slice(queryIndex + 1))
+      .get('code')
+      ?.trim()
+      .toUpperCase();
+    if (linkedCode) setJoinCode(linkedCode);
+  }, []);
 
   const selectedOption = SIGNUP_OPTIONS.find(o => o.id === regTarget);
   const rolePlans = regTarget ? ROLE_PLANS[regTarget as string] ?? [] : [];
@@ -167,18 +177,33 @@ export default function SignupPage() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const cleanEmail = email.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = name.trim().replace(/\s+/g, ' ');
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(cleanEmail)) {
       toast({ title: "Invalid Email", description: "Please enter a valid email address (e.g. name@example.com).", variant: "destructive" });
       return;
     }
+    if (!cleanName || cleanName.length > 120) {
+      toast({ title: "Invalid Name", description: "Enter a name between 1 and 120 characters.", variant: "destructive" });
+      return;
+    }
+    if (password.length < 8 || password.length > 128) {
+      toast({ title: "Weak Password", description: "Use a password between 8 and 128 characters.", variant: "destructive" });
+      return;
+    }
+    if (password !== passwordConfirmation) {
+      toast({ title: "Passwords Do Not Match", description: "Re-enter the same password in both fields.", variant: "destructive" });
+      return;
+    }
 
     setIsLoading(true);
+    let createdUser: FirebaseUser | null = null;
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
       const user = userCredential.user;
-      await updateProfile(user, { displayName: name });
+      createdUser = user;
+      await updateProfile(user, { displayName: cleanName });
 
       const roleMap: Record<string, string> = {
         self: 'adult_player',
@@ -189,100 +214,57 @@ export default function SignupPage() {
       };
       const role = roleMap[regTarget as string] || 'adult_player';
 
-      await setDoc(doc(db, 'users', user.uid), {
+      const postVerificationPath =
+        planChoice && planChoice !== 'starter'
+          ? '/pricing'
+          : joinCode.trim()
+            ? `/teams/join?code=${encodeURIComponent(joinCode.trim().toUpperCase())}`
+            : role === 'parent'
+              ? '/family'
+              : role === 'league_creator'
+                ? '/competition'
+                : role === 'coach' || role === 'admin'
+                  ? '/teams/new'
+                  : '/teams/join';
+      sessionStorage.setItem('squad_post_verify_path', postVerificationPath);
+      await sendBrandedVerificationEmail(user);
+
+      const profileBatch = writeBatch(db);
+      profileBatch.set(doc(db, 'users', user.uid), {
         id: user.uid,
-        fullName: name,
+        fullName: cleanName,
         email: cleanEmail,
         role,
-        notificationsEnabled: true,
+        notificationsEnabled: false,
+        upcomingEventNotificationsEnabled: false,
         createdAt: new Date().toISOString(),
         avatarUrl: `https://picsum.photos/seed/${user.uid}/150/150`,
-        activePlanId: 'starter_squad',
-        proTeamLimit: 0,
       });
-      await establishSession(user);
 
       // Adult player: create matching player record
       if (regTarget === 'self') {
-        await setDoc(doc(db, 'players', `p_${user.uid}`), {
-          firstName: name.split(' ')[0],
-          lastName: name.split(' ').slice(1).join(' '),
+        profileBatch.set(doc(db, 'players', `p_${user.uid}`), {
+          firstName: cleanName.split(' ')[0],
+          lastName: cleanName.split(' ').slice(1).join(' '),
           isMinor: false,
           userId: user.uid,
           hasLogin: true,
+          recruitingProfileEnabled: false,
           createdAt: new Date().toISOString(),
         });
       }
-
-      toast({ title: "Account Created!", description: `Welcome to The Squad Hub.` });
-
-      // === PAID PLAN: redirect to Stripe Checkout with 5-day trial ===
-      const isPaid = planChoice && planChoice !== 'starter';
-      if (isPaid) {
-        const planDef = PLAN_DEFS[planChoice as string];
-        const resolvedPriceId = billingCycle === 'annual'
-          ? planDef?.annualPriceId
-          : planDef?.monthlyPriceId;
-        if (!resolvedPriceId) {
-          // Fallback: go to pricing if price ID missing
-          toast({ title: 'Plan Setup Issue', description: 'Please complete your upgrade from the pricing page.', variant: 'destructive' });
-          router.push('/pricing');
-          return;
-        }
-        try {
-          const token = await getAuthToken(auth);
-          const res = await fetch('/api/checkout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-            body: JSON.stringify({
-              priceId: resolvedPriceId,
-              userId: user.uid,
-              billingCycle,
-              trialDays: 5,
-              newUser: true,
-            }),
-          });
-          const data = await res.json();
-          if (data.url) {
-            window.location.href = data.url;
-            return;
-          }
-          throw new Error(data.error || 'Checkout initiation failed');
-        } catch (checkoutErr: any) {
-          toast({ title: 'Payment Redirect Failed', description: 'Account created. Please upgrade from the pricing page.', variant: 'destructive' });
-          router.push('/pricing');
-          return;
-        }
-      }
-
-      // === FREE / PLAYER / PARENT path ===
-      // Apply join code if entered
-      if (joinCode.trim() && (role === 'adult_player' || role === 'parent')) {
-        try {
-          const effectivePlayerId = `p_${user.uid}`;
-          await fetch('/api/teams/join', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: joinCode.trim().toUpperCase(), playerId: effectivePlayerId, role: 'Player' }),
-          });
-        } catch (_) {
-          // Non-critical — user can join from dashboard
-        }
-      }
-
-      // Role-based redirect
-      if (joinCode.trim() && (role === 'adult_player' || role === 'parent')) {
-        router.push('/feed');
-      } else if (role === 'coach' || role === 'admin') {
-        router.push('/teams/new');
-      } else if (role === 'parent') {
-        router.push('/family');
-      } else if (role === 'league_creator') {
-        router.push('/competition');
-      } else {
-        router.push('/teams/join');
-      }
+      await profileBatch.commit();
+      toast({ title: "Verify Your Email", description: "We sent a verification link before account access is enabled." });
+      router.push('/verify-email');
     } catch (error: any) {
+      if (createdUser) {
+        sessionStorage.removeItem('squad_post_verify_path');
+        await deleteUser(createdUser).catch(() => {
+          // A very recent signup normally requires no reauthentication. If the
+          // provider refuses cleanup, the unverified identity remains blocked
+          // by API, middleware, Firestore, and Storage verification gates.
+        });
+      }
       const code = error?.code || '';
       if (code === 'auth/email-already-in-use') {
         toast({ title: "Email Already in Use", description: "Please log in or use a different email.", variant: "destructive" });
@@ -290,8 +272,10 @@ export default function SignupPage() {
         toast({ title: "Invalid Email", description: "Please enter a valid email address.", variant: "destructive" });
       } else if (code === 'auth/weak-password') {
         toast({ title: "Weak Password", description: "Password must be at least 6 characters.", variant: "destructive" });
+      } else if (code === 'auth/unauthorized-continue-uri') {
+        toast({ title: "Signup Temporarily Unavailable", description: "This site is not authorized for account verification. No account was retained.", variant: "destructive" });
       } else {
-        toast({ title: "Signup Error", description: error.message || "An unexpected error occurred.", variant: "destructive" });
+        toast({ title: "Signup Error", description: "Signup could not be completed. No account was retained; please try again.", variant: "destructive" });
       }
     } finally {
       setIsLoading(false);
@@ -694,6 +678,7 @@ export default function SignupPage() {
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Full Name</Label>
                   <Input
                     required
+                    maxLength={120}
                     placeholder="John Smith"
                     value={name}
                     onChange={e => setName(e.target.value)}
@@ -705,6 +690,7 @@ export default function SignupPage() {
                   <Input
                     required
                     type="email"
+                    maxLength={254}
                     placeholder="you@example.com"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
@@ -716,9 +702,25 @@ export default function SignupPage() {
                   <Input
                     required
                     type="password"
-                    placeholder="Min. 6 characters"
+                    minLength={8}
+                    maxLength={128}
+                    placeholder="Min. 8 characters"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
+                    className="h-12 rounded-xl bg-muted/30 border-muted font-semibold"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Confirm Password</Label>
+                  <Input
+                    required
+                    type="password"
+                    minLength={8}
+                    maxLength={128}
+                    autoComplete="new-password"
+                    placeholder="Re-enter your password"
+                    value={passwordConfirmation}
+                    onChange={e => setPasswordConfirmation(e.target.value)}
                     className="h-12 rounded-xl bg-muted/30 border-muted font-semibold"
                   />
                 </div>
@@ -728,7 +730,7 @@ export default function SignupPage() {
                 <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                 <p className="text-[10px] font-medium leading-relaxed text-muted-foreground">
                   {planChoice && planChoice !== 'starter'
-                    ? "Your account will be created, then you'll be taken to Stripe's secure checkout. Card details are collected upfront but you won't be charged for 5 days."
+                    ? "Verify your email first. After verification, you can continue to Stripe's secure checkout for the selected 5-day trial."
                     : "By creating an account you confirm you are 18+ and authorized to manage registration data for your organization."
                   }
                 </p>
@@ -743,7 +745,7 @@ export default function SignupPage() {
                   {isLoading
                     ? "Creating Account..."
                     : planChoice && planChoice !== 'starter'
-                      ? "Create Account & Continue to Payment"
+                      ? "Create Account & Verify Email"
                       : "Create Account"
                   }
                 </Button>

@@ -534,7 +534,7 @@ export function EventDetailDialog({
                            <div className="flex flex-col sm:flex-row">
                               <div className="w-full sm:w-32 aspect-video sm:aspect-square bg-black shrink-0 relative">
                                  {drill.coverImageUrl ? (
-                                   <img src={drill.coverImageUrl} className="w-full h-full object-cover opacity-60" />
+                                   <img src={drill.coverImageUrl} alt={`${drill.title || drill.name || 'Drill'} cover`} className="w-full h-full object-cover opacity-60" />
                                  ) : drill.url ? (
                                    <div className="absolute inset-0 flex items-center justify-center bg-primary/10"><Play className="h-6 w-6 text-primary" /></div>
                                  ) : (

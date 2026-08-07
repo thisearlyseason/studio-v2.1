@@ -97,7 +97,6 @@ import {
 } from "@/components/ui/dialog";
 import BrandLogo from '@/components/BrandLogo';
 import { BetaNotificationBanner } from '@/components/layout/BetaNotificationBanner';
-import TimeOutLauncher from '@/components/time-out/TimeOutLauncher';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   AlertDialog,
@@ -110,9 +109,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { signOut } from 'firebase/auth';
 import { useAuth } from '@/firebase';
-import { signOutWithSession } from '@/lib/client-session';
 import { toast } from '@/hooks/use-toast';
+import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
+import { clearBrowserSession } from '@/lib/client-auth';
 import {
   Tooltip,
   TooltipContent,
@@ -405,10 +406,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     activeTeam, setActiveTeam, teams, user, isPro, 
     isPrimaryClubAuthority, isStaff, isParent, isPlayer, hasFeature, alerts,
     unreadAlertsCount, purchasePro, isSchoolMode, isSchoolAdmin, isEliteAccount, isEliteClubMode,
-    deleteTeam, deleteAccount
+    deleteTeam, deleteAccount, isSuperAdmin
   } = useTeam();
   const auth = useAuth();
   const hasDemoBanner = !!user?.isDemo && !user?.isBetaTester;
+  const canAccessCoachesCorner = hasCoachesCornerEntitlement(activeTeam, isSuperAdmin);
+  const isAdminTabLocked = (tab: (typeof adminTabs)[number]) =>
+    tab.name === 'Coaches Corner'
+      ? !canAccessCoachesCorner
+      : tab.pro && !isPro;
 
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   // Controlled open state for both squad switcher instances
@@ -500,7 +506,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       if (tab.name === 'Library' && activeTeam?.features?.library === false) return false;
 
       // Feed is filtered by plan/feature
-      if (tab.name === 'Feed') return hasFeature?.('live_feed_read');
+      if (tab.name === 'Feed') return hasFeature?.('live_feed_read') && !(isParent && activeTeam?.parentFeedEnabled === false);
       // Roster: hide for school admins in institution mode (they use the School Hub instead)
       if (tab.name === 'Roster' && isSchoolMode && isPrimaryClubAuthority && activeTeam?.type === 'school') return false;
       // Fundraising: staff-only administrative module — players and parents cannot access it
@@ -522,13 +528,16 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return true;
   });
 
-  // School admin in institution mode: only the squad-selector is shown.
-  // This covers: (a) when the explicit school hub record is active, or (b) when no squad has been chosen yet.
-  const isSchoolInstitutionMode = isSchoolMode && isPrimaryClubAuthority && (!activeTeam || activeTeam?.type === 'school');
+  // The institution hub is a route-level context. A previously selected squad can
+  // remain active for later navigation, but it must not appear selected on the hub.
+  const isInstitutionHubRoute = pathname === '/club';
 
-  // Elite Club Organizer in hub mode: nav is hidden only when NO squad is selected (organizer is on the Club Hub).
-  // When a sub-squad is selected, full navigation is shown for that squad.
-  const isEliteHubMode = isEliteClubMode && !activeTeam;
+  // School admin in institution mode: show only the institution identity.
+  const isSchoolInstitutionMode = isSchoolMode && isPrimaryClubAuthority
+    && (isInstitutionHubRoute || !activeTeam || activeTeam?.type === 'school');
+
+  // Club organizers likewise see only the club identity while on the Club Hub.
+  const isEliteHubMode = isEliteClubMode && (isInstitutionHubRoute || !activeTeam);
 
   // Institution authority: based purely on account type, never on which squad is currently active.
   // Used in the More menu so the hub link + squad switcher ALWAYS appear for these users.
@@ -550,7 +559,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             ? [{ name: 'Home', href: '/dashboard', icon: Home }]
             : []),
           { name: 'Schedule', href: '/events', icon: CalendarDays },
-          ...(activeTeam?.features?.feed !== false ? [{ name: 'Feed', href: '/feed', icon: LayoutDashboard, gate: () => hasFeature?.('live_feed_read') }] : []),
+          ...(activeTeam?.features?.feed !== false && !(isParent && activeTeam?.parentFeedEnabled === false) ? [{ name: 'Feed', href: '/feed', icon: LayoutDashboard, gate: () => hasFeature?.('live_feed_read') }] : []),
           ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Tactical Chat', href: '/chats', icon: MessageCircle }] : []),
           { name: 'Hub', href: '/sports-hub', icon: BookOpen },
         ]
@@ -560,7 +569,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const handleLogout = async () => {
     try {
-      await signOutWithSession(auth);
+      await clearBrowserSession();
+      await signOut(auth);
       router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
@@ -725,35 +735,23 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         <div className="flex flex-col min-w-0">
                           {isSchoolMode && isPrimaryClubAuthority ? (
                             <>
-                              {/* Always show school name as the top line */}
                               <span className="font-black text-sm truncate uppercase tracking-tight text-foreground">
                                 {user?.schoolName || user?.clubName || 'School Hub'}
                               </span>
-                              {activeTeam?.type === 'school' ? (
-                                /* Institution is active — prompt to pick a squad */
-                                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest truncate flex items-center gap-1">
-                                  Select a Squad
-                                </span>
-                              ) : (
-                                /* A specific squad is active */
+                              {!isSchoolInstitutionMode && activeTeam && (
                                 <span className="text-[9px] font-bold text-primary uppercase tracking-widest truncate">
-                                  ↳ {activeTeam?.name || 'Squad'}
+                                  ↳ {activeTeam.name}
                                 </span>
                               )}
                             </>
                           ) : isEliteClubMode ? (
                             <>
-                              {/* Elite Club Organizer identity */}
                               <span className="font-black text-sm truncate uppercase tracking-tight text-foreground">
                                 {user?.clubName || user?.schoolName || 'Elite Club'}
                               </span>
-                              {isEliteHubMode ? (
-                                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest truncate">
-                                  Select a Squad
-                                </span>
-                              ) : (
+                              {!isEliteHubMode && activeTeam && (
                                 <span className="text-[9px] font-bold text-primary uppercase tracking-widest truncate">
-                                  ↳ {activeTeam?.name || 'Squad'}
+                                  ↳ {activeTeam.name}
                                 </span>
                               )}
                             </>
@@ -779,7 +777,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   {isStaff && (
                     <div className="space-y-1.5">
                       <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary px-2 mb-2">Command</p>
-                      {filteredAdminTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
+                      {filteredAdminTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={isAdminTabLocked(tab)} />)}
                     </div>
                   )}
                   <div className="space-y-1.5">
@@ -914,7 +912,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="md:hidden"><BrandLogo variant="light-background" className="h-6 w-28" /></div>
               <div className="flex items-center gap-2 md:gap-3">
                 {isStaff && <CreateAlertButton />}
-                <TimeOutLauncher />
                 <AlertsHistoryDialog>
                   <Button variant="ghost" size="icon" className="h-10 w-10 md:h-11 md:w-11 rounded-2xl hover:bg-primary/5 text-foreground relative transition-all active:scale-95">
                     <Bell className="h-5 w-5" />
@@ -959,6 +956,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     <DropdownMenuItem onClick={() => router.push('/settings')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
                       <User className="h-4 w-4 text-primary" /> Profile Settings
                     </DropdownMenuItem>
+
+                    {isSuperAdmin && (
+                      <DropdownMenuItem onClick={() => router.push('/admin')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest text-primary focus:text-primary">
+                        <ShieldCheck className="h-4 w-4" /> Go to Admin Page
+                      </DropdownMenuItem>
+                    )}
                     
                     <DropdownMenuItem onClick={() => router.push('/how-to')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
                       <BookOpen className="h-4 w-4 text-primary" /> Tactical Manual
@@ -1005,9 +1008,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                           <AlertDialogHeader>
                             <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">Identity Termination</AlertDialogTitle>
                             <AlertDialogDescription className="text-sm font-medium text-foreground/70">
-                              You are about to permanently delete your global account identity. All your data, settings, and role memberships will be purged. 
+                              You are about to schedule deletion of your global account identity. Your account is retained for seven days, then permanently removed. Accounts that own teams or leagues must transfer or delete them first so organization data is never orphaned.
                               <br /><br />
-                              <span className="font-bold text-destructive">WARNING: This cannot be undone.</span>
+                              <span className="font-bold text-destructive">WARNING: This action signs you out and begins the seven-day deletion period.</span>
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter className="pt-4">
@@ -1179,7 +1182,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                                 <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Command Hub</p>
                                 <div className="grid grid-cols-1 gap-2">
                                   {adminTabs.map((tab) => {
-                                    const isLocked = tab.pro && !isPro;
+                                    const isLocked = isAdminTabLocked(tab);
                                     const handleClick = (e: React.MouseEvent) => {
                                       if (isLocked) { e.preventDefault(); purchasePro(); }
                                       else { setIsMoreMenuOpen(false); }
@@ -1291,6 +1294,24 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         <div className="space-y-3">
                           <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground px-2">Account Management</p>
                           <div className="grid grid-cols-1 gap-2">
+                            {isSuperAdmin && (
+                              <Link
+                                href="/admin"
+                                onClick={() => setIsMoreMenuOpen(false)}
+                                className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 p-4 transition-all active:scale-[0.98]"
+                              >
+                                <div className="flex items-center gap-4">
+                                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary text-white">
+                                    <ShieldCheck className="h-4 w-4" />
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-black uppercase tracking-widest text-primary">Go to Admin Page</span>
+                                    <span className="text-[8px] font-bold uppercase text-muted-foreground">Superadmin controls</span>
+                                  </div>
+                                </div>
+                                <ChevronRight className="h-4 w-4 text-primary/40" />
+                              </Link>
+                            )}
                             {showInstallBtn && (
                               <div className="relative group/installmobile">
                                 <button

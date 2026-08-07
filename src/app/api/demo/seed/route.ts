@@ -1,147 +1,105 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
-import { FieldValue } from 'firebase-admin/firestore';
-import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
-import { getPlanTeamLimit } from '@/lib/plan-catalog';
+import * as admin from 'firebase-admin';
+import { DEMO_PLANS, getDemoTeamShells } from '@/lib/demo-plan-config';
 
 /**
- * POST /api/demo/seed
- * Server-side demo team seeder. Uses Firebase Admin SDK so NO Firestore
- * security rule bypass (isDemo: true on client docs) is required.
- *
- * Body: { planId: string }
- * Auth: Bearer token required
- * Returns: { ok: true, teamId: string, planId: string }
+ * Creates only protected demo identity and team-shell records. Rich synthetic
+ * content is filled afterward by the existing blueprint, scoped to these
+ * server-approved shells through demoSessionOwnerId.
  */
 export async function POST(req: NextRequest) {
-  // 1. Verify the caller is authenticated
-  const authResult = await verifyFirebaseToken(req);
-  if (authResult instanceof NextResponse) return authResult;
-  const uid = authResult.uid;
+  const auth = await verifyFirebaseToken(req);
+  if (auth instanceof NextResponse) return auth;
 
   try {
-    const limited = await enforceUserRateLimit(uid, 'demo-seed', 20, 60 * 60 * 1000);
-    if (limited) return limited;
-    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 4_000);
-    const planId = body.planId;
+    const { planId } = await req.json();
+    const plan = typeof planId === 'string' ? DEMO_PLANS[planId] : undefined;
+    if (!plan) return NextResponse.json({ error: 'Invalid demo plan.' }, { status: 400 });
 
-  const ALLOWED_PLANS = new Set([
-    'starter_squad', 'squad_pro', 'elite_teams', 'school_demo',
-    'player_demo', 'parent_demo', 'league_demo',
-    'pro_demo', 'coach_demo', 'basic_demo',
-  ]);
+    const uid = auth.uid;
+    const userRef = adminDb.collection('users').doc(uid);
+    const existingProfile = await userRef.get();
+    const isAnonymousDemo = auth.signInProvider === 'anonymous';
+    const isBetaTester = existingProfile.data()?.isBetaTester === true;
+    if (!isAnonymousDemo && !isBetaTester) {
+      return NextResponse.json({ error: 'Demo setup is limited to anonymous demos and approved beta testers.' }, { status: 403 });
+    }
 
-  if (typeof planId !== 'string' || !ALLOWED_PLANS.has(planId)) {
-    return NextResponse.json({ error: `Invalid planId: ${planId}` }, { status: 400 });
-  }
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const shells = getDemoTeamShells(uid, planId, plan);
+    const isElite = ['elite_teams', 'elite', 'league'].includes(planId);
+    const name = plan.role === 'admin' ? 'Guest Admin' : `Guest ${plan.position}`;
+    const batch = adminDb.batch();
 
-  // 2. Check if this user already has a demo team for this plan (prevent duplicate seeding)
-  const existingQuery = await adminDb
-    .collection('teams')
-    .where('ownerUserId', '==', uid)
-    .where('isDemo', '==', true)
-    .where('planId', '==', planId)
-    .limit(1)
-    .get();
+    if (isAnonymousDemo) {
+      batch.set(userRef, {
+        id: uid,
+        fullName: name,
+        email: `${plan.role}@thesquad.pro`,
+        role: plan.role,
+        plan_type: plan.planType,
+        team_limit: plan.teamLimit,
+        subscription_status: 'active',
+        isDemo: true,
+        isStaff: true,
+        seenAlertIds: [],
+        avatarUrl: `https://picsum.photos/seed/${uid}/150/150`,
+        clubName: plan.planType === 'school' ? 'Springfield High School' : isElite ? 'Apex Academy' : 'Squad Sports Hub',
+        clubDescription: isElite ? 'Precision performance at a professional scale.' : plan.planType === 'school' ? 'Secondary Athletic Program Command' : '',
+        schoolAdminIds: plan.planType === 'school' ? [uid] : [],
+        isPrimaryClubAuthority: plan.isPro && !['parent', 'adult_player'].includes(plan.role),
+        demoInitializedAt: now,
+        createdAt: now,
+      }, { merge: true });
+    }
 
-  if (!existingQuery.empty) {
-    const existingTeam = existingQuery.docs[0];
+    for (const shell of shells) {
+      const teamRef = adminDb.collection('teams').doc(shell.id);
+      batch.set(teamRef, {
+        id: shell.id,
+        name: shell.name,
+        teamName: shell.name,
+        ownerUserId: shell.ownerUserId,
+        demoSessionOwnerId: uid,
+        isDemo: true,
+        isPro: plan.isPro,
+        planId: plan.planType,
+        type: shell.type,
+        sport: plan.planType === 'school' || planId === 'parent_demo' || planId === 'player_demo' ? 'Basketball' : 'Multi-Sport',
+        createdAt: now,
+        updatedAt: now,
+      }, { merge: true });
+    }
+
+    await batch.commit();
     return NextResponse.json({
       ok: true,
-      teamId: existingTeam.id,
       planId,
-      alreadySeeded: true,
+      teamIds: shells.map((shell) => shell.id),
+      primaryTeamId: shells.find((shell) => shell.type !== 'school')?.id || null,
     });
+  } catch (error: any) {
+    console.error('[demo/seed] Error:', error.message);
+    return NextResponse.json({ error: 'Unable to initialize the demo environment.' }, { status: 500 });
   }
+}
 
-  // 3. Generate a stable demo team ID
-  const teamId = `demo_${planId}_${uid.slice(0, 8)}_${Date.now()}`;
-  const now = FieldValue.serverTimestamp();
-  const batch = adminDb.batch();
-
-  // 4. Create the team document
-  const teamRef = adminDb.collection('teams').doc(teamId);
-  batch.set(teamRef, {
-    id: teamId,
-    name: getDemoTeamName(planId),
-    sport: 'Soccer',
-    planId: planId,
-    plan_type: getPlanType(planId),
-    isDemo: true,
-    demoOwnerUserId: uid,
-    ownerUserId: uid,
-    role: 'Admin',
-    memberCount: 1,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  // 5. Add the user as team owner/Admin member
-  const memberRef = teamRef.collection('members').doc(uid);
-  batch.set(memberRef, {
-    id: uid,
-    userId: uid,
-    teamId,
-    name: 'Demo Coach',
-    role: 'Admin',
-    position: 'Head Coach',
-    isDemo: true,
-    joinedAt: now,
-  });
-
-  // 6. Create a plan stub so feature flags work
-  const planRef = adminDb.collection('plans').doc(planId);
-  batch.set(planRef, {
-    id: planId,
-    name: getDemoTeamName(planId),
-    isDemo: true,
-    features: getDemoFeatures(planId),
-    teamLimit: getPlanTeamLimit(planId),
-    createdAt: now,
-  }, { merge: true });
-
-  await batch.commit();
-
-    return NextResponse.json({ ok: true, teamId, planId });
-  } catch (error) {
-    if (error instanceof RequestBodyError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+/** Marks an approved beta workspace complete only after rich seeding succeeds. */
+export async function PATCH(req: NextRequest) {
+  const auth = await verifyFirebaseToken(req);
+  if (auth instanceof NextResponse) return auth;
+  try {
+    const userRef = adminDb.collection('users').doc(auth.uid);
+    const user = await userRef.get();
+    if (user.data()?.isBetaTester !== true) {
+      return NextResponse.json({ error: 'Only approved beta testers can complete this setup.' }, { status: 403 });
     }
-    console.error('[demo/seed] Error:', error);
-    return NextResponse.json({ error: 'Could not create demo data.' }, { status: 500 });
+    await userRef.set({ betaDemoSeeded: true, betaDemoSeededAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    console.error('[demo/seed PATCH] Error:', error.message);
+    return NextResponse.json({ error: 'Unable to finalize the beta environment.' }, { status: 500 });
   }
-}
-
-function getDemoTeamName(planId: string): string {
-  const names: Record<string, string> = {
-    starter_squad: 'Starter Demo Team',
-    squad_pro: 'Pro Demo Squad',
-    elite_teams: 'Elite Demo Club',
-    school_demo: 'Demo High School',
-    player_demo: 'Player Demo Team',
-    parent_demo: 'Parent Demo Team',
-    league_demo: 'Demo League',
-    pro_demo: 'Pro Demo Team',
-    coach_demo: 'Coach Demo Squad',
-    basic_demo: 'Basic Demo Team',
-  };
-  return names[planId] ?? 'Demo Team';
-}
-
-function getPlanType(planId: string): string {
-  if (planId.includes('school')) return 'school';
-  if (planId.includes('elite')) return 'elite';
-  if (planId.includes('league')) return 'league';
-  if (planId.includes('player')) return 'player';
-  if (planId.includes('parent')) return 'parent';
-  if (planId.includes('pro')) return 'pro';
-  return 'starter';
-}
-
-function getDemoFeatures(planId: string): string[] {
-  const base = ['feed', 'roster', 'events', 'games', 'chats'];
-  const pro = [...base, 'drills', 'practice', 'files', 'volunteers', 'fundraising', 'equipment', 'facilities', 'family', 'analytics'];
-  if (planId === 'starter_squad') return base;
-  return pro;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Trophy, Plus, MapPin, TrendingUp, Lock, LineChart as ChartIcon, ChevronRight, Zap, Quote, Loader2, Download } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -34,6 +34,9 @@ import { Line, LineChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DatePicker } from "@/components/ui/date-picker";
+import { useAuth } from '@/firebase';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
+import { NoActiveTeamState } from '@/components/layout/NoActiveTeamState';
 
 const chartConfig = {
   myScore: { label: "Our Score", color: "hsl(var(--primary))" },
@@ -41,8 +44,9 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export default function GamesPage() {
-  const { activeTeam, addGame, updateGame, isSuperAdmin, purchasePro, hasFeature, isStaff, activeTeamEvents, isPro } = useTeam();
+  const { activeTeam, isTeamsLoading, isSuperAdmin, purchasePro, hasFeature, isStaff, activeTeamEvents, isPro } = useTeam();
   const db = useFirestore();
+  const auth = useAuth();
   const { toast } = useToast();
   
   const gamesQuery = useMemoFirebase(() => {
@@ -62,6 +66,8 @@ export default function GamesPage() {
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedEventId, setSelectedEventId] = useState<string>('manual');
+  const [isSavingScore, setIsSavingScore] = useState(false);
+  const scoreSubmissionKey = useRef<string | null>(null);
   const searchParams = useSearchParams();
 
   const scheduledMatches = useMemo(() => {
@@ -160,12 +166,17 @@ export default function GamesPage() {
     return { wins, losses, ties };
   }, [games]);
 
+  if (isTeamsLoading) return <div className="flex flex-col items-center justify-center py-20 animate-pulse"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase mt-4">Syncing Ledger...</p></div>;
+  if (!activeTeam) return <NoActiveTeamState title="Connect a Squad to Score Matches" description="Basic scorekeeping is included with your free account. Create or join a squad, then record opponents and final scores here." />;
   if (isLoading) return <div className="flex flex-col items-center justify-center py-20 animate-pulse"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase mt-4">Syncing Ledger...</p></div>;
 
-  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
+  const isAdmin = isStaff || isSuperAdmin;
 
-  const handleRecordGame = () => {
-    if (!opponent || !date || !myScore || !opponentScore) return;
+  const handleRecordGame = async () => {
+    if (!opponent.trim() || !date || myScore === '' || opponentScore === '') {
+      toast({ title: 'Missing Match Details', description: 'Enter the opponent, date, and both final scores.', variant: 'destructive' });
+      return;
+    }
     const myS = parseInt(myScore, 10);
     const oppS = parseInt(opponentScore, 10);
     if (isNaN(myS) || isNaN(oppS) || myS < 0 || oppS < 0) {
@@ -183,11 +194,43 @@ export default function GamesPage() {
       notes: isPro ? notes : '',
       eventId: selectedEventId !== 'manual' ? selectedEventId : null
     };
-    if (editingGame) updateGame(editingGame.id, payload); else addGame(payload);
-    setIsRecordOpen(false); resetForm();
+    if (!activeTeam?.id || !auth || isSavingScore) return;
+    setIsSavingScore(true);
+    try {
+      const token = await getAuthToken(auth);
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      if (!scoreSubmissionKey.current) scoreSubmissionKey.current = crypto.randomUUID();
+      const response = await fetch('/api/teams/games', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': scoreSubmissionKey.current,
+          ...authHeader(token),
+        },
+        body: JSON.stringify({
+          ...payload,
+          teamId: activeTeam.id,
+          gameId: editingGame?.id || null,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to record the final score.');
+      toast({ title: editingGame ? 'Final Score Updated' : 'Final Score Broadcast' });
+      scoreSubmissionKey.current = null;
+      setIsRecordOpen(false);
+      resetForm();
+    } catch (error: any) {
+      toast({
+        title: 'Score Not Recorded',
+        description: error.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingScore(false);
+    }
   };
 
-  const resetForm = () => { setOpponent(''); setDate(''); setMyScore(''); setOpponentScore(''); setLocation(''); setNotes(''); setEditingGame(null); setSelectedEventId('manual'); };
+  const resetForm = () => { setOpponent(''); setDate(''); setMyScore(''); setOpponentScore(''); setLocation(''); setNotes(''); setEditingGame(null); setSelectedEventId('manual'); scoreSubmissionKey.current = null; };
 
   return (
     <div className="space-y-8 pb-20 animate-in fade-in duration-500">
@@ -378,7 +421,13 @@ export default function GamesPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20" onClick={handleRecordGame}>Broadcast Final Score</Button>
+              <Button
+                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20"
+                onClick={handleRecordGame}
+                disabled={isSavingScore}
+              >
+                {isSavingScore ? <Loader2 className="h-6 w-6 animate-spin" /> : 'Broadcast Final Score'}
+              </Button>
             </DialogFooter>
           </div>
         </DialogContent>

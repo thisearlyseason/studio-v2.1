@@ -32,6 +32,7 @@ import { getAuthToken, authHeader } from '@/lib/client-auth';
 export function FundraisingManager() {
   const { activeTeam, db, user, addFundraisingOpportunity, updateFundraisingOpportunity, deleteFundraisingOpportunity } = useTeam();
   const auth = useAuth();
+  const stripeLinkOperations = React.useRef(new Map<string, string>());
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<FundraisingOpportunity | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -108,6 +109,8 @@ export function FundraisingManager() {
     if (!user?.id || !activeTeam?.id) return;
     setGeneratingLinkFor(opp.id);
     try {
+      const operationId = stripeLinkOperations.current.get(opp.id) || crypto.randomUUID();
+      stripeLinkOperations.current.set(opp.id, operationId);
       const idToken = await getAuthToken(auth);
       if (!idToken) throw new Error('Not authenticated');
 
@@ -120,10 +123,12 @@ export function FundraisingManager() {
           campaignId: opp.id,
           campaignTitle: opp.title,
           campaignDescription: opp.description,
+          operationId,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create payment link');
+      stripeLinkOperations.current.delete(opp.id);
 
       toast({
         title: '✓ Stripe Donation Link Created',

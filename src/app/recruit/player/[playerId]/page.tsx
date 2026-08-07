@@ -3,9 +3,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { useFirestore, useUser } from '@/firebase';
-import { doc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { useTeam } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -55,45 +52,49 @@ import { generateBrandedPDF } from '@/lib/pdf-utils';
 // CRITICAL BUILD FIX: Next.js 15 build safety for dynamic routes
 export const dynamic = 'force-dynamic';
 
+// This page receives a deliberately field-whitelisted response from the public
+// recruiting endpoint. Sport-specific metrics are intentionally flexible.
+type PublicRecord = Record<string, any>;
+type PublicRecruitingResponse = {
+  player: PublicRecord;
+  profile: PublicRecord;
+  metrics: PublicRecord;
+  stats: PublicRecord[];
+  videos: PublicRecord[];
+};
+
 export default function PublicScoutPortalPage() {
   const { playerId } = useParams();
-  const db = useFirestore();
-  const { user } = useUser();
-  const { myChildren } = useTeam();
-  
-  const [isEvalOpen, setIsEvalOpen] = useState(false); // kept for TS — not used on public page
-  const [newEval, setNewEval] = useState({ athleticism: 5, skillLevel: 5, gameIQ: 5, leadership: 5 });
-
-  const [publicData, setPublicData] = useState<any>(null);
-  const [playerLoading, setPlayerLoading] = useState(true);
-  const isOwner = useMemo(() => {
-    if (!user || !playerId) return false;
-    const id = String(playerId);
-    return id === user.uid || id === `p_${user.uid}` || myChildren.some(child => child.id === id);
-  }, [myChildren, playerId, user]);
+  const [scoutData, setScoutData] = useState<PublicRecruitingResponse | null>(null);
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
 
   useEffect(() => {
-    if (!playerId) return;
     const controller = new AbortController();
-    setPlayerLoading(true);
-    fetch(`/api/public/recruiting/${encodeURIComponent(String(playerId))}`, { signal: controller.signal })
-      .then(async response => response.ok ? response.json() : null)
-      .then(data => setPublicData(data))
+    const requestedPlayerId = typeof playerId === 'string' ? playerId : '';
+    if (!requestedPlayerId) {
+      setScoutData(null);
+      setIsProfileLoading(false);
+      return () => controller.abort();
+    }
+
+    setIsProfileLoading(true);
+    fetch(`/api/public/recruiting/${encodeURIComponent(requestedPlayerId)}`, { signal: controller.signal })
+      .then(async response => response.ok ? response.json() as Promise<PublicRecruitingResponse> : null)
+      .then(data => setScoutData(data))
       .catch(error => {
-        if (error?.name !== 'AbortError') setPublicData(null);
+        if (error.name !== 'AbortError') console.warn('[Public recruiting profile] Load failed.');
+        setScoutData(null);
       })
-      .finally(() => setPlayerLoading(false));
+      .finally(() => setIsProfileLoading(false));
     return () => controller.abort();
   }, [playerId]);
 
-  const player = publicData?.player;
-  const profile = publicData?.profile;
-  const metrics = publicData?.metrics;
-  const contactData = publicData?.contact;
-  const stats = publicData?.stats || [];
-  const evals = publicData?.evaluations || [];
-  const videosData = publicData?.videos || [];
-  const videos = videosData;
+  const player = scoutData?.player;
+  const profile = scoutData?.profile;
+  const metrics = scoutData?.metrics;
+  const stats = scoutData?.stats || [];
+  const videos = scoutData?.videos || [];
+  const evals: PublicRecord[] = [];
 
   const [selectedPublicVideo, setSelectedPublicVideo] = useState<any>(null);
   const [isYtPlaying, setIsYtPlaying] = useState(false);
@@ -101,6 +102,7 @@ export default function PublicScoutPortalPage() {
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
   const [manualSeekTime, setManualSeekTime] = useState<number | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
+
 
   const handleDownloadPack = () => {
     const name = profile?.fullName || player?.name || 'Athlete';
@@ -228,7 +230,7 @@ export default function PublicScoutPortalPage() {
 
   // ONLY block core UI on player loading. Sub-sections can lazy land.
   // Combine with failsafe.
-  const isEssentiallyLoaded = !playerLoading || loadingFailsafe;
+  const isEssentiallyLoaded = !isProfileLoading || loadingFailsafe;
   const loading = !isEssentiallyLoaded || (!player && !loadingFailsafe);
 
   const averageEval = useMemo(() => {
@@ -273,9 +275,9 @@ export default function PublicScoutPortalPage() {
 
   const allPhotos = useMemo(() => {
     const manualPhotos = (profile?.photos || []).map((url: string) => ({ url, type: 'Archival' }));
-    const tacticalPhotos = (videosData || []).filter((v: any) => v.type === 'photo').map((v: any) => ({ url: v.url, type: 'Tactical' }));
+    const tacticalPhotos = videos.filter((v: any) => v.type === 'photo').map((v: any) => ({ url: v.url, type: 'Tactical' }));
     return [...manualPhotos, ...tacticalPhotos];
-  }, [profile?.photos, videosData]);
+  }, [profile?.photos, videos]);
 
   useEffect(() => {
     if (playerName) {
@@ -375,36 +377,6 @@ export default function PublicScoutPortalPage() {
     }
   };
 
-  const handleAddEval = async () => {
-    if (!user || (!playerId)) return;
-    try {
-      await addDoc(collection(db, 'players', playerId as string, 'evaluations'), {
-        ...newEval,
-        authorId: user.uid,
-        authorName: user.displayName || user.email || 'Verified Organizer / Scout',
-        createdAt: serverTimestamp()
-      });
-      setIsEvalOpen(false);
-      setNewEval({ athleticism: 5, skillLevel: 5, gameIQ: 5, leadership: 5 });
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleDeletePhoto = async (index: number) => {
-    if (!isOwner || !playerId) return;
-    const newPhotos = [...(profile.photos || [])];
-    newPhotos.splice(index, 1);
-    const { updateDoc } = await import('firebase/firestore');
-    await updateDoc(doc(db, 'players', playerId as string, 'recruitingProfile', 'profile'), { photos: newPhotos });
-  };
-
-  const handleDeleteVideo = async (videoId: string) => {
-    if (!isOwner || !playerId) return;
-    const { doc, deleteDoc } = await import('firebase/firestore');
-    await deleteDoc(doc(db, 'players', playerId as string, 'videos', videoId));
-  };
-
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-muted/10">
       <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -412,8 +384,8 @@ export default function PublicScoutPortalPage() {
     </div>
   );
 
-  // Only block if explicitly disabled — undefined means not yet set (treat as enabled)
-  if (!player || player.recruitingProfileEnabled === false) {
+  // Recruiting profiles are private until a player or authorized coach explicitly activates them.
+  if (!player || player.recruitingProfileEnabled !== true) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10">
         <Card className="max-w-md w-full text-center p-12 rounded-[3rem] border-none shadow-2xl bg-white">
@@ -637,16 +609,6 @@ export default function PublicScoutPortalPage() {
                             {isDownloading === v.id ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <Download className="h-4 w-4 text-primary" />}
                           </Button>
                         )}
-                        {isOwner && (
-                           <Button 
-                             variant="destructive" 
-                             size="icon" 
-                             className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-xl"
-                             onClick={(e) => { e.stopPropagation(); handleDeleteVideo(v.id); }}
-                           >
-                              <Trash2 className="h-4 w-4" />
-                           </Button>
-                        )}
                       </div>
                     </div>
                     <CardFooter className="bg-white p-5 flex-col items-start gap-1">
@@ -854,26 +816,10 @@ export default function PublicScoutPortalPage() {
               <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white p-8 space-y-6 overflow-hidden relative">
                 <div className="absolute inset-0 bg-primary opacity-5" />
                 <div className="relative z-10 space-y-4">
-                  <p className="text-xs font-medium text-white/60 leading-relaxed italic">Direct contact details are restricted to verified institutional scouts and professional agencies.</p>
-                  {contactData?.coachEmail ? (
-                    <a
-                      href={`mailto:${contactData.coachEmail}?subject=${encodeURIComponent(`Requesting Scouting Information Package – ${playerName}`)}`}
-                      className="block w-full"
-                    >
-                      <Button className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-primary hover:text-white transition-all">
-                        <Mail className="h-4 w-4 mr-2" /> Reach Out to Coach
-                      </Button>
-                    </a>
-                  ) : (
-                    <Button disabled className="w-full h-12 rounded-xl bg-white/20 text-white/40 font-black uppercase text-[10px] tracking-widest cursor-not-allowed">
-                      Contact Not Yet Available
-                    </Button>
-                  )}
-                  {contactData?.coachEmail && (
-                    <p className="text-[9px] font-black uppercase tracking-widest text-white/30 text-center">
-                      Opens your email client · Subject auto-filled
-                    </p>
-                  )}
+                  <p className="text-xs font-medium text-white/60 leading-relaxed italic">Direct contact details are private. Contact the athlete&apos;s club or recruiting office through its verified public channel.</p>
+                  <Button disabled className="w-full h-12 rounded-xl bg-white/20 text-white/40 font-black uppercase text-[10px] tracking-widest cursor-not-allowed">
+                    Contact Managed Privately
+                  </Button>
                 </div>
               </Card>
             </section>

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import membershipModule from '../src/lib/team-membership-security.ts';
+import * as membershipModule from '../src/lib/team-membership-security.ts';
 
 const { isActiveTeamMembership } = membershipModule;
 

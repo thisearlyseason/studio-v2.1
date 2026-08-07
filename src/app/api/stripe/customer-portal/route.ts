@@ -41,10 +41,6 @@ export async function POST(req: NextRequest) {
       }, { status: 409 });
     }
 
-    if (userData.stripe_customer_id !== stripeCustomerId) {
-      await userSnap.ref.update({ stripe_customer_id: stripeCustomerId });
-    }
-
     const origin = getTrustedAppOrigin(req);
 
     const portalSession = await stripe.billingPortal.sessions.create({

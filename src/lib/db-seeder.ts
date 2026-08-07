@@ -26,8 +26,15 @@ class BatchHelper {
   private db: Firestore;
   private batch: WriteBatch;
   private opCount = 0;
-  private readonly CHUNK_SIZE = 400;
+  // Firestore rules allow only a small number of document lookups across one
+  // atomic batch. Demo writes repeatedly verify their owning team, so keep
+  // chunks deliberately small even though Firestore's write-count limit is 500.
+  // Five writes keeps rules-engine document lookups comfortably below the
+  // multi-write access-call ceiling, including player/media writes that verify
+  // both the player and owning squad.
+  private readonly CHUNK_SIZE = 5;
   private chunkPaths: string[] = [];  // paths in current chunk for debugging
+  private pendingChunks: Array<{ batch: WriteBatch; count: number; paths: string[] }> = [];
 
   constructor(db: Firestore) {
     this.db = db;
@@ -39,18 +46,26 @@ class BatchHelper {
     if (this.chunkPaths.length < 20) {
       this.chunkPaths.push(ref.path ?? ref._key?.path?.segments?.join('/') ?? String(ref));
     }
+    // Trusted server code creates every demo team shell first. Merge client
+    // blueprint data so the server-owned demoSessionOwnerId is never removed.
+    const isDemoTeamRoot = /^teams\/[^/]+$/.test(ref.path || '') && data?.isDemo === true;
     if (opts) {
       this.batch.set(ref, data, opts);
+    } else if (isDemoTeamRoot) {
+      this.batch.set(ref, data, { merge: true });
     } else {
       this.batch.set(ref, data);
     }
     this.opCount++;
+    if (this.opCount >= this.CHUNK_SIZE) {
+      this.queueCurrentChunk();
+    }
     return this;
   }
 
   async maybeCommit() {
-    if (this.opCount >= this.CHUNK_SIZE) {
-      await this._commitChunk();
+    if (this.pendingChunks.length > 0) {
+      await this.flush();
     }
   }
 
@@ -61,29 +76,57 @@ class BatchHelper {
    * entire batch of unrelated documents.
    */
   async flush() {
-    if (this.opCount > 0) {
-      await this._commitChunk();
+    this.queueCurrentChunk();
+    while (this.pendingChunks.length > 0) {
+      const chunk = this.pendingChunks.shift()!;
+      await this._commitChunk(chunk);
     }
   }
 
   async commit() {
-    if (this.opCount > 0) {
-      await this._commitChunk();
-    }
+    await this.flush();
   }
 
-  private async _commitChunk() {
-    const paths = [...this.chunkPaths];
-    console.log(`[Demo] Committing batch chunk (${this.opCount} ops). Paths sampled:`, paths);
-    try {
-      await this.batch.commit();
-    } catch (err: any) {
-      console.error('[Demo] Batch chunk FAILED. Paths in this chunk:', paths);
-      throw err;
-    }
+  private queueCurrentChunk() {
+    if (this.opCount === 0) return;
+    this.pendingChunks.push({
+      batch: this.batch,
+      count: this.opCount,
+      paths: [...this.chunkPaths],
+    });
     this.batch = writeBatch(this.db);
     this.opCount = 0;
     this.chunkPaths = [];
+  }
+
+  private async _commitChunk(chunk: { batch: WriteBatch; count: number; paths: string[] }) {
+    console.log(`[Demo] Committing batch chunk (${chunk.count} ops). Paths sampled:`, chunk.paths);
+    const transientCodes = new Set([
+      'aborted',
+      'cancelled',
+      'deadline-exceeded',
+      'firestore/aborted',
+      'firestore/cancelled',
+      'firestore/deadline-exceeded',
+      'firestore/internal',
+      'firestore/unavailable',
+      'internal',
+      'unavailable',
+    ]);
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await chunk.batch.commit();
+        return;
+      } catch (err: any) {
+        const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
+        const canRetry = transientCodes.has(code) && attempt < 3;
+        if (!canRetry) {
+          console.error('[Demo] Batch chunk FAILED. Paths in this chunk:', chunk.paths);
+          throw err;
+        }
+        await new Promise(resolve => setTimeout(resolve, attempt * 500));
+      }
+    }
   }
 }
 
@@ -588,7 +631,14 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   };
 
   const plan_type = planTypeMap[planId] || 'free';
-  const team_limit = getPlanTeamLimit(plan_type);
+  const teamLimitMap: Record<string, number> = {
+    'free': 1,
+    'team': 1,
+    'elite': 8,
+    'league': 15,
+    'school': 15
+  };
+  const team_limit = teamLimitMap[plan_type] || 1;
 
   const userRole = isSchoolDemo ? 'admin' : (isParentDemo ? 'parent' : (isPlayerDemo ? 'adult_player' : (isLeagueDemo ? 'league_creator' : 'coach')));
   const pos = isParentDemo ? 'Parent' : (isPlayerDemo ? 'Player' : (isSchoolDemo ? 'Athletic Director' : (isLeagueDemo ? 'League Creator' : 'Coach')));
@@ -596,46 +646,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
   const batch = new BatchHelper(db);
 
-  // 1. Core Profile Reset
-  // For beta testers: preserve their real name/email — only update plan/role/flags.
-  // For guest demo users: write a full generic profile.
-  const profileDoc = isBetaTester
-    ? clean({
-        id: userId,
-        role: userRole,
-        plan_type: plan_type,
-        team_limit: team_limit,
-        subscription_status: 'active',
-        isBetaTester: true,
-        isDemo: false, // Beta testers are NOT demo accounts
-        seenAlertIds: [],
-        isPrimaryClubAuthority: (isProTier || isEliteDemo || isSchoolDemo) && !isPlayerDemo && !isParentDemo,
-        isStaff: true,
-        ...(isEliteDemo ? { clubName: 'Apex Academy', clubDescription: 'Precision performance at a professional scale.' } : {}),
-        ...(isSchoolDemo ? { clubName: 'Springfield High School', schoolAdminIds: [userId] } : {}),
-      })
-    : clean({
-        id: userId,
-        fullName: isSchoolDemo ? 'Guest Admin' : `Guest ${pos}`,
-        email: `${userRole}@thesquad.pro`,
-        role: userRole,
-        plan_type: plan_type,
-        team_limit: team_limit,
-        subscription_status: 'active',
-        createdAt: now,
-        isDemo: true,
-        demoOwnerUserId: userId,
-        seenAlertIds: [],
-        avatarUrl: `https://picsum.photos/seed/${userId}/150/150`,
-        clubDescription: isEliteDemo ? 'Precision performance at a professional scale.' : (isSchoolDemo ? 'Secondary Athletic Program Command' : undefined),
-        schoolAdminIds: isSchoolDemo ? [userId] : [],
-        isPrimaryClubAuthority: (isProTier || isEliteDemo || isSchoolDemo) && !isPlayerDemo && !isParentDemo,
-        clubName: isSchoolDemo ? 'Springfield High School' : (isEliteDemo ? 'Apex Academy' : 'Squad Sports Hub'),
-        isStaff: true
-      });
-
-  batch.set(doc(db, 'users', userId), profileDoc, { merge: true });
-  await batch.flush();
+  // Protected profile, plan, staff, and subscription fields are initialized by
+  // /api/demo/seed. The browser never writes account authority for any demo.
 
   // 1.1 Secure Facilities Seeding (All Pro Tiers)
   if (isProTier && !isParentDemo && !isPlayerDemo) {
@@ -722,6 +734,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             createdBy: userId,
             creatorId: userId,
             memberTeamIds: [strikerId, lakerId, 'hawks_id', 'tigers_id', 'eagles_id'],
+            memberUserIds: [userId],
             isDemo: true,
             status: 'active',
             teams: {
@@ -824,6 +837,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                     hasLogin: true,
                     createdAt: now,
                     joinedTeamIds: [v.id],
+                    primaryTeamId: v.id,
+                    updatedByTeamId: v.id,
                     ageGroup: 'Adult',
                     avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=guestplayer`,
                     sports: ['Basketball'],
@@ -880,7 +895,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             dateOfBirth: juniorDob, isDemo: true,
             demoOwnerUserId: userId,
             hasLogin: false, createdAt: now, joinedTeamIds: [strikerId], ageGroup: 'U10', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=junior',
-            sports: ['Basketball'], primaryPosition: 'Point Guard'
+            sports: ['Basketball'], primaryPosition: 'Point Guard', primaryTeamId: strikerId, updatedByTeamId: strikerId
         }));
 
         const alexId = `c2_${userId}`;
@@ -891,13 +906,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             dateOfBirth: alexDob, isDemo: true,
             demoOwnerUserId: userId,
             hasLogin: true, pendingInviteEmail: alexEmail, createdAt: now, joinedTeamIds: [lakerId], ageGroup: 'U17', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=alex',
-            sports: ['Basketball', 'Soccer', 'Cross Country'], primaryPosition: 'Striker'
+            sports: ['Basketball', 'Soccer', 'Cross Country'], primaryPosition: 'Striker', primaryTeamId: lakerId, updatedByTeamId: lakerId
         }));
-
-        // Mock teen user
-        batch.set(doc(db, 'users', alexId), clean({
-            id: alexId, fullName: 'Alex Guest', email: alexEmail, role: 'youth_player', isDemo: true, demoOwnerUserId: userId, createdAt: now
-        }), { merge: true });
 
         // Link kids to teams as members
         // Junior -> Strikers
@@ -1087,6 +1097,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             createdBy: userId,
             creatorId: userId,
             memberTeamIds,
+            memberUserIds: [userId],
             isDemo: true,
             status: 'active',
             createdAt: now,
@@ -1153,11 +1164,11 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
     for (let i = 0; i < teamVariants.length; i++) {
         const variant = teamVariants[i];
-        let teamId = `demo_${planId}_${userId.slice(-4)}_${(variant || 'main').toLowerCase().replace(/\s+/g, '')}`;
-        let name = isSchoolDemo ? `Springfield ${variant}` : (variant ? `Elite Squad - ${variant}` : (isProTier ? 'Apex Demo Squad' : 'Grassroots Demo'));
+        const teamId = `demo_${planId}_${userId.slice(-4)}_${(variant || 'main').toLowerCase().replace(/\s+/g, '')}`;
+        const name = isSchoolDemo ? `Springfield ${variant}` : (variant ? `Elite Squad - ${variant}` : (isProTier ? 'Apex Demo Squad' : 'Grassroots Demo'));
         // All school variants are squads — the institution is a separate record created above
-        let teamType = isSchoolDemo ? 'school_squad' : 'youth';
-        let schoolId = isSchoolDemo ? `demo_${planId}_${userId.slice(-4)}_institution` : undefined;
+        const teamType = isSchoolDemo ? 'school_squad' : 'youth';
+        const schoolId = isSchoolDemo ? `demo_${planId}_${userId.slice(-4)}_institution` : undefined;
 
 
         const uniqueCode = (h => Math.abs(h).toString(36).toUpperCase().padStart(8,'0'))(teamId.split('').reduce((h,c)=>(Math.imul(31,h)+c.charCodeAt(0))|0,0));
@@ -1210,12 +1221,17 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                     hasLogin: false,
                     createdAt: now,
                     joinedTeamIds: [teamId],
+                    primaryTeamId: teamId,
+                    updatedByTeamId: teamId,
                     avatar: m.avatar,
                     school: (m as any).school,
                     gradYear: (m as any).gradYear,
                     gpa: (m as any).gpa,
                     primaryPosition: m.position,
-                    sports: [isSchoolDemo ? 'Basketball' : 'Multi-Sport']
+                    sports: [isSchoolDemo ? 'Basketball' : 'Multi-Sport'],
+                    // Keep recruiting private by default. Alex is the single
+                    // deterministic public demo used to exercise the scout portal.
+                    recruitingProfileEnabled: m.name === 'Alex Rivera'
                 }));
 
                 // Add recruiting content to one of the main players to showcase recruiting portal
@@ -1231,7 +1247,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                         type: 'Highlight',
                         createdAt: yesterday,
                         isPublic: true,
-                        isDemo: true
+                        isDemo: true,
+                        updatedByTeamId: teamId,
                       },
                     });
                 }
@@ -1367,5 +1384,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       await eliteBatch.flush();
     }
 
-    return `demo_${planId}_${userId.slice(-4)}`;
+    if (isLeagueDemo) return '';
+    const primaryVariant = teamVariants[0] || 'main';
+    return `demo_${planId}_${userId.slice(-4)}_${primaryVariant.toLowerCase().replace(/\s+/g, '')}`;
 }

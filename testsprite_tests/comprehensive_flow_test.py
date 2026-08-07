@@ -1,6 +1,11 @@
 import asyncio
 from playwright.async_api import async_playwright
 
+try:
+    from testsprite_tests.e2e_config import BASE_URL, league_code, test_email, test_password
+except ModuleNotFoundError:
+    from e2e_config import BASE_URL, league_code, test_email, test_password
+
 async def run_comprehensive_test():
     print("🚀 Starting Comprehensive Flow Test...")
     pw = None
@@ -26,7 +31,7 @@ async def run_comprehensive_test():
 
         # Step 1: Open Home Page
         print("\n--- Step 1: Navigating to Home Page ---")
-        await page.goto("http://localhost:9002")
+        await page.goto(f"{BASE_URL}")
         await page.wait_for_timeout(4000)
         title = await page.title()
         print(f"Page Title: {title}")
@@ -35,7 +40,7 @@ async def run_comprehensive_test():
 
         # Step 2: Open Login Page
         print("\n--- Step 2: Navigating to Login Page ---")
-        await page.goto("http://localhost:9002/login")
+        await page.goto(f"{BASE_URL}/login")
         await page.wait_for_timeout(3000)
         
         # Verify inputs exist
@@ -48,8 +53,8 @@ async def run_comprehensive_test():
 
         # Step 3: Perform Login
         print("\n--- Step 3: Logging In with Test Coach credentials ---")
-        await page.fill("#email", "example@gmail.com")
-        await page.fill("#password", "password123")
+        await page.fill("#email", test_email())
+        await page.fill("#password", test_password())
         
         # Click submit button
         submit_btn = page.locator("button:has-text('Verify Identity')")
@@ -71,7 +76,7 @@ async def run_comprehensive_test():
 
         # Step 5: Verify Schedule/Events Flow
         print("\n--- Step 5: Verifying Schedule Hub ---")
-        await page.goto("http://localhost:9002/events")
+        await page.goto(f"{BASE_URL}/events")
         await page.wait_for_timeout(4000)
         events_text = (await page.locator("body").inner_text()).lower()
         assert "schedule" in events_text or "itinerary" in events_text or "events" in events_text, "Events/Schedule page load failed"
@@ -79,7 +84,7 @@ async def run_comprehensive_test():
 
         # Step 6: Verify Playbook/Drills Flow
         print("\n--- Step 6: Verifying Playbook & Drills ---")
-        await page.goto("http://localhost:9002/drills")
+        await page.goto(f"{BASE_URL}/drills")
         await page.wait_for_timeout(4000)
         drills_text = (await page.locator("body").inner_text()).lower()
         assert "playbook" in drills_text or "drill" in drills_text, "Playbook/Drills page load failed"
@@ -87,7 +92,7 @@ async def run_comprehensive_test():
 
         # Step 7: Verify Roster Flow
         print("\n--- Step 7: Verifying Roster ---")
-        await page.goto("http://localhost:9002/roster")
+        await page.goto(f"{BASE_URL}/roster")
         await page.wait_for_timeout(4000)
         roster_text = (await page.locator("body").inner_text()).lower()
         assert "roster" in roster_text or "members" in roster_text or "player" in roster_text, "Roster page load failed"
@@ -95,7 +100,7 @@ async def run_comprehensive_test():
 
         # Step 8: Verify Leagues Flow
         print("\n--- Step 8: Verifying Leagues & Competition ---")
-        await page.goto("http://localhost:9002/leagues")
+        await page.goto(f"{BASE_URL}/leagues")
         await page.wait_for_timeout(4000)
         leagues_text = (await page.locator("body").inner_text()).lower()
         assert "league" in leagues_text or "standings" in leagues_text or "competition" in leagues_text, "Leagues page load failed"
@@ -103,7 +108,7 @@ async def run_comprehensive_test():
 
         # Step 9: Verify Tournaments Flow
         print("\n--- Step 9: Verifying Tournaments ---")
-        await page.goto("http://localhost:9002/tournaments")
+        await page.goto(f"{BASE_URL}/tournaments")
         # Allow enough time for redirect and client-side guard checks
         await page.wait_for_timeout(6000)
         print(f"Tournaments page URL after redirect: {page.url}")
@@ -114,7 +119,7 @@ async def run_comprehensive_test():
 
         # Step 10: Verify Family Hub Flow (Parent Perspective)
         print("\n--- Step 10: Verifying Family Hub ---")
-        await page.goto("http://localhost:9002/family")
+        await page.goto(f"{BASE_URL}/family")
         await page.wait_for_timeout(4000)
         family_text = (await page.locator("body").inner_text()).lower()
         assert "family" in family_text or "children" in family_text or "guardian" in family_text or "household" in family_text, "Family page load failed"

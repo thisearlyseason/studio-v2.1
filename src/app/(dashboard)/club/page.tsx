@@ -79,7 +79,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collectionGroup, query, where, orderBy, collection, getDocs, limit, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collectionGroup, query, where, collection, getDocs, limit, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IncidentDetailDialog } from '@/app/(dashboard)/coaches-corner/incident-detail-dialog';
 import { format, parseISO } from 'date-fns';
@@ -136,9 +136,19 @@ function TeamComplianceCard({ teams, clubDocs }: { teams: Team[], clubDocs: Team
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function ClubManagementPage() {
+  const { isPrimaryClubAuthority, isSchoolMode } = useTeam();
+
+  if (!isPrimaryClubAuthority) {
+    return <AccessRestricted type="role" title={isSchoolMode ? "School Hub Locked" : "Club Hub Locked"} description={isSchoolMode ? "This command center is reserved for School Hub Administrators." : "This command center is reserved for Institutional Stakeholders and Club Hub Administrators."} />;
+  }
+
+  return <AuthorizedClubManagementPage />;
+}
+
+function AuthorizedClubManagementPage() {
   const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, updateTeam, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, reinstateMember, isEliteAccount } = useTeam();
   const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
-  
+
   const router = useRouter();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -171,60 +181,93 @@ export default function ClubManagementPage() {
   };
 
 
+  // Membership records intentionally contain only a subset of team fields. Hub
+  // totals must use the authoritative team documents or ownership/school links
+  // can be missing and the dashboard will count only the currently active team.
+  const [resolvedTeams, setResolvedTeams] = useState<Team[]>([]);
+  const [isHubDataLoading, setIsHubDataLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveHubTeams = async () => {
+      if (!db || teams.length === 0) {
+        if (!cancelled) {
+          setResolvedTeams(teams);
+          setIsHubDataLoading(false);
+        }
+        return;
+      }
+
+      setIsHubDataLoading(true);
+      const authoritative = await Promise.all(teams.map(async membership => {
+        try {
+          const snapshot = await getDoc(doc(db, 'teams', membership.id));
+          return snapshot.exists()
+            ? ({ ...membership, ...snapshot.data(), id: snapshot.id } as Team)
+            : membership;
+        } catch {
+          // Preserve the accessible membership record if a legacy document
+          // cannot be resolved; never expand beyond the user's membership list.
+          return membership;
+        }
+      }));
+
+      if (!cancelled) {
+        setResolvedTeams(authoritative);
+        setIsHubDataLoading(false);
+      }
+    };
+
+    resolveHubTeams();
+    return () => { cancelled = true; };
+  }, [db, teams]);
+
   const schoolHub = useMemo(() => {
-    const explicit = teams.find(t => t.type === 'school' || t.type === 'school_hub');
+    const explicit = resolvedTeams.find(t => t.type === 'school' || t.type === 'school_hub');
     if (explicit) return explicit;
     
     // If no explicit hub but user is on school plan, treat their primary owned team as the hub
     if (isSchoolMode) {
-      return teams.find(t => t.ownerUserId === user?.id && t.isPro) || teams[0] || null;
+      return resolvedTeams.find(t => t.ownerUserId === user?.id && t.isPro) || resolvedTeams[0] || null;
     }
     // For elite multi-team organizers, treat their primary owned Pro team as the hub
     if (isEliteAccount && isPrimaryClubAuthority) {
-      return teams.find(t => t.ownerUserId === user?.id && t.isPro) || null;
+      return resolvedTeams.find(t => t.ownerUserId === user?.id && t.isPro) || resolvedTeams[0] || null;
     }
     return null;
-  }, [teams, isSchoolMode, isEliteAccount, isPrimaryClubAuthority, user?.id]);
+  }, [resolvedTeams, isSchoolMode, isEliteAccount, isPrimaryClubAuthority, user?.id]);
 
-  // School Logic: Get sub-squads relative to the identified hub
+  // One canonical organization-scoped squad set powers every hub statistic.
+  // The provider's membership list is already access-scoped; resolving the
+  // underlying documents supplies the fields needed for correct aggregation.
   const schoolSquads = useMemo(() => {
-    if (!schoolHub) return [];
-    return teams.filter(t => {
-      if (t.id === schoolHub.id) return false;
-      // School: squads linked via schoolId
-      if (t.schoolId === schoolHub.id) return true;
-      // School fallback or Elite: all other teams owned by same user
-      if ((isSchoolMode || isEliteAccount) && t.ownerUserId === user?.id) return true;
-      return false;
-    });
-  }, [schoolHub, teams, isSchoolMode, isEliteAccount, user?.id]);
+    if (isSchoolMode) {
+      // A school institution document is a container, not a squad.
+      return resolvedTeams.filter(t => t.type !== 'school' && t.type !== 'school_hub');
+    }
+    // Elite/club hubs have no synthetic team container: every accessible row
+    // shown under "Sub-Squads" is a real squad and must be counted.
+    return resolvedTeams.filter(t => t.type !== 'school' && t.type !== 'school_hub');
+  }, [resolvedTeams, isSchoolMode]);
 
   const clubTeams = useMemo(() => {
-    if (schoolHub) {
-        const all = [schoolHub, ...schoolSquads];
-        // Ensure unique by ID
-        return Array.from(new Map(all.map(t => [t.id, t])).values());
-    }
-    return teams.filter(t => t.ownerUserId === user?.id && t.isPro);
-  }, [teams, user?.id, schoolHub, schoolSquads]);
+    return Array.from(new Map(schoolSquads.map(t => [t.id, t])).values());
+  }, [schoolSquads]);
   const clubTeamIds = useMemo(() => clubTeams.map(t => t.id), [clubTeams]);
-
-  // Get all school team IDs for querying members directly
-  const schoolTeamIds = useMemo(() => {
-    if (!schoolHub) return [];
-    const allTeams = [schoolHub, ...schoolSquads];
-    return allTeams.map(t => t.id);
-  }, [schoolHub, schoolSquads]);
 
   // Fetch members from ALL squad sub-collections independently so we don't
   // rely on a collectionGroup+in composite index (which causes partial results).
   const [allRawMembers, setAllRawMembers] = useState<Member[]>([]);
 
   const fetchAllSquadMembers = useCallback(async () => {
-    if (!db || teams.length === 0) return;
+    if (!db || clubTeams.length === 0) {
+      setAllRawMembers([]);
+      return;
+    }
     try {
       const results: Member[] = [];
-      for (const team of teams) {
+      for (const team of clubTeams) {
         const snap = await getDocs(collection(db, 'teams', team.id, 'members'));
         snap.forEach(d => results.push({ id: d.id, ...d.data() } as Member));
       }
@@ -232,7 +275,7 @@ export default function ClubManagementPage() {
     } catch (e) {
       console.warn('Failed to fetch squad members:', e);
     }
-  }, [db, teams]);
+  }, [db, clubTeams]);
 
   // Hub Broadcast Channel state
   const [hubChannel, setHubChannel] = useState<{ id: string; name: string; memberIds: string[] } | null>(null);
@@ -247,7 +290,7 @@ export default function ClubManagementPage() {
     // Determine candidate teams to search
     const candidateTeamId = schoolHub?.id;
     const candidateTeams = isEliteAccount
-      ? teams.filter(t => t.ownerUserId === user?.id && t.isPro).map(t => t.id)
+      ? clubTeams.map(t => t.id)
       : candidateTeamId ? [candidateTeamId] : [];
     if (candidateTeams.length === 0) return;
 
@@ -272,13 +315,13 @@ export default function ClubManagementPage() {
       }
     };
     fetchHubChannel();
-  }, [db, schoolHub?.id, isEliteAccount, teams, user?.id]);
+  }, [db, schoolHub?.id, isEliteAccount, clubTeams]);
 
   // The team that actually holds the hub channel (may differ from schoolHub for elite)
   const hubTeam = useMemo(() => {
-    if (hubChannelTeamId) return teams.find(t => t.id === hubChannelTeamId) || schoolHub;
+    if (hubChannelTeamId) return resolvedTeams.find(t => t.id === hubChannelTeamId) || schoolHub;
     return schoolHub;
-  }, [hubChannelTeamId, teams, schoolHub]);
+  }, [hubChannelTeamId, resolvedTeams, schoolHub]);
 
   const handleCreateHubChannel = async () => {
     // For elite, use the first owned Pro team as hub. For school, use the institution.
@@ -308,7 +351,7 @@ export default function ClubManagementPage() {
         if (isStaff) {
           memberUserIds.add(m.userId);
           if (!staffMetadata[m.userId]) {
-            const squadName = teams.find(t => t.id === m.teamId)?.name || teams.find(t => t.id === m.teamId)?.teamName || '';
+            const squadName = clubTeams.find(t => t.id === m.teamId)?.name || clubTeams.find(t => t.id === m.teamId)?.teamName || '';
             staffMetadata[m.userId] = {
               name: m.name || m.userId,
               position: m.position || role,
@@ -346,15 +389,9 @@ export default function ClubManagementPage() {
 
   // Aggregate all members from all school teams
   const clubMembers = useMemo(() => {
-    if (!allRawMembers && !schoolHub) return [];
+    const squadIds = new Set(clubTeamIds);
     
-    // In school mode, we want members who belong to any of our identified squads or the hub
-    const hubId = schoolHub?.id;
-    const squadIds = new Set(teams.map(t => t.id)); // Use ALL current teams the user can see
-    
-    const validMembers = (allRawMembers || []).filter(m => 
-      squadIds.has(m.teamId) || m.schoolId === hubId || m.teamId === hubId
-    );
+    const validMembers = (allRawMembers || []).filter(m => squadIds.has(m.teamId));
     
     // Deduplicate by userId first, fallback to id for placeholders
     const uniqueMap = new Map<string, Member>();
@@ -365,7 +402,7 @@ export default function ClubManagementPage() {
       }
     });
     return Array.from(uniqueMap.values());
-  }, [allRawMembers, schoolHub, teams]);
+  }, [allRawMembers, clubTeamIds]);
 
 
 
@@ -408,10 +445,32 @@ export default function ClubManagementPage() {
     return coaches;
   }, [allRawMembers, user]);
 
-  const incidentsQueryOwner = schoolHub ? schoolHub.ownerUserId : user?.id;
-  const incidentsQuery = useMemoFirebase(() => (db && incidentsQueryOwner) ? query(collectionGroup(db, 'incidents'), where('ownerUserId', '==', incidentsQueryOwner), orderBy('createdAt', 'desc')) : null, [db, incidentsQueryOwner]);
-  const { data: allIncidentsRaw } = useCollection<TeamIncident>(incidentsQuery);
-  const clubIncidents = useMemo(() => (allIncidentsRaw || []), [allIncidentsRaw]);
+  const [clubIncidents, setClubIncidents] = useState<TeamIncident[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchClubIncidents = async () => {
+      if (!db || clubTeamIds.length === 0) {
+        if (!cancelled) setClubIncidents([]);
+        return;
+      }
+      try {
+        const snapshots = await Promise.all(
+          clubTeamIds.map(teamId => getDocs(collection(db, 'teams', teamId, 'incidents')))
+        );
+        const incidents = snapshots.flatMap(snapshot =>
+          snapshot.docs.map(incident => ({ id: incident.id, ...incident.data() } as TeamIncident))
+        );
+        const unique = Array.from(new Map(incidents.map(incident => [`${incident.teamId || ''}:${incident.id}`, incident])).values());
+        unique.sort((a: any, b: any) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+        if (!cancelled) setClubIncidents(unique);
+      } catch (error) {
+        console.warn('Failed to fetch hub incidents:', error);
+        if (!cancelled) setClubIncidents([]);
+      }
+    };
+    fetchClubIncidents();
+    return () => { cancelled = true; };
+  }, [db, clubTeamIds]);
 
   const stats = useMemo(() => {
     let owed = 0, total = 0, cleared = 0;
@@ -882,7 +941,9 @@ export default function ClubManagementPage() {
       <div className="grid grid-cols-2 gap-3 md:gap-5">
         <Card className="rounded-[1.5rem] md:rounded-[2rem] border-none shadow-md bg-primary text-white p-4 md:p-6 space-y-1">
           <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Total Squads</p>
-          <p className="text-3xl md:text-4xl font-black">{clubTeams.length}</p>
+          <p className="text-3xl md:text-4xl font-black" aria-live="polite">
+            {isHubDataLoading ? <Loader2 className="h-7 w-7 animate-spin" aria-label="Loading squad total" /> : clubTeams.length}
+          </p>
         </Card>
         <Card className="rounded-[1.5rem] md:rounded-[2rem] border-none shadow-md bg-black text-white p-4 md:p-6 space-y-2">
           <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Fiscal Pulse</p>
@@ -1749,6 +1810,7 @@ export default function ClubManagementPage() {
             hubTeamId={schoolHub.id}
             subSquads={schoolSquads.map(s => ({ id: s.id, name: s.name }))}
             isSchoolMode={isSchoolMode}
+            isDemo={user.isDemo === true}
           />
         </div>
       )}

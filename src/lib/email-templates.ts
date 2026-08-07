@@ -1,3 +1,5 @@
+import { escapeHtml } from '@/lib/html-escape';
+
 /**
  * Email Templates — The Squad Pro
  * Pure HTML strings (no JSX deps) for maximum compatibility with Resend.
@@ -53,37 +55,36 @@ function btn(text: string, url: string): string {
 
 function field(label: string, value: string): string {
   return `<tr>
-    <td style="padding:10px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.15em;color:#71717a;width:40%;">${label}</td>
-    <td style="padding:10px 16px;font-size:13px;font-weight:700;color:#18181b;">${value}</td>
+    <td style="padding:10px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.15em;color:#71717a;width:40%;">${escapeHtml(label)}</td>
+    <td style="padding:10px 16px;font-size:13px;font-weight:700;color:#18181b;">${escapeHtml(value)}</td>
   </tr>`;
 }
 
 // ── Template 1: Welcome / Beta Approved ─────────────────────────────────────
-export function welcomeEmail({ name, email, password, planType }: {
+export function welcomeEmail({ name, email, resetLink, planType }: {
   name: string;
   email: string;
-  password: string;
+  resetLink: string;
   planType: string;
 }): { subject: string; html: string } {
   const planLabel = planType === 'elite' ? 'Elite Club' : planType === 'school' ? 'School Hub' : planType === 'team' ? 'Pro Team' : 'Beta';
   return {
     subject: `Welcome to ${BRAND_NAME} — Your account is ready`,
     html: layout('Your Account is Ready', `
-      <p style="margin:0 0 8px;font-size:22px;font-weight:900;color:#18181b;">Welcome, ${name}! 🎉</p>
+      <p style="margin:0 0 8px;font-size:22px;font-weight:900;color:#18181b;">Welcome, ${escapeHtml(name)}! 🎉</p>
       <p style="margin:0 0 28px;font-size:15px;color:#52525b;line-height:1.6;">
-        Your <strong>${planLabel}</strong> beta access has been approved. Here are your login credentials:
+        Your <strong>${escapeHtml(planLabel)}</strong> beta access has been approved. Set your private password to activate the account:
       </p>
 
       <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;border-radius:16px;overflow:hidden;margin-bottom:28px;">
         <tbody>
           ${field('Email', email)}
-          ${field('Password', `<code style="font-family:monospace;background:#e4e4e7;padding:3px 8px;border-radius:6px;">${password}</code>`)}
           ${field('Plan', planLabel)}
         </tbody>
       </table>
 
-      <p style="margin:0 0 4px;font-size:12px;color:#a1a1aa;text-align:center;">Log in and change your password immediately.</p>
-      ${btn('Log In to The Squad Pro', `${BASE_URL}/login`)}
+      <p style="margin:0 0 4px;font-size:12px;color:#a1a1aa;text-align:center;">This secure setup link expires automatically.</p>
+      ${btn('Set Your Password', resetLink)}
 
       <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.7;">
         Need help getting started? Check out the <a href="${BASE_URL}/how-to" style="color:${BRAND_COLOR};font-weight:700;">User Manual</a> or reply to this email — we're here.
@@ -112,7 +113,33 @@ export function passwordResetEmail({ email, resetLink }: {
   };
 }
 
-// ── Template 3: New Event / Game Notification ────────────────────────────────
+// ── Template 3: Email Verification ──────────────────────────────────────────
+export function verificationEmail({ name, email, verificationLink }: {
+  name?: string;
+  email: string;
+  verificationLink: string;
+}): { subject: string; html: string } {
+  const greeting = name?.trim() ? `Hi ${escapeHtml(name.trim())},` : 'Welcome to The Squad Pro,';
+  return {
+    subject: `Verify your ${BRAND_NAME} email`,
+    html: layout('Verify Your Email', `
+      <p style="margin:0 0 10px;font-size:20px;font-weight:900;color:#18181b;">${greeting}</p>
+      <p style="margin:0 0 24px;font-size:15px;color:#52525b;line-height:1.65;">
+        Confirm <strong>${escapeHtml(email)}</strong> to activate your account and securely open your team or league workspace.
+      </p>
+      <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:16px;padding:18px 20px;margin:0 0 8px;">
+        <p style="margin:0;color:#6d28d9;font-size:11px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;">Secure account activation</p>
+        <p style="margin:8px 0 0;color:#52525b;font-size:13px;line-height:1.55;">This one-time link verifies your address. The Squad Pro will never ask you to send a password by email.</p>
+      </div>
+      ${btn('Verify My Email', verificationLink)}
+      <p style="margin:0;font-size:12px;color:#71717a;text-align:center;line-height:1.6;">
+        If you didn't create this account, you can safely ignore this message.
+      </p>
+    `),
+  };
+}
+
+// ── Template 4: New Event / Game Notification ────────────────────────────────
 export function eventNotificationEmail({ recipientName, teamName, eventTitle, eventDate, eventTime, location, eventType }: {
   recipientName: string;
   teamName: string;

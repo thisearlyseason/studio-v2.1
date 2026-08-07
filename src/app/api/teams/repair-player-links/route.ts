@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { FieldValue } from 'firebase-admin/firestore';
+import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import {
@@ -7,14 +7,21 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
-import {
-  isRepairableAthlete,
-  isValidRepairId,
-  playerIdentityForMember,
-  playerNamesFromMember,
-} from '@/lib/player-link-repair';
 
+const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const MAX_REPAIRS_PER_REQUEST = 200;
+const NON_ATHLETE_POSITIONS = new Set(['coach', 'head coach', 'assistant coach', 'manager', 'squad leader', 'athletic director', 'staff']);
+
+function identityForMember(teamId: string, memberId: string, member: FirebaseFirestore.DocumentData) {
+  const userId = typeof member.userId === 'string' && ID_PATTERN.test(member.userId) ? member.userId : '';
+  return userId ? `p_${userId}` : `legacy_${teamId}_${memberId}`;
+}
+
+function namesFromMember(member: FirebaseFirestore.DocumentData) {
+  const name = typeof member.name === 'string' ? member.name.trim() : '';
+  const [firstName = 'Athlete', ...lastName] = name.split(/\s+/).filter(Boolean);
+  return { firstName, lastName: lastName.join(' ') };
+}
 
 const STAFF_POSITIONS = new Set(['coach', 'head coach', 'assistant coach', 'manager', 'squad leader', 'athletic director', 'staff']);
 
@@ -43,8 +50,8 @@ export async function POST(req: NextRequest) {
     if (limited) return limited;
 
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
-    const teamId = isValidRepairId(body.teamId) ? body.teamId : '';
-    const memberId = isValidRepairId(body.memberId) ? body.memberId : null;
+    const teamId = typeof body.teamId === 'string' && ID_PATTERN.test(body.teamId) ? body.teamId : '';
+    const memberId = typeof body.memberId === 'string' && ID_PATTERN.test(body.memberId) ? body.memberId : null;
     if (!teamId) return NextResponse.json({ error: 'Invalid squad.' }, { status: 400 });
 
     const teamRef = await hasRepairAuthority(teamId, auth.uid, auth.role);
@@ -60,7 +67,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Squad has too many members to repair at once.' }, { status: 400 });
     }
 
-    const eligible = members.filter(snapshot => snapshot.exists && isRepairableAthlete(snapshot.data()));
+    const eligible = members.filter(snapshot => {
+      const member = snapshot.data();
+      return snapshot.exists && member?.status !== 'removed' && member?.isDeleted !== true && !member?.playerId && !NON_ATHLETE_POSITIONS.has(String(member?.position || '').trim().toLowerCase());
+    });
     if (memberId && !members[0]?.exists) return NextResponse.json({ error: 'Roster member not found.' }, { status: 404 });
 
     const now = new Date().toISOString();
@@ -68,10 +78,10 @@ export async function POST(req: NextRequest) {
     const repairs: { memberId: string; playerId: string; created: boolean }[] = [];
     for (const memberSnapshot of eligible) {
       const member = memberSnapshot.data() || {};
-      const playerId = playerIdentityForMember(teamId, memberSnapshot.id, member);
+      const playerId = identityForMember(teamId, memberSnapshot.id, member);
       const playerRef = adminDb.collection('players').doc(playerId);
       const playerSnapshot = await playerRef.get();
-      const { firstName, lastName } = playerNamesFromMember(member);
+      const { firstName, lastName } = namesFromMember(member);
       if (!playerSnapshot.exists) {
         batch.create(playerRef, {
           id: playerId,
@@ -87,7 +97,7 @@ export async function POST(req: NextRequest) {
         });
       } else {
         batch.set(playerRef, {
-          joinedTeamIds: FieldValue.arrayUnion(teamId),
+          joinedTeamIds: admin.firestore.FieldValue.arrayUnion(teamId),
           updatedAt: now,
         }, { merge: true });
       }

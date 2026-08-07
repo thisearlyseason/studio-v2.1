@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useParams } from 'next/navigation';
 import { VolunteerOpportunity } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -24,15 +24,36 @@ import {
 import BrandLogo from '@/components/BrandLogo';
 import { format } from 'date-fns';
 import { toast } from '@/hooks/use-toast';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { useEffect, useRef } from 'react';
 
 function VolunteerSignupForm() {
   const { teamId, oppId } = useParams();
   const [opp, setOpp] = useState<VolunteerOpportunity | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
+  const [loadError, setLoadError] = useState('');
+  const [formData, setFormData] = useState({ name: '', email: '', phone: '', relationship: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const submissionKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/public/volunteer?teamId=${encodeURIComponent(teamId as string)}&oppId=${encodeURIComponent(oppId as string)}`, {
+      signal: controller.signal,
+    })
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Opportunity unavailable.');
+        setOpp(payload.opportunity);
+        setLoadError('');
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError') setLoadError(error.message || 'Opportunity unavailable.');
+      })
+      .finally(() => setIsLoading(false));
+    return () => controller.abort();
+  }, [teamId, oppId]);
 
   useEffect(() => {
     if (!teamId || !oppId) return;
@@ -50,29 +71,32 @@ function VolunteerSignupForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || isSubmitting) return;
+    if (!formData.name || !formData.email || !formData.phone || !formData.relationship || isSubmitting) return;
 
     setIsSubmitting(true);
     try {
-      const response = await fetch('/api/public/volunteer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamId, opportunityId: oppId, ...formData }),
-      });
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-        throw new Error(result.error || 'Unable to register.');
-      }
+      if (!submissionKey.current) submissionKey.current = crypto.randomUUID();
+      const response = await fetch(
+        `/api/public/volunteer?teamId=${encodeURIComponent(teamId as string)}&oppId=${encodeURIComponent(oppId as string)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': submissionKey.current },
+          body: JSON.stringify(formData),
+        }
+      );
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to submit your request.');
+      submissionKey.current = null;
       setIsSuccess(true);
     } catch (err: any) {
-      toast({ title: "Submission Failed", description: err.message, variant: "destructive" });
+      toast({ title: "Submission Failed", description: err.message || 'Please try again.', variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-  if (!opp) return <div className="min-h-screen flex items-center justify-center p-6"><Card className="max-w-md text-center p-10"><AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" /><h2 className="text-2xl font-black uppercase">Opportunity Not Found</h2></Card></div>;
+  if (!opp) return <div className="min-h-screen flex items-center justify-center p-6"><Card className="max-w-md text-center p-10"><AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" /><h2 className="text-2xl font-black uppercase">Opportunity Not Found</h2><p className="mt-3 text-sm text-muted-foreground">{loadError}</p></Card></div>;
 
   if (isSuccess) {
     return (
@@ -190,13 +214,33 @@ function VolunteerSignupForm() {
                   />
                 </div>
               </div>
+              <div className="space-y-3">
+                <Label className="text-[10px] font-black uppercase ml-1">Your Connection</Label>
+                <RadioGroup
+                  value={formData.relationship}
+                  onValueChange={relationship => setFormData({ ...formData, relationship })}
+                  className="grid grid-cols-2 gap-3"
+                >
+                  {[
+                    ['parent', 'Parent'],
+                    ['family_member', 'Family Member'],
+                    ['friend', 'Friend'],
+                    ['other', 'Other'],
+                  ].map(([value, label]) => (
+                    <Label key={value} htmlFor={`relationship-${value}`} className="flex items-center gap-3 rounded-xl border-2 p-4 cursor-pointer">
+                      <RadioGroupItem id={`relationship-${value}`} value={value} />
+                      <span className="text-xs font-black uppercase">{label}</span>
+                    </Label>
+                  ))}
+                </RadioGroup>
+              </div>
             </CardContent>
 
             <CardFooter className="p-8 lg:p-10 pt-0">
               <Button 
                 type="submit" 
                 className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all"
-                disabled={isSubmitting || !formData.name}
+                disabled={isSubmitting || !formData.name || !formData.email || !formData.phone || !formData.relationship}
               >
                 {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit to Assignment"}
               </Button>

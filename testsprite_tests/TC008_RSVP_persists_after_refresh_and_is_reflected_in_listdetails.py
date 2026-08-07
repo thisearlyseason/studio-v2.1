@@ -2,6 +2,11 @@ import asyncio
 from playwright import async_api
 from playwright.async_api import expect
 
+try:
+    from testsprite_tests.e2e_config import BASE_URL, league_code, test_email, test_password
+except ModuleNotFoundError:
+    from e2e_config import BASE_URL, league_code, test_email, test_password
+
 async def run_test():
     pw = None
     browser = None
@@ -30,8 +35,8 @@ async def run_test():
         page = await context.new_page()
 
         # Interact with the page elements to simulate user flow
-        # -> Navigate to http://localhost:9002
-        await page.goto("http://localhost:9002")
+        # -> Navigate to $E2E_BASE_URL
+        await page.goto(f"{BASE_URL}")
         
         # -> Open the login form by clicking the 'Log In' button so we can sign in and proceed to events.
         frame = context.pages[-1]
@@ -46,18 +51,18 @@ async def run_test():
         await asyncio.sleep(3); await elem.click()
         
         # -> Navigate directly to /login to reach the login form (explicit navigation allowed by test steps).
-        await page.goto("http://localhost:9002/login")
+        await page.goto(f"{BASE_URL}/login")
         
         # -> Fill the email and password fields and submit the login form to sign in.
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[5]/div/form/div/div/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('tester_k995dt@example.com')
+        await asyncio.sleep(3); await elem.fill(test_email())
         
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[5]/div/form/div/div[2]/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('password123')
+        await asyncio.sleep(3); await elem.fill(test_password())
         
         frame = context.pages[-1]
         # Click element
@@ -65,18 +70,18 @@ async def run_test():
         await asyncio.sleep(3); await elem.click()
         
         # -> Submit the login form (send Enter) and then reach the events list (navigate to /events if the SPA doesn't redirect).
-        await page.goto("http://localhost:9002/events")
+        await page.goto(f"{BASE_URL}/events")
         
         # -> Fill the email and password fields and submit the login form to sign in, then proceed to the events list.
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[5]/div/form/div/div/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('tester_k995dt@example.com')
+        await asyncio.sleep(3); await elem.fill(test_email())
         
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[5]/div/form/div/div[2]/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('password123')
+        await asyncio.sleep(3); await elem.fill(test_password())
         
         frame = context.pages[-1]
         # Click element
@@ -108,10 +113,10 @@ async def run_test():
         await asyncio.sleep(3); await elem.click()
         
         # -> Try navigating directly to /events to see if the events list is accessible as a guest or whether the app blocks access when not authenticated. If events load, open an event and attempt the RSVP persistence flow; if access is blocked, report the feature as unreachable/blocked.
-        await page.goto("http://localhost:9002/events")
+        await page.goto(f"{BASE_URL}/events")
         
         # -> Load the events list page as a guest by navigating to /events so we can try the RSVP persistence flow (or detect that authentication is required).
-        await page.goto("http://localhost:9002/events")
+        await page.goto(f"{BASE_URL}/events")
         
         # -> Enter the guest/demo flow by clicking the 'Starter Plan Demo' button so we can access the events list as an alternative to logging in.
         frame = context.pages[-1]
@@ -119,8 +124,8 @@ async def run_test():
         elem = frame.locator('xpath=/html/body/div[2]/div[5]/div[2]/div[2]/button').nth(0)
         await asyncio.sleep(3); await elem.click()
         
-        # -> Navigate to the events list as a guest (http://localhost:9002/events). If navigation is blocked or the page stays on a loading/sync spinner, re-evaluate and report blocked/unavailable.
-        await page.goto("http://localhost:9002/events")
+        # -> Navigate to the events list as a guest ($E2E_BASE_URL/events). If navigation is blocked or the page stays on a loading/sync spinner, re-evaluate and report blocked/unavailable.
+        await page.goto(f"{BASE_URL}/events")
         
         # -> Open the schedule in List view to reveal the events list by clicking the 'List' button.
         frame = context.pages[-1]

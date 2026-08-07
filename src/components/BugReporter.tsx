@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
+import { usePathname } from 'next/navigation';
 
 export default function BugReporter() {
+  const pathname = usePathname();
   const { user, isAuthResolved } = useUser();
   const db = useFirestore();
   const [isBetaTester, setIsBetaTester] = useState(false);
@@ -20,7 +22,7 @@ export default function BugReporter() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!isAuthResolved || !user || !db) return;
+    if (pathname !== '/' || !isAuthResolved || !user || !db) return;
 
     const checkBetaStatus = async () => {
       try {
@@ -34,9 +36,9 @@ export default function BugReporter() {
     };
 
     checkBetaStatus();
-  }, [user, isAuthResolved, db]);
+  }, [pathname, user, isAuthResolved, db]);
 
-  if (!isBetaTester) return null;
+  if (pathname !== '/' || !isBetaTester) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

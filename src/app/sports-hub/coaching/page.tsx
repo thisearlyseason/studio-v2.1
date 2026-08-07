@@ -6,15 +6,8 @@ import Link from 'next/link';
 import { GraduationCap, User, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CategoryPills } from '@/components/sports-hub/CategoryPills';
-import { ARTICLES_LIST } from '@/lib/sports-hub-articles';
-
-// Pull all coaching articles from the central DB
-const ALL_COACHING = ARTICLES_LIST.filter(
-  (a) =>
-    a.categories?.includes('Coaching') ||
-    (a as { section?: string }).section === 'Coaching' ||
-    (a as { section?: string }).section === 'coaching'
-);
+import type { Article } from '@/lib/sports-hub-articles';
+import { useSportsHubArticles } from '@/hooks/use-sports-hub-articles';
 
 // Derive subcategory pills from tags
 const SUB_CATEGORY_MAP: Record<string, string[]> = {
@@ -31,7 +24,7 @@ const SUB_CATEGORY_MAP: Record<string, string[]> = {
 
 const COACHING_CATEGORIES = ['All', ...Object.keys(SUB_CATEGORY_MAP)];
 
-function getSubCategory(article: typeof ARTICLES_LIST[0]): string {
+function getSubCategory(article: Article): string {
   const tagList = (article.tags || []).map((t: string) => t.toLowerCase());
   for (const [cat, keywords] of Object.entries(SUB_CATEGORY_MAP)) {
     if (keywords.some((kw) => tagList.some((t) => t.includes(kw)))) return cat;
@@ -46,15 +39,19 @@ const fadeUp = {
 
 export default function CoachingPage() {
   const [activeCategory, setActiveCategory] = useState('All');
+  const articles = useSportsHubArticles();
+  const allCoaching = useMemo(() => articles.filter(
+    article => article.categories?.includes('Coaching') || article.section === 'Coaching' || article.section === 'coaching'
+  ), [articles]);
 
   const filtered = useMemo(() => {
-    if (activeCategory === 'All') return ALL_COACHING;
+    if (activeCategory === 'All') return allCoaching;
     const keywords = SUB_CATEGORY_MAP[activeCategory] || [];
-    return ALL_COACHING.filter((a) => {
+    return allCoaching.filter((a) => {
       const tagList = (a.tags || []).map((t: string) => t.toLowerCase());
       return keywords.some((kw) => tagList.some((t) => t.includes(kw)));
     });
-  }, [activeCategory]);
+  }, [activeCategory, allCoaching]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-12">
@@ -72,7 +69,7 @@ export default function CoachingPage() {
           Leadership, motivation, practice planning, player development — everything you need to be a better coach.
         </p>
         <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mt-2">
-          <span className="text-primary">{ALL_COACHING.length}</span> Articles
+          <span className="text-primary">{allCoaching.length}</span> Articles
         </p>
       </motion.div>
 

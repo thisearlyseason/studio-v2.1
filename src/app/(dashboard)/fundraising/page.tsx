@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useTeam, FundraisingOpportunity, DonationEntry } from '@/components/providers/team-provider';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useAuth, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, doc, getDocs, increment, writeBatch } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -52,6 +52,8 @@ import { cn } from '@/lib/utils';
 import { format, isPast, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { Lock as LockIcon } from 'lucide-react';
 import { DatePicker } from "@/components/ui/date-picker";
+import { StripeConnectSetup } from '@/components/finance/StripeConnectSetup';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 
 // ── View All Donations Modal ─────────────────────────────────────────────────
 function ViewAllDonationsModal({ fund, isOpen, onOpenChange }: { 
@@ -249,6 +251,7 @@ function DonationAuditLedger({ fundId }: { fundId: string }) {
 export default function FundraisingPage() {
   const { activeTeam, user, isStaff, isParent, isPlayer, recordDonation, addFundraisingOpportunity, updateFundraisingOpportunity, deleteFundraisingOpportunity, isPro, purchasePro } = useTeam();
   const db = useFirestore();
+  const auth = useAuth();
   
   const [filterMode, setFilterMode] = useState<'active' | 'past'>('active');
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -260,6 +263,7 @@ export default function FundraisingPage() {
   const [viewAllFund, setViewAllFund] = useState<FundraisingOpportunity | null>(null);
   const [isViewAllOpen, setIsViewAllOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [stripeChargesEnabled, setStripeChargesEnabled] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   const [newFund, setNewFund] = useState({ 
@@ -269,7 +273,7 @@ export default function FundraisingPage() {
   const [isCommitOpen, setIsCommitOpen] = useState(false);
   const [selectedFundForCommit, setSelectedFundForCommit] = useState<FundraisingOpportunity | null>(null);
   const [commitData, setCommitData] = useState({ amount: '50', method: 'external' as 'external' | 'e-transfer' });
-  const [configMethod, setConfigMethod] = useState<'external' | 'e-transfer'>('external');
+  const [configMethod, setConfigMethod] = useState<'stripe' | 'e-transfer'>('stripe');
 
   const fundsQuery = useMemoFirebase(() => (activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'fundraising'), orderBy('deadline', 'asc')) : null, [activeTeam?.id, db]);
   const { data: rawCampaigns, isLoading } = useCollection<FundraisingOpportunity>(fundsQuery);
@@ -294,18 +298,72 @@ export default function FundraisingPage() {
   const isLimitReached = !isPro && activeCampaigns.length >= 2;
 
   const handleAddCampaign = async () => {
-    if (!newFund.title || !newFund.goal) return;
+    if (!newFund.title || !newFund.goal || !activeTeam?.id || !user?.id) return;
+    if (configMethod === 'stripe' && !stripeChargesEnabled) {
+      toast({
+        title: 'Connect Stripe First',
+        description: 'Complete the Stripe connection below before enabling online donations.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsProcessing(true);
-    await addFundraisingOpportunity({
-      ...newFund,
-      goalAmount: parseFloat(newFund.goal),
-      externalLink: configMethod === 'external' ? newFund.externalLink : '',
-      eTransferDetails: configMethod === 'e-transfer' ? newFund.eTransferDetails : ''
-    });
-    setIsAddOpen(false);
-    setIsProcessing(false);
-    setNewFund({ title: '', description: '', goal: '1000', deadline: '', isShareable: false, externalLink: '', eTransferDetails: '' });
-    toast({ title: "Campaign Strategy Launched" });
+    let createdCampaignId: string | undefined;
+    try {
+      const campaignId = await addFundraisingOpportunity({
+        ...newFund,
+        goalAmount: parseFloat(newFund.goal),
+        paymentMethod: configMethod,
+        externalLink: '',
+        eTransferDetails: configMethod === 'e-transfer' ? newFund.eTransferDetails : '',
+      });
+      if (!campaignId) throw new Error('Campaign could not be created.');
+      createdCampaignId = campaignId;
+
+      if (configMethod === 'stripe') {
+        const token = await getAuthToken(auth);
+        if (!token) throw new Error('Your sign-in expired. Sign in again and retry.');
+        const response = await fetch('/api/stripe/fundraising-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+          body: JSON.stringify({
+            userId: user.id,
+            teamId: activeTeam.id,
+            campaignId,
+            campaignTitle: newFund.title,
+            campaignDescription: newFund.description,
+            operationId: crypto.randomUUID(),
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(result.error || 'Stripe donation link could not be created.');
+        }
+      }
+
+      setIsAddOpen(false);
+      setNewFund({ title: '', description: '', goal: '1000', deadline: '', isShareable: false, externalLink: '', eTransferDetails: '' });
+      toast({
+        title: 'Campaign Strategy Launched',
+        description: configMethod === 'stripe'
+          ? 'Donations will route to the connected Stripe account and be verified automatically.'
+          : 'E-Transfer donations require manual verification.',
+      });
+    } catch (error: any) {
+      console.error('[Fundraising] Campaign creation failed:', error);
+      if (createdCampaignId) {
+        await deleteFundraisingOpportunity(createdCampaignId).catch(cleanupError => {
+          console.error('[Fundraising] Failed to roll back incomplete campaign:', cleanupError);
+        });
+      }
+      toast({
+        title: 'Campaign Setup Failed',
+        description: error?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleEditCampaign = async () => {
@@ -590,13 +648,13 @@ export default function FundraisingPage() {
               
               <div className="space-y-4 pt-4 border-t">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Configure Payment Protocol</Label>
-                <RadioGroup value={configMethod} onValueChange={(v: any) => setConfigMethod(v)} className="grid grid-cols-2 gap-4">
-                  <div className={cn("p-4 rounded-xl border-2 transition-all cursor-pointer", configMethod === 'external' ? "border-primary bg-primary/5 shadow-sm" : "border-muted")} onClick={() => setConfigMethod('external')}>
+                <RadioGroup value={configMethod} onValueChange={(v: 'stripe' | 'e-transfer') => setConfigMethod(v)} className="grid grid-cols-2 gap-4">
+                  <div className={cn("p-4 rounded-xl border-2 transition-all cursor-pointer", configMethod === 'stripe' ? "border-primary bg-primary/5 shadow-sm" : "border-muted")} onClick={() => setConfigMethod('stripe')}>
                     <div className="flex items-center gap-2 mb-1">
-                      <RadioGroupItem value="external" id="c_ext" />
-                      <Label htmlFor="c_ext" className="font-black text-[10px] uppercase cursor-pointer text-foreground">Digital Hub</Label>
+                      <RadioGroupItem value="stripe" id="c_stripe" />
+                      <Label htmlFor="c_stripe" className="font-black text-[10px] uppercase cursor-pointer text-foreground">Connected Stripe</Label>
                     </div>
-                    <p className="text-[8px] font-medium text-muted-foreground uppercase">External redirect</p>
+                    <p className="text-[8px] font-medium text-muted-foreground uppercase">Automatic verification</p>
                   </div>
                   <div className={cn("p-4 rounded-xl border-2 transition-all cursor-pointer", configMethod === 'e-transfer' ? "border-primary bg-primary/5 shadow-sm" : "border-muted")} onClick={() => setConfigMethod('e-transfer')}>
                     <div className="flex items-center gap-2 mb-1">
@@ -607,10 +665,16 @@ export default function FundraisingPage() {
                   </div>
                 </RadioGroup>
 
-                {configMethod === 'external' && (
-                  <div className="space-y-2 animate-in slide-in-from-top-2">
-                    <Label className="text-[10px] font-black uppercase ml-1 text-foreground">Digital Payment URL</Label>
-                    <Input placeholder="Stripe, PayPal, Venmo URL..." value={newFund.externalLink} onChange={e => setNewFund({...newFund, externalLink: e.target.value})} className="h-12 rounded-xl border-2 bg-muted/10 font-bold text-foreground" />
+                {configMethod === 'stripe' && activeTeam?.id && user?.id && (
+                  <div className="animate-in slide-in-from-top-2">
+                    <StripeConnectSetup
+                      userId={user.id}
+                      teamId={activeTeam.id}
+                      onConnected={() => setStripeChargesEnabled(true)}
+                    />
+                    <p className="mt-2 px-1 text-[9px] font-bold uppercase text-muted-foreground">
+                      Funds go directly to this connected Stripe account. Successful Stripe webhooks mark donations paid automatically.
+                    </p>
                   </div>
                 )}
 
@@ -631,7 +695,7 @@ export default function FundraisingPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title || !newFund.goal}>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title || !newFund.goal || (configMethod === 'stripe' && !stripeChargesEnabled)}>
                 {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Authorize Deployment"}
               </Button>
             </DialogFooter>
@@ -675,10 +739,13 @@ export default function FundraisingPage() {
                   </div>
                 </div>
                 
-                <div className="space-y-2 animate-in slide-in-from-top-2">
-                  <Label className="text-[10px] font-black uppercase ml-1 text-foreground">Digital Payment URL</Label>
-                  <Input placeholder="Stripe, PayPal, Venmo URL..." value={editingFund.externalLink} onChange={e => setEditingFund({...editingFund, externalLink: e.target.value})} className="h-12 rounded-xl border-2 bg-muted/10 font-bold text-foreground" />
-                </div>
+                {editingFund.externalLink && (
+                  <div className="space-y-2 animate-in slide-in-from-top-2">
+                    <Label className="text-[10px] font-black uppercase ml-1 text-foreground">Managed Payment Link</Label>
+                    <Input readOnly value={editingFund.externalLink} className="h-12 rounded-xl border-2 bg-muted/30 font-bold text-muted-foreground" />
+                    <p className="text-[9px] font-bold uppercase text-muted-foreground">Managed by the connected Stripe account; it cannot be replaced from the browser.</p>
+                  </div>
+                )}
 
                 <div className="space-y-2 animate-in slide-in-from-top-2">
                   <Label className="text-[10px] font-black uppercase ml-1 text-foreground">E-Transfer Protocol</Label>

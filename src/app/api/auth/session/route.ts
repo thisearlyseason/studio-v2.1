@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminAuth } from '@/lib/firebase-admin';
-import { SESSION_COOKIE_NAME } from '@/lib/server-dashboard-auth';
+import * as admin from 'firebase-admin';
+import { ensureAdminInit } from '@/lib/firebase-admin';
+import { verifyFirebaseToken } from '@/lib/api-auth';
 
-const SESSION_DURATION_MS = 12 * 60 * 60 * 1000;
+const SESSION_COOKIE = '__session';
+const SESSION_DURATION_MS = 5 * 24 * 60 * 60 * 1000;
 
 function cookieOptions(maxAge: number) {
   return {
@@ -14,48 +16,60 @@ function cookieOptions(maxAge: number) {
   };
 }
 
-function safeReturnPath(value: string | null): string {
-  return value?.startsWith('/') && !value.startsWith('//') && !value.includes('\\') && value.length <= 2_000
-    ? value
-    : '/dashboard';
-}
-
-export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get('authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return NextResponse.json({ error: 'A Firebase ID token is required.' }, { status: 401 });
+export async function POST(request: NextRequest) {
+  const auth = await verifyFirebaseToken(request);
+  if (auth instanceof NextResponse) return auth;
+  const authorization = request.headers.get('authorization') || '';
+  const idToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (!idToken) {
+    return NextResponse.json({ error: 'Authentication token is required.' }, { status: 401 });
   }
 
   try {
-    const idToken = authHeader.slice(7);
-    await getAdminAuth().verifyIdToken(idToken, true);
-    const sessionCookie = await getAdminAuth().createSessionCookie(idToken, {
+    ensureAdminInit();
+    const sessionCookie = await admin.auth().createSessionCookie(idToken, {
       expiresIn: SESSION_DURATION_MS,
     });
     const response = NextResponse.json({ ok: true });
-    response.cookies.set(SESSION_COOKIE_NAME, sessionCookie, cookieOptions(SESSION_DURATION_MS / 1000));
-    response.headers.set('Cache-Control', 'no-store');
+    response.cookies.set(
+      SESSION_COOKIE,
+      sessionCookie,
+      cookieOptions(Math.floor(SESSION_DURATION_MS / 1000))
+    );
     return response;
   } catch (error) {
     console.error('[auth/session] Unable to create session:', error);
-    return NextResponse.json({ error: 'Unable to create a secure session.' }, { status: 401 });
+    return NextResponse.json({ error: 'Unable to establish a secure session.' }, { status: 401 });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const sessionCookie = request.cookies.get(SESSION_COOKIE)?.value;
+  if (!sessionCookie) {
+    return NextResponse.json({ authenticated: false }, { status: 401 });
+  }
+  try {
+    ensureAdminInit();
+    const decoded = await admin.auth().verifySessionCookie(sessionCookie, true);
+    if (
+      decoded.firebase?.sign_in_provider !== 'anonymous' &&
+      decoded.email_verified !== true &&
+      decoded.role !== 'superadmin'
+    ) {
+      return NextResponse.json({ authenticated: false }, { status: 403 });
+    }
+    return NextResponse.json({
+      authenticated: true,
+      uid: decoded.uid,
+      role: decoded.role || null,
+    });
+  } catch {
+    return NextResponse.json({ authenticated: false }, { status: 401 });
   }
 }
 
 export async function DELETE() {
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(SESSION_COOKIE_NAME, '', cookieOptions(0));
-  response.headers.set('Cache-Control', 'no-store');
-  return response;
-}
-
-export async function GET(req: NextRequest) {
-  const returnTo = safeReturnPath(req.nextUrl.searchParams.get('returnTo'));
-  const loginUrl = new URL('/login', req.url);
-  loginUrl.searchParams.set('reason', 'session');
-  loginUrl.searchParams.set('returnTo', returnTo);
-  const response = NextResponse.redirect(loginUrl);
-  response.cookies.set(SESSION_COOKIE_NAME, '', cookieOptions(0));
-  response.headers.set('Cache-Control', 'no-store');
+  response.cookies.set(SESSION_COOKIE, '', cookieOptions(0));
   return response;
 }

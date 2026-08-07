@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import pricingModule from '../src/lib/pricing.ts';
-import priceMapModule from '../src/lib/stripe-price-map.ts';
-import portalCustomerModule from '../src/lib/stripe-portal-customer.ts';
-import entitlementModule from '../src/lib/subscription-entitlements.ts';
+import * as pricingModule from '../src/lib/pricing.ts';
+import * as priceMapModule from '../src/lib/stripe-price-map.ts';
+import * as portalCustomerModule from '../src/lib/stripe-portal-customer.ts';
+import * as entitlementModule from '../src/lib/subscription-entitlements.ts';
 const { PRICING_CONFIG } = pricingModule;
 const { PLAN_PRICE_MAP } = priceMapModule;
 const { resolvePortalCustomerId } = portalCustomerModule;

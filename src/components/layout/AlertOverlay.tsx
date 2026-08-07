@@ -29,7 +29,7 @@ import {
   TooltipContent, 
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Megaphone, Bell, History, Clock, X, Lock, Users, ShieldAlert, GraduationCap, Baby, Trash2, Zap, Shield, CheckCircle2 } from 'lucide-react';
+import { Megaphone, Bell, History, Clock, X, Lock, Users, ShieldAlert, GraduationCap, Baby, Trash2, Zap, Shield, CheckCircle2, Loader2 } from 'lucide-react';
 import { DialogClose } from '@/components/ui/dialog';
 import { useTeam, TeamAlert } from '@/components/providers/team-provider';
 import { formatDistanceToNow } from 'date-fns';
@@ -41,26 +41,15 @@ import { useToast } from '@/hooks/use-toast';
  * respecting the target audience.
  */
 export function AlertOverlay() {
-  const { alerts, seenAlertIds, markAlertAsSeen, isStaff, isPlayer, isParent, user } = useTeam();
+  const { alerts, seenAlertIds, markAlertAsSeen } = useTeam();
   const [currentAlertId, setCurrentAlertId] = useState<string | null>(null);
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [locallyAcknowledgedIds, setLocallyAcknowledgedIds] = useState<string[]>([]);
 
   // Tactical logic to find the next unread alert
   const findNextAlert = useCallback(() => {
-    const myAlerts = (alerts || []).filter(alert => {
-      // If targetUserId is set, it MUST match the current user
-      if (alert.targetUserId && alert.targetUserId !== user?.id) return false;
-      
-      if (alert.audience === 'everyone') return true;
-      if (alert.audience === 'coaches' && isStaff) return true;
-      if (alert.audience === 'players' && isPlayer) return true;
-      if (alert.audience === 'parents' && isParent) return true;
-      return false;
-    });
-
-    return myAlerts.find(a => !seenAlertIds.includes(a.id) && !locallyAcknowledgedIds.includes(a.id));
-  }, [alerts, seenAlertIds, locallyAcknowledgedIds, isStaff, isPlayer, isParent]);
+    return alerts.find(alert => !seenAlertIds.includes(alert.id) && !locallyAcknowledgedIds.includes(alert.id));
+  }, [alerts, seenAlertIds, locallyAcknowledgedIds]);
 
   useEffect(() => {
     if (isAlertOpen) return;
@@ -91,7 +80,7 @@ export function AlertOverlay() {
     <Dialog open={isAlertOpen} onOpenChange={(open) => {
       if (!open) handleUnderstood();
     }}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-lg p-0 rounded-[2rem] sm:rounded-[3rem] overflow-hidden border-none shadow-[0_30px_100px_rgba(255,0,0,0.2)] bg-white max-h-[90vh] overflow-y-auto">
+      <DialogContent className="!left-1/2 !top-1/2 !h-auto !max-h-[90dvh] !-translate-x-1/2 !-translate-y-1/2 w-[calc(100vw-2rem)] max-w-lg p-0 rounded-[2rem] sm:rounded-[3rem] overflow-hidden border-none shadow-[0_30px_100px_rgba(255,0,0,0.2)] bg-white">
         <DialogTitle className="sr-only">High Priority Squad Alert</DialogTitle>
         <DialogDescription className="sr-only">Important directive from squad command</DialogDescription>
         {/* Championship Header */}
@@ -163,32 +152,19 @@ function QuoteIcon({ className }: { className?: string }) {
 }
 
 export function AlertsHistoryDialog({ children }: { children: React.ReactNode }) {
-  const { alerts, markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isStaff, isPlayer, isParent, deleteAlert, user } = useTeam();
+  const { alerts, markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isStaff, deleteAlert } = useTeam();
   const [isOpen, setIsOpen] = useState(false);
   const { toast } = useToast();
 
   const [showArchived, setShowArchived] = useState(false);
   const [processingIds, setProcessingIds] = useState<string[]>([]);
 
-  const filteredAlerts = useMemo(() => {
-    return (alerts || []).filter(alert => {
-      // If targetUserId is set, it MUST match the current user
-      if (alert.targetUserId && alert.targetUserId !== user?.id) return false;
-
-      if (alert.audience === 'everyone') return true;
-      if (alert.audience === 'coaches' && isStaff) return true;
-      if (alert.audience === 'players' && isPlayer) return true;
-      if (alert.audience === 'parents' && isParent) return true;
-      return false;
-    });
-  }, [alerts, isStaff, isPlayer, isParent]);
-
   const { activeAlerts, archivedAlerts } = useMemo(() => {
     return {
-      activeAlerts: filteredAlerts.filter((a: TeamAlert) => !seenAlertIds.includes(a.id) && !processingIds.includes(a.id)),
-      archivedAlerts: filteredAlerts.filter((a: TeamAlert) => seenAlertIds.includes(a.id) || (processingIds.includes(a.id) && !seenAlertIds.includes(a.id)))
+      activeAlerts: alerts.filter((a: TeamAlert) => !seenAlertIds.includes(a.id) && !processingIds.includes(a.id)),
+      archivedAlerts: alerts.filter((a: TeamAlert) => seenAlertIds.includes(a.id) || (processingIds.includes(a.id) && !seenAlertIds.includes(a.id)))
     };
-  }, [filteredAlerts, seenAlertIds, processingIds]);
+  }, [alerts, seenAlertIds, processingIds]);
 
   const displayAlerts = showArchived ? [...activeAlerts, ...archivedAlerts] : activeAlerts;
 
@@ -387,14 +363,15 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
 }
 
 export function CreateAlertButton() {
-  const { createAlert, activeTeam, isSuperAdmin, purchasePro } = useTeam();
+  const { createAlert, activeTeam, isSuperAdmin, purchasePro, firebaseUser } = useTeam();
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [audience, setAudience] = useState<TeamAlert['audience']>('everyone');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
+  const isAdmin = activeTeam?.ownerUserId === firebaseUser?.uid || isSuperAdmin;
   const canAlert = activeTeam?.isPro || isSuperAdmin;
 
   if (!isAdmin) return null;
@@ -408,14 +385,25 @@ export function CreateAlertButton() {
     );
   }
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!title || !message) return;
-    createAlert(title, message, audience);
-    setIsCreateOpen(false);
-    setTitle('');
-    setMessage('');
-    setAudience('everyone');
-    toast({ title: "Broadcast Dispatched", description: "All relevant squad members have been notified." });
+    setIsSubmitting(true);
+    try {
+      await createAlert(title, message, audience);
+      setIsCreateOpen(false);
+      setTitle('');
+      setMessage('');
+      setAudience('everyone');
+      toast({ title: "Broadcast Dispatched", description: "All relevant squad members have been notified." });
+    } catch (error: any) {
+      toast({
+        title: 'Broadcast Failed',
+        description: error.message || 'The broadcast was not saved. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -466,8 +454,9 @@ export function CreateAlertButton() {
             </div>
           </div>
           <DialogFooter>
-            <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleCreate} disabled={!title || !message}>
-              Dispatch Strategic Broadcast
+            <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleCreate} disabled={isSubmitting || !title || !message}>
+              {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
+              {isSubmitting ? 'Dispatching Broadcast' : 'Dispatch Strategic Broadcast'}
             </Button>
           </DialogFooter>
         </div>

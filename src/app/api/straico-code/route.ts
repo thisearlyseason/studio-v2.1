@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateWithStraico, USE_STRAICO } from '@/lib/straico';
-import { verifyFirebaseToken } from '@/lib/api-auth';
+import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
+import { getPaidTeamFeatureAccess } from '@/lib/server-team-entitlements';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -13,13 +14,14 @@ export async function POST(req: NextRequest) {
   // ── Auth guard: must be a signed-in user to use paid AI endpoints ──────
   const authResult = await verifyFirebaseToken(req);
   if (authResult instanceof NextResponse) return authResult;
+  const anonymousCheck = assertNonAnonymous(authResult);
+  if (anonymousCheck) return anonymousCheck;
 
   try {
-    const limited = await enforceUserRateLimit(authResult.uid, 'straico-code', 30, 60 * 60 * 1000);
-    if (limited) return limited;
-
-    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 12_000);
-    const { prompt } = body as { prompt?: string };
+    const { prompt, teamId } = await readJsonBodyWithLimit<{
+      prompt?: unknown;
+      teamId?: unknown;
+    }>(req, 32_000);
 
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
       return NextResponse.json(
@@ -27,11 +29,27 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    if (prompt.length > 8_000) {
-      return NextResponse.json(
-        { error: 'Prompt must be 8000 characters or fewer.' },
-        { status: 400 }
-      );
+    if (prompt.length > 10_000) {
+      return NextResponse.json({ error: 'Prompt is too long.' }, { status: 400 });
+    }
+    if (typeof teamId !== 'string' || !teamId.trim()) {
+      return NextResponse.json({ error: 'A valid teamId is required.' }, { status: 400 });
+    }
+
+    const rateLimit = await enforceUserRateLimit(
+      authResult.uid,
+      'straico-code',
+      20,
+      10 * 60 * 1000
+    );
+    if (rateLimit) return rateLimit;
+    const access = await getPaidTeamFeatureAccess(
+      authResult.uid,
+      teamId,
+      authResult.role === 'superadmin'
+    );
+    if (!access.allowed) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     if (!USE_STRAICO) {

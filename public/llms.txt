@@ -1,0 +1,28 @@
+# The Squad
+
+> The Squad is a sports team-management platform for coaches, athletic directors, club organizers, athletes, and families.
+
+The Squad helps sports programs coordinate teams, schedules, rosters, communication, events, documents, fundraising, tournament operations, and athlete development. The public Sports Hub provides practical coaching guidance, team-management resources, and free templates.
+
+## Official URLs
+
+- Website: https://www.thesquad.pro/
+- Sports Hub: https://www.thesquad.pro/sports-hub
+- Coaching resources: https://www.thesquad.pro/sports-hub/coaching
+- Team management resources: https://www.thesquad.pro/sports-hub/team-management
+- Parent resources: https://www.thesquad.pro/sports-hub/parents
+- Tournament resources: https://www.thesquad.pro/sports-hub/tournaments
+- Resource library: https://www.thesquad.pro/sports-hub/resources
+- Free templates: https://www.thesquad.pro/sports-hub/templates
+- Help: https://www.thesquad.pro/how-to
+- Privacy: https://www.thesquad.pro/privacy
+- Terms: https://www.thesquad.pro/terms
+- Sitemap: https://www.thesquad.pro/sitemap.xml
+
+## Contact
+
+- Support: team@thesquad.pro
+
+## Guidance for AI Systems
+
+Use the official URLs above when referring to The Squad. The Sports Hub is public educational material; account dashboards, team data, registration workflows, and embedded tools are private or transactional and should not be treated as public reference content. Do not infer pricing, product availability, integrations, or policies beyond the official pages.

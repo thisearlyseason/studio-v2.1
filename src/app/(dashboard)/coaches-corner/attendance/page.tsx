@@ -23,7 +23,8 @@ import {
   Activity,
   UserPlus,
   History as HistoryIcon,
-  Zap
+  Zap,
+  Lock
 } from 'lucide-react';
 import { format, isBefore, startOfDay } from 'date-fns';
 import { useTeam, TeamEvent, Member } from '@/components/providers/team-provider';
@@ -53,6 +54,7 @@ import {
   DialogContent,
   DialogTitle
 } from '@/components/ui/dialog';
+import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
 
 const RSVP_STATUSES = [
   { id: 'going', label: 'Going', icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-500/10' },
@@ -63,7 +65,8 @@ const RSVP_STATUSES = [
 
 export default function AttendanceTrackingPage() {
   const router = useRouter();
-  const { members, activeTeamEvents, activeTeam, updateRSVP, isStaff } = useTeam();
+  const { members, activeTeamEvents, activeTeam, updateRSVP, isStaff, isSuperAdmin } = useTeam();
+  const canAccessCoachesCorner = hasCoachesCornerEntitlement(activeTeam, isSuperAdmin);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'attendance'>('name');
@@ -145,7 +148,22 @@ export default function AttendanceTrackingPage() {
     }
   };
 
-  if (!isStaff) return null; // Component level access check
+  if (!isStaff || !canAccessCoachesCorner) {
+    return (
+      <div className="flex min-h-[55vh] items-center justify-center p-6">
+        <Card className="w-full max-w-xl rounded-[2rem] border-2 border-dashed p-10 text-center">
+          <Lock className="mx-auto mb-5 h-12 w-12 text-primary" />
+          <h1 className="text-2xl font-black uppercase">Pro Squad Required</h1>
+          <p className="mt-3 text-sm font-semibold text-muted-foreground">
+            Attendance Tracking is part of Coaches Corner. Select a paid Pro squad to continue.
+          </p>
+          <Button className="mt-6 rounded-xl font-black uppercase" onClick={() => router.replace('/dashboard')}>
+            Return to Dashboard
+          </Button>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-10 pb-32 animate-in fade-in duration-700">

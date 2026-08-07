@@ -107,6 +107,15 @@ export const exportImageToPDF = async (element: HTMLElement, options: PDFBrandin
 export const addSquadBranding = (doc: jsPDF, title: string, subtitle?: string, lightMode?: boolean, compact?: boolean) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const headerY = compact ? 25 : 45;
+  const fitText = (text: string, maxWidth: number, preferredSize: number, minimumSize: number) => {
+    let size = preferredSize;
+    doc.setFontSize(size);
+    while (size > minimumSize && doc.getTextWidth(text) > maxWidth) {
+      size -= 0.5;
+      doc.setFontSize(size);
+    }
+    return size;
+  };
   
   // Header Bar
   doc.setFillColor(lightMode ? 255 : 15, lightMode ? 255 : 15, lightMode ? 255 : 20); 
@@ -124,8 +133,9 @@ export const addSquadBranding = (doc: jsPDF, title: string, subtitle?: string, l
     doc.setFontSize(10);
     doc.text("SQUAD INTELLIGENCE", 15, 12);
     
-    doc.setFontSize(14);
-    doc.text(title.toUpperCase(), 15, 20);
+    const compactTitle = title.toUpperCase();
+    fitText(compactTitle, pageWidth - 30, 14, 8);
+    doc.text(compactTitle, 15, 20);
     
     doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
@@ -142,9 +152,10 @@ export const addSquadBranding = (doc: jsPDF, title: string, subtitle?: string, l
     doc.setDrawColor(lightMode ? 200 : 255);
     doc.setLineWidth(0.1);
     doc.line(75, 12, 75, 30);
-    doc.setFontSize(22);
+    const fullTitle = title.toUpperCase();
     doc.setFont('helvetica', 'bold');
-    doc.text(title.toUpperCase(), 82, 24);
+    fitText(fullTitle, pageWidth - 102, 22, 10);
+    doc.text(fullTitle, 82, 24);
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(lightMode ? 100 : 180);

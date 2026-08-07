@@ -2,76 +2,137 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function isSuperAdmin() {
-      return request.auth != null && request.auth.token.get('role', '') == 'superadmin';
+    function isAuthenticated() {
+      return request.auth != null;
     }
 
-    function isImageUpload(maxBytes) {
-      return request.resource != null &&
-        request.resource.size <= maxBytes &&
+    function isAnonymousSession() {
+      return isAuthenticated() &&
+        request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'anonymous';
+    }
+
+    function isSignedIn() {
+      let user = firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)
+      );
+      return isAuthenticated() && (
+        isAnonymousSession() ||
+        (
+          (
+            request.auth.token.get('email_verified', false) == true ||
+            request.auth.token.get('role', '') == 'superadmin'
+          ) &&
+          user.data.get('accountStatus', 'active') != 'suspended' &&
+          user.data.get('accountStatus', 'active') != 'pending_deletion' &&
+          user.data.get('deletionStatus', '') != 'pending'
+        )
+      );
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() &&
+        request.auth.token.get('role', '') == 'superadmin';
+    }
+
+    function playerDocument(playerId) {
+      return firestore.get(/databases/(default)/documents/players/$(playerId));
+    }
+
+    function isPrimaryTeamOwner(playerId) {
+      let player = playerDocument(playerId);
+      return isSignedIn() && (
+        (
+          player.data.keys().hasAny(['primaryTeamId']) &&
+          player.data.primaryTeamId != '' &&
+          firestore.get(/databases/(default)/documents/teams/$(player.data.primaryTeamId))
+            .data.ownerUserId == request.auth.uid
+        ) ||
+        (
+          player.data.keys().hasAny(['teamId']) &&
+          player.data.teamId != '' &&
+          firestore.get(/databases/(default)/documents/teams/$(player.data.teamId))
+            .data.ownerUserId == request.auth.uid
+        )
+      );
+    }
+
+    function canManagePlayer(playerId) {
+      let player = playerDocument(playerId);
+      return isSuperAdmin() || (isSignedIn() && (
+        (
+          player.data.keys().hasAny(['userId']) &&
+          player.data.userId == request.auth.uid
+        ) ||
+        (
+          player.data.keys().hasAny(['parentId']) &&
+          player.data.parentId == request.auth.uid
+        ) ||
+        isPrimaryTeamOwner(playerId)
+      ));
+    }
+
+    function hasSafeImageUpload() {
+      return request.resource.size <= 10 * 1024 * 1024 &&
         request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
     }
 
-    function isVideoUpload(maxBytes) {
-      return request.resource != null &&
-        request.resource.size <= maxBytes &&
-        request.resource.contentType.matches('video/.*');
+    function hasSafeVideoUpload() {
+      return request.resource.size <= 500 * 1024 * 1024 &&
+        request.resource.contentType.matches('video/(mp4|webm|quicktime|x-m4v)');
     }
 
-    function canAccessPlayer(playerId) {
-      let player = firestore.get(/databases/(default)/documents/players/$(playerId)).data;
-      return request.auth != null && (
+    // Recruiting media is public only while the athlete explicitly enables
+    // their scout profile. Family and the primary squad owner retain access.
+    match /players/{playerId}/thumbnails/{fileName} {
+      allow read: if playerDocument(playerId).data.recruitingProfileEnabled == true ||
+        canManagePlayer(playerId);
+      allow create, update: if canManagePlayer(playerId) && hasSafeImageUpload();
+      allow delete: if canManagePlayer(playerId);
+    }
+
+    match /players/{playerId}/avatar/{fileName} {
+      allow read: if playerDocument(playerId).data.recruitingProfileEnabled == true ||
+        canManagePlayer(playerId);
+      allow create, update: if canManagePlayer(playerId) && hasSafeImageUpload();
+      allow delete: if canManagePlayer(playerId);
+    }
+
+    match /players/{playerId}/videos/{fileName} {
+      allow read: if playerDocument(playerId).data.recruitingProfileEnabled == true ||
+        canManagePlayer(playerId);
+      allow create, update: if canManagePlayer(playerId) && hasSafeVideoUpload();
+      allow delete: if canManagePlayer(playerId);
+    }
+
+    // Only explicitly branded team assets are public.
+    match /teams/{teamId}/branding/{allPaths=**} {
+      allow read: if true;
+      allow create, update: if (
         isSuperAdmin() ||
-        player.get('userId', '') == request.auth.uid ||
-        player.get('parentId', '') == request.auth.uid ||
-        request.auth.uid in player.get('guardianIds', []) ||
-        (player.get('primaryTeamId', '') != '' &&
-         firestore.get(/databases/(default)/documents/teams/$(player.primaryTeamId)).data.ownerUserId == request.auth.uid)
+        (
+          isSignedIn() &&
+          firestore.get(/databases/(default)/documents/teams/$(teamId))
+            .data.ownerUserId == request.auth.uid
+        )
+      ) && hasSafeImageUpload();
+      allow delete: if isSuperAdmin() || (
+        isSignedIn() &&
+        firestore.get(/databases/(default)/documents/teams/$(teamId))
+          .data.ownerUserId == request.auth.uid
       );
     }
 
-    function canAccessTeam(teamId) {
-      return request.auth != null && (
-        isSuperAdmin() ||
-        (firestore.exists(/databases/(default)/documents/teams/$(teamId)/members/$(request.auth.uid)) &&
-         firestore.get(/databases/(default)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.get('status', 'active') != 'removed' &&
-         firestore.get(/databases/(default)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.get('isDeleted', false) != true) ||
-        firestore.get(/databases/(default)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid
-      );
+    match /users/{userId}/avatar.jpg {
+      allow read: if isSignedIn();
+      allow create, update: if (
+        isSuperAdmin() || (isSignedIn() && request.auth.uid == userId)
+      ) && hasSafeImageUpload();
+      allow delete: if isSuperAdmin() || (isSignedIn() && request.auth.uid == userId);
     }
 
-    // ── Players media ──────────────────────────────────────────────────────
-    // Recruiting pages receive sanitized media links from the server. Raw bucket
-    // paths remain restricted to the athlete, guardian, or team owner.
-    match /players/{playerId}/{allPaths=**} {
-      allow read: if canAccessPlayer(playerId);
-      allow create, update: if canAccessPlayer(playerId) &&
-        (isImageUpload(5 * 1024 * 1024) || isVideoUpload(500 * 1024 * 1024));
-      allow delete: if canAccessPlayer(playerId);
-    }
-
-    // ── Team logos and branding ────────────────────────────────────────────
-    // Team files can contain more than logos, so the whole prefix is private.
-    // Public DTOs expose only deliberately selected branding URLs.
-    match /teams/{teamId}/{allPaths=**} {
-      allow read, write: if canAccessTeam(teamId);
-    }
-
-    // ── User profile media ─────────────────────────────────────────────────
-    // Profile media is private to its owner. Writes are image-only and bounded.
-    match /users/{userId}/{allPaths=**} {
-      allow read: if request.auth != null && (isSuperAdmin() || request.auth.uid == userId);
-      allow create, update: if request.auth != null && (
-        isSuperAdmin() ||
-        (request.auth.uid == userId && isImageUpload(5 * 1024 * 1024))
-      );
-      allow delete: if request.auth != null && (isSuperAdmin() || request.auth.uid == userId);
-    }
-
-    // ── Catch-all ──────────────────────────────────────────────────────────
-    // Unknown paths are never public.
+    // No implicit public bucket. Every supported asset path is declared above.
     match /{allPaths=**} {
-      allow read, write: if isSuperAdmin();
+      allow read, write: if false;
     }
   }
 }

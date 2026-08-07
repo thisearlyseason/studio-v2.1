@@ -1,7 +1,10 @@
 # The Squad — Full Platform QA Test Plan
-**Version:** 1.1 | **Date:** May 2026 | **Audit Completed:** May 3, 2026 | **URL:** http://localhost:9002
+**Version:** 1.1 | **Date:** May 2026 | **Audit Completed:** May 3, 2026 | **URL:** http://localhost:9001
 
-> ✅ **PRODUCTION READY** — All 30 sections verified. Clean production build confirmed (`npm run build` ✓).
+> **PRE-PRODUCTION QA RECORD** — This historical checklist is not a current
+> production-readiness approval. The active security audit, automated release
+> checks, deployment verification, and final role-based regression testing must
+> all pass before release.
 
 ---
 

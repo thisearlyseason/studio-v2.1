@@ -70,6 +70,7 @@ export function PaymentItemsManager({ userId, teamId, stripeChargesEnabled }: Pa
   const [itemToDelete, setItemToDelete] = useState<PaymentItem | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const createOperationRef = React.useRef<{ id: string; fingerprint: string } | null>(null);
 
   const [form, setForm] = useState({
     name: '',
@@ -113,6 +114,13 @@ export function PaymentItemsManager({ userId, teamId, stripeChargesEnabled }: Pa
 
     setIsSubmitting(true);
     try {
+      const fingerprint = JSON.stringify({ teamId, ...form });
+      if (createOperationRef.current?.fingerprint !== fingerprint) {
+        createOperationRef.current = {
+          id: crypto.randomUUID(),
+          fingerprint,
+        };
+      }
       const idToken = await getAuthToken(auth);
       if (!idToken) throw new Error('Not authenticated');
 
@@ -126,12 +134,14 @@ export function PaymentItemsManager({ userId, teamId, stripeChargesEnabled }: Pa
           category: form.category,
           amountDollars: amount,
           description: form.description.trim() || undefined,
+          operationId: createOperationRef.current.id,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create payment item');
 
-      setItems(prev => [data.item, ...prev]);
+      setItems(prev => [data.item, ...prev.filter(item => item.id !== data.item.id)]);
+      createOperationRef.current = null;
       setIsDialogOpen(false);
       resetForm();
       toast({ title: '✓ Payment Item Created', description: `"${data.item.name}" payment link is ready to share.` });

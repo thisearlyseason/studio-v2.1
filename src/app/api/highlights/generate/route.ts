@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from "@google/genai";
-import { verifyFirebaseToken } from '@/lib/api-auth';
+import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
+import { getPaidTeamFeatureAccess } from '@/lib/server-team-entitlements';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
-import { parseHighlightGenerateBody } from '@/lib/highlight-request-security';
 import { readResponseTextWithLimit } from '@/lib/public-network-url';
+
+const MAX_BODY_BYTES = 32_000;
 
 /**
  * TEXT-ONLY FALLBACK route — used when only a URL is provided (no video upload).
@@ -22,19 +24,53 @@ export async function POST(req: NextRequest) {
   // ── Auth guard: must be a signed-in user to use paid AI endpoints ──────
   const authResult = await verifyFirebaseToken(req);
   if (authResult instanceof NextResponse) return authResult;
+  const anonymousCheck = assertNonAnonymous(authResult);
+  if (anonymousCheck) return anonymousCheck;
 
   try {
-    const limited = await enforceUserRateLimit(authResult.uid, 'highlight-generate', 20, 60 * 60 * 1000);
-    if (limited) return limited;
+    const { videoUrl, prompt, videoDuration, teamId } =
+      await readJsonBodyWithLimit<{
+        videoUrl?: unknown;
+        prompt?: unknown;
+        videoDuration?: unknown;
+        teamId?: unknown;
+      }>(req, MAX_BODY_BYTES);
 
-    const body = await readJsonBodyWithLimit<unknown>(req, 20_000);
-    const { videoUrl, prompt, videoDuration } = parseHighlightGenerateBody(body);
+    if (typeof teamId !== 'string' || !teamId.trim()) {
+      return NextResponse.json({ error: 'A valid teamId is required.' }, { status: 400 });
+    }
+    const rateLimit = await enforceUserRateLimit(
+      authResult.uid,
+      'highlights-generate',
+      10,
+      10 * 60 * 1000
+    );
+    if (rateLimit) return rateLimit;
+    const access = await getPaidTeamFeatureAccess(
+      authResult.uid,
+      teamId,
+      authResult.role === 'superadmin'
+    );
+    if (!access.allowed) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+
+    if (typeof videoUrl !== 'string' || !videoUrl || videoUrl.length > 2_048) {
+      return NextResponse.json({ error: 'Video URL is required' }, { status: 400 });
+    }
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 2_000) {
+      return NextResponse.json({ error: 'A valid prompt is required.' }, { status: 400 });
+    }
+    const duration =
+      typeof videoDuration === 'number' && Number.isFinite(videoDuration)
+        ? Math.min(Math.max(videoDuration, 1), 21_600)
+        : 300;
 
     const apiKey = process.env.STRAICO_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'STRAICO_API_KEY missing. This fallback mode requires a Straico key, or upload a video file to use Gemini AI analysis.' },
-        { status: 500 }
+        { error: 'AI analysis service is not configured.' },
+        { status: 503 }
       );
     }
 
@@ -46,12 +82,12 @@ You are an elite sports scout. Based on the video URL and context provided, esti
 NOTE: You cannot watch this video. Generate realistic, evenly-spaced timestamp estimates within the video duration.
 
 Video URL: ${videoUrl}
-Duration: ${videoDuration ? `${videoDuration} seconds` : 'Unknown'}
+Duration: ${duration} seconds
 Scout Request: "${prompt}"
 
 RULES:
 1. Return 4-6 highlight segments.
-2. NEVER return startTime or endTime greater than ${videoDuration || 300} seconds.
+2. NEVER return startTime or endTime greater than ${duration} seconds.
 3. Space highlights evenly across the video timeline.
 4. Each highlight window: startTime = peak - 5s, endTime = peak + 8s.
 5. Use professional scouting vocabulary in descriptions.
@@ -147,6 +183,6 @@ Format: [{"startTime": number, "endTime": number, "title": string, "description"
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
     console.error('[Highlights Fallback Error]:', err);
-    return NextResponse.json({ error: err.message || 'Analysis Failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Analysis failed.' }, { status: 500 });
   }
 }

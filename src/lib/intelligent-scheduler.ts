@@ -95,7 +95,7 @@ export function validateSchedule(
   });
 
   const spread = maxCount === -1 ? 0 : maxCount - minCount;
-  let fairnessScore = spread === 0 ? 100 : Math.max(0, 100 - (spread * 10));
+  const fairnessScore = spread === 0 ? 100 : Math.max(0, 100 - (spread * 10));
 
   if (spread > 1 && config.gamesPerTeam) {
     warnings.push(`Uneven match distribution: Spread of ${spread} games difference between teams.`);

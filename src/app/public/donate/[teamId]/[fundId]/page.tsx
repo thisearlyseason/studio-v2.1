@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { FundraisingOpportunity } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -27,7 +27,7 @@ import {
   DollarSign
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
-import { format, isPast } from 'date-fns';
+import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
@@ -35,24 +35,47 @@ export default function PublicDonationPortalPage() {
   const { teamId, fundId } = useParams();
   const [fund, setFund] = useState<FundraisingOpportunity | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [donorName, setDonorName] = useState('');
+  const [donorEmail, setDonorEmail] = useState('');
+  const [donorPhone, setDonorPhone] = useState('');
+  const [relationship, setRelationship] = useState('');
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<'external' | 'etransfer'>('external');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const submissionKey = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!teamId || !fundId) return;
+    const resolvedTeamId = typeof teamId === 'string' ? teamId : '';
+    const resolvedFundId = typeof fundId === 'string' ? fundId : '';
+    if (!resolvedTeamId || !resolvedFundId) {
+      setLoadError('This donation link is invalid.');
+      setIsLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
     setIsLoading(true);
-    fetch(`/api/public/donations?teamId=${encodeURIComponent(String(teamId))}&fundId=${encodeURIComponent(String(fundId))}`, {
-      signal: controller.signal,
-    })
-      .then(async response => response.ok ? response.json() : Promise.reject(new Error('inactive')))
-      .then(result => setFund(result.data))
-      .catch(error => { if (error.name !== 'AbortError') setFund(null); })
+    fetch(
+      `/api/public/fundraising?teamId=${encodeURIComponent(resolvedTeamId)}&fundId=${encodeURIComponent(resolvedFundId)}`,
+      { signal: controller.signal }
+    )
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Campaign unavailable.');
+        setFund(payload.campaign as FundraisingOpportunity);
+        setLoadError(null);
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError') {
+          setFund(null);
+          setLoadError(error.message || 'Campaign unavailable.');
+        }
+      })
       .finally(() => setIsLoading(false));
+
     return () => controller.abort();
   }, [teamId, fundId]);
 
@@ -63,28 +86,50 @@ export default function PublicDonationPortalPage() {
 
   const handleDonate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!donorName || !amount || isSubmitting || !fund) return;
+    if (!donorName || !donorEmail || !donorPhone || !relationship || !amount || isSubmitting || !fund) return;
 
     setIsSubmitting(true);
     try {
-      const response = await fetch('/api/public/donations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamId, fundId, donorName, amount: parseFloat(amount), method }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || 'Unable to record donation intent.');
-
-      if (method === 'external' && result.redirectUrl) {
+      if (!submissionKey.current) {
+        submissionKey.current = crypto.randomUUID();
+      }
+      const response = await fetch(
+        `/api/public/fundraising?teamId=${encodeURIComponent(teamId as string)}&fundId=${encodeURIComponent(fundId as string)}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': submissionKey.current,
+          },
+          body: JSON.stringify({
+            donorName,
+            donorEmail,
+            donorPhone,
+            relationship,
+            amount: Number(amount),
+            method,
+          }),
+        }
+      );
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to record this donation intent.');
+      }
+      submissionKey.current = null;
+      if (method === 'external' && fund.externalLink) {
         toast({ title: "Dispatching to Secure Hub" });
         setTimeout(() => {
-          window.location.href = result.redirectUrl;
+          window.location.href = fund.externalLink!;
         }, 1500);
       } else {
         setIsSuccess(true);
       }
     } catch (err: any) {
-      toast({ title: "Submission Failed", description: err.message, variant: "destructive" });
+      toast({
+        title: "Submission Failed",
+        description: err.message || 'Please try again.',
+        variant: "destructive",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -97,12 +142,12 @@ export default function PublicDonationPortalPage() {
     </div>
   );
 
-  if (!fund || !fund.isShareable || isPast(new Date(fund.deadline))) return (
+  if (!fund || loadError) return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10">
       <Card className="max-w-md text-center p-12 rounded-[3rem] border-none shadow-2xl">
         <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" />
         <h2 className="text-2xl font-black uppercase tracking-tight">Campaign Inactive</h2>
-        <p className="text-muted-foreground font-medium mt-2">This donation portal has been closed or the link is invalid.</p>
+        <p className="text-muted-foreground font-medium mt-2">{loadError || 'This donation portal has been closed or the link is invalid.'}</p>
       </Card>
     </div>
   );
@@ -206,6 +251,32 @@ export default function PublicDonationPortalPage() {
                     className="h-14 rounded-2xl border-2 font-black text-2xl text-primary focus:border-primary/20 transition-all"
                   />
                 </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Email Address</Label>
+                  <Input required type="email" value={donorEmail} onChange={e => setDonorEmail(e.target.value)} className="h-14 rounded-2xl border-2 font-bold" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Phone Number</Label>
+                  <Input required type="tel" value={donorPhone} onChange={e => setDonorPhone(e.target.value)} className="h-14 rounded-2xl border-2 font-bold" />
+                </div>
+              </div>
+              <div className="space-y-3">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Your Connection</Label>
+                <RadioGroup value={relationship} onValueChange={setRelationship} className="grid grid-cols-2 gap-3">
+                  {[
+                    ['parent', 'Parent'],
+                    ['family_member', 'Family Member'],
+                    ['friend', 'Friend'],
+                    ['other', 'Other'],
+                  ].map(([value, label]) => (
+                    <Label key={value} htmlFor={`donor-${value}`} className="flex items-center gap-3 rounded-xl border-2 p-4 cursor-pointer">
+                      <RadioGroupItem id={`donor-${value}`} value={value} />
+                      <span className="text-xs font-black uppercase">{label}</span>
+                    </Label>
+                  ))}
+                </RadioGroup>
               </div>
 
               <div className="space-y-4 pt-4 border-t">

@@ -2,117 +2,120 @@ import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import {
-  enforceUserRateLimit,
+  enforcePublicRateLimit,
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const KEY_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+const RELATIONSHIPS = new Set(['parent', 'family_member', 'friend', 'other']);
 
-function identifiers(req: NextRequest) {
-  const teamId = req.nextUrl.searchParams.get('teamId') || '';
-  const opportunityId = req.nextUrl.searchParams.get('opportunityId') || '';
-  return { teamId, opportunityId };
+function cleanId(value: string | null) {
+  return value && ID_PATTERN.test(value) ? value : null;
 }
 
-function requestKey(req: NextRequest, suffix: string) {
-  const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-  return `${(forwarded || 'local').slice(0, 100)}:${suffix}`;
-}
-
-function publicOpportunity(id: string, data: FirebaseFirestore.DocumentData) {
-  return {
-    id,
-    title: String(data.title || 'Volunteer Opportunity'),
-    description: String(data.description || ''),
-    date: data.date || null,
-    endDate: data.endDate || null,
-    location: String(data.location || ''),
-    spots: Math.max(0, Number(data.spots || 0)),
-    points: Math.max(0, Number(data.points || 0)),
-    hoursPerSlot: Math.max(0, Number(data.hoursPerSlot || 0)),
-    signupCount: Object.keys(data.signups || {}).length,
-  };
+async function getOpportunity(req: NextRequest) {
+  const teamId = cleanId(req.nextUrl.searchParams.get('teamId'));
+  const oppId = cleanId(req.nextUrl.searchParams.get('oppId'));
+  if (!teamId || !oppId) return null;
+  const ref = adminDb.collection('teams').doc(teamId).collection('volunteers').doc(oppId);
+  const snapshot = await ref.get();
+  const data = snapshot.data() || {};
+  if (!snapshot.exists || data.isShareable !== true) return null;
+  const end = typeof data.endDate === 'string' && data.endDate ? new Date(data.endDate) : null;
+  if (end && !Number.isNaN(end.getTime()) && end.getTime() < Date.now()) return null;
+  return { teamId, oppId, ref, snapshot };
 }
 
 export async function GET(req: NextRequest) {
+  const limited = await enforcePublicRateLimit(req, 'volunteer-read', 60, 10 * 60 * 1000);
+  if (limited) return limited;
   try {
-    const { teamId, opportunityId } = identifiers(req);
-    if (!ID_PATTERN.test(teamId) || !ID_PATTERN.test(opportunityId)) {
-      return NextResponse.json({ error: 'Invalid volunteer link.' }, { status: 400 });
+    const opportunity = await getOpportunity(req);
+    if (!opportunity) {
+      return NextResponse.json({ error: 'This volunteer opportunity is unavailable.' }, { status: 404 });
     }
-
-    const snapshot = await adminDb.collection('teams').doc(teamId).collection('volunteers').doc(opportunityId).get();
-    const data = snapshot.data();
-    if (!snapshot.exists || data?.isShareable !== true || data?.status === 'closed') {
-      return NextResponse.json({ error: 'Volunteer opportunity not found or inactive.' }, { status: 404 });
-    }
-
-    return NextResponse.json({ data: publicOpportunity(snapshot.id, data) });
+    const data = opportunity.snapshot.data() || {};
+    return NextResponse.json({
+      opportunity: {
+        id: opportunity.oppId,
+        title: String(data.title || 'Volunteer Opportunity'),
+        description: String(data.description || ''),
+        date: String(data.date || ''),
+        endDate: String(data.endDate || ''),
+        location: String(data.location || ''),
+        spots: Number(data.spots) || 0,
+        hoursPerSlot: Number(data.hoursPerSlot) || 0,
+      },
+    });
   } catch (error) {
-    console.error('[public/volunteer] Read error:', error);
-    return NextResponse.json({ error: 'Volunteer portal is temporarily unavailable.' }, { status: 500 });
+    console.error('[public/volunteer GET] Error:', error);
+    return NextResponse.json({ error: 'Unable to load this volunteer opportunity.' }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
+  const limited = await enforcePublicRateLimit(req, 'volunteer-submit', 10, 60 * 60 * 1000);
+  if (limited) return limited;
   try {
-    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
-    const teamId = String(body.teamId || '').trim();
-    const opportunityId = String(body.opportunityId || '').trim();
-    const name = String(body.name || '').trim().slice(0, 120);
-    const email = String(body.email || '').trim().toLowerCase().slice(0, 254);
-    const phone = String(body.phone || '').trim().slice(0, 40);
-    if (!ID_PATTERN.test(teamId) || !ID_PATTERN.test(opportunityId) || name.length < 2 ||
-        !EMAIL_PATTERN.test(email) || phone.length < 7) {
-      return NextResponse.json({ error: 'Valid contact details are required.' }, { status: 400 });
+    const opportunity = await getOpportunity(req);
+    if (!opportunity) {
+      return NextResponse.json({ error: 'This volunteer opportunity is unavailable.' }, { status: 404 });
+    }
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 12_000);
+    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 120) : '';
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase().slice(0, 254) : '';
+    const phone = typeof body.phone === 'string' ? body.phone.trim().slice(0, 40) : '';
+    const relationship = typeof body.relationship === 'string' ? body.relationship : '';
+    const key = req.headers.get('idempotency-key') || '';
+    if (name.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || phone.length < 7) {
+      return NextResponse.json({ error: 'Enter a valid name, email address, and phone number.' }, { status: 400 });
+    }
+    if (!RELATIONSHIPS.has(relationship)) {
+      return NextResponse.json({ error: 'Select how you are connected to the participant.' }, { status: 400 });
+    }
+    if (!KEY_PATTERN.test(key)) {
+      return NextResponse.json({ error: 'A valid submission key is required.' }, { status: 400 });
     }
 
-    const limited = await enforceUserRateLimit(
-      requestKey(req, `${teamId}:${opportunityId}`),
-      'public-volunteer',
-      10,
-      60 * 60 * 1000,
-    );
-    if (limited) return limited;
-
-    const ref = adminDb.collection('teams').doc(teamId).collection('volunteers').doc(opportunityId);
-    const signupId = `public_${createHash('sha256').update(`${opportunityId}:${email}`).digest('hex').slice(0, 24)}`;
-    const result = await adminDb.runTransaction(async transaction => {
-      const snapshot = await transaction.get(ref);
-      const data = snapshot.data();
-      if (!snapshot.exists || data?.isShareable !== true || data?.status === 'closed') return 'inactive';
+    const signupId = createHash('sha256')
+      .update(`${opportunity.teamId}:${opportunity.oppId}:${key}`)
+      .digest('hex');
+    await adminDb.runTransaction(async transaction => {
+      const fresh = await transaction.get(opportunity.ref);
+      const data = fresh.data() || {};
+      if (!fresh.exists || data.isShareable !== true) throw new Error('CLOSED');
       const signups = data.signups || {};
-      const spots = Math.max(0, Number(data.spots || 0));
-      if (!signups[signupId] && spots > 0 && Object.keys(signups).length >= spots) return 'full';
-      transaction.update(ref, {
+      const confirmed = Object.values(signups).filter((signup: any) => signup?.status !== 'cancelled').length;
+      if (Number(data.spots) > 0 && confirmed >= Number(data.spots)) throw new Error('FULL');
+      transaction.update(opportunity.ref, {
         [`signups.${signupId}`]: {
-          userId: signupId,
+          userId: `public_${signupId}`,
           userName: name,
+          name,
           email,
           phone,
+          relationship,
           isConfirmed: false,
           status: 'pending',
+          source: 'public_portal',
           createdAt: new Date().toISOString(),
-          source: 'public-portal',
         },
       });
-      return 'saved';
     });
-
-    if (result === 'inactive') {
-      return NextResponse.json({ error: 'Volunteer opportunity not found or inactive.' }, { status: 404 });
-    }
-    if (result === 'full') {
-      return NextResponse.json({ error: 'This volunteer opportunity is already full.' }, { status: 409 });
-    }
-    return NextResponse.json({ success: true });
-  } catch (error) {
+    return NextResponse.json({ ok: true, signupId });
+  } catch (error: any) {
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    console.error('[public/volunteer] Submission error:', error);
-    return NextResponse.json({ error: 'Volunteer signup could not be completed.' }, { status: 500 });
+    if (error?.message === 'FULL') {
+      return NextResponse.json({ error: 'This opportunity is already full.' }, { status: 409 });
+    }
+    if (error?.message === 'CLOSED') {
+      return NextResponse.json({ error: 'This opportunity is no longer public.' }, { status: 404 });
+    }
+    console.error('[public/volunteer POST] Error:', error);
+    return NextResponse.json({ error: 'Unable to submit this volunteer request.' }, { status: 500 });
   }
 }

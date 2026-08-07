@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import policyModule from '../src/lib/storage-upload-policy.ts';
+import * as policyModule from '../src/lib/storage-upload-policy.ts';
 
 const { MAX_IMAGE_UPLOAD_BYTES, validateRasterImage } = policyModule;
 

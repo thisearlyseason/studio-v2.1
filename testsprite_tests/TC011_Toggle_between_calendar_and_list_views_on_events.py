@@ -2,6 +2,11 @@ import asyncio
 from playwright import async_api
 from playwright.async_api import expect
 
+try:
+    from testsprite_tests.e2e_config import BASE_URL, league_code, test_email, test_password
+except ModuleNotFoundError:
+    from e2e_config import BASE_URL, league_code, test_email, test_password
+
 async def run_test():
     pw = None
     browser = None
@@ -30,22 +35,22 @@ async def run_test():
         page = await context.new_page()
 
         # Interact with the page elements to simulate user flow
-        # -> Navigate to http://localhost:9002
-        await page.goto("http://localhost:9002")
+        # -> Navigate to $E2E_BASE_URL
+        await page.goto(f"{BASE_URL}")
         
         # -> Navigate to /login and wait for the login form fields (email, password, and submit) to appear.
-        await page.goto("http://localhost:9002/login")
+        await page.goto(f"{BASE_URL}/login")
         
         # -> Fill the email field with the test credential and the password field, then submit the login form.
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[5]/div/form/div/div/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('tester_k995dt@example.com')
+        await asyncio.sleep(3); await elem.fill(test_email())
         
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[5]/div/form/div/div[2]/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('password123')
+        await asyncio.sleep(3); await elem.fill(test_password())
         
         frame = context.pages[-1]
         # Click element

@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken } from '@/lib/api-auth';
-import type { Notification, WebpushConfig } from 'firebase-admin/messaging';
-import { adminDb, getAdminMessaging } from '@/lib/firebase-admin';
-import { timingSafeEqual } from 'node:crypto';
-import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
-import { getTeamDeliveryTargets, isAuthorizedTeamNotifier, validNotificationUrl } from '@/lib/notification-targets';
-
-function hasInternalSecret(req: NextRequest): boolean {
-  const expected = process.env.INTERNAL_API_SECRET || '';
-  const supplied = req.headers.get('x-internal-secret') || '';
-  if (!expected || !supplied) return false;
-  const a = Buffer.from(expected);
-  const b = Buffer.from(supplied);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
+import * as admin from 'firebase-admin';
+import { adminDb } from '@/lib/firebase-admin'; // Ensures admin app is initialized
+import { getTeamAuthority } from '@/lib/server-team-access';
+import {
+  enforceUserRateLimit,
+  readJsonBodyWithLimit,
+  RequestBodyError,
+} from '@/lib/server-request-guards';
 
 /**
  * POST /api/notify
@@ -34,70 +28,96 @@ function hasInternalSecret(req: NextRequest): boolean {
  * }
  */
 export async function POST(req: NextRequest) {
-  const internal = hasInternalSecret(req);
-  const authResult = internal ? { uid: 'internal', role: 'superadmin' } : await verifyFirebaseToken(req);
-  if (authResult instanceof NextResponse) return authResult;
-
   try {
-    const limited = await enforceUserRateLimit(authResult.uid, 'push-notify', internal ? 120 : 30, 60 * 60 * 1000);
-    if (limited) return limited;
-    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 40_000);
-    const tokens = Array.isArray(body.tokens) ? body.tokens.filter((token): token is string => typeof token === 'string') : [];
-    const recipientUserIds = Array.isArray(body.recipientUserIds) ? body.recipientUserIds.filter((uid): uid is string => typeof uid === 'string') : [];
-    const topic = typeof body.topic === 'string' ? body.topic.trim() : '';
-    const title = typeof body.title === 'string' ? body.title.trim() : '';
-    const msgBody = typeof body.body === 'string' ? body.body.trim() : '';
-    const url = body.url;
-    const imageUrl = body.imageUrl;
-    const notificationUrl = typeof url === 'string' ? url : undefined;
+    const body = await readJsonBodyWithLimit<Record<string, any>>(req, 128_000);
+    const { recipientUserIds, topic, title, body: msgBody, url, imageUrl, teamId } = body;
+    const internalSecret = process.env.INTERNAL_API_SECRET;
+    const isInternal = !!internalSecret && req.headers.get('x-internal-secret') === internalSecret;
+    const authResult = isInternal ? null : await verifyFirebaseToken(req);
+    if (authResult instanceof NextResponse) return authResult;
+    if (!isInternal) {
+      const rateLimit = await enforceUserRateLimit(
+        authResult!.uid,
+        'push-notify',
+        60,
+        60 * 60 * 1000
+      );
+      if (rateLimit) return rateLimit;
+    }
 
-    if (!title || !msgBody) {
+    if (
+      typeof title !== 'string' ||
+      typeof msgBody !== 'string' ||
+      !title.trim() ||
+      !msgBody.trim() ||
+      title.length > 160 ||
+      msgBody.length > 2_000
+    ) {
       return NextResponse.json({ error: 'title and body are required' }, { status: 400 });
     }
-    if (title.length > 120 || msgBody.length > 500 || !validNotificationUrl(url)) {
-      return NextResponse.json({ error: 'Notification content is invalid or too large.' }, { status: 400 });
+    if (!isInternal && (!teamId || !Array.isArray(recipientUserIds) || recipientUserIds.length === 0)) {
+      return NextResponse.json({ error: 'teamId and recipientUserIds are required' }, { status: 400 });
     }
-    if (!tokens.length && !recipientUserIds.length && !topic) {
+    if (!isInternal && topic) {
+      return NextResponse.json({ error: 'Topic notifications are restricted to trusted server callers.' }, { status: 403 });
+    }
+
+    let tokens: string[] = [];
+    if (!isInternal) {
+      if (recipientUserIds.length > 500) return NextResponse.json({ error: 'Too many recipients.' }, { status: 400 });
+      const authority = await getTeamAuthority(teamId, authResult!.uid, authResult!.role);
+      if (!authority?.isStaff) {
+        return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
+      }
+
+      const uniqueRecipients: string[] = [...new Set(
+        (recipientUserIds as unknown[]).filter((id): id is string => typeof id === 'string')
+      )];
+      const memberSnaps = await Promise.all(uniqueRecipients.map(id =>
+        adminDb.collection('teams').doc(teamId).collection('members').doc(id).get()
+      ));
+      const allowedRecipients = uniqueRecipients.filter((_, index) => {
+        const member = memberSnaps[index];
+        return member.exists &&
+          member.data()?.status !== 'removed' &&
+          member.data()?.isDeleted !== true;
+      });
+      if (allowedRecipients.length !== uniqueRecipients.length) {
+        return NextResponse.json({ error: 'Recipients must be current team members.' }, { status: 403 });
+      }
+      const userSnaps = await Promise.all(allowedRecipients.map(id => adminDb.collection('users').doc(id).get()));
+      tokens = userSnaps.flatMap(snap => {
+        const user = snap.data();
+        if (user?.notificationsEnabled === false) return [];
+        const savedTokens = user?.fcmTokens;
+        return Array.isArray(savedTokens) ? savedTokens.filter((token: unknown): token is string => typeof token === 'string') : [];
+      });
+    }
+    if (isInternal && !topic && !Array.isArray(body.tokens)) {
       return NextResponse.json({ error: 'tokens[] or topic is required' }, { status: 400 });
     }
-    if (!internal && authResult.role !== 'superadmin') {
-      const teamId = typeof body.teamId === 'string' ? body.teamId.trim() : '';
-      if (!teamId || topic || !(await isAuthorizedTeamNotifier(teamId, authResult.uid, authResult.role))) {
-        return NextResponse.json({ error: 'Only authorized team staff can send team notifications.' }, { status: 403 });
-      }
-      const targets = await getTeamDeliveryTargets(teamId);
-      if (recipientUserIds.length && recipientUserIds.some(uid => !targets.userIds.has(uid))) {
-        return NextResponse.json({ error: 'Notification recipients must belong to the selected team.' }, { status: 403 });
-      }
-      if (tokens.length && tokens.some(token => !targets.tokens.has(token))) {
-        return NextResponse.json({ error: 'Notification tokens must belong to the selected team.' }, { status: 403 });
-      }
+    if (isInternal && Array.isArray(body.tokens)) tokens = body.tokens.filter((token: unknown): token is string => typeof token === 'string');
+    if (!tokens.length && !topic) {
+      return NextResponse.json({ ok: true, successCount: 0, failureCount: 0 });
     }
-    if (!tokens.length && recipientUserIds.length) {
-      const refs = [...recipientUserIds].map(uid => adminDb.collection('users').doc(uid));
-      const snapshots = await adminDb.getAll(...refs);
-      for (const snapshot of snapshots) {
-        const userTokens = snapshot.data()?.fcmTokens;
-        if (Array.isArray(userTokens)) tokens.push(...userTokens.filter((token: unknown): token is string => typeof token === 'string').slice(0, 20));
-      }
-    }
-    if (tokens.length > 500) return NextResponse.json({ error: 'A maximum of 500 notification tokens is allowed.' }, { status: 400 });
 
-    const messaging = getAdminMessaging();
+    // Use shared admin instance (initialized in lib/firebase-admin.ts)
+    void adminDb; // trigger lazy init
+    const messaging = admin.messaging();
 
-    const notification: Notification = { title, body: msgBody };
+    const notification: admin.messaging.Notification = { title, body: msgBody };
     if (imageUrl) (notification as any).imageUrl = imageUrl;
 
-    const webpush: WebpushConfig = {
+    const webpush: admin.messaging.WebpushConfig = {
       notification: {
         icon: '/favicon-192.png',
         badge: '/favicon-192.png',
-      ...(notificationUrl ? { clickAction: notificationUrl } : {}),
+        ...(url ? { clickAction: url } : {}),
       },
-      fcmOptions: notificationUrl ? { link: notificationUrl } : undefined,
+      fcmOptions: url ? { link: url } : undefined,
     };
 
-    let result: Record<string, unknown> = { successCount: 0, failureCount: 0 };
+    let result: Record<string, unknown>;
     if (tokens.length) {
       // Chunk into groups of 500 (FCM multicast limit)
       const chunks: string[][] = [];
@@ -112,7 +132,7 @@ export async function POST(req: NextRequest) {
       const successCount = responses.reduce((sum, r) => sum + r.successCount, 0);
       const failureCount = responses.reduce((sum, r) => sum + r.failureCount, 0);
       result = { successCount, failureCount };
-    } else if (topic) {
+    } else {
       // Send to FCM topic
       const msgId = await messaging.send({ topic, notification, webpush });
       result = { messageId: msgId };
@@ -120,8 +140,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, ...result });
   } catch (err: any) {
-    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof RequestBodyError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[FCM] Notify error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: 'Unable to send notification.' }, { status: 500 });
   }
 }

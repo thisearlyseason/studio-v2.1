@@ -2,6 +2,11 @@ import asyncio
 from playwright import async_api
 from playwright.async_api import expect
 
+try:
+    from testsprite_tests.e2e_config import BASE_URL, league_code, test_email, test_password
+except ModuleNotFoundError:
+    from e2e_config import BASE_URL, league_code, test_email, test_password
+
 async def run_test():
     pw = None
     browser = None
@@ -30,14 +35,14 @@ async def run_test():
         page = await context.new_page()
 
         # Interact with the page elements to simulate user flow
-        # -> Navigate to http://localhost:9002
-        await page.goto("http://localhost:9002")
+        # -> Navigate to $E2E_BASE_URL
+        await page.goto(f"{BASE_URL}")
         
         # -> Navigate to /events and check whether unauthenticated access redirects to the login page.
-        await page.goto("http://localhost:9002/events")
+        await page.goto(f"{BASE_URL}/events")
         
         # -> Navigate to /roster and verify whether unauthenticated access redirects to the login page.
-        await page.goto("http://localhost:9002/roster")
+        await page.goto(f"{BASE_URL}/roster")
         
         # --> Assertions to verify final state
         frame = context.pages[-1]

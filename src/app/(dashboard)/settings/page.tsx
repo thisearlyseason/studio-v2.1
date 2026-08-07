@@ -66,7 +66,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useTeam } from '@/components/providers/team-provider';
 import { useAuth, useStorage } from '@/firebase';
-import { reauthenticateWithCredential, EmailAuthProvider, updateEmail } from 'firebase/auth';
+import { signOut, reauthenticateWithCredential, EmailAuthProvider, verifyBeforeUpdateEmail } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
@@ -76,26 +76,34 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
-import { deleteFCMToken } from '@/lib/fcm-client';
-import { signOutWithSession } from '@/lib/client-session';
-import { RASTER_IMAGE_ACCEPT, validateRasterImage } from '@/lib/storage-upload-policy';
+import { deleteFCMToken, initFCM } from '@/lib/fcm-client';
+import { clearBrowserSession } from '@/lib/client-auth';
 
 export default function SettingsPage() {
   const { 
     user, updateUser, members, activeTeam, updateMember, 
     manageSubscription, isPro, resetSquadData, checkCodeUniqueness, 
-    updateTeamCode, isStaff, isPlayer, isPrimaryClubAuthority, db
+    updateTeamCode, isStaff, isPlayer, isParent, isPrimaryClubAuthority, db
   } = useTeam();
   const auth = useAuth();
   const router = useRouter();
   const [notifications, setNotifications] = useState(false);
   const [isNotifLoading, setIsNotifLoading] = useState(false);
+  const [upcomingEventNotifications, setUpcomingEventNotifications] = useState(false);
+  const [isUpcomingEventNotifLoading, setIsUpcomingEventNotifLoading] = useState(false);
+  const [isNotificationConsentOpen, setIsNotificationConsentOpen] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<
+    NotificationPermission | 'unsupported'
+  >('default');
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isResetOpen, setIsResetOpen] = useState(false);
   const [isDoubleConfirmOpen, setIsDoubleConfirmOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [resetOptions, setResetOptions] = useState<string[]>(['games', 'events']);
   const [mounted, setMounted] = useState(false);
+  const hasLeagueMembership = Boolean(
+    activeTeam?.leagueIds && Object.keys(activeTeam.leagueIds).length > 0
+  );
   const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const storage = useStorage();
@@ -155,7 +163,17 @@ export default function SettingsPage() {
         institutionTitle: user.institutionTitle || (user.plan_type === 'school' ? 'Athletic Director' : ''),
       });
       // Initialize notifications from user preferences
-      setNotifications((user as any).notificationsEnabled ?? true);
+      const permissionGranted =
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        Notification.permission === 'granted';
+      setNotificationPermission(
+        typeof window !== 'undefined' && 'Notification' in window
+          ? Notification.permission
+          : 'unsupported'
+      );
+      setNotifications(Boolean((user as any).notificationsEnabled) && permissionGranted);
+      setUpcomingEventNotifications(Boolean(user.upcomingEventNotificationsEnabled));
     }
   }, [user, activeTeam, members]);
 
@@ -175,12 +193,6 @@ export default function SettingsPage() {
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
-    const validationError = validateRasterImage(file);
-    if (validationError) {
-      toast({ title: 'Invalid Image', description: validationError, variant: 'destructive' });
-      e.target.value = '';
-      return;
-    }
     setIsUpdatingAvatar(true);
     try {
       // Upload directly to Firebase Storage (avoids Firestore 1MB document limit)
@@ -259,10 +271,18 @@ export default function SettingsPage() {
         reauthPassword
       );
       await reauthenticateWithCredential(auth.currentUser, credential);
-      await updateEmail(auth.currentUser, editForm.email.trim().toLowerCase());
-      await saveProfileFields(true);
+      await verifyBeforeUpdateEmail(
+        auth.currentUser,
+        editForm.email.trim().toLowerCase(),
+        { url: `${window.location.origin}/login?email_updated=1` },
+      );
+      await saveProfileFields(false);
       setIsReauthOpen(false);
       setReauthPassword('');
+      toast({
+        title: 'Verify New Email',
+        description: 'Your current email remains active until you approve the link sent to the new address.',
+      });
     } catch (err: any) {
       const msg = err.code === 'auth/wrong-password' ? 'Incorrect password.' :
                   err.code === 'auth/email-already-in-use' ? 'This email is already in use.' :
@@ -279,31 +299,89 @@ export default function SettingsPage() {
       if (user?.id) {
         deleteFCMToken(user.id).catch(() => {});
       }
-      await signOutWithSession(auth);
+      await clearBrowserSession();
+      await signOut(auth);
       router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
     }
   };
 
-  const handleNotificationsToggle = async (enabled: boolean) => {
+  const enableNotifications = async () => {
     setIsNotifLoading(true);
     try {
-      if (enabled && 'Notification' in window) {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          toast({ title: 'Notifications Blocked', description: 'Allow notifications in your browser settings to enable this.', variant: 'destructive' });
-          setIsNotifLoading(false);
-          return;
-        }
+      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+        toast({
+          title: 'Notifications Unavailable',
+          description: 'This browser does not support web notifications. On iPhone or iPad, install The Squad to your Home Screen first.',
+          variant: 'destructive',
+        });
+        return;
       }
-      setNotifications(enabled);
-      await updateUser({ notificationsEnabled: enabled });
-      toast({ title: enabled ? 'Notifications Enabled' : 'Notifications Disabled' });
+      const token = await initFCM(user.id);
+      setNotificationPermission(Notification.permission);
+      if (!token) {
+        const blocked = Notification.permission === 'denied';
+        toast({
+          title: blocked ? 'Notifications Blocked' : 'Notifications Could Not Be Enabled',
+          description: blocked
+            ? 'Open this site in your browser settings, allow notifications for The Squad, then try again.'
+            : 'The Squad could not register this device. Refresh the page and try again.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      setNotifications(true);
+      await updateUser({ notificationsEnabled: true });
+      toast({
+        title: 'Notifications Enabled',
+        description: 'The Squad can now send alerts to this device.',
+      });
     } catch {
       toast({ title: 'Failed to update notifications', variant: 'destructive' });
     } finally {
       setIsNotifLoading(false);
+    }
+  };
+
+  const handleNotificationsToggle = async (enabled: boolean) => {
+    if (enabled) {
+      setIsNotificationConsentOpen(true);
+      return;
+    }
+
+    setIsNotifLoading(true);
+    try {
+      await deleteFCMToken(user.id);
+      setNotifications(false);
+      setUpcomingEventNotifications(false);
+      await updateUser({
+        notificationsEnabled: false,
+        upcomingEventNotificationsEnabled: false,
+      });
+      toast({ title: 'Notifications Disabled' });
+    } catch {
+      toast({ title: 'Failed to update notifications', variant: 'destructive' });
+    } finally {
+      setIsNotifLoading(false);
+    }
+  };
+
+  const handleUpcomingEventNotificationsToggle = async (enabled: boolean) => {
+    setIsUpcomingEventNotifLoading(true);
+    try {
+      setUpcomingEventNotifications(enabled);
+      await updateUser({ upcomingEventNotificationsEnabled: enabled });
+      toast({
+        title: enabled ? 'Game-Day Reminders Enabled' : 'Game-Day Reminders Disabled',
+        description: enabled
+          ? 'You will receive one same-day reminder for upcoming team events.'
+          : 'Upcoming event reminders are now off for your account.',
+      });
+    } catch {
+      toast({ title: 'Failed to update game-day reminders', variant: 'destructive' });
+    } finally {
+      setIsUpcomingEventNotifLoading(false);
     }
   };
 
@@ -365,7 +443,7 @@ export default function SettingsPage() {
         <CardContent className="-mt-16 space-y-10 p-10 pt-0 relative z-10">
           <div className="flex flex-col items-center text-center space-y-6">
             <div className="relative group">
-              <input type="file" ref={avatarInputRef} className="hidden" accept={RASTER_IMAGE_ACCEPT} onChange={handleAvatarChange} />
+              <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
               <Avatar className="h-32 w-32 border-[6px] border-background shadow-2xl rounded-[2.5rem] transition-transform duration-500 group-hover:scale-105">
                 <AvatarImage src={user.avatar} className="object-cover" />
                 <AvatarFallback className="font-black text-2xl bg-muted">{user.name?.[0] || '?'}</AvatarFallback>
@@ -516,8 +594,57 @@ export default function SettingsPage() {
             <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed">
               Global system for push notifications covering feed updates, match schedule changes, and real-time coordinator alerts.
             </p>
+            {notificationPermission === 'denied' && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left">
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-800">
+                  The Squad notifications are blocked in this browser
+                </p>
+                <p className="mt-2 text-xs font-medium leading-relaxed text-amber-900/80">
+                  Open your browser&apos;s site settings for The Squad, change Notifications to Allow, then return here and turn Tactical Alerts on.
+                </p>
+              </div>
+            )}
+            {notificationPermission === 'unsupported' && (
+              <div className="rounded-2xl border border-muted bg-muted/30 p-4 text-left">
+                <p className="text-xs font-medium leading-relaxed text-muted-foreground">
+                  Notifications are unavailable in this browser. On iPhone or iPad, add The Squad to your Home Screen and open the installed app.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
+
+        {(isParent || isPlayer) && (
+          <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b p-8 flex flex-row items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="bg-blue-100 p-2.5 rounded-xl text-blue-700"><Bell className="h-5 w-5" /></div>
+                <div>
+                  <CardTitle className="text-sm font-black uppercase tracking-widest">Game-Day Reminders</CardTitle>
+                  <CardDescription className="mt-1 text-[10px] font-bold uppercase tracking-wider">
+                    Players and parents
+                  </CardDescription>
+                </div>
+              </div>
+              <Switch
+                aria-label="Game-day reminders"
+                checked={notifications && upcomingEventNotifications}
+                onCheckedChange={handleUpcomingEventNotificationsToggle}
+                disabled={isUpcomingEventNotifLoading || !notifications}
+              />
+            </CardHeader>
+            <CardContent className="p-8 space-y-3">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed">
+                Receive one same-day alert with the upcoming game, practice, tournament, meeting, or event time and location.
+              </p>
+              {!notifications && (
+                <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">
+                  Turn on Tactical Alerts first to enable game-day reminders.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {(isStaff && !isPlayer || isPrimaryClubAuthority) && (
         <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
@@ -614,6 +741,19 @@ export default function SettingsPage() {
 
       <div className="space-y-4 pt-10 border-t">
         <h3 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground px-2">Account Logistics</h3>
+
+        {hasLeagueMembership && (
+          <Link href="/teams/join" className="w-full p-6 bg-black text-white rounded-3xl flex items-center justify-between border-2 border-transparent hover:border-primary/40 shadow-sm transition-all group">
+            <div className="flex items-center gap-4">
+              <div className="bg-white/10 p-3 rounded-2xl text-white group-hover:bg-primary transition-colors"><ShieldCheck className="h-6 w-6" /></div>
+              <div className="text-left">
+                <p className="font-black text-sm uppercase tracking-tight">League Membership</p>
+                <p className="text-[10px] text-white/60 font-bold uppercase">Use an invite code to join another league</p>
+              </div>
+            </div>
+            <ArrowRight className="h-5 w-5 text-white/50 group-hover:text-white group-hover:translate-x-1 transition-all" />
+          </Link>
+        )}
 
         <Link href="/how-to" className="w-full p-6 bg-white rounded-3xl flex items-center justify-between border-2 border-transparent hover:border-primary/20 shadow-sm transition-all group block">
           <div className="flex items-center gap-4">
@@ -759,6 +899,33 @@ export default function SettingsPage() {
           <AlertDialogFooter className="mt-6">
             <AlertDialogCancel className="rounded-xl font-bold border-2">Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleFinalReset} className="rounded-xl font-black bg-red-600 hover:bg-red-700">Purge Permanently</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isNotificationConsentOpen} onOpenChange={setIsNotificationConsentOpen}>
+        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
+          <AlertDialogHeader>
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Bell className="h-7 w-7" />
+            </div>
+            <AlertDialogTitle className="text-center text-2xl font-black tracking-tight">
+              The Squad wants to send you notifications
+            </AlertDialogTitle>
+            <AlertDialogDescription className="pt-2 text-center text-sm font-medium leading-relaxed text-foreground/70">
+              Get team updates, schedule changes, game-day reminders, and coordinator alerts on this device. You can turn them off anytime in Settings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-5 sm:justify-center">
+            <AlertDialogCancel className="rounded-full border-2 px-7 font-black">
+              Not Now
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-full px-7 font-black"
+              onClick={() => void enableNotifications()}
+            >
+              Allow Notifications
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -7,7 +7,7 @@
  *     headers: { 'Content-Type': 'application/json', ...authHeader(token) }
  *   })
  */
-import type { Auth } from 'firebase/auth';
+import { sendEmailVerification, type Auth, type User } from 'firebase/auth';
 
 /** Gets the current user's Firebase ID token. Returns null if not authenticated. */
 export async function getAuthToken(auth: Auth): Promise<string | null> {
@@ -25,4 +25,44 @@ export async function getAuthToken(auth: Auth): Promise<string | null> {
 export function authHeader(token: string | null): Record<string, string> {
   if (!token) return {};
   return { Authorization: `Bearer ${token}` };
+}
+
+export async function sendBrandedVerificationEmail(user: User): Promise<void> {
+  const token = await user.getIdToken(true);
+  const response = await fetch('/api/email/verify-email', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ name: user.displayName || '' }),
+  });
+  if (response.ok) return;
+
+  // Local development intentionally has no production Resend secret. Firebase's
+  // isolated-project sender keeps localhost usable while hosted environments
+  // always use the branded thesquad.pro delivery path.
+  if (process.env.NODE_ENV !== 'production') {
+    await sendEmailVerification(user, {
+      url: `${window.location.origin}/login?verified=1`,
+    });
+    return;
+  }
+  throw new Error('Unable to send verification email.');
+}
+
+export async function establishBrowserSession(user: User): Promise<void> {
+  const token = await user.getIdToken(true);
+  const response = await fetch('/api/auth/session', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) throw new Error('Unable to establish a secure browser session.');
+}
+
+export async function clearBrowserSession(): Promise<void> {
+  await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
 }

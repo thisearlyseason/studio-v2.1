@@ -29,6 +29,7 @@ interface HubStripeSettingsProps {
   hubTeamId: string;
   subSquads: { id: string; name: string }[];
   isSchoolMode: boolean;
+  isDemo?: boolean;
 }
 
 interface HubConnectStatus {
@@ -398,6 +399,7 @@ export function HubStripeSettings({
   hubTeamId,
   subSquads,
   isSchoolMode,
+  isDemo = false,
 }: HubStripeSettingsProps) {
   const db = useFirestore();
 
@@ -435,6 +437,24 @@ export function HubStripeSettings({
   };
 
   const hubLabel = isSchoolMode ? 'School Hub' : 'Club Hub';
+
+  if (isDemo) {
+    return (
+      <Card className="rounded-[2rem] border-none shadow-md bg-muted/30 p-6">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-black uppercase tracking-wider text-foreground">
+              Online Payments Disabled in Demo
+            </p>
+            <p className="text-[10px] font-bold text-muted-foreground mt-1 leading-relaxed">
+              Stripe setup is available only in a live paid workspace. Demo data will not connect to or modify a payment account.
+            </p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

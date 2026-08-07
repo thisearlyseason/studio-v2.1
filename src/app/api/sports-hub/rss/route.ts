@@ -123,7 +123,7 @@ async function fetchFeed(
     const res = await fetchPublicUrl(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'The-Squad-SportsHub/2.0 (+https://thesquad.app/sports-hub)',
+        'User-Agent': 'The-Squad-SportsHub/2.0 (+https://www.thesquad.pro/sports-hub)',
         Accept: 'application/rss+xml, application/xml, application/atom+xml, text/xml, */*',
       },
     });

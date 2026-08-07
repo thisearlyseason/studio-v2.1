@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useTeam } from '@/components/providers/team-provider';
+import { useAuth } from '@/firebase';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { 
   Users, 
   ShieldCheck, 
@@ -26,9 +28,26 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+
+type InvitePreview = {
+  teamId: string;
+  teamName: string;
+};
 
 export default function JoinTeamPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const auth = useAuth();
   const { user, myChildren, joinTeamWithCode, isParent, isPlayer, isStaff } = useTeam();
   
   const [teamCode, setTeamCode] = useState('');
@@ -36,6 +55,9 @@ export default function JoinTeamPage() {
   // 'self' means the signed-in user (player), or any child id for parent
   const [selectedId, setSelectedId] = useState<'self' | string>('self');
   const [isJoining, setIsJoining] = useState(false);
+  const [isResolvingInvite, setIsResolvingInvite] = useState(false);
+  const [invitePreview, setInvitePreview] = useState<InvitePreview | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   const isAthlete = isPlayer || isParent;
   const hasChildren = myChildren.length > 0;
@@ -45,8 +67,47 @@ export default function JoinTeamPage() {
     ? `p_${user?.id}`
     : selectedId; // child ID
 
-  const handleJoinTeam = async () => {
+  const resolveInvite = useCallback(async (rawCode: string, openConfirmation = true) => {
+    const normalizedCode = rawCode.trim().toUpperCase();
+    if (!normalizedCode || !auth.currentUser) return;
+    setIsResolvingInvite(true);
+    try {
+      const token = await getAuthToken(auth);
+      const response = await fetch(
+        `/api/teams/join?code=${encodeURIComponent(normalizedCode)}`,
+        { headers: authHeader(token) }
+      );
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to verify this squad.');
+      setTeamCode(normalizedCode);
+      setInvitePreview({ teamId: payload.teamId, teamName: payload.teamName });
+      if (openConfirmation) setIsConfirmOpen(true);
+    } catch (error: any) {
+      setInvitePreview(null);
+      toast({
+        title: 'Recruitment Link Invalid',
+        description: error.message || 'This squad invitation could not be verified.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsResolvingInvite(false);
+    }
+  }, [auth]);
+
+  useEffect(() => {
+    const linkedCode = searchParams.get('code')?.trim().toUpperCase() || '';
+    if (!linkedCode || !user?.id) return;
+    setTeamCode(linkedCode);
+    void resolveInvite(linkedCode);
+  }, [resolveInvite, searchParams, user?.id]);
+
+  const handleReviewTeam = async () => {
     if (!teamCode.trim()) return;
+    await resolveInvite(teamCode);
+  };
+
+  const handleJoinTeam = async () => {
+    if (!teamCode.trim() || !invitePreview) return;
     if (!effectivePlayerId) {
       toast({ title: "Identification Required", description: "Please select which player is joining.", variant: "destructive" });
       return;
@@ -55,7 +116,16 @@ export default function JoinTeamPage() {
     try {
       const role = selectedId === 'self' ? (isParent ? 'Parent' : 'Player') : 'Player';
       const success = await joinTeamWithCode(teamCode.trim().toUpperCase(), effectivePlayerId, role);
-      if (success) router.push('/feed');
+      if (success) {
+        setIsConfirmOpen(false);
+        router.push('/feed');
+      } else {
+        toast({
+          title: 'Enrollment Failed',
+          description: 'This player could not be enrolled in the selected squad.',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setIsJoining(false);
     }
@@ -185,10 +255,12 @@ export default function JoinTeamPage() {
             <CardFooter className="p-8 lg:p-10 pt-0">
               <Button
                 className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20"
-                onClick={handleJoinTeam}
-                disabled={isJoining || !teamCode.trim()}
+                onClick={handleReviewTeam}
+                disabled={isJoining || isResolvingInvite || !teamCode.trim()}
               >
-                {isJoining ? <Loader2 className="h-6 w-6 animate-spin" /> : "Enroll in Squad"}
+                {isJoining || isResolvingInvite
+                  ? <Loader2 className="h-6 w-6 animate-spin" />
+                  : "Review Squad Invitation"}
               </Button>
             </CardFooter>
           </Card>
@@ -274,6 +346,29 @@ export default function JoinTeamPage() {
           </p>
         </div>
       </div>
+
+      <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <AlertDialogContent className="rounded-[2.5rem]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">
+              Join {invitePreview?.teamName || 'this squad'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="font-medium">
+              {isAthlete
+                ? `Confirm joining “${invitePreview?.teamName || 'this squad'}”.`
+                : `This recruitment link is for “${invitePreview?.teamName || 'this squad'}”. Sign in with a player or parent account to enroll an athlete.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isJoining}>Cancel</AlertDialogCancel>
+            {isAthlete && (
+              <AlertDialogAction onClick={handleJoinTeam} disabled={isJoining}>
+                {isJoining ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Join Squad'}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

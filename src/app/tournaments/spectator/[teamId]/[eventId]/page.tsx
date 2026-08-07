@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { TeamEvent, TournamentGame } from '@/components/providers/team-provider';
-import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,7 +17,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { AnimatedScore } from '@/components/ui/animated-score';
 import { SquadIdentity } from '@/components/SquadIdentity';
-import { PortalStatus } from '@/components/public/PortalStatus';
 
 function formatRoundName(name?: string) {
   if (!name) return '';
@@ -84,9 +82,36 @@ export default function PublicSpectatorHub() {
   const [activeTab, setActiveTab] = useState('schedule');
   const [teamFilter, setTeamFilter] = useState<string | 'all'>('all');
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [event, setEvent] = useState<TeamEvent | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
-  const { data: event, isLoading, error, status, retry } = usePublicPortal<TeamEvent>(portalUrl);
+  useEffect(() => {
+    const resolvedTeamId = typeof teamId === 'string' ? teamId : '';
+    const resolvedEventId = typeof eventId === 'string' ? eventId : '';
+    if (!resolvedTeamId || !resolvedEventId) {
+      setEvent(null);
+      setIsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsLoading(true);
+    fetch(
+      `/api/public/tournaments/${encodeURIComponent(resolvedTeamId)}/${encodeURIComponent(resolvedEventId)}`,
+      { signal: controller.signal }
+    )
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Tournament unavailable.');
+        setEvent(payload.tournament as TeamEvent);
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError') setEvent(null);
+      })
+      .finally(() => setIsLoading(false));
+
+    return () => controller.abort();
+  }, [teamId, eventId]);
 
   const filteredSchedule = useMemo(() => {
     if (!event?.tournamentGames) return [];
@@ -133,7 +158,15 @@ export default function PublicSpectatorHub() {
     </div>
   );
 
-  if (!event || !event.isTournament) return <PortalStatus status={status} message={error} onRetry={retry} title={status === 404 ? 'Tournament Not Found' : undefined} />;
+  if (!event || !event.isTournament) return (
+    <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10">
+      <Card className="max-w-md text-center p-10 rounded-[3rem] border-none shadow-2xl">
+        <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-6 opacity-20" />
+        <h2 className="text-2xl font-black uppercase tracking-tight">Tournament Not Found</h2>
+        <p className="text-muted-foreground font-medium mt-2">This hub is currently inactive or private.</p>
+      </Card>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-muted/5 flex flex-col items-center py-8 lg:py-12 px-4 md:px-6">

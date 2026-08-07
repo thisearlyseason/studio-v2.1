@@ -55,6 +55,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format } from 'date-fns';
+import { NoActiveTeamState } from '@/components/layout/NoActiveTeamState';
 
 const getYoutubeThumbnail = (url: string) => {
   if (!url) return null;
@@ -66,7 +67,7 @@ const getYoutubeThumbnail = (url: string) => {
 };
 
 export default function PlaybookAndGamePlayPage() {
-  const { activeTeam, addDrill, updateDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro, members } = useTeam();
+  const { activeTeam, isTeamsLoading, addDrill, updateDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro, members } = useTeam();
   const db = useFirestore();
 
   const [viewMode, setViewMode] = useState<'drills' | 'gameplay'>('drills');
@@ -374,6 +375,8 @@ export default function PlaybookAndGamePlayPage() {
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentText, setEditingCommentText] = useState<string>('');
 
+  if (isTeamsLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Tactical Hub...</p></div>;
+  if (!activeTeam) return <NoActiveTeamState title="Build Your Tactical Hub" description="Tactical playbooks and game film belong to a squad. Create your free squad or join one to open this workspace." />;
   if (isDrillsLoading || isFilesLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Tactical Hub...</p></div>;
 
   const renderWatchBadge = (item: any) => {
@@ -475,7 +478,11 @@ export default function PlaybookAndGamePlayPage() {
               <div className="flex gap-2 shrink-0">
                 <Button onClick={() => {
                   setNewTitle(''); setNewUrl(''); setNewDesc('');
-                  viewMode === 'drills' ? setIsAddDrillOpen(true) : setIsUploadOpen(true);
+                  if (viewMode === 'drills') {
+                    setIsAddDrillOpen(true);
+                  } else {
+                    setIsUploadOpen(true);
+                  }
                 }} className="rounded-full h-14 px-8 font-black uppercase text-xs shadow-xl shadow-primary/20">
                   <Plus className="h-5 w-5 mr-2" /> Publish {viewMode === 'drills' ? 'Drill' : 'Film'}
                 </Button>
@@ -977,7 +984,7 @@ export default function PlaybookAndGamePlayPage() {
                                  const mediaUrl = typeof media === 'string' ? media : media.url;
                                  return (
                                    <div key={idx} className="aspect-video bg-neutral-900 rounded-[2.5rem] overflow-hidden shadow-2xl relative cursor-zoom-in group border-2 border-white/5 hover:border-primary/50 transition-all duration-500" onClick={() => setLightboxUrl(mediaUrl)}>
-                                     <img src={mediaUrl} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700" />
+                                     <img src={mediaUrl} alt={`Tactical asset ${idx + 1}`} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700" />
                                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/60 backdrop-blur-sm transition-all duration-500">
                                        <Search className="h-10 w-10 text-white" />
                                      </div>

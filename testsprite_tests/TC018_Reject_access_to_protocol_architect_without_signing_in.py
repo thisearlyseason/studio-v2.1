@@ -3,6 +3,11 @@ import re
 from playwright import async_api
 from playwright.async_api import expect
 
+try:
+    from testsprite_tests.e2e_config import BASE_URL, league_code, test_email, test_password
+except ModuleNotFoundError:
+    from e2e_config import BASE_URL, league_code, test_email, test_password
+
 async def run_test():
     pw = None
     browser = None
@@ -34,14 +39,14 @@ async def run_test():
 
         # Interact with the page elements to simulate user flow
         # -> navigate
-        await page.goto("http://localhost:9002")
+        await page.goto(f"{BASE_URL}")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:
             pass
         
-        # -> Navigate to http://localhost:9002/leagues/registration/1 and observe whether the sign-in page is displayed.
-        await page.goto("http://localhost:9002/leagues/registration/1")
+        # -> Navigate to $E2E_BASE_URL/leagues/registration/1 and observe whether the sign-in page is displayed.
+        await page.goto(f"{BASE_URL}/leagues/registration/1")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:

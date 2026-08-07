@@ -6,13 +6,13 @@ import Link from 'next/link';
 import {
   BookOpen, Search, Bookmark, BookmarkCheck, Share2, Link2,
   Clock, ChevronRight, Check, Filter, X, Users, Trophy,
-  Apple, FlaskConical, Dumbbell, Brain, Zap,
+  Apple, FlaskConical, Dumbbell, Brain, Zap, HeartHandshake,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { ARTICLES_LIST } from '@/lib/sports-hub-articles';
 import type { Article } from '@/lib/sports-hub-articles';
+import { useSportsHubArticles } from '@/hooks/use-sports-hub-articles';
 
 // ─── Category Config ──────────────────────────────────────────────────────────
 
@@ -26,6 +26,7 @@ const CATEGORY_CONFIG = [
   { label: 'Sports Science',        icon: FlaskConical, color: 'text-purple-500' },
   { label: 'Strength & Conditioning', icon: Dumbbell,   color: 'text-rose-500' },
   { label: 'Mental Performance',    icon: Brain,        color: 'text-indigo-500' },
+  { label: 'Parents',               icon: HeartHandshake, color: 'text-pink-600' },
 ] as const;
 
 const SORT_OPTIONS = [
@@ -56,7 +57,11 @@ function useBookmarks() {
   const toggle = (id: string) => {
     setBookmarks(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       try { localStorage.setItem('sh-bookmarks', JSON.stringify([...next])); } catch { /* */ }
       return next;
     });
@@ -88,7 +93,7 @@ function ArticleCard({
   onCopy: () => void;
   isCopied: boolean;
 }) {
-  const url = `https://thesquad.app/sports-hub/articles/${article.slug}`;
+  const url = `https://www.thesquad.pro/sports-hub/articles/${article.slug}`;
 
   const handleShare = async (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
@@ -228,6 +233,7 @@ function CategoryPill({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function NewsPage() {
+  const articles = useSportsHubArticles();
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortOption>('newest');
@@ -238,18 +244,18 @@ export default function NewsPage() {
 
   // Counts per category
   const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = { All: ARTICLES_LIST.length };
-    for (const a of ARTICLES_LIST) {
+    const counts: Record<string, number> = { All: articles.length };
+    for (const a of articles) {
       for (const c of a.categories) {
         counts[c] = (counts[c] ?? 0) + 1;
       }
     }
     return counts;
-  }, []);
+  }, [articles]);
 
   // Filtered + sorted articles
   const filtered = useMemo(() => {
-    let list = [...ARTICLES_LIST];
+    let list = [...articles];
 
     if (showOnlyBookmarks) list = list.filter(a => bookmarks.has(a.id));
 
@@ -273,7 +279,7 @@ export default function NewsPage() {
     }
 
     return list;
-  }, [category, search, sort, showOnlyBookmarks, bookmarks]);
+  }, [articles, category, search, sort, showOnlyBookmarks, bookmarks]);
 
   const featured = filtered.filter(a => a.isFeatured).slice(0, 3);
   const rest = featured.length > 0 ? filtered.filter(a => !a.isFeatured) : filtered;
@@ -297,7 +303,7 @@ export default function NewsPage() {
         </p>
         <div className="flex items-center gap-2 mt-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
           <span className="h-2 w-2 rounded-full hero-gradient" />
-          {ARTICLES_LIST.length} articles · Updated regularly
+          {articles.length} articles · Updated regularly
         </div>
       </motion.div>
 
@@ -357,7 +363,7 @@ export default function NewsPage() {
         </div>
 
         {/* Category pills */}
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+        <div className="flex flex-wrap gap-2 pb-1">
           {CATEGORY_CONFIG.map(cat => (
             <CategoryPill
               key={cat.label}
@@ -393,7 +399,7 @@ export default function NewsPage() {
                 article={a}
                 isBookmarked={bookmarks.has(a.id)}
                 onBookmark={() => toggleBookmark(a.id)}
-                onCopy={() => copy(a.id, `https://thesquad.app/sports-hub/articles/${a.slug}`)}
+                onCopy={() => copy(a.id, `https://www.thesquad.pro/sports-hub/articles/${a.slug}`)}
                 isCopied={copiedId === a.id}
               />
             ))}
@@ -444,7 +450,7 @@ export default function NewsPage() {
                   article={a}
                   isBookmarked={bookmarks.has(a.id)}
                   onBookmark={() => toggleBookmark(a.id)}
-                  onCopy={() => copy(a.id, `https://thesquad.app/sports-hub/articles/${a.slug}`)}
+                onCopy={() => copy(a.id, `https://www.thesquad.pro/sports-hub/articles/${a.slug}`)}
                   isCopied={copiedId === a.id}
                 />
               ))}

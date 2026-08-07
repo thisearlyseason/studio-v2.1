@@ -35,6 +35,7 @@ import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { SquadIdentity } from '@/components/SquadIdentity';
+import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -55,22 +56,33 @@ export default function BillingDashboard() {
   const [pendingSync, setPendingSync] = useState(false);
   const [addonQty, setAddonQty] = useState(userProfile?.extra_teams || 0);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(
-    userProfile?.subscription_status?.includes('annual') ? 'annual' : 'monthly'
+    userProfile?.billing_cycle || 'monthly'
   );
 
   useEffect(() => {
     setAddonQty(userProfile?.extra_teams || 0);
   }, [userProfile?.extra_teams]);
+  useEffect(() => {
+    if (userProfile?.billing_cycle) {
+      setBillingCycle(userProfile.billing_cycle);
+    }
+  }, [userProfile?.billing_cycle]);
 
   // Demo detection: team IDs starting with 'demo_' or isDemo flag on team/user
   const isDemo = !!(activeTeam?.isDemo || (userProfile as any)?.isDemo ||
     teams?.some(t => t.id?.startsWith('demo_')));
 
   const currentPlan = PRICING_CONFIG.find(p => p.id === userProfile?.plan_type) || null;
-  const isOverLimit = (teams || []).length > (userProfile?.team_limit || 1);
+  const paidSeatLimit = userProfile?.team_limit ?? 0;
+  const ownedProTeamCount = (teams || []).filter(
+    team =>
+      team.ownerUserId === userProfile?.id &&
+      team.isPro === true &&
+      isBillableSquadSeat(team)
+  ).length;
+  const isOverLimit = ownedProTeamCount > paidSeatLimit;
   const isStripeLinked = !!userProfile?.stripe_subscription_id;
-  // Multi-team plans are those with a limit > 1 (Elite, League, Schools)
-  const isMultiTeamPlan = (userProfile?.team_limit || 1) > 1;
+  const hasPaidPlan = ['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo'].includes(userProfile?.plan_type || '');
 
   // ─── Handlers ────────────────────────────────────────────────────────────
   const handleUpdatePlan = async (newPlan: Plan | null, initialAddons?: number) => {
@@ -95,6 +107,7 @@ export default function BillingDashboard() {
           headers: { 'Content-Type': 'application/json', ...authHeader(token) },
           body: JSON.stringify({
             userId: userProfile.id,
+            teamId: activeTeam?.id,
             priceId: newPlan ? (billingCycle === 'annual' ? newPlan.annualPriceId : newPlan.monthlyPriceId) : null,
             billingCycle,
             extraTeamQty: initialAddons || 0,
@@ -123,12 +136,21 @@ export default function BillingDashboard() {
       const response = await fetch('/api/subscription/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ userId: userProfile.id, newPriceId }),
+        body: JSON.stringify({
+          userId: userProfile.id,
+          newPriceId,
+          operationId: crypto.randomUUID(),
+        }),
       });
       const data = await response.json();
       if (data.success) {
         toast({ title: 'Plan Changed!', description: `Switched to ${newPlan.name}. Reloading...` });
         setTimeout(() => { window.location.href = '/dashboard/billing'; }, 1200);
+      } else if (data.pending) {
+        toast({
+          title: 'Payment Pending',
+          description: data.message,
+        });
       } else {
         throw new Error(data.error);
       }
@@ -162,13 +184,18 @@ export default function BillingDashboard() {
         body: JSON.stringify({
           userId: userProfile.id,
           quantity: qty,
-          billingCycle: userProfile.subscription_status?.includes('annual') ? 'annual' : 'monthly',
+          operationId: crypto.randomUUID(),
         }),
       });
       const data = await response.json();
       if (data.success) {
         toast({ title: 'Quota Updated', description: 'Extra team capacity has been adjusted.' });
         setAddonQty(qty);
+      } else if (data.pending) {
+        toast({
+          title: 'Payment Pending',
+          description: data.message,
+        });
       } else {
         throw new Error(data.error);
       }
@@ -187,7 +214,7 @@ export default function BillingDashboard() {
       const response = await fetch('/api/subscription/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ userId: userProfile.id }),
+        body: JSON.stringify({ userId: userProfile.id, operationId: crypto.randomUUID() }),
       });
       const data = await response.json();
       if (data.success) {
@@ -210,7 +237,7 @@ export default function BillingDashboard() {
       const res = await fetch('/api/stripe/customer-portal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ userId: userProfile.id }),
+        body: JSON.stringify({ userId: userProfile.id, operationId: crypto.randomUUID() }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
@@ -230,7 +257,10 @@ export default function BillingDashboard() {
       const res = await fetch('/api/subscription/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ userId: userProfile.id }),
+        body: JSON.stringify({
+          userId: userProfile.id,
+          operationId: crypto.randomUUID(),
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -267,7 +297,7 @@ export default function BillingDashboard() {
 
   // Helpers
   const currentPlanIndex = PRICING_CONFIG.findIndex(p => p.id === userProfile.plan_type);
-  const isCancelling = userProfile.subscription_status === 'cancel_at_period_end' || (userProfile as any).cancel_at_period_end;
+  const isCancelling = userProfile.cancel_at_period_end === true;
 
   const getPlanAction = (plan: Plan) => {
     if (plan.id === userProfile.plan_type) return 'current';
@@ -334,8 +364,8 @@ export default function BillingDashboard() {
           <div>
             <p className="font-black text-red-900 text-sm uppercase tracking-tight">Team Limit Exceeded</p>
             <p className="text-xs font-bold text-red-700 mt-1">
-              You are managing {(teams || []).length} teams but your plan allows {userProfile.team_limit || 1}.
-              Upgrade your plan to restore full access.
+              You have {ownedProTeamCount} Pro squads but your plan includes {paidSeatLimit} paid seats.
+              Release a Pro seat or upgrade your plan to restore paid features.
             </p>
           </div>
         </div>
@@ -363,8 +393,8 @@ export default function BillingDashboard() {
             </div>
             <div className="flex flex-wrap gap-4">
               <div className="bg-muted/40 px-5 py-3 rounded-2xl text-center">
-                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Team Slots</p>
-                <p className="text-xl font-black">{userProfile.team_limit || 1}</p>
+                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Paid Seats</p>
+                <p className="text-xl font-black">{paidSeatLimit}</p>
               </div>
               <div className="bg-muted/40 px-5 py-3 rounded-2xl text-center">
                 <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Extra Squads</p>
@@ -528,18 +558,8 @@ export default function BillingDashboard() {
                     if (addonQty > currentQty) {
                       const diff = addonQty - currentQty;
                       const price = billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPrice : EXTRA_TEAM_CONFIG.monthlyPrice;
-                      if (!confirm(`Add ${diff} extra squad seat${diff > 1 ? 's' : ''} for ${price}/squad per ${billingCycle === 'annual' ? 'year' : 'month'}? You will be taken to Stripe to complete payment.`)) return;
-                      setLoading('addon_init');
-                      getAuthToken(auth).then(token =>
-                        fetch('/api/stripe/create-checkout', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-                          body: JSON.stringify({ userId: userProfile.id, priceId: null, billingCycle, extraTeamQty: diff }),
-                        })
-                      ).then(r => r.json()).then(data => {
-                        if (data.url) { window.location.href = data.url; }
-                        else { toast({ title: 'Checkout Error', description: data.error, variant: 'destructive' }); setLoading(null); }
-                      }).catch(e => { toast({ title: 'Checkout Error', description: e.message, variant: 'destructive' }); setLoading(null); });
+                      if (!confirm(`Add ${diff} extra squad seat${diff > 1 ? 's' : ''} for ${price}/squad per ${billingCycle === 'annual' ? 'year' : 'month'}? Your Stripe subscription will be updated immediately.`)) return;
+                      void handleUpdateAddon(addonQty);
                     } else {
                       handleUpdateAddon(addonQty);
                     }
@@ -557,7 +577,7 @@ export default function BillingDashboard() {
       )}
 
       {/* ── Squad Pro Allocation — only meaningful for multi-team plans ── */}
-      {isMultiTeamPlan && teams && teams.filter(t => t.ownerUserId === userProfile.id).length > 0 && (
+      {hasPaidPlan && teams && teams.filter(t => t.ownerUserId === userProfile.id).length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-black uppercase tracking-widest">Squad Pro Allocation</h2>

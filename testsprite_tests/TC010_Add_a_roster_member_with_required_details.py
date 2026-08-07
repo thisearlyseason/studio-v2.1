@@ -2,6 +2,11 @@ import asyncio
 from playwright import async_api
 from playwright.async_api import expect
 
+try:
+    from testsprite_tests.e2e_config import BASE_URL, league_code, test_email, test_password
+except ModuleNotFoundError:
+    from e2e_config import BASE_URL, league_code, test_email, test_password
+
 async def run_test():
     pw = None
     browser = None
@@ -30,8 +35,8 @@ async def run_test():
         page = await context.new_page()
 
         # Interact with the page elements to simulate user flow
-        # -> Navigate to http://localhost:9002
-        await page.goto("http://localhost:9002")
+        # -> Navigate to $E2E_BASE_URL
+        await page.goto(f"{BASE_URL}")
         
         # -> Open the login form by clicking the 'Log In' button.
         frame = context.pages[-1]
@@ -40,18 +45,18 @@ async def run_test():
         await asyncio.sleep(3); await elem.click()
         
         # -> Open the login page/form by navigating to /login so I can fill staff credentials.
-        await page.goto("http://localhost:9002/login")
+        await page.goto(f"{BASE_URL}/login")
         
         # -> Fill the email and password fields with staff credentials and submit the login form.
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[5]/div/form/div/div/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('tester_k995dt@example.com')
+        await asyncio.sleep(3); await elem.fill(test_email())
         
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[5]/div/form/div/div[2]/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('password123')
+        await asyncio.sleep(3); await elem.fill(test_password())
         
         frame = context.pages[-1]
         # Click element
@@ -62,12 +67,12 @@ async def run_test():
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[5]/div/form/div/div/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('tester_k995dt@example.com')
+        await asyncio.sleep(3); await elem.fill(test_email())
         
         frame = context.pages[-1]
         # Input text
         elem = frame.locator('xpath=/html/body/div[2]/div[5]/div/form/div/div[2]/input').nth(0)
-        await asyncio.sleep(3); await elem.fill('password123')
+        await asyncio.sleep(3); await elem.fill(test_password())
         
         frame = context.pages[-1]
         # Click element
@@ -150,7 +155,7 @@ async def run_test():
         await asyncio.sleep(3); await elem.click()
         
         # -> Open the Roster page (navigate to /roster) and wait for the roster area to finish loading so the 'Add member' control becomes visible.
-        await page.goto("http://localhost:9002/roster")
+        await page.goto(f"{BASE_URL}/roster")
         
         # --> Assertions to verify final state
         frame = context.pages[-1]

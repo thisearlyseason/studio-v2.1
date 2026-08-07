@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import submissionModule from '../src/lib/public-submissions.ts';
+import * as submissionModule from '../src/lib/public-submissions.ts';
 
 const { parsePublicSubmission } = submissionModule;
 

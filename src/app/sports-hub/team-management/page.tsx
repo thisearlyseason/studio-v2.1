@@ -6,15 +6,8 @@ import Link from 'next/link';
 import { Users, User, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CategoryPills } from '@/components/sports-hub/CategoryPills';
-import { ARTICLES_LIST } from '@/lib/sports-hub-articles';
-
-// Pull all team management articles from the central DB
-const ALL_TM = ARTICLES_LIST.filter(
-  (a) =>
-    a.categories?.includes('Team Management') ||
-    (a as { section?: string }).section === 'Team Management' ||
-    (a as { section?: string }).section === 'team-management'
-);
+import type { Article } from '@/lib/sports-hub-articles';
+import { useSportsHubArticles } from '@/hooks/use-sports-hub-articles';
 
 // Tag-based subcategory mapping
 const SUB_CATEGORY_MAP: Record<string, string[]> = {
@@ -29,7 +22,7 @@ const SUB_CATEGORY_MAP: Record<string, string[]> = {
 
 const TM_CATEGORIES = ['All', ...Object.keys(SUB_CATEGORY_MAP)];
 
-function getSubCategory(article: typeof ARTICLES_LIST[0]): string {
+function getSubCategory(article: Article): string {
   const tagList = (article.tags || []).map((t: string) => t.toLowerCase());
   for (const [cat, keywords] of Object.entries(SUB_CATEGORY_MAP)) {
     if (keywords.some((kw) => tagList.some((t) => t.includes(kw)))) return cat;
@@ -44,15 +37,19 @@ const fadeUp = {
 
 export default function TeamManagementPage() {
   const [activeCategory, setActiveCategory] = useState('All');
+  const articles = useSportsHubArticles();
+  const allTeamManagement = useMemo(() => articles.filter(
+    article => article.categories?.includes('Team Management') || article.section === 'Team Management' || article.section === 'team-management'
+  ), [articles]);
 
   const filtered = useMemo(() => {
-    if (activeCategory === 'All') return ALL_TM;
+    if (activeCategory === 'All') return allTeamManagement;
     const keywords = SUB_CATEGORY_MAP[activeCategory] || [];
-    return ALL_TM.filter((a) => {
+    return allTeamManagement.filter((a) => {
       const tagList = (a.tags || []).map((t: string) => t.toLowerCase());
       return keywords.some((kw) => tagList.some((t) => t.includes(kw)));
     });
-  }, [activeCategory]);
+  }, [activeCategory, allTeamManagement]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-12">
@@ -70,7 +67,7 @@ export default function TeamManagementPage() {
           Rosters, communication, volunteers, equipment, finance, and scheduling — the operational side of running a great sports program.
         </p>
         <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mt-2">
-          <span className="text-primary">{ALL_TM.length}</span> Articles
+          <span className="text-primary">{allTeamManagement.length}</span> Articles
         </p>
       </motion.div>
 

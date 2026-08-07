@@ -22,6 +22,8 @@ interface ConnectStatus {
 interface StripeConnectSetupProps {
   /** The authenticated user's Firebase UID */
   userId: string;
+  /** The paid squad whose seat authorizes online payments */
+  teamId: string;
   /** Called after a successful connection so parent can refresh state */
   onConnected?: () => void;
 }
@@ -36,7 +38,7 @@ interface StripeConnectSetupProps {
  * Free/starter users should NOT see this component — the parent (SquadFinancialHub)
  * is already guarded by {isPro && ...}. We add a secondary guard here for safety.
  */
-export function StripeConnectSetup({ userId, onConnected }: StripeConnectSetupProps) {
+export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnectSetupProps) {
   const auth = useAuth();
   const [status, setStatus] = useState<ConnectStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,9 +54,12 @@ export function StripeConnectSetup({ userId, onConnected }: StripeConnectSetupPr
     try {
       const idToken = await getAuthToken(auth);
       if (!idToken) { setIsLoading(false); return; }
-      const res = await fetch(`/api/stripe/connect/status?userId=${userId}`, {
+      const res = await fetch(
+        `/api/stripe/connect/status?userId=${userId}&teamId=${encodeURIComponent(teamId)}`,
+        {
         headers: authHeader(idToken),
-      });
+        }
+      );
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
@@ -76,8 +81,7 @@ export function StripeConnectSetup({ userId, onConnected }: StripeConnectSetupPr
     } finally {
       setIsLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth, userId]); // onConnected intentionally excluded — use ref instead
+  }, [auth, userId, teamId]); // onConnected intentionally excluded — use ref instead
 
   useEffect(() => {
     fetchStatus();
@@ -110,7 +114,7 @@ export function StripeConnectSetup({ userId, onConnected }: StripeConnectSetupPr
       const res = await fetch('/api/stripe/connect/onboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(idToken) },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, teamId }),
       });
       const data = await res.json();
       if (!res.ok) {

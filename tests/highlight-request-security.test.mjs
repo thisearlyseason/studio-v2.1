@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import highlightModule from '../src/lib/highlight-request-security.ts';
-import guardModule from '../src/lib/server-request-guards.ts';
+import * as highlightModule from '../src/lib/highlight-request-security.ts';
+import * as guardModule from '../src/lib/server-request-guards.ts';
 
 const {
   parseAllowedFrameUrl,

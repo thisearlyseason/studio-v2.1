@@ -1,12 +1,13 @@
 'use server';
 /**
- * @fileOverview A Genkit flow that generates professional scouting reports using Straico.
+ * @fileOverview Generates professional scouting reports using Straico.
  * 
  * - generateScoutingBrief - Analysis engine for opponent tactics.
  */
 
-import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { z } from 'zod';
+import { generateWithStraico } from '@/lib/straico';
+import { parseStructuredAiResponse } from '@/lib/structured-ai-response';
 
 const ScoutingInputSchema = z.object({
   opponentName: z.string(),
@@ -21,43 +22,19 @@ const ScoutingOutputSchema = z.object({
   suggestedDrillFocus: z.string().describe('Recommended training priority for this match-up.'),
 });
 
-/**
- * Top-level prompt definition using the custom Straico model.
- */
-const scoutingPrompt = ai.definePrompt({
-  name: 'scoutingPrompt',
-  model: 'straico/default',
-  input: { schema: ScoutingInputSchema },
-  output: { schema: ScoutingOutputSchema },
-  prompt: `You are an Elite Tactical Analyst for a professional {{{sport}}} team.
-  
-  Analyze the following coach observations for the upcoming match against {{{opponentName}}}:
-  
-  OBSERVATIONS:
-  {{{rawObservations}}}
-  
-  Generate a structured, high-performance scouting report that identifies strategic patterns and exploit points.
-  Ensure the tone is objective and instruction-focused for the squad.`,
-});
-
-/**
- * Top-level flow definition to avoid redundant registration.
- */
-const generateScoutingBriefFlow = ai.defineFlow(
-  {
-    name: 'generateScoutingBriefFlow',
-    inputSchema: ScoutingInputSchema,
-    outputSchema: ScoutingOutputSchema,
-  },
-  async (input) => {
-    const { output } = await scoutingPrompt(input);
-    if (!output) {
-      throw new Error('Tactical analysis failed to generate output.');
-    }
-    return output;
-  }
-);
-
 export async function generateScoutingBrief(input: z.infer<typeof ScoutingInputSchema>) {
-  return generateScoutingBriefFlow(input);
+  const validatedInput = ScoutingInputSchema.parse(input);
+  const response = await generateWithStraico(`You are an Elite Tactical Analyst for a professional ${validatedInput.sport} team.
+
+Analyze the following coach observations for the upcoming match against ${validatedInput.opponentName}:
+
+OBSERVATIONS:
+${validatedInput.rawObservations}
+
+Generate a structured, high-performance scouting report that identifies strategic patterns and exploit points.
+Ensure the tone is objective and instruction-focused for the squad.
+Return only valid JSON with this exact shape:
+{"strengths":"string","weaknesses":"string","keysToVictory":"string","suggestedDrillFocus":"string"}`);
+
+  return ScoutingOutputSchema.parse(parseStructuredAiResponse(response));
 }

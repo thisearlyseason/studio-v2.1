@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import networkModule from '../src/lib/public-network-url.ts';
+import * as networkModule from '../src/lib/public-network-url.ts';
 
 const { isObviouslyPrivateHostname, isPrivateIp } = networkModule;
 const notificationModule = await import('../src/lib/notification-targets.ts');

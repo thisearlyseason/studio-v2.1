@@ -13,11 +13,11 @@ import { useTeam } from '@/components/providers/team-provider';
 import { Loader2, Timer } from 'lucide-react';
 import { seedGuestDemoTeam } from '@/lib/db-seeder';
 import { useFirestore } from '@/firebase';
-import { signOutWithSession } from '@/lib/client-session';
+import { signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { getAuthToken, authHeader } from '@/lib/client-auth';
+import { getAuthToken, authHeader, clearBrowserSession } from '@/lib/client-auth';
 
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -94,21 +94,19 @@ function DemoSeedWrapper({
       try {
         if (!auth.currentUser) throw new Error('No authenticated user');
 
-        // Always run the full client-side seeder — it seeds hundreds of documents
-        // (players, events, games, chats, drills, fundraising, equipment, etc.).
-        // The server-side /api/demo/seed was only a skeleton; the full seeder must be primary.
-        const primaryId = await seedGuestDemoTeam(db, user.uid, demoPlanId);
+        // Server establishes the protected profile and approved team shells.
+        // The rich client blueprint may only fill those server-approved demos.
+        const idToken = await getAuthToken(auth);
+        if (!idToken) throw new Error('Demo session expired. Please start the demo again.');
+        const bootstrapResponse = await fetch('/api/demo/seed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ planId: demoPlanId }),
+        });
+        const bootstrapPayload = await bootstrapResponse.json();
+        if (!bootstrapResponse.ok) throw new Error(bootstrapPayload.error || 'Unable to initialize the demo.');
 
-        // Log a diagnostic ping to the server-side route (non-blocking, for monitoring)
-        getAuthToken(auth).then(idToken => {
-          if (idToken) {
-            fetch('/api/demo/seed', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-              body: JSON.stringify({ planId: demoPlanId }),
-            }).catch(() => {}); // fire-and-forget
-          }
-        }).catch(() => {});
+        const primaryId = await seedGuestDemoTeam(db, user.uid, demoPlanId);
 
         if (primaryId) {
           localStorage.setItem('sf_session_team_id', primaryId);
@@ -126,14 +124,17 @@ function DemoSeedWrapper({
         }, 2000);
 
       } catch (e: any) {
-        // Log every available detail so we can diagnose permission failures in production
-        console.error(`[Demo] Seed attempt ${attempt} failed:`, {
+        // Keep the diagnostic as one serialized string. Some hosted console
+        // collectors collapse object arguments to the literal word "Object",
+        // which hides the actionable Firebase code and project identifier.
+        const diagnostic = {
           message: e?.message,
           code: e?.code,
           name: e?.name,
+          firebaseProjectId: auth.app.options.projectId,
           stack: e?.stack?.split('\n').slice(0,5).join('\n'),
-          raw: e
-        });
+        };
+        console.error(`[Demo] Seed attempt ${attempt} failed: ${JSON.stringify(diagnostic)}`);
 
         if (e.code === 'resource-exhausted') {
           // Quota errors are not recoverable — surface immediately
@@ -193,6 +194,7 @@ function BetaDemoSeeder({
   setIsSeedingDemo: (v: boolean) => void;
 }) {
   const db = useFirestore();
+  const auth = useAuth();
   const seederFiredRef = useRef(false);
 
   useEffect(() => {
@@ -228,13 +230,24 @@ function BetaDemoSeeder({
 
     const seed = async (attempt = 1) => {
       try {
+        const idToken = await getAuthToken(auth);
+        if (!idToken) throw new Error('Beta session expired. Please sign in again.');
+        const bootstrap = await fetch('/api/demo/seed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ planId }),
+        });
+        if (!bootstrap.ok) throw new Error((await bootstrap.json()).error || 'Unable to initialize beta workspace.');
+
         const primaryId = await seedGuestDemoTeam(db, user.uid, planId, true /* isBetaTester */);
         if (primaryId) {
           localStorage.setItem('sf_session_team_id', primaryId);
         }
-        // Mark as seeded in Firestore so we never re-seed across devices/sessions
-        const { updateDoc, doc: fsDoc } = await import('firebase/firestore');
-        await updateDoc(fsDoc(db, 'users', user.uid), { betaDemoSeeded: true });
+        const complete = await fetch('/api/demo/seed', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        });
+        if (!complete.ok) throw new Error((await complete.json()).error || 'Unable to finalize beta workspace.');
 
         toast({ title: '🎮 Beta Environment Ready', description: 'Your demo workspace has been set up.' });
         setTimeout(() => window.location.replace('/dashboard'), 1500);
@@ -251,7 +264,7 @@ function BetaDemoSeeder({
       }
     };
     seed();
-  }, [user, userProfile, isTeamsLoading, teamsCount, isDemoInitializing, db, setIsDemoInitializing, setIsSeedingDemo]);
+  }, [user, userProfile, isTeamsLoading, teamsCount, isDemoInitializing, db, auth, setIsDemoInitializing, setIsSeedingDemo]);
 
   return null;
 }
@@ -290,6 +303,11 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!mounted || !isAuthResolved || isDemoInitializing) return;
     if (!user && !pathname.includes('seed_demo')) {
+      const query = searchParams.toString();
+      const returnPath = `${pathname}${query ? `?${query}` : ''}`;
+      if (returnPath.startsWith('/') && !returnPath.startsWith('//')) {
+        sessionStorage.setItem('squad_return_path', returnPath);
+      }
       router.push('/login');
     }
 
@@ -333,10 +351,14 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         return;
       }
     }
-  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, activeTeam]);
+  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, activeTeam]);
 
   useEffect(() => {
-    if (!mounted || isSeedingDemo || isTeamsLoading || !user || isDemoInitializing) return;
+    // Wait for both the profile and team hydration before deciding that the
+    // account needs onboarding. School/club demos can authenticate before
+    // their server-seeded profile is visible to the client; redirecting during
+    // that gap incorrectly sends an authorized administrator to /teams/join.
+    if (!mounted || isSeedingDemo || isTeamsLoading || !user || !userProfile || isDemoInitializing) return;
     const isSetupPage = pathname === '/dashboard' ||
                         pathname === '/dashboard/billing' ||
                         pathname === '/teams/new' || 
@@ -347,6 +369,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
                         pathname === '/how-to' ||
                         pathname === '/leagues' ||
                         pathname === '/competition' ||
+                        pathname === '/club' ||
                         pathname === '/manage-tournaments' ||
                         pathname === '/facilities' ||
                         pathname === '/coaches-corner' ||
@@ -387,7 +410,9 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       setTimeLeft(remaining);
       if (remaining <= 0) {
         sessionStorage.removeItem(DEMO_START_KEY);
-        signOutWithSession(auth).then(() => window.location.href = `/login?reason=expired`);
+        void clearBrowserSession()
+          .then(() => signOut(auth))
+          .finally(() => { window.location.href = `/login?reason=expired`; });
       }
     };
     checkSession();
@@ -415,7 +440,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           await fetch('/api/subscription/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-            body: JSON.stringify({ userId: user.uid }),
+            body: JSON.stringify({ userId: user.uid, operationId: crypto.randomUUID() }),
           });
           
           if (auth.currentUser) {

@@ -46,11 +46,14 @@ export default function UniversalAccountDashboard() {
     user, activeTeam, activeTeamEvents, 
     householdBalance, isYouth, isParent,
     householdEvents, householdGames, myChildren, teams,
-    isPrimaryClubAuthority, isSchoolMode, isEliteClubMode
+    isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isStaff
   } = useTeam();
   const router = useRouter();
   const db = useFirestore();
   const [mounted, setMounted] = useState(false);
+  const hasLeagueMembership = Boolean(
+    activeTeam?.leagueIds && Object.keys(activeTeam.leagueIds).length > 0
+  );
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -332,12 +335,25 @@ export default function UniversalAccountDashboard() {
                   </Card>
                 );
               }) : (
-                <div className="flex flex-col items-center justify-center py-16 bg-muted/5 rounded-[2.5rem] border-2 border-dashed border-muted/20 text-center space-y-3 opacity-60">
-                  <CalendarDays className="h-10 w-10 text-muted-foreground opacity-20" />
+                <div className="flex flex-col items-center justify-center py-12 px-6 bg-muted/5 rounded-[2.5rem] border-2 border-dashed border-muted/20 text-center space-y-4">
+                  <CalendarDays className="h-10 w-10 text-primary/40" />
                   <div>
                     <h4 className="text-lg font-black uppercase tracking-tight text-muted-foreground">Tactical Silence</h4>
                     <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mt-1">No upcoming squad directives found</p>
                   </div>
+                  <Button
+                    className="h-11 rounded-full px-7 text-[10px] font-black uppercase tracking-widest"
+                    onClick={() => router.push(
+                      activeTeam
+                        ? (isStaff ? '/events' : '/calendar')
+                        : (user.role === 'coach' ? '/teams/new' : '/teams/join')
+                    )}
+                  >
+                    {activeTeam
+                      ? (isStaff ? 'Schedule First Event' : 'Open Master Schedule')
+                      : (user.role === 'coach' ? 'Create Your Squad' : 'Join a Squad')}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
                 </div>
               )}
             </div>
@@ -383,12 +399,14 @@ export default function UniversalAccountDashboard() {
           </section>
         </div>
         <aside className="space-y-8">
-          <Card className="rounded-[2rem] bg-black text-white p-8 space-y-6 relative overflow-hidden group">
-            <ShieldCheck className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 h-32 w-32 group-hover:scale-110 transition-transform duration-700" />
-            <h3 className="text-2xl font-black uppercase tracking-tight">Join a League</h3>
-            <p className="text-xs text-white/60 font-medium leading-relaxed italic">Enter a coordinate league code provided by your organization manager to instantly enroll your household into competitive standings.</p>
-            <Button onClick={() => router.push('/teams/join')} className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] shadow-xl">Open Portal <ArrowRight className="ml-2 h-5 w-5" /></Button>
-          </Card>
+          {!hasLeagueMembership && (
+            <Card className="rounded-[2rem] bg-black text-white p-8 space-y-6 relative overflow-hidden group">
+              <ShieldCheck className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 h-32 w-32 group-hover:scale-110 transition-transform duration-700" />
+              <h3 className="text-2xl font-black uppercase tracking-tight">Join a League</h3>
+              <p className="text-xs text-white/60 font-medium leading-relaxed italic">Enter a coordinate league code provided by your organization manager to instantly enroll your household into competitive standings.</p>
+              <Button onClick={() => router.push('/teams/join')} className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] shadow-xl">Open Portal <ArrowRight className="ml-2 h-5 w-5" /></Button>
+            </Card>
+          )}
           <Card className="rounded-[2rem] shadow-xl bg-white p-6 space-y-4 ring-1 ring-black/5"><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><CardTitle className="text-[10px] font-black uppercase text-foreground">Roster Compliance</CardTitle></div><p className="text-[10px] font-medium text-muted-foreground leading-relaxed">Ensure all teammates have signed their liability and media release waivers before match day.</p><Button onClick={() => router.push('/files')} variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px] border-2">Audit Ledger</Button></Card>
         </aside>
       </div>

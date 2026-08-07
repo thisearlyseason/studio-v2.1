@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import webhookSecurityModule from '../src/lib/stripe-connect-webhook-security.ts';
+import * as webhookSecurityModule from '../src/lib/stripe-connect-webhook-security.ts';
 
 const {
   isSafeFirestoreId,

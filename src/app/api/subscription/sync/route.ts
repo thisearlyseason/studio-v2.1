@@ -1,27 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
+import Stripe from 'stripe';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
-import { verifyFirebaseToken, assertOwner } from '@/lib/api-auth';
-import { resolveSubscriptionEntitlements, selectSubscriptionForSync } from '@/lib/subscription-entitlements';
-import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
-import { PLAN_TEAM_LIMITS } from '@/lib/plan-catalog';
+import { verifyFirebaseToken, assertOwner, assertNonAnonymous } from '@/lib/api-auth';
+import {
+  PLAN_PRICE_MAP,
+  EXTRA_TEAM_PRICE_IDS,
+  PRICE_BILLING_CYCLE,
+} from '@/lib/stripe-price-map';
+import { isEntitledSubscriptionStatus } from '@/lib/server-team-entitlements';
+import { reconcilePaidTeamSeats } from '@/lib/server-subscription-seats';
+import { chooseAuthoritativeSubscriptionId } from '@/lib/subscription-seat-policy';
+import {
+  enforceUserRateLimit,
+  readJsonBodyWithLimit,
+  RequestBodyError,
+} from '@/lib/server-request-guards';
+import {
+  claimSubscriptionMutation,
+  releaseSubscriptionMutation,
+  SubscriptionMutationInProgressError,
+} from '@/lib/server-subscription-mutation-lock';
+
+function hasRecognizedBasePlan(subscription: Stripe.Subscription): boolean {
+  return subscription.items.data.some(item => Boolean(PLAN_PRICE_MAP[item.price.id]));
+}
 
 export async function POST(req: NextRequest) {
   // Authenticate caller
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
+  const anonymousCheck = assertNonAnonymous(auth);
+  if (anonymousCheck) return anonymousCheck;
+  let claimed: { ref: FirebaseFirestore.DocumentReference; key: string } | null = null;
 
   try {
-    const limited = await enforceUserRateLimit(auth.uid, 'subscription-sync', 30, 60 * 60 * 1000);
-    if (limited) return limited;
-    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 4_000);
-    const userId = body.userId;
+    const { userId, operationId } = await readJsonBodyWithLimit<{
+      userId?: unknown;
+      operationId?: unknown;
+    }>(req, 8_000);
 
-    if (typeof userId !== 'string' || !userId) return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    if (
+      typeof userId !== 'string' ||
+      typeof operationId !== 'string' ||
+      !/^[A-Za-z0-9_-]{16,100}$/.test(operationId)
+    ) return NextResponse.json({ error: 'A valid subscription sync request is required.' }, { status: 400 });
 
     // Verify the caller owns this account
     const ownerCheck = assertOwner(auth, userId);
     if (ownerCheck) return ownerCheck;
+    const rateLimit = await enforceUserRateLimit(auth.uid, 'subscription-sync', 12, 60 * 60 * 1000);
+    if (rateLimit) return rateLimit;
 
     const stripe = getStripe();
 
@@ -35,57 +64,97 @@ export async function POST(req: NextRequest) {
     if (!customerId) {
       return NextResponse.json({ error: 'No Stripe customer associated with this account.' }, { status: 400 });
     }
+    const mutationKey = `sync:${operationId}`;
+    await claimSubscriptionMutation(userRef, mutationKey);
+    claimed = { ref: userRef, key: mutationKey };
 
     // List ALL subscriptions for this customer
     const subscriptions = await stripe.subscriptions.list({
       customer: customerId,
       status: 'all',
-      limit: 5,
+      limit: 100,
     });
 
-    const selectedSubscription = selectSubscriptionForSync(subscriptions.data);
-    const entitlements = selectedSubscription
-      ? resolveSubscriptionEntitlements(selectedSubscription)
-      : { planType: 'free', teamLimit: PLAN_TEAM_LIMITS.free, extraTeams: 0, subscriptionStatus: 'none', isEntitled: false };
+    const fallbackSubscriptionId =
+      userData.stripe_subscription_id || subscriptions.data[0]?.id || '';
+    const authoritativeSubscriptionId = fallbackSubscriptionId
+      ? chooseAuthoritativeSubscriptionId({
+          eventSubscriptionId: fallbackSubscriptionId,
+          subscriptions: subscriptions.data.map(subscription => ({
+            id: subscription.id,
+            status: subscription.status,
+            created: subscription.created,
+            hasRecognizedBasePlan: hasRecognizedBasePlan(subscription),
+          })),
+        })
+      : '';
+    const activeSub = subscriptions.data.find(
+      subscription => subscription.id === authoritativeSubscriptionId &&
+        isEntitledSubscriptionStatus(subscription.status) &&
+        hasRecognizedBasePlan(subscription)
+    );
 
-    await userRef.update({
-      stripe_subscription_id: selectedSubscription?.id || null,
-      subscription_status: entitlements.subscriptionStatus,
-      plan_type: entitlements.planType,
-      team_limit: entitlements.teamLimit,
-      extra_teams: entitlements.extraTeams,
-      last_webhook_sync: new Date().toISOString(),
-    });
+    let planType = 'free';
+    let baseTeamLimit = 0;
+    let extraTeams = 0;
+    let billingCycle: 'monthly' | 'annual' | null = null;
 
-    // CASCADE: Update all teams owned by this user (chunked to stay under Firestore's 500-op batch limit)
-    try {
-      const teamsSnap = await adminDb
-        .collection('teams')
-        .where('ownerUserId', '==', userId)
-        .get();
-      if (!teamsSnap.empty) {
-        const CHUNK = 400;
-        for (let i = 0; i < teamsSnap.docs.length; i += CHUNK) {
-          const chunk = teamsSnap.docs.slice(i, i + CHUNK);
-          const batch = adminDb.batch();
-          chunk.forEach(teamDoc => {
-            batch.update(teamDoc.ref, {
-              planId: entitlements.planType,
-              isPro: entitlements.isEntitled,
-              last_plan_sync: new Date().toISOString(),
-            });
-          });
-          await batch.commit();
+    if (activeSub) {
+      for (const item of activeSub.items.data) {
+        const resolved = PLAN_PRICE_MAP[item.price.id];
+        if (resolved) {
+          planType = resolved.id;
+          baseTeamLimit = resolved.teamLimit;
+          billingCycle = PRICE_BILLING_CYCLE[item.price.id] || null;
+        } else if (
+          item.price.id === EXTRA_TEAM_PRICE_IDS.monthly ||
+          item.price.id === EXTRA_TEAM_PRICE_IDS.annual
+        ) {
+          extraTeams = item.quantity || 0;
         }
       }
-    } catch (cascadeErr: any) {
-      console.error('[subscription/sync] Team cascade error:', cascadeErr.message);
     }
+    const hasPaidEntitlement = Boolean(activeSub && planType !== 'free');
+    const totalTeamLimit = hasPaidEntitlement ? baseTeamLimit + extraTeams : 0;
+    const subscriptionStatus = activeSub?.status || 'inactive';
 
-    return NextResponse.json({ success: true, subscriptionId: selectedSubscription?.id || null });
+    // Keep only already-allocated squads within the current paid seat capacity.
+    // Missing, canceled, incomplete, or unknown subscriptions revoke all seats.
+    await reconcilePaidTeamSeats({
+      userId,
+      planType,
+      entitled: hasPaidEntitlement,
+      capacity: totalTeamLimit,
+      userUpdates: {
+        stripe_subscription_id: activeSub?.id || null,
+        subscription_status: subscriptionStatus,
+        cancel_at_period_end: activeSub?.cancel_at_period_end === true,
+        billing_cycle: billingCycle,
+        plan_type: hasPaidEntitlement ? planType : 'free',
+        team_limit: totalTeamLimit,
+        extra_teams: hasPaidEntitlement ? extraTeams : 0,
+        last_webhook_sync: new Date().toISOString(),
+      },
+      requiredMutationKey: mutationKey,
+    });
+
+    return NextResponse.json({
+      success: true,
+      subscriptionId: activeSub?.id || null,
+      subscriptionStatus,
+      planType: hasPaidEntitlement ? planType : 'free',
+      teamLimit: totalTeamLimit,
+    });
   } catch (err: any) {
-    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof RequestBodyError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    if (err instanceof SubscriptionMutationInProgressError) {
+      return NextResponse.json({ error: 'Another subscription change is already in progress.' }, { status: 409 });
+    }
     console.error('[subscription/sync] Error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
+  } finally {
+    if (claimed) await releaseSubscriptionMutation(claimed.ref, claimed.key).catch(() => {});
   }
 }

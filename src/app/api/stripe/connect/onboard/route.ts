@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { verifyFirebaseToken } from '@/lib/api-auth';
+import { getTeamFinanceAccess } from '@/lib/server-team-entitlements';
 import {
   enforceUserRateLimit,
-  getTrustedAppOrigin,
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
@@ -25,105 +25,95 @@ import {
  * Body: { userId, teamId?, mode?: 'user' | 'hub' }
  */
 
-const PAID_PLAN_TYPES = new Set(['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo']);
-
 export async function POST(req: NextRequest) {
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const limited = await enforceUserRateLimit(auth.uid, 'stripe-connect-onboard', 20, 60 * 60 * 1000);
-    if (limited) return limited;
-    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
-    const userId = body.userId;
-    const teamId = typeof body.teamId === 'string' ? body.teamId : undefined;
-    const requestedMode = body.mode ?? 'user';
+    const { userId, teamId, mode = 'user' } = await readJsonBodyWithLimit<{
+      userId?: unknown;
+      teamId?: unknown;
+      mode?: unknown;
+    }>(req, 8_000);
 
-    if (typeof userId !== 'string' || !userId) {
+    if (typeof userId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(userId)) {
       return NextResponse.json({ error: 'Missing userId.' }, { status: 400 });
     }
-    if (!['user', 'hub'].includes(String(requestedMode))) {
-      return NextResponse.json({ error: 'mode must be user or hub.' }, { status: 400 });
-    }
-    const mode: 'user' | 'hub' = requestedMode === 'hub' ? 'hub' : 'user';
 
     if (auth.uid !== userId) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
     }
+    if (mode !== 'user' && mode !== 'hub') {
+      return NextResponse.json({ error: 'Invalid Stripe connection mode.' }, { status: 400 });
+    }
+
+    const rateLimit = await enforceUserRateLimit(
+      auth.uid,
+      'stripe-connect-onboard',
+      10,
+      60 * 60 * 1000
+    );
+    if (rateLimit) return rateLimit;
 
     const userSnap = await adminDb.collection('users').doc(userId).get();
     if (!userSnap.exists) {
       return NextResponse.json({ error: 'User not found.' }, { status: 404 });
     }
     const userData = userSnap.data()!;
-
-    // ── Plan gate ─────────────────────────────────────────────────────────────
-    const isPaidPlan = PAID_PLAN_TYPES.has(userData.plan_type || '');
-    const isSuperAdmin = userData.role === 'superadmin';
-    if (!isPaidPlan && !isSuperAdmin) {
+    const isSuperAdmin = auth.role === 'superadmin';
+    if (typeof teamId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(teamId)) {
       return NextResponse.json(
-        { error: 'Online payments require a paid plan. Please upgrade to connect Stripe.' },
-        { status: 403 }
+        { error: 'A paid squad is required to connect Stripe.' },
+        { status: 400 }
       );
     }
 
-    // ── Hub mode: verify the user is the hub team owner ───────────────────────
-    if (mode === 'hub') {
-      if (!teamId || teamId.includes('/')) {
-        return NextResponse.json({ error: 'teamId is required for hub mode.' }, { status: 400 });
-      }
-      const teamSnap = await adminDb.collection('teams').doc(teamId).get();
-      if (!teamSnap.exists) {
-        return NextResponse.json({ error: 'Hub team not found.' }, { status: 404 });
-      }
-      if (teamSnap.data()!.ownerUserId !== userId && !isSuperAdmin) {
-        return NextResponse.json({ error: 'Forbidden: must be hub team owner.' }, { status: 403 });
-      }
+    const access = await getTeamFinanceAccess(userId, teamId, isSuperAdmin, true);
+    if (!access.allowed) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     const stripe = getStripe();
-    const origin = getTrustedAppOrigin(req);
+    const origin = process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin;
 
     // Determine where the existing connect account ID is stored
-    let connectAccountId: string | undefined;
-    if (mode === 'hub' && teamId) {
-      const hubSnap = await adminDb.collection('teams').doc(teamId).get();
-      connectAccountId = hubSnap.data()?.stripeConnectAccountId;
-    } else {
+    const teamRef = adminDb.collection('teams').doc(teamId);
+    const teamSnap = await teamRef.get();
+    if (!teamSnap.exists) {
+      return NextResponse.json({ error: 'Squad not found.' }, { status: 404 });
+    }
+    let connectAccountId: string | undefined = teamSnap.data()?.stripeConnectAccountId;
+    if (!connectAccountId && teamSnap.data()?.ownerUserId === userId) {
       connectAccountId = userData.stripe_connect_account_id;
     }
 
     // Create Connect Express account if not already created
     if (!connectAccountId) {
-      const account = await stripe.accounts.create(
-        {
-          type: 'express',
-          email: userData.email,
-          capabilities: {
-            card_payments: { requested: true },
-            transfers: { requested: true },
-          },
-          business_type: 'individual',
-          metadata: {
-            firebase_uid: userId,
-            ...(mode === 'hub' && teamId ? { hub_team_id: teamId } : {}),
-          },
+      const account = await stripe.accounts.create({
+        type: 'express',
+        email: userData.email,
+        capabilities: {
+          card_payments: { requested: true },
+          transfers: { requested: true },
         },
-        { idempotencyKey: `connect-${mode}-${mode === 'hub' ? teamId : userId}` },
-      );
+        business_type: 'individual',
+        metadata: {
+          firebase_uid: userId,
+          firebase_team_id: teamId,
+          ...(mode === 'hub' ? { hub_team_id: teamId } : {}),
+        },
+      }, { idempotencyKey: `connect-account:${teamId}` });
       connectAccountId = account.id;
-
-      // Store on the right document
-      if (mode === 'hub' && teamId) {
-        await adminDb.collection('teams').doc(teamId).update({
-          stripeConnectAccountId: connectAccountId,
-        });
-      } else {
-        await adminDb.collection('users').doc(userId).update({
-          stripe_connect_account_id: connectAccountId,
-        });
-      }
     }
+
+    // Every payout destination is persisted on the team/hub itself. This keeps
+    // all authorized finance admins on one destination and prevents the caller's
+    // personal account from silently becoming the team's payout account.
+    await teamRef.update({
+      stripeConnectAccountId: connectAccountId,
+      stripeConnectConfiguredBy: userId,
+      stripeConnectUpdatedAt: new Date().toISOString(),
+    });
 
     // Return URL includes mode + teamId so the status check knows where to look
     const returnParams = new URLSearchParams({
@@ -146,7 +136,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: accountLink.url, connectAccountId });
   } catch (err: any) {
-    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof RequestBodyError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[stripe/connect/onboard] Error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

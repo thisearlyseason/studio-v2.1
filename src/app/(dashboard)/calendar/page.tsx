@@ -79,6 +79,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { WeatherPulse } from '@/components/WeatherPulse';
+import { useCollection, useMemoFirebase } from '@/firebase';
+import { collection, limit, orderBy, query } from 'firebase/firestore';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary border-primary text-white',
@@ -936,6 +938,16 @@ export default function MasterCalendarPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeDetailedEventId, setActiveDetailedEventId] = useState<string | null>(null);
 
+  const recordedGamesQuery = useMemoFirebase(() => {
+    if (!db || !activeTeam?.id) return null;
+    return query(
+      collection(db, 'teams', activeTeam.id, 'games'),
+      orderBy('date', 'desc'),
+      limit(100)
+    );
+  }, [db, activeTeam?.id]);
+  const { data: recordedGames } = useCollection<any>(recordedGamesQuery);
+
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       setViewMode('list');
@@ -962,6 +974,30 @@ export default function MasterCalendarPage() {
           id: g.id || `game_${g.date}_${g.time || g.startTime}`
         } as TeamEvent);
       }
+    });
+
+    // Scorekeeping stores finalized/manual results in the team's games ledger.
+    // Surface those records in Schedule as completed games, including results
+    // that were not linked to a pre-existing calendar event.
+    (recordedGames || []).forEach(game => {
+      const recordedId = `recorded_game_${game.id}`;
+      if (!game.date || map.has(recordedId)) return;
+      map.set(recordedId, {
+        id: recordedId,
+        teamId: game.teamId || activeTeam?.id,
+        title: `Final: ${activeTeam?.teamName || 'Us'} ${game.myScore ?? 0}–${game.opponentScore ?? 0} ${game.opponent || 'Opponent'}`,
+        date: game.date,
+        startTime: game.startTime || '',
+        location: game.location || '',
+        description: game.notes || 'Final score recorded in Scorekeeping.',
+        eventType: 'game',
+        isCompleted: true,
+        opponent: game.opponent || '',
+        myScore: game.myScore,
+        opponentScore: game.opponentScore,
+        result: game.result,
+        sourceGameId: game.id,
+      } as TeamEvent);
     });
 
     // Synthesis: Expand tournament games into individual match entries
@@ -1011,7 +1047,7 @@ export default function MasterCalendarPage() {
     });
 
     return Array.from(map.values());
-  }, [householdEvents, activeTeamEvents, householdGames, teams]);
+  }, [householdEvents, activeTeamEvents, householdGames, recordedGames, teams, activeTeam]);
 
   const activeDetailedEvent = useMemo(() => {
     if (!activeDetailedEventId) return null;

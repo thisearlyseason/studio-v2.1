@@ -8,9 +8,40 @@
 
 import { getApp } from 'firebase/app';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
-import { doc, updateDoc, arrayUnion, getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_FCM_VAPID_KEY;
+
+function serviceWorkerUrl() {
+  const options = getApp().options;
+  const config = {
+    apiKey: options.apiKey,
+    authDomain: options.authDomain,
+    projectId: options.projectId,
+    storageBucket: options.storageBucket,
+    messagingSenderId: options.messagingSenderId,
+    appId: options.appId,
+  };
+  return `/sw.js?firebaseConfig=${encodeURIComponent(JSON.stringify(config))}`;
+}
+
+async function updateRegisteredDevice(
+  token: string,
+  method: 'POST' | 'DELETE'
+): Promise<void> {
+  const currentUser = getAuth(getApp()).currentUser;
+  if (!currentUser) throw new Error('A signed-in account is required.');
+  const idToken = await currentUser.getIdToken();
+  const response = await fetch('/api/notifications/device', {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ token }),
+  });
+  if (!response.ok) throw new Error('Unable to register this device for notifications.');
+}
 
 /**
  * Request notification permission, get FCM token, store in Firestore.
@@ -21,12 +52,11 @@ export async function initFCM(userId: string): Promise<string | null> {
   // Only works in browser, not in SSR
   if (typeof window === 'undefined') return null;
   if (!('Notification' in window)) return null;
-  if (!VAPID_KEY) {
-    console.warn('[FCM] NEXT_PUBLIC_FCM_VAPID_KEY not set — push notifications disabled');
-    return null;
-  }
 
   try {
+    const currentUser = getAuth(getApp()).currentUser;
+    if (!currentUser || currentUser.uid !== userId) return null;
+
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
       console.log('[FCM] Notification permission denied');
@@ -37,19 +67,18 @@ export async function initFCM(userId: string): Promise<string | null> {
     const messaging = getMessaging(app);
 
     // Register service worker for FCM
-    const registration = await navigator.serviceWorker.register('/sw.js');
+    const registration = await navigator.serviceWorker.register(serviceWorkerUrl(), {
+      scope: '/',
+      updateViaCache: 'none',
+    });
 
     const token = await getToken(messaging, {
-      vapidKey: VAPID_KEY,
+      ...(VAPID_KEY ? { vapidKey: VAPID_KEY } : {}),
       serviceWorkerRegistration: registration,
     });
 
     if (token) {
-      // Store token in Firestore (arrayUnion keeps multiple devices)
-      const db = getFirestore(app);
-      await updateDoc(doc(db, 'users', userId), {
-        fcmTokens: arrayUnion(token),
-      });
+      await updateRegisteredDevice(token, 'POST');
     }
 
     return token ?? null;
@@ -66,18 +95,16 @@ export async function initFCM(userId: string): Promise<string | null> {
  */
 export async function deleteFCMToken(userId: string): Promise<void> {
   if (typeof window === 'undefined') return;
-  if (!VAPID_KEY) return;
   try {
     const app = getApp();
+    if (getAuth(app).currentUser?.uid !== userId) return;
     const messaging = getMessaging(app);
-    const db = getFirestore(app);
-
     // Get current token before deleting
-    const registration = await navigator.serviceWorker.getRegistration('/sw.js');
+    const registration = await navigator.serviceWorker.getRegistration('/');
     if (!registration) return;
 
     const currentToken = await getToken(messaging, {
-      vapidKey: VAPID_KEY,
+      ...(VAPID_KEY ? { vapidKey: VAPID_KEY } : {}),
       serviceWorkerRegistration: registration,
     }).catch(() => null);
 
@@ -88,11 +115,7 @@ export async function deleteFCMToken(userId: string): Promise<void> {
 
     // Remove from Firestore token array
     if (currentToken) {
-      await import('firebase/firestore').then(({ arrayRemove }) =>
-        updateDoc(doc(db, 'users', userId), {
-          fcmTokens: arrayRemove(currentToken),
-        })
-      ).catch(() => {});
+      await updateRegisteredDevice(currentToken, 'DELETE').catch(() => {});
     }
   } catch (err) {
     // Non-critical — don't block logout

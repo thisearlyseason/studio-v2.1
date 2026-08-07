@@ -5,6 +5,7 @@ import { useTeam } from '@/components/providers/team-provider';
 import { useFirestore } from '@/firebase';
 import { collection, query, where, getDocs, doc, getDoc, updateDoc, orderBy, limit, deleteDoc, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
+import { getApp } from 'firebase/app';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,8 +15,11 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
-import { Search, Shield, Users, CreditCard, Building2, ChevronRight, X, RefreshCw, AlertTriangle, CheckCircle2, Clock, CheckCircle, XCircle, HelpCircle, LogOut, Loader2, ExternalLink, Copy, Bug, FileText, Bell, Send, MapPin, BarChart3, TrendingUp, ArrowUpDown, ArrowUp, ArrowDown, Download, Mail, Newspaper, BookOpen, Rss, PenLine, ToggleLeft, ToggleRight, Globe, Star } from 'lucide-react';
-import { getPlanTeamLimit } from '@/lib/plan-catalog';
+import { Search, Shield, Users, CreditCard, Building2, ChevronRight, X, RefreshCw, AlertTriangle, CheckCircle2, Clock, CheckCircle, XCircle, HelpCircle, LogOut, Loader2, ExternalLink, Copy, Bug, FileText, Bell, Send, MapPin, BarChart3, TrendingUp, ArrowUpDown, ArrowUp, ArrowDown, Download, Mail, Newspaper, BookOpen, Rss, PenLine, ToggleLeft, ToggleRight, Globe, Star, Code2, UserX, ShieldOff, RotateCcw } from 'lucide-react';
+import { NewsletterManager } from '@/components/admin/newsletter-manager';
+import { EmbedHubManager } from '@/components/admin/embed-hub-manager';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
+import { STATIC_SPORTS_HUB_ARTICLE_COUNT } from '@/lib/sports-hub-catalog-metadata';
 
 const PLAN_LABELS: Record<string, { label: string; color: string }> = {
   free:    { label: 'Free',          color: 'bg-gray-100 text-gray-700' },
@@ -28,6 +32,13 @@ const PLAN_LABELS: Record<string, { label: string; color: string }> = {
 function planBadge(plan: string | null | undefined) {
   const p = PLAN_LABELS[plan || 'free'] || { label: plan || 'Free', color: 'bg-gray-100 text-gray-700' };
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${p.color}`}>{p.label}</span>;
+}
+
+function adminDate(value: any): Date | null {
+  if (!value) return null;
+  if (typeof value?.toDate === 'function') return value.toDate();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 interface UserResult {
@@ -60,7 +71,7 @@ export default function AdminPortalPage() {
   const db = useFirestore();
   const router = useRouter();
 
-  const [activeTab, setActiveTab] = useState<'accounts' | 'beta' | 'bugs' | 'users' | 'newsletters' | 'sports-hub'>('accounts');
+  const [activeTab, setActiveTab] = useState<'accounts' | 'beta' | 'bugs' | 'users' | 'newsletters' | 'sports-hub' | 'embeds'>('accounts');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -104,6 +115,12 @@ export default function AdminPortalPage() {
   const [userSortField, setUserSortField] = useState<'createdAt' | 'plan_type' | 'fullName'>('createdAt');
   const [userSortDir, setUserSortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [accountControl, setAccountControl] = useState<{
+    action: 'suspend' | 'restore' | 'schedule_deletion' | 'cancel_deletion';
+    target: any;
+  } | null>(null);
+  const [accountConfirmationEmail, setAccountConfirmationEmail] = useState('');
+  const [accountControlBusy, setAccountControlBusy] = useState(false);
 
   // ── Newsletter state ────────────────────────────────────────────────────────
   const [newsletters, setNewsletters] = useState<any[]>([]);
@@ -123,6 +140,7 @@ export default function AdminPortalPage() {
   const [refreshingFeed, setRefreshingFeed] = useState<string | null>(null);
   const [shComposeTitle, setShComposeTitle] = useState('');
   const [shComposeExcerpt, setShComposeExcerpt] = useState('');
+  const [shComposeContent, setShComposeContent] = useState('');
   const [shComposeSection, setShComposeSection] = useState('news');
   const [shComposeCategory, setShComposeCategory] = useState('Coaching');
   const [publishingArticle, setPublishingArticle] = useState(false);
@@ -153,10 +171,15 @@ export default function AdminPortalPage() {
 
         if (lastLoginDate) {
           const sinceTs = Timestamp.fromDate(lastLoginDate);
-          const [nlSnap, betaSnap] = await Promise.all([
+          const [legacyNlSnap, currentNlSnap, betaSnap] = await Promise.all([
             getDocs(query(
               collection(db, 'newsletter_signups'),
               where('createdAt', '>', sinceTs),
+              limit(200)
+            )),
+            getDocs(query(
+              collection(db, 'newsletter_subscribers'),
+              where('updatedAt', '>', sinceTs),
               limit(200)
             )),
             getDocs(query(
@@ -166,15 +189,16 @@ export default function AdminPortalPage() {
               limit(200)
             )),
           ]);
-          newNewsletterCount = nlSnap.size;
+          newNewsletterCount = legacyNlSnap.size + currentNlSnap.size;
           newBetaCount = betaSnap.size;
         } else {
           // First ever login — just count totals so the banner is useful
-          const [nlSnap, betaSnap] = await Promise.all([
+          const [legacyNlSnap, currentNlSnap, betaSnap] = await Promise.all([
             getDocs(query(collection(db, 'newsletter_signups'), limit(200))),
+            getDocs(query(collection(db, 'newsletter_subscribers'), limit(200))),
             getDocs(query(collection(db, 'beta_applications'), where('status', '==', 'pending'), limit(200))),
           ]);
-          newNewsletterCount = nlSnap.size;
+          newNewsletterCount = legacyNlSnap.size + currentNlSnap.size;
           newBetaCount = betaSnap.size;
         }
 
@@ -207,7 +231,6 @@ export default function AdminPortalPage() {
     if (activeTab === 'beta') fetchBetaApps();
     if (activeTab === 'bugs') fetchBugs();
     if (activeTab === 'users') fetchAllUsers();
-    if (activeTab === 'newsletters') fetchNewsletters();
     if (activeTab === 'sports-hub') fetchSportsHubData();
   }, [activeTab, isSuperAdmin, db]);
 
@@ -266,22 +289,32 @@ export default function AdminPortalPage() {
 
   // ── Sports Hub Firestore helpers ─────────────────────────────────────────────
   const fetchSportsHubData = async () => {
-    if (!db) return;
+    if (!firebaseUser) return;
     setLoadingSH(true);
     try {
-      const [feedsSnap, articlesSnap, nlSnap] = await Promise.all([
-        getDocs(query(collection(db, 'sports_hub_rss_feeds'), orderBy('createdAt', 'desc'), limit(50))),
-        getDocs(query(collection(db, 'sports_hub_articles'), orderBy('publishedAt', 'desc'), limit(20))),
-        getDocs(query(collection(db, 'sports_hub_newsletter_subscribers'), orderBy('subscribedAt', 'desc'), limit(200))),
-      ]);
-      setShFeeds(feedsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setShArticles(articlesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setShNewsletters(nlSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch (e: any) {
-      // Collections may not exist yet — show empty state gracefully
-      setShFeeds([]);
-      setShArticles([]);
-      setShNewsletters([]);
+      const token = await firebaseUser.getIdToken();
+      const response = await fetch('/api/admin/sports-hub', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to load Sports Hub data.');
+      setShFeeds(Array.isArray(payload.feeds) ? payload.feeds : []);
+      setShArticles(Array.isArray(payload.articles) ? payload.articles : []);
+      setShNewsletters(Array.isArray(payload.subscribers) ? payload.subscribers : []);
+      if (Array.isArray(payload.failedSources) && payload.failedSources.length) {
+        toast({
+          title: 'Sports Hub Data Partially Loaded',
+          description: `Unable to read: ${payload.failedSources.join(', ')}.`,
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Sports Hub Load Failed',
+        description: error instanceof Error ? error.message : 'Unable to load Sports Hub data.',
+        variant: 'destructive',
+      });
     } finally {
       setLoadingSH(false);
     }
@@ -353,7 +386,7 @@ export default function AdminPortalPage() {
   };
 
   const publishHubArticle = async () => {
-    if (!db || !shComposeTitle.trim() || !shComposeExcerpt.trim()) return;
+    if (!db || !shComposeTitle.trim() || !shComposeExcerpt.trim() || !shComposeContent.trim()) return;
     setPublishingArticle(true);
     try {
       const slug = shComposeTitle.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -369,17 +402,18 @@ export default function AdminPortalPage() {
         isProductUpdate: false,
         viewCount: 0,
         bookmarkCount: 0,
-        readingTime: Math.ceil(shComposeExcerpt.split(' ').length / 200) || 3,
+        readingTime: Math.ceil(shComposeContent.split(/\s+/).length / 200) || 1,
         publishedAt: new Date().toISOString(),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         tableOfContents: [],
         reactionCounts: {},
         tags: [],
-        content: shComposeExcerpt,
+        content: shComposeContent,
       });
       setShComposeTitle('');
       setShComposeExcerpt('');
+      setShComposeContent('');
       toast({ title: '✅ Article Published', description: `"${shComposeTitle}" is now live in the Sports Hub.` });
       setShSection('overview');
       await fetchSportsHubData();
@@ -432,8 +466,9 @@ export default function AdminPortalPage() {
     setProcessingBeta(true);
     try {
       // Attempt to create user via Firebase Auth REST API
-      const { firebaseConfig } = await import('@/firebase/config');
-      const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${firebaseConfig.apiKey}`, {
+      const apiKey = getApp().options.apiKey;
+      if (!apiKey) throw new Error('Firebase web configuration is unavailable.');
+      const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -474,37 +509,55 @@ export default function AdminPortalPage() {
         organization: selectedBetaApp.organization,
         isBetaTester: true,
         plan_type: betaPlanType,
-        team_limit: getPlanTeamLimit(betaPlanType),
+        team_limit: betaPlanType === 'elite' ? 5 : (betaPlanType === 'league' || betaPlanType === 'school' ? 100 : (betaPlanType === 'team' ? 1 : 0)),
         createdAt: new Date().toISOString()
       });
       
       // Update beta app status
       await updateDoc(doc(db, 'beta_applications', selectedBetaApp.id), { status: 'approved' });
 
-      // Send branded welcome email via Resend (fire-and-forget, don't block UI)
+      // Send the welcome email before reporting its delivery status.
+      let welcomeEmailSent = false;
+      let welcomeEmailError = '';
       if (firebaseUser) {
-        firebaseUser.getIdToken().then((idToken: string) => {
-          fetch('/api/email/welcome', {
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          const welcomeResponse = await fetch('/api/email/welcome', {
             method: 'POST',
-            headers: { 
+            headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${idToken}`
             },
             body: JSON.stringify({
               name: selectedBetaApp.fullName || selectedBetaApp.name || 'Athlete',
               email: selectedBetaApp.email,
-              password: betaPassword,
               planType: betaPlanType,
             }),
-          }).catch((err) => console.warn('[Welcome Email] Failed to send:', err));
-        }).catch((err: any) => console.warn('[Welcome Email] Failed to get ID token:', err));
+          });
+          const welcomePayload = await welcomeResponse.json().catch(() => ({}));
+          if (!welcomeResponse.ok) {
+            throw new Error(welcomePayload.error || 'Resend did not accept the welcome email.');
+          }
+          welcomeEmailSent = true;
+        } catch (error) {
+          welcomeEmailError = error instanceof Error ? error.message : 'Unknown email error';
+          console.warn('[Welcome Email] Failed to send:', error);
+        }
+      } else {
+        welcomeEmailError = 'Admin authentication was unavailable.';
       }
 
       setBetaApps(prev => prev.map(a => a.id === selectedBetaApp.id ? { ...a, status: 'approved' } : a));
       setSelectedBetaApp(null);
       setBetaPassword('');
       setBetaPlanType('free');
-      toast({ title: 'Beta User Approved', description: 'Account created. Welcome email sent via Resend.' });
+      toast({
+        title: 'Beta User Approved',
+        description: welcomeEmailSent
+          ? 'Account created. Resend accepted the welcome email.'
+          : `Account created, but the welcome email was not sent: ${welcomeEmailError}`,
+        ...(!welcomeEmailSent ? { variant: 'destructive' as const } : {}),
+      });
     } catch (e: any) {
       toast({ title: 'Approval Failed', description: e.message, variant: 'destructive' });
     } finally {
@@ -524,7 +577,7 @@ export default function AdminPortalPage() {
         await updateDoc(doc(db, 'users', existingUid), {
           isBetaTester: true,
           plan_type: pendingPlanType,
-          team_limit: getPlanTeamLimit(pendingPlanType),
+          team_limit: pendingPlanType === 'elite' ? 5 : (pendingPlanType === 'league' || pendingPlanType === 'school' ? 100 : (pendingPlanType === 'team' ? 1 : 0)),
           betaUpgradedAt: new Date().toISOString(),
         });
       }
@@ -565,7 +618,7 @@ export default function AdminPortalPage() {
         await updateDoc(doc(db, 'users', existingUid), {
           isBetaTester: true,
           plan_type: betaPlanType,
-          team_limit: getPlanTeamLimit(betaPlanType),
+          team_limit: betaPlanType === 'elite' ? 5 : (betaPlanType === 'league' || betaPlanType === 'school' ? 100 : (betaPlanType === 'team' ? 1 : 0)),
           betaUpgradedAt: new Date().toISOString(),
         });
       }
@@ -691,7 +744,7 @@ export default function AdminPortalPage() {
     if (!db || !selectedUser || !newPlan) return;
     setUpdatingPlan(true);
     try {
-      const newLimit = getPlanTeamLimit(newPlan);
+      const newLimit = newPlan === 'elite' ? 5 : (newPlan === 'league' || newPlan === 'school' ? 100 : (newPlan === 'team' ? 1 : 0));
       await updateDoc(doc(db, 'users', selectedUser.id), { plan_type: newPlan, team_limit: newLimit });
       setSelectedUser(prev => prev ? { ...prev, plan_type: newPlan } : null);
       setResults(prev => prev.map(r => r.id === selectedUser.id ? { ...r, plan_type: newPlan } : r));
@@ -712,6 +765,63 @@ export default function AdminPortalPage() {
       toast({ title: 'Beta Tester Updated', description: `User is now ${newVal ? 'a Beta Tester' : 'NOT a Beta Tester'}.` });
     } catch (e: any) {
       toast({ title: 'Update failed', description: e.message, variant: 'destructive' });
+    }
+  };
+
+  const runAccountControl = async () => {
+    if (!firebaseUser || !accountControl) return;
+    setAccountControlBusy(true);
+    try {
+      const token = await firebaseUser.getIdToken();
+      const response = await fetch(`/api/admin/users/${encodeURIComponent(accountControl.target.id)}/account-control`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: accountControl.action,
+          confirmationEmail: accountConfirmationEmail,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to update this account.');
+
+      const updatedStatus = payload.status || 'active';
+      const updateLocalUser = (entry: any) => entry.id === accountControl.target.id
+        ? {
+            ...entry,
+            accountStatus: updatedStatus,
+            deletionStatus: updatedStatus === 'pending_deletion' ? 'pending' : undefined,
+            deletionPurgeAt: payload.purgeAt || undefined,
+          }
+        : entry;
+      setAllUsers(previous => previous.map(updateLocalUser));
+      setResults(previous => previous.map(updateLocalUser));
+      setSelectedUser(previous => previous ? updateLocalUser(previous) : previous);
+
+      const labels: Record<typeof accountControl.action, string> = {
+        suspend: 'Account Suspended',
+        restore: 'Account Restored',
+        schedule_deletion: 'Deletion Scheduled',
+        cancel_deletion: 'Deletion Cancelled',
+      };
+      toast({
+        title: labels[accountControl.action],
+        description: payload.purgeAt
+          ? `The account is disabled and will be permanently removed after ${new Date(payload.purgeAt).toLocaleDateString()}.`
+          : 'The account status was updated successfully.',
+      });
+      setAccountControl(null);
+      setAccountConfirmationEmail('');
+    } catch (error) {
+      toast({
+        title: 'Account Update Blocked',
+        description: error instanceof Error ? error.message : 'Unable to update this account safely.',
+        variant: 'destructive',
+      });
+    } finally {
+      setAccountControlBusy(false);
     }
   };
 
@@ -777,6 +887,106 @@ export default function AdminPortalPage() {
               disabled={upgradingExisting}
             >
               {upgradingExisting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Yes, Upgrade Account'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Super Admin Account Control Confirmation ── */}
+      <Dialog
+        open={!!accountControl}
+        onOpenChange={(open) => {
+          if (!open && !accountControlBusy) {
+            setAccountControl(null);
+            setAccountConfirmationEmail('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg rounded-3xl bg-white dark:bg-[#111] border-2 border-red-500/20 p-0 overflow-hidden">
+          <div className="bg-red-500/10 px-8 pt-8 pb-6 border-b border-red-500/20">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-11 h-11 rounded-2xl bg-red-500/15 flex items-center justify-center">
+                {accountControl?.action === 'schedule_deletion'
+                  ? <UserX className="w-5 h-5 text-red-500" />
+                  : accountControl?.action === 'suspend'
+                    ? <ShieldOff className="w-5 h-5 text-red-500" />
+                    : <RotateCcw className="w-5 h-5 text-emerald-500" />}
+              </div>
+              <DialogTitle className="text-xl font-black uppercase tracking-tight text-gray-900 dark:text-white">
+                {accountControl?.action === 'schedule_deletion' && 'Schedule Account Deletion'}
+                {accountControl?.action === 'suspend' && 'Suspend Account'}
+                {accountControl?.action === 'restore' && 'Restore Account'}
+                {accountControl?.action === 'cancel_deletion' && 'Cancel Account Deletion'}
+              </DialogTitle>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-white/60 font-medium">
+              {accountControl?.target.fullName || accountControl?.target.name || accountControl?.target.email}
+              <span className="block text-xs font-mono mt-1 text-gray-400">{accountControl?.target.email}</span>
+            </p>
+          </div>
+          <div className="px-8 py-6 space-y-5">
+            {accountControl?.action === 'schedule_deletion' && (
+              <>
+                <div className="rounded-2xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 p-4 text-sm font-medium text-red-800 dark:text-red-200 leading-relaxed">
+                  Login access will be revoked immediately. Personal data will be retained for seven days and then permanently purged. Active Stripe subscriptions and organization ownership must be resolved first.
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="account-delete-confirmation" className="text-[10px] font-black uppercase tracking-widest">
+                    Type the account email to confirm
+                  </Label>
+                  <Input
+                    id="account-delete-confirmation"
+                    value={accountConfirmationEmail}
+                    onChange={event => setAccountConfirmationEmail(event.target.value)}
+                    placeholder={accountControl.target.email || 'user@example.com'}
+                    autoComplete="off"
+                    className="h-12 rounded-xl border-2 font-mono"
+                  />
+                </div>
+              </>
+            )}
+            {accountControl?.action === 'suspend' && (
+              <p className="text-sm text-gray-600 dark:text-white/60 leading-relaxed">
+                This immediately revokes every active session and prevents the user from signing in. Their data, memberships, and billing records are retained.
+              </p>
+            )}
+            {accountControl?.action === 'restore' && (
+              <p className="text-sm text-gray-600 dark:text-white/60 leading-relaxed">
+                This re-enables login for the suspended account. The user must sign in again to obtain a new session.
+              </p>
+            )}
+            {accountControl?.action === 'cancel_deletion' && (
+              <p className="text-sm text-gray-600 dark:text-white/60 leading-relaxed">
+                This cancels the pending seven-day purge, restores the account, and requires the user to sign in again.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="px-8 pb-8 flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1 h-12 border-2 font-black uppercase tracking-widest text-xs rounded-xl"
+              onClick={() => {
+                setAccountControl(null);
+                setAccountConfirmationEmail('');
+              }}
+              disabled={accountControlBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              className={`flex-1 h-12 font-black uppercase tracking-widest text-xs rounded-xl ${
+                accountControl?.action === 'restore' || accountControl?.action === 'cancel_deletion'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : 'bg-red-600 hover:bg-red-700 text-white'
+              }`}
+              onClick={runAccountControl}
+              disabled={
+                accountControlBusy ||
+                (accountControl?.action === 'schedule_deletion' &&
+                  accountConfirmationEmail.trim().toLowerCase() !== String(accountControl.target.email || '').trim().toLowerCase())
+              }
+            >
+              {accountControlBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm Action'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -899,6 +1109,12 @@ export default function AdminPortalPage() {
             className={`px-4 py-2 font-black uppercase tracking-widest text-xs rounded-full transition-colors flex items-center gap-2 ${activeTab === 'sports-hub' ? 'bg-primary text-white' : 'text-gray-900 dark:text-white/50 hover:bg-gray-200 dark:bg-white/10 hover:text-gray-900 dark:text-white'}`}
           >
             <BookOpen className="w-4 h-4" /> Sports Hub
+          </button>
+          <button
+            onClick={() => setActiveTab('embeds')}
+            className={`px-4 py-2 font-black uppercase tracking-widest text-xs rounded-full transition-colors flex items-center gap-2 ${activeTab === 'embeds' ? 'bg-violet-600 text-white' : 'text-gray-900 dark:text-white/50 hover:bg-gray-200 dark:bg-white/10 hover:text-gray-900 dark:hover:text-white'}`}
+          >
+            <Code2 className="w-4 h-4" /> Links &amp; Embeds
           </button>
         </div>
 
@@ -1087,6 +1303,9 @@ export default function AdminPortalPage() {
                     {filtered.map((u) => {
                       const isExpanded = expandedUserId === u.id;
                       const cancelDate = u.cancelledAt || u.subscription_cancelled_at || u.canceledAt;
+                      const accountStatus = u.deletionStatus === 'pending'
+                        ? 'pending_deletion'
+                        : (u.accountStatus || 'active');
                       return (
                         <div key={u.id}>
                           <button
@@ -1147,6 +1366,7 @@ export default function AdminPortalPage() {
                                   { label: 'Beta Upgraded', value: fmt(u.betaUpgradedAt) },
                                   { label: 'Cancelled', value: fmt(cancelDate) },
                                   { label: 'Is Demo', value: u.isDemo ? 'Yes' : 'No' },
+                                  { label: 'Account Status', value: accountStatus.replaceAll('_', ' ') },
                                 ].map(({ label, value }) => (
                                   <div key={label} className="space-y-1">
                                     <p className="text-[8px] font-black uppercase tracking-widest text-gray-400 dark:text-white/25">{label}</p>
@@ -1169,6 +1389,53 @@ export default function AdminPortalPage() {
                                   <Copy className="w-3 h-3" /> Copy UID
                                 </button>
                               </div>
+                              {!u.isDemo && u.id !== user?.id && String(u.role || '').toLowerCase() !== 'superadmin' && (
+                                <div className="mt-5 pt-4 border-t border-gray-200 dark:border-white/10 flex flex-wrap items-center gap-2">
+                                  <span className={`mr-2 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
+                                    accountStatus === 'active'
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : accountStatus === 'suspended'
+                                        ? 'bg-amber-100 text-amber-700'
+                                        : 'bg-red-100 text-red-700'
+                                  }`}>
+                                    {accountStatus.replaceAll('_', ' ')}
+                                  </span>
+                                  {accountStatus === 'active' && (
+                                    <button
+                                      onClick={() => setAccountControl({ action: 'suspend', target: u })}
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-300 text-amber-700 hover:bg-amber-50 text-[9px] font-black uppercase tracking-widest transition-colors"
+                                    >
+                                      <ShieldOff className="w-3.5 h-3.5" /> Suspend
+                                    </button>
+                                  )}
+                                  {accountStatus === 'suspended' && (
+                                    <button
+                                      onClick={() => setAccountControl({ action: 'restore', target: u })}
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-[9px] font-black uppercase tracking-widest transition-colors"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5" /> Restore
+                                    </button>
+                                  )}
+                                  {accountStatus === 'pending_deletion' ? (
+                                    <button
+                                      onClick={() => setAccountControl({ action: 'cancel_deletion', target: u })}
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-[9px] font-black uppercase tracking-widest transition-colors"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5" /> Cancel Deletion
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        setAccountConfirmationEmail('');
+                                        setAccountControl({ action: 'schedule_deletion', target: u });
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[9px] font-black uppercase tracking-widest transition-colors"
+                                    >
+                                      <UserX className="w-3.5 h-3.5" /> Delete Account
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1922,7 +2189,9 @@ export default function AdminPortalPage() {
         )}
 
         {/* ══════════ NEWSLETTERS TAB ══════════ */}
-        {activeTab === 'newsletters' && (() => {
+        {activeTab === 'newsletters' && <NewsletterManager />}
+        {activeTab === 'embeds' && <EmbedHubManager />}
+        {activeTab === 'newsletters' && false && (() => {
           const term = newsletterSearch.toLowerCase();
           const filtered = newsletters.filter(n =>
             (n.name || '').toLowerCase().includes(term) ||
@@ -2114,7 +2383,7 @@ export default function AdminPortalPage() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
                       { label: 'RSS Feeds', value: shFeeds.length, sub: `${shFeeds.filter(f => f.isEnabled).length} active`, icon: Rss, color: 'text-sky-500', bg: 'bg-sky-500/10', border: 'border-sky-500/20' },
-                      { label: 'Articles', value: shArticles.length, sub: 'Published', icon: FileText, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/20' },
+                      { label: 'Articles', value: STATIC_SPORTS_HUB_ARTICLE_COUNT + shArticles.length, sub: `${STATIC_SPORTS_HUB_ARTICLE_COUNT} built-in · ${shArticles.length} custom`, icon: FileText, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/20' },
                       { label: 'Subscribers', value: shNewsletters.length, sub: 'Hub newsletter', icon: Mail, color: 'text-emerald-500', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
                       { label: 'Last Sync', value: shFeeds.filter(f => f.lastSyncStatus === 'success').length, sub: 'feeds OK', icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-500/10', border: 'border-green-500/20' },
                     ].map(card => (
@@ -2303,7 +2572,7 @@ export default function AdminPortalPage() {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     {[
                       { label: 'Total Subscribers', value: shNewsletters.length, icon: Mail, color: 'text-emerald-500', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
-                      { label: 'This Month', value: shNewsletters.filter(n => { if (!n.subscribedAt) return false; return new Date(n.subscribedAt) > new Date(Date.now() - 30 * 86400000); }).length, icon: TrendingUp, color: 'text-sky-500', bg: 'bg-sky-500/10', border: 'border-sky-500/20' },
+                      { label: 'This Month', value: shNewsletters.filter(n => { const subscribed = adminDate(n.subscribedAt); return subscribed ? subscribed > new Date(Date.now() - 30 * 86400000) : false; }).length, icon: TrendingUp, color: 'text-sky-500', bg: 'bg-sky-500/10', border: 'border-sky-500/20' },
                       { label: 'Active', value: shNewsletters.filter(n => n.isActive !== false).length, icon: CheckCircle, color: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/20' },
                     ].map(card => (
                       <div key={card.label} className={`rounded-2xl border-2 ${card.border} bg-white dark:bg-white/5 p-5 space-y-3`}>
@@ -2338,7 +2607,7 @@ export default function AdminPortalPage() {
                               {sub.isActive !== false ? 'Active' : 'Inactive'}
                             </span>
                             <span className="text-[10px] text-gray-400 dark:text-white/30 font-mono whitespace-nowrap pl-4">
-                              {sub.subscribedAt ? new Date(sub.subscribedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                              {adminDate(sub.subscribedAt)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) || '—'}
                             </span>
                           </div>
                         ))}
@@ -2353,7 +2622,7 @@ export default function AdminPortalPage() {
                 <div className="space-y-5 max-w-2xl">
                   <div className="bg-sky-500/10 border border-sky-500/20 rounded-2xl p-4 flex gap-3 text-xs font-medium text-sky-700 dark:text-sky-300">
                     <Star className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" />
-                    Quick Compose creates a published article stub in Firestore. For full rich-text editing, open the article in the Sports Hub CMS and use the article editor.
+                    Compose a complete Sports Hub article with visual formatting and inline images. Only public HTTPS image URLs are accepted.
                   </div>
                   <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl p-6 space-y-5">
                     <p className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-400 dark:text-white/30">New Sports Hub Article</p>
@@ -2400,17 +2669,27 @@ export default function AdminPortalPage() {
                         className="rounded-xl bg-gray-50 dark:bg-white/5 font-medium resize-none"
                       />
                     </div>
+                    <div>
+                      <Label className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1.5 block">Article Content</Label>
+                      <RichTextEditor
+                        value={shComposeContent}
+                        onChange={setShComposeContent}
+                        ariaLabel="Sports Hub article visual editor"
+                        placeholder="Write the full article. Select text to make it bold or italic, add headings and lists, or insert an image…"
+                        minHeightClassName="min-h-80"
+                      />
+                    </div>
                     <div className="flex items-center gap-4">
                       <button
                         onClick={publishHubArticle}
-                        disabled={publishingArticle || !shComposeTitle.trim() || !shComposeExcerpt.trim()}
+                        disabled={publishingArticle || !shComposeTitle.trim() || !shComposeExcerpt.trim() || !shComposeContent.trim()}
                         className="flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white font-black uppercase tracking-widest text-xs transition-all hover:bg-primary/90 disabled:opacity-50"
                       >
                         {publishingArticle ? <Loader2 className="w-4 h-4 animate-spin" /> : <PenLine className="w-4 h-4" />}
                         Publish Article
                       </button>
                       <button
-                        onClick={() => { setShComposeTitle(''); setShComposeExcerpt(''); }}
+                        onClick={() => { setShComposeTitle(''); setShComposeExcerpt(''); setShComposeContent(''); }}
                         className="text-xs font-black uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors"
                       >
                         Clear

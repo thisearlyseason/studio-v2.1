@@ -17,6 +17,8 @@ import { ShieldAlert, Check, Users, ShieldCheck, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { isBillableSquadSeat } from '@/lib/team-seat-policy';
+import { toast } from '@/hooks/use-toast';
 
 export function QuotaResolutionOverlay() {
   const { proQuotaStatus, teams, user, resolveQuota } = useTeam();
@@ -25,7 +27,9 @@ export function QuotaResolutionOverlay() {
 
   // Filter for teams owned by the current user that are currently Pro
   const ownedProTeams = useMemo(() => {
-    return teams.filter(t => t.ownerUserId === user?.id && t.isPro);
+    return teams.filter(
+      t => t.ownerUserId === user?.id && t.isPro && isBillableSquadSeat(t)
+    );
   }, [teams, user?.id]);
 
   useEffect(() => {
@@ -45,8 +49,17 @@ export function QuotaResolutionOverlay() {
 
   const handleConfirm = async () => {
     setIsResolving(true);
-    await resolveQuota(selectedIds);
-    setIsResolving(false);
+    try {
+      await resolveQuota(selectedIds);
+    } catch (error: any) {
+      toast({
+        title: 'Quota Update Failed',
+        description: error.message || 'Unable to update team access.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsResolving(false);
+    }
   };
 
   if (!proQuotaStatus.exceeded) return null;

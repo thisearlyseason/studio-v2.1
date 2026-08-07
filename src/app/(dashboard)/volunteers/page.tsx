@@ -63,6 +63,7 @@ export default function VolunteerHubPage() {
   const { 
     activeTeam, 
     user, 
+    members,
     isStaff, 
     isParent, 
     addVolunteerOpportunity, 
@@ -81,6 +82,7 @@ export default function VolunteerHubPage() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingOpp, setEditingOpp] = useState<VolunteerOpportunity | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [verifyingContribution, setVerifyingContribution] = useState<string | null>(null);
   const [newOpp, setNewOpp] = useState({ title: '', description: '', date: '', location: '', spots: 2, points: 50, startTime: '09:00', isShareable: false });
 
   const oppsQuery = useMemoFirebase(() => {
@@ -123,16 +125,51 @@ export default function VolunteerHubPage() {
   }, [opportunities, rawEvents]);
 
   const totalPoints = useMemo(() => {
-    let total = 0;
+    let ledgerTotal = 0;
     opportunities.forEach(opp => {
       Object.values(opp.signups || {}).forEach(s => {
         if (s.userId === user?.id && s.status === 'verified') {
-          total += opp.points || 0;
+          ledgerTotal += Number(s.verifiedPoints ?? opp.points) || 0;
         }
       });
     });
-    return total;
-  }, [opportunities, user?.id]);
+    const memberTotal =
+      members.find(member => member.userId === user?.id || member.id === user?.id)
+        ?.volunteerPoints || 0;
+    return Math.max(memberTotal, ledgerTotal);
+  }, [members, opportunities, user?.id]);
+
+  const contributionTotals = useMemo(() => {
+    const totals = new Map<string, { userId: string; userName: string; email?: string; points: number }>();
+    opportunities.forEach(opportunity => {
+      Object.values(opportunity.signups || {}).forEach(signup => {
+        if (signup.status !== 'verified') return;
+        const current = totals.get(signup.userId) || {
+          userId: signup.userId,
+          userName: signup.userName || 'Contributor',
+          email: signup.email,
+          points: 0,
+        };
+        current.points += Number(signup.verifiedPoints ?? opportunity.points) || 0;
+        totals.set(signup.userId, current);
+      });
+    });
+    members.forEach(member => {
+      const points = Number(member.volunteerPoints) || 0;
+      if (points <= 0) return;
+      const key = member.userId || member.id;
+      const current = totals.get(key);
+      if (!current || points > current.points) {
+        totals.set(key, {
+          userId: key,
+          userName: member.name || current?.userName || 'Contributor',
+          email: member.email || current?.email,
+          points,
+        });
+      }
+    });
+    return [...totals.values()].sort((a, b) => b.points - a.points);
+  }, [members, opportunities]);
 
   const handleAddOpportunity = async () => {
     if (!newOpp.title || !newOpp.date) return;
@@ -166,6 +203,29 @@ export default function VolunteerHubPage() {
     const url = `${window.location.origin}/public/volunteer/${activeTeam?.id}/${oppId}`;
     navigator.clipboard.writeText(url);
     toast({ title: "Portal Link Copied", description: "External signup link ready for dispatch." });
+  };
+
+  const handleVerifyContribution = async (
+    opportunity: VolunteerOpportunity,
+    contributorId: string
+  ) => {
+    const key = `${opportunity.id}:${contributorId}`;
+    setVerifyingContribution(key);
+    try {
+      await verifyVolunteerPoints(opportunity.id, contributorId, opportunity.points);
+      toast({
+        title: 'Contribution Verified',
+        description: `${opportunity.points} points were added to the contributor’s permanent total.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Verification Failed',
+        description: error.message || 'Unable to award contribution points.',
+        variant: 'destructive',
+      });
+    } finally {
+      setVerifyingContribution(null);
+    }
   };
 
   if (isLoading) {
@@ -382,6 +442,19 @@ export default function VolunteerHubPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
+              {contributionTotals.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 p-8 border-b-2 border-black/5 bg-muted/10">
+                  {contributionTotals.map((contributor, index) => (
+                    <div key={contributor.userId} className="rounded-2xl bg-white border border-black/5 p-5 flex items-center justify-between gap-4 shadow-sm">
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-primary">#{index + 1} Contributor</p>
+                        <p className="font-black uppercase truncate">{contributor.userName}</p>
+                      </div>
+                      <p className="text-2xl font-black text-primary shrink-0">{contributor.points} PTS</p>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left min-w-[800px]">
                   <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground border-b-2 border-black/5">
@@ -422,12 +495,22 @@ export default function VolunteerHubPage() {
                         <td className="px-12 py-8 text-right">
                           {signup.status === 'verified' ? (
                             <div className="flex flex-col items-end">
-                              <span className="font-black text-primary text-base italic">+{opp.points} PTS</span>
+                              <span className="font-black text-primary text-base italic">+{signup.verifiedPoints ?? opp.points} PTS</span>
                               <span className="text-[8px] font-black uppercase text-muted-foreground opacity-40">Intelligence Confirmed</span>
                             </div>
                           ) : (
-                            <Button size="sm" className="rounded-xl h-12 px-8 font-black uppercase text-[10px] tracking-widest bg-black text-white hover:bg-primary shadow-xl shadow-black/5 group" onClick={() => verifyVolunteerPoints(opp.id, signup.userId, 1)}>
-                              <ShieldCheck className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" /> Verify & Award
+                            <Button
+                              size="sm"
+                              className="rounded-xl h-12 px-8 font-black uppercase text-[10px] tracking-widest bg-black text-white hover:bg-primary shadow-xl shadow-black/5 group"
+                              onClick={() => handleVerifyContribution(opp, signup.userId)}
+                              disabled={verifyingContribution === `${opp.id}:${signup.userId}`}
+                            >
+                              {verifyingContribution === `${opp.id}:${signup.userId}` ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              ) : (
+                                <ShieldCheck className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" />
+                              )}
+                              Verify & Award
                             </Button>
                           )}
                         </td>

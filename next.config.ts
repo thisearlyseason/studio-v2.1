@@ -29,22 +29,39 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       // Stripe Connect requires connect-js.stripe.com in script-src
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' js.stripe.com connect-js.stripe.com *.stripe.com va.vercel-scripts.com elfsightcdn.com *.elfsightcdn.com https://connect.facebook.net",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com js.stripe.com connect-js.stripe.com *.stripe.com elfsightcdn.com *.elfsightcdn.com",
       "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
       "font-src 'self' fonts.gstatic.com",
       "img-src 'self' data: blob: https: storage.googleapis.com *.firebasestorage.app placehold.co images.unsplash.com picsum.photos api.dicebear.com freeimage.host",
       "media-src 'self' blob: data: https: storage.googleapis.com *.firebasestorage.app",
       // Stripe Connect needs several stripe.com subdomains for its onboarding iframe/XHR
-      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://api.straico.com https://freeimage.host wss://*.firebaseio.com *.vercel-analytics.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org https://connect.facebook.net https://www.facebook.com",
+      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://api.straico.com https://freeimage.host wss://*.firebaseio.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org",
       // Stripe Connect onboarding is iframe-based
-      "frame-src 'self' js.stripe.com connect-js.stripe.com *.stripe.com checkout.stripe.com hooks.stripe.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com youtube.com *.youtube.com youtu.be *.youtu.be www.youtube-nocookie.com",
+      "frame-src 'self' https://*.firebaseapp.com js.stripe.com connect-js.stripe.com *.stripe.com checkout.stripe.com hooks.stripe.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com youtube.com *.youtube.com youtu.be *.youtu.be www.youtube-nocookie.com",
       "worker-src 'self' blob:",
       "child-src 'self' blob:",
     ].join('; '),
   },
 ];
 
+const embedSecurityHeaders = securityHeaders
+  .filter(header => header.key !== 'X-Frame-Options')
+  .map(header => header.key === 'Content-Security-Policy'
+    ? { ...header, value: `${header.value}; frame-ancestors *` }
+    : header);
+
 const nextConfig: NextConfig = {
+  // App Hosting provides FIREBASE_WEBAPP_CONFIG at build time. Expose only
+  // that public web-SDK configuration to the browser bundle so each backend
+  // connects to its own Firebase project instead of the local fallback.
+  env: {
+    NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG:
+      process.env.VERCEL_ENV === 'production'
+        ? ''
+        : process.env.FIREBASE_WEBAPP_CONFIG ??
+          process.env.NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG ??
+          '',
+  },
   typescript: {
     // Type checking is now enabled. Both project-level TS errors were fixed:
     // 1. games/page.tsx: added missing useToast import
@@ -109,8 +126,13 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // Apply to all routes: pages, API routes, and static files
-        source: '/(.*)',
+        // Embed cards are intentionally frameable on external Linktree-style sites.
+        source: '/embed/:path*',
+        headers: embedSecurityHeaders,
+      },
+      {
+        // Every non-embed route retains strict same-origin framing protection.
+        source: '/((?!embed(?:/|$)).*)',
         headers: securityHeaders,
       },
     ];

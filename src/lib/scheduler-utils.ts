@@ -82,7 +82,7 @@ function parseTime(timeStr: string, referenceDate: Date): Date {
   // Regex fallback for non-standard inputs like "8:00pm" or "08:00"
   const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
   if (match) {
-    let [_, hours, mins, ampm] = match;
+    const [_, hours, mins, ampm] = match;
     let h = parseInt(hours);
     if (ampm?.toUpperCase() === 'PM' && h < 12) h += 12;
     if (ampm?.toUpperCase() === 'AM' && h === 12) h = 0;

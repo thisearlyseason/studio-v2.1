@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from "@google/genai";
-import { verifyFirebaseToken } from '@/lib/api-auth';
+import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
+import { getPaidTeamFeatureAccess } from '@/lib/server-team-entitlements';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
-import { parseHighlightAnalyzeBody } from '@/lib/highlight-request-security';
 import { readResponseTextWithLimit } from '@/lib/public-network-url';
 
 export const maxDuration = 300;
@@ -14,6 +14,9 @@ export const dynamic = 'force-dynamic';
 
 /** Max request body: 10MB (base64 frames can be large, but this prevents abuse). */
 const MAX_BODY_BYTES = 10_000_000;
+const MAX_FRAME_COUNT = 24;
+const MAX_FRAME_BYTES = 2_000_000;
+const MAX_VIDEO_DURATION_SECONDS = 21_600;
 
 /**
  * /api/highlights/analyze — Vision-based highlight detection via Straico (Primary) or Gemini (Fallback)
@@ -74,34 +77,71 @@ async function callStraico(apiKey: string, modelId: string, messages: any[]): Pr
   }
 }
 
-async function readImageWithLimit(response: Response, maxBytes = 5_000_000): Promise<ArrayBuffer> {
-  const declaredLength = Number.parseInt(response.headers.get('content-length') || '', 10);
-  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    throw new Error('Hosted frame is too large.');
-  }
-  if (!response.body) throw new Error('Hosted frame returned an empty response.');
+/** Allowed origins for server-side frame fetches. Only Firebase Storage buckets accepted. */
+const SERVER_FETCH_FRAME_HOSTS = new Set([
+  'storage.googleapis.com',
+  'firebasestorage.googleapis.com',
+]);
+const VISION_FRAME_HOSTS = new Set([
+  ...SERVER_FETCH_FRAME_HOSTS,
+]);
 
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > maxBytes) {
-      await reader.cancel();
-      throw new Error('Hosted frame is too large.');
+function isAllowedFrameUrl(url: string, serverFetch = false): boolean {
+  try {
+    const parsed = new URL(url);
+    if (
+      parsed.protocol !== 'https:' ||
+      parsed.username ||
+      parsed.password ||
+      parsed.port
+    ) {
+      return false;
     }
-    chunks.push(value);
+    return (serverFetch ? SERVER_FETCH_FRAME_HOSTS : VISION_FRAME_HOSTS).has(
+      parsed.hostname.toLowerCase()
+    );
+  } catch {
+    return false;
   }
+}
 
-  const combined = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.byteLength;
+async function fetchFrameBytes(url: string): Promise<Uint8Array> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      redirect: 'error',
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(`Frame fetch failed with HTTP ${response.status}.`);
+    }
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.startsWith('image/')) {
+      throw new Error('Frame response was not an image.');
+    }
+    const declaredLength = Number(response.headers.get('content-length') || 0);
+    if (declaredLength > MAX_FRAME_BYTES) {
+      throw new Error('Frame response was too large.');
+    }
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_FRAME_BYTES) {
+        await reader.cancel();
+        throw new Error('Frame response was too large.');
+      }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks, totalBytes);
+  } finally {
+    clearTimeout(timeout);
   }
-  return combined.buffer;
 }
 
 async function callGemini(apiKey: string, model: string, prompt: string, frameUrls: Array<{url: string, timestamp: number}>): Promise<string | null> {
@@ -111,15 +151,14 @@ async function callGemini(apiKey: string, model: string, prompt: string, frameUr
 
     // Prepare multimodal content
     for (const frame of frameUrls) {
-      contents.push({ text: `[Timestamp: ${frame.timestamp.toFixed(1)}s]` });
-      const imageController = new AbortController();
-      const imageTimeout = setTimeout(() => imageController.abort(), 10_000);
-      const imageRes = await fetch(frame.url, { signal: imageController.signal, redirect: 'error' });
-      clearTimeout(imageTimeout);
-      if (!imageRes.ok || !imageRes.headers.get('content-type')?.toLowerCase().startsWith('image/')) {
-        throw new Error('Hosted frame could not be read as an image.');
+      // ── SSRF Guard: only fetch from known Firebase Storage origins ──────
+      if (!isAllowedFrameUrl(frame.url, true)) {
+        console.warn(`[Gemini] Blocked non-allowlisted URL: ${frame.url.slice(0, 80)}`);
+        continue; // Skip this frame rather than aborting the whole request
       }
-      const imageBuffer = await readImageWithLimit(imageRes);
+
+      contents.push({ text: `[Timestamp: ${frame.timestamp.toFixed(1)}s]` });
+      const imageBuffer = await fetchFrameBytes(frame.url);
       contents.push({
         inlineData: {
           mimeType: "image/jpeg",
@@ -140,31 +179,147 @@ async function callGemini(apiKey: string, model: string, prompt: string, frameUr
   }
 }
 
+async function callGeminiInline(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  frames: Array<{ base64: string; timestamp: number }>
+): Promise<string | null> {
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const contents: any[] = [{ text: prompt }];
+    for (const frame of frames) {
+      contents.push({ text: `[Timestamp: ${frame.timestamp.toFixed(1)}s]` });
+      contents.push({
+        inlineData: {
+          mimeType: 'image/jpeg',
+          data: frame.base64,
+        },
+      });
+    }
+    const response = await ai.models.generateContent({
+      model,
+      contents: [{ role: 'user', parts: contents }],
+    });
+    return response.text ?? null;
+  } catch (error: any) {
+    console.warn('[Gemini Inline] Failed:', error.message);
+    return null;
+  }
+}
+
 
 export async function POST(req: NextRequest) {
   // ── Auth guard: must be a signed-in user to use paid AI endpoints ──────
   const authResult = await verifyFirebaseToken(req);
   if (authResult instanceof NextResponse) return authResult;
+  const anonymousCheck = assertNonAnonymous(authResult);
+  if (anonymousCheck) return anonymousCheck;
 
   try {
-    const limited = await enforceUserRateLimit(authResult.uid, 'highlight-analysis', 12, 60 * 60 * 1000);
-    if (limited) return limited;
+    const body = await readJsonBodyWithLimit<{
+      frameUrls?: Array<{ timestamp: number; url: string }>;
+      frames?: Array<{ timestamp: number; base64: string }>;
+      prompt?: unknown;
+      videoDuration?: unknown;
+      teamId?: unknown;
+    }>(req, MAX_BODY_BYTES);
+    const {
+      frameUrls,  // PRIMARY: HTTPS URLs from Firebase Storage (Straico requires real URLs)
+      frames,     // FALLBACK: base64 — triggers text-only mode (no vision)
+      prompt,
+      videoDuration,
+      teamId,
+    }: {
+      frameUrls?: Array<{ timestamp: number; url: string }>;
+      frames?: Array<{ timestamp: number; base64: string }>;
+      prompt?: unknown;
+      videoDuration?: unknown;
+      teamId?: unknown;
+    } = body;
 
-    const body = await readJsonBodyWithLimit<unknown>(req, MAX_BODY_BYTES);
-    const { frameUrls, frames, prompt, videoDuration } = parseHighlightAnalyzeBody(body);
-    const hasUrls = frameUrls.length > 0;
-
-    const apiKey = process.env.STRAICO_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'STRAICO_API_KEY is not set in .env.local' }, { status: 500 });
+    if (typeof teamId !== 'string' || !teamId.trim()) {
+      return NextResponse.json({ error: 'A valid teamId is required.' }, { status: 400 });
+    }
+    const rateLimit = await enforceUserRateLimit(
+      authResult.uid,
+      'highlights-analyze',
+      6,
+      10 * 60 * 1000
+    );
+    if (rateLimit) return rateLimit;
+    const access = await getPaidTeamFeatureAccess(
+      authResult.uid,
+      teamId,
+      authResult.role === 'superadmin'
+    );
+    if (!access.allowed) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
-    const durationSecs = Math.round(videoDuration || 0);
-    const frameCount = hasUrls ? frameUrls.length : frames.length;
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 2_000) {
+      return NextResponse.json({ error: 'A valid prompt is required.' }, { status: 400 });
+    }
+    const duration =
+      typeof videoDuration === 'number' &&
+      Number.isFinite(videoDuration) &&
+      videoDuration > 0 &&
+      videoDuration <= MAX_VIDEO_DURATION_SECONDS
+        ? videoDuration
+        : null;
+    if (!duration) {
+      return NextResponse.json({ error: 'A valid video duration is required.' }, { status: 400 });
+    }
+
+    const validFrameUrls =
+      Array.isArray(frameUrls) &&
+      frameUrls.length <= MAX_FRAME_COUNT &&
+      frameUrls.every(
+        frame =>
+          typeof frame?.url === 'string' &&
+          frame.url.length <= 2_048 &&
+          isAllowedFrameUrl(frame.url) &&
+          typeof frame.timestamp === 'number' &&
+          Number.isFinite(frame.timestamp) &&
+          frame.timestamp >= 0 &&
+          frame.timestamp <= duration
+      );
+    const validFrames =
+      Array.isArray(frames) &&
+      frames.length <= MAX_FRAME_COUNT &&
+      frames.every(
+        frame =>
+          typeof frame?.base64 === 'string' &&
+          frame.base64.length <= 2_000_000 &&
+          /^[A-Za-z0-9+/]+={0,2}$/.test(frame.base64) &&
+          typeof frame.timestamp === 'number' &&
+          Number.isFinite(frame.timestamp) &&
+          frame.timestamp >= 0 &&
+          frame.timestamp <= duration
+      );
+    const hasUrls = validFrameUrls && frameUrls!.length > 0;
+    const hasBase64 = validFrames && frames!.length > 0;
+
+    if (!hasUrls && !hasBase64) {
+      return NextResponse.json({ error: 'No valid frames provided.' }, { status: 400 });
+    }
+
+    const straicoApiKey = process.env.STRAICO_API_KEY;
+    const googleAiApiKey =
+      process.env.GOOGLE_AI_API_KEY &&
+      process.env.GOOGLE_AI_API_KEY !== 'your_gemini_api_key_here'
+        ? process.env.GOOGLE_AI_API_KEY
+        : null;
+    if (!straicoApiKey && !googleAiApiKey) {
+      return NextResponse.json({ error: 'AI analysis service is not configured.' }, { status: 503 });
+    }
+
+    const durationSecs = Math.round(duration);
+    const frameCount = hasUrls ? frameUrls!.length : frames!.length;
 
     const frameTimestamps = hasUrls
       ? frameUrls.map((f, i) => `Frame ${i + 1} @ ${f.timestamp.toFixed(1)}s`).join(', ')
-      : frames.map((f, i) => `Frame ${i + 1} @ ${f.timestamp.toFixed(1)}s`).join(', ');
+      : frames!.map((f, i) => `Frame ${i + 1} @ ${f.timestamp.toFixed(1)}s`).join(', ');
 
     console.log(`[Straico] ${frameCount} frames (${hasUrls ? 'HTTPS vision' : 'text-only fallback'}), ${durationSecs}s video`);
 
@@ -192,7 +347,7 @@ EXAMPLE: [{"startTime":12.5,"endTime":28.0,"impactFrameTime":18.2,"title":"Elite
     let successModel = '';
     let lastError = '';
 
-    if (hasUrls) {
+    if (hasUrls && straicoApiKey) {
       // ── VISION PATH: Send HTTPS image URLs to Straico ──────────────────
       const visionContent: any[] = [{ type: 'text', text: scoutPrompt }];
 
@@ -214,7 +369,7 @@ EXAMPLE: [{"startTime":12.5,"endTime":28.0,"impactFrameTime":18.2,"title":"Elite
       for (const modelId of VISION_MODELS) {
         try {
           console.log(`[Straico Vision] Trying: ${modelId}`);
-          const content = await callStraico(apiKey, modelId, visionMessages);
+          const content = await callStraico(straicoApiKey, modelId, visionMessages);
           if (content) { textResult = content; successModel = modelId; break; }
           lastError = `${modelId}: empty response`;
         } catch (e: any) {
@@ -224,13 +379,26 @@ EXAMPLE: [{"startTime":12.5,"endTime":28.0,"impactFrameTime":18.2,"title":"Elite
       }
 
       // --- ATTEMPT 2: Gemini Direct Fallback (Free if key is valid) ---
-      if (!textResult && process.env.GOOGLE_AI_API_KEY && process.env.GOOGLE_AI_API_KEY !== 'your_gemini_api_key_here') {
+      if (!textResult && googleAiApiKey) {
         console.log('[Analyze] Straico vision failed/unavailable. Falling back to direct Gemini analysis.');
-        const result = await callGemini(process.env.GOOGLE_AI_API_KEY, 'gemini-1.5-flash', scoutPrompt, frameUrls);
+        const result = await callGemini(googleAiApiKey, 'gemini-1.5-flash', scoutPrompt, frameUrls!);
         if (result) {
           textResult = result;
           successModel = 'google/gemini-1.5-flash (direct)';
         }
+      }
+    }
+
+    if (!textResult && hasBase64 && googleAiApiKey) {
+      const result = await callGeminiInline(
+        googleAiApiKey,
+        'gemini-1.5-flash',
+        scoutPrompt,
+        frames!
+      );
+      if (result) {
+        textResult = result;
+        successModel = 'google/gemini-1.5-flash (private inline frames)';
       }
     }
 
@@ -252,10 +420,10 @@ Return ONLY valid JSON array, no markdown:
 
       const textMessages = [{ role: 'user', content: textPrompt }];
 
-      for (const modelId of TEXT_MODELS) {
+      for (const modelId of straicoApiKey ? TEXT_MODELS : []) {
         try {
           console.log(`[Straico Text] Trying: ${modelId}`);
-          const content = await callStraico(apiKey, modelId, textMessages);
+          const content = await callStraico(straicoApiKey!, modelId, textMessages);
           if (content) { textResult = content; successModel = `${modelId} (text-only)`; break; }
         } catch (e: any) {
           lastError = `${modelId}: ${e.message}`;
@@ -302,6 +470,6 @@ Return ONLY valid JSON array, no markdown:
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
     console.error('[Straico Analyze Error]:', err.message);
-    return NextResponse.json({ error: err.message || 'Analysis failed.' }, { status: 500 });
+    return NextResponse.json({ error: 'Analysis failed.' }, { status: 500 });
   }
 }

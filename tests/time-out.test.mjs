@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'; import test from 'node:test';
-import core from '../src/components/time-out/game-core.ts';
+import * as core from '../src/components/time-out/game-core.ts';
 const { DIFFICULTY, STORAGE, firstToFive, volleyballPoint, baseballContact, storageGet, storageSet } = core;
 test('Time Out difficulty gets progressively faster and less forgiving',()=>{assert.ok(DIFFICULTY.easy.speed<DIFFICULTY.hard.speed);assert.ok(DIFFICULTY.easy.timing>DIFFICULTY.hard.timing)});
 test('first-to-five ends a match',()=>{assert.equal(firstToFive(5,4),true);assert.equal(firstToFive(4,4),false)});

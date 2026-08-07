@@ -9,13 +9,13 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth, useUser, useFirestore } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signInAnonymously, signOut, signInWithPopup, GoogleAuthProvider, sendPasswordResetEmail, browserPopupRedirectResolver } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import BrandLogo from '@/components/BrandLogo';
 import Image from 'next/image';
 import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap, Eye, EyeOff } from 'lucide-react';
-import { establishSession, signOutWithSession } from '@/lib/client-session';
+import { clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
 
 function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
   return Promise.race([
@@ -47,18 +47,32 @@ export default function LoginPage() {
   const router = useRouter();
 
   React.useEffect(() => {
+    const returnTo = new URLSearchParams(window.location.search).get('returnTo');
+    if (returnTo?.startsWith('/') && !returnTo.startsWith('//')) {
+      sessionStorage.setItem('squad_return_path', returnTo);
+    }
+  }, []);
+
+  React.useEffect(() => {
     if (!isUserLoading && user) {
       const fetchRole = async () => {
-        try {
-          await establishSession(user);
-        } catch {
-          await signOut(auth);
-          setIsLoading(false);
-          toast({ title: 'Session Expired', description: 'Please sign in again to continue.', variant: 'destructive' });
+        if (!user.isAnonymous && !user.emailVerified) {
+          await clearBrowserSession();
+          router.replace('/verify-email');
           return;
         }
-        const requestedPath = new URLSearchParams(window.location.search).get('returnTo');
-        const returnPath = requestedPath || sessionStorage.getItem('squad_return_path');
+        try {
+          await establishBrowserSession(user);
+        } catch {
+          setIsLoading(false);
+          toast({
+            title: 'Session Setup Failed',
+            description: 'Your login could not be secured. Please try again.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        const returnPath = sessionStorage.getItem('squad_return_path');
         if (returnPath?.startsWith('/') && !returnPath.startsWith('//')) {
           sessionStorage.removeItem('squad_return_path');
           router.push(returnPath);
@@ -72,6 +86,9 @@ export default function LoginPage() {
           );
           if (userDoc.exists()) {
             const data = userDoc.data();
+            if (user.email && data.email !== user.email) {
+              await updateDoc(userDoc.ref, { email: user.email });
+            }
             const tokenResult = await user.getIdTokenResult();
             if (tokenResult.claims.role === 'superadmin') {
               router.push('/admin');
@@ -98,14 +115,14 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       await withTimeout(
-        signInWithEmailAndPassword(auth, email.trim(), password.trim()),
+        signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password),
         15000,
         'Login request timed out. Check your connection and try again.',
       );
     } catch (error: any) {
       toast({
         title: "Login Failed",
-        description: error.message || "Invalid credentials.",
+        description: "The email or password is incorrect, or this account is unavailable.",
         variant: "destructive",
       });
     } finally {
@@ -167,7 +184,8 @@ export default function LoginPage() {
     setIsDemoLoading(true);
     try {
       // Clear current session first to prevent state pollution
-      await signOutWithSession(auth);
+      await clearBrowserSession();
+      await signOut(auth);
       // Brief delay to ensure auth state clean
       await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -176,8 +194,8 @@ export default function LoginPage() {
       localStorage.removeItem('sf_session_team_id');
       sessionStorage.removeItem('squad_demo_start_time');
       
-      const credential = await signInAnonymously(auth);
-      await establishSession(credential.user);
+      const demoCredential = await signInAnonymously(auth);
+      await establishBrowserSession(demoCredential.user);
       
       // Use window.location.replace to bypass internal router cache 
       // and ensure DashboardLayout initializes with fresh demo parameters

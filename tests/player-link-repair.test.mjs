@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import playerLinkRepair from '../src/lib/player-link-repair.ts';
+import * as playerLinkRepair from '../src/lib/player-link-repair.ts';
 const {
   isRepairableAthlete,
   playerIdentityForMember,
