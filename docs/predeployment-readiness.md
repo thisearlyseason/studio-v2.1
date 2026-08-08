@@ -11,7 +11,7 @@
 - The production infrastructure workflow verifies the release, requires explicit project confirmation, and deploys indexes, Functions, then rules.
 - Legacy root tournament creation is closed to ordinary accounts; supported tournaments remain team-scoped events.
 - Storage is default-deny with explicit public branding and opted-in recruiting media paths.
-- Existing payment, tenant isolation, notification, email, league-access, and public-spectator repairs remain local and un-deployed.
+- Payment, tenant isolation, notification, email, league-access, and public-spectator repairs are deployed at revision `eb06d75957ffae9324de737f36e684262c5f0dcb`.
 
 ## Required before any production deployment
 
@@ -23,8 +23,9 @@
 
 ## Deployment state and external gates
 
-- No frontend, Functions, Firestore rules, Storage rules, or hosting deployment was made by this local readiness pass.
-- Production Vercel environment metadata was cleaned of retired provider variables and now includes the production calendar feed endpoint.
+- Production infrastructure workflow `31265002674` deployed Functions, Firestore indexes, and Firestore/Storage rules successfully.
+- Vercel production deployment `dpl_F1fhzsL5nC4KVUKvxgfAeutFkU34` is Ready and serves `eb06d75957ffae9324de737f36e684262c5f0dcb`.
+- Production Vercel environment metadata contains the required variable names and the deployed runtime passed live smoke checks.
 - Isolated browser coverage now includes all seven demo personas, authenticated feature modules, 35 public routes, protected/public API negatives, and 390x844 role dashboards.
-- Production metadata confirms retired calendar functions and index-contract drift; the new infrastructure workflow is required before web promotion.
+- Production metadata confirms retired calendar functions are absent and the complete Firestore index contract is enabled.
 - Sensitive production values, signed provider callbacks, real email/push delivery, monitoring, and backup/restore validation remain external promotion gates.

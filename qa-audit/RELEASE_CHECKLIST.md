@@ -23,9 +23,9 @@
 
 ## Deploy/rollback
 
-- [ ] Run the guarded production infrastructure workflow; remove retired calendar functions and deploy the complete checked-in index contract.
+- [x] Run workflow `31265002674`; retired calendar functions are absent and the complete checked-in index contract is enabled.
 - [ ] Snapshot rules/indexes/config before deploy.
 - [ ] Deploy Preview first; run smoke tests with test accounts.
-- [ ] Promote only an immutable, reviewed commit.
+- [x] Promote immutable reviewed commit `eb06d75957ffae9324de737f36e684262c5f0dcb`.
 - [ ] Monitor Stripe/Resend/webhook/API error logs after release.
 - [ ] Keep a documented rollback version and data-migration reversal plan.
