@@ -55,6 +55,10 @@ beforeEach(async () => {
         name: 'Pending Delete',
         deletionStatus: 'pending',
       }),
+      setDoc(doc(db, 'users', 'owner', 'tokens', 'google'), {
+        access_token: 'server-secret',
+        refresh_token: 'server-refresh-secret',
+      }),
       setDoc(doc(db, 'teams', 'team-a'), {
         ownerUserId: 'owner',
         isPro: true,
@@ -137,6 +141,22 @@ beforeEach(async () => {
         title: 'Targeted alert',
         createdBy: 'owner',
       }),
+      setDoc(doc(db, 'teams', 'team-a', 'paymentItems', 'item-a'), {
+        name: 'Team dues',
+        amount: 5000,
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'payments', 'member-payment'), {
+        payer_email: 'member@example.test',
+        amount: 5000,
+        payment_method: 'online',
+        status: 'paid',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'payments', 'other-payment'), {
+        payer_email: 'other@example.test',
+        amount: 7500,
+        payment_method: 'offline',
+        status: 'paid',
+      }),
       setDoc(doc(db, 'players', 'private-player'), {
         userId: 'member',
         parentId: 'member',
@@ -217,6 +237,12 @@ beforeEach(async () => {
         email: 'hub@example.com',
         isActive: true,
       }),
+      setDoc(doc(db, 'calendarFeeds', 'existing-feed'), {
+        type: 'team',
+        userId: 'owner',
+        teamId: 'team-a',
+        active: true,
+      }),
     ]);
   });
 });
@@ -243,6 +269,67 @@ test('user profiles remain private and billing authority cannot be self-granted'
     plan_type: 'school',
     team_limit: 100,
   }));
+});
+
+test('OAuth credentials remain server-only despite the user subcollection fallback', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const superAdminDb = authenticatedDb('root', { role: 'superadmin' });
+  const tokenRef = doc(ownerDb, 'users', 'owner', 'tokens', 'google');
+
+  await assertFails(getDoc(tokenRef));
+  await assertFails(setDoc(tokenRef, { access_token: 'forged' }));
+  await assertFails(getDoc(doc(superAdminDb, 'users', 'owner', 'tokens', 'google')));
+});
+
+test('calendar feed documents are readable and writable only by trusted server code', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const superAdminDb = authenticatedDb('root', { role: 'superadmin' });
+  const feedRef = doc(ownerDb, 'calendarFeeds', 'existing-feed');
+
+  await assertFails(getDoc(feedRef));
+  await assertFails(setDoc(doc(ownerDb, 'calendarFeeds', 'forged-feed'), {
+    type: 'team',
+    userId: 'owner',
+    teamId: 'another-team',
+    active: true,
+  }));
+  await assertFails(setDoc(feedRef, { teamId: 'another-team' }, { merge: true }));
+  await assertFails(setDoc(doc(superAdminDb, 'stripeConnectWebhookEvents', 'evt_forged'), {
+    status: 'completed',
+  }));
+});
+
+test('payment records are server-written and members can read only their own records', async () => {
+  const ownerDb = authenticatedDb('owner', { email: 'owner@example.test' });
+  const staffDb = authenticatedDb('staff', { email: 'staff@example.test' });
+  const memberDb = authenticatedDb('member', { email: 'member@example.test' });
+  const outsiderDb = authenticatedDb('outsider', { email: 'member@example.test' });
+
+  await assertFails(setDoc(doc(ownerDb, 'teams', 'team-a', 'payments', 'forged-owner'), {
+    payer_email: 'owner@example.test',
+    amount: 1,
+    status: 'paid',
+  }));
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'payments', 'forged-staff'), {
+    payer_email: 'staff@example.test',
+    amount: 1,
+    status: 'paid',
+  }));
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'paymentItems', 'forged-item'), {
+    name: 'Forged fee',
+    amount: 1,
+  }));
+
+  await assertSucceeds(getDoc(doc(memberDb, 'teams', 'team-a', 'payments', 'member-payment')));
+  await assertFails(getDoc(doc(memberDb, 'teams', 'team-a', 'payments', 'other-payment')));
+  await assertFails(getDoc(doc(outsiderDb, 'teams', 'team-a', 'payments', 'member-payment')));
+  await assertSucceeds(getDoc(doc(staffDb, 'teams', 'team-a', 'payments', 'other-payment')));
+  await assertSucceeds(getDoc(doc(ownerDb, 'teams', 'team-a', 'payments', 'other-payment')));
+  await assertSucceeds(getDocs(query(
+    collection(memberDb, 'teams', 'team-a', 'payments'),
+    where('payer_email', '==', 'member@example.test'),
+  )));
+  await assertFails(getDocs(collection(memberDb, 'teams', 'team-a', 'payments')));
 });
 
 test('team creation is server-only and tenant reads require membership', async () => {

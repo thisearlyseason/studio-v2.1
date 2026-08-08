@@ -76,7 +76,7 @@ import {
   CreditCard
 } from 'lucide-react';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
-import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where, getDocs, addDoc } from 'firebase/firestore';
+import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where, getDocs } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -5261,28 +5261,29 @@ function SquadFinancialHub() {
       toast({ title: 'Name and description are required', variant: 'destructive' });
       return;
     }
-    const amount = parseFloat(offlineForm.amountDollars);
-    if (!isFinite(amount) || amount < 0) {
+    const amount = Number(offlineForm.amountDollars);
+    if (!Number.isFinite(amount) || amount <= 0) {
       toast({ title: 'Invalid amount', variant: 'destructive' });
       return;
     }
     setIsRecording(true);
     try {
-      const now = new Date().toISOString();
-      await addDoc(collection(db, 'teams', activeTeam!.id, 'payments'), {
-        teamId: activeTeam!.id,
-        paymentItemName: offlineForm.paymentItemName.trim(),
-        payer_name: offlineForm.payer_name.trim(),
-        payer_email: offlineForm.payer_email.trim().toLowerCase(),
-        amount: Math.round(amount * 100), // store in cents
-        currency: 'usd',
-        payment_method: 'offline',
-        status: 'paid',
-        notes: offlineForm.notes.trim() || '',
-        recorded_by: user?.id || '',
-        createdAt: now,
-        updatedAt: now,
+      const token = await getAuthToken(auth);
+      const response = await fetch('/api/payments/offline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({
+          teamId: activeTeam!.id,
+          paymentItemName: offlineForm.paymentItemName.trim(),
+          payerName: offlineForm.payer_name.trim(),
+          payerEmail: offlineForm.payer_email.trim(),
+          amount: Math.round(amount * 100),
+          currency: 'usd',
+          notes: offlineForm.notes.trim() || '',
+        }),
       });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to record payment.');
       toast({ title: '✓ Payment Recorded', description: `Offline payment from ${offlineForm.payer_name} saved.` });
       setOfflineForm({ payer_name: '', payer_email: '', paymentItemName: '', amountDollars: '', notes: '' });
       setIsOfflineDialogOpen(false);

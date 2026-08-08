@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { connectAccountOwnsTeam } from '@/lib/server-stripe-connect';
+import { shouldApplyStripePaymentStatus } from '@/lib/stripe-connect-webhook-security';
 
 /**
  * POST /api/stripe/connect/webhook
@@ -25,6 +26,109 @@ import { connectAccountOwnsTeam } from '@/lib/server-stripe-connect';
 
 const CONNECT_WEBHOOK_SECRET = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
 const MAX_BODY_SIZE = 512_000;
+const WEBHOOK_PROCESSING_LEASE_MS = 10 * 60 * 1000;
+
+type StripeEventContext = {
+  id: string;
+  type: string;
+  created: number;
+};
+
+async function claimWebhookEvent(event: Stripe.Event, connectedAccountId?: string) {
+  const eventRef = adminDb.collection('stripeConnectWebhookEvents').doc(event.id);
+  return adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(eventRef);
+    const existing = snapshot.data() || {};
+    if (existing.status === 'completed') return 'completed' as const;
+
+    if (existing.status === 'processing') {
+      const startedAt = Date.parse(String(existing.processingStartedAt || ''));
+      if (Number.isFinite(startedAt) && Date.now() - startedAt < WEBHOOK_PROCESSING_LEASE_MS) {
+        return 'active' as const;
+      }
+    }
+
+    transaction.set(eventRef, {
+      eventId: event.id,
+      eventType: event.type,
+      eventCreated: event.created,
+      connectedAccountId: connectedAccountId ?? null,
+      status: 'processing',
+      processingStartedAt: new Date().toISOString(),
+      receivedAt: existing.receivedAt || new Date().toISOString(),
+      attempts: Number(existing.attempts || 0) + 1,
+      lastError: null,
+    }, { merge: true });
+    return 'claimed' as const;
+  });
+}
+
+async function finishWebhookEvent(eventId: string, status: 'completed' | 'failed', error?: string) {
+  await adminDb.collection('stripeConnectWebhookEvents').doc(eventId).set({
+    status,
+    ...(status === 'completed'
+      ? { completedAt: new Date().toISOString(), lastError: null }
+      : { failedAt: new Date().toISOString(), lastError: error || 'Processing failed.' }),
+  }, { merge: true });
+}
+
+async function upsertStripePayment({
+  teamId,
+  paymentRecordId,
+  status,
+  event,
+  fields,
+}: {
+  teamId: string;
+  paymentRecordId: string;
+  status: 'paid' | 'failed';
+  event: StripeEventContext;
+  fields: Record<string, unknown>;
+}) {
+  const paymentRef = adminDb.collection('teams').doc(teamId).collection('payments').doc(paymentRecordId);
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(paymentRef);
+    const current = snapshot.data() || {};
+    const shouldApply = shouldApplyStripePaymentStatus(
+      current.status === 'paid' || current.status === 'failed'
+        ? {
+            status: current.status,
+            eventCreated: typeof current.last_stripe_event_created === 'number'
+              ? current.last_stripe_event_created
+              : current.status === 'paid' ? Number.MAX_SAFE_INTEGER : 0,
+            eventId: String(current.last_stripe_event_id || ''),
+          }
+        : null,
+      { status, eventCreated: event.created, eventId: event.id },
+    );
+
+    // A stale failure has no useful enrichment and must not touch the record.
+    if (!shouldApply && status === 'failed') return;
+
+    const payload: Record<string, unknown> = {
+      id: paymentRecordId,
+      teamId,
+      payment_method: 'online',
+    };
+    for (const [key, value] of Object.entries(fields)) {
+      if (value === undefined) continue;
+      if ((value === '' || value === null) && current[key]) continue;
+      if (key === 'paymentItemName' && value === 'Online Payment' && current.paymentItemName) continue;
+      payload[key] = value;
+    }
+    if (!snapshot.exists) payload.createdAt = new Date().toISOString();
+    if (shouldApply) {
+      Object.assign(payload, {
+        status,
+        last_stripe_event_created: event.created,
+        last_stripe_event_id: event.id,
+        last_stripe_event_type: event.type,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    transaction.set(paymentRef, payload, { merge: true });
+  });
+}
 
 export async function POST(req: NextRequest) {
   // Guard oversized payloads
@@ -34,7 +138,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.text();
-  if (body.length > MAX_BODY_SIZE) {
+  if (Buffer.byteLength(body, 'utf8') > MAX_BODY_SIZE) {
     return NextResponse.json({ error: 'Payload too large.' }, { status: 413 });
   }
 
@@ -59,24 +163,34 @@ export async function POST(req: NextRequest) {
 
   // The connected account ID is in the event's account field
   const connectedAccountId = (event as any).account as string | undefined;
+  const claimResult = await claimWebhookEvent(event, connectedAccountId);
+  if (claimResult === 'completed') return NextResponse.json({ received: true, duplicate: true });
+  if (claimResult === 'active') {
+    return NextResponse.json({ error: 'Event is already being processed.' }, { status: 409 });
+  }
 
   try {
+    const eventContext: StripeEventContext = {
+      id: event.id,
+      type: event.type,
+      created: event.created,
+    };
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
-        await handleCheckoutCompleted(session, connectedAccountId);
+        await handleCheckoutCompleted(session, connectedAccountId, eventContext);
         break;
       }
 
       case 'payment_intent.succeeded': {
         const pi = event.data.object as Stripe.PaymentIntent;
-        await handlePaymentIntentSucceeded(pi, connectedAccountId);
+        await handlePaymentIntentSucceeded(pi, connectedAccountId, eventContext);
         break;
       }
 
       case 'payment_intent.payment_failed': {
         const pi = event.data.object as Stripe.PaymentIntent;
-        await handlePaymentIntentFailed(pi, connectedAccountId);
+        await handlePaymentIntentFailed(pi, connectedAccountId, eventContext);
         break;
       }
 
@@ -85,9 +199,13 @@ export async function POST(req: NextRequest) {
         break;
     }
 
+    await finishWebhookEvent(event.id, 'completed');
     return NextResponse.json({ received: true });
   } catch (err: any) {
     console.error('[Connect Webhook] Processing error:', err.message);
+    await finishWebhookEvent(event.id, 'failed', err.message).catch(finishError => {
+      console.error('[Connect Webhook] Failed to persist event failure:', finishError);
+    });
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
@@ -101,7 +219,8 @@ export async function POST(req: NextRequest) {
  */
 async function handleCheckoutCompleted(
   session: Stripe.Checkout.Session,
-  connectedAccountId: string | undefined
+  connectedAccountId: string | undefined,
+  event: StripeEventContext,
 ) {
   const teamId: string | undefined = session.metadata?.firebase_team_id;
   if (!teamId) {
@@ -113,7 +232,7 @@ async function handleCheckoutCompleted(
     throw new Error('Connected account does not own the referenced team.');
   }
 
-  const payerEmail = session.customer_details?.email ?? session.customer_email ?? '';
+  const payerEmail = (session.customer_details?.email ?? session.customer_email ?? '').trim().toLowerCase();
   const payerName = session.customer_details?.name ?? '';
   const amountTotal = session.amount_total ?? 0;
   const currency = session.currency ?? 'usd';
@@ -136,22 +255,18 @@ async function handleCheckoutCompleted(
     console.warn('[Connect Webhook] Could not fetch receipt URL:', err.message);
   }
 
-  const now = new Date().toISOString();
-
   // Checkout and payment-intent events have different event IDs. The payment
   // intent is the stable identifier they share, so it prevents double records.
   const paymentIntentId = typeof session.payment_intent === 'string'
     ? session.payment_intent
     : session.payment_intent?.id;
   const paymentRecordId = paymentIntentId ?? session.id;
-  const docRef = adminDb
-    .collection('teams').doc(teamId)
-    .collection('payments').doc(paymentRecordId);
-
-  await docRef.set(
-    {
-      id: paymentRecordId,
-      teamId,
+  await upsertStripePayment({
+    teamId,
+    paymentRecordId,
+    status: 'paid',
+    event,
+    fields: {
       paymentItemName: session.metadata?.payment_item_category
         ? `${session.metadata.payment_item_category} payment`
         : 'Online Payment',
@@ -159,17 +274,12 @@ async function handleCheckoutCompleted(
       payer_email: payerEmail,
       amount: amountTotal,
       currency,
-      payment_method: 'online',
-      status: 'paid',
       stripe_session_id: session.id,
       stripe_payment_intent_id: paymentIntentId ?? null,
       stripe_receipt_url: receiptUrl,
       stripe_connect_account_id: connectedAccountId ?? null,
-      createdAt: now,
-      updatedAt: now,
     },
-    { merge: true }
-  );
+  });
 
   await recordFundraisingDonation({
     teamId,
@@ -183,7 +293,7 @@ async function handleCheckoutCompleted(
     connectedAccountId,
   });
 
-  console.log(`[Connect Webhook] Payment recorded for team ${teamId}: ${payerEmail} paid ${amountTotal} ${currency}`);
+  console.log(`[Connect Webhook] Payment recorded for team ${teamId}: ${amountTotal} ${currency}`);
 }
 
 /**
@@ -192,7 +302,8 @@ async function handleCheckoutCompleted(
  */
 async function handlePaymentIntentSucceeded(
   pi: Stripe.PaymentIntent,
-  connectedAccountId: string | undefined
+  connectedAccountId: string | undefined,
+  event: StripeEventContext,
 ) {
   const teamId: string | undefined = pi.metadata?.firebase_team_id;
   if (!teamId) return;
@@ -200,28 +311,20 @@ async function handlePaymentIntentSucceeded(
     throw new Error('Connected account does not own the referenced team.');
   }
 
-  // Only update — the checkout.session.completed handler is primary
-  await adminDb
-    .collection('teams').doc(teamId)
-    .collection('payments').doc(pi.id)
-    .set(
-      {
-        id: pi.id,
-        teamId,
-        payment_method: 'online',
-        status: 'paid',
-        amount: pi.amount_received,
-        currency: pi.currency,
-        stripe_payment_intent_id: pi.id,
-        stripe_connect_account_id: connectedAccountId,
-        payer_email: pi.receipt_email ?? '',
-        payer_name: '',
-        paymentItemName: 'Online Payment',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+  await upsertStripePayment({
+    teamId,
+    paymentRecordId: pi.id,
+    status: 'paid',
+    event,
+    fields: {
+      amount: pi.amount_received,
+      currency: pi.currency,
+      stripe_payment_intent_id: pi.id,
+      stripe_connect_account_id: connectedAccountId,
+      payer_email: (pi.receipt_email ?? '').trim().toLowerCase(),
+      paymentItemName: 'Online Payment',
+    },
+  });
 
   await recordFundraisingDonation({
     teamId,
@@ -230,7 +333,7 @@ async function handlePaymentIntentSucceeded(
     amountCents: pi.amount_received,
     currency: pi.currency,
     payerName: '',
-    payerEmail: pi.receipt_email ?? '',
+    payerEmail: (pi.receipt_email ?? '').trim().toLowerCase(),
     receiptUrl: null,
     connectedAccountId,
   });
@@ -310,7 +413,8 @@ async function recordFundraisingDonation({
  */
 async function handlePaymentIntentFailed(
   pi: Stripe.PaymentIntent,
-  connectedAccountId: string | undefined
+  connectedAccountId: string | undefined,
+  event: StripeEventContext,
 ) {
   const teamId: string | undefined = pi.metadata?.firebase_team_id;
   if (!teamId) return;
@@ -318,24 +422,18 @@ async function handlePaymentIntentFailed(
     throw new Error('Connected account does not own the referenced team.');
   }
 
-  await adminDb
-    .collection('teams').doc(teamId)
-    .collection('payments').doc(pi.id)
-    .set(
-      {
-        id: pi.id,
-        teamId,
-        payment_method: 'online',
-        status: 'failed',
-        amount: pi.amount,
-        currency: pi.currency,
-        stripe_payment_intent_id: pi.id,
-        stripe_connect_account_id: connectedAccountId,
-        payer_email: pi.receipt_email ?? '',
-        payer_name: '',
-        paymentItemName: 'Online Payment',
-        updatedAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+  await upsertStripePayment({
+    teamId,
+    paymentRecordId: pi.id,
+    status: 'failed',
+    event,
+    fields: {
+      amount: pi.amount,
+      currency: pi.currency,
+      stripe_payment_intent_id: pi.id,
+      stripe_connect_account_id: connectedAccountId,
+      payer_email: (pi.receipt_email ?? '').trim().toLowerCase(),
+      paymentItemName: 'Online Payment',
+    },
+  });
 }

@@ -66,7 +66,7 @@ export default function TermsOfServicePage() {
           <section className="space-y-4">
             <h2 className="text-xl font-bold text-foreground uppercase tracking-wider">4. Subscriptions & Payments</h2>
             <p>
-              Pro Squad subscriptions are billed at <strong>$12.99 USD per month per team</strong>. Multi-team discounts are available through Club Tiers starting at <strong>$23.99 USD/month</strong>. Payments are non-refundable for partial months of service. We reserve the right to change our pricing with 30 days' notice.
+              Current subscription tiers, billing periods, trial terms, and prices are shown on our pricing page and again at checkout. Unless expressly stated otherwise, prices are presented and billed in <strong>Canadian dollars (CAD)</strong>. The Stripe checkout summary presented before purchase controls the amount and billing cadence you authorize. Payments are non-refundable for partial billing periods except where required by law. We may change future pricing with at least 30 days&apos; notice to affected subscribers.
             </p>
           </section>
 

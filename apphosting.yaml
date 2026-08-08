@@ -4,6 +4,18 @@
 
 runtime: nodejs24
 
+env:
+  - variable: NEXT_PUBLIC_APP_URL
+    value: https://studio--the-squad-v2-staging.us-east4.hosted.app
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG
+    value: '{"projectId":"the-squad-v2-staging","appId":"1:100620894746:web:5d5a2d05022ea6fc1d87a3","storageBucket":"the-squad-v2-staging.firebasestorage.app","apiKey":"AIzaSyBdH-iUTHwGketG0RQ1Lx1r3HImg3Rxp9M","authDomain":"the-squad-v2-staging.firebaseapp.com","messagingSenderId":"100620894746"}'
+    availability:
+      - BUILD
+      - RUNTIME
+
 runConfig:
   # Increase this value if you'd like to automatically spin up
   # more instances in response to increased traffic.

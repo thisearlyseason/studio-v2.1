@@ -51,6 +51,7 @@ const embedSecurityHeaders = securityHeaders
     : header);
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   // App Hosting provides FIREBASE_WEBAPP_CONFIG at build time. Expose only
   // that public web-SDK configuration to the browser bundle so each backend
   // connects to its own Firebase project instead of the local fallback.
