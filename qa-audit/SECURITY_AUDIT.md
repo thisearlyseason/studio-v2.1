@@ -38,4 +38,4 @@
 
 ## Review limitations
 
-The 2026-08-08 certification used an isolated Firebase project for seven demo personas, public/protected API negatives, and responsive browser checks. Production access was read-only and limited to health, route, Vercel metadata, Function inventory, and Firestore index inventory. No production account or data was mutated, no deployment or charge was initiated, and no real email inbox, signed provider callback, browser farm, or FCM device was available. Absence of findings outside this scope is not proof of absence.
+The 2026-08-08 certification used an isolated Firebase project for seven demo personas, public/protected API negatives, and responsive browser checks. Production verification covered the deployed revision, health and public routes, protected API negatives, Function inventory, Firestore index inventory, security headers, and invalid calendar tokens. No production account or customer data was mutated and no charge was initiated. Real email inbox, signed provider callback, browser farm, and FCM device coverage remains outside this audit. Absence of findings outside this scope is not proof of absence.

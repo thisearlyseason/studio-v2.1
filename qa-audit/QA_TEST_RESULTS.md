@@ -4,7 +4,7 @@ Audit date: 2026-08-08
 Release candidate: `agent/fix-login-spinner` working tree
 Test environment: local Next.js server backed by isolated Firebase project `the-squad-audit-preview`
 
-No payment was finalized. No production data was mutated, and no production deployment was performed.
+No payment was finalized. Production infrastructure and the web release were deployed after certification; no production customer data was mutated.
 
 ## Automated release gates
 
@@ -48,9 +48,11 @@ Screenshots and Playwright artifacts are stored under `output/playwright/` and a
 - Repaired the public volunteer portal request race and seeded a valid shareable fixture.
 - Removed Google AI/Gemini, Straico, highlight-generation, and Google Calendar OAuth code. Calendar integration now uses a server-issued ICS feed and requires no `GOOGLE_REDIRECT_URI`.
 
-## External promotion gates
+## Post-deployment verification
 
-- Vercel contains every required production variable name, but sensitive values cannot be downloaded for local format validation. Run `npm run verify:env` inside the protected production deployment environment.
-- Production Firebase still has the retired `connectGoogleCalendar`, `onEventCreate`, `onEventUpdate`, and `onEventDelete` functions. The guarded infrastructure workflow removes them and verifies their absence.
-- Production Firestore does not yet match `firestore.indexes.json`. Drift includes the payer lookup composite, member lookup fields, signature lookup fields, and the checked-in `events.date` override. Deploy the complete index contract and wait for every index to become enabled before promoting the web release.
+- The guarded production workflow `31265002674` passed its release gate, authenticated through production GitHub OIDC, deployed indexes, Functions, and rules, and verified the calendar endpoint.
+- Production Firebase now exposes exactly the expected ten Functions; retired Google Calendar/event-sync Functions are absent.
+- Production Firestore now matches `firestore.indexes.json` with no missing composite indexes or field overrides.
+- Vercel production deployment `dpl_F1fhzsL5nC4KVUKvxgfAeutFkU34` is Ready and serves revision `eb06d75957ffae9324de737f36e684262c5f0dcb`.
+- Vercel contains every required production variable name. Sensitive values remain intentionally undisclosed; the successful protected build and live smoke checks confirm the deployed runtime is serving the release.
 - Stripe signed-webhook lifecycle tests, real Resend delivery, FCM device delivery, and cross-browser/device testing require provider-controlled test credentials and devices. Payment completion remains explicitly excluded from this certification.

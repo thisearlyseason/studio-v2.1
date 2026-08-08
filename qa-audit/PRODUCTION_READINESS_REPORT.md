@@ -6,9 +6,7 @@ Scope: repository review, automated gates, isolated-Firebase browser/API testing
 
 ## Executive summary
 
-**Overall release status: RELEASE CANDIDATE VERIFIED; PRODUCTION PROMOTION PENDING.** The application code passes the complete local release gate, both runtime dependency audits are clear, and the isolated browser/API certification covers all seven demo personas and the supported feature surface without completing payment. Confirmed defects were repaired and regression-tested.
-
-The currently deployed production revision is not this release candidate. Production Firebase still contains retired Google Calendar OAuth/event-sync functions and does not match the checked-in Firestore index contract. The guarded production infrastructure workflow must be run before the web release is promoted.
+**Overall release status: LIVE AND POST-DEPLOYMENT VERIFIED.** The application code passed the complete release gate, both runtime dependency audits are clear, and the isolated browser/API certification covered all seven demo personas and the supported feature surface without completing payment. Confirmed defects were repaired and regression-tested. Production infrastructure and the Vercel web release are now deployed and smoke-tested.
 
 ## Architecture summary
 
@@ -25,8 +23,8 @@ The currently deployed production revision is not this release candidate. Produc
 | Severity | ID | Finding | Status |
 |---|---|---|---|
 | Critical | SEC-001 | Public recruiting toggle granted unauthenticated reads of whole player documents and arbitrary subcollections. | Fixed on audit branch; anonymous player and child-document access now denied in emulator |
-| High | REL-002 | Required production environment values require provider-backed verification. | Variable names/scopes verified in Vercel; sensitive values remain externally verifiable only |
-| High | REL-003 | Production Firebase still runs retired Google Calendar functions and its index inventory differs from `firestore.indexes.json`. | Deployment workflow prepared and validated; production rollout pending |
+| High | REL-002 | Required production environment values require provider-backed verification. | Variable names/scopes verified in Vercel; deployed build and live runtime verified without exposing values |
+| High | REL-003 | Production Firebase had retired Google Calendar functions and index-contract drift. | Fixed; workflow `31265002674` deployed and verified the complete production contract |
 | Medium | DEP-001 | Dependency audit originally reported high Next.js/sharp/fast-uri issues. | Fixed; both production audits report 0 vulnerabilities |
 | Medium | AUTH-001 | Parent-owned child player documents may be created/deleted by the guardian but parent update access is not consistently present in the player rules. | Fixed on audit branch; regression coverage added |
 | Medium | QA-001 | Lint completes with exit code 0 but reports warning debt, including React hook dependency and accessibility/performance warnings. | Unresolved quality debt |
@@ -41,13 +39,12 @@ The currently deployed production revision is not this release candidate. Produc
 - Evidence: root and Functions production audits now report **0 vulnerabilities**. The complete `npm run verify` gate passes.
 - The Google AI, Straico, and FFmpeg packages and provider routes were removed.
 
-## Remaining promotion gates
+## Operational follow-up
 
-1. Run `npm run verify:env` inside the protected production environment so sensitive values can be format-checked without disclosure.
-2. Run `.github/workflows/deploy-production-infrastructure.yml` with the exact production project confirmation. Verify the retired calendar functions are absent and the complete checked-in index contract is enabled.
-3. Promote the exact verified commit to Vercel and repeat production health, public-route, authentication, and calendar-feed smoke tests.
-4. Complete provider-controlled Stripe webhook, Resend delivery, and FCM device checks. Payment completion remains outside this audit by instruction.
+1. Complete provider-controlled Stripe signed-webhook, Resend delivery, and FCM device checks using non-production fixtures. Payment completion remains outside this audit by instruction.
+2. Monitor Vercel, Firebase, Stripe, Resend, and Function error telemetry after launch and retain the rollback deployment record.
+3. Keep the protected production environment identity and deployment workflow under review.
 
 ## Release decision
 
-Do **not** label the current production deployment certified. Approve promotion only after the four gates above are recorded against the exact immutable release commit.
+The production deployment is approved for live operation based on the recorded automated, isolated-browser, infrastructure, and live-smoke evidence. Provider delivery and payment-completion checks remain intentionally outside this audit.
