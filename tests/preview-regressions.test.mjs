@@ -419,7 +419,7 @@ test('Sports Hub exposes every category without horizontal scrolling and include
   const catalog = await import('../src/lib/sports-hub-articles.ts');
   const parentArticles = catalog.ARTICLES_LIST.filter(article => article.categories.includes('Parents'));
 
-  assert.equal(parentArticles.length, 20);
+  assert.equal(parentArticles.length, 40);
   assert.equal(parentArticles.every(article => article.section === 'parents'), true);
   assert.equal(parentArticles.every(article => article.content.includes('## What You Can Do This Week')), true);
   assert.match(sectionNav, /name: 'Parents'/);

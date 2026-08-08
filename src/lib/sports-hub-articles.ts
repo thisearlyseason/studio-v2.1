@@ -1,5 +1,6 @@
 import { PARENT_ARTICLES } from './sports-hub-parent-articles';
 import { YOUTH_ARTICLES } from './sports-hub-youth-articles';
+import { EXPANDED_ARTICLES } from './sports-hub-expanded-articles';
 
 export interface Article {
   id: string;
@@ -49,6 +50,7 @@ export const ARTICLES_DB: Record<string, Article> = {
 
   ...PARENT_ARTICLES,
   ...YOUTH_ARTICLES,
+  ...EXPANDED_ARTICLES,
 
   'building-championship-culture': {
     id: 'building-championship-culture',

@@ -3,6 +3,7 @@
  * All resources link to real, publicly accessible URLs where possible.
  * Internal resources use /sports-hub/resources/[id] viewer pages.
  */
+import { EXPANDED_RESOURCES } from './sports-hub-expanded-resources';
 
 export type ResourceType =
   | 'practice-plan'
@@ -49,6 +50,7 @@ export interface ResourceContent {
 }
 
 export const RESOURCES: Resource[] = [
+  ...EXPANDED_RESOURCES,
   // ─── PRACTICE PLANS ───────────────────────────────────────────────────────
   {
     id: 'pp-1',
