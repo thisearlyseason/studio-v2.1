@@ -53,8 +53,6 @@ import {
   Terminal,
   Megaphone,
   HandHelping,
-  BrainCircuit,
-  Wand2,
   GraduationCap,
   Award,
   CircleCheck,
@@ -159,7 +157,7 @@ export default function HowToGuidePage() {
       { step: "Win/Loss Record", detail: <>Your cumulative <strong>Win/Loss/Tie</strong> record is always visible on the Dashboard. It auto-calculates from every logged Match Day score in your schedule.</> },
       { step: "Tournament Results", detail: <>For tournaments, log individual game scores within the tournament event detail view. The system tracks bracket progression and aggregated tournament records separately from regular season stats.</> },
       { step: "Performance Analytics (Pro)", detail: <>Squad Pro and higher unlock an advanced <strong>Analytics Dashboard</strong> with charts for Points Per Game (PPG) trends, win streaks, opponent performance comparison, and home vs. away records.</> },
-      { step: "Scouting Ledger (Pro)", detail: <>In <strong>Scorekeeping → Scouting</strong>, log opponent observations and tendencies. These can be fed into the <strong>AI Scout Assistant</strong> to generate a Keys-to-Victory briefing before upcoming matches.</>}
+      { step: "Staff Evaluations (Pro)", detail: <>Use <strong>Coaches Corner</strong> to keep private athlete evaluations, recruiting-ready notes, photos, and film together for staff review.</>}
     ]
   };
 
@@ -247,7 +245,7 @@ export default function HowToGuidePage() {
     steps: [
       { step: "Upgrade Your Plan", detail: <>Visit <strong>Settings → Subscription Intelligence</strong> and tap <strong>Manage Elite Seat</strong> to view billing options. Select Squad Pro, Elite, or League plans depending on your organizational needs.</> },
       { step: "Provision a Seat", detail: <>After upgrading, visit <strong>Team Profile</strong> and use <strong>Override Tier</strong> to attach the Pro seat to your primary squad. The squad badge updates immediately to reflect the new tier.</> },
-      { step: "Unlock Modules", detail: <>Once your tier is activated, Pro features like Feed posting, Practice planning, Film compliance, Volunteer Hub, Fundraising Hub, and AI Scouting unlock automatically. No manual activation needed.</> },
+      { step: "Unlock Modules", detail: <>Once your tier is activated, Pro features like Feed posting, Practice planning, Film compliance, Volunteer Hub, Fundraising Hub, and scouting portfolios unlock automatically. No manual activation needed.</> },
       { step: "Add Extra Teams", detail: <>Your plan includes a set number of squad seats. If you need more, purchase <strong>Extra Squad Add-ons</strong> from the billing portal to expand your roster of managed teams without changing your base plan.</>}
     ]
   };
@@ -300,15 +298,15 @@ export default function HowToGuidePage() {
     ]
   };
 
-  const BLOCK_AI_SCOUTING = {
-    title: "18. AI Scouting Assistant & FFmpeg",
-    icon: BrainCircuit,
+  const BLOCK_FILM_PORTFOLIOS = {
+    title: "18. Film Archive & Scouting Portfolios",
+    icon: Video,
     badge: "Pro Feature",
     steps: [
-      { step: "Capture Tactical Frames", detail: <>Use the <strong>FFmpeg Engine</strong> in the video viewer to capture frame-accurate screenshots of opponent defensive schemes, player positioning, or critical tactical moments.</> },
-      { step: "Log Scout Notes", detail: <>Enter raw performance notes, play-by-play observations, and opponent tendencies in the <strong>AI Scout</strong> input portal. Notes can be freeform or organized by quarter/period.</> },
-      { step: "Generate Keys to Victory", detail: <>Tap <strong>Analyze Schematic</strong>. The AI digests your notes and captured frames and outputs a structured <strong>Keys to Victory</strong> briefing with defensive exploits, offensive attack vectors, and player matchup recommendations.</> },
-      { step: "Share with Staff", detail: <>Export the scouting brief as a PDF or share it directly within the app to your staff-only Tactical Chat channel so your coaching team arrives at the game with a unified game plan.</>}
+      { step: "Archive Athlete Film", detail: <>Open an athlete in <strong>Coaches Corner</strong>, choose <strong>Add Film</strong>, and upload a supported video or paste a hosted video URL.</> },
+      { step: "Organize the Reel", detail: <>Give each clip a clear title and type so staff can scan the athlete's film library and open the right footage quickly.</> },
+      { step: "Record Staff Evaluations", detail: <>Add private personnel evaluations and mark approved entries as <strong>Recruiting Ready</strong> when they can appear in the athlete's external portfolio.</> },
+      { step: "Export the Scouting Pack", detail: <>Use the roster profile to generate the athlete's scouting pack with approved profile details, evaluations, media, and recruiting information.</>}
     ]
   };
 
@@ -493,7 +491,7 @@ export default function HowToGuidePage() {
     pro: {
       label: "Squad Pro",
       desc: "Exhaustive coordination for serious squads with advanced compliance and analytics.",
-      highlights: ["75% Film Compliance", "Practice Builder & PDF Export", "AI Scouting", "Volunteer & Fundraising Hubs", "Squad Feed", "Broadcast Alerts", "Module Visibility", "Stripe Online Payments", "Annual Billing"],
+      highlights: ["75% Film Compliance", "Practice Builder & PDF Export", "Scouting Portfolios", "Volunteer & Fundraising Hubs", "Squad Feed", "Broadcast Alerts", "Module Visibility", "Stripe Online Payments", "Annual Billing"],
       sections: [
         BLOCK_DEPLOYMENT,
         BLOCK_SCHEDULING,
@@ -512,7 +510,7 @@ export default function HowToGuidePage() {
         BLOCK_FILM_COMPLIANCE,
         BLOCK_BRIEFING_UNIT,
         BLOCK_HIGH_PRIORITY,
-        BLOCK_AI_SCOUTING,
+        BLOCK_FILM_PORTFOLIOS,
         BLOCK_STRIPE_PAYMENTS,
         BLOCK_ANNUAL_SUBSCRIPTION
       ]
@@ -539,7 +537,7 @@ export default function HowToGuidePage() {
         BLOCK_FILM_COMPLIANCE,
         BLOCK_BRIEFING_UNIT,
         BLOCK_HIGH_PRIORITY,
-        BLOCK_AI_SCOUTING,
+        BLOCK_FILM_PORTFOLIOS,
         BLOCK_FISCAL_AUDIT,
         BLOCK_CLUB_HUB,
         BLOCK_INSTITUTIONAL_PROTOCOLS,
@@ -572,7 +570,7 @@ export default function HowToGuidePage() {
         BLOCK_FILM_COMPLIANCE,
         BLOCK_BRIEFING_UNIT,
         BLOCK_HIGH_PRIORITY,
-        BLOCK_AI_SCOUTING,
+        BLOCK_FILM_PORTFOLIOS,
         BLOCK_FISCAL_AUDIT,
         BLOCK_INSTITUTIONAL_PROTOCOLS,
         BLOCK_FLEET_LOGISTICS,

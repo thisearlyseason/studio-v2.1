@@ -28,7 +28,7 @@ GitHub account `thisearlyseason`. The `tylerans` account cannot grant access to
 repositories on that account as a workaround.
 
 Create a Firebase project that does not share Auth, Firestore, Storage, Stripe,
-Resend, Google OAuth, or AI credentials with production. Configure these GitHub
+or Resend credentials with production. Configure these GitHub
 environment values:
 
 - Variable `STAGING_FIREBASE_PROJECT_ID`
@@ -57,8 +57,8 @@ npm run verify:env
 
 Do not trigger the first rollout until all values required by
 `scripts/check-production-env.mjs` exist as isolated staging values. In
-particular, use Stripe test-mode products and webhooks, a staging OAuth client,
-and non-production email and AI credentials. The health endpoint alone does not
+particular, use Stripe test-mode products and webhooks and non-production email
+credentials. The health endpoint alone does not
 prove these integrations are configured.
 
 ## Staging release
@@ -85,18 +85,30 @@ prove these integrations are configured.
 
 ## Production promotion
 
-Production promotion requires a separate protected GitHub environment and the
-same commit that passed staging. Before promotion, confirm production secrets,
-Stripe and Resend webhook endpoints, custom domains, Firebase authorized domains,
-OAuth redirect URIs, alerting, backups, and rollback ownership.
+Production uses Firebase project `studio-6850142148-fe343` for Auth, Firestore,
+Storage, and Functions. Web traffic is served by Vercel project `thesquadv2`
+(`prj_UGwsgdfqkFaJPTuELNgDG0Extd3f`), linked to this repository with `fix` as
+its production branch. `www.thesquad.pro` and `thesquad.pro` are its production
+aliases. The legacy production App Hosting backend remains linked to
+`thisearlyseason/studio` and must not be used for this release.
 
-Deploy in this order: indexes, Functions, rules, then App Hosting. Afterward,
-repeat the smoke matrix with non-destructive production fixtures and confirm
-payment, email, function-error, and uptime alerts are receiving data.
+Production promotion requires the protected `production` GitHub environment,
+variable `PRODUCTION_FIREBASE_PROJECT_ID=studio-6850142148-fe343`, and the same
+workload-identity secrets used by the production deploy identity. Run `Deploy
+production infrastructure` from the reviewed release candidate and type the
+production project ID when prompted. That workflow deploys indexes, Functions,
+then rules and verifies that the retired Google Calendar OAuth Functions are gone.
+
+After infrastructure succeeds, merge the reviewed release into `fix`. Vercel
+then builds and promotes that revision automatically. Confirm `/api/health`
+reports the expected revision before repeating the smoke matrix with
+non-destructive production fixtures. Confirm production secrets, Stripe and
+Resend webhook endpoints, custom domains, Firebase authorized domains, calendar
+feed subscriptions, alerting, backups, and rollback ownership before promotion.
 
 ## Rollback
 
-- App Hosting: create a rollout for the last known-good commit.
+- Vercel: promote the last known-good production deployment.
 - Functions: redeploy Functions from the last known-good commit.
 - Rules: redeploy the last known-good rules only after confirming they remain compatible with current stored data.
 - Indexes: do not delete indexes during an incident unless their removal is independently reviewed.

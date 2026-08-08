@@ -21,11 +21,11 @@
 
 ## DEP-001 — Vulnerable package versions
 
-- Severity: Medium (fixed high findings; remaining moderate chain)
+- Severity: Medium (fixed)
 - Affected files: `package.json`, `package-lock.json`.
 - Fix applied: Next.js 15.5.22, sharp 0.35.3, overrides for sharp 0.35.3 and fast-uri 4.1.1.
-- Regression evidence: production audit now has 0 critical and 0 high findings; typecheck/tests/build pass.
-- Remaining: npm reports moderate advisories through `@google/genai`/MCP/Hono; npm's offered fix is a breaking downgrade. Upgrade/vendor review is required before a future release.
+- Regression evidence: both production dependency audits report 0 vulnerabilities; typecheck, tests, rules, and builds pass.
+- The retired Google AI, Straico, and FFmpeg dependency chains have been removed.
 
 ## Observed controls
 
@@ -38,4 +38,4 @@
 
 ## Review limitations
 
-No production account, database, deployment, browser farm, email inbox, Stripe test fixture, or FCM device was available. The Firebase Firestore/Storage rules emulator was run locally. Absence of findings outside this scope is not proof of absence.
+The 2026-08-08 certification used an isolated Firebase project for seven demo personas, public/protected API negatives, and responsive browser checks. Production access was read-only and limited to health, route, Vercel metadata, Function inventory, and Firestore index inventory. No production account or data was mutated, no deployment or charge was initiated, and no real email inbox, signed provider callback, browser farm, or FCM device was available. Absence of findings outside this scope is not proof of absence.

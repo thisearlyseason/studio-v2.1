@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
-import { getTeamAuthority } from '@/lib/server-team-access';
+import { findActiveTeamMember, getTeamAuthority } from '@/lib/server-team-access';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -78,18 +78,14 @@ export async function POST(req: NextRequest) {
     if (!uniqueRecipients.length) {
       return NextResponse.json({ error: 'No valid recipients were provided.' }, { status: 400 });
     }
-    const memberSnaps = await Promise.all(uniqueRecipients.map(id =>
-      adminDb.collection('teams').doc(teamId).collection('members').doc(id).get()
+    const members = await Promise.all(uniqueRecipients.map(id =>
+      findActiveTeamMember(teamId, id)
     ));
-    if (memberSnaps.some(member =>
-      !member.exists ||
-      member.data()?.status === 'removed' ||
-      member.data()?.isDeleted === true
-    )) {
+    if (members.some(member => !member)) {
       return NextResponse.json({ error: 'Recipients must be current team members.' }, { status: 403 });
     }
-    const to = [...new Set(memberSnaps.flatMap(member => {
-      const email = typeof member.data()?.email === 'string' ? member.data()?.email.trim().toLowerCase() : '';
+    const to = [...new Set(members.flatMap(member => {
+      const email = typeof member?.data.email === 'string' ? member.data.email.trim().toLowerCase() : '';
       return EMAIL_PATTERN.test(email) ? [email] : [];
     }))];
     if (!to.length) return NextResponse.json({ error: 'No recipient email addresses are available.' }, { status: 400 });

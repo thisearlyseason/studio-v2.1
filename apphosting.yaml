@@ -1,4 +1,6 @@
 
+# Staging App Hosting configuration. Production web traffic is served by the
+# Vercel project documented in docs/release-runbook.md.
 # Settings to manage and configure a Firebase App Hosting backend.
 # https://firebase.google.com/docs/app-hosting/configure
 
@@ -15,9 +17,13 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  - variable: CALENDAR_FEED_BASE_URL
+    value: https://us-central1-the-squad-v2-staging.cloudfunctions.net/getCalendarFeed
+    availability:
+      - RUNTIME
 
 runConfig:
   # Increase this value if you'd like to automatically spin up
   # more instances in response to increased traffic.
-  maxInstances: 1
+  maxInstances: 10
   memory: 512Mi

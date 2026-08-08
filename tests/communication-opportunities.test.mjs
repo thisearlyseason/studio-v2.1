@@ -9,6 +9,8 @@ test('public volunteer links use the validated server route and collect contact 
   const route = read('../src/app/api/public/volunteer/route.ts');
 
   assert.match(page, /\/api\/public\/volunteer/);
+  assert.doesNotMatch(page, /opportunityId=/);
+  assert.equal((page.match(/fetch\(`\/api\/public\/volunteer\?/g) || []).length, 1);
   assert.doesNotMatch(page, /useDoc|publicSignUpForVolunteer/);
   for (const field of ['name', 'email', 'phone', 'relationship']) {
     assert.match(route, new RegExp(`\\b${field}\\b`));

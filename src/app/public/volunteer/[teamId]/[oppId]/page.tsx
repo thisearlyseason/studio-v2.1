@@ -55,20 +55,6 @@ function VolunteerSignupForm() {
     return () => controller.abort();
   }, [teamId, oppId]);
 
-  useEffect(() => {
-    if (!teamId || !oppId) return;
-    const controller = new AbortController();
-    setIsLoading(true);
-    fetch(`/api/public/volunteer?teamId=${encodeURIComponent(String(teamId))}&opportunityId=${encodeURIComponent(String(oppId))}`, {
-      signal: controller.signal,
-    })
-      .then(async response => response.ok ? response.json() : Promise.reject(new Error('inactive')))
-      .then(result => setOpp(result.data))
-      .catch(error => { if (error.name !== 'AbortError') setOpp(null); })
-      .finally(() => setIsLoading(false));
-    return () => controller.abort();
-  }, [teamId, oppId]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email || !formData.phone || !formData.relationship || isSubmitting) return;

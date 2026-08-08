@@ -16,10 +16,9 @@ Values were not read or recorded. `npm run verify:env` must run in the actual pr
 | RESEND_WEBHOOK_SECRET | Resend signature verification | Server | test endpoint | required | Fail closed if missing |
 | FIREBASE_SERVICE_ACCOUNT_JSON | Admin SDK credentials | Server | isolated project | App Hosting identity/secret | Never browser-visible |
 | FIREBASE_WEBAPP_CONFIG | hosted Firebase config | Server/build | isolated project | App Hosting injected | Avoid production fallback in preview |
-| GOOGLE_AI_API_KEY, STRAICO_API_KEY | AI providers | Server | sandbox | required if feature enabled | Fail safely; quota/abuse review |
-| GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI | Google OAuth/Calendar | Server/client ID as appropriate | Preview callback | production callback | Exact redirect allowlist required |
 | INTERNAL_API_SECRET | internal endpoint guard | Server | unique secret | required | Never use a default |
-| OWNER_NOTIFICATION_EMAIL, OWNER_FCM_TOKEN | owner operational alerts | Server | test recipient | required if alerts enabled | Avoid real-recipient test sends |
+| OWNER_NOTIFICATION_EMAIL | owner operational email alerts | Server | test recipient | required | Avoid real-recipient test sends |
+| OWNER_FCM_TOKEN | optional dedicated owner push alert | Server | test recipient or unset | optional | Email alerts remain active when unset |
 | APP_URL, GCLOUD_PROJECT, GOOGLE_CLOUD_PROJECT | backend/runtime config | Server | isolated | required as applicable | Validate platform injection |
 | FIREBASE_AUTH_EMULATOR_HOST, FIRESTORE_EMULATOR_HOST, USE_EMULATOR, NEXT_PUBLIC_USE_FIREBASE_EMULATORS | local emulator controls | Local only | unset | unset | Must not reach production |
 

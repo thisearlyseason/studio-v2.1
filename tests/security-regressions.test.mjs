@@ -149,9 +149,15 @@ test('calendar feeds are server-issued and revalidate current squad membership',
   assert.match(route, /randomBytes\(32\)/);
   assert.match(route, /serverIssued: true/);
   assert.match(route, /canAccessTeam/);
+  assert.match(route, /process\.env\.CALENDAR_FEED_BASE_URL/);
+  assert.doesNotMatch(route, /getcalendarfeed-jscic6vsuq-uc/);
   assert.match(functions, /hasCurrentCalendarTeamAccess/);
+  assert.match(functions, /\^\[a-f0-9\]\{64\}\$/);
+  assert.match(functions, /private, no-store, max-age=0/);
+  assert.match(functions, /buildCalendarFeed/);
   assert.match(functions, /serverIssued !== true/);
   assert.match(functions, /Squad Access Revoked/);
+  assert.doesNotMatch(functions, /GOOGLE_REDIRECT_URI|connectGoogleCalendar|google\.auth\.OAuth2/);
   for (const fieldPath of ['userId', 'parentId']) {
     assert.ok(indexes.fieldOverrides.some(override =>
       override.collectionGroup === 'members' &&
@@ -161,6 +167,21 @@ test('calendar feeds are server-issued and revalidate current squad membership',
       )
     ));
   }
+});
+
+test('notification delivery resolves canonical users through active membership records', async () => {
+  const [notify, email, access] = await Promise.all([
+    readSource('../src/app/api/notify/route.ts'),
+    readSource('../src/app/api/email/send/route.ts'),
+    readSource('../src/lib/server-team-access.ts'),
+  ]);
+
+  for (const source of [notify, email]) {
+    assert.match(source, /findActiveTeamMember\(teamId, id\)/);
+    assert.match(source, /members\.some\(member => !member\)/);
+  }
+  assert.match(notify, /member\?\.data\.userId/);
+  assert.match(access, /members\.where\('userId', '==', uid\)/);
 });
 
 test('offline payments are validated and written only through the finance-authorized API', async () => {

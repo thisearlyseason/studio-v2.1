@@ -91,7 +91,7 @@ export default function BetaApplicationPage() {
     "Stats & Analytics",
     "Coach Tools",
     "Media Sharing",
-    "AI Features",
+    "Film and Scouting",
     "Social Features",
     "Other"
   ];

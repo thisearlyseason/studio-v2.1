@@ -1927,7 +1927,14 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   };
 
   const handleCreateLeague = async () => {
-    if (!leagueName.trim()) return;
+    if (!leagueName.trim()) {
+      toast({
+        title: `${leagueLabel} Title Required`,
+        description: `Enter a title before deploying this ${leagueLabel.toLowerCase()}.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsProcessing(true);
     try {
       const customSport = sport.trim() || activeTeam?.sport || 'General';
@@ -2783,7 +2790,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                 </div>
               )}
             </div>
-            <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreateLeague} disabled={isProcessing}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Hub"}</Button></DialogFooter>
+            <DialogFooter><Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreateLeague} disabled={isProcessing || !leagueName.trim()}>{isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Hub"}</Button></DialogFooter>
           </div>
         </DialogContent>
       </Dialog>

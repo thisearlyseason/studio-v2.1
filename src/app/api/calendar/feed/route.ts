@@ -11,7 +11,6 @@ import {
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const MAX_MULTI_TEAM_IDS = 25;
-const DEFAULT_FEED_URL = 'https://getcalendarfeed-jscic6vsuq-uc.a.run.app/';
 
 type FeedType = 'user' | 'team' | 'multi';
 
@@ -48,6 +47,16 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   const anonymousError = assertNonAnonymous(auth);
   if (anonymousError) return anonymousError;
+
+  const configuredFeedUrl = process.env.CALENDAR_FEED_BASE_URL;
+  let feedUrl: URL;
+  try {
+    feedUrl = new URL(configuredFeedUrl || '');
+    if (feedUrl.protocol !== 'https:') throw new Error('Calendar feed URL must use HTTPS.');
+  } catch {
+    console.error('[calendar/feed] CALENDAR_FEED_BASE_URL is missing or invalid.');
+    return NextResponse.json({ error: 'Calendar subscriptions are not configured.' }, { status: 503 });
+  }
 
   try {
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
@@ -128,9 +137,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const url = new URL(process.env.CALENDAR_FEED_BASE_URL || DEFAULT_FEED_URL);
-    url.searchParams.set('token', token);
-    return NextResponse.json({ url: url.toString() });
+    feedUrl.searchParams.set('token', token);
+    return NextResponse.json({ url: feedUrl.toString() });
   } catch (error) {
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

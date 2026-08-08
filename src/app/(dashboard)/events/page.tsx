@@ -360,10 +360,17 @@ export default function EventsPage() {
   }, [activeTeamEvents, filterMode]);
 
   const handleCreateEvent = async () => { 
-    if (!newTitle || !newDate || !newTime) return;
+    if (!newTitle.trim() || !newDate || !newTime) {
+      toast({
+        title: 'Activity Incomplete',
+        description: 'Enter a title, date, and start time before deployment.',
+        variant: 'destructive',
+      });
+      return;
+    }
     try {
       const payload: any = { 
-        title: newTitle, eventType, 
+        title: newTitle.trim(), eventType,
         date: new Date(`${newDate}T${newTime || '00:00'}`).toISOString(), 
         endDate: newEndDate ? new Date(`${newEndDate}T${newTime || '23:59'}`).toISOString() : new Date(`${newDate}T${newTime || '23:59'}`).toISOString(),
         startTime: newTime, location: newLocation, description: newDescription,
@@ -958,4 +965,3 @@ export default function EventsPage() {
     </div>
   );
 }
-

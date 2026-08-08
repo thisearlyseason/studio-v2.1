@@ -470,7 +470,7 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
       { id: `a1_${teamId}`, title: 'Venue Change', message: 'Match moved to Court 4 due to maintenance.', audience: 'everyone', createdAt: yesterday, createdBy: userId }
     ],
     volunteers: [
-      { id: `vol1_${teamId}`, title: 'Tournament Concessions', description: 'Help run the stand during the multi-day event.', date: tomorrow, startTime: '09:00', endTime: '15:00', spots: 5, hoursPerSlot: 2, pointsPerSlot: 10, signups: { [`u3_${teamId}`]: { userId: `u3_${teamId}`, userName: playerPool[0].name, status: 'pending', createdAt: yesterday } } },
+      { id: `vol1_${teamId}`, title: 'Tournament Concessions', description: 'Help run the stand during the multi-day event.', date: tomorrow, location: 'Premier Sports Park', startTime: '09:00', endTime: '15:00', spots: 5, hoursPerSlot: 2, pointsPerSlot: 10, isShareable: true, signups: { [`u3_${teamId}`]: { userId: `u3_${teamId}`, userName: playerPool[0].name, status: 'pending', createdAt: yesterday } } },
       { id: `vol2_${teamId}`, title: 'Match Day Photography', description: 'Capture high-quality action shots for the social feed.', date: later, startTime: '18:00', endTime: '20:00', spots: 2, hoursPerSlot: 2, pointsPerSlot: 25, signups: {} }
     ],
     fundraising: [

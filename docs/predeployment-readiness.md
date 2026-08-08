@@ -8,22 +8,23 @@
 - Chat poll votes are validated and counted server-side.
 - The checked-in release gate runs app checks, Functions compilation, emulator-backed rules tests, and dependency audits.
 - The staging workflow verifies the full release and deploys through workload identity with a protected GitHub environment.
+- The production infrastructure workflow verifies the release, requires explicit project confirmation, and deploys indexes, Functions, then rules.
+- Legacy root tournament creation is closed to ordinary accounts; supported tournaments remain team-scoped events.
+- Storage is default-deny with explicit public branding and opted-in recruiting media paths.
 - Existing payment, tenant isolation, notification, email, league-access, and public-spectator repairs remain local and un-deployed.
 
 ## Required before any production deployment
 
-1. Configure the protected `staging` GitHub environment and workload-identity values documented in `docs/release-runbook.md`.
-2. Run the release gate, then deploy the exact passing commit to the isolated staging Firebase project.
-3. Confirm the compiled `functions/lib` output matches `functions/src` and all scheduled jobs are active.
-4. Confirm Firestore indexes are enabled, then verify private league access, spectator views, chat polling, calendar feeds, and payer-isolated finance queries using non-admin accounts.
-5. Run Stripe test-mode checkout, webhook retry, payment record, Pro-seat allocation, and offline receipt approval tests.
-6. Run the authenticated mobile/desktop smoke matrix in `docs/release-runbook.md`.
-7. Confirm the account-deletion policy for users who own teams or leagues. The current safe behavior blocks deletion until their organizations are transferred or removed.
+1. Run `npm run verify:env` inside the protected production environment; local processes cannot retrieve Vercel Sensitive values.
+2. Run the guarded production infrastructure workflow with the exact production Firebase project confirmation. It must deploy indexes and Functions, remove the retired Google Calendar functions, deploy rules, and verify the ICS endpoint.
+3. Compare the live inventory to `firestore.indexes.json` and wait for the complete contract to become enabled before the web promotion. Current drift includes payer, member, signature, and event-date definitions.
+4. Promote the exact immutable commit that passed `npm run verify`, then repeat the production health, auth, public-route, and calendar-feed smoke tests.
+5. Complete Stripe signed-webhook, Resend delivery, and FCM device checks with provider-controlled test credentials. Do not finalize payment as part of this audit.
 
-## Deliberately not deployed or changed
+## Deployment state and external gates
 
-- No frontend, Functions, Firestore rules, Storage rules, or hosting deployment was made after the request to keep changes local.
-- Top-level tournament hubs are not yet invite-code gated: their data model has no trusted invite redemption flow. Do not deploy a restrictive tournament rule until that flow and migration are implemented.
-- Storage still needs a product-level path classification (public logos/scout media versus private team documents). Tightening the existing broad team-media read rule without moving public assets would break existing public pages.
-- Browser-level end-to-end tests are not yet checked into the release gate; the staging smoke matrix remains manual.
-- Production secrets, monitoring, backup/restore validation, and hosting capacity remain external release gates.
+- No frontend, Functions, Firestore rules, Storage rules, or hosting deployment was made by this local readiness pass.
+- Production Vercel environment metadata was cleaned of retired provider variables and now includes the production calendar feed endpoint.
+- Isolated browser coverage now includes all seven demo personas, authenticated feature modules, 35 public routes, protected/public API negatives, and 390x844 role dashboards.
+- Production metadata confirms retired calendar functions and index-contract drift; the new infrastructure workflow is required before web promotion.
+- Sensitive production values, signed provider callbacks, real email/push delivery, monitoring, and backup/restore validation remain external promotion gates.
