@@ -649,7 +649,10 @@ exports.getCalendarFeed = (0, https_1.onRequest)({ cors: true }, async (req, res
  * Auth deletion temporarily fails. Organization owners are intentionally
  * skipped: deleting them would orphan teams or leagues.
  */
-exports.purgeExpiredDeletionRequests = (0, scheduler_1.onSchedule)('every 15 minutes', async () => {
+exports.purgeExpiredDeletionRequests = (0, scheduler_1.onSchedule)({
+    schedule: 'every 15 minutes',
+    region: 'us-central1',
+}, async () => {
     const now = admin.firestore.Timestamp.now();
     const requests = await db.collection('accountDeletionRequests')
         .where('purgeAt', '<=', now)
@@ -769,7 +772,10 @@ exports.purgeExpiredDeletionRequests = (0, scheduler_1.onSchedule)('every 15 min
  * Sweeps anonymous demo accounts after 15 minutes. Live accounts are never
  * handled here; they follow the separate seven-day deletion-request lifecycle.
  */
-exports.cleanupAnonymousUsers = (0, scheduler_1.onSchedule)('every 15 minutes', async (_event) => {
+exports.cleanupAnonymousUsers = (0, scheduler_1.onSchedule)({
+    schedule: 'every 15 minutes',
+    region: 'us-central1',
+}, async () => {
     const auth = admin.auth();
     const DEMO_LIFETIME_MS = 15 * 60 * 1000;
     const now = Date.now();
@@ -828,6 +834,7 @@ exports.cleanupAnonymousUsers = (0, scheduler_1.onSchedule)('every 15 minutes', 
  */
 exports.sendUpcomingEventReminders = (0, scheduler_1.onSchedule)({
     schedule: 'every 15 minutes',
+    region: 'us-central1',
     timeoutSeconds: 540,
     memory: '512MiB',
 }, async () => {

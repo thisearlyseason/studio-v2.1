@@ -99,7 +99,7 @@ test('live deletion immediately revokes access and purges on a short schedule', 
   const functions = await readSource('../functions/src/index.ts');
   assert.match(route, /revokeRefreshTokens\(auth\.uid\)/);
   assert.match(route, /updateUser\(auth\.uid, \{ disabled: true \}\)/);
-  assert.match(functions, /purgeExpiredDeletionRequests = onSchedule\('every 15 minutes'/);
+  assert.match(functions, /purgeExpiredDeletionRequests = onSchedule\(\{[\s\S]*?schedule: 'every 15 minutes',[\s\S]*?region: 'us-central1'/);
 });
 
 test('Super Admin account controls fail closed and use the seven-day purge lifecycle', async () => {
