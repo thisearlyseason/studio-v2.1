@@ -1,6 +1,6 @@
 import type { Resource, ResourceType, Difficulty } from './sports-hub-resources';
 
-type ResourceSeed = { id: string; title: string; description: string; type: ResourceType; sport: string; difficulty: Difficulty; tags: string[] };
+type ResourceSeed = { id: string; title: string; description: string; type: ResourceType; sport: string; difficulty: Difficulty; tags: string[]; isVideo?: boolean; videoUrl?: string; videoCredit?: string };
 
 const generalSeeds: ResourceSeed[] = [
   { id: 'expanded-season-kickoff-plan', title: 'Season Kickoff Operations Plan', description: 'A first-week checklist for rosters, staff, facilities, communication, and family orientation.', type: 'season-planner', sport: 'General', difficulty: 'beginner', tags: ['season kickoff', 'operations', 'planning'] },
@@ -50,8 +50,43 @@ const drillSeeds: ResourceSeed[] = [
   { id: 'expanded-drill-general-reaction-colors', title: 'Reaction Color Calls', description: 'A multi-sport reaction game that develops scanning, movement quality, and fast choices.', type: 'drill', sport: 'General', difficulty: 'beginner', tags: ['reaction', 'movement', 'multi-sport'] },
 ];
 
+const additionalVideoUrls = [
+  'https://www.youtube.com/embed/SM9ECNPk1sA',
+  'https://www.youtube.com/embed/HHVF4K2aFTA',
+  'https://www.youtube.com/embed/6Px5YfwvpkM',
+  'https://www.youtube.com/embed/BodeaYnXKbU',
+  'https://www.youtube.com/embed/-nspljeyz68',
+  'https://www.youtube.com/embed/HLHhVyiOExA',
+  'https://www.youtube.com/embed/U9RS9D69_9M',
+  'https://www.youtube.com/embed/3ckHPv9ufn0',
+  'https://www.youtube.com/embed/SM9ECNPk1sA?rel=0',
+  'https://www.youtube.com/embed/HHVF4K2aFTA?rel=0',
+];
+
+function makeAdditionalSeeds(type: ResourceType, prefix: string, sport: string, titles: string[], tags: string[], video = false): ResourceSeed[] {
+  return titles.map((title, index) => ({
+    id: `${prefix}-${index + 1}`,
+    title,
+    description: `${title}: a ready-to-use ${type.replaceAll('-', ' ')} for organized, safe, and inclusive sports programs.`,
+    type, sport, difficulty: (['beginner', 'intermediate', 'advanced'] as Difficulty[])[index % 3],
+    tags: [...tags, type],
+    ...(video ? { isVideo: true, videoUrl: additionalVideoUrls[index], videoCredit: 'The Squad Sports Hub' } : {}),
+  }));
+}
+
+const additionalSeeds: ResourceSeed[] = [
+  ...makeAdditionalSeeds('practice-plan', 'expanded-practice-plan', 'General', ['60-Minute Fundamentals Practice Plan', '90-Minute Skills and Scrimmage Plan', 'Rainy-Day Indoor Practice Plan', 'Low-Equipment Practice Plan', 'First Week Team-Building Practice', 'Pre-Game Walkthrough Practice', 'Post-Break Return Practice', 'Small-Group Skills Practice', 'Recovery-Focused Practice Plan', 'End-of-Season Celebration Practice'], ['practice plan', 'coaching', 'session design']),
+  ...makeAdditionalSeeds('drill', 'expanded-drill-library', 'General', ['Mirror Movement Reaction Drill', 'Numbers-Up Decision Drill', 'Four-Corner Passing Drill', 'Defensive Recovery Race', 'Scanning Before Receiving Drill', 'Quick Feet Balance Circuit', 'Pressure-and-Release Game', 'Communication Relay Drill', 'Finish Under Fatigue Drill', 'Team Shape Freeze-and-Play Drill'], ['drill', 'skills', 'training']),
+  ...makeAdditionalSeeds('video', 'expanded-video-library', 'General', ['Warm-Up Movement Video Guide', 'Youth Defensive Footwork Video', 'Small-Sided Games Coaching Video', 'How to Run a Safe Cooldown', 'Practice Planning Whiteboard Walkthrough', 'Parent Meeting Communication Video', 'Tournament Check-In Demonstration', 'Athlete Goal-Setting Video', 'Equipment Safety Inspection Video', 'Coach Feedback Techniques Video'], ['video', 'coaching', 'education'], true),
+  ...makeAdditionalSeeds('season-planner', 'expanded-season-planner', 'General', ['12-Week Season Roadmap', 'Eight-Week Development Cycle', 'Tryout-to-Opening-Day Planner', 'Midseason Reset Planner', 'Holiday Break Training Planner', 'Tournament Season Planner', 'Multi-Team Program Calendar', 'Athlete Development Review Calendar', 'Volunteer Recruitment Season Planner', 'Season Closeout and Handoff Planner'], ['season', 'calendar', 'planning']),
+  ...makeAdditionalSeeds('game-day-checklist', 'expanded-game-day-checklist', 'General', ['Home Game Arrival Checklist', 'Away Game Departure Checklist', 'Officials and Scorekeeper Checklist', 'Weather-Ready Game Day Checklist', 'Youth Game Safety Checklist', 'Game-Day Equipment Loadout', 'Roster and Eligibility Check', 'Post-Game Closeout Checklist', 'Doubleheader Game-Day Checklist', 'Game-Day Accessibility Checklist'], ['game day', 'checklist', 'operations']),
+  ...makeAdditionalSeeds('tournament-checklist', 'expanded-tournament-checklist', 'General', ['Tournament Registration Checklist', 'Tournament Bracket Publishing Checklist', 'Pool Play Operations Checklist', 'Finals Day Operations Checklist', 'Tournament Volunteer Briefing Checklist', 'Tournament Medical Station Checklist', 'Tournament Communications Checklist', 'Tournament Awards Checklist', 'Tournament Results Audit Checklist', 'Tournament Cleanup and Handoff Checklist'], ['tournament', 'checklist', 'events']),
+  ...makeAdditionalSeeds('emergency-action-plan', 'expanded-emergency-plan', 'General', ['Heat and Hydration Response Plan', 'Lightning Delay Response Plan', 'Concussion Response Plan', 'Missing Participant Response Plan', 'Severe Weather Shelter Plan', 'Facility Evacuation Plan', 'Cardiac Emergency Response Plan', 'Allergic Reaction Response Plan', 'Safeguarding Concern Escalation Plan', 'Post-Incident Documentation Plan'], ['emergency', 'safety', 'response']),
+  ...makeAdditionalSeeds('parent-communication', 'expanded-parent-communication', 'General', ['Season Welcome Email Pack', 'Practice Change Message Templates', 'Playing-Time Conversation Guide', 'Injury Update Communication Guide', 'Travel Weekend Information Pack', 'Weather Cancellation Message Pack', 'Fee Reminder Message Templates', 'Volunteer Request Message Pack', 'End-of-Season Survey Message', 'Coach Introduction Message Pack'], ['parents', 'communication', 'families']),
+];
+
 function makeResource(seed: ResourceSeed, index: number): Resource {
-  return { ...seed, downloadCount: 120 + index * 17, isFeatured: index === 0, isVideo: false, createdAt: '2026-08-08', content: { overview: seed.description, body: `## ${seed.title}
+  return { ...seed, downloadCount: 120 + index * 17, isFeatured: index === 0, isVideo: seed.isVideo ?? false, createdAt: '2026-08-08', videoUrl: seed.videoUrl, videoCredit: seed.videoCredit, content: { overview: seed.description, body: `## ${seed.title}
 
 ${seed.description}
 
@@ -68,5 +103,4 @@ Use short rounds, observe the key decision or movement, and offer one correction
 After the session, record what worked, what needs changing, and the next progression. Keep private athlete information in the approved team system rather than in a public copy of this resource.` }, tags: seed.tags };
 }
 
-export const EXPANDED_RESOURCES: Resource[] = [...generalSeeds, ...drillSeeds].map(makeResource);
-
+export const EXPANDED_RESOURCES: Resource[] = [...generalSeeds, ...drillSeeds, ...additionalSeeds].map(makeResource);
