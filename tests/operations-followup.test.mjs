@@ -87,3 +87,29 @@ test('fundraising uses connected Stripe and webhook idempotency instead of arbit
   assert.match(webhook, /stripe_\$\{paymentIntentId\}/);
   assert.match(webhook, /FieldValue\.increment\(amountCents \/ 100\)/);
 });
+
+test('terms match the current CAD checkout contract without stale hardcoded prices', async () => {
+  const terms = await readSource('../src/app/terms/page.tsx');
+
+  assert.match(terms, /prices are presented and billed in <strong>Canadian dollars \(CAD\)<\/strong>/);
+  assert.match(terms, /Stripe checkout summary presented before purchase controls/);
+  assert.doesNotMatch(terms, /\$12\.99 USD/);
+  assert.doesNotMatch(terms, /\$23\.99 USD/);
+});
+
+test('staging deployment fails closed when App Hosting is linked to another repository', async () => {
+  const workflow = await readSource('../.github/workflows/deploy-staging.yml');
+  const runbook = await readSource('../docs/release-runbook.md');
+  const firebaseProjects = JSON.parse(await readSource('../.firebaserc'));
+
+  assert.match(workflow, /apphosting:backends:get/);
+  assert.match(workflow, /App Hosting backend is linked to/);
+  assert.match(workflow, /configured\.origin !== canonical\.origin/);
+  assert.ok(workflow.includes('const expectedLink = repository.replace('));
+  assert.ok(workflow.includes('/gitRepositoryLinks/${expectedLink}'));
+  assert.match(runbook, /linked to this repository \(`thisearlyseason\/studio-v2\.1`\)/);
+  assert.match(runbook, /legacy `thisearlyseason\/studio`/);
+  assert.match(runbook, /GitHub account `thisearlyseason`/);
+  assert.match(runbook, /Stripe test-mode products and webhooks/);
+  assert.equal(firebaseProjects.projects.staging, 'the-squad-v2-staging');
+});

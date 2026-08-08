@@ -511,6 +511,45 @@ export const connectGoogleCalendar = onRequest({ cors: true }, async (req, res) 
  * Dynamic ICS generator for calendar subscriptions.
  * Validates unguessable token and pulls real-time event status.
  */
+function isActiveCalendarMembership(data: FirebaseFirestore.DocumentData): boolean {
+  return data.status !== "removed" && data.isDeleted !== true;
+}
+
+async function hasCurrentCalendarTeamAccess(teamId: string, userId: string): Promise<boolean> {
+  const teamRef = db.collection("teams").doc(teamId);
+  const members = teamRef.collection("members");
+  const [team, direct, linked, child] = await Promise.all([
+    teamRef.get(),
+    members.doc(userId).get(),
+    members.where("userId", "==", userId).limit(10).get(),
+    members.where("parentId", "==", userId).limit(10).get(),
+  ]);
+  if (!team.exists) return false;
+  if (team.data()?.ownerUserId === userId) return true;
+  return (
+    (direct.exists && isActiveCalendarMembership(direct.data() || {})) ||
+    linked.docs.some(member => isActiveCalendarMembership(member.data())) ||
+    child.docs.some(member => isActiveCalendarMembership(member.data()))
+  );
+}
+
+async function getCurrentCalendarTeamIds(userId: string): Promise<string[]> {
+  const [linked, children, owned] = await Promise.all([
+    db.collectionGroup("members").where("userId", "==", userId).get(),
+    db.collectionGroup("members").where("parentId", "==", userId).get(),
+    db.collection("teams").where("ownerUserId", "==", userId).get(),
+  ]);
+  const teamIds = new Set<string>(owned.docs.map(team => team.id));
+  for (const membership of [...linked.docs, ...children.docs]) {
+    const path = membership.ref.path.split("/");
+    const teamId = path.length === 4 && path[0] === "teams" && path[2] === "members"
+      ? path[1]
+      : null;
+    if (teamId && isActiveCalendarMembership(membership.data())) teamIds.add(teamId);
+  }
+  return [...teamIds];
+}
+
 export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
   // Path format expected: /calendar/feed/{token}
   // If not using path params, can use query string ?token=...
@@ -524,12 +563,53 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
   try {
     // 1. Validate Token Integrity
     const feedSnap = await db.collection("calendarFeeds").doc(token).get();
-    if (!feedSnap.exists || !feedSnap.data()?.active) {
+    if (
+      !feedSnap.exists ||
+      feedSnap.data()?.active !== true ||
+      feedSnap.data()?.serverIssued !== true
+    ) {
       res.status(403).send("Tactical Error: Feed Token Denied or Decommissioned.");
       return;
     }
 
     const { type, userId, teamId, teamIds } = feedSnap.data()!;
+    if (typeof userId !== "string" || !userId) {
+      res.status(403).send("Tactical Error: Feed Owner Invalid.");
+      return;
+    }
+
+    let resolvedTeamIds: string[] = [];
+    if (type === "team") {
+      if (typeof teamId !== "string" || !(await hasCurrentCalendarTeamAccess(teamId, userId))) {
+        res.status(403).send("Tactical Error: Squad Access Revoked.");
+        return;
+      }
+      resolvedTeamIds = [teamId];
+    } else if (type === "multi") {
+      if (
+        !Array.isArray(teamIds) ||
+        teamIds.length < 1 ||
+        teamIds.length > 25 ||
+        teamIds.some(value => typeof value !== "string")
+      ) {
+        res.status(403).send("Tactical Error: Feed Scope Invalid.");
+        return;
+      }
+      const access = await Promise.all(
+        (teamIds as string[]).map(id => hasCurrentCalendarTeamAccess(id, userId))
+      );
+      if (access.some(allowed => !allowed)) {
+        res.status(403).send("Tactical Error: Squad Access Revoked.");
+        return;
+      }
+      resolvedTeamIds = teamIds as string[];
+    } else if (type === "user") {
+      resolvedTeamIds = await getCurrentCalendarTeamIds(userId);
+    } else {
+      res.status(403).send("Tactical Error: Feed Type Invalid.");
+      return;
+    }
+
     let events: any[] = [];
     const teamNameMap: Record<string, string> = {};
 
@@ -542,17 +622,15 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
     const dateFrom = threeMonthsAgo.toISOString().split('T')[0]; // 'YYYY-MM-DD'
     const dateTo = oneYearAhead.toISOString().split('T')[0];
 
-    if (type === "team" && teamId) {
-      const teamDoc = await db.collection("teams").doc(teamId).get();
-      teamNameMap[teamId] = teamDoc.data()?.name || "Team";
+    if (type === "team") {
+      const resolvedTeamId = resolvedTeamIds[0];
+      const teamDoc = await db.collection("teams").doc(resolvedTeamId).get();
+      teamNameMap[resolvedTeamId] = teamDoc.data()?.name || "Team";
       
-      const snap = await db.collection("teams").doc(teamId).collection("events")
+      const snap = await db.collection("teams").doc(resolvedTeamId).collection("events")
         .where("date", ">=", dateFrom).where("date", "<=", dateTo).get();
-      events = snap.docs.map(doc => ({ ...doc.data(), id: doc.id, teamId }));
-    } else if (type === "user" && userId) {
-      const membersSnap = await db.collectionGroup("members").where("userId", "==", userId).get();
-      const resolvedTeamIds = membersSnap.docs.map(doc => doc.data().teamId);
-      
+      events = snap.docs.map(doc => ({ ...doc.data(), id: doc.id, teamId: resolvedTeamId }));
+    } else if (type === "user") {
       if (resolvedTeamIds.length > 0) {
         const teamDocs = await Promise.all(resolvedTeamIds.map(tid => db.collection("teams").doc(tid).get()));
         teamDocs.forEach(td => { if(td.exists) teamNameMap[td.id] = td.data()?.name; });
@@ -564,18 +642,18 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
         const snaps = await Promise.all(eventPromises);
         events = snaps.flatMap((s, idx) => s.docs.map(doc => ({ ...doc.data(), id: doc.id, teamId: resolvedTeamIds[idx] })));
       }
-    } else if (type === "multi" && teamIds && Array.isArray(teamIds)) {
+    } else if (type === "multi") {
       // Fetch names for all selected teams
-      const teamDocs = await Promise.all(teamIds.map(tid => db.collection("teams").doc(tid).get()));
+      const teamDocs = await Promise.all(resolvedTeamIds.map(tid => db.collection("teams").doc(tid).get()));
       teamDocs.forEach(td => { if(td.exists) teamNameMap[td.id] = td.data()?.name; });
 
       // Fetch events from all selected teams (date-filtered)
-      const eventPromises = teamIds.map(tid => 
+      const eventPromises = resolvedTeamIds.map(tid =>
         db.collection("teams").doc(tid).collection("events")
           .where("date", ">=", dateFrom).where("date", "<=", dateTo).get()
       );
       const snaps = await Promise.all(eventPromises);
-      events = snaps.flatMap((s, idx) => s.docs.map(doc => ({ ...doc.data(), id: doc.id, teamId: teamIds[idx] })));
+      events = snaps.flatMap((s, idx) => s.docs.map(doc => ({ ...doc.data(), id: doc.id, teamId: resolvedTeamIds[idx] })));
     }
 
     // 3. Strategic Deduplication (Ensures shared games only appear once)

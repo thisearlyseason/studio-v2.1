@@ -245,6 +245,17 @@ test('embed hub exposes frameable public cards without weakening other pages', a
   assert.match(adminPage, /<EmbedHubManager/);
 });
 
+test('production responses expose health state without a framework fingerprint', async () => {
+  const nextConfig = await readSource('../next.config.ts');
+  const health = await readSource('../src/app/api/health/route.ts');
+
+  assert.match(nextConfig, /poweredByHeader: false/);
+  assert.match(health, /status: 'ok'/);
+  assert.match(health, /service: 'the-squad-web'/);
+  assert.match(health, /'Cache-Control': 'no-store, max-age=0'/);
+  assert.doesNotMatch(health, /adminDb|firebase-admin|STRIPE|RESEND/);
+});
+
 test('Sports Hub admin combines built-in and custom articles without one failed query clearing all data', async () => {
   const admin = await readSource('../src/app/admin/page.tsx');
   const adminRoute = await readSource('../src/app/api/admin/sports-hub/route.ts');

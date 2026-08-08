@@ -185,8 +185,12 @@ service cloud.firestore {
       }
 
       match /{subCollection}/{docId} {
-        allow read: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
-        allow write: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
+        // Explicitly excluded because overlapping matches are ORed by Firestore.
+        // OAuth credentials are server-only even for the account owner.
+        allow read: if subCollection != 'tokens' &&
+          (isSuperAdmin() || (isSignedIn() && isOwner(userId)));
+        allow write: if subCollection != 'tokens' &&
+          (isSuperAdmin() || (isSignedIn() && isOwner(userId)));
       }
     }
 
@@ -354,16 +358,22 @@ service cloud.firestore {
       // ─── Online Payment Items (coaches create payable line items) ──────────
       match /paymentItems/{itemId} {
         allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
-        allow write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        allow write: if false;
       }
 
       // ─── Payments (online + offline payment records) ────────────────────────
       // Server-side (webhook, Admin SDK) writes bypass these rules.
-      // Coaches (team owners) can write offline records.
-      // All team members can read payment records.
       match /payments/{paymentId} {
-        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
-        allow write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        allow read: if isSuperAdmin() || (isSignedIn() && (
+          isTeamOwner(teamId) ||
+          isTeamStaff(teamId) ||
+          (
+            isTeamMember(teamId) &&
+            request.auth.token.get('email', '') != '' &&
+            resource.data.get('payer_email', '') == request.auth.token.get('email', '')
+          )
+        ));
+        allow write: if false;
       }
 
       // ─── Team Chat ────────────────────────────────────────────────────────
@@ -686,11 +696,11 @@ service cloud.firestore {
 
     // ─── Calendar feeds ──────────────────────────────────────────────────────
     match /calendarFeeds/{feedId} {
-      allow read: if isSuperAdmin() || (
-        isSignedIn() && resource.data.userId == request.auth.uid
-      );
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow read, write: if false;
+    }
+
+    match /stripeConnectWebhookEvents/{eventId} {
+      allow read, write: if false;
     }
 
     // ─── Volunteers ──────────────────────────────────────────────────────────

@@ -3773,67 +3773,24 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
 
   const getCalendarFeedUrl = useCallback(async (type: 'user' | 'team' | 'multi', targetId?: string, teamIds?: string[]) => {
-    if (!db) return null;
+    if (!firebaseUser) return null;
     const finalTargetId = targetId || (type === 'team' ? activeTeam?.id : firebaseUser?.uid);
     if (type !== 'multi' && !finalTargetId) return null;
     if (type === 'multi' && (!teamIds || teamIds.length === 0)) return null;
-
-    const feedsRef = collection(db, 'calendarFeeds');
-    let q;
-    
-    if (type === 'multi') {
-      // For multi-feeds, we look for a match on the exact set of team IDs
-      q = query(
-        feedsRef,
-        where('type', '==', 'multi'),
-        where('teamIds', '==', teamIds!.sort()), 
-        where('active', '==', true),
-        limit(1)
-      );
-    } else {
-      q = query(
-        feedsRef,
-        where('type', '==', type),
-        where(type === 'user' ? 'userId' : 'teamId', '==', finalTargetId),
-        where('active', '==', true),
-        limit(1)
-      );
-    }
-    
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      return `https://getcalendarfeed-jscic6vsuq-uc.a.run.app/?token=${snap.docs[0].id}`;
-    }
-
-    const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-
-    // Build rich metadata so the Cloud Function can generate enriched ICS events
-    // with athlete names, team labels, and proper SEQUENCE/LAST-MODIFIED for updates.
-    const childrenMeta = (myChildren || []).map(c => ({
-      id: c.id,
-      name: `${c.firstName} ${c.lastName}`.trim(),
-      teamIds: c.joinedTeamIds || [],
-    }));
-
-    await setDoc(doc(db, 'calendarFeeds', token), {
-      token,
-      type,
-      userId: firebaseUser?.uid || null,
-      ownerDisplayName: userProfile?.name || null,
-      teamId: type === 'team' ? finalTargetId : null,
-      teamName: type === 'team' ? (activeTeam?.name || null) : null,
-      teamIds: type === 'multi' ? teamIds!.sort() : (type === 'user' ? (teamsRaw || []).map(t => t.id) : null),
-      // Children metadata for household/parent feeds — enables "Athlete: Junior Guest" labels
-      childrenMeta: (type === 'user' || type === 'multi') ? childrenMeta : [],
-      active: true,
-      createdAt: new Date().toISOString(),
-      lastRefreshed: new Date().toISOString(),
-      // App base URL so the Cloud Function can link back to event detail pages  
-      appBaseUrl: typeof window !== 'undefined' ? window.location.origin : 'https://thesquad.pro',
+    const token = await getAuthToken(firebaseAuth);
+    const response = await fetch('/api/calendar/feed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({
+        type,
+        ...(type === 'team' ? { teamId: finalTargetId } : {}),
+        ...(type === 'multi' ? { teamIds } : {}),
+      }),
     });
-
-    return `https://getcalendarfeed-jscic6vsuq-uc.a.run.app/?token=${token}`;
-  }, [db, activeTeam, firebaseUser, myChildren, teamsRaw, userProfile]);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to create calendar feed.');
+    return typeof payload.url === 'string' ? payload.url : null;
+  }, [activeTeam?.id, firebaseAuth, firebaseUser]);
 
   const contextValue = useMemo(() => ({
     db, user: userProfile, userProfile, activeTeam, setActiveTeam, teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
