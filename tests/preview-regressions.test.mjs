@@ -468,7 +468,8 @@ test('topic gap pages publish sport solutions and the recommended articles in th
     assert.equal(catalog.ARTICLES_DB[slug].categories.includes('Youth Sports'), true);
   }
 
-  assert.match(sportCatalog, /SPORT_SLUGS = \['soccer', 'basketball'\]/);
+  assert.match(sportCatalog, /'baseball', 'rugby', 'football'/);
+  assert.match(sportCatalog, /'pickleball', 'tennis', 'golf'/);
   assert.match(sportIndex, /Sports management software by sport/i);
   assert.match(sportLanding, /'@type': 'FAQPage'/);
   assert.match(sportLanding, /'@type': 'SoftwareApplication'/);

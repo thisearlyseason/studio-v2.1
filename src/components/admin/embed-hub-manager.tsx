@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Check, Copy, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { SPORT_LANDINGS, SPORT_SLUGS } from '@/lib/sport-landing';
 
 type ShareItem = {
   id: string;
@@ -30,6 +31,13 @@ const audienceItems: ShareItem[] = [
   { id: 'schools', name: 'Schools Landing Page', description: 'Campaign page focused on athletic departments, squad seats, compliance, and school-wide oversight.', directPath: '/for/schools' },
   { id: 'municipalities', name: 'Municipalities Landing Page', description: 'Campaign page focused on community programs, facilities, organizers, and public recreation delivery.', directPath: '/for/municipalities' },
 ] as const;
+
+const sportItems: ShareItem[] = SPORT_SLUGS.map(slug => ({
+  id: `sport-${slug}`,
+  name: `${SPORT_LANDINGS[slug].name} Landing Page`,
+  description: `Sport-specific registration, scheduling, team, league, and tournament workflows for ${SPORT_LANDINGS[slug].name.toLowerCase()} promotion.`,
+  directPath: `/sports/${slug}`,
+}));
 
 export function EmbedHubManager() {
   const [origin, setOrigin] = useState('https://www.thesquad.pro');
@@ -91,6 +99,15 @@ export function EmbedHubManager() {
       <div><h1 className="text-4xl font-black uppercase tracking-tighter">Links &amp; Embed Hub</h1><p className="mt-1 text-xs font-bold uppercase tracking-widest text-gray-400">Copy campaign links, responsive cards, or direct URLs for any external website</p></div>
       <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 text-sm leading-6">
         Use the iframe code in an HTML/embed block on another host. Use the direct URL for Linktree buttons, social bios, QR codes, or ordinary links. The iframe width automatically fits its container.
+      </div>
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-2xl font-black uppercase tracking-tight">Sport Landing Pages</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Promotional URLs for each sport-specific management page.</p>
+        </div>
+        <div className="grid gap-5">
+          {sportItems.map(renderItem)}
+        </div>
       </div>
       <div className="space-y-4">
         <div>

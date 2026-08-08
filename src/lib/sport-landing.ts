@@ -1,4 +1,7 @@
-export const SPORT_SLUGS = ['soccer', 'basketball'] as const;
+export const SPORT_SLUGS = [
+  'soccer', 'basketball', 'baseball', 'rugby', 'football', 'cornhole', 'gymnastics',
+  'pickleball', 'tennis', 'golf', 'swimming', 'esports', 'ultimate-frisbee', 'disc-golf',
+] as const;
 
 export type SportSlug = typeof SPORT_SLUGS[number];
 
@@ -19,7 +22,7 @@ export type SportLanding = {
   faq: Array<{ question: string; answer: string }>;
 };
 
-export const SPORT_LANDINGS: Record<SportSlug, SportLanding> = {
+const CORE_SPORT_LANDINGS: Record<'soccer' | 'basketball', SportLanding> = {
   soccer: {
     slug: 'soccer',
     name: 'Soccer',
@@ -101,6 +104,54 @@ export const SPORT_LANDINGS: Record<SportSlug, SportLanding> = {
     ],
   },
 };
+
+type AdditionalSportConfig = { name: string; focus: string; heroImage: string; heroAlt: string };
+
+const ADDITIONAL_SPORTS: Record<Exclude<SportSlug, 'soccer' | 'basketball'>, AdditionalSportConfig> = {
+  baseball: { name: 'Baseball', focus: 'diamond scheduling, player development, scorekeeping, and tournament operations', heroImage: '/images/campaigns/leagues-hero.webp', heroAlt: 'Youth baseball team preparing on a community field' },
+  rugby: { name: 'Rugby', focus: 'club registration, pitch scheduling, rosters, safeguarding, and match-day communication', heroImage: '/images/campaigns/coaches-hero.webp', heroAlt: 'Rugby coaches and players preparing together' },
+  football: { name: 'Football', focus: 'team registration, practice facilities, roster permissions, game-day roles, and league scheduling', heroImage: '/images/campaigns/schools-hero.webp', heroAlt: 'Football players and coaches meeting beside a field' },
+  cornhole: { name: 'Cornhole', focus: 'league registration, bracket scheduling, venue setup, scorekeeping, and player communication', heroImage: '/images/campaigns/leagues-hero.webp', heroAlt: 'Community players competing in a cornhole event' },
+  gymnastics: { name: 'Gymnastics', focus: 'class enrollment, coach assignments, attendance, skill progress, family updates, and showcases', heroImage: '/images/campaigns/schools-hero.webp', heroAlt: 'Gymnastics athletes training with their coaches' },
+  pickleball: { name: 'Pickleball', focus: 'court bookings, ladders, leagues, player registration, match schedules, and event communication', heroImage: '/images/campaigns/leagues-hero.webp', heroAlt: 'Pickleball players gathering at community courts' },
+  tennis: { name: 'Tennis', focus: 'court scheduling, lesson rosters, ladders, clinics, tournaments, and player communication', heroImage: '/images/campaigns/coaches-hero.webp', heroAlt: 'Tennis players and coaches preparing for practice' },
+  golf: { name: 'Golf', focus: 'club events, tee-time registration, divisions, volunteer coordination, and tournament results', heroImage: '/images/campaigns/leagues-hero.webp', heroAlt: 'Golfers preparing for a community tournament' },
+  swimming: { name: 'Swimming', focus: 'lane scheduling, meet registration, athlete rosters, attendance, results, and family communication', heroImage: '/images/campaigns/schools-hero.webp', heroAlt: 'Swimmers and coaches preparing at a pool' },
+  esports: { name: 'Esports', focus: 'player enrollment, team rosters, match scheduling, permissions, broadcasts, and competition operations', heroImage: '/images/campaigns/coaches-hero.webp', heroAlt: 'Esports team members preparing for a match' },
+  'ultimate-frisbee': { name: 'Ultimate Frisbee', focus: 'club registration, field scheduling, spirit standards, rosters, tournaments, and team communication', heroImage: '/images/campaigns/leagues-hero.webp', heroAlt: 'Ultimate Frisbee players preparing on a field' },
+  'disc-golf': { name: 'Disc Golf', focus: 'league registration, course scheduling, divisions, scorekeeping, events, and player updates', heroImage: '/images/campaigns/coaches-hero.webp', heroAlt: 'Disc golf players preparing for a community round' },
+};
+
+function buildAdditionalLanding(slug: Exclude<SportSlug, 'soccer' | 'basketball'>, config: AdditionalSportConfig): SportLanding {
+  const lower = config.name.toLowerCase();
+  return {
+    slug, name: config.name,
+    seoTitle: `${config.name} Team and League Management Software`,
+    seoDescription: `Manage ${lower} registration, rosters, schedules, communication, events, and family access with The Squad.`,
+    heroImage: config.heroImage, heroAlt: config.heroAlt,
+    headline: `${config.name} team and league management software`,
+    description: `Connect ${config.focus} in one workspace built for the organizations and communities that run ${lower}.`,
+    registration: `Collect ${lower} player, team, class, or event details with configurable forms for contacts, divisions, waivers, permissions, and payment status.`,
+    scheduling: `Coordinate ${lower} practices, matches, lessons, rounds, or events across facilities and local time zones while keeping updates in one source.`,
+    teamApp: `Give coaches, organizers, athletes, and permitted families role-appropriate access to rosters, attendance, broadcasts, files, and calendar feeds.`,
+    tournaments: `Run ${lower} leagues and tournaments with registration, divisions, schedules, officials or volunteers, scoring, standings, and public event information.`,
+    operationalDetails: [
+      `${config.name} registration and divisions`, 'Facility, venue, or course scheduling', 'Roster and eligibility records',
+      'Coach, organizer, athlete, and family communication', 'Attendance, scoring, and event operations', 'Public schedules without private roster data',
+    ],
+    faq: [
+      { question: `Can The Squad manage ${lower} registration?`, answer: `Yes. Organizers can configure ${lower} registration forms, collect required answers and waivers, review responses, and keep accepted registrations in the right team, club, league, or event workspace.` },
+      { question: `How does ${lower} scheduling work?`, answer: `Schedules can include practices, matches, classes, rounds, meets, or events with local times, facilities, attendance, and updates connected to the same organization.` },
+      { question: `Can families and athletes use the ${lower} team app?`, answer: 'Yes. People use the same platform with role-appropriate permissions. Coaches and organizers manage operations while athletes and guardians see the information they are allowed to access.' },
+      { question: `Does The Squad support ${lower} tournaments?`, answer: `Yes. Event organizers can manage registration, divisions, schedules, venues, scoring, standings, waivers, volunteers, and public spectator information.` },
+    ],
+  };
+}
+
+export const SPORT_LANDINGS: Record<SportSlug, SportLanding> = {
+  ...CORE_SPORT_LANDINGS,
+  ...Object.fromEntries(Object.entries(ADDITIONAL_SPORTS).map(([slug, config]) => [slug, buildAdditionalLanding(slug as Exclude<SportSlug, 'soccer' | 'basketball'>, config)])),
+} as Record<SportSlug, SportLanding>;
 
 export function isSportSlug(value: string): value is SportSlug {
   return SPORT_SLUGS.includes(value as SportSlug);
