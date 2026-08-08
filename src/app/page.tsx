@@ -40,7 +40,6 @@ import {
   Terminal,
   MousePointer2,
   Lock,
-  BrainCircuit,
   Package,
   DollarSign,
   PenTool,
@@ -1120,7 +1119,7 @@ export default function LandingPage() {
               {
                 Icon: PenTool,
                 title: 'Branded Briefing Unit',
-                desc: <>Export professionally branded <strong>Tactical PDF Briefings</strong> for every event. Automated <strong>AI Image Optimization</strong> ensures drill assets load instantly.</>,
+                desc: <>Export professionally branded <strong>Tactical PDF Briefings</strong> for every event. Automatic <strong>Image Optimization</strong> ensures drill assets load instantly.</>,
                 items: ['Printable Itineraries', 'Institutional Branding'],
                 accent: 'from-blue-500/10 to-transparent',
               },
@@ -1222,11 +1221,11 @@ export default function LandingPage() {
               <tbody className="divide-y">
                 {[
                   { feature: "Branded PDF Briefings", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Institutional Tactical PDF Printouts" },
-                  { feature: "HD Tactical Capture", squad: true, tsnap: false, hudl: "Basic", treach: false, gchanger: false, note: "Frame-accurate play breakdown" },
+                  { feature: "Athlete Film Library", squad: true, tsnap: false, hudl: "Basic", treach: false, gchanger: false, note: "Hosted and uploaded highlight reels" },
                   { feature: "Institutional Fiscal Audit", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Club-wide financial visibility" },
                   { feature: "Recruiting Portfolio Export", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Certified athlete performance resumes" },
                   { feature: "Consolidated Household Hub", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Unified management for multi-athlete families" },
-                  { feature: "AI Image/Asset Optimization", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Automatic high-res compression" },
+                  { feature: "Image/Asset Optimization", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Automatic high-res compression" },
                   { feature: "75% Film Watch Rule", squad: true, tsnap: false, hudl: "Partial", treach: false, gchanger: false, note: "Verified compliance monitoring" },
                   { feature: "Tournament & League Elite Engines", squad: true, tsnap: "Partial", hudl: false, treach: false, gchanger: "Basic", note: "One-click championship series" },
                   { feature: "UTC-Precision Scheduling", squad: true, tsnap: "Basic", hudl: "Basic", treach: "Basic", gchanger: "Basic", note: "Timezone-aware local consistency" },
@@ -1291,8 +1290,8 @@ export default function LandingPage() {
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                 {[
-                  { Icon: BrainCircuit, title: 'AI Scouting Analyst', desc: <>Generate <strong>Structured Opponent Intel</strong> from match notes using integrated GenAI protocols.</> },
-                  { Icon: Video,        title: 'HD Tactical Capture',  desc: <>Extract high-resolution <strong>Tactical Frames</strong> from raw film for granular play-by-play breakdown.</> },
+                  { Icon: ClipboardList, title: 'Scouting Profiles', desc: <>Keep <strong>Staff Evaluations</strong>, recruiting-ready notes, and athlete media together in one controlled profile.</> },
+                  { Icon: Video,        title: 'Athlete Film Library',  desc: <>Archive hosted or uploaded <strong>Highlight Reels</strong> for staff review and recruiting portfolios.</> },
                   { Icon: Building,     title: 'Institutional Hub',    desc: <><strong>Fiscal Pulse Auditing</strong> for club directors managing 20+ squads with aggregated financial visibility.</> },
                   { Icon: ShieldAlert,  title: 'Recruiting Portfolios',desc: <>Certified <strong>Personnel Evaluations</strong> that athletes can export directly to college recruitment pipelines.</> },
                 ].map(({ Icon, title, desc }, i) => (

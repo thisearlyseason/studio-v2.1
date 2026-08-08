@@ -404,9 +404,41 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
     }));
   };
 
+  const validateBaseConfiguration = () => {
+    if (!form.title.trim() || !form.startDate || !form.endDate) {
+      toast({
+        title: 'Base Configuration Incomplete',
+        description: 'Enter a series title, commencement date, and conclusion date.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    if (form.endDate < form.startDate) {
+      toast({
+        title: 'Invalid Tournament Dates',
+        description: 'The conclusion date cannot be before the commencement date.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    return true;
+  };
+
   const handleNext = () => {
-    if (step === 1) initDailyWindows();
+    if (step === 1) {
+      if (!validateBaseConfiguration()) return;
+      initDailyWindows();
+    }
     setStep(step + 1);
+  };
+
+  const handleStepSelection = (nextStep: number) => {
+    if (nextStep > 1 && !validateBaseConfiguration()) {
+      setStep(1);
+      return;
+    }
+    if (nextStep > step && step === 1) initDailyWindows();
+    setStep(nextStep);
   };
 
   const importLeagueTeams = (leagueId: string) => {
@@ -426,7 +458,10 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
   };
 
   const handleDeploy = async () => {
-    if (!form.title) return;
+    if (!validateBaseConfiguration()) {
+      setStep(1);
+      return;
+    }
     setIsProcessing(true);
 
     const deploySingleEvent = async (divTitle?: string) => {
@@ -541,7 +576,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                      "relative pl-8 transition-all duration-300 cursor-pointer hover:opacity-100",
                      step === s.num ? "opacity-100" : "opacity-30"
                    )}
-                   onClick={() => setStep(s.num)}
+                   onClick={() => handleStepSelection(s.num)}
                  >
                    <div className={cn(
                      "absolute left-0 top-1 bottom-1 w-[2px]",

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebase-admin'; // Ensures admin app is initialized
-import { getTeamAuthority } from '@/lib/server-team-access';
+import { findActiveTeamMember, getTeamAuthority } from '@/lib/server-team-access';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -73,19 +73,19 @@ export async function POST(req: NextRequest) {
       const uniqueRecipients: string[] = [...new Set(
         (recipientUserIds as unknown[]).filter((id): id is string => typeof id === 'string')
       )];
-      const memberSnaps = await Promise.all(uniqueRecipients.map(id =>
-        adminDb.collection('teams').doc(teamId).collection('members').doc(id).get()
+      const members = await Promise.all(uniqueRecipients.map(id =>
+        findActiveTeamMember(teamId, id)
       ));
-      const allowedRecipients = uniqueRecipients.filter((_, index) => {
-        const member = memberSnaps[index];
-        return member.exists &&
-          member.data()?.status !== 'removed' &&
-          member.data()?.isDeleted !== true;
-      });
-      if (allowedRecipients.length !== uniqueRecipients.length) {
+      if (members.some(member => !member)) {
         return NextResponse.json({ error: 'Recipients must be current team members.' }, { status: 403 });
       }
-      const userSnaps = await Promise.all(allowedRecipients.map(id => adminDb.collection('users').doc(id).get()));
+      const allowedRecipientUserIds = [...new Set(members.map((member, index) => {
+        const linkedUserId = member?.data.userId;
+        return typeof linkedUserId === 'string' && linkedUserId.trim()
+          ? linkedUserId.trim()
+          : uniqueRecipients[index];
+      }))];
+      const userSnaps = await Promise.all(allowedRecipientUserIds.map(id => adminDb.collection('users').doc(id).get()));
       tokens = userSnaps.flatMap(snap => {
         const user = snap.data();
         if (user?.notificationsEnabled === false) return [];

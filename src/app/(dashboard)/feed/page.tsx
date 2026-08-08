@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,9 +32,7 @@ import {
   Plus,
   MessageCircle,
   LineChart as ChartIcon,
-  Calendar as CalendarIcon,
-  Clapperboard,
-  Search
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -62,117 +60,6 @@ import {
 } from '@/components/ui/dialog';
 import { addDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { useToast } from '@/hooks/use-toast';
-
-// ─── Tenor GIF Picker ──────────────────────────────────────────────────────
-// Tenor v1 demo key — free, no registration needed for dev/demo use.
-// For production: get a free key at developers.google.com/tenor
-const TENOR_KEY = 'LIVDSRZULELA';
-const TENOR_LIMIT = 24;
-
-function GifPicker({ onSelect, onClose }: { onSelect: (url: string) => void; onClose: () => void }) {
-  const [query, setQuery] = useState('');
-  const [gifs, setGifs] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const fetchGifs = useCallback(async (q: string) => {
-    setIsLoading(true);
-    setFetchError(null);
-    try {
-      const base = 'https://api.tenor.com/v1';
-      const endpoint = q.trim()
-        ? `${base}/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=${TENOR_LIMIT}&media_filter=minimal&contentfilter=medium`
-        : `${base}/trending?key=${TENOR_KEY}&limit=${TENOR_LIMIT}&media_filter=minimal&contentfilter=medium`;
-      const res = await fetch(endpoint);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setGifs(json.results || []);
-    } catch (err: any) {
-      setFetchError(err.message || 'Failed to load GIFs');
-      setGifs([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Load trending GIFs on mount
-  useEffect(() => { fetchGifs(''); }, [fetchGifs]);
-
-  // Debounced search
-  useEffect(() => {
-    if (searchRef.current) clearTimeout(searchRef.current);
-    searchRef.current = setTimeout(() => fetchGifs(query), 450);
-    return () => { if (searchRef.current) clearTimeout(searchRef.current); };
-  }, [query, fetchGifs]);
-
-  return (
-    <div className="mt-3 rounded-2xl border-2 border-primary/10 bg-muted/20 overflow-hidden animate-in slide-in-from-top-2 duration-200">
-      {/* Search header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b bg-background">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <input
-            autoFocus
-            type="text"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search GIFs..."
-            className="w-full h-9 rounded-xl bg-muted/50 pl-9 pr-4 text-xs font-bold border-none outline-none focus:ring-2 focus:ring-primary/30 transition-all"
-          />
-        </div>
-        <Button variant="ghost" size="icon" aria-label="Close GIF picker" className="h-8 w-8 rounded-xl shrink-0 text-muted-foreground hover:text-foreground" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {/* GIF grid */}
-      <div className="p-3 h-64 overflow-y-auto custom-scrollbar">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </div>
-        ) : fetchError ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 opacity-50">
-            <Clapperboard className="h-8 w-8 text-destructive" />
-            <p className="text-[10px] font-black uppercase tracking-widest text-destructive">API Error: {fetchError}</p>
-          </div>
-        ) : gifs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 opacity-40">
-            <Clapperboard className="h-8 w-8" />
-            <p className="text-[10px] font-black uppercase tracking-widest">No GIFs found</p>
-          </div>
-        ) : (
-          <div className="columns-2 sm:columns-3 md:columns-4 gap-2 space-y-2">
-            {gifs.map((gif) => {
-              // Tenor v1: media is an array of objects; tinygif for thumb, gif for full
-              const media = gif.media?.[0];
-              const thumb = media?.tinygif?.url || media?.gif?.url;
-              const full  = media?.gif?.url || media?.tinygif?.url;
-              if (!thumb || !full) return null;
-              return (
-                <button
-                  key={gif.id}
-                  aria-label={`Select ${gif.title || 'GIF'}`}
-                  onClick={() => { onSelect(full); onClose(); }}
-                  className="break-inside-avoid w-full rounded-xl overflow-hidden ring-2 ring-transparent hover:ring-primary transition-all hover:scale-[1.02] active:scale-[0.98] duration-150"
-                >
-                  <img src={thumb} alt={gif.title || 'GIF'} className="w-full h-auto block" loading="lazy" />
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Attribution — required by Tenor ToS */}
-      <div className="px-4 py-2 border-t bg-background flex items-center justify-between">
-        <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Powered by Tenor</span>
-        <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">{query.trim() ? 'Search' : 'Trending'}</span>
-      </div>
-    </div>
-  );
-}
 
 function CommentList({ postId, teamId, isAdmin, currentUserId, canComment }: { postId: string, teamId: string, isAdmin: boolean, currentUserId: string, canComment: boolean }) {
   const db = useFirestore();
@@ -261,10 +148,7 @@ export default function FeedPage() {
   const [isPollDialogOpen, setIsPollDialogOpen] = useState(false);
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptions, setPollOptions] = useState<{text: string, image?: string}[]>([{text: '', image: undefined}, {text: '', image: undefined}]);
-  const [isGifPickerOpen, setIsGifPickerOpen] = useState(false);
-
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
-  const [isGifOpen, setIsGifOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const heroInputRef = useRef<HTMLInputElement>(null);
@@ -341,15 +225,22 @@ export default function FeedPage() {
 
   const handleCreatePoll = () => {
     const validOptions = pollOptions.filter(o => o.text.trim() !== '');
-    if (!pollQuestion || validOptions.length < 2) return;
+    if (!pollQuestion.trim() || validOptions.length < 2) {
+      toast({
+        title: 'Poll Incomplete',
+        description: 'Enter a question and at least two options.',
+        variant: 'destructive',
+      });
+      return;
+    }
     addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts'), {
       teamId: activeTeam.id,
-      content: pollQuestion,
+      content: pollQuestion.trim(),
       type: 'poll',
       poll: {
         id: 'p' + Date.now(),
-        question: pollQuestion,
-        options: validOptions.map(o => ({ text: o.text, imageUrl: o.image || null, votes: 0 })),
+        question: pollQuestion.trim(),
+        options: validOptions.map(o => ({ text: o.text.trim(), imageUrl: o.image || null, votes: 0 })),
         totalVotes: 0,
         voters: {},
         isClosed: false
@@ -461,25 +352,6 @@ export default function FeedPage() {
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={isGifOpen ? 'Close GIF picker' : 'Search GIFs'}
-                          className={cn(
-                            "h-10 w-10 lg:h-12 lg:w-12 rounded-full transition-all",
-                            isGifOpen
-                              ? "bg-primary/10 text-primary"
-                              : "text-muted-foreground hover:text-primary hover:bg-primary/5"
-                          )}
-                          onClick={() => { setIsGifOpen(v => !v); }}
-                        >
-                          <Clapperboard className="h-4 w-4 lg:h-5 lg:w-5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Search GIFs</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
                         <Button aria-label="Create poll" variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/5" onClick={() => setIsPollDialogOpen(true)}>
                           <BarChart2 className="h-4 w-4 lg:h-5 lg:w-5" />
                         </Button>
@@ -488,14 +360,6 @@ export default function FeedPage() {
                     </Tooltip>
                     <Button disabled={!newPostContent.trim() && !imageUrl} onClick={handlePost} className="ml-auto rounded-full px-6 lg:px-8 h-10 lg:h-12 font-black uppercase text-[9px] lg:text-[11px] tracking-widest shadow-lg lg:shadow-xl shadow-primary/20">Post to Squad</Button>
                   </div>
-
-                  {/* GIF Picker — renders inline below toolbar */}
-                  {isGifOpen && (
-                    <GifPicker
-                      onSelect={(url) => { setImageUrl(url); setIsGifOpen(false); }}
-                      onClose={() => setIsGifOpen(false)}
-                    />
-                  )}
                 </div>
               </div>
             </CardContent>

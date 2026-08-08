@@ -124,4 +124,4 @@ SquadForge is a comprehensive institutional athletic management platform designe
 - **Database**: Firebase Firestore (utilizing `collectionGroup` for cross-squad compliance auditing)
 - **Authentication**: Firebase Auth with RBAC-enhanced metadata.
 - **Payments**: Stripe (Connect/Subscriptions)
-- **AI Integration**: Straico API for tactical generation and institutional logic assistance.
+- **Calendar Delivery**: Server-issued, membership-aware ICS subscriptions for Google Calendar, Apple Calendar, and Outlook.

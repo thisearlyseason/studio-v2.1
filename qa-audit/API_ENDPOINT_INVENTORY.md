@@ -30,7 +30,6 @@ Authentication/authorization status is from static review. `Auth` means Firebase
 | public/tournaments/[teamId]/[eventId] | GET | Public | server projection | Review in Preview |
 | sports-hub/articles, sports-hub/rss | GET | Public | content/URL hardening | Reviewed |
 | sports-hub/rss-refresh | POST | Auth/internal | protected refresh | Reviewed |
-| highlights/analyze, generate, upload-frame; straico-code | POST | Auth | user/team checks and bounded input | Review AI/provider behavior in Preview |
 | demo/seed | POST/PATCH | Auth | demo/session controls | Reviewed |
 
 Every route still needs dynamic negative tests in Preview (missing/invalid token, wrong tenant ID, wrong role, malformed body, replay, rate limit, and expired resource).

@@ -9,7 +9,6 @@ import {
   Send, 
   BarChart2, 
   MoreVertical, 
-  Sparkles,
   X,
   Plus,
   Trash2,
@@ -34,10 +33,8 @@ import {
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogTrigger,
   DialogDescription, 
   DialogFooter,
-  DialogClose
 } from '@/components/ui/dialog';
 import {
   DropdownMenu,
@@ -47,8 +44,6 @@ import {
   DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
-import { suggestPollQuestionAndOptions } from '@/ai/flows/poll-question-and-option-suggestion';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { useTeam, Message, Member } from '@/components/providers/team-provider';
@@ -91,8 +86,6 @@ function ChatRoomInner() {
   
   const [pollPrompt, setPollPrompt] = useState('');
   const [pollOptions, setPollOptions] = useState<{text: string, image?: string}[]>([{text: '', image: undefined}, {text: '', image: undefined}]);
-  const [suggestedPoll, setSuggestedPoll] = useState<{question: string, options: string[]} | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [chatImage, setChatImage] = useState<string | undefined>();
   
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -174,31 +167,14 @@ function ChatRoomInner() {
     }
   };
 
-  const handleSuggestPoll = async () => {
-    if (!pollPrompt.trim()) return;
-    setIsGenerating(true);
-    try {
-      const result = await suggestPollQuestionAndOptions({ prompt: pollPrompt });
-      setSuggestedPoll(result);
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to generate poll.", variant: "destructive" });
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   const handleCreatePoll = () => {
     if (!chatId || !user) return;
-    let question = pollPrompt;
-    let finalOptions = pollOptions.filter(o => o.text.trim() !== '');
-    if (suggestedPoll) {
-      question = suggestedPoll.question;
-      finalOptions = suggestedPoll.options.map(o => ({text: o, image: undefined}));
-    }
+    const question = pollPrompt;
+    const finalOptions = pollOptions.filter(o => o.text.trim() !== '');
     if (!question || finalOptions.length < 2) return;
     const pollData = { id: 'p' + Date.now(), question, options: finalOptions.map(o => ({ text: o.text, imageUrl: o.image, votes: 0 })), totalVotes: 0, voters: {}, isClosed: false };
     addMessage(chatId as string, user.name, '', 'poll', undefined, pollData, effectiveTeamId || undefined);
-    setIsPollDialogOpen(false); setSuggestedPoll(null); setPollPrompt(''); setPollOptions([{text: '', image: undefined}, {text: '', image: undefined}]);
+    setIsPollDialogOpen(false); setPollPrompt(''); setPollOptions([{text: '', image: undefined}, {text: '', image: undefined}]);
   };
 
   if (isChatLoading) {
@@ -241,7 +217,7 @@ function ChatRoomInner() {
         <div className="flex items-center gap-3">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={() => router.push('/chats')} className="rounded-xl h-10 w-10 shrink-0">
+              <Button aria-label="Back to chats" variant="ghost" size="icon" onClick={() => router.push('/chats')} className="rounded-xl h-10 w-10 shrink-0">
                 <ChevronLeft className="h-6 w-6" />
               </Button>
             </TooltipTrigger>
@@ -262,7 +238,7 @@ function ChatRoomInner() {
           <div className="flex items-center gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary" onClick={() => setIsMembersDialogOpen(true)}>
+                <Button aria-label="View channel members" variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary" onClick={() => setIsMembersDialogOpen(true)}>
                   <Users className="h-5 w-5" />
                 </Button>
               </TooltipTrigger>
@@ -272,18 +248,18 @@ function ChatRoomInner() {
             </Tooltip>
             
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button aria-label="Channel parameters" variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary">
                       <MoreVertical className="h-5 w-5" />
                     </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Channel Parameters
-                  </TooltipContent>
-                </Tooltip>
-              </DropdownMenuTrigger>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Channel Parameters
+                </TooltipContent>
+              </Tooltip>
               <DropdownMenuContent align="end" className="w-56 rounded-2xl p-2 shadow-2xl">
                 <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsRenameDialogOpen(true)}>
                   <Edit3 className="h-4 w-4 text-primary" /> Rename Tactical Group
@@ -403,7 +379,7 @@ function ChatRoomInner() {
               <img src={chatImage} className="h-24 w-auto rounded-[1.5rem] border-4 border-white shadow-xl ring-1 ring-black/10" alt="Preview" />
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="destructive" size="icon" className="absolute -top-3 -right-3 h-8 w-8 rounded-full shadow-lg border-2 border-white" onClick={() => setChatImage(undefined)}>
+                  <Button aria-label="Remove attached image" variant="destructive" size="icon" className="absolute -top-3 -right-3 h-8 w-8 rounded-full shadow-lg border-2 border-white" onClick={() => setChatImage(undefined)}>
                     <X className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
@@ -430,7 +406,7 @@ function ChatRoomInner() {
               />
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" className="rounded-2xl shrink-0 h-12 w-12 border-muted hover:bg-primary/5 hover:border-primary/20 text-muted-foreground hover:text-primary transition-all shadow-sm" onClick={() => fileInputRef.current?.click()}>
+                  <Button aria-label="Attach image" variant="outline" size="icon" className="rounded-2xl shrink-0 h-12 w-12 border-muted hover:bg-primary/5 hover:border-primary/20 text-muted-foreground hover:text-primary transition-all shadow-sm" onClick={() => fileInputRef.current?.click()}>
                     <ImageIcon className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
@@ -440,7 +416,7 @@ function ChatRoomInner() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" className="rounded-2xl shrink-0 h-12 w-12 border-muted hover:bg-primary/5 hover:border-primary/20 text-muted-foreground hover:text-primary transition-all shadow-sm" onClick={() => setIsPollDialogOpen(true)}>
+                  <Button aria-label="Create poll" variant="outline" size="icon" className="rounded-2xl shrink-0 h-12 w-12 border-muted hover:bg-primary/5 hover:border-primary/20 text-muted-foreground hover:text-primary transition-all shadow-sm" onClick={() => setIsPollDialogOpen(true)}>
                     <BarChart2 className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
@@ -461,6 +437,7 @@ function ChatRoomInner() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button 
+                    aria-label="Send message"
                     size="icon" 
                     className="absolute right-1.5 top-1.5 rounded-2xl h-9 w-9 shadow-lg shadow-primary/30 hover:scale-105 active:scale-95 transition-all" 
                     onClick={handleSendMessage}
@@ -607,12 +584,7 @@ function ChatRoomInner() {
             <div className="space-y-6 py-2">
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tactical Question</Label>
-                <div className="flex gap-2">
-                  <Input value={pollPrompt} onChange={e => setPollPrompt(e.target.value)} className="h-14 rounded-2xl font-black border-2 text-base" placeholder="e.g. Jersey design choice?" />
-                  <Button variant="secondary" size="icon" className="h-14 w-14 shrink-0 rounded-2xl shadow-inner border-2" onClick={handleSuggestPoll} disabled={isGenerating}>
-                    {isGenerating ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5 text-primary" />}
-                  </Button>
-                </div>
+                <Input value={pollPrompt} onChange={e => setPollPrompt(e.target.value)} className="h-14 rounded-2xl font-black border-2 text-base" placeholder="e.g. Jersey design choice?" />
               </div>
               <div className="space-y-3">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Polling Options</Label>

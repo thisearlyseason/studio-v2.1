@@ -17,14 +17,9 @@ const required = [
   'RESEND_API_KEY',
   'RESEND_WEBHOOK_SECRET',
   'NEWSLETTER_UNSUBSCRIBE_SECRET',
-  'STRAICO_API_KEY',
-  'GOOGLE_AI_API_KEY',
+  'CALENDAR_FEED_BASE_URL',
   'INTERNAL_API_SECRET',
   'OWNER_NOTIFICATION_EMAIL',
-  'OWNER_FCM_TOKEN',
-  'GOOGLE_CLIENT_ID',
-  'GOOGLE_CLIENT_SECRET',
-  'GOOGLE_REDIRECT_URI',
 ];
 
 const placeholderPattern = /^(change[-_ ]?me|your[_-]|example|test|placeholder|todo|null|undefined)$/i;
@@ -42,6 +37,31 @@ for (const name of required) {
   }
 }
 
+const firebaseServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
+const runtimeProjectId = process.env.GOOGLE_CLOUD_PROJECT?.trim() || process.env.GCLOUD_PROJECT?.trim();
+let serviceAccountProjectId;
+
+if (firebaseServiceAccount) {
+  let parsed;
+  try {
+    parsed = JSON.parse(firebaseServiceAccount);
+  } catch {
+    try {
+      parsed = JSON.parse(Buffer.from(firebaseServiceAccount, 'base64').toString('utf8'));
+    } catch {
+      invalid.push('FIREBASE_SERVICE_ACCOUNT_JSON must contain valid JSON or base64-encoded JSON');
+    }
+  }
+  if (parsed) {
+    serviceAccountProjectId = parsed.project_id || parsed.projectId;
+    if (!serviceAccountProjectId) {
+      invalid.push('FIREBASE_SERVICE_ACCOUNT_JSON must include project_id');
+    }
+  }
+} else if (!runtimeProjectId) {
+  missing.push('FIREBASE_SERVICE_ACCOUNT_JSON or GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT');
+}
+
 const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
 if (appUrl) {
   try {
@@ -55,13 +75,26 @@ if (appUrl) {
   }
 }
 
-const redirectUri = process.env.GOOGLE_REDIRECT_URI?.trim();
-if (redirectUri) {
+const calendarFeedUrl = process.env.CALENDAR_FEED_BASE_URL?.trim();
+if (calendarFeedUrl) {
   try {
-    const parsed = new URL(redirectUri);
-    if (parsed.protocol !== 'https:') invalid.push('GOOGLE_REDIRECT_URI must use HTTPS');
+    const parsed = new URL(calendarFeedUrl);
+    if (parsed.protocol !== 'https:') invalid.push('CALENDAR_FEED_BASE_URL must use HTTPS');
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+      invalid.push('CALENDAR_FEED_BASE_URL cannot contain credentials, query parameters, or a fragment');
+    }
+    if (parsed.pathname.replace(/\/$/, '') !== '/getCalendarFeed') {
+      invalid.push('CALENDAR_FEED_BASE_URL must target the getCalendarFeed Function');
+    }
+    const projectId = serviceAccountProjectId || runtimeProjectId;
+    if (projectId) {
+      const expectedHost = `us-central1-${projectId}.cloudfunctions.net`;
+      if (parsed.hostname !== expectedHost) {
+        invalid.push(`CALENDAR_FEED_BASE_URL must target ${expectedHost}`);
+      }
+    }
   } catch {
-    invalid.push('GOOGLE_REDIRECT_URI must be a valid absolute URL');
+    invalid.push('CALENDAR_FEED_BASE_URL must be a valid absolute URL');
   }
 }
 

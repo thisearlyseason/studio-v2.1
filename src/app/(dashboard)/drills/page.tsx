@@ -534,7 +534,7 @@ export default function PlaybookAndGamePlayPage() {
                         <div className="flex bg-muted/50 rounded-xl overflow-hidden shadow-inner">
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditDrill(e, drill); }}>
+                              <Button aria-label={`Edit ${drill.title}`} variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditDrill(e, drill); }}>
                                 <Edit2 className="h-3 w-3" />
                               </Button>
                             </TooltipTrigger>
@@ -542,7 +542,7 @@ export default function PlaybookAndGamePlayPage() {
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:bg-amber-50 rounded-none border-l" onClick={(e) => toggleMandatoryWatch(e, drill, 'drills')}>
+                              <Button aria-label={`${drill.mandatoryWatch ? 'Disable' : 'Enable'} mandatory watch for ${drill.title}`} variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:bg-amber-50 rounded-none border-l" onClick={(e) => toggleMandatoryWatch(e, drill, 'drills')}>
                                 {drill.mandatoryWatch ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
                               </Button>
                             </TooltipTrigger>
@@ -551,7 +551,7 @@ export default function PlaybookAndGamePlayPage() {
                           {drill.mandatoryWatch && (
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-primary hover:bg-primary/5 rounded-none border-l" onClick={(e) => { e.stopPropagation(); setWatchersDrill(drill); setIsWatchersOpen(true); }}>
+                                <Button aria-label={`View watch status for ${drill.title}`} variant="ghost" size="icon" className="h-7 w-7 text-primary hover:bg-primary/5 rounded-none border-l" onClick={(e) => { e.stopPropagation(); setWatchersDrill(drill); setIsWatchersOpen(true); }}>
                                   <Users className="h-3 w-3" />
                                 </Button>
                               </TooltipTrigger>
@@ -560,7 +560,7 @@ export default function PlaybookAndGamePlayPage() {
                           )}
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteDrill(drill.id); }}>
+                              <Button aria-label={`Delete ${drill.title}`} variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteDrill(drill.id); }}>
                                 <Trash2 className="h-3 w-3" />
                               </Button>
                             </TooltipTrigger>
@@ -628,7 +628,7 @@ export default function PlaybookAndGamePlayPage() {
                         <div className="flex bg-muted/50 rounded-xl overflow-hidden shadow-inner">
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditFile(e, file); }}>
+                              <Button aria-label={`Edit ${file.name}`} variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditFile(e, file); }}>
                                 <Edit2 className="h-3 w-3" />
                               </Button>
                             </TooltipTrigger>
@@ -636,7 +636,7 @@ export default function PlaybookAndGamePlayPage() {
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:bg-amber-50 rounded-none border-l" onClick={(e) => toggleMandatoryWatch(e, file as any, 'files')}>
+                              <Button aria-label={`${(file as any).mandatoryWatch ? 'Disable' : 'Enable'} mandatory watch for ${file.name}`} variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:bg-amber-50 rounded-none border-l" onClick={(e) => toggleMandatoryWatch(e, file as any, 'files')}>
                                 {(file as any).mandatoryWatch ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
                               </Button>
                             </TooltipTrigger>
@@ -644,7 +644,7 @@ export default function PlaybookAndGamePlayPage() {
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteFile(file.id); }}>
+                              <Button aria-label={`Delete ${file.name}`} variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteFile(file.id); }}>
                                 <Trash2 className="h-3 w-3" />
                               </Button>
                             </TooltipTrigger>

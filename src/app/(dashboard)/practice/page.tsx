@@ -92,10 +92,18 @@ export default function PracticeManagementPage() {
   }, [templates, searchTerm]);
 
   const handleSaveTemplate = async () => {
-    if (!newTitle || !activeTeam) return;
+    if (!activeTeam) return;
+    if (!newTitle.trim()) {
+      toast({
+        title: 'Protocol Title Required',
+        description: 'Enter a title before securing this practice protocol.',
+        variant: 'destructive',
+      });
+      return;
+    }
     try {
       const payload = {
-        title: newTitle,
+        title: newTitle.trim(),
         description: newDesc,
         drillIds: selectedDrills
       };

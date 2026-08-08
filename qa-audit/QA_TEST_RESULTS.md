@@ -1,17 +1,56 @@
 # QA Test Results
 
-| Test / check | Area | Expected | Actual | Result | Evidence |
-|---|---|---|---|---|---|
-| `npm run typecheck` | Type safety | No TS errors | Passed | PASS | Local audit run |
-| `npm test` | Unit/security/subscription regressions | All tests pass | 121/121 passed | PASS | Local audit run |
-| `npm run lint` | Static analysis | No fatal lint issues | Exit 0; 1,943 warnings | PASS WITH DEBT | ESLint output |
-| `npm run build` | Production build | Compile/type/prerender complete | Passed on Next 15.5.22 | PASS | Local audit run |
-| `npm --prefix functions run build` | Cloud Functions | Compile | Passed after `functions/npm ci` | PASS | Local audit run |
-| `npm run test:rules` | Firestore/Storage integration | Emulator rules tests | 18/18 passed with Java 26.0.2 | PASS | Firebase CLI output, 2026-07-26 |
-| `npm run verify:env` | Production config | Required secrets present | Blocked locally; 24 variables absent | BLOCKED | Script output; do not add local secrets |
-| `npm audit --omit=dev --package-lock-only` | Production dependency audit | No critical/high | 0 critical, 0 high, 3 moderate | PASS WITH CONDITIONS | Audit output |
-| Manual Stripe flows | Billing | Test-mode end-to-end | Not run | BLOCKED | Requires Stripe test credentials |
-| Manual Resend/FCM flows | Delivery | Real sandbox delivery | Not run | BLOCKED | Requires test recipients/devices |
-| Browser/mobile matrix | UX/a11y | 320–1920 / browsers | Not run | BLOCKED | Requires Preview/browser devices |
+Audit date: 2026-08-08
+Release candidate: `agent/fix-login-spinner` working tree
+Test environment: local Next.js server backed by isolated Firebase project `the-squad-audit-preview`
 
-Notable automated coverage already present includes account deletion, Stripe/webhook idempotency, subscription seats and downgrade behavior, server authorization, input bounds, secure rich text/RSS processing, public volunteer/fundraising, and access-control regressions. The emulator suite now explicitly denies anonymous access to an enabled player's private record and child contact document.
+No payment was finalized. No production data was mutated, and no production deployment was performed.
+
+## Automated release gates
+
+| Test / check | Actual | Result |
+|---|---|---|
+| `npm run typecheck` | No TypeScript errors | PASS |
+| `npm test` | 233/233 tests passed | PASS |
+| `npm run test:rules` | 29/29 Firestore and Storage emulator tests passed | PASS |
+| `npm run lint` | Exit 0; warning debt remains | PASS WITH DEBT |
+| `npm run build` | Next.js production build passed; 308 routes | PASS |
+| `npm --prefix functions run build` | Cloud Functions TypeScript build passed | PASS |
+| Root production dependency audit | 0 vulnerabilities | PASS |
+| Functions production dependency audit | 0 vulnerabilities | PASS |
+| Workflow YAML parsing | All three workflows parsed | PASS |
+| `git diff --check` | No whitespace errors | PASS |
+
+## Browser and API certification
+
+| Area | Coverage | Result |
+|---|---|---|
+| Demo personas | Starter, Squad Pro, Elite Org, School, Player, Parent, and Free League Creator | PASS |
+| Authenticated modules | Dashboards, organization hubs, role guards, feed CRUD/polls, events, drills, practice templates, chats, waivers, leagues, tournaments, volunteer tools, settings, billing, and pricing | PASS |
+| Public routes | 35 signup, legal, audience, Sports Hub, and embed routes returned HTTP 200 | PASS |
+| Dynamic public data | League, tournament/spectator, fundraiser, recruiting profile, and volunteer portal | PASS |
+| Protected APIs | Unauthenticated requests uniformly returned HTTP 401 | PASS |
+| Invalid public requests | Controlled HTTP 400/404; oversized request returned HTTP 413 | PASS |
+| Payment boundary | Pricing and checkout preflight exercised; preflight rejected before session creation and no payment state was created | PASS |
+| Responsive UI | Signup, Squad Pro dashboard, Parent Family Hub, and Player dashboard at 390x844 with no horizontal overflow | PASS |
+| Idempotency | Repeated volunteer signup returned the same signup ID | PASS |
+
+Screenshots and Playwright artifacts are stored under `output/playwright/` and are intentionally not part of the release commit.
+
+## Defects found and repaired
+
+- Removed the broken Tenor GIF integration and hardcoded API key.
+- Added visible validation for event, poll, practice-template, league, and tournament forms.
+- Prevented demo workspaces from sending external event, document, and drill notifications.
+- Resolved notification and email recipients by member document ID or canonical `userId`.
+- Repaired chat parameters access and added accessible names to chat and drill icon controls.
+- Added collection-group indexes for `signatures.userId` and `signatures.teamId`.
+- Repaired the public volunteer portal request race and seeded a valid shareable fixture.
+- Removed Google AI/Gemini, Straico, highlight-generation, and Google Calendar OAuth code. Calendar integration now uses a server-issued ICS feed and requires no `GOOGLE_REDIRECT_URI`.
+
+## External promotion gates
+
+- Vercel contains every required production variable name, but sensitive values cannot be downloaded for local format validation. Run `npm run verify:env` inside the protected production deployment environment.
+- Production Firebase still has the retired `connectGoogleCalendar`, `onEventCreate`, `onEventUpdate`, and `onEventDelete` functions. The guarded infrastructure workflow removes them and verifies their absence.
+- Production Firestore does not yet match `firestore.indexes.json`. Drift includes the payer lookup composite, member lookup fields, signature lookup fields, and the checked-in `events.date` override. Deploy the complete index contract and wait for every index to become enabled before promoting the web release.
+- Stripe signed-webhook lifecycle tests, real Resend delivery, FCM device delivery, and cross-browser/device testing require provider-controlled test credentials and devices. Payment completion remains explicitly excluded from this certification.

@@ -2168,7 +2168,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await setDoc(doc(db, 'teams', activeTeam.id, 'documents', data.id), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId, createdAt: new Date().toISOString() }));
 
       // Fire push + email to all team members
-      Promise.resolve().then(async () => {
+      if (!activeTeam.isDemo) Promise.resolve().then(async () => {
         try {
           const { getAuth } = await import('firebase/auth');
           const { getApp } = await import('firebase/app');
@@ -2220,7 +2220,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await addDoc(collection(db, 'teams', activeTeam.id, 'events'), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId }));
 
       // Fire push + email to all team members
-      Promise.resolve().then(async () => {
+      if (!activeTeam.isDemo) Promise.resolve().then(async () => {
         try {
           const { getAuth } = await import('firebase/auth');
           const { getApp } = await import('firebase/app');
@@ -2620,7 +2620,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await addDoc(collection(db, 'teams', activeTeam.id, 'drills'), { ...clean(d), createdAt: new Date().toISOString() });
 
       // Fire push + email to all team members
-      Promise.resolve().then(async () => {
+      if (!activeTeam.isDemo) Promise.resolve().then(async () => {
         try {
           const { getAuth } = await import('firebase/auth');
           const { getApp } = await import('firebase/app');

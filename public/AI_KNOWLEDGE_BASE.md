@@ -53,11 +53,9 @@ The system operates on an hierarchical permission model managed via the `isStaff
     - **Logic**: Uses `onTimeUpdate` for raw video and post-message timers for YouTube.
     - **Verification**: Once 75% of the duration is reached, the system writes to the `watchedBy` map within the Firestore document.
 
-### MODULE B: COACHES CORNER & AI SCOUTING
-- **AI Scouting Reports**: Utilizes the `analyze` route. Converts raw unstructured text into structured JSON.
-- **HD Tactical Capture (FFmpeg)**: 
-    - **Engine**: `ffmpeg-processor.ts`.
-    - **Action**: Extracts frames at high bitrate from raw source files to capture specific plays or defensive positioning.
+### MODULE B: COACHES CORNER & FILM LIBRARY
+- **Film Archive**: Staff can add athlete film from a local video upload or a hosted video URL.
+- **Film Organization**: Clips are grouped by type and retained in each athlete's highlight reel for manual review.
 - **Personnel Evaluation Ledger**: A private "Staff Only" section for writing long-form performance reviews. Each review can be tagged as "Recruiting Ready" to appear in the player's external portfolio.
 
 ### MODULE C: ELITE TOURNAMENT ENGINE

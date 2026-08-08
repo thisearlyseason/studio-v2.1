@@ -21,7 +21,6 @@ const securityHeaders = [
   // Content Security Policy
   // - Firebase Auth, Firestore, Storage: *.googleapis.com, *.firebaseapp.com, *.firebase.com
   // - Stripe checkout: js.stripe.com, checkout.stripe.com
-  // - AI services: api.straico.com, identitytoolkit.googleapis.com
   // - freeimage.host: used as frame upload proxy
   // - data: required for canvas/FFmpeg blobs
   {
@@ -35,7 +34,7 @@ const securityHeaders = [
       "img-src 'self' data: blob: https: storage.googleapis.com *.firebasestorage.app placehold.co images.unsplash.com picsum.photos api.dicebear.com freeimage.host",
       "media-src 'self' blob: data: https: storage.googleapis.com *.firebasestorage.app",
       // Stripe Connect needs several stripe.com subdomains for its onboarding iframe/XHR
-      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://api.straico.com https://freeimage.host wss://*.firebaseio.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org",
+      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://freeimage.host wss://*.firebaseio.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org",
       // Stripe Connect onboarding is iframe-based
       "frame-src 'self' https://*.firebaseapp.com js.stripe.com connect-js.stripe.com *.stripe.com checkout.stripe.com hooks.stripe.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com youtube.com *.youtube.com youtu.be *.youtu.be www.youtube-nocookie.com",
       "worker-src 'self' blob:",

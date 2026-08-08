@@ -120,5 +120,31 @@ test('staging deployment fails closed when App Hosting is linked to another repo
   assert.match(appHosting, /NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG/);
   assert.match(appHosting, /the-squad-v2-staging/);
   assert.match(appHosting, /NEXT_PUBLIC_APP_URL/);
+  assert.match(appHosting, /CALENDAR_FEED_BASE_URL/);
+  assert.match(appHosting, /the-squad-v2-staging\.cloudfunctions\.net\/getCalendarFeed/);
   assert.doesNotMatch(appHosting, /STRIPE_SECRET_KEY|RESEND_API_KEY|GOOGLE_CLIENT_SECRET/);
+});
+
+test('production configuration has no external AI provider dependency', async () => {
+  const envCheck = await readSource('../scripts/check-production-env.mjs');
+  const coachesCorner = await readSource('../src/app/(dashboard)/coaches-corner/page.tsx');
+  const chat = await readSource('../src/app/(dashboard)/chats/[chatId]/page.tsx');
+  const landing = await readSource('../src/app/page.tsx');
+  const guide = await readSource('../src/app/how-to/page.tsx');
+  const packageJson = JSON.parse(await readSource('../package.json'));
+  const functionsPackage = JSON.parse(await readSource('../functions/package.json'));
+
+  assert.doesNotMatch(
+    `${envCheck}\n${coachesCorner}\n${chat}`,
+    /STRAICO_API_KEY|straico|GOOGLE_AI_API_KEY|GoogleGenAI|gemini/i
+  );
+  assert.doesNotMatch(envCheck, /GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|GOOGLE_REDIRECT_URI/);
+  assert.doesNotMatch(coachesCorner, /AI Reel Tool/);
+  assert.doesNotMatch(chat, /suggestPollQuestionAndOptions/);
+  assert.doesNotMatch(
+    `${landing}\n${guide}`,
+    /AI Scouting|GenAI protocols|FFmpeg Engine|HD Tactical Capture|AI Image\/Asset Optimization/i
+  );
+  assert.equal(packageJson.dependencies['@google/genai'], undefined);
+  assert.equal(functionsPackage.dependencies.googleapis, undefined);
 });

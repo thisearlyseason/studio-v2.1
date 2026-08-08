@@ -112,6 +112,61 @@ test('demo organization hubs do not call Stripe Connect', async () => {
   assert.match(club, /isDemo=\{user\.isDemo === true\}/);
 });
 
+test('demo workspaces never dispatch external team notifications', async () => {
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+
+  assert.equal(
+    (provider.match(/if \(!activeTeam\.isDemo\) Promise\.resolve\(\)\.then/g) || []).length,
+    3
+  );
+});
+
+test('production feed does not ship the retired Tenor integration', async () => {
+  const feed = await readSource('../src/app/(dashboard)/feed/page.tsx');
+
+  assert.doesNotMatch(feed, /api\.tenor\.com|TENOR_KEY|GifPicker|Search GIFs/);
+  assert.match(feed, /Poll Incomplete/);
+});
+
+test('creation workflows reject incomplete required fields', async () => {
+  const [events, practice, leagues, tournaments] = await Promise.all([
+    readSource('../src/app/(dashboard)/events/page.tsx'),
+    readSource('../src/app/(dashboard)/practice/page.tsx'),
+    readSource('../src/app/(dashboard)/leagues/leagues-page-content.tsx'),
+    readSource('../src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx'),
+  ]);
+
+  assert.match(events, /Activity Incomplete/);
+  assert.match(practice, /Protocol Title Required/);
+  assert.match(leagues, /disabled=\{isProcessing \|\| !leagueName\.trim\(\)\}/);
+  assert.match(tournaments, /Base Configuration Incomplete/);
+  assert.match(tournaments, /form\.endDate < form\.startDate/);
+  assert.match(tournaments, /onClick=\{\(\) => handleStepSelection\(s\.num\)\}/);
+});
+
+test('chat controls have a functional menu trigger and accessible names', async () => {
+  const chat = await readSource('../src/app/(dashboard)/chats/[chatId]/page.tsx');
+
+  assert.match(chat, /<TooltipTrigger asChild>\s*<DropdownMenuTrigger asChild>\s*<Button aria-label="Channel parameters"/);
+  for (const label of ['Back to chats', 'View channel members', 'Attach image', 'Create poll', 'Send message']) {
+    assert.match(chat, new RegExp(`aria-label="${label}"`));
+  }
+});
+
+test('family signature lookups declare their collection-group indexes', async () => {
+  const indexes = JSON.parse(await readSource('../firestore.indexes.json'));
+
+  for (const fieldPath of ['userId', 'teamId']) {
+    assert.ok(indexes.fieldOverrides.some(override =>
+      override.collectionGroup === 'signatures' &&
+      override.fieldPath === fieldPath &&
+      override.indexes?.some(index =>
+        index.order === 'ASCENDING' && index.queryScope === 'COLLECTION_GROUP'
+      )
+    ));
+  }
+});
+
 test('dashboard queues unsigned-document prompts behind unread broadcasts', async () => {
   const dashboard = await readSource('../src/app/(dashboard)/dashboard/page.tsx');
 
