@@ -91,7 +91,7 @@ jobs:
         run: npx firebase deploy --project "$FIREBASE_PROJECT_ID" --only firestore:indexes --non-interactive
 
       - name: Deploy Functions
-        run: npx firebase deploy --project "$FIREBASE_PROJECT_ID" --only functions --non-interactive
+        run: npx firebase deploy --project "$FIREBASE_PROJECT_ID" --only functions --non-interactive --force
 
       - name: Deploy Firestore and Storage rules
         run: npx firebase deploy --project "$FIREBASE_PROJECT_ID" --only firestore:rules,storage --non-interactive
