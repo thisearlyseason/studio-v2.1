@@ -98,6 +98,7 @@ test('terms match the current CAD checkout contract without stale hardcoded pric
 });
 
 test('staging deployment fails closed when App Hosting is linked to another repository', async () => {
+  const appHosting = await readSource('../apphosting.yaml');
   const ciWorkflow = await readSource('../.github/workflows/ci.yml');
   const workflow = await readSource('../.github/workflows/deploy-staging.yml');
   const runbook = await readSource('../docs/release-runbook.md');
@@ -116,4 +117,8 @@ test('staging deployment fails closed when App Hosting is linked to another repo
   assert.doesNotMatch(`${ciWorkflow}\n${workflow}`, /actions\/(?:checkout|setup-node)@v4/);
   assert.doesNotMatch(`${ciWorkflow}\n${workflow}`, /actions\/setup-java@v4/);
   assert.match(workflow, /google-github-actions\/auth@v3/);
+  assert.match(appHosting, /NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG/);
+  assert.match(appHosting, /the-squad-v2-staging/);
+  assert.match(appHosting, /NEXT_PUBLIC_APP_URL/);
+  assert.doesNotMatch(appHosting, /STRIPE_SECRET_KEY|RESEND_API_KEY|GOOGLE_CLIENT_SECRET/);
 });
