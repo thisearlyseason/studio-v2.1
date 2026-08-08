@@ -106,7 +106,7 @@ export default async function SportLandingPage({ params }: PageProps) {
           <p className="mt-6 max-w-3xl text-base font-medium leading-8 text-white/80 sm:text-xl">{landing.description}</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link href="/signup" className="inline-flex min-h-12 items-center justify-center rounded-lg bg-primary px-7 text-xs font-black uppercase text-white">Start your {landing.name.toLowerCase()} squad<ArrowRight className="ml-3 h-4 w-4" /></Link>
-            <Link href="/pricing" className="inline-flex min-h-12 items-center justify-center rounded-lg border border-white/40 bg-black/25 px-7 text-xs font-black uppercase text-white">Review plans</Link>
+            <Link href="/#pricing" className="inline-flex min-h-12 items-center justify-center rounded-lg border border-white/40 bg-black/25 px-7 text-xs font-black uppercase text-white">Review plans</Link>
           </div>
         </div>
       </section>

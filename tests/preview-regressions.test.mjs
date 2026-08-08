@@ -474,6 +474,7 @@ test('topic gap pages publish sport solutions and the recommended articles in th
   assert.match(sportLanding, /'@type': 'FAQPage'/);
   assert.match(sportLanding, /'@type': 'SoftwareApplication'/);
   assert.match(sportLanding, /priceCurrency: 'CAD'/);
+  assert.match(sportLanding, /href="\/#pricing"/);
   assert.match(youthPage, /article\.section\.toLowerCase\(\) === 'youth'/);
   assert.match(sectionNav, /name: 'Youth Sports', href: '\/sports-hub\/youth'/);
   assert.match(sportsHubLayout, /\['Latest News', '\/sports-hub\/news'\]/);
